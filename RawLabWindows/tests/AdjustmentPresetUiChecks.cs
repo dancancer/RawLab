@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -9,7 +8,6 @@ using RawLab.Windows;
 
 internal static class AdjustmentPresetUiChecks
 {
-    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static void Run(string repo, string raw, Action<bool, string> check)
     {
         repo = Path.GetFullPath(repo); raw = Path.GetFullPath(raw);
@@ -19,13 +17,13 @@ internal static class AdjustmentPresetUiChecks
         File.Copy(raw, source); File.Copy(raw, target);
         var app = TestWindowState.CreateApplication(); SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         Loc.Initialize("en"); foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
-        var window = new MainWindow(); TestWindowState.Isolate(window, output);
+        var window = TestWindowState.CreateIsolatedWindow(output);
         var edits = new EditStore(Path.Combine(output, "edits")); var library = new AdjustmentPresetStore(Path.Combine(output, "presets"));
-        Set(window, "editStore", edits); Set(window, "presetStore", library);
+        window.EditStoreInstance = edits; window.PresetStoreInstance = library;
         try {
             window.GpuMode.SelectedIndex = 1; window.Show(); window.OpenFile(source); Ready(window);
-            var settings = Get<Adjustments>(window, "settings"); settings.Set(Parameter.Exposure, 1.25); Invoke(window, "MarkEdited"); Invoke(window, "SaveEdits");
-            var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", Private)!.GetValue(window)!;
+            var settings = window.Settings; settings.Set(Parameter.Exposure, 1.25); window.MarkEditedForTests(); window.SaveEditsForTests();
+            var session = window.TransferSessionForTests;
             session.Copy(AdjustmentScope.Custom([AdjustmentField.Contrast]), new(OriginalIdentity.Read(source), settings.Capture(), null), new(source, true));
             var clipboard = session.Clipboard; var revision = edits.ReadState(source); var history = session.Transactions.Count;
             var summaryDialog = new AdjustmentPresetNameDialog(window, "保存预设", "Summary", true, (_, _) => null,
@@ -62,8 +60,8 @@ internal static class AdjustmentPresetUiChecks
             window.OpenFile(target); Ready(window); File.Delete(source);
             var preparation = window.PrepareAdjustmentTargets(preset.Payload, [target], AdjustmentHistoryAction.Preset);
             InteractionChecks.PumpUntil(() => preparation.IsCompleted); var operation = preparation.GetAwaiter().GetResult()!;
-            var applied = session.Apply(operation).Single(); Invoke(window, "AdoptSavedEdit", applied.Saved!); Ready(window);
-            check(applied.Status == AdjustmentStatus.Applied && Get<Adjustments>(window, "settings")[Parameter.Exposure] == 1.25 &&
+            var applied = session.Apply(operation).Single(); window.AdoptSavedEditForTests(applied.Saved!); Ready(window);
+            check(applied.Status == AdjustmentStatus.Applied && window.Settings[Parameter.Exposure] == 1.25 &&
                 session.Transactions.Last().Action == AdjustmentHistoryAction.Preset, "Native preset applies after source removal through the shared history");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(edits.Find(target) == null, "Native preset Undo restores original absence");
@@ -80,9 +78,6 @@ internal static class AdjustmentPresetUiChecks
         } finally { window.Close(); app.Shutdown(); }
     }
     private static void Ready(MainWindow window) => InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-    private static T Get<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
-    private static void Set(object owner, string name, object value) => owner.GetType().GetField(name, Private)!.SetValue(owner, value);
-    private static object? Invoke(object owner, string name, params object[] arguments) => owner.GetType().GetMethod(name, Private)!.Invoke(owner, arguments);
     private static IEnumerable<DependencyObject> Children(DependencyObject parent)
     {
         yield return parent;

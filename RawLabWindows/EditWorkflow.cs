@@ -18,11 +18,14 @@ public partial class MainWindow
     private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer editNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
-    private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
+    private BatchJournal batchJournal;
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
     private bool LookAvailable => lookAvailability.IsAvailable(settings.IsHDREditing, lut);
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
+
+    private RenderEngine CreateRenderEngine(int gpuMode = 1, int? aiBackend = null, string aiDeviceID = "") =>
+        new(gpuMode: gpuMode, aiBackend: aiBackend, aiDeviceID: aiDeviceID, aiDiagnostics: aiDiagnostics, appPaths: appPaths);
 
     private void InitializeEditWorkflow()
     {
@@ -35,7 +38,7 @@ public partial class MainWindow
             if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
             CancelEditGesture();SaveEdits();
         };
-        try { editStore = new EditStore(EditStore.DefaultDirectory); }
+        try { editStore ??= new EditStore(appPaths.EditsDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", AdjustmentTransferPresentation.Detail(error)), error)); }
@@ -163,13 +166,13 @@ public partial class MainWindow
 
     internal void SaveSettingsCopies(IEnumerable<string> inputs, AdjustmentSnapshot snapshot, string? look)
     {
-        editStore ??= new EditStore(EditStore.DefaultDirectory);
+        editStore ??= new EditStore(appPaths.EditsDirectory);
         editStore.Save(inputs, snapshot, look);
     }
 
     private (PhotoEditState Record, Adjustments Settings) LoadEditsForOpen(string input)
     {
-        editStore ??= new EditStore(EditStore.DefaultDirectory);
+        editStore ??= new EditStore(appPaths.EditsDirectory);
         PhotoEditState nextRecord;
         Adjustments nextSettings;
         try
@@ -202,6 +205,7 @@ public partial class MainWindow
     {
         var (nextRecord, nextSettings) = TransferSession.RepairLegacyNormalX3fOnOpen(input, LoadEditsForOpen);
         var saved = nextRecord.Edit;
+        editStore ??= new EditStore(appPaths.EditsDirectory);
         currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
@@ -276,7 +280,7 @@ public partial class MainWindow
         }catch(Exception error){ShowAdjustmentError(error);return;}
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
         if (editDirty) { SaveEdits(); return; }
-        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
+        try { editStore = new EditStore(appPaths.EditsDirectory); SetSaveNotice("调整记录可用", "", false); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
     }
 
@@ -314,9 +318,9 @@ public partial class MainWindow
     }
     private void ShowBatch(BatchJob job,bool autoStart=false)
     {
-        var window = new BatchExportWindow(job, batchJournal,backend=>new RenderEngine(aiBackend:backend,
-            aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics,
-            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null) { Owner = this, IsEnabled = !UpdateInstallationActive };
+        var window = new BatchExportWindow(job, batchJournal,backend=>CreateRenderEngine(aiBackend:backend,
+            aiDeviceID:job.AIDeviceID),aiDiagnostics,
+            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null,appPaths) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {

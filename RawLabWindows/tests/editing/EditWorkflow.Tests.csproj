@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../AppPaths.cs" Link="AppPaths.cs" />
     <Compile Include="../../AdjustmentPayload.cs" Link="AdjustmentPayload.cs" />
     <Compile Include="../../AdjustmentSummary.cs" Link="AdjustmentSummary.cs" />
     <Compile Include="../../AdjustmentPresetStore.cs" Link="AdjustmentPresetStore.cs" />

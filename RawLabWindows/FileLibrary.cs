@@ -33,7 +33,7 @@ public sealed class LibraryEntry : INotifyPropertyChanged
     public string PhotoStatus => string.Join(" · ",new[]{IsSelected ? Loc.Text("当前照片") : null,
         IsMarked ? Loc.Text("已选") : null,IsEdited ? Loc.Text("已编辑") : null,PreviewNotice}.Where(value=>value!=null));
     public BitmapSource? Thumbnail { get=>thumbnail; private set { thumbnail=value; OnPropertyChanged(); } }
-    public LibraryEntry? Parent { get; private set; }
+    public LibraryEntry? Parent { get; internal set; }
     public ObservableCollection<LibraryEntry> Children { get; } = [];
     public ObservableCollection<LibraryEntry> Folders { get; } = [];
     public IReadOnlyList<LibraryEntry> Photos { get; private set; } = [];
@@ -163,15 +163,16 @@ public sealed class LibraryEntry : INotifyPropertyChanged
 }
 internal sealed class Library
 {
-    private readonly string settingsPath;
+    private string settingsPath;
     private readonly Action<string, string>? moveFile;
     private readonly Action<TimeSpan>? sleep;
     private readonly Func<TimeSpan>? elapsed;
+    internal string SettingsPath { get => settingsPath; set => settingsPath = value; }
     public ObservableCollection<LibraryEntry> Roots { get; }=[];
     public Library() : this(null) { }
     internal Library(string? settingsPath, Action<string, string>? moveFile = null, Action<TimeSpan>? sleep = null, Func<TimeSpan>? elapsed = null)
     {
-        this.settingsPath = settingsPath ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","folders.json");
+        this.settingsPath = settingsPath ?? AppPaths.Default.FoldersPath;
         this.moveFile = moveFile; this.sleep = sleep; this.elapsed = elapsed;
         try { foreach(var path in JsonSerializer.Deserialize<string[]>(File.ReadAllText(this.settingsPath)) ?? [])Roots.Add(new(path,true)); }
         catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or JsonException) { }

@@ -10,14 +10,15 @@ internal static class Program
     public static void Main()
     {
         VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
-        Loc.Initialize();
+        var appPaths = AppPaths.Default;
+        Loc.Initialize(preferencePath: appPaths.LanguagePreferencePath);
         var paths = SystemPhotoOpen.Paths(Environment.GetCommandLineArgs().Skip(1));
-        var pipeName = SystemPhotoOpen.PipeName(UpdateStore.DefaultDirectory);
+        var pipeName = SystemPhotoOpen.PipeName(appPaths.UpdatesDirectory);
         try
         {
-            using var lease = SystemPhotoOpen.AcquireOrForwardAsync(UpdateStore.DefaultDirectory, pipeName, paths).GetAwaiter().GetResult();
+            using var lease = SystemPhotoOpen.AcquireOrForwardAsync(appPaths.UpdatesDirectory, pipeName, paths).GetAwaiter().GetResult();
             if (lease == null) return;
-            var app = new App(); app.InitializeComponent();
+            var app = new App(appPaths: appPaths); app.InitializeComponent();
             app.EnqueueSystemPhotos(paths);
             using var server = new SystemPhotoOpenServer(pipeName, app.EnqueueSystemPhotos);
             app.Run();

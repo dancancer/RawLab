@@ -17,12 +17,12 @@ internal static class AppearanceChecks
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
-        var editor=new MainWindow();TestWindowState.Isolate(editor,output);editor.Show();
-        var about=new AboutWindow("0.8.0");var settings=new SettingsWindow(0);
-        var sizeDialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,editor},null)!;
-        typeof(LongEdgeDialog).GetMethod("Accept",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(sizeDialog,null);
-        typeof(MainWindow).GetMethod("SetStatus",BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(string),typeof(bool)},null)!.Invoke(editor,new object[]{"Error",true});
-        typeof(MainWindow).GetMethod("SetSaveNotice",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(editor,new object[]{"保存失败","Detail",true});
+        var editor=TestWindowState.CreateIsolatedWindow(output);editor.Show();
+        var about=new AboutWindow("0.8.0");var settings=new SettingsWindow(0,editor.Paths);
+        var sizeDialog=new LongEdgeDialog(null,editor);
+        sizeDialog.Accept();
+        editor.SetStatusForTests("Error",true);
+        editor.SetSaveNoticeForTests("保存失败","Detail",true);
         var job=BatchJob.Create("missing.arw",new Adjustments().Capture(),null,"Neutral");
         job.Items.Add(new(Guid.NewGuid(),"missing.arw",new("missing.arw",0,0,0)){Status=BatchStatus.Failed,Error="Failure detail"});
         var batch=new BatchExportWindow(job,new BatchJournal(Path.Combine(output,"batch")));

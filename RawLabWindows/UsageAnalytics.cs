@@ -97,6 +97,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
 {
     private sealed record ConsentState(bool? Enabled);
     private readonly string settingsPath;
+    internal string SettingsPath => settingsPath;
     private readonly UsageInstallId installId;
     private readonly IUsageAnalyticsTransport transport;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -112,13 +113,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
     public const int MaxCount = 100_000;
     // 退出时等待 SDK 关闭的上限：离线时原生关闭可能一直等网络，不能拖住退出
     public static readonly TimeSpan ShutdownLimit = TimeSpan.FromSeconds(3);
-    public static string DefaultSettingsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab",
-#if RAWLAB_RUM_LOCAL
-        "usage-local.json");
-#else
-        "usage.json");
-#endif
+    public static string DefaultSettingsPath => AppPaths.Default.UsageSettingsPath;
     public static string DefaultInstallIdPath => InstallIdPathFor(DefaultSettingsPath);
     public static string DefaultCacheDirectory => CacheDirectoryFor(DefaultSettingsPath);
 

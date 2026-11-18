@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
@@ -115,7 +114,7 @@ internal static class AdjustmentPresetDialogChecks
                 [AdjustmentField.Look] = AdjustmentPayload.Value(new { kind = "managed", id = "missing-native-preset-look" })
             }));
         var editsPath = Path.Combine(output, "edits", "edits.json"); var savedEdits = File.ReadAllBytes(editsPath);
-        var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(owner)!;
+        var session = owner.TransferSessionForTests;
         var history = session.Transactions.Count;
         try {
             Drive(owner, [new("preset.library", w => Click(w, "preset.apply." + missing.ID))]);

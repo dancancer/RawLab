@@ -16,6 +16,7 @@ internal sealed class LUTCompatibilityDialog : Window
     private readonly LUTPreviewService service = new();
     private readonly Dictionary<string, LUTPreviewFrame> frames = new();
     private readonly Dictionary<string, (Button Button, Image Image)> thumbnails = new();
+    internal IReadOnlyDictionary<string, (Button Button, Image Image)> Thumbnails => thumbnails;
     private readonly StackPanel fields = new(), advancedFields = new(), referenceFields = new();
     private readonly WrapPanel candidates = new();
     private readonly Image before = new() { Height = 200, Stretch = Stretch.Uniform }, after = new() { Height = 200, Stretch = Stretch.Uniform };
@@ -24,6 +25,7 @@ internal sealed class LUTCompatibilityDialog : Window
     private readonly TextBlock notice = AdjustmentDialogLayout.Text(""), referenceName = AdjustmentDialogLayout.Text(""), comparison = AdjustmentDialogLayout.Text("");
     private readonly TextBlock assumptions = AdjustmentDialogLayout.Text("");
     private readonly Button confirm, compare, more;
+    internal Button ConfirmButton => confirm;
     private readonly LUTReferenceConditions referenceConditions = new();
     private readonly List<CheckBox> referenceChecks = new();
     private readonly TextBox referenceNotes = new() { MinHeight = 54, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap };

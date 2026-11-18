@@ -79,8 +79,7 @@ internal sealed class LookLibrary
     private sealed record Registry(int Version, List<ManagedLook> Looks, Dictionary<string,string>? ExternalNames = null);
     private sealed record PersistRegistry(int Version, object[] Looks, Dictionary<string, string>? ExternalNames = null);
 
-    internal static string DefaultDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Looks");
+    internal static string DefaultDirectory => AppPaths.Default.LooksDirectory;
 
     private readonly string directory;
     private readonly string registryPath;

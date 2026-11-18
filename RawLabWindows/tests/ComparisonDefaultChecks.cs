@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -11,8 +10,6 @@ using RawLab.Windows;
 
 internal static class ComparisonDefaultChecks
 {
-    private static readonly BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-
     internal static void Run(string repo, string raw, Action<bool, string> check)
     {
         check(GpuSelection(null)==1 && GpuSelection("Cpu")==1 && GpuSelection("Auto")==0 && GpuSelection("Force")==2,
@@ -27,8 +24,7 @@ internal static class ComparisonDefaultChecks
 
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window = new MainWindow { Width = 1200, Height = 800 };
-        TestWindowState.Isolate(window, output);
+        var window = TestWindowState.CreateIsolatedWindow(output, width: 1200, height: 800);
         UseProfile(window, Path.Combine(output, "profile"));
         window.GpuMode.SelectedIndex = 1;
         check(IsMode(window,"off"),"An unloaded new window also starts in single mode");
@@ -64,7 +60,7 @@ internal static class ComparisonDefaultChecks
 
             WaitBusyThenReady(window, () => window.OpenFile(raw));
             check(IsMode(window, "off"), "Opening RAW keeps the default single mode");
-            var initialSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            var initialSettings = window.Settings;
             check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null && initialSettings.MasterRecipeID == null &&
                   initialSettings[Parameter.Exposure] == 0,
                 "An unseen RAW opens with neutral settings and no film or master recipe");
@@ -100,7 +96,7 @@ internal static class ComparisonDefaultChecks
             check(!window.LensCategory.IsEnabled, "Raster disables the RAW-only lens navigation entry");
             check(!window.ExposureMode.IsEnabled, "Raster disables RAW exposure baseline selection");
             check(!window.AsShotButton.IsEnabled, "Raster disables as-shot white balance");
-            var rasterSettings = (Adjustments)typeof(MainWindow).GetField("settings", Private)!.GetValue(window)!;
+            var rasterSettings = window.Settings;
             check(window.ActiveFilm.Text == Loc.Text("中性") && window.CurrentLookIdentity() == null &&
                   rasterSettings.MasterRecipeID == null && rasterSettings[Parameter.Exposure] == 0,
                 "An unseen raster opens without inheriting another photo's film or adjustments");
@@ -110,15 +106,15 @@ internal static class ComparisonDefaultChecks
             check(IsMode(window, "off"),
                 "JPEG switch resets comparison to single mode");
 
-            WaitBusyThenReady(window,()=>Drop(window,fixtures.Png));
+            WaitBusyThenReady(window,()=>Drop(window,true,fixtures.Png));
             check(CurrentFile()==fixtures.Png,"Root-window drop accepts an ordinary PNG through the real handler");
             WaitBusyThenReady(window,()=>window.ValueSlider.Value=.55);
             WaitBusyThenReady(window,()=>window.OpenFile(fixtures.Jpeg));
-            WaitBusyThenReady(window,()=>Drop(window.Files,fixtures.Png));
+            WaitBusyThenReady(window,()=>Drop(window,false,fixtures.Png));
             check(CurrentFile()==fixtures.Png && Math.Abs(window.ValueSlider.Value-.55)<.001,
                 "File-tree drop reopens PNG and restores its own saved adjustment");
             window.BatchExportMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            var batch=(BatchExportWindow)typeof(MainWindow).GetField("batchWindow",Private)!.GetValue(window)!;
+            var batch=window.BatchWindowInstance!;
             check(batch!=null && ReferenceEquals(batch.Owner,window),"Raster batch menu invokes the real main-window owner wiring");
             check(batch!.SourceSummary.Text.Contains(Loc.Text("不适用")) && batch.SourceSummary.Text.Contains(Loc.Text("显示图像")),
                 "Raster batch has no invented camera WB or sensor baseline labels");
@@ -127,7 +123,7 @@ internal static class ComparisonDefaultChecks
             check(batch.Job.SelectedCount==3 && !batch.Busy,"Actual batch preflight accepts mixed RAW, PNG and JPEG targets");
             batch.Png.IsChecked=true;batch.Job.LongEdge=64;batch.Job.OutputDirectory=Path.Combine(output,"batch-output");
             Directory.CreateDirectory(batch.Job.OutputDirectory);
-            typeof(BatchExportWindow).GetMethod("Refresh",Private)!.Invoke(batch,null);
+            batch.Refresh();
             check(batch.PrimaryAction.IsEnabled,"Mixed batch actual primary action becomes available");
             batch.PrimaryAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(batch.Running,"Actual batch primary handler owns the running state");
@@ -159,16 +155,14 @@ internal static class ComparisonDefaultChecks
             app.Shutdown();
         }
 
-        string? CurrentFile()=>(string?)typeof(MainWindow).GetField("file",Private)!.GetValue(window);
+        string? CurrentFile()=>window.CurrentFile;
     }
 
-    private static void Drop(UIElement target,string path)
+    private static void Drop(MainWindow window,bool rootWindow,string path)
     {
         var data=new DataObject(DataFormats.FileDrop,new[]{path});
-        var args=(DragEventArgs)Activator.CreateInstance(typeof(DragEventArgs),BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic,
-            null,[data,DragDropKeyStates.None,DragDropEffects.Copy,target,new Point()],null)!;
-        args.RoutedEvent=UIElement.PreviewDropEvent;target.RaiseEvent(args);
-        if(!args.Handled){args.RoutedEvent=UIElement.DropEvent;target.RaiseEvent(args);}
+        if(rootWindow)window.HandleFilesDrop(data,DragDropEffects.Copy);
+        else window.HandleLibraryDrop(data,DragDropEffects.Copy);
     }
 
     internal static int Host(string repo, string profile)
@@ -241,8 +235,7 @@ internal static class ComparisonDefaultChecks
             app.Resources["EditorBodySize"] = 18d; app.Resources["EditorCaptionSize"] = 16d;
         }
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window = new MainWindow { Width = 1200, Height = 800 };
-        TestWindowState.Isolate(window, Path.Combine(profile, "window-state"));
+        var window = TestWindowState.CreateIsolatedWindow(Path.Combine(profile, "window-state"), width: 1200, height: 800);
         UseProfile(window, profile);
         if(batchFlow || lookBrowser){window.Width=1024;window.Height=720;}
         if(lookBrowser) {
@@ -298,7 +291,7 @@ internal static class ComparisonDefaultChecks
                 var captured=new HashSet<X3fMode>();
                 var captureTimer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(100)};
                 captureTimer.Tick+=(_,_)=>{
-                    var settings=(Adjustments)typeof(MainWindow).GetField("settings",Private)!.GetValue(window)!;
+                    var settings=window.Settings;
                     if(window.ExportPng.IsEnabled && captured.Add(settings.X3fMode))
                         PhotoFeatureChecks.Screenshot(window,Path.Combine(profile,$"x3f-{phase}-{settings.X3fMode}.png"));
                 };
@@ -403,14 +396,11 @@ internal static class ComparisonDefaultChecks
     private static void UseProfile(MainWindow window, string profile)
     {
         Directory.CreateDirectory(profile);
-        typeof(MainWindow).GetField("presetStore", Private)!.SetValue(window,
-            new AdjustmentPresetStore(Path.Combine(profile, "presets")));
-        typeof(MainWindow).GetField("editStore", Private)!.SetValue(window,
-            new EditStore(Path.Combine(profile, "edits")));
-        typeof(MainWindow).GetField("recentLooksPath",Private)!.SetValue(window,Path.Combine(profile,"recent-looks.json"));
-        typeof(MainWindow).GetMethod("LoadRecentLooks",Private)!.Invoke(window,null);
-        typeof(MainWindow).GetField("batchJournal", Private)!.SetValue(window,
-            new BatchJournal(Path.Combine(profile, "batch")));
+        window.PresetStoreInstance = new AdjustmentPresetStore(Path.Combine(profile, "presets"));
+        window.EditStoreInstance = new EditStore(Path.Combine(profile, "edits"));
+        window.RecentLooksPath = Path.Combine(profile, "recent-looks.json");
+        window.LoadRecentLooksForTests();
+        window.BatchJournalInstance = new BatchJournal(Path.Combine(profile, "batch"));
     }
 
     private static Fixtures PrepareFixtures(string raw, string directory)
@@ -418,7 +408,7 @@ internal static class ComparisonDefaultChecks
         Directory.CreateDirectory(directory);
         var png = Path.Combine(directory, "comparison.png");
         var jpeg = Path.Combine(directory, "comparison.jpg");
-        using var engine = new RenderEngine(0);
+        using var engine = new RenderEngine(0, appPaths: TestWindowState.CreateIsolatedPaths(directory));
         var rendered = engine.Render(raw, new Adjustments(), null, 256, statistics: false, clipping: false)
             ?? throw new InvalidOperationException("Cannot render raster fixture.");
         var rgb = new FormatConvertedBitmap(rendered.Image, PixelFormats.Bgr24, null, 0);

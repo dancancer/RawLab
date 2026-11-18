@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows.Media;
@@ -12,13 +11,10 @@ internal static class RasterChecks
     internal static void Run(string repo,string raw,string cli,Action<bool,string> check)
     {
         FirstPreviewChecks.Run([],check);
-        var raster=typeof(LibraryEntry).GetMethod("IsRaster",BindingFlags.Public|BindingFlags.Static);
-        var image=typeof(LibraryEntry).GetMethod("IsImage",BindingFlags.Public|BindingFlags.Static);
-        check(raster!=null && image!=null,"File library exposes ordinary-image and RAW/image classification");
         foreach(var name in new[]{"image.JPG","image.jpeg","image.PNG","image.tif","image.TIFF"})
-            check((bool)raster!.Invoke(null,[name])! && (bool)image!.Invoke(null,[name])! && !LibraryEntry.IsRaw(name),"Ordinary image classification: "+name);
-        check((bool)image!.Invoke(null,["image.ARW"])! && !(bool)image.Invoke(null,["image.txt"])!,"RAW classification is retained without admitting arbitrary files");
-        check(LibraryEntry.IsRaw("sigma.X3F") && (bool)image.Invoke(null,["sigma.X3F"])! &&
+            check(LibraryEntry.IsRaster(name) && LibraryEntry.IsImage(name) && !LibraryEntry.IsRaw(name),"Ordinary image classification: "+name);
+        check(LibraryEntry.IsImage("image.ARW") && !LibraryEntry.IsImage("image.txt"),"RAW classification is retained without admitting arbitrary files");
+        check(LibraryEntry.IsRaw("sigma.X3F") && LibraryEntry.IsImage("sigma.X3F") &&
             LibraryEntry.ImageFilter.Contains("*.x3f",StringComparison.Ordinal),"Sigma X3F is admitted as RAW by the photo picker");
         var output=Path.Combine(repo,"build","windows-raster",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
         var inputs=Path.Combine(output,"inputs");Directory.CreateDirectory(inputs);
@@ -188,13 +184,8 @@ internal static class RasterChecks
         check(observed.TryGetValue(rasterKey,out var rasterTargetState) && rasterTargetState.SameAs(dormantSnapshot),
             "Mixed batch keeps the raster target snapshot unchanged while target normalization remains input-scoped");
         check(dormant.Capture().SameAs(dormantSnapshot),"Batch target normalization does not mutate the frozen source snapshot");
-        var batchSettingsHelper=typeof(RenderEngine).GetMethod("PrepareBatchSettings",BindingFlags.Static|BindingFlags.NonPublic);
-        check(batchSettingsHelper!=null,"Batch render and target preview share an explicit source/target settings helper");
-        if(batchSettingsHelper!=null)
-        {
-            var previewSettings=(Adjustments)batchSettingsHelper.Invoke(null,[png,raw,dormant])!;
-            check(previewSettings.Capture().SameAs(effectiveRaw!),"Batch target preview uses the same effective RAW settings as final render");
-        }
+        var previewSettings=RenderEngine.PrepareBatchSettings(png,raw,dormant);
+        check(previewSettings.Capture().SameAs(effectiveRaw!),"Batch target preview uses the same effective RAW settings as final render");
         var damaged=Path.Combine(inputs,"damaged.png");File.WriteAllBytes(damaged,[137,80,78,71]);
         var rejected=false;try{engine.Render(damaged,new(),null,32);}catch(InvalidOperationException){rejected=true;}
         check(rejected,"Damaged ordinary input is rejected rather than returning the previous image");
@@ -240,7 +231,7 @@ internal static class RasterChecks
             }
             using var file=File.Create(path);encoder.Save(file);
         }
-        long DisplayBytes(){var property=typeof(RenderEngine).GetProperty("CachedDisplayBytes",BindingFlags.Instance|BindingFlags.NonPublic);check(property!=null,"Display cache exposes an actual bounded allocation counter");return (long)property!.GetValue(engine)!;}
+        long DisplayBytes() => engine.CachedDisplayBytes;
         void Verify(string input,Adjustments settings,string? look,string name)
         {
             var gui=Path.Combine(output,name+"-gui.png");var agent=Path.Combine(output,name+"-agent.png");var path=Path.Combine(output,name+".json");

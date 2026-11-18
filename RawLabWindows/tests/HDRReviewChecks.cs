@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -9,12 +8,8 @@ using RawLab.Windows;
 
 internal static class HDRReviewChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    private static T Get<T>(object owner,string field)=>(T)owner.GetType().GetField(field,Private)!.GetValue(owner)!;
-    private static object? Call(object owner,string method,params object?[] args)=>owner.GetType().GetMethods(Private)
-        .Single(value=>value.Name==method && value.GetParameters().Length==args.Length).Invoke(owner,args);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled &&
-        !Get<DispatcherTimer>(window,"previewResize").IsEnabled && !Get<bool>(window,"editDirty"));
+        !window.PreviewResizeTimer.IsEnabled && !window.EditDirty);
 
     internal static void StatisticsFlags(string source,Action<bool,string> check)
     {
@@ -22,7 +17,7 @@ internal static class HDRReviewChecks
         int Analyze(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask) {
             calls++;return RenderEngine.AnalyzeStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask);
         }
-        using var engine=new RenderEngine(0,statisticsAnalyzer:Analyze);
+        using var engine=new RenderEngine(0,appPaths:TestWindowState.CreateIsolatedPaths(Path.GetDirectoryName(source)!),statisticsAnalyzer:Analyze);
         foreach(var hdr in new[]{true,false}) {
             var settings=new Adjustments {HDR=new HDRSettings {Mode=hdr ? HDRMode.Hdr : HDRMode.Sdr}};
             var before=calls;
@@ -41,7 +36,7 @@ internal static class HDRReviewChecks
         var source=Path.Combine(root,"phone"+Path.GetExtension(fixture));File.Copy(fixture,source);
         Loc.Initialize("en");var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window=new MainWindow(Path.Combine(root,"looks"));TestWindowState.Isolate(window,root);
+        var window=TestWindowState.CreateIsolatedWindow(root,lookLibraryDirectory:Path.Combine(root,"looks"));
         var failures=new List<string>();
         try {
             window.Show();window.OpenFile(source);Ready(window);
@@ -83,7 +78,7 @@ internal static class HDRReviewChecks
             var prepare=dialog.AddInputs([source,ordinary,raw]);InteractionChecks.PumpUntil(()=>prepare.IsCompleted);prepare.GetAwaiter().GetResult();
             check(export.Items.Count==3 && export.Items.All(item=>item.CanSelect),"Actual batch preflight accepts HDR, ordinary JPEG and RAW targets in frozen SDR mode");
         } finally {dialog.Close();}
-        using var engine=new RenderEngine(0);
+        using var engine=new RenderEngine(0,appPaths:owner.Paths);
         BatchRunner.Run(export,journal,false,CancellationToken.None,(_,_)=>{},(input,settings,look,destination,edge)=>
             engine.Render(input,settings,look,128,output:destination,longEdge:edge,formatOverride:ExportFormat.Jpeg));
         check(export.SucceededCount==3 && export.FailedCount==0,"Frozen SDR batch publishes JPEG output for all three source types");
@@ -91,11 +86,11 @@ internal static class HDRReviewChecks
 
     private static void HslPicker(MainWindow window,string root,string source,Action<bool,string> check)
     {
-        if(Get<Adjustments>(window,"settings").IsHDREditing) {
+        if(window.Settings.IsHDREditing) {
             window.HDREditMenu.IsChecked=false;window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
         }
-        using var engine=new RenderEngine(0);
-        var settings=Get<Adjustments>(window,"settings").Clone();
+        using var engine=new RenderEngine(0,appPaths:window.Paths);
+        var settings=window.Settings.Clone();
         var revision=new HslTargetRevision(17,29);Point? usable=null;
         foreach(var point in new[]{new Point(.25,.25),new Point(.5,.5),new Point(.75,.75),new Point(.25,.75),new Point(.75,.25)}) {
             var sample=engine.SampleHsl(source,settings,null,128,false,revision,point.X,point.Y);
@@ -104,30 +99,30 @@ internal static class HDRReviewChecks
             if(sample.Usable){usable=point;break;}
         }
         check(engine.CachedDisplayBytes==0,"HSL HDR-source analysis does not fill the ordinary full-size decoder cache");
-        window.HslCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Call(window,"SetHslTargetMode",true,0);
+        window.HslCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));window.SetHslTargetModeForTests(true,0);
         Ready(window);
         check(window.HslEditor.IsEnabled && window.ResultCanvas.HslTargetEnabled,"SDR mode exposes the actual HSL picker on an HDR source");
-        Call(window,"BeginHslTarget",usable ?? new Point(.5,.5),20d);
-        InteractionChecks.PumpUntil(()=>!Get<HslTargetInteraction>(window,"hslTarget").Waiting && window.ExportPng.IsEnabled);
-        var selection=Get<HslTargetInteraction>(window,"hslTarget").Selection;
+        window.BeginHslTargetForTests(usable ?? new Point(.5,.5),20d);
+        InteractionChecks.PumpUntil(()=>!window.HslTarget.Waiting && window.ExportPng.IsEnabled);
+        var selection=window.HslTarget.Selection;
         check(selection!=null && selection.Availability!=HslTargetAvailability.Failed &&
-            (usable==null || !Get<Adjustments>(window,"settings").Hsl.IsIdentity),"Visible HSL picker accepts the SDR rendition and commits a usable target");
-        Capture(window,Path.Combine(root,"sdr-hsl-picker.png"));Call(window,"SetHslTargetMode",false,0);Ready(window);
+            (usable==null || !window.Settings.Hsl.IsIdentity),"Visible HSL picker accepts the SDR rendition and commits a usable target");
+        Capture(window,Path.Combine(root,"sdr-hsl-picker.png"));window.SetHslTargetModeForTests(false,0);Ready(window);
     }
 
     private static void Clipping(MainWindow window,string root,Action<bool,string> check)
     {
         foreach(var hdr in new[]{true,false}) {
-            if(Get<Adjustments>(window,"settings").IsHDREditing!=hdr) {
+            if(window.Settings.IsHDREditing!=hdr) {
                 window.HDREditMenu.IsChecked=hdr;window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
             }
-            Get<Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)>>(window,"workspaceTools")[EditorAdjustmentTool.Exposure].Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.WorkspaceTools[EditorAdjustmentTool.Exposure].Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             window.OrdinaryParameter.Number.Text="4";check(window.OrdinaryParameter.Commit(),"Exposure commits before clipping check");Ready(window);
-            var frame=Get<RenderedImage>(window,"result");
+            var frame=window.CurrentResult!;
             window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
-            InteractionChecks.PumpUntil(()=>Get<BitmapSource?>(window.ResultCanvas,"mask")!=null);
-            var overlay=Get<BitmapSource>(window.ResultCanvas,"mask");
-            check(window.ResultCanvas.ShowClipping && ReferenceEquals(frame,Get<RenderedImage>(window,"result")),
+            InteractionChecks.PumpUntil(()=>window.ResultCanvas.MaskSource!=null);
+            var overlay=window.ResultCanvas.MaskSource!;
+            check(window.ResultCanvas.ShowClipping && ReferenceEquals(frame,window.CurrentResult),
                 "Clipping supplies the canvas mask without replacing the frame in mode "+hdr);
             var photo=Pixels(frame.Image,PixelFormats.Bgra32);var mask=Pixels(overlay,PixelFormats.Bgra32);
             check(overlay.PixelWidth==frame.Image.PixelWidth && overlay.PixelHeight==frame.Image.PixelHeight,"Clipping mask matches the displayed SDR dimensions");
@@ -139,7 +134,7 @@ internal static class HDRReviewChecks
             check(mask.SequenceEqual(expected) && Enumerable.Range(0,mask.Length/4).Any(i=>mask[i*4+3]==160),"Highlight and black warnings follow the corresponding SDR output pixels");
             Capture(window,Path.Combine(root,hdr ? "hdr-clipping.png" : "sdr-clipping.png"));
             window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
-            check(!window.ResultCanvas.ShowClipping && ReferenceEquals(frame,Get<RenderedImage>(window,"result")),
+            check(!window.ResultCanvas.ShowClipping && ReferenceEquals(frame,window.CurrentResult),
                 "Disabling clipping hides the overlay and retains the preview");
         }
     }

@@ -40,12 +40,11 @@ internal static class HDRNative
     internal const uint MetadataIsoXmp = 1;
     internal const int ProRAWDecodeVersion = 2;
 
-    internal static string TemporaryRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Cache", "HDR");
+    internal static string TemporaryRoot => AppPaths.Default.HdrCacheDirectory;
 
-    private static string EnsureTemporaryRoot()
+    private static string EnsureTemporaryRoot(string? temporaryRoot = null)
     {
-        var root = TemporaryRoot;
+        var root = temporaryRoot ?? TemporaryRoot;
         Directory.CreateDirectory(root);
         return root;
     }
@@ -130,7 +129,8 @@ internal static class HDRNative
     }
 
     internal static HDRPairOwner Decode(string path, HDRIntent intent, uint longEdge = 0, HDRSourceInfo? expected = null,
-        Native.Session? session = null, HDRCameraDevelopmentSettings? development = null, bool cameraAI = false)
+        Native.Session? session = null, HDRCameraDevelopmentSettings? development = null, bool cameraAI = false,
+        string? temporaryRoot = null, string? cameraProfileDirectory = null)
     {
         if (expected == null) {
             var state = PhotoInput.IsRaw(path)
@@ -150,7 +150,7 @@ internal static class HDRNative
         };
         var pair = Pair(); var diagnostic = Diagnostic();
         var status = expected.IsProRAW
-            ? Native.sony2fuji_hdr_decode_proraw(session, path, ref options, EnsureTemporaryRoot(), ref pair, ref diagnostic)
+            ? Native.sony2fuji_hdr_decode_proraw(session, path, ref options, EnsureTemporaryRoot(temporaryRoot), ref pair, ref diagnostic)
             : expected.IsCameraRaw
                 ? DecodeCameraRaw()
                 : Native.sony2fuji_hdr_decode(path, ref options, ref pair, ref diagnostic);
@@ -171,7 +171,7 @@ internal static class HDRNative
                 config.Version = 2;
                 config.StructSize = (uint)Marshal.SizeOf<Native.HDRCameraDevelopmentV2>();
                 var profiled = new Native.HDRCameraDevelopmentV2 {
-                    Base = config, ProfilePath = profile.RequireAsset(), ProfileSha256 = Encoding.ASCII.GetBytes(profile.Sha256 + '\0')
+                    Base = config, ProfilePath = profile.RequireAsset(cameraProfileDirectory), ProfileSha256 = Encoding.ASCII.GetBytes(profile.Sha256 + '\0')
                 };
                 return Native.DecodeWithHDRCameraProfile(session,path,ref options,ref profiled,ref pair,ref diagnostic);
             }
@@ -208,10 +208,10 @@ internal static class HDRNative
     }
 
     internal static HDRPairOwner Render(Native.Session session, HDRPairOwner source, HDRSettings settings,
-        HDRIntent intent, uint longEdge = 0)
+        HDRIntent intent, uint longEdge = 0, string? lookDirectory = null)
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
-        var request = settings.NativeRenderRequest(intent, longEdge);
+        var request = settings.NativeRenderRequest(intent, longEdge, lookDirectory);
         var result = Pair(); var diagnostic = Diagnostic();
         var status = Native.sony2fuji_hdr_render(session, ref source.Pair, ref request, ref result, ref diagnostic);
         if (status != StatusOk)
@@ -259,18 +259,19 @@ internal static class HDRNative
         } finally { File.Delete(staging); }
     }
 
-    internal static string RequireAsset(this HDRCameraProfile profile)
+    internal static string RequireAsset(this HDRCameraProfile profile, string? directory = null)
     {
-        var path = profile.AssetPath;
+        var path = profile.AssetPathFor(directory);
         return File.Exists(path) ? path : throw new HDRSourceException(3, 21, 11);
     }
 
-    internal static HDRCameraProfile ImportCameraProfile(string path)
+    internal static HDRCameraProfile ImportCameraProfile(string path, string? directory = null)
     {
         if (Path.GetExtension(path).ToLowerInvariant() is not (".dcp" or ".rlook"))
             throw new HDRSourceException(1, 21, 11);
-        Directory.CreateDirectory(HDRCameraProfile.Directory);
-        var staging = Path.Combine(HDRCameraProfile.Directory, $".import-{Guid.NewGuid():N}.profile");
+        directory ??= HDRCameraProfile.Directory;
+        Directory.CreateDirectory(directory);
+        var staging = Path.Combine(directory, $".import-{Guid.NewGuid():N}.profile");
         try {
             using (var source = File.OpenRead(path)) {
                 if (source.Length is <= 0 or > HDRLookSettings.MaximumBytes) throw new HDRSourceException(1, 21, 11);
@@ -286,7 +287,7 @@ internal static class HDRNative
             if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
             var profile = new HDRCameraProfile(Encoding.ASCII.GetString(info.Sha256, 0, 64), Path.GetFileNameWithoutExtension(path));
             if (!profile.IsValid) throw new HDRSourceException(1, 21, 11);
-            File.Move(staging, profile.AssetPath, overwrite: true);
+            File.Move(staging, profile.AssetPathFor(directory), overwrite: true);
             return profile;
         } finally { File.Delete(staging); }
     }
@@ -345,7 +346,7 @@ internal static class HDRNative
     }
 
     internal static Native.HDRStreamResult ExportProRAW(Native.Session session, string sourcePath, HDRSettings settings,
-        string destination, byte[] sha256, bool keepHdr, uint longEdge = 0, uint quality = 95)
+        string destination, byte[] sha256, bool keepHdr, uint longEdge = 0, uint quality = 95, string? temporaryRoot = null)
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
         if (sha256.Length != 32) throw new ArgumentException("A frozen SHA-256 digest is required.", nameof(sha256));
@@ -360,7 +361,7 @@ internal static class HDRNative
         };
         var diagnostic = Diagnostic();
         var status = Native.sony2fuji_hdr_export_proraw(session, sourcePath, ref request, ref config,
-            keepHdr ? 1u : 0u, EnsureTemporaryRoot(), destination, ref result, ref diagnostic);
+            keepHdr ? 1u : 0u, EnsureTemporaryRoot(temporaryRoot), destination, ref result, ref diagnostic);
         if (status == StatusCancelled) throw new OperationCanceledException();
         if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
         return result;

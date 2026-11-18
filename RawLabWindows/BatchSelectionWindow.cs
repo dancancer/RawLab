@@ -58,7 +58,7 @@ internal sealed class BatchSelectionWindow : Window
             UpdateThumbnail: (row, image) => row.Thumbnail.Source=image,
             DecodeThumbnailAsync: (path, token) => Task.Run(() => {
                 token.ThrowIfCancellationRequested();
-                return RenderEngine.Thumbnail(path);
+                return RenderEngine.Thumbnail(path, editor.Paths);
             }, token),
             ValidatePhoto: photo => {
                 try { photo.Validate(); return null; }
@@ -171,6 +171,10 @@ internal sealed class CollectionExportDialog : Window
     private readonly ComboBox formats=new(){MinWidth=150};
     private readonly TextBox edge=new(){MinWidth=100};
     private string? directory;
+    internal ComboBox FormatsBox => formats;
+    internal TextBox EdgeBox => edge;
+    internal string? DirectoryPath { get => directory; set => directory = value; }
+    internal Task ConfirmAsync() => Confirm();
     internal CollectionExportDialog(Window owner,MainWindow editor)
     {
         this.editor=editor;var root=AdjustmentDialogLayout.Configure(this,owner,"逐张导出","collection.export-review");

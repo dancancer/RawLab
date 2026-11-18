@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -10,14 +9,13 @@ using RawLab.Windows;
 
 internal static class BatchSelectionUiChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         var root=Path.Combine(Path.GetFullPath(repo),"build","windows-collection",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         var source=Path.Combine(root,"source"+Path.GetExtension(raw));var target=Path.Combine(root,"target"+Path.GetExtension(raw));File.Copy(raw,source);File.Copy(raw,target);
         var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         Loc.Initialize("zh-Hans");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-        var window=new MainWindow();TestWindowState.Isolate(window,root);var store=new EditStore(Path.Combine(root,"edits"));Set(window,"editStore",store);
+        var window=TestWindowState.CreateIsolatedWindow(root,editDirectory:Path.Combine(root,"edits"));var store=window.EditStoreInstance!;
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(source);Ready(window);
             window.OrdinaryParameter.Number.Text="0.5";check(window.OrdinaryParameter.Commit(),"Exact source value commits through existing editor");Ready(window);
@@ -41,7 +39,7 @@ internal static class BatchSelectionUiChecks
                     var scope=app.Windows.OfType<AdjustmentScopeDialog>().FirstOrDefault(dialog=>dialog.IsVisible);
                     if(scope!=null && stage==0) {
                         scope.UpdateLayout();Find<ComboBox>(scope,"adjustment.copy.scope").SelectedIndex=3;
-                        if(Get<Adjustments>(window,"settings").IsHDREditing) {
+                        if(window.Settings.IsHDREditing) {
                             check(Find<CheckBox>(scope,"adjustment.field.hdr.relative_temperature").IsVisible &&
                                 Find<CheckBox>(scope,"adjustment.field.hdr.relative_tint").IsVisible,
                                 "Actual HDR collection scope shows relative WB controls");
@@ -70,7 +68,7 @@ internal static class BatchSelectionUiChecks
             check(collection.IsVisible && window.Collection.CurrentID==null && window.Collection.Selected.Count==2 && window.Collection.ReturnPosition==1,
                 "Return action preserves collection order, selection and position");
             check(window.Collection.LastSynchronization==synchronizationID,"Ordinary micro-edit does not replace the synchronization history entry");
-            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>Get<bool>(window,"transformPreviewReady"));
+            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>window.TransformPreviewReady);
             ((CheckBox)window.GeometryEditor.FindName("HorizontalFlip")).IsChecked=true;InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             var blocked=window.PrepareCollectionExport([],ExportFormat.Png,256,root);check(!blocked.Ready,"Export sees the currently open geometry draft");
             var skipped=window.PrepareCollectionExport([targetID],ExportFormat.Png,256,root);
@@ -79,7 +77,7 @@ internal static class BatchSelectionUiChecks
             var review=window.PrepareCollectionExport([],ExportFormat.Png,256,root);check(review.Ready,"Both committed target snapshots are shown after draft resolution");
             var failureJournal=new BatchJournal(Path.Combine(root,"init-failure"));
             // 审查结果记录了本会话的编辑代次，冻结时必须用同一会话的代次核对。
-            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null,null,Get<AdjustmentTransferSession>(window,"adjustmentSession").EditGeneration)
+            var failureJob=new BatchSelectionExport(store,failureJournal,_=>null,null,window.AdjustmentSessionInstance!.EditGeneration)
                 .Freeze(window.Collection,review,_=>null);
             var failedWindow=new BatchExportWindow(failureJob,failureJournal,_=>throw new IOException("Injected engine initialization failure")){Owner=window};
             Loc.SetPreference("en",Path.Combine(root,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
@@ -115,7 +113,7 @@ internal static class BatchSelectionUiChecks
             check(cancelled.Result==null && !window.CollectionHasExport,"Cancelled preflight cannot hand off a task");
             // 冻结期取消锚点：生产入口 FreezeCollectionExportAsync 派发后台后、续体运行前取消 → 任务拒绝，
             // journal 从未落盘、look 副本清空、任务窗口未弹出。撤修复（冻结同步落盘不让出 UI 线程）时任务已完成 → IsFaulted 必红。
-            var cancelJournal=Get<BatchJournal>(window,"batchJournal");
+            var cancelJournal=window.BatchJournalInstance;
             var cancelReview=window.PrepareCollectionExport([],ExportFormat.Png,256,root);
             var freezingCancel=window.FreezeCollectionExportAsync(cancelReview,autoStart:true);window.CancelCollectionOperation();
             InteractionChecks.PumpUntil(()=>freezingCancel.IsCompleted);
@@ -126,15 +124,15 @@ internal static class BatchSelectionUiChecks
             // 对话框冻结期取消锚点：「取消」在冻结真正飞行中（copy 阶段挂起等待）时点击——checking 贯穿冻结期时
             // CancelCheck 生效：窗口无结果关闭（ShowDialog!=true）、journal 不落盘、任务窗口不弹。撤修复（Confirm 提前
             // checking=false）时取消空返，冻结照常落盘启动 → 排空后断言必红。
-            var cancelDialog=new CollectionExportDialog(collection,window);Set(cancelDialog,"directory",root);
-            Get<TextBox>(cancelDialog,"edge").Text="256";Get<ComboBox>(cancelDialog,"formats").SelectedItem=ExportFormat.Png;
+            var cancelDialog=new CollectionExportDialog(collection,window);cancelDialog.DirectoryPath=root;
+            cancelDialog.EdgeBox.Text="256";cancelDialog.FormatsBox.SelectedItem=ExportFormat.Png;
             using var inCopy=new ManualResetEventSlim(false);using var resume=new ManualResetEventSlim(false);
             cancelDialog.freezeStage=stage=>{if(stage=="copy"&&!inCopy.IsSet){inCopy.Set();resume.Wait(TimeSpan.FromSeconds(10));}};
             var dialogStart=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(50)};var confirmRaised=false;Task? confirmTask=null;
             dialogStart.Tick+=(_,_)=>{
                 if(!confirmRaised){dialogStart.Stop();cancelDialog.UpdateLayout();
                     // 等价句柄：按钮处理器是 async void 拿不到在途任务，这里直接取回生产方法 Confirm() 返回的 Task 供排空（不改生产代码）。
-                    confirmTask=(Task)typeof(CollectionExportDialog).GetMethod("Confirm",Private)!.Invoke(cancelDialog,null)!;
+                    confirmTask=cancelDialog.ConfirmAsync();
                     confirmRaised=true;dialogStart.Interval=TimeSpan.FromMilliseconds(20);dialogStart.Start();return;}
                 if(inCopy.IsSet){dialogStart.Stop();Find<Button>(cancelDialog,"collection.export-cancel").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));resume.Set();}
             };
@@ -146,9 +144,9 @@ internal static class BatchSelectionUiChecks
             check(cancelledShown!=true && cancelJournal.Load()==null && !app.Windows.OfType<BatchExportWindow>().Any()
                     && (!Directory.Exists(cancelJournal.DirectoryPath) || Directory.GetFiles(cancelJournal.DirectoryPath).Length==0),
                 "Cancelling while the dialog freeze is in flight discards the export before any journal write");
-            var dialog=new CollectionExportDialog(collection,window);Set(dialog,"directory",root);
-            Get<TextBox>(dialog,"edge").Text="256";
-            Get<ComboBox>(dialog,"formats").SelectedItem=ExportFormat.Png;
+            var dialog=new CollectionExportDialog(collection,window);dialog.DirectoryPath=root;
+            dialog.EdgeBox.Text="256";
+            dialog.FormatsBox.SelectedItem=ExportFormat.Png;
             // 生产入口线程锚点：对话框 Confirm 驱动的冻结（前后双遍重验 + copy）必须整体在池线程执行；
             // 撤修复（Freeze 在 UI 线程内联）时 IsThreadPoolThread 记 false，必红；RequestedAIBackend 漏快照也在此以跨线程异常暴露。
             var freezeStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
@@ -169,9 +167,9 @@ internal static class BatchSelectionUiChecks
             var frozen=job.Items.Single(item=>item.Input==target).Frozen!;
             check(frozen.Settings.Restore()[Parameter.Exposure]==1.25 && store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2,
                 "Frozen task keeps the target micro-edit after a later saved change");
-            using(var engine=new RenderEngine(1)) {
+            using(var engine=new RenderEngine(1,appPaths:window.Paths)) {
                 var before=engine.Render(target,frozen.Settings.Restore(),frozen.Look,128,statistics:false,clipping:false)!.Image;
-                var after=engine.Render(target,Get<Adjustments>(window,"settings"),null,128,statistics:false,clipping:false)!.Image;
+                var after=engine.Render(target,window.Settings,null,128,statistics:false,clipping:false)!.Image;
                 check(!Pixels(before).SequenceEqual(Pixels(after)),"Native frozen preview differs from the later editor state");
             }
             batch.Close();collection.Close();
@@ -189,6 +187,4 @@ internal static class BatchSelectionUiChecks
         throw new InvalidOperationException("Missing UI control "+id);
     }
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-    private static T Get<T>(object value,string name)=>(T)value.GetType().GetField(name,Private)!.GetValue(value)!;
-    private static void Set(object value,string name,object state)=>value.GetType().GetField(name,Private)!.SetValue(value,state);
 }

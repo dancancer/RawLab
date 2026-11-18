@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -109,7 +108,7 @@ internal static class UiPanelChecks
             check(swatches.Length==8 && clipped==0,$"Eight HSL color swatches are not clipped: {clipped} of {swatches.Length} ({language})");
         });
         var owner=new Window{Width=400,Height=300,ShowInTaskbar=false};owner.Show();
-        var dialog=(Window)Activator.CreateInstance(typeof(LongEdgeDialog),BindingFlags.Instance|BindingFlags.NonPublic,null,new object?[]{null,owner},null)!;
+        var dialog=new LongEdgeDialog(null,owner);
         dialog.Show();dialog.UpdateLayout();
         try
         {

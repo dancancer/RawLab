@@ -447,6 +447,7 @@ public sealed class LatestWork<T> where T : class
 {
     public record Ticket(long Id, T Value);
     private Ticket? pending;
+    internal Ticket? Pending => pending;
     public Ticket? Active { get; private set; }
     public long Revision { get; private set; }
     public bool Busy => Active != null || pending != null;

@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,7 +9,6 @@ using RawLab.Windows;
 
 internal static class TransformUiChecks
 {
-    private const BindingFlags Private=BindingFlags.NonPublic|BindingFlags.Instance;
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         if(File.Exists(Path.Combine(BatchJournal.DefaultDirectory,"job.json")))throw new InvalidOperationException("Preserve existing batch job; use an isolated test account.");
@@ -23,35 +21,35 @@ internal static class TransformUiChecks
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         Loc.Initialize("zh-Hans");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-        var window=new MainWindow();TestWindowState.Isolate(window,directory);var store=new EditStore(Path.Combine(directory,"edits"));Set(window,"editStore",store);
+        var window=TestWindowState.CreateIsolatedWindow(directory);var store=new EditStore(Path.Combine(directory,"edits"));window.EditStoreInstance=store;
         try
         {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            Click(window.AutoExposureButton);InteractionChecks.PumpUntil(()=>!Get<bool>(window,"autoExposing") && window.ExportPng.IsEnabled);
-            var measured=Get<Adjustments>(window,"settings")[Parameter.Exposure];
+            Click(window.AutoExposureButton);InteractionChecks.PumpUntil(()=>!window.AutoExposing && window.ExportPng.IsEnabled);
+            var measured=window.Settings[Parameter.Exposure];
             check(Math.Abs(measured*100-Math.Round(measured*100))<1e-6,"Native auto exposure commits to the visible 0.01 EV grid");
             Commit(window.ValueText,"0.13");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             var invalidLook=Path.Combine(directory,"invalid.cube");File.WriteAllText(invalidLook,"not a CUBE");
             var goodLook=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_PROVIA_65grid_V.1.00.cube");
             var import=window.ImportLookFiles([invalidLook,goodLook]);InteractionChecks.PumpUntil(()=>import.IsCompleted);
-            check(import.GetAwaiter().GetResult().Count==1 && Get<string>(window,"lut")==goodLook,"Partial look import retains validated success and reports the invalid file");
+            check(import.GetAwaiter().GetResult().Count==1 && window.CurrentLut==goodLook,"Partial look import retains validated success and reports the invalid file");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             var savedLook=window.CurrentLookIdentity();
             window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(window.CurrentLookIdentity()==null && Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,
+            check(window.CurrentLookIdentity()==null && window.Settings[Parameter.Exposure]==0,
                 "A new RAW does not inherit the previous photo's look or exposure");
             window.OpenFile(photo);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(window.CurrentLookIdentity()==savedLook && Get<string>(window,"lut")==goodLook &&
-                Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-.13)<1e-6,
+            check(window.CurrentLookIdentity()==savedLook && window.CurrentLut==goodLook &&
+                Math.Abs(window.Settings[Parameter.Exposure]-.13)<1e-6,
                 "Reopening an edited RAW restores its saved look and exposure");
             window.SetComparisonMode(true,false);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             // 用不同校准值证明草稿显影回调不会回写 committed WB。
-            Get<Adjustments>(window,"settings").ResolveWhiteBalance((9000,-30));Invoke(window,"MarkEdited");
-            Invoke(window,"SaveEdits");var original=Get<Adjustments>(window,"settings").Capture();
-            Invoke(window,"SelectTool",EditorAdjustmentTool.BlackPoint);
+            window.Settings.ResolveWhiteBalance((9000,-30));window.MarkEditedForTests();
+            window.SaveEditsForTests();var original=window.Settings.Capture();
+            window.SelectToolForTests(EditorAdjustmentTool.BlackPoint);
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
-            var draft=Get<TransformDraft>(window,"transform");
+            var draft=window.TransformDraft;
             check(draft.Active && !window.ExportPng.IsEnabled,"Real WPF geometry workspace gates export");
             check(ReferenceEquals(((CheckBox)window.GeometryEditor.FindName("HorizontalFlip")).Foreground,
                 Application.Current.Resources["Foreground"]),"Native crop flip icons retain the editor foreground");
@@ -66,12 +64,12 @@ internal static class TransformUiChecks
                 actionBounds.Bottom<=window.AdjustmentPanel.ActualHeight,
                 "Crop parameters and fixed draft actions occupy separate visible regions");
             window.SetComparisonMode(true,true);window.BeforeViewMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            check(draft.Active && !Get<EditorViewState>(window,"view").Enabled && !Get<EditorViewState>(window,"view").HoldingBefore,
+            check(draft.Active && !window.ViewState.Enabled && !window.ViewState.HoldingBefore,
                 "Comparison commands and before action cannot exit or bypass an active geometry draft");
-            var unchangedRevision=Get<long>(window,"editRevision");
-            check(!window.ApplyDraftButton.IsEnabled && !(bool)Invoke(window,"ApplyTransformDraft")! &&
-                draft.Active && Get<long>(window,"editRevision")==unchangedRevision,"Unchanged exact draft cannot apply");
-            check(Get<Adjustments>(window,"settings").Capture().SameAs(original),"Draft native WB result cannot overwrite deliberately different committed calibration");
+            var unchangedRevision=window.EditRevision;
+            check(!window.ApplyDraftButton.IsEnabled && !window.ApplyTransformDraftForTests() &&
+                draft.Active && window.EditRevision==unchangedRevision,"Unchanged exact draft cannot apply");
+            check(window.Settings.Capture().SameAs(original),"Draft native WB result cannot overwrite deliberately different committed calibration");
             foreach(var horizontal in new[]{true,false})
             {
                 var edge=CropInteraction.Dragging(new(0,0,.1,.1),CropHandle.Move,2,2,6000,4000,null);
@@ -83,12 +81,12 @@ internal static class TransformUiChecks
                 InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             }
             Click((Button)window.GeometryEditor.FindName("ResetGeometry"));InteractionChecks.PumpUntil(()=>PreviewReady(window));
-            var previousLook=Get<string>(window,"lut");Set(window,"lut",Path.Combine(directory,"missing.cube"));
-            typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);
+            var previousLook=window.CurrentLut;window.CurrentLut=Path.Combine(directory,"missing.cube");
+            window.ScheduleForTests(false,false);
             check(!window.ApplyDraftButton.IsEnabled && draft.Active,"Failed draft preview invalidates a previously ready Apply gate");
-            Set(window,"lut",previousLook);typeof(MainWindow).GetMethod("Schedule",Private)!.Invoke(window,[false,false]);InteractionChecks.PumpUntil(()=>PreviewReady(window));
+            window.CurrentLut=previousLook;window.ScheduleForTests(false,false);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             var width=(TextBox)window.GeometryEditor.FindName("CropWidth");Commit(width,"60");
-            check(draft.Geometry.CropWidth==.6 && Get<Adjustments>(window,"settings").Capture().SameAs(original) && store.Find(photo)!.Settings.SameAs(original),
+            check(draft.Geometry.CropWidth==.6 && window.Settings.Capture().SameAs(original) && store.Find(photo)!.Settings.SameAs(original),
                 "Crop preview changes neither committed settings nor saved record");
             var cropSurface=EditorShellChecks.ArrangeLayout(window,new Size(1000,680));
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
@@ -102,86 +100,86 @@ internal static class TransformUiChecks
             Commit(width,"62");InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             var blocked=Path.Combine(directory,"blocked");File.WriteAllText(blocked,"not a directory");
             var savedBytes=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
-            var beforeFailedApply=Get<long>(window,"editRevision");
+            var beforeFailedApply=window.EditRevision;
             var beforeFailedPreview=PreviewRequests(window);
-            Set(window,"editStore",new EditStore(blocked));
-            check(!(bool)Invoke(window,"ApplyTransformDraft")! && draft.Active && draft.Geometry.CropWidth==.62 &&
-                Get<Adjustments>(window,"settings").Capture().SameAs(original) && Get<long>(window,"editRevision")==beforeFailedApply &&
+            window.EditStoreInstance=new EditStore(blocked);
+            check(!window.ApplyTransformDraftForTests() && draft.Active && draft.Geometry.CropWidth==.62 &&
+                window.Settings.Capture().SameAs(original) && window.EditRevision==beforeFailedApply &&
                 window.RetrySave.Visibility==Visibility.Visible && PreviewRequests(window)==beforeFailedPreview &&
                 File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(savedBytes),
                 "Failed draft save preserves committed state, draft, revision and durable record");
-            Set(window,"editStore",store);Click(window.RetrySave);
+            window.EditStoreInstance=store;Click(window.RetrySave);
             check(PreviewRequests(window)==beforeFailedPreview+1,"Successful retry schedules one exact preview while restoring comparison");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<long>(window,"editRevision")==beforeFailedApply+1 && !Get<bool>(window,"editDirty") &&
-                !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled,"Retry applies the draft once without a second autosave");
+            check(window.EditRevision==beforeFailedApply+1 && !window.EditDirty &&
+                !window.EditSaveTimer.IsEnabled,"Retry applies the draft once without a second autosave");
             check(!draft.Active && store.Find(photo)!.Settings.Geometry?.CropWidth==.62,"Apply writes the draft once to photo memory");
-            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null && Get<Parameter>(window,"selectedParameter")==Parameter.Exposure,
+            check(window.SelectedToneParameter==null && window.SelectedParameter==Parameter.Exposure,
                 "Applying geometry after black point returns to exposure without a stale tone selection");
-            Invoke(window,"SelectTool",EditorAdjustmentTool.WhitePoint);
+            window.SelectToolForTests(EditorAdjustmentTool.WhitePoint);
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             Commit((TextBox)window.GeometryEditor.FindName("CropWidth"),"bad");
-            Invoke(window,"CancelTransformDraft");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62 && !window.GeometryEditor.HasInvalidInput,"Cancel restores committed crop and clears invalid geometry input");
-            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Cancelling geometry clears the previous white point selection");
-            Invoke(window,"SelectTool",EditorAdjustmentTool.Vibrance);
+            window.CancelTransformDraftForTests();InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(window.Settings.Geometry.CropWidth==.62 && !window.GeometryEditor.HasInvalidInput,"Cancel restores committed crop and clears invalid geometry input");
+            check(window.SelectedToneParameter==null,"Cancelling geometry clears the previous white point selection");
+            window.SelectToolForTests(EditorAdjustmentTool.Vibrance);
             Click(window.LensCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             ((CheckBox)window.LensEditor.FindName("Distortion")).IsChecked=true;
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
-            check(draft.Active && draft.Lens.Distortion && !Get<Adjustments>(window,"settings").Lens.Distortion,"Lens switches remain draft-only until apply");
+            check(draft.Active && draft.Lens.Distortion && !window.Settings.Lens.Distortion,"Lens switches remain draft-only until apply");
             Click(window.ApplyDraftButton);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
             check(store.Find(photo)!.Settings.Lens?.Distortion==true,"Lens Apply persists the real correction request");
-            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Applying lens clears the previous vibrance selection");
-            Invoke(window,"SelectTool",EditorAdjustmentTool.BlackPoint);
+            check(window.SelectedToneParameter==null,"Applying lens clears the previous vibrance selection");
+            window.SelectToolForTests(EditorAdjustmentTool.BlackPoint);
             Click(window.LensCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
-            var pairCommitted=Get<Adjustments>(window,"settings").Capture();
+            var pairCommitted=window.Settings.Capture();
             var pairRecord=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
-            var pairRevision=Get<long>(window,"editRevision");var pairPreview=PreviewRequests(window);
+            var pairRevision=window.EditRevision;var pairPreview=PreviewRequests(window);
             var pairReset=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Geometry))!;
             check(window.CommitReset(pairReset,pairRevision) && draft.Active && draft.Geometry.IsIdentity && draft.Lens==new LensSettings() &&
-                Get<Adjustments>(window,"settings").Capture().SameAs(pairCommitted) && Get<long>(window,"editRevision")==pairRevision &&
-                PreviewRequests(window)==pairPreview+1 && !Get<bool>(window,"editDirty") &&
+                window.Settings.Capture().SameAs(pairCommitted) && window.EditRevision==pairRevision &&
+                PreviewRequests(window)==pairPreview+1 && !window.EditDirty &&
                 File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(pairRecord),
                 "Geometry group commits only the complete draft pair and one preview without a save");
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
-            Invoke(window,"CancelTransformDraft");InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<Adjustments>(window,"settings").Geometry.CropWidth==.62 && Get<Adjustments>(window,"settings").Lens.Distortion,
+            window.CancelTransformDraftForTests();InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(window.Settings.Geometry.CropWidth==.62 && window.Settings.Lens.Distortion,
                 "Cancelling the group reset retains both committed transform objects");
-            check(Get<ToneControlParameter?>(window,"selectedToneParameter")==null,"Cancelling lens clears the previous black point selection");
-            var normalRevision=Get<long>(window,"editRevision");var normalPreview=PreviewRequests(window);
-            var normalSettings=Get<Adjustments>(window,"settings").Capture();
+            check(window.SelectedToneParameter==null,"Cancelling lens clears the previous black point selection");
+            var normalRevision=window.EditRevision;var normalPreview=PreviewRequests(window);
+            var normalSettings=window.Settings.Capture();
             var staleReset=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
-            Get<Adjustments>(window,"settings").ResolveWhiteBalance((10000,40));
-            check(!window.CommitReset(staleReset,normalRevision) && Get<long>(window,"editRevision")==normalRevision && PreviewRequests(window)==normalPreview,
+            window.Settings.ResolveWhiteBalance((10000,40));
+            check(!window.CommitReset(staleReset,normalRevision) && window.EditRevision==normalRevision && PreviewRequests(window)==normalPreview,
                 "Same-revision WB metadata invalidates the real prepared reset without an edit or preview");
-            Set(window,"settings",normalSettings.Restore());
+            window.Settings=normalSettings.Restore();
             var ordinaryReset=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
-            var normalLook=Get<string>(window,"lut");var recordBeforeReset=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
-            var history=Get<AdjustmentTransferSession>(window,"adjustmentSession");var historyBeforeReset=history.Transactions.Count;
-            check(window.CommitReset(ordinaryReset,normalRevision) && Get<long>(window,"editRevision")==normalRevision+1 &&
-                PreviewRequests(window)==normalPreview+1 && !Get<bool>(window,"editDirty") && !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled &&
-                Get<string>(window,"lut")==normalLook && !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset) &&
-                store.Find(photo)!.Settings.SameAs(Get<Adjustments>(window,"settings").Capture()) && history.Transactions.Count==historyBeforeReset+1,
+            var normalLook=window.CurrentLut;var recordBeforeReset=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
+            var history=window.AdjustmentSessionInstance!;var historyBeforeReset=history.Transactions.Count;
+            check(window.CommitReset(ordinaryReset,normalRevision) && window.EditRevision==normalRevision+1 &&
+                PreviewRequests(window)==normalPreview+1 && !window.EditDirty && !window.EditSaveTimer.IsEnabled &&
+                window.CurrentLut==normalLook && !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(recordBeforeReset) &&
+                store.Find(photo)!.Settings.SameAs(window.Settings.Capture()) && history.Transactions.Count==historyBeforeReset+1,
                 "Ordinary reset preserves resolved look and commits one durable history component and preview");
             var resetReceipt=store.ReadState(photo);
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);Invoke(window,"SaveEdits");
+            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);window.SaveEditsForTests();
             check(store.ReadState(photo).SameAs(resetReceipt) && history.Transactions.Count==historyBeforeReset+1,
                 "Preview completion and the former autosave boundary cannot append another reset save");
             var noChange=window.PrepareReset(new(EditorResetKind.Group,EditorAdjustmentGroup.Light))!;
-            normalPreview=PreviewRequests(window);normalRevision=Get<long>(window,"editRevision");
+            normalPreview=PreviewRequests(window);normalRevision=window.EditRevision;
             check(noChange.Status==EditorResetStatus.NoChange && !window.CommitReset(noChange,normalRevision) &&
-                PreviewRequests(window)==normalPreview && Get<long>(window,"editRevision")==normalRevision && !Get<bool>(window,"editDirty"),
+                PreviewRequests(window)==normalPreview && window.EditRevision==normalRevision && !window.EditDirty,
                 "Unchanged ordinary reset creates no real save or preview request");
             Click(window.GeometryCategory);InteractionChecks.PumpUntil(()=>PreviewReady(window));
             Commit((TextBox)window.GeometryEditor.FindName("CropWidth"),"63");
             InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
-            var leaveCommitted=Get<Adjustments>(window,"settings").Capture();
+            var leaveCommitted=window.Settings.Capture();
             var leaveRecord=File.ReadAllBytes(Path.Combine(directory,"edits","edits.json"));
-            var leaveRevision=Get<long>(window,"editRevision");var leaveOpenRevision=Get<long>(window,"openRevision");
+            var leaveRevision=window.EditRevision;var leaveOpenRevision=window.OpenRevision;
             var leavePreview=PreviewRequests(window);var leaveStage=0;string? leaveFailure=null;Window? retainedDialog=null;
             var leaveWatch=System.Diagnostics.Stopwatch.StartNew();
             var chooseApply=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(20)};
-            Set(window,"editStore",new EditStore(blocked));
+            window.EditStoreInstance=new EditStore(blocked);
             chooseApply.Tick+=(_,_)=>{
                 var dialog=app.Windows.OfType<Window>().SingleOrDefault(candidate=>candidate.Title==Loc.Text("保留这次几何或镜头修改？"));
                 if(leaveWatch.Elapsed>TimeSpan.FromMinutes(3))
@@ -192,32 +190,32 @@ internal static class TransformUiChecks
                     var body=(StackPanel)dialog.Content;
                     var apply=((WrapPanel)body.Children[1]).Children.OfType<Button>().Single(button=>Equals(button.Content,Loc.Text("应用并离开")));
                     if(leaveStage==0){retainedDialog=dialog;leaveStage=1;Click(apply);return;}
-                    if(dialog!=retainedDialog || !dialog.IsVisible || Get<string>(window,"file")!=photo || !draft.Active ||
-                        draft.Geometry.CropWidth!=.63 || !Get<Adjustments>(window,"settings").Capture().SameAs(leaveCommitted) ||
-                        Get<long>(window,"editRevision")!=leaveRevision || Get<long>(window,"openRevision")!=leaveOpenRevision ||
+                    if(dialog!=retainedDialog || !dialog.IsVisible || window.CurrentFile!=photo || !draft.Active ||
+                        draft.Geometry.CropWidth!=.63 || !window.Settings.Capture().SameAs(leaveCommitted) ||
+                        window.EditRevision!=leaveRevision || window.OpenRevision!=leaveOpenRevision ||
                         PreviewRequests(window)!=leavePreview || !File.ReadAllBytes(Path.Combine(directory,"edits","edits.json")).SequenceEqual(leaveRecord) ||
                         ((TextBlock)body.Children[0]).Text!=Loc.Text("调整未保存 · 重试"))
                     { leaveFailure="Failed Apply-and-leave did not retain its dialog, destination, state, record and localized error";chooseApply.Stop();dialog.Close();return; }
-                    Set(window,"editStore",store);leaveStage=2;chooseApply.Stop();Click(apply);
+                    window.EditStoreInstance=store;leaveStage=2;chooseApply.Stop();Click(apply);
                 }
                 catch(Exception error){leaveFailure=error.ToString();chooseApply.Stop();dialog.Close();}
             };
             try { chooseApply.Start();window.OpenFile(other); }
-            finally { chooseApply.Stop();Set(window,"editStore",store);if(retainedDialog?.IsVisible==true)retainedDialog.Close(); }
-            check(leaveFailure==null && leaveStage==2 && Get<string>(window,"file")==other && !draft.Active &&
-                Get<long>(window,"editRevision")==leaveRevision+1 && Get<long>(window,"openRevision")==leaveOpenRevision+1 &&
-                !Get<bool>(window,"editDirty") && !Get<DispatcherTimer>(window,"editSaveTimer").IsEnabled &&
+            finally { chooseApply.Stop();window.EditStoreInstance=store;if(retainedDialog?.IsVisible==true)retainedDialog.Close(); }
+            check(leaveFailure==null && leaveStage==2 && window.CurrentFile==other && !draft.Active &&
+                window.EditRevision==leaveRevision+1 && window.OpenRevision==leaveOpenRevision+1 &&
+                !window.EditDirty && !window.EditSaveTimer.IsEnabled &&
                 new EditStore(Path.Combine(directory,"edits")).Find(photo)!.Settings.Geometry?.CropWidth==.63,
                 leaveFailure ?? "Retry in the retained leave dialog durably applies once and executes the original photo destination once");
             Console.WriteLine("WAIT exact preview after applying draft and leaving photo");
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<long>(window,"openRevision")==leaveOpenRevision+1,"Completed leave does not replay its original photo navigation");
+            check(window.OpenRevision==leaveOpenRevision+1,"Completed leave does not replay its original photo navigation");
             window.OpenFile(photo);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            Set(window,"editStore",new EditStore(blocked));
-            Commit(window.ValueText,"0.27");Invoke(window,"SaveEdits");window.OpenFile(other);
-            check(Get<string>(window,"file")==photo && window.RetrySave.Visibility==Visibility.Visible,"Persistent save failure blocks switching photos");
-            Set(window,"editStore",store);Invoke(window,"SaveEdits");window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            check(Get<string>(window,"file")==other,"Retry releases the photo-switch guard after durable save");
+            window.EditStoreInstance=new EditStore(blocked);
+            Commit(window.ValueText,"0.27");window.SaveEditsForTests();window.OpenFile(other);
+            check(window.CurrentFile==photo && window.RetrySave.Visibility==Visibility.Visible,"Persistent save failure blocks switching photos");
+            window.EditStoreInstance=store;window.SaveEditsForTests();window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            check(window.CurrentFile==other,"Retry releases the photo-switch guard after durable save");
             foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})
             {
                 var surface=EditorShellChecks.ArrangeLayout(window,size);
@@ -229,24 +227,19 @@ internal static class TransformUiChecks
         catch(Exception error)
         {
             // 清理也可能等待 native worker，先落下原始异常和状态，避免被关闭等待掩盖。
-            var scheduler=Get<object>(window,"scheduler");
-            object? Scheduler(string property)=>scheduler.GetType().GetProperty(property)!.GetValue(scheduler);
-            Console.Error.WriteLine($"Transform UI failed: {error}\nfile={Get<string>(window,"file")}; openRevision={Get<long>(window,"openRevision")}; exactReady={Get<bool>(window,"exactReady")}; schedulerBusy={Scheduler("Busy")}; schedulerRevision={Scheduler("Revision")}; schedulerActive={Scheduler("Active")}; draftReady={Get<bool>(window,"transformPreviewReady")}; resizePending={Get<DispatcherTimer>(window,"previewResize").IsEnabled}; exportEnabled={window.ExportPng.IsEnabled}; renderFailed={Get<bool>(window,"renderFailed")}; status={window.Status.Text}");
+            Console.Error.WriteLine($"Transform UI failed: {error}\nfile={window.CurrentFile}; openRevision={window.OpenRevision}; exactReady={window.ExactReady}; schedulerBusy={window.SchedulerBusy}; schedulerRevision={window.SchedulerRevision}; schedulerActive={window.SchedulerHasActive}; draftReady={window.TransformPreviewReady}; resizePending={window.PreviewResizeTimer.IsEnabled}; exportEnabled={window.ExportPng.IsEnabled}; renderFailed={window.RenderFailed}; status={window.Status.Text}");
             throw;
         }
         finally
         {
             Console.WriteLine("CLEANUP transform UI: cancel draft, save, close window");
-            if(Get<TransformDraft>(window,"transform").Active)Invoke(window,"CancelTransformDraft");
-            Set(window,"editStore",store);window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();
+            if(window.TransformDraft.Active)window.CancelTransformDraftForTests();
+            window.EditStoreInstance=store;window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();
             Console.WriteLine("CLEANUP transform UI completed");
         }
     }
-    private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
-    private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);
-    private static object? Invoke(object owner,string name,params object[] args)=>owner.GetType().GetMethod(name,Private)!.Invoke(owner,args);
-    private static bool PreviewReady(MainWindow window)=>Get<bool>(window,"transformPreviewReady") && !Get<DispatcherTimer>(window,"previewResize").IsEnabled;
-    private static long PreviewRequests(MainWindow window)=>(long)Get<object>(window,"scheduler").GetType().GetProperty("Revision")!.GetValue(Get<object>(window,"scheduler"))!;
+    private static bool PreviewReady(MainWindow window)=>window.TransformPreviewReady && !window.PreviewResizeTimer.IsEnabled;
+    private static long PreviewRequests(MainWindow window)=>window.SchedulerRevision;
     private static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static void Commit(TextBox field,string text){field.Text=text;field.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice,Environment.TickCount,field,field){RoutedEvent=UIElement.LostKeyboardFocusEvent});}
 }

@@ -156,7 +156,7 @@ public sealed class BatchJob
 
 public sealed class BatchJournal
 {
-    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Batch");
+    public static string DefaultDirectory => AppPaths.Default.BatchDirectory;
     public string DirectoryPath { get; }
     private string PathName => Path.Combine(DirectoryPath, "job.json");
     public string? LastQuarantinedPath { get; private set; }

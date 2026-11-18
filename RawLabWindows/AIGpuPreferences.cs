@@ -8,7 +8,7 @@ internal sealed record AIGpuPreference(string DeviceID="",string DeviceName="");
 
 internal sealed class AIGpuPreferenceStore(string path)
 {
-    internal static string DefaultPath=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","ai-gpu.json");
+    internal static string DefaultPath=>AppPaths.Default.AiGpuPreferencesPath;
     internal string PathName {get;}=path;
     internal AIGpuPreference Read()
     {

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -15,7 +14,6 @@ using RawLab.Windows;
 
 internal static class AdjustmentHistoryUiChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     [DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr owner);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
     [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog,int item);
@@ -29,11 +27,11 @@ internal static class AdjustmentHistoryUiChecks
         File.Copy(raw,photo);File.Copy(raw,target);
         var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         Loc.Initialize("zh-Hans");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-        var window=new MainWindow();TestWindowState.Isolate(window,output);var store=new EditStore(Path.Combine(output,"edits"));Set(window,"editStore",store);
+        var window=TestWindowState.CreateIsolatedWindow(output);var store=new EditStore(Path.Combine(output,"edits"));window.EditStoreInstance=store;
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);Ready(window);
             check(((MenuItem)window.MainMenu.Items[1]).Items.Contains(window.CopyAdjustmentMenu),"Initialized Edit menu retains the actual Copy adjustment item");
-            var session=(AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession",Private)!.GetValue(window)!;
+            var session=window.TransferSessionForTests;
             check(session.Transactions.Count==0 && store.Find(photo)==null,"Opening and native metadata resolution create no edit history");
             var row=window.OrdinaryParameter;var slider=row.Slider;
             slider.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});
@@ -41,43 +39,43 @@ internal static class AdjustmentHistoryUiChecks
             var elapsed=Stopwatch.StartNew();InteractionChecks.PumpUntil(()=>elapsed.ElapsedMilliseconds>650);
             check(session.Transactions.Count==0 && store.Find(photo)==null,"Live WPF drag does not save at the former debounce boundary");
             slider.RaiseEvent(new DragCompletedEventArgs(0,0,false){RoutedEvent=Thumb.DragCompletedEvent});Ready(window);
-            var committedExposure=Get<Adjustments>(window,"settings")[Parameter.Exposure];
+            var committedExposure=window.Settings[Parameter.Exposure];
             check(session.Transactions.Count==1 && Math.Abs(store.Find(photo)!.Settings.Values[1]-committedExposure)<1e-9,"One large completed slider drag creates one saved history component");
-            var saved=store.ReadState(photo);var before=Get<Adjustments>(window,"settings").Capture();
+            var saved=store.ReadState(photo);var before=window.Settings.Capture();
             slider.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});slider.Value=.75;
             slider.RaiseEvent(new DragCompletedEventArgs(0,0,true){RoutedEvent=Thumb.DragCompletedEvent});Ready(window);
-            check(session.Transactions.Count==1 && store.ReadState(photo).SameAs(saved) && Get<Adjustments>(window,"settings").Capture().SameAs(before),
+            check(session.Transactions.Count==1 && store.ReadState(photo).SameAs(saved) && window.Settings.Capture().SameAs(before),
                 "Cancelled native Thumb drag restores preview and leaves the saved revision unchanged");
             slider.RaiseEvent(new DragStartedEventArgs(0,0){RoutedEvent=Thumb.DragStartedEvent});slider.Value=.8;row.CancelInput();Ready(window);
             slider.RaiseEvent(new DragCompletedEventArgs(0,0,false){RoutedEvent=Thumb.DragCompletedEvent});
             check(session.Transactions.Count==1 && store.ReadState(photo).SameAs(saved),"Navigation cancellation ignores the late drag completion");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
-            check(store.Find(photo)==null && Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,"Edit menu undo restores an absent edit record");
+            check(store.Find(photo)==null && window.Settings[Parameter.Exposure]==0,"Edit menu undo restores an absent edit record");
             window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
             check(store.Find(photo)!.Settings.Values[1]==committedExposure,"Edit menu redo restores the full saved appearance");
-            var payload=session.Copy(AdjustmentScope.Custom([AdjustmentField.Exposure]),new(OriginalIdentity.Read(photo),Get<Adjustments>(window,"settings").Capture(),null),new(photo,true));
+            var payload=session.Copy(AdjustmentScope.Custom([AdjustmentField.Exposure]),new(OriginalIdentity.Read(photo),window.Settings.Capture(),null),new(photo,true));
             window.OpenFile(target);Ready(window);
             var preparing=window.PrepareAdjustmentTargets(payload,[target,photo]);InteractionChecks.PumpUntil(()=>preparing.IsCompleted);
             var operation=preparing.GetAwaiter().GetResult()!;
             check(operation.Targets.Count==2 && operation.Targets.All(t=>t.Error==null),"Native preflight resolves independent target calibration");
             var applied=session.Apply(operation);
-            var receipt=applied.Single(o=>o.TargetID==target).Saved!;Invoke(window,"AdoptSavedEdit",receipt);Ready(window);
-            check(Get<Adjustments>(window,"settings")[Parameter.Exposure]==committedExposure && store.Find(target)!.Settings.Values[1]==committedExposure,"Native target adopts only its successful paste receipt");
+            var receipt=applied.Single(o=>o.TargetID==target).Saved!;window.AdoptSavedEditForTests(receipt);Ready(window);
+            check(window.Settings[Parameter.Exposure]==committedExposure && store.Find(target)!.Settings.Values[1]==committedExposure,"Native target adopts only its successful paste receipt");
             var paste=session.Transactions.Last();check(paste.Action==AdjustmentHistoryAction.Paste && paste.Parts.Count==1,"Unchanged source is excluded from successful paste history");
-            var undo=session.UndoPhoto(target).Single();Invoke(window,"AdoptSavedEdit",undo.Saved!);Ready(window);
+            var undo=session.UndoPhoto(target).Single();window.AdoptSavedEditForTests(undo.Saved!);Ready(window);
             check(store.Find(target)==null && store.Find(photo)!=null,"Single-photo undo preserves the other photo");
-            var redo=session.RedoPhoto(target).Single();Invoke(window,"AdoptSavedEdit",redo.Saved!);Ready(window);
+            var redo=session.RedoPhoto(target).Single();window.AdoptSavedEditForTests(redo.Saved!);Ready(window);
             window.OpenFile(photo);Ready(window);window.OpenFile(target);Ready(window);
-            check(Get<Adjustments>(window,"settings")[Parameter.Exposure]==committedExposure,"File reopen restores successful saved paste");
+            check(window.Settings[Parameter.Exposure]==committedExposure,"File reopen restores successful saved paste");
             var historyBefore=session.Transactions.Count;
-            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>Get<bool>(window,"transformPreviewReady"));
+            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>window.TransformPreviewReady);
             ((CheckBox)window.GeometryEditor.FindName("HorizontalFlip")).IsChecked=true;InteractionChecks.PumpUntil(()=>window.ApplyDraftButton.IsEnabled);
             check(session.Transactions.Count==historyBefore,"Native geometry draft stays outside history before Apply");
             window.ApplyDraftButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
             check(session.Transactions.Count==historyBefore+1 && store.Find(target)!.Settings.Geometry!.FlipHorizontal,"Geometry Apply shares the saved history transaction");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
-            check(!Get<Adjustments>(window,"settings").Geometry.FlipHorizontal,"Geometry undo restores the full native snapshot");
-            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>Get<bool>(window,"transformPreviewReady"));
+            check(!window.Settings.Geometry.FlipHorizontal,"Geometry undo restores the full native snapshot");
+            window.GeometryCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));InteractionChecks.PumpUntil(()=>window.TransformPreviewReady);
             ((Expander)window.GeometryEditor.FindName("PreciseCrop")).IsExpanded=true;
             var cropWidth=(TextBox)window.GeometryEditor.FindName("CropWidth");cropWidth.Focus();cropWidth.Text="80";
             window.MainMenu.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.PreviewMouseDownEvent});
@@ -88,24 +86,24 @@ internal static class AdjustmentHistoryUiChecks
                 if(draftDialog==null)return;sawDraftDialog=true;draftTimer.Stop();draftDialog.Close();
             };
             draftTimer.Start();window.CopyAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));draftTimer.Stop();
-            check(sawDraftDialog && Math.Abs(Get<TransformDraft>(window,"transform").Geometry.CropWidth-.8)<1e-9,
+            check(sawDraftDialog && Math.Abs(window.TransformDraft.Geometry.CropWidth-.8)<1e-9,
                 "Copy command resolves the complete geometry draft before continuing");
             window.CancelDraftButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
             DialogChecks(window,session,photo,output,check);
             DialogLocales(window,session,photo,output,check);
-            var externallyEdited=Get<Adjustments>(window,"settings").Clone();externallyEdited.Set(Parameter.Exposure,2.4);
+            var externallyEdited=window.Settings.Clone();externallyEdited.Set(Parameter.Exposure,2.4);
             // A second write does not lock the single editor out; the next ordinary
             // adjustment remains usable and persists the current in-memory value.
             store.Save(target,externallyEdited.Capture(),null);
             window.OrdinaryParameter.Slider.Value=.7;Ready(window);
             var afterOrdinary=store.Find(target);
-            check(!Get<bool>(window,"editDirty") && window.AdjustmentPanel.IsEnabled && afterOrdinary!=null &&
+            check(!window.EditDirty && window.AdjustmentPanel.IsEnabled && afterOrdinary!=null &&
                 Math.Abs(afterOrdinary.Settings.Values[1]-2.4)>1e-9,
                 "A later ordinary adjustment remains editable and replaces the prior saved value");
-            var expected=store.ReadState(target);var outgoing=Get<Adjustments>(window,"settings").Clone();outgoing.Set(Parameter.Exposure,2.6);
+            var expected=store.ReadState(target);var outgoing=window.Settings.Clone();outgoing.Set(Parameter.Exposure,2.6);
             var written=session.CommitEdit(expected,new(expected.Identity,outgoing.Capture(),null));
             var adopted=new Dictionary<string,Exception?>();
-            var adoptedResult=(IReadOnlyList<AdjustmentOutcome>)Invoke(window,"AdoptAdjustmentOutcomes",new[]{written},adopted)!;
+            var adoptedResult=window.AdoptAdjustmentOutcomesForTests([written],adopted);
             check(adoptedResult.Single().Status==AdjustmentStatus.Applied && adoptedResult.Single().Error==null && window.AdjustmentPanel.IsEnabled &&
                 session.IsCurrentSave(adoptedResult.Single().Saved!),"A successful saved receipt keeps the editor usable and current");
             PartialResultsDialog(window,photo,output,check);
@@ -141,7 +139,7 @@ internal static class AdjustmentHistoryUiChecks
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})foreach(var fontSize in new[]{13d,26d}) {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;
                 if(fontSize==13) {
-                    Invoke(owner,"BuildResetMenu");var edit=(MenuItem)owner.MainMenu.Items[1];edit.IsSubmenuOpen=true;
+                    owner.BuildResetMenuForTests();var edit=(MenuItem)owner.MainMenu.Items[1];edit.IsSubmenuOpen=true;
                     check(new[]{owner.CopyAdjustmentMenu,owner.PasteAdjustmentMenu,owner.PastePhotosAdjustmentMenu,owner.HistoryAdjustmentMenu,owner.UndoAdjustmentMenu,owner.RedoAdjustmentMenu}.All(edit.Items.Contains) &&
                         Equals(owner.CopyAdjustmentMenu.Header,Loc.Text("复制调整…")) && edit.Items.OfType<MenuItem>().Count(item=>item.Tag is EditorResetScope)>=3,
                         "Localized Edit menu preserves transfer/history commands and rebuilt reset scopes: "+language);
@@ -178,7 +176,7 @@ internal static class AdjustmentHistoryUiChecks
         var store=new EditStore(Path.Combine(output,"partial-edits"),(path,value)=>{
             if(++writes==2)throw new IOException("Injected second target save failure");AtomicJson.Write(path,value);
         });
-        Set(window,"editStore",store);window.OpenFile(first);Ready(window);
+        window.EditStoreInstance=store;window.OpenFile(first);Ready(window);
         var settings=new Adjustments();settings.Set(Parameter.Exposure,1.25);
         var payload=AdjustmentTransfer.Capture(AdjustmentScope.Custom([AdjustmentField.Exposure]),new(OriginalIdentity.Read(raw),settings.Capture(),null),new(raw,true));
         var stage=0;Exception? failure=null;PhotoEditState? undone=null;PhotoEditState? secondSaved=null;Window? outer=null;
@@ -195,13 +193,13 @@ internal static class AdjustmentHistoryUiChecks
                 }
                 if(stage==1) {
                     Find<Button>(dialog,"adjustment.results.undo").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));undone=store.ReadState(first);
-                    check(undone.Edit==null && Get<Adjustments>(window,"settings")[Parameter.Exposure]==0 && Find<Button>(dialog,"adjustment.results.apply").IsEnabled,
+                    check(undone.Edit==null && window.Settings[Parameter.Exposure]==0 && Find<Button>(dialog,"adjustment.results.apply").IsEnabled,
                         "Undoing the successful component preserves the failed-target retry action");stage++;return;
                 }
                 if(stage==2) {
                     Find<Button>(dialog,"adjustment.results.apply").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));secondSaved=store.ReadState(second);
                     check(store.ReadState(first).SameAs(undone) && secondSaved.Edit!.Settings.Values[1]==1.25 &&
-                        Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,"Retry saves only the failed target and never rewrites the undone photo or its UI");
+                        window.Settings[Parameter.Exposure]==0,"Retry saves only the failed target and never rewrites the undone photo or its UI");
                     check(Find<TextBlock>(dialog,"adjustment.results.summary").Text.Contains("已撤销 1 张"),"Results distinguish undone components from currently saved targets");
                     Screenshot(dialog,Path.Combine(output,"partial-retry-after-undo.png"));stage++;return;
                 }
@@ -216,39 +214,39 @@ internal static class AdjustmentHistoryUiChecks
                 }
             }catch(Exception error){failure=error;timer.Stop();dialog.Close();}
         };
-        timer.Start();var pending=(Task)Invoke(window,"ShowAdjustmentPreflight",payload,new[]{first,second},AdjustmentHistoryAction.Paste,null)!;
+        timer.Start();var pending=window.ShowAdjustmentPreflightForTests(payload,new[]{first,second},AdjustmentHistoryAction.Paste,null);
         InteractionChecks.PumpUntil(()=>pending.IsCompleted);timer.Stop();pending.GetAwaiter().GetResult();
         if(failure!=null)throw failure;
         check(stage==5,"Production modal partial-save, undo, retry, redo and close flow completes");Ready(window);
         check(outer?.IsVisible==false && Application.Current.Windows.OfType<Window>().All(w=>AutomationProperties.GetAutomationId(w)!="adjustment.results") &&
-            Get<Adjustments>(window,"settings")[Parameter.Exposure]==0,
+            window.Settings[Parameter.Exposure]==0,
             "Closing batch results leaves the undone current photo unchanged");
     }
     private static void ReplacedSourceRetry(MainWindow window,string photo,string raw,string output,Action<bool,string> check)
     {
-        var store=Get<EditStore>(window,"editStore");
+        var store=window.EditStoreInstance!;
         var blocked=Path.Combine(output,"retry-blocked");File.WriteAllText(blocked,"not a directory");
-        Set(window,"editStore",new EditStore(blocked));
-        var settings=Get<Adjustments>(window,"settings");settings.Set(Parameter.Exposure,.4);Invoke(window,"MarkEdited");
-        check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),
+        window.EditStoreInstance=new EditStore(blocked);
+        var settings=window.Settings;settings.Set(Parameter.Exposure,.4);window.MarkEditedForTests();
+        check(window.RetrySave.IsVisible && window.EditDirty,
             "Replacement retry starts with a visible failed-save action and retained edits");
 
-        Set(window,"editStore",store);
+        window.EditStoreInstance=store;
         // 打开中的照片被应用以只读方式锁定，Windows 不允许替换文件；修改时间同样改变原图身份。
         File.SetLastWriteTimeUtc(photo,File.GetLastWriteTimeUtc(photo).AddMinutes(1));
-        Invoke(window,"SaveEdits");
+        window.SaveEditsForTests();
         check(Equals(window.SaveState.ToolTip,Loc.Text("原始文件已被替换，请重新选择照片。")),
             "A replaced original uses the localized save-failure tooltip");
-        var before=Get<Adjustments>(window,"settings").Capture();
+        var before=window.Settings.Capture();
         ChooseRetryConfirmation(window,7); // IDNO
-        check(Get<Adjustments>(window,"settings").Capture().SameAs(before) && Get<bool>(window,"editDirty") && window.RetrySave.IsVisible,
+        check(window.Settings.Capture().SameAs(before) && window.EditDirty && window.RetrySave.IsVisible,
             "Retry confirmation No keeps the in-memory edits and failed-save state");
 
-        var opened=Get<long>(window,"openRevision");ChooseRetryConfirmation(window,6); // IDYES
+        var opened=window.OpenRevision;ChooseRetryConfirmation(window,6); // IDYES
         Ready(window);
         var defaults=PhotoInput.PrepareDefaultSettings(photo);
-        check(Get<long>(window,"openRevision")>opened && !Get<bool>(window,"editDirty") && !window.RetrySave.IsVisible &&
-            Get<Adjustments>(window,"settings")[Parameter.Exposure]==defaults[Parameter.Exposure],
+        check(window.OpenRevision>opened && !window.EditDirty && !window.RetrySave.IsVisible &&
+            window.Settings[Parameter.Exposure]==defaults[Parameter.Exposure],
             "Retry confirmation Yes discards the stale edits and reopens the replaced photo");
     }
     private static void ChooseRetryConfirmation(MainWindow window,int buttonID)
@@ -260,7 +258,7 @@ internal static class AdjustmentHistoryUiChecks
             var button=GetDlgItem(dialog,buttonID);if(button==IntPtr.Zero)return;
             if(Interlocked.Exchange(ref clicked,1)==0)SendMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
         },null,30,30);
-        Invoke(window,"RetrySaveClicked",window.RetrySave,new RoutedEventArgs(Button.ClickEvent));
+        window.RetrySaveClickedForTests(window.RetrySave,new RoutedEventArgs(Button.ClickEvent));
         if(Volatile.Read(ref clicked)!=1)throw new InvalidOperationException("Replacement retry confirmation did not respond");
     }
     private static T Find<T>(DependencyObject root,string id) where T:DependencyObject
@@ -275,7 +273,4 @@ internal static class AdjustmentHistoryUiChecks
         var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var output=File.Create(path);encoder.Save(output);
     }
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-    private static T Get<T>(object value,string name)=>(T)value.GetType().GetField(name,Private)!.GetValue(value)!;
-    private static void Set(object value,string name,object state)=>value.GetType().GetField(name,Private)!.SetValue(value,state);
-    private static object? Invoke(object value,string name,params object?[] args)=>value.GetType().GetMethod(name,Private)!.Invoke(value,args);
 }

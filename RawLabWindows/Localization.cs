@@ -17,8 +17,7 @@ public static class Loc
         new("system", "跟随系统"), new("zh-Hans", "简体中文"), new("en", "English"),
         new("de", "Deutsch"), new("fr", "Français"), new("ja", "日本語"), new("es", "Español")
     ];
-    private static readonly string preferenceFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "language.txt");
+    private static string preferenceFile => AppPaths.Default.LanguagePreferencePath;
     private static Dictionary<string, string> english = new();
     private static Dictionary<string, string> translated = new();
     private static readonly string systemLanguage = CultureInfo.CurrentUICulture.Name;
@@ -26,6 +25,8 @@ public static class Loc
     public static string Language { get; private set; } = "en";
     public static IReadOnlyDictionary<string, string> Strings => translated;
     public static event Action? Changed;
+    internal static void NotifyChangedForTests() => Changed?.Invoke();
+    internal static int ChangedSubscriberCount => Changed?.GetInvocationList().Length ?? 0;
 
     public static string Resolve(string preference, string systemLanguage)
     {
@@ -36,8 +37,7 @@ public static class Loc
         return Choices.Any(c => c.Code == parts[0] && c.Code != "system") ? parts[0] : "en";
     }
 
-    public static void Initialize(string? preferenceOverride = null)=>Initialize(preferenceOverride,null);
-    public static void Initialize(string? preferenceOverride,string? preferencePath)
+    public static void Initialize(string? preferenceOverride = null, string? preferencePath = null)
     {
         var path=preferencePath ?? preferenceFile;
         try { Preference = preferenceOverride ?? (File.Exists(path) ? File.ReadAllText(path).Trim() : "system"); }
@@ -47,8 +47,7 @@ public static class Loc
         Reload();
     }
 
-    public static void SetPreference(string preference)=>SetPreference(preference,null);
-    public static void SetPreference(string preference,string? preferencePath)
+    public static void SetPreference(string preference, string? preferencePath = null)
     {
         if (!Choices.Any(c => c.Code == preference)) throw new ArgumentException(nameof(preference));
         var path=preferencePath ?? preferenceFile;

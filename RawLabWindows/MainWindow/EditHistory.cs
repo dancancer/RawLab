@@ -14,7 +14,7 @@ public partial class MainWindow
     private AdjustmentTransferSession TransferSession
     {
         get {
-            editStore ??=new(EditStore.DefaultDirectory);
+            editStore ??=new(appPaths.EditsDirectory);
             if(adjustmentSession==null || !ReferenceEquals(sessionStore,editStore)) {sessionStore=editStore;adjustmentSession=new(editStore);}
             return adjustmentSession;
         }

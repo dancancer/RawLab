@@ -173,8 +173,9 @@ public sealed class EditStore
         Dictionary<string, JsonElement>? MigrationReceipts = null);
     private sealed record CachedRegistry(PathStatStamp Stamp, long Epoch, OriginalIdentity Identity, Registry Registry);
     private static readonly ConcurrentDictionary<string, long> PathEpochs = new(StringComparer.OrdinalIgnoreCase);
-    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Edits");
+    public static string DefaultDirectory => AppPaths.Default.EditsDirectory;
     private readonly string path;
+    internal string RegistryPath => path;
     private readonly string canonicalPath;
     private readonly Action<string,object> write;
     private readonly Func<string, OriginalIdentity>? customReadIdentity;

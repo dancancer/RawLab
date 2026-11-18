@@ -19,8 +19,7 @@ internal sealed class AIDiagnosticStore
     private const int MaxReportBytes=512*1024;
     private readonly object gate=new();
     private readonly int maxReports;
-    internal static AIDiagnosticStore Default {get;}=new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Diagnostics","AI"));
+    internal static AIDiagnosticStore Default {get;}=new(AppPaths.Default.AiDiagnosticsDirectory);
     internal string DirectoryPath {get;}
     internal AIDiagnosticStore(string directory,int maxReports=20)
     {

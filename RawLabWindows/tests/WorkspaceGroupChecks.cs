@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
@@ -9,9 +8,6 @@ using RawLab.Windows;
 
 internal static class WorkspaceGroupChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    private static T Get<T>(MainWindow window,string name)=>(T)typeof(MainWindow).GetField(name,Private)!.GetValue(window)!;
-    private static object? Invoke(MainWindow window,string name,params object[] args)=>typeof(MainWindow).GetMethod(name,Private)!.Invoke(window,args);
     internal static void Run(MainWindow window,string output,Action<bool,string> check)
     {
         var groupIds=new[]{"looks","light","color","effects","detail","geometry"};
@@ -19,15 +15,15 @@ internal static class WorkspaceGroupChecks
             EditorAdjustmentTool.Clarity,EditorAdjustmentTool.Denoise,EditorAdjustmentTool.Geometry};
         check(window.Groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetAutomationId).SequenceEqual(groupIds.Select(id=>"editor.group."+id)),
             "Six persistent groups have stable ordered IDs");
-        Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
-        var snapshot=Get<Adjustments>(window,"settings").Capture();var revision=Get<long>(window,"editRevision");
+        window.SelectToolForTests(EditorAdjustmentTool.Exposure);
+        var snapshot=window.Settings.Capture();var revision=window.EditRevision;
         window.HslEditor.SelectChannel(6);
         foreach(var (group,index) in EditorAdjustmentRules.VisibleGroups(false).Select((group,index)=>(group,index))) {
             // Repeated group clicks collapse; the next click selects the descriptor default.
-            Invoke(window,"SelectTool",defaults[index]);Invoke(window,"SelectGroup",group);window.UpdateLayout();
+            window.SelectToolForTests(defaults[index]);window.SelectGroupForTests(group);window.UpdateLayout();
             check(window.ToolsScroller.Visibility==Visibility.Collapsed && window.Groups.IsVisible,"Repeated click collapses content but retains group navigation: "+group);
-            Invoke(window,"SelectGroup",group);window.UpdateLayout();
-            check((EditorAdjustmentTool)typeof(MainWindow).GetProperty("CurrentTool",Private)!.GetValue(window)! ==defaults[index],"Group opens its default tool: "+group);
+            window.SelectGroupForTests(group);window.UpdateLayout();
+            check(window.CurrentToolForTests==defaults[index],"Group opens its default tool: "+group);
             var expectedTools=group==EditorAdjustmentGroup.Geometry ? new[]{"Geometry","Perspective","Lens"}
                 : EditorAdjustmentRules.Tools(group).Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString())
                     .Concat(group == EditorAdjustmentGroup.Looks ? ["preset.quick.open"] : Array.Empty<string>());
@@ -35,32 +31,32 @@ internal static class WorkspaceGroupChecks
                 .Select(AutomationProperties.GetAutomationId).SequenceEqual(expectedTools),
                 "Group renders only its own tools in descriptor order: "+group);
         }
-        Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);
-        check(window.HslEditor.SelectedChannel==6 && Get<long>(window,"editRevision")==revision && Get<Adjustments>(window,"settings").Capture().SameAs(snapshot),
+        window.SelectToolForTests(EditorAdjustmentTool.Hsl);
+        check(window.HslEditor.SelectedChannel==6 && window.EditRevision==revision && window.Settings.Capture().SameAs(snapshot),
             "Group and tool navigation preserves HSL channel, processing identity and all edits without writes");
-        Invoke(window,"ResetMenuClicked",window.ResetAllButton,new RoutedEventArgs());
+        window.ResetMenuClickedForTests(window.ResetAllButton,new RoutedEventArgs());
         var menu=window.ResetAllButton.ContextMenu;
         check(menu.Items.OfType<MenuItem>().Select(item=>((EditorResetScope)item.Tag).Kind).SequenceEqual(new[]{
             EditorResetKind.HslChannel,EditorResetKind.AllHsl,EditorResetKind.Group,EditorResetKind.All}),
             "Production HSL menu orders current color, all HSL, color group and All");
         check(menu.Items.OfType<MenuItem>().First().Header.ToString()!.Contains(window.HslEditor.SelectedChannelName),"HSL current-color reset includes its selected color name");
         menu.IsOpen=false;
-        var state=Get<Adjustments>(window,"settings");
+        var state=window.Settings;
         state.Hsl=state.Hsl.WithValue(0,6,.12345).WithValue(1,1,.33333);
-        var beforeChannel=state.Capture();var channelRevision=Get<long>(window,"editRevision");
-        Invoke(window,"RequestReset",new EditorResetScope(EditorResetKind.HslChannel,Channel:6));
-        var afterChannel=Get<Adjustments>(window,"settings").Capture();
+        var beforeChannel=state.Capture();var channelRevision=window.EditRevision;
+        window.RequestResetForTests(new EditorResetScope(EditorResetKind.HslChannel,Channel:6));
+        var afterChannel=window.Settings.Capture();
         var expectedChannel=beforeChannel.Hsl!;for(var axis=0;axis<3;axis++)expectedChannel=expectedChannel.WithValue(axis,6,0);
         check(afterChannel.SameAs(beforeChannel with{Hsl=expectedChannel}) && afterChannel.Hsl!.Value(1,1)==.33333 &&
-            window.HslEditor.SelectedChannel==6 && Get<long>(window,"editRevision")==channelRevision+1,
+            window.HslEditor.SelectedChannel==6 && window.EditRevision==channelRevision+1,
             "Production current-color reset makes one edit and preserves sibling precision, tool and channel");
-        Invoke(window,"RequestReset",new EditorResetScope(EditorResetKind.HslChannel,Channel:6));
-        check(Get<long>(window,"editRevision")==channelRevision+1,"Repeated production color reset is a zero-edit NoChange");
+        window.RequestResetForTests(new EditorResetScope(EditorResetKind.HslChannel,Channel:6));
+        check(window.EditRevision==channelRevision+1,"Repeated production color reset is a zero-edit NoChange");
         InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
         var previous=Loc.Preference;var originalFont=window.FontSize;
         var preferencePath=Path.Combine(output,"workspace-language.txt");
         // 工具内容变化时保留调整栏与照片之间的边界。
-        Get<WorkspaceLayout>(window,"workspaceLayout").ResizeInspector(344);
+        window.WorkspaceLayoutInstance.ResizeInspector(344);
         try {
             foreach(var language in new[]{"de","zh-Hans","en","fr","ja","es"})foreach(var size in new[]{new Size(1024,720),new Size(1440,920)})foreach(var font in new[]{13.0,26.0}) {
                 // 与设置入口一样触发 Changed，刷新已创建控件；语言偏好只写测试目录。
@@ -70,12 +66,12 @@ internal static class WorkspaceGroupChecks
                 var boundary=window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).X;
                 var width=window.AdjustmentPanel.ActualWidth;
                 foreach(var tool in Enum.GetValues<EditorAdjustmentTool>()) {
-                    Invoke(window,"SelectTool",tool);window.UpdateLayout();
+                    window.SelectToolForTests(tool);window.UpdateLayout();
                     check(Math.Abs(window.AdjustmentPanel.ActualWidth-width)<1 &&
                         Math.Abs(window.AdjustmentPanel.TransformToAncestor(window).Transform(new Point()).X-boundary)<1,
                         $"Tool content preserves the photo/inspector boundary: {language}/{size}/{tool}");
                 }
-                Invoke(window,"SelectTool",EditorAdjustmentTool.Hsl);window.UpdateLayout();
+                window.SelectToolForTests(EditorAdjustmentTool.Hsl);window.UpdateLayout();
                 check(window.Groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetName)
                     .SequenceEqual(EditorAdjustmentRules.VisibleGroups(false).Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))),
                     "All group captions/accessibility names use the selected language: "+language);
@@ -120,7 +116,7 @@ internal static class WorkspaceGroupChecks
                 }
             }
         } finally {window.FontSize=originalFont;Loc.SetPreference(previous,preferencePath);foreach(var pair in Loc.Strings)Application.Current.Resources[pair.Key]=pair.Value;}
-        Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);
+        window.SelectToolForTests(EditorAdjustmentTool.Exposure);
         WorkspaceParameterChecks.Run(window,output,check);
     }
     private static void CheckHistogramStatistics(MainWindow window,string language,Size size,Action<bool,string> check)

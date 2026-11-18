@@ -48,7 +48,8 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
         this.source = source ?? new SignedUpdateSource(trust, currentVersion);
         manager = new UpdateManager(this.source, new UpdateOptions { AllowVersionDowngrade = false, ExplicitChannel = "stable", MaximumDeltasBeforeFallback = -1 }, locator);
     }
-    public static IDesktopUpdateAdapter Create(string currentVersion)
+    public static IDesktopUpdateAdapter Create(string currentVersion) => Create(currentVersion, AppPaths.Default);
+    internal static IDesktopUpdateAdapter Create(string currentVersion, AppPaths appPaths)
     {
         var trust = UpdateTrustConfiguration.Load();
         if (trust == null) return new UnavailableUpdateAdapter("configuration");
@@ -56,7 +57,7 @@ public sealed class VelopackUpdateAdapter : IDesktopUpdateAdapter
         var locator = VelopackLocator.Current;
         if (locator.AppId != "RawLab.Desktop" || locator.CurrentlyInstalledVersion == null || locator.IsPortable || locator.Channel != "stable")
             return new UnavailableUpdateAdapter("installation");
-        var local = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)) + Path.DirectorySeparatorChar;
+        var local = Path.GetFullPath(appPaths.LocalApplicationDataRoot) + Path.DirectorySeparatorChar;
         if (locator.RootAppDir == null || !Path.GetFullPath(locator.RootAppDir).StartsWith(local, StringComparison.OrdinalIgnoreCase) ||
             locator.AppContentDir == null || locator.UpdateExePath == null) return new UnavailableUpdateAdapter("installation");
         return new VelopackUpdateAdapter(trust, locator, currentVersion);

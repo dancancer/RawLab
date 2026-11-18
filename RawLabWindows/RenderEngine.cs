@@ -24,6 +24,7 @@ internal sealed partial class RenderEngine : IDisposable
     private sealed record CameraWhiteBalanceKey(OriginalIdentity Source, ProcessingIdentity Processing, X3fMode X3fMode, int ExposureMode);
     private (CameraWhiteBalanceKey Key, (double Temperature, double Tint) Value)? recipeWhiteBalance;
     private readonly string lensDatabase;
+    private readonly AppPaths appPaths;
     private Stamp? lensStamp;
     private LensCandidate[] lensCandidates = [];
     private string? lastSourceFingerprint;
@@ -31,6 +32,9 @@ internal sealed partial class RenderEngine : IDisposable
     private ((NeutralReferenceKey Reference, int GpuMode, int? ProRAWDecodeVersion) Key, RenderedImage Frame)? original;
     private readonly PreviewRevisionCache<(PreviewKey Key, int Edge), PreviewFrame> previewCache =
         new(256L * 1024 * 1024, FrameBytes, maximumEntries: 16);
+    internal Native.Session Session => session;
+    internal Native.CancellationCallback? CancellationCallback { get => cancellationCallback; set => cancellationCallback = value; }
+    internal bool HasOriginal => original != null;
     // The optional result cache is separate from the active comparison image.
     internal long CachedPreviewBytes => previewCache.TotalBytes;
     private static long ImageBytes(RenderedImage value)=>(long)value.Image.PixelWidth*value.Image.PixelHeight*4*(value.Clipping==null ? 1 : 2) +
@@ -39,14 +43,15 @@ internal sealed partial class RenderEngine : IDisposable
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
     public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null,
-        string aiDeviceID="",AIDiagnosticStore? aiDiagnostics=null)
+        string aiDeviceID="",AIDiagnosticStore? aiDiagnostics=null,AppPaths? appPaths=null)
     {
+        this.appPaths=appPaths ?? AppPaths.Default;
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
         this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
-        this.aiCacheDirectory=aiCacheDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","DualDn");
+        this.aiCacheDirectory=aiCacheDirectory ?? this.appPaths.DualDnCacheDirectory;
         aiBackendOverride=aiBackend;
-        this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? AIDiagnosticStore.Default;
+        this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? (appPaths != null ? new(this.appPaths.AiDiagnosticsDirectory) : AIDiagnosticStore.Default);
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
@@ -157,7 +162,8 @@ internal sealed partial class RenderEngine : IDisposable
 
     private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
     {
-        using var source = HDRSourceCache.Acquire(path,info,false,256,session);
+        using var source = HDRSourceCache.Acquire(path,info,false,256,session,
+            temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory);
         var pair = HDRDisplay.CopySDROnly(source.Owner.Pair);
         using var input = new HDRSdrInput(pair.SDR);
         var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
@@ -349,7 +355,7 @@ internal sealed partial class RenderEngine : IDisposable
             using var stream = File.OpenRead(path);
             var digest = SHA256.HashData(stream);
             HDRNative.ExportProRAW(session, path, settings.HDR!, output!, digest, format!.Value == ExportFormat.HdrJpeg,
-                checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)));
+                checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)), temporaryRoot: appPaths.HdrCacheDirectory);
             return null;
         }
         var edgeValue = (uint)HDRPreviewEdge(edge);
@@ -360,7 +366,7 @@ internal sealed partial class RenderEngine : IDisposable
             return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping);
 
         using var rendered = HDRNative.Render(session, source.Owner, settings.HDR!, final ? HDRIntent.Final : HDRIntent.Preview,
-            final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue);
+            final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue, appPaths.HdrLooksDirectory);
         if (output != null)
         {
             var metadataSource = info.IsCameraRaw ? null : path;
@@ -464,7 +470,8 @@ internal sealed partial class RenderEngine : IDisposable
             finally { Native.sony2fuji_hsl_probe_destroy(hdrProbe); }
         }
         using var source=PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path,out var info)==HDRProbeState.Supported
-            ? HDRSourceCache.Acquire(path,info!,false,hdrEdge,session) : null;
+            ? HDRSourceCache.Acquire(path,info!,false,hdrEdge,session,
+                temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory) : null;
         using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopySDROnly(source.Owner.Pair).SDR);
         var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
         var request=prepared.Item2;
@@ -604,16 +611,18 @@ internal sealed partial class RenderEngine : IDisposable
         var image = BitmapSource.Create((int)buffer.Width,(int)buffer.Height,96,96,opaque ? PixelFormats.Pbgra32 : PixelFormats.Bgra32,null,buffer.Data,checked((int)buffer.Size),(int)buffer.Stride);
         image.Freeze(); return image;
     }
-    public static BitmapSource? Thumbnail(string path)=>ReadEmbeddedPreview(path,180).Image;
-    public static EmbeddedPreview ReadEmbeddedPreview(string path,int edge=1600)
+    public static BitmapSource? Thumbnail(string path, AppPaths? appPaths = null)=>ReadEmbeddedPreview(path,180,appPaths).Image;
+    public static EmbeddedPreview ReadEmbeddedPreview(string path,int edge=1600,AppPaths? appPaths=null)
     {
         if (edge <= 0) return new(null, 0, 0);
+        var paths = appPaths ?? AppPaths.Default;
         Native.Buffer buffer = default;
         return ReadEmbeddedPreviewCore(() =>
         {
             if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out _) == HDRProbeState.Supported)
             {
-                using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)));
+                using var decoded = HDRNative.Decode(path, HDRIntent.Preview, checked((uint)Math.Clamp(edge, 1, 65535)),
+                    temporaryRoot: paths.HdrCacheDirectory, cameraProfileDirectory: paths.HdrCameraProfilesDirectory);
                 var pair = HDRDisplay.CopySDROnly(decoded.Pair);
                 return new(pair.SDRBitmap, pair.SDR.Width, pair.SDR.Height);
             }

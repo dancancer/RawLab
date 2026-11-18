@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -12,9 +11,6 @@ using RawLab.Windows;
 
 internal static class SoftwareUpdateUiChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    private static T Get<T>(object value,string name)=>(T)value.GetType().GetField(name,Private)!.GetValue(value)!;
-    private static object? Invoke(object value,string name,params object?[] args)=>value.GetType().GetMethod(name,Private)!.Invoke(value,args);
     private static IEnumerable<DependencyObject> Children(DependencyObject root)
     {
         yield return root;
@@ -27,10 +23,9 @@ internal static class SoftwareUpdateUiChecks
     private static void Ready(MainWindow window)
     {
         var clock=Stopwatch.StartNew();
-        var renderFailed=typeof(MainWindow).GetField("renderFailed",Private)!;
         while(!window.ExportPng.IsEnabled)
         {
-            if((bool)renderFailed.GetValue(window)!)throw new InvalidOperationException($"Ready reached a terminal render failure: {window.Status.Text}");
+            if(window.RenderFailed)throw new InvalidOperationException($"Ready reached a terminal render failure: {window.Status.Text}");
             if(clock.Elapsed>TimeSpan.FromMinutes(2))throw new TimeoutException($"Ready did not complete within 120s: ()=>window.ExportPng.IsEnabled (status: {window.Status.Text})");
             var frame=new DispatcherFrame();
             var timer=new DispatcherTimer(DispatcherPriority.Background){Interval=TimeSpan.FromMilliseconds(5)};
@@ -58,24 +53,25 @@ internal static class SoftwareUpdateUiChecks
             (source,destination)=>{if(failStateSave?.Invoke()==true)throw new IOException("Simulated sharing conflict",unchecked((int)0x80070020));File.Move(source,destination,true);},
             delay=>{uiDelays.Add((int)delay.TotalMilliseconds);uiElapsed+=delay;},
             ()=>uiElapsed);
+        var paths=TestWindowState.CreateIsolatedPaths(output);
+        var analytics=TestWindowState.CreateDisabledAnalytics(paths);
+        var store=new EditStore(paths.EditsDirectory);
         var adapter=new Adapter();var controller=new DesktopUpdateController(adapter,new(),controllerStore,"0.8.2","14",false);
-        var window=new MainWindow(new UsageAnalytics(),null,desktopUpdates:controller){Width=1200,Height=900};TestWindowState.Isolate(window,output);
-        // Isolate swaps the controller store for a plain one; re-attach the injected store so the failing-move hook and fake clock drive the update-state writes below.
-        typeof(DesktopUpdateController).GetField("store",Private)!.SetValue(controller,controllerStore);
-        var store=new EditStore(Path.Combine(output,"edits"));typeof(MainWindow).GetField("editStore",Private)!.SetValue(window,store);
+        var window=new MainWindow(paths,analytics,desktopUpdates:controller,editStore:store){Width=1200,Height=900};
+        window.UpdateNotice.Visibility=Visibility.Collapsed;
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);Ready(window);
             GateBusyWorkChecks(window,controller,adapter,check);
-            Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);Ready(window);
-            var session=(AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession",Private)!.GetValue(window)!;
+            window.SelectToolForTests(EditorAdjustmentTool.Exposure);Ready(window);
+            var session=window.TransferSessionForTests;
             foreach(var draft in new[]{"1.25","-"}) {
                 window.Activate();window.OrdinaryParameter.Number.Focus();window.OrdinaryParameter.Number.Text=draft;
-                var saved=store.ReadState(photo);var count=session.Transactions.Count;var state=Get<Adjustments>(window,"settings").Capture();
-                Invoke(window,"ShowSoftwareUpdates",true);var dialog=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
+                var saved=store.ReadState(photo);var count=session.Transactions.Count;var state=window.Settings.Capture();
+                window.ShowSoftwareUpdatesForTests(true);var dialog=window.SoftwareUpdateWindowInstance!;
                 InteractionChecks.PumpUntil(()=>dialog.IsVisible);Click(Button(dialog,"updates.check"));
                 InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Available);
                 check(window.OrdinaryParameter.Number.Text==draft && window.OrdinaryParameter.HasPendingInput &&
-                    Get<Adjustments>(window,"settings").Capture().SameAs(state) && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==count,
+                    window.Settings.Capture().SameAs(state) && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==count,
                     "Opening and checking from actual update window preserves input, edits and history: "+draft);
                 Click(Button(dialog,"updates.download"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Downloading);
                 check(controller.Gate.Blockers().Contains("draft"),"Production gate sees suspended numeric input while downloading");
@@ -85,10 +81,10 @@ internal static class SoftwareUpdateUiChecks
                     "Closing and cancelling updates leaves the editor input unchanged: "+draft);
                 window.OrdinaryParameter.CancelInput();
             }
-            Invoke(window,"BeginTransform",TransformTool.Geometry);InteractionChecks.PumpUntil(()=>Get<TransformDraft>(window,"transform").Active);
-            var transform=Get<TransformDraft>(window,"transform");var geometry=transform.Geometry with{StraightenDegrees=1.2};
+            window.BeginTransformForTests(TransformTool.Geometry);InteractionChecks.PumpUntil(()=>window.TransformDraft.Active);
+            var transform=window.TransformDraft;var geometry=transform.Geometry with{StraightenDegrees=1.2};
             transform.Update(geometry,transform.Lens);var baseline=store.ReadState(photo);var history=session.Transactions.Count;
-            Invoke(window,"ShowSoftwareUpdates",false);var prompt=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
+            window.ShowSoftwareUpdatesForTests(false);var prompt=window.SoftwareUpdateWindowInstance!;
             check(transform.Active && transform.Geometry==geometry && controller.Gate.Blockers().Contains("draft"),"Update prompt preserves the real transform draft and blocks installation");
             Click(Button(prompt,"updates.check"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Available);
             Click(Button(prompt,"updates.download"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.Downloading);
@@ -96,8 +92,8 @@ internal static class SoftwareUpdateUiChecks
             Click(Button(prompt,"updates.onQuit"));InteractionChecks.PumpUntil(()=>controller.State.Phase==UpdatePhase.WaitingForTasks);
             check(adapter.Installs==0 && transform.Active && store.ReadState(photo).SameAs(baseline) && session.Transactions.Count==history,
                 "Choosing installation while a transform draft exists does not apply, discard or save it");
-            controller.Cancel();prompt.Close();Invoke(window,"CancelTransformDraft");Ready(window);
-            Invoke(window,"ShowSoftwareUpdates",true);var settings=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
+            controller.Cancel();prompt.Close();window.CancelTransformDraftForTests();Ready(window);
+            window.ShowSoftwareUpdatesForTests(true);var settings=window.SoftwareUpdateWindowInstance!;
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"}) {
                 Loc.SetPreference(language,Path.Combine(output,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
                 settings.FontSize=26;settings.UpdateLayout();
@@ -155,7 +151,7 @@ internal static class SoftwareUpdateUiChecks
             check(controller.StorageError==null && window.EditorShell.IsEnabled && !window.UpdateLockBanner.IsVisible,
                 "Recovering update-state writes clears StorageError while keeping the real editor enabled");
             var beforeFailure=store.ReadState(photo);
-            Invoke(window,"ShowCollection");var collection=Get<BatchSelectionWindow>(window,"collectionWindow");
+            window.ShowCollectionForTests();var collection=window.CollectionWindowInstance!;
             adapter.RejectInstall=true;controller.CheckAsync(true).GetAwaiter().GetResult();
             var downloading=controller.DownloadAsync();adapter.Download.TrySetResult();
             InteractionChecks.PumpUntil(()=>downloading.IsCompleted && controller.State.Phase==UpdatePhase.PackageReady);
@@ -168,7 +164,7 @@ internal static class SoftwareUpdateUiChecks
                 !window.EditorShell.IsEnabled && window.UpdateLockBanner.IsVisible && store.ReadState(photo).SameAs(beforeFailure),
                 "An installer dispatch failure whose failure record also fails to persist keeps the disk-phase lock and preserves saved edits");
             check(!collection.IsEnabled,"The retained installation lock also disables an existing collection window");
-            collection.Close();Invoke(window,"ShowCollection");collection=Get<BatchSelectionWindow>(window,"collectionWindow");
+            collection.Close();window.ShowCollectionForTests();collection=window.CollectionWindowInstance!;
             check(!collection.IsEnabled,"A collection window created under the retained installation lock starts disabled");
             collection.Close();
             // 双故障下失败记录未落盘，控制器保守地保留 Installing 阶段的锁；锁横幅与键盘交互断言依赖这一可见的锁定状态。
@@ -181,8 +177,8 @@ internal static class SoftwareUpdateUiChecks
             check(!press.Handled,"Installation lock does not swallow the focused update button's Space key");
             press.RoutedEvent=Keyboard.KeyDownEvent;openUpdates.RaiseEvent(press);
             openUpdates.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(openUpdates),Environment.TickCount,Key.Space){RoutedEvent=Keyboard.KeyUpEvent});
-            InteractionChecks.PumpUntil(()=>Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow").IsVisible);
-            var reopenedUpdateWindow=Get<SoftwareUpdateWindow>(window,"softwareUpdateWindow");
+            InteractionChecks.PumpUntil(()=>window.SoftwareUpdateWindowInstance!.IsVisible);
+            var reopenedUpdateWindow=window.SoftwareUpdateWindowInstance!;
             check(reopenedUpdateWindow.IsEnabled &&
                 !Children(reopenedUpdateWindow).OfType<ProgressBar>().Any() &&
                 !Children(reopenedUpdateWindow).OfType<Button>().Any(b=>AutomationProperties.GetAutomationId(b)=="updates.retryStartup") &&
@@ -190,20 +186,21 @@ internal static class SoftwareUpdateUiChecks
                 "Keyboard activation of the lock banner reopens the usable software update window without dead startup retry");
             reopenedUpdateWindow.Close();
             Console.WriteLine("UPDATE_UI_OUTPUT="+output);
-        } finally {controller.Cancel();Invoke(window,"CancelTransformDraft");Invoke(window,"CancelParameterInputs");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+        } finally {controller.Cancel();window.CancelTransformDraftForTests();window.CancelParameterInputsForTests();window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }
     private static void GateBusyWorkChecks(MainWindow window,DesktopUpdateController controller,Adapter adapter,Action<bool,string> check)
     {
-        foreach(var name in new[]{"autoExposing","transferPreparing"}) {
-            var field=typeof(MainWindow).GetField(name,Private)!;field.SetValue(window,true);
+        (string Name,Action<bool> Set)[] busyFlags=[("autoExposing",value=>window.AutoExposing=value),("transferPreparing",value=>window.TransferPreparing=value)];
+        foreach(var (name,set) in busyFlags) {
+            set(true);
             try {
                 var before=controller.State.Copy();
-                check(((UpdateSessionStatus)Invoke(window,"UpdateStatus")!).TasksRunning && controller.Gate.Blockers().Contains("tasks") &&
+                check(window.UpdateStatusForTests().TasksRunning && controller.Gate.Blockers().Contains("tasks") &&
                     controller.Gate.Prepare().Contains("tasks") && controller.State.Phase==before.Phase &&
                     controller.State.BackupPath==before.BackupPath && adapter.Installs==0,
                     "Active native work blocks update preparation before backup or install: "+name);
-            } finally {field.SetValue(window,false);}
-            check(!((UpdateSessionStatus)Invoke(window,"UpdateStatus")!).TasksRunning && !controller.Gate.Blockers().Contains("tasks"),
+            } finally {set(false);}
+            check(!window.UpdateStatusForTests().TasksRunning && !controller.Gate.Blockers().Contains("tasks"),
                 "Completed native work releases the update gate: "+name);
         }
     }

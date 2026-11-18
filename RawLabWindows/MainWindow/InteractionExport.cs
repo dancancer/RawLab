@@ -15,7 +15,7 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
-    private string exportStagingDirectory = TempCleanup.DefaultExportStagingDirectory;
+    private string exportStagingDirectory = "";
     private void CompareClicked(object sender,RoutedEventArgs e)
     {if(compare)SetComparisonMode(false,false);else SetComparisonMode(true,view.PreferredMode==ComparisonMode.Wipe);}
     private void ExportMenuClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);

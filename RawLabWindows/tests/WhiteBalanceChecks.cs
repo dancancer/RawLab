@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using RawLab.Windows;
 
 internal static class WhiteBalanceChecks
@@ -12,17 +11,15 @@ internal static class WhiteBalanceChecks
         File.Copy(raw,source);
         try
         {
-            using var engine=new RenderEngine(0);
+            using var engine=new RenderEngine(0,appPaths:AppPaths.CreateIsolated(directory));
             using var cancellation=new CancellationTokenSource();
             engine.SetCancellation(cancellation.Token);
-            const BindingFlags privateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
-            var session=(Native.Session)typeof(RenderEngine).GetField("session",privateInstance)!.GetValue(engine)!;
-            var prepare=typeof(RenderEngine).GetMethod("PrepareRecipe",privateInstance)!;
-            Adjustments Resolve(Adjustments settings)=>(Adjustments)prepare.Invoke(engine,[source,settings])!;
+            var session=engine.Session;
+            Adjustments Resolve(Adjustments settings)=>engine.PrepareRecipe(source,settings);
             var polls=0;
             Native.CancellationCallback countCalls=_=>{Interlocked.Increment(ref polls);return 0;};
             // Replacing the RAW may recreate the native session. Keep the observer registered through that path.
-            typeof(RenderEngine).GetField("cancellationCallback",privateInstance)!.SetValue(engine,countCalls);
+            engine.CancellationCallback=countCalls;
             Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero));
             var recipe=new Adjustments();recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
             recipe.Set(Parameter.Strength,100);recipe.Set(Parameter.Tint,10);

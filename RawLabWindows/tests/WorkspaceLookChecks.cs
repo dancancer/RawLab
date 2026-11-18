@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -11,10 +10,6 @@ using RawLab.Windows;
 
 internal static class WorkspaceLookChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    private static T Get<T>(MainWindow window,string name)=>(T)typeof(MainWindow).GetField(name,Private)!.GetValue(window)!;
-    private static void Set(MainWindow window,string name,object value)=>typeof(MainWindow).GetField(name,Private)!.SetValue(window,value);
-    private static object? Invoke(MainWindow window,string name,params object[] args)=>typeof(MainWindow).GetMethod(name,Private)!.Invoke(window,args);
     private static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
     internal static void Run(string repo,string raw,Action<bool,string> check)
@@ -22,14 +17,14 @@ internal static class WorkspaceLookChecks
         var output=Path.Combine(Path.GetFullPath(repo),".cache","tmp","workspace-looks",Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(output);var source=Path.Combine(output,"source.dng");File.Copy(raw,source);
         var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window=new MainWindow();TestWindowState.Isolate(window,output);
-        var storePath=Path.Combine(output,"edits");var store=new EditStore(storePath);Set(window,"editStore",store);
+        var window=TestWindowState.CreateIsolatedWindow(output);
+        var storePath=Path.Combine(output,"edits");var store=new EditStore(storePath);window.EditStoreInstance=store;
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(source);Ready(window);
             foreach(var language in new[]{"en","de"}) {
                 Loc.SetPreference(language,Path.Combine(output,"language.txt"));foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
                 var surface=EditorShellChecks.ArrangeLayout(window,new Size(1024,720));
-                Invoke(window,"SelectTool",EditorAdjustmentTool.Exposure);window.UpdateLayout();
+                window.SelectToolForTests(EditorAdjustmentTool.Exposure);window.UpdateLayout();
                 check(!window.LibraryPanel.IsVisible && Math.Abs(window.AdjustmentPanel.ActualWidth - 280) < 1,
                     "A narrow window opens a 280 DIP inspector with the library drawer initially closed: " + language);
                 var canvas = window.PhotoArea.RenderSize;
@@ -60,10 +55,10 @@ internal static class WorkspaceLookChecks
             EditorShellChecks.ArrangeLayout(window, new Size(1440, 920));
             var modes = new[] { window.EditingWorkspaceButton, window.SelectionWorkspaceButton, window.PreviewWorkspaceButton };
             check(modes.All(WorkspaceModeGapIsClickable), "The space between the icon and text belongs to each workspace button");
-            var layout = Get<WorkspaceLayout>(window, "workspaceLayout");
+            var layout = window.WorkspaceLayoutInstance;
             layout.ResizeInspector(334);
-            Invoke(window, "RefreshWorkspace");
-            Invoke(window, "SelectTool", EditorAdjustmentTool.Hsl); window.UpdateLayout();
+            window.RefreshWorkspaceForTests();
+            window.SelectToolForTests(EditorAdjustmentTool.Hsl); window.UpdateLayout();
             check(Math.Abs(window.AdjustmentPanel.ActualWidth - 334) < 1, "Inspector width survives a tool change");
             Click(window.SelectionWorkspaceButton); window.UpdateLayout();
             check(window.SelectionWorkspace.IsVisible && !window.PhotoArea.IsVisible && !window.AdjustmentPanel.IsVisible &&
@@ -71,7 +66,7 @@ internal static class WorkspaceLookChecks
             Click(window.PreviewWorkspaceButton); window.UpdateLayout();
             check(window.PhotoArea.IsVisible && !window.LibraryPanel.IsVisible && !window.AdjustmentPanel.IsVisible,
                 "Preview uses the whole photo area");
-            Invoke(window, "DismissWorkspaceTransient"); window.UpdateLayout();
+            window.DismissWorkspaceTransientForTests(); window.UpdateLayout();
             check(window.SelectionWorkspace.IsVisible, "Escape returns from Preview to Select");
             Click(window.EditingWorkspaceButton);
             EditorShellChecks.ArrangeLayout(window, new Size(1024, 720));
@@ -79,59 +74,59 @@ internal static class WorkspaceLookChecks
             Click(window.LibraryToggleButton); window.UpdateLayout();
             check(window.LibraryOverlay.IsVisible && window.LibraryPanel.Parent == window.LibraryDrawer &&
                 window.PhotoArea.RenderSize == previewSize, "Compact library overlays the preview without resizing it");
-            Invoke(window, "DismissWorkspaceTransient"); window.UpdateLayout();
+            window.DismissWorkspaceTransientForTests(); window.UpdateLayout();
             check(!window.LibraryOverlay.IsVisible && Math.Abs(window.AdjustmentPanel.ActualWidth - 280) < 1,
                 "Escape closes the drawer and retains the narrow inspector");
-            Invoke(window, "SelectTool", EditorAdjustmentTool.Geometry);
+            window.SelectToolForTests(EditorAdjustmentTool.Geometry);
             window.GeometryEditor.ShowPerspective = true;
             Click(window.PreviewWorkspaceButton);
             check(!window.DraftActions.IsVisible, "Preview ends the clean geometry draft");
-            Invoke(window, "DismissWorkspaceTransient");
+            window.DismissWorkspaceTransientForTests();
             window.UpdateLayout();
             check(window.GeometrySurface.IsVisible && window.GeometryEditor.ShowPerspective && window.DraftActions.IsVisible,
                 "Returning to Edit restores the geometry subtool and fixed draft actions");
             Click(window.CancelDraftButton);
             CheckNarrowControls(window, output, check);
             CheckFolderWorkspace(window, output, check);
-            Invoke(window,"SelectTool",EditorAdjustmentTool.Film);window.UpdateLayout();
-            var edits=Get<Adjustments>(window,"settings");edits.Set(Parameter.Exposure,.1);Invoke(window,"MarkEdited");
+            window.SelectToolForTests(EditorAdjustmentTool.Film);window.UpdateLayout();
+            var edits=window.Settings;edits.Set(Parameter.Exposure,.1);window.MarkEditedForTests();
             var acros=Path.Combine(AppContext.BaseDirectory,"LUTs","FLog2_to_ACROS_65grid_V.1.00.cube");
             check(File.Exists(acros),"Native test uses bundled ACROS asset");
             window.LookSearch.Text="acros";window.UpdateLayout();
-            var choices=Get<Dictionary<string,Button>>(window,"filmButtons");
+            var choices=window.FilmButtons;
             check(choices.Count==1 && choices.ContainsKey(acros),"Case-insensitive search narrows the live native list");
             using(var held=new FileStream(Path.Combine(storePath,"edits.json"),FileMode.Open,FileAccess.Read,FileShare.Read)) {
                 choices[acros].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                check(Get<RecentLooks>(window,"recentLooks").IDs.Count==0 && window.RetrySave.IsVisible,"Failed look save is excluded from Recent");
+                check(window.RecentLooksInstance.IDs.Count==0 && window.RetrySave.IsVisible,"Failed look save is excluded from Recent");
             }
-            Invoke(window,"SaveEdits");Ready(window);
-            var recent=Get<RecentLooks>(window,"recentLooks");
+            window.SaveEditsForTests();Ready(window);
+            var recent=window.RecentLooksInstance;
             check(recent.IDs.SequenceEqual(new[]{"builtin:"+Path.GetFileName(acros)}),"Successful retry records the stable built-in identity once");
             var saved=store.ReadState(source);window.LookSearch.Text="no matching look";window.UpdateLayout();
             check(window.LookEmpty.IsVisible && window.LookImport.IsVisible && window.LookImport.IsEnabled && store.ReadState(source).SameAs(saved),
                 "Empty search retains the committed look and fixed import action");
             window.LookEmptyAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             window.LookCategory.SelectedIndex=(int)LookBrowserCategory.Recent;window.UpdateLayout();
-            check(Get<Dictionary<string,Button>>(window,"filmButtons").Keys.SequenceEqual(new[]{acros}),"Recent filters only the successfully saved look");
-            Invoke(window,"LoadRecentLooks");check(Get<RecentLooks>(window,"recentLooks").IDs.SequenceEqual(recent.IDs),"Recent preferences survive reload independently of photo data");
+            check(window.FilmButtons.Keys.SequenceEqual(new[]{acros}),"Recent filters only the successfully saved look");
+            window.LoadRecentLooksForTests();check(window.RecentLooksInstance.IDs.SequenceEqual(recent.IDs),"Recent preferences survive reload independently of photo data");
             var final=EditorShellChecks.ArrangeLayout(window,new Size(1024,720));
             check(window.LookImport.TransformToAncestor(window).Transform(new Point(window.LookImport.ActualWidth,window.LookImport.ActualHeight)).X<=window.ActualWidth,
                 "Fixed import action stays inside narrow native window");
             EditorShellChecks.CaptureLayout(window,final,Path.Combine(output,"recent-de.png"));
-            Invoke(window,"SelectTool",EditorAdjustmentTool.MasterRecipe);window.UpdateLayout();
+            window.SelectToolForTests(EditorAdjustmentTool.MasterRecipe);window.UpdateLayout();
             check(window.RecipeStrip.Columns==3 && window.RecipeStrip.Columns==window.FilmStrip.Columns,
                 "Master recipe grid matches the three-column film grid");
-            var recipes=Get<Dictionary<string,Button>>(window,"recipeButtons");
+            var recipes=window.RecipeButtons;
             var lastRecipe=recipes.Values.Last();
             lastRecipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Ready(window);
             check(recipes.Values.Count(button=>Equals(button.Tag,"selected") && button.BorderThickness==new Thickness(1) &&
                   AutomationProperties.GetItemStatus(button)==Loc.Text("已应用"))==1 &&
                   PhotoFeatureChecks.Descendants<TextBlock>(window.MasterRecipePanel).All(text=>text.Text!="✓"),
                 "Applied recipe uses the selected card border without an inline checkmark");
-            var recipeSettings=Get<Adjustments>(window,"settings");
+            var recipeSettings=window.Settings;
             recipeSettings.Set(Parameter.Exposure,1.25);
             lastRecipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(Math.Abs(Get<Adjustments>(window,"settings")[Parameter.Exposure]-MasterRecipe.All[^1].ExposureDelta)<.0001,
+            check(Math.Abs(window.Settings[Parameter.Exposure]-MasterRecipe.All[^1].ExposureDelta)<.0001,
                 "Reselecting the active recipe reapplies its default adjustments");
             var recipeSurface=EditorShellChecks.ArrangeLayout(window,new Size(1024,720));
             EditorShellChecks.CaptureLayout(window,recipeSurface,Path.Combine(output,"recipe-selected-de.png"));
@@ -157,7 +152,7 @@ internal static class WorkspaceLookChecks
 
     private static void CheckNarrowControls(MainWindow window, string output, Action<bool,string> check)
     {
-        Invoke(window, "SelectTool", EditorAdjustmentTool.Hsl);
+        window.SelectToolForTests(EditorAdjustmentTool.Hsl);
         window.UpdateLayout();
         var swatches = PhotoFeatureChecks.Descendants<Button>(window.HslEditor)
             .Where(button => AutomationProperties.GetAutomationId(button).StartsWith("hsl.channel.")).ToArray();
@@ -172,7 +167,7 @@ internal static class WorkspaceLookChecks
         check(window.HslEditor.SelectedChannel == 0, "HSL keyboard navigation wraps from the last color to the first");
         EditorShellChecks.CaptureLayout(window, (FrameworkElement)window.Content, Path.Combine(output, "hsl-narrow.png"));
 
-        Invoke(window, "SelectTool", EditorAdjustmentTool.Denoise);
+        window.SelectToolForTests(EditorAdjustmentTool.Denoise);
         var panel = window.DenoiseEditor;
         var toggle = (FrameworkElement)panel.FindName("EnabledBox");
         var preset = (ComboBox)panel.FindName("PresetBox");
@@ -206,7 +201,7 @@ internal static class WorkspaceLookChecks
         Array.Resize(ref image, image.Length + 256);
         for (var i = 0; i < 180; i++) File.WriteAllBytes(Path.Combine(rootPath, $"image-{i:D3}.png"), image);
         File.WriteAllBytes(Path.Combine(nestedPath, "another.png"), image);
-        var library = Get<Library>(window, "library");
+        var library = window.LibraryInstance;
         var root = new LibraryEntry(rootPath, true);
         library.Roots.Add(root);
         InteractionChecks.PumpUntil(() => root.Photos.Count == 180);
@@ -218,15 +213,15 @@ internal static class WorkspaceLookChecks
         Click(window.RevealFolderButton);
         window.UpdateLayout();
         root.IsExpanded = true;
-        var browse = (Task)Invoke(window, "BrowseFolder", root.Folders[0], false)!;
+        var browse = window.BrowseFolderForTests(root.Folders[0], false);
         InteractionChecks.PumpUntil(() => browse.IsCompleted);
-        var activePhoto = Get<string>(window, "file");
+        var activePhoto = window.CurrentFile;
         Click(window.CollapseFoldersButton);
         check(!root.IsExpanded && window.FolderBreadcrumb.Text.EndsWith("nested", StringComparison.Ordinal) &&
-            Get<string>(window, "file") == activePhoto, "Collapse all preserves the browsed folder and the current photo");
+            window.CurrentFile == activePhoto, "Collapse all preserves the browsed folder and the current photo");
         Click(window.UpFolderButton);
         InteractionChecks.PumpUntil(() => window.FolderPhotoCount.Text == Loc.Format("{0} 张照片", 180));
-        check(Get<string>(window, "file") == activePhoto, "Navigating up repopulates only the thumbnail list");
+        check(window.CurrentFile == activePhoto, "Navigating up repopulates only the thumbnail list");
         var rows = window.SidebarGallery.Items.OfType<MainWindow.WorkspacePhotoRow>().ToArray();
         check(rows.Length == 90 && rows.All(row => row.Columns == 2 && row.Photos.Count == 2),
             "The separate sidebar photo viewport keeps two equal columns");
@@ -236,7 +231,7 @@ internal static class WorkspaceLookChecks
         FlushGalleryLayout();
         var before = scroller.VerticalOffset;
         check(before > 2500, $"The gallery scrolls by pixels through its virtual rows ({before}/{scroller.ExtentHeight}, viewport {scroller.ViewportHeight})");
-        var enter = (Task)Invoke(window, "BrowseFolder", root.Folders[0], false)!;
+        var enter = window.BrowseFolderForTests(root.Folders[0], false);
         InteractionChecks.PumpUntil(() => enter.IsCompleted);
         Click(window.UpFolderButton);
         FlushGalleryLayout();
@@ -248,7 +243,7 @@ internal static class WorkspaceLookChecks
         check(root.Photos.Count(entry => entry.Thumbnail != null) < root.Photos.Count,
             "The browser decodes thumbnails for the visible gallery without loading the whole folder");
         var originalBrightness=ThumbnailBrightness(neighbor.Thumbnail!);
-        var previewStore=Get<EditStore>(window,"editStore");
+        var previewStore=window.EditStoreInstance!;
         var previewIdentity=OriginalIdentity.Read(neighbor.Path);
         var previewSettings=PhotoInput.PrepareInputSettings(neighbor.Path,new Adjustments());
         previewSettings.Set(Parameter.Exposure,1);
@@ -276,13 +271,13 @@ internal static class WorkspaceLookChecks
         check(beforeReplacement.Length == afterReplacement.Length && beforeReplacement.Modified == afterReplacement.Modified &&
             beforeReplacement.Created == afterReplacement.Created && beforeReplacement.FileID != afterReplacement.FileID,
             "The replacement keeps its name, length and timestamps but has a different file ID");
-        var refreshTimer = Get<DispatcherTimer>(window, "thumbnailRefresh");
+        var refreshTimer = window.ThumbnailRefreshTimer;
         var refreshInterval = refreshTimer.Interval;
         // Complete the reload before the debounce can observe the temporarily empty gallery.
         refreshTimer.Interval = TimeSpan.FromSeconds(10);
         try
         {
-            var reload = (Task)Invoke(window, "BrowseFolder", root, true)!;
+            var reload = window.BrowseFolderForTests(root, true);
             InteractionChecks.PumpUntil(() => reload.IsCompleted);
             reload.GetAwaiter().GetResult();
             FlushGalleryLayout();
@@ -306,12 +301,12 @@ internal static class WorkspaceLookChecks
         });
         var menu = tile.ContextMenu!;
         check(menu.IsOpen && menu.PlacementTarget == tile &&
-            Get<string>(window, "file") == activePhoto, "Photo right-click opens its context menu and leaves the current photo unchanged");
+            window.CurrentFile == activePhoto, "Photo right-click opens its context menu and leaves the current photo unchanged");
         menu.IsOpen = false;
         Click(window.LibraryToggleButton);
         Click(window.SelectionWorkspaceButton);
-        InteractionChecks.PumpUntil(()=>!Get<bool>(window,"readingFolder") &&
-            !Get<DispatcherTimer>(window,"photoFolderRefresh").IsEnabled && window.SelectionGallery.Items.Count > 0);
+        InteractionChecks.PumpUntil(()=>!window.ReadingFolder &&
+            !window.PhotoFolderRefreshTimer.IsEnabled && window.SelectionGallery.Items.Count > 0);
         FlushGalleryLayout();
         check(window.SelectionGallery.Items.OfType<MainWindow.WorkspacePhotoRow>().First().Columns >= 3,
             "The contact sheet adds columns when it uses the center of the window");
@@ -319,7 +314,7 @@ internal static class WorkspaceLookChecks
             .First(button => button.DataContext is LibraryEntry);
         Click(photo);
         check(window.SelectionActions.IsVisible && window.WorkspaceSelectionCount.Text == Loc.Format("已选 {0} 张", 1) &&
-            Get<string>(window, "file") == activePhoto, "Clicking a contact sheet photo marks it without changing the current photo");
+            window.CurrentFile == activePhoto, "Clicking a contact sheet photo marks it without changing the current photo");
         Click(window.EditingWorkspaceButton);
         FlushGalleryLayout();
 

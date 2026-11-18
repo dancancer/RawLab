@@ -1,12 +1,10 @@
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 using RawLab.Windows;
 
 internal static class QuickPresetUiChecks
 {
-    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static void Run(string repo, string raw, Action<bool, string> check)
     {
         var output = Path.Combine(Path.GetFullPath(repo), ".cache", "tmp", "quick-preset-ui", Guid.NewGuid().ToString("N"));
@@ -15,20 +13,20 @@ internal static class QuickPresetUiChecks
         var target = Path.Combine(output, "target" + Path.GetExtension(raw)); File.Copy(raw, target);
         var app = TestWindowState.CreateApplication(); SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         Loc.Initialize("en"); foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
-        var window = new MainWindow(); TestWindowState.Isolate(window, output);
-        var edits = new EditStore(Path.Combine(output, "edits")); var library = new AdjustmentPresetStore(Path.Combine(output, "presets"));
-        Set(window, "editStore", edits); Set(window, "presetStore", library);
+        var window = TestWindowState.CreateIsolatedWindow(output, editDirectory: Path.Combine(output, "edits"));
+        var edits = window.EditStoreInstance!; var library = new AdjustmentPresetStore(Path.Combine(output, "presets"));
+        window.PresetStoreInstance = library;
         try {
             window.GpuMode.SelectedIndex = 1; window.Show(); window.OpenFile(source); Ready(window);
             void Change(double exposure, double? contrast = null) {
-                var settings = Get<Adjustments>(window, "settings"); settings.Set(Parameter.Exposure, exposure);
+                var settings = window.Settings; settings.Set(Parameter.Exposure, exposure);
                 if (contrast.HasValue) settings.Set(Parameter.Contrast, contrast.Value);
-                Invoke(window, "MarkEdited"); Invoke(window, "RefreshControls");
+                window.MarkEditedForTests(); window.RefreshControlsForTests();
             }
             Change(.7);
             var preset = library.Create("Quick exposure", window.CapturePresetAdjustments(AdjustmentScope.Custom([AdjustmentField.Exposure])));
             Change(.2);
-            var session = (AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession", Private)!.GetValue(window)!;
+            var session = window.TransferSessionForTests;
             var count = session.Transactions.Count;
             window.ShowQuickPresets();
             var applying = window.ApplyPresetToCurrentPhoto(preset);
@@ -37,10 +35,10 @@ internal static class QuickPresetUiChecks
             check(window.QuickPresetPhase == QuickPresetPhase.Saved && edits.Find(source)!.Settings.Values[1] == .7 &&
                 session.Transactions.Count == count + 1 && session.Transactions.Last().Action == AdjustmentHistoryAction.Preset,
                 "Quick one-click apply saves one preset transaction and rejects duplicate submit");
-            Invoke(window, "RunPhotoHistory", true); Ready(window);
+            window.RunPhotoHistoryForTests(true); Ready(window);
             check(window.QuickPresetPhase == QuickPresetPhase.Idle && window.QuickPresetSurface.IsVisible && edits.Find(source)!.Settings.Values[1] == .2,
                 "Global Undo dismisses the previous quick preset result and preserves browsing");
-            Invoke(window, "RunPhotoHistory", false); Ready(window);
+            window.RunPhotoHistoryForTests(false); Ready(window);
             var saved = edits.ReadState(source);
             Done(window.ApplyPresetToCurrentPhoto(preset));
             check(window.QuickPresetPhase == QuickPresetPhase.Unchanged && edits.ReadState(source).SameAs(saved) && session.Transactions.Count == count + 1,
@@ -66,16 +64,16 @@ internal static class QuickPresetUiChecks
             Late(() => Change(.4), "later ordinary edit");
             check(edits.Find(source)!.Settings.Values[1] == .4, "A later ordinary edit is never replaced by the prepared preset");
             Late(() => window.OpenFile(target), "source switch"); Ready(window);
-            check(Get<string>(window, "file") == target && Get<Adjustments>(window, "settings")[Parameter.Exposure] == 0,
+            check(window.CurrentFile == target && window.Settings[Parameter.Exposure] == 0,
                 "A late prepared preset cannot leak into the newly opened photo");
             window.OpenFile(source); Ready(window);
             window.ShowQuickPresets();
             var failing = new EditStore(Path.Combine(output, "edits"), (_, _) => throw new IOException("Injected quick preset save failure"));
-            Set(window, "editStore", failing);
+            window.EditStoreInstance = failing;
             Done(window.ApplyPresetToCurrentPhoto(preset));
             check(window.QuickPresetPhase == QuickPresetPhase.Failed,
                 "Quick preset save failure cannot report Saved");
-            Set(window, "editStore", edits);
+            window.EditStoreInstance = edits;
             Done(window.ApplyPresetToCurrentPhoto(preset)); Ready(window);
             check(window.QuickPresetPhase == QuickPresetPhase.Saved, "Quick retry performs a fresh prepare and saves");
             Change(.7, 1.3); var ordinary = edits.ReadState(source); window.UndoQuickPreset();
@@ -86,7 +84,4 @@ internal static class QuickPresetUiChecks
     }
     private static void Done(Task work) { InteractionChecks.PumpUntil(() => work.IsCompleted); work.GetAwaiter().GetResult(); }
     private static void Ready(MainWindow window) => InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-    private static T Get<T>(object owner, string name) => (T)owner.GetType().GetField(name, Private)!.GetValue(owner)!;
-    private static void Set(object owner, string name, object value) => owner.GetType().GetField(name, Private)!.SetValue(owner, value);
-    private static object? Invoke(object owner, string name, params object[] arguments) => owner.GetType().GetMethod(name, Private)!.Invoke(owner, arguments);
 }

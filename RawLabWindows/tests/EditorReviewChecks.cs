@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,7 +9,6 @@ using RawLab.Windows;
 
 internal static partial class EditorReviewChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal enum Part { All, BusyBatchFirst, BusyForegroundFirst, BusyExportBatchFirst, BusyExportFirst, BusyResumePreview,
         CloseJournalRetry, CloseJournalSync, CloseIdleNoop, CloseThumbnailQueue, CloseRunning, ResizeImportFirst,
         ResizeBatchBeforeImport, ResizeExportFirst, ResizeBatchBeforeExport, LibraryDrop, DialogGeometry, DialogLens, UsageLifecycle, ClosePending, WorkspaceReset }
@@ -70,10 +68,9 @@ internal static partial class EditorReviewChecks
 
         MainWindow Open(string name)
         {
-            var window=new MainWindow();
-            TestWindowState.Isolate(window,Path.Combine(output,name));
-            Set(window,"editStore",new EditStore(Path.Combine(output,name,"edits")));
-            Set(window,"batchJournal",new BatchJournal(Path.Combine(output,name,"batch")));
+            var window=TestWindowState.CreateIsolatedWindow(Path.Combine(output,name));
+            window.EditStoreInstance=new EditStore(Path.Combine(output,name,"edits"));
+            window.BatchJournalInstance=new BatchJournal(Path.Combine(output,name,"batch"));
             window.GpuMode.SelectedIndex=1;window.Show();
             InteractionChecks.PumpUntil(()=>window.IsLoaded);window.OpenFile(photo);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);

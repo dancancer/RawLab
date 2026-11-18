@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
@@ -37,23 +36,19 @@ internal static class InteractionChecks
         app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window=new MainWindow{Width=1440,Height=920};
-        TestWindowState.Isolate(window,Path.Combine(repo,"build","windows-interactions"));
+        var window=TestWindowState.CreateIsolatedWindow(Path.Combine(repo,"build","windows-interactions"),width:1440,height:920);
         window.Show();
         try
         {
-            var edgeField=typeof(MainWindow).GetField("previewLongEdge",BindingFlags.Instance|BindingFlags.NonPublic)!;
-            var renderEdge=typeof(MainWindow).GetMethod("RenderEdge",BindingFlags.Instance|BindingFlags.NonPublic)!;
-            edgeField.SetValue(window,0);
-            if((int)renderEdge.Invoke(window,[true])! != 2000 || (int)renderEdge.Invoke(window,[false])! != 0)
+            window.PreviewLongEdge=0;
+            if(window.RenderEdgeForTests(true) != 2000 || window.RenderEdgeForTests(false) != 0)
                 throw new Exception("Native-pixel dragging must stay bounded and release must restore native");
-            edgeField.SetValue(window,1216);
-            if((int)renderEdge.Invoke(window,[true])! != 1216)
+            window.PreviewLongEdge=1216;
+            if(window.RenderEdgeForTests(true) != 1216)
                 throw new Exception("Fit dragging must retain the viewport edge");
-            edgeField.SetValue(window,2000);
-            var imageField=typeof(PhotoCanvas).GetField("image",BindingFlags.Instance|BindingFlags.NonPublic)!;
+            window.PreviewLongEdge=2000;
             var timer=Stopwatch.StartNew();window.OpenFile(raw);
-            PumpUntil(()=>imageField.GetValue(window.ResultCanvas)!=null);
+            PumpUntil(()=>window.ResultCanvas.ImageSource!=null);
             Console.WriteLine($"first-image-ms={timer.Elapsed.TotalMilliseconds:F1}; status={window.Status.Text}");
             PumpUntil(()=>window.ExportPng.IsEnabled);
             Console.WriteLine($"exact-ready-ms={timer.Elapsed.TotalMilliseconds:F1}");
@@ -86,9 +81,9 @@ internal static class InteractionChecks
             for(var i=0;i<60;i++){viewport.Move(new Vector(i%2==0 ? 2 : -2,0));window.ResultCanvas.UpdateLayout();target.Clear();target.Render(window.ResultCanvas);}
             Console.WriteLine($"offscreen-pan-mean-ms={timer.Elapsed.TotalMilliseconds/60:F2}; managed-bytes={GC.GetAllocatedBytesForCurrentThread()-allocated}");
             viewport.Fit();PumpUntil(()=>window.ExportPng.IsEnabled);
-            var placeholder=(BitmapSource)imageField.GetValue(window.ResultCanvas)!;
+            var placeholder=window.ResultCanvas.ImageSource!;
             timer.Restart();window.OpenFile(raw,placeholder);
-            if(!ReferenceEquals(imageField.GetValue(window.ResultCanvas),placeholder) || window.ExportPng.IsEnabled)
+            if(!ReferenceEquals(window.ResultCanvas.ImageSource,placeholder) || window.ExportPng.IsEnabled)
                 throw new Exception("Selecting a thumbnail must paint immediately without enabling export");
             Console.WriteLine($"thumbnail-dispatch-ms={timer.Elapsed.TotalMilliseconds:F2}");
             var output=Path.Combine(repo,"build","interaction-verification");Directory.CreateDirectory(output);
@@ -96,27 +91,26 @@ internal static class InteractionChecks
             var other=Path.Combine(inputs,"other"+Path.GetExtension(raw));File.Copy(raw,other);
             var otherPlaceholder=BitmapSource.Create(2,1,96,96,PixelFormats.Rgb24,null,new byte[]{255,0,0,0,255,0},6);otherPlaceholder.Freeze();
             window.OpenFile(other,otherPlaceholder);
-            if(imageField.GetValue(window.ResultCanvas)==null || imageField.GetValue(window.NeutralCanvas)==null ||
-               ReferenceEquals(imageField.GetValue(window.ResultCanvas),placeholder) ||
-               ReferenceEquals(imageField.GetValue(window.NeutralCanvas),placeholder) || window.ExportPng.IsEnabled)
+            if(window.ResultCanvas.ImageSource==null || window.NeutralCanvas.ImageSource==null ||
+               ReferenceEquals(window.ResultCanvas.ImageSource,placeholder) ||
+               ReferenceEquals(window.NeutralCanvas.ImageSource,placeholder) || window.ExportPng.IsEnabled)
                 throw new Exception("Switching photos must replace both placeholder canvases without enabling export");
-            var previousPlaceholder=imageField.GetValue(window.ResultCanvas);var previousNeutral=imageField.GetValue(window.NeutralCanvas);
+            var previousPlaceholder=window.ResultCanvas.ImageSource;var previousNeutral=window.NeutralCanvas.ImageSource;
             window.OpenFile(raw);
             // 当前照片的内嵌预览可能已就绪；只排除上一张照片的占位图。
-            if(ReferenceEquals(imageField.GetValue(window.ResultCanvas),previousPlaceholder) ||
-               ReferenceEquals(imageField.GetValue(window.NeutralCanvas),previousNeutral) || window.ExportPng.IsEnabled)
+            if(ReferenceEquals(window.ResultCanvas.ImageSource,previousPlaceholder) ||
+               ReferenceEquals(window.NeutralCanvas.ImageSource,previousNeutral) || window.ExportPng.IsEnabled)
                 throw new Exception("Opening without a thumbnail must not retain the previous photo's placeholder");
             PumpUntil(()=>window.ExportPng.IsEnabled);
-            if(imageField.GetValue(window.ResultCanvas)==null || ReferenceEquals(imageField.GetValue(window.ResultCanvas),otherPlaceholder))
+            if(window.ResultCanvas.ImageSource==null || ReferenceEquals(window.ResultCanvas.ImageSource,otherPlaceholder))
                 throw new Exception("An exact result must replace the opening placeholder");
             var invalid=Path.Combine(inputs,"invalid.png");File.WriteAllText(invalid,"invalid image");
             window.OpenFile(invalid,otherPlaceholder);
-            var failedField=typeof(MainWindow).GetField("renderFailed",BindingFlags.Instance|BindingFlags.NonPublic)!;
-            PumpUntil(()=>(bool)failedField.GetValue(window)!);
-            if(imageField.GetValue(window.ResultCanvas)!=null || imageField.GetValue(window.NeutralCanvas)!=null || window.ExportPng.IsEnabled)
+            PumpUntil(()=>window.RenderFailed);
+            if(window.ResultCanvas.ImageSource!=null || window.NeutralCanvas.ImageSource!=null || window.ExportPng.IsEnabled)
                 throw new Exception("A failed initial render must clear its placeholder without enabling export");
             window.OpenFile(raw,otherPlaceholder);PumpUntil(()=>window.ExportPng.IsEnabled);
-            if(ReferenceEquals(imageField.GetValue(window.ResultCanvas),otherPlaceholder))
+            if(ReferenceEquals(window.ResultCanvas.ImageSource,otherPlaceholder))
                 throw new Exception("A recovered exact result must replace the opening placeholder");
             PumpUntil(()=>{try{Directory.Delete(inputs,true);return true;}catch(IOException){return false;}});
             Console.WriteLine("PASS thumbnail placeholder lifecycle");

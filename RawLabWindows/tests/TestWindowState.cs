@@ -1,6 +1,6 @@
 using System.IO;
 using System.Net.Http;
-using System.Reflection;
+using System.Windows;
 using RawLab.Windows;
 
 internal static class TestWindowState
@@ -18,34 +18,55 @@ internal static class TestWindowState
         var path=Path.Combine(directory,"job.json");
         if(File.Exists(path))throw new InvalidOperationException("Preserve existing batch job: "+path+". Use an isolated test account.");
     }
+    internal static AppPaths CreateIsolatedPaths(string output)
+    {
+        var paths=AppPaths.CreateIsolated(output);
+        Directory.CreateDirectory(paths.Root);
+        return paths;
+    }
+    internal static UsageAnalytics CreateDisabledAnalytics(AppPaths paths)
+    {
+        Directory.CreateDirectory(paths.Root);
+        File.WriteAllText(paths.UsageSettingsPath,"{\"Enabled\":false}");
+        return new UsageAnalytics(paths.UsageSettingsPath,new UnavailableUsageAnalyticsTransport());
+    }
+    internal static MainWindow CreateIsolatedWindow(
+        string output,
+        string? lookLibraryDirectory=null,
+        AIDenoiseJob? aiJob=null,
+        DesktopUpdateController? desktopUpdates=null,
+        string? editDirectory=null,
+        UsageAnalytics? usageAnalytics=null,
+        double? width=null,
+        double? height=null)
+    {
+        var paths=CreateIsolatedPaths(output);
+        var analytics=usageAnalytics ?? CreateDisabledAnalytics(paths);
+        var updates=desktopUpdates ?? new DesktopUpdateController(
+            new UnavailableUpdateAdapter("configuration"),
+            new(),
+            new(paths.UpdatesDirectory),
+            typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown",
+            "",
+            automaticCheck:false);
+        var edits=new EditStore(editDirectory ?? paths.EditsDirectory);
+        var window=new MainWindow(
+            paths,
+            analytics,
+            lookLibraryDirectory ?? paths.LooksDirectory,
+            aiJob,
+            updates,
+            edits);
+        window.UpdateNotice.Visibility=Visibility.Collapsed;
+        if(width is {} w)window.Width=w;
+        if(height is {} h)window.Height=h;
+        return window;
+    }
     internal static void Isolate(MainWindow window,string output,HttpClient? updatesClient=null,string? editDirectory=null)
     {
-        var root=Path.Combine(Path.GetFullPath(output),"profile-"+Guid.NewGuid().ToString("N")[..8]);Directory.CreateDirectory(root);
-        const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
-        void Set(string field,object value)=>typeof(MainWindow).GetField(field,flags)!.SetValue(window,value);
-        var desktop=typeof(MainWindow).GetField("desktopUpdates",flags)!.GetValue(window)!;
-        var updateDirectory=Path.Combine(root,"Updates");
-        typeof(DesktopUpdateController).GetField("store",flags)!.SetValue(desktop,new UpdateStore(updateDirectory));
-        typeof(DesktopUpdateController).GetField("backup",flags)!.SetValue(desktop,new UpdateDataBackup(root,updateDirectory));
-        typeof(DesktopUpdateController).GetField("preferences",flags)!.SetValue(desktop,new UpdatePreferences{AutomaticCheck=false});
+        var paths=CreateIsolatedPaths(output);
         // 统计默认开启；测试窗口显式写入私有的“关闭”，既不沿用默认同意，也不生成安装标识
-        var usage=Path.Combine(root,"usage.json");File.WriteAllText(usage,"{\"Enabled\":false}");
-        Set("usageAnalytics",new UsageAnalytics(usage,new UnavailableUsageAnalyticsTransport()));
-        var notice=(System.Windows.FrameworkElement)window.FindName("UpdateNotice");
-        notice.Visibility=System.Windows.Visibility.Collapsed;
-        Set("editStore",new EditStore(editDirectory ?? Path.Combine(root,"edits")));
-        Set("photoPreviewCacheDirectory",Path.Combine(root,"photo-previews"));
-        Set("recentLooksPath",Path.Combine(root,"recent-looks.json"));
-        Set("workspaceWidthsPath", Path.Combine(root,"workspace-widths.json"));
-        Set("recentLooks",new RecentLooks());
-        Set("presetStore",new AdjustmentPresetStore(Path.Combine(root,"presets")));
-        Set("batchJournal",new BatchJournal(Path.Combine(root,"batch")));
-        Set("exportStagingDirectory",Path.Combine(root,"export-staging"));
-        Set("aiPreferenceStore",new AIGpuPreferenceStore(Path.Combine(root,"ai-gpu.json")));
-        Set("aiDiagnostics",new AIDiagnosticStore(Path.Combine(root,"ai-diagnostics")));
-        Set("aiPreference",new AIGpuPreference());
-        var library=typeof(MainWindow).GetField("library",flags)!.GetValue(window)!;
-        library.GetType().GetField("settingsPath",flags)!.SetValue(library,Path.Combine(root,"folders.json"));
-        ((System.Collections.IList)library.GetType().GetProperty("Roots")!.GetValue(library)!).Clear();
+        var analytics=CreateDisabledAnalytics(paths);
+        window.IsolateForTests(paths,analytics,editDirectory);
     }
 }

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../AppPaths.cs" Link="AppPaths.cs" />
     <Compile Include="../../Localization.cs" Link="Localization.cs" />
     <Compile Include="../../AtomicFileWrite.cs" Link="AtomicFileWrite.cs" />
     <Compile Include="../../Updates/UpdateState.cs" Link="UpdateState.cs" />
