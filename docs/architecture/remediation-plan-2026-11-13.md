@@ -7,7 +7,7 @@
      脚本/命令 + 断言名 + 撤掉修复后应红的位置。
   3. changelog.md 追加一行：日期 · PR · 涉及编号 · 状态变化。
   4. 产品决策的最新登记在 g-product-decisions.md；阶段表的最新维护在 f-overall-plan.md。
-     remediation-roadmap-2026-11-13.md 是同内容的早期快照（§2/§5/§6 已滞后），以本目录两文件为准，后续合并。
+     ../archive/architecture/remediation-roadmap-2026-11-13.md 是同内容的早期快照（§2/§5/§6 已滞后并已归档，参见 adr-2026-11-19-owner-transformation.md），以本目录两文件为准，后续合并。
 复核说明：独立复核请直接按「依据」列的命令与断言复跑，并撤掉对应修复确认变红——
 本表的「已修」只以代码核实和红/绿证据为准，不以 PR 标题为准。
 文档来源：codebase-review-2026-11-12.md、codebase-review-followup-2026-11-13.md、
@@ -49,6 +49,6 @@ architecture-review-2026-11-13.md。
 
 ## 关联文档
 
-- [整改路线图（早期快照）](remediation-roadmap-2026-11-13.md)：§2/§5/§6 与 f-overall-plan.md、g-product-decisions.md 同源，已滞后，待合并。
+- [整改路线图（早期快照，已归档）](../archive/architecture/remediation-roadmap-2026-11-13.md)：§2/§5/§6 与 f-overall-plan.md、g-product-decisions.md 同源，已滞后并由 [Owner 改造 ADR](adr-2026-11-19-owner-transformation.md) 取代。
 - [架构评审补充](architecture-review-addendum-2026-11-13.md)：Q1 决策依据、残余风险（§4 执行期补查）。
 - 评审门禁与编排纪律（用户裁定）：所有 PR 合入前必须 carbon 评审通过（纯文档豁免）；任务编排与关键决策走 /agy-lead（carbon）。

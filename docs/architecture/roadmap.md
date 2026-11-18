@@ -4,7 +4,7 @@
 
 > **基线与协作治理说明**：
 > - 本路线图记录规划意图与验收标准，不预设发布版本号或日期，不将计划项视为已实现或已通过设备验收；各平台实际支持范围与限制以对应版本发布说明及实测证据为准。
-> - 代码与语义规格整改由 [整改路线图（2026-11-13）](remediation-roadmap-2026-11-13.md) 统筹（确立 `Shared/specs/` 字段规格、传输/重置场景向量、版本登记表与 GPU/CPU 对拍十条不变量）。涉及跨端新参数与调整语义的功能阶段，须建立在该规格层基座之上按 [集成协作规范](../process/integration-workflow.md) 推进。
+> - 代码与工程结构改造由 [Owner 架构与工程改造决策 ADR](adr-2026-11-19-owner-transformation.md) 统筹，承接并取代已归档的 [整改路线图（2026-11-13）](../archive/architecture/remediation-roadmap-2026-11-13.md)（延续 `Shared/specs/` 字段规格、传输/重置场景向量、版本登记表与渲染对拍约束）。涉及跨端新参数与调整语义的功能阶段，须建立在该规格层基座之上按 [集成协作规范](../process/integration-workflow.md) 推进。
 
 ---
 
@@ -25,7 +25,7 @@
 1. **坚守「参数化非破坏性显影工作站」定位（[PRODUCT.md](../../PRODUCT.md) · [DESIGN.md](../../DESIGN.md)）**
    - **纳入范围**：相机三原色校准、窄带点颜色与颜色收敛、可选颜色、胶片物理光学、定量像素取样与无损观察视图、参数化几何/范围蒙版、端侧语义与景深蒙版、应用内可撤销调色助手、轻量非破坏性污点修复、广色域与 `16-bit` 无损 TIFF 导出。
    - **明确不做**：不做传统像素图层合成、不做手工高低频磨皮画笔、不做液化变形、不做生成式 AI 扩图或换天；重度商业像素精修通过 **`16-bit ProPhoto RGB / Adobe RGB TIFF`** 无损导出交由外部专业精修工具接力。
-2. **共享核心唯一真源与规格层先导（[色彩约定](../../lutools/docs/color-contract.md) · [整改路线图](remediation-roadmap-2026-11-13.md)）**
+2. **共享核心唯一真源与规格层先导（[色彩约定](../../lutools/docs/color-contract.md) · [Owner 改造决策 ADR](adr-2026-11-19-owner-transformation.md) · [历史整改路线图](../archive/architecture/remediation-roadmap-2026-11-13.md)）**
    - 凡属显影、调色、定量遥测、蒙版计算与色彩管理的核心算子，统一沉淀于 `lutools` C++17 核心与 C ABI，确保四端客户端、批量导出、CLI 与 Agent 接口语义完全一致。
    - 所有跨端新参数须一次性纳入共享字段规格、传输/重置场景向量、版本登记表与 C ABI 布局夹具验证，不在单端或两套代码中重复实现。
 3. **零值恒等向后兼容与原片只读（[迁移契约](../../lutools/docs/processing-migration.md)）**
