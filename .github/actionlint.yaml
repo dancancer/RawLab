@@ -1,5 +1,8 @@
 self-hosted-runner:
   labels:
+    # Official GitHub-hosted preview label, missing from pinned actionlint 1.7.12.
+    # This is a linter compatibility entry, not a self-hosted execution route.
+    - xcode-27
     - rawlab-android
     - rawlab-windows
     - rawlab-apple

@@ -119,26 +119,27 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(external["checks"], "models")
                 self.assertEqual(internal["checks"], "full")
 
-    def test_fork_pull_requests_never_select_a_self_hosted_platform(self):
-        """A fork cannot run on the self-hosted macOS and iOS runners, so selecting them makes the aggregate result red."""
-        files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
-        internal, _, _, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
-        external, cold, _, reason = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
-        self.assertEqual(internal, {"macos", "ios", "android", "windows"})
-        self.assertEqual(external, {"android", "windows"})
-        self.assertFalse(cold)
-        self.assertIn("fork pull request", reason)
+    def test_fork_pull_requests_select_the_same_hosted_platforms(self):
+        for path in ("Shared/AdjustmentTransfer.swift", "RawLab/RawLab/App.swift", "RawLabMac/build.sh"):
+            with self.subTest(path=path):
+                files = {"HEAD^1": [path]}
+                internal, _, _, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
+                external, cold, _, _ = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
+                self.assertEqual(external, internal)
+                self.assertEqual(external, selection.affected([path]))
+                self.assertFalse(cold)
 
     def test_fork_pull_request_leaves_a_consistent_verify_result(self):
         files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
         platforms, _, _, _ = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
-        # 与真实 CI 一致：托管平台（android、windows）可执行——Windows 作业的
-        # 源门禁放行 windows-2022 路由（test_workflow 锁住该条件），自托管作业被跳过。
-        runnable = platforms & {"android", "windows"}
-        results = {platform: ("success" if platform in runnable else "skipped")
-                   for platform in selection.PLATFORMS}
+        self.assertEqual(platforms, EVERY)
+        results = {platform: "success" for platform in selection.PLATFORMS}
         needs = VerifyTests().needs(platforms, results)
         self.assertEqual(selection.verify(needs), [])
+        for platform in ("macos", "ios"):
+            needs[platform]["result"] = "skipped"
+            self.assertTrue(selection.verify(needs), "a selected hosted Apple check must not silently skip")
+            needs[platform]["result"] = "success"
 
     def test_pushes_compare_with_the_last_successful_push_run(self):
         seen = []
@@ -162,6 +163,15 @@ class SelectionTests(unittest.TestCase):
             selection.select("schedule", {}, "s", unavailable, unavailable)
         self.assertEqual(selection.select("workflow_dispatch", {}, "s", unavailable, unavailable)[:2], (EVERY, False))
 
+    def test_mac_matrix_preserves_native_architectures_on_hosted_runners(self):
+        for checks in selection.CHECK_GROUPS:
+            rows = selection.macos_matrix(checks)
+            self.assertEqual(rows[0], {"runner": "macos-26", "arch": "arm64", "jobs": "2", "suite": "all"})
+            for row in rows[1:]:
+                self.assertEqual(row["runner"], "macos-26-intel")
+                self.assertEqual(row["arch"], "x86_64")
+                self.assertEqual(row["jobs"], "4")
+
     def test_mac_matrix_runs_models_once_and_builds_once_per_architecture(self):
         self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("models")], [("arm64", "all")])
         self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("build")], [("arm64", "all"), ("x86_64", "build")])
@@ -171,27 +181,21 @@ class SelectionTests(unittest.TestCase):
 
 
 class WindowsSchedulingTests(unittest.TestCase):
-    def test_windows_models_and_warm_prs_use_hosted_windows(self):
-        dedicated = ["self-hosted", "windows", "x64", "rawlab-windows"]
-        for event, cold, want in (
-            ("pull_request", False, "windows-2022"),
-            ("pull_request", True, dedicated),
-            ("push", False, dedicated),
-            ("workflow_dispatch", False, dedicated),
-            ("workflow_dispatch", True, dedicated),
-        ):
-            with self.subTest(event=event, cold=cold):
-                self.assertEqual(selection.windows_runner(event, cold), want)
-                self.assertEqual(selection.windows_runner(event, cold, "models"), "windows-2022")
+    def test_every_windows_group_uses_hosted_windows(self):
+        for event in ("pull_request", "push", "workflow_dispatch"):
+            for cold in (False, True):
+                for checks in selection.CHECK_GROUPS:
+                    with self.subTest(event=event, cold=cold, checks=checks):
+                        self.assertEqual(selection.windows_runner(event, cold, checks), "windows-2022")
 
     def test_selection_cli_emits_a_json_runner_for_the_workflow(self):
         for event_name, event, want in (
             ("pull_request", pull(), "windows-2022"),
             ("pull_request", pull("main", "release/0.9.0"),
-             ["self-hosted", "windows", "x64", "rawlab-windows"]),
+             "windows-2022"),
             ("workflow_dispatch", {}, "windows-2022"),
             ("workflow_dispatch", {"inputs": {"platform": "windows", "checks": "full"}},
-             ["self-hosted", "windows", "x64", "rawlab-windows"]),
+             "windows-2022"),
         ):
             with self.subTest(event=event_name, payload=event), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)

@@ -127,11 +127,7 @@ jobs:
   macos:
     name: macOS ${{ needs.changes.outputs.checks }} (${{ matrix.arch }}, ${{ matrix.suite }})
     needs: changes
-    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
-    if: >-
-      needs.changes.outputs.macos == 'true' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+    if: needs.changes.outputs.macos == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -149,7 +145,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: matrix.arch == 'x86_64'
         with:
           python-version: '3.12'
       - name: Identify native dependency cache
@@ -157,9 +152,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
-          if [[ "$RAWLAB_ARCH" == x86_64 ]]; then
-            brew install pkg-config autoconf automake libtool
-          fi
+          brew install pkg-config autoconf automake libtool
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
@@ -290,14 +283,7 @@ jobs:
   windows:
     name: Windows ${{ needs.changes.outputs.checks }}
     needs: changes
-    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
-    # fork PR 的选择结果永远路由到托管 windows-2022（selector 不会判它冷构建），
-    # 因此托管路由放行 fork，自托管路由（冷构建与手动 build/native/full）保持同仓库限定。
-    if: >-
-      needs.changes.outputs.windows == 'true' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository ||
-       needs.changes.outputs.windows_runner == '"windows-2022"')
+    if: needs.changes.outputs.windows == 'true'
     runs-on: ${{ fromJSON(needs.changes.outputs.windows_runner) }}
     timeout-minutes: 120
     env:
@@ -732,20 +718,21 @@ jobs:
   ios:
     name: iOS ${{ needs.changes.outputs.checks }}
     needs: changes
-    # 自托管 runner 只在同仓库分支上执行：fork 的 PR 会带来任意代码。
-    if: >-
-      needs.changes.outputs.ios == 'true' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
+    if: needs.changes.outputs.ios == 'true'
+    # macos-26 carries Xcode 26; this hosted image supplies the required iOS 27.1 SDK.
+    runs-on: xcode-27
     timeout-minutes: 180
     env:
-      JOBS: '6'
-      CMAKE_BUILD_PARALLEL_LEVEL: '6'
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
       - name: Check iOS SDK for iPhone Duo
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -764,6 +751,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
+          brew install pkg-config autoconf automake libtool
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
