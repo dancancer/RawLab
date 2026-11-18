@@ -144,7 +144,7 @@ protocols, resource validity, and build/test failure propagation.
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
 | macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
 | Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
-| Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
+| Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
 | iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
@@ -214,95 +214,6 @@ selectors. `native` omits independent models; choose `full` when both are needed
 Confirm the logged checkout SHA and keep the manual result separate from
 `CI result`. No dispatch, local build or green model result authorizes signing,
 release publication or deployment.
-
-### JIT Dispatcher for Self-Hosted Jobs (Opt-In, Not Enabled)
-
-This section documents the optional persistent-runner tooling only. The current
-workflow has no self-hosted jobs and does not invoke this dispatcher. Re-enabling
-any persistent route requires separate authorization and a review of fork safety.
-
-[`scripts/ci/jit_dispatch.py`](../../scripts/ci/jit_dispatch.py) is the opt-in WP-01
-replacement for the resident `Runner.Listener` on the Apple pool Macs. While it stays
-disabled — the current state — the resident listener serves every run exactly as before;
-enabling it is a host-side change, not a workflow change, and no CI file loads it.
-
-The dispatcher polls `GET /repos/<repo>/actions/runs` for `queued` and `in_progress`
-runs and judges each run only by GitHub's server-side fields, which fork workflow YAML
-cannot forge: the run `event`, `head_repository.full_name`, and the queued jobs'
-`labels` (a job is only claimable when its label set is one this machine actually
-registers). A run may reach the physical machine only when it is a `push` on this
-repository or an operator admitted it through the `RAWLAB_JIT_ALLOWLIST` environment
-variable (comma-separated `@<head_sha>`-pinned targets: same-repo `pr#<number>@<head_sha>`,
-`<run_id>@<head_sha>`, `<head-repo>@<head_sha>`, or `<head-repo>:<head-branch>@<head_sha>`;
-because GitHub REST `workflow_run` returns `pull_requests: []` for external fork PRs,
-`pr#<number>@<head_sha>` matches same-repository PRs only and external forks must use
-`<run_id>@<head_sha>` or `<owner>/<repo>:<branch>@<head_sha>`;
-unpinned entries or `head_sha` mismatches are refused). Claimed
-runs get a `POST .../runners/generate-jitconfig` registration (`name` +
-`runner_group_id` + `labels`; a 2026-11-14 live probe against API version 2022-11-28
-pinned the contract: omitting the group answers 422, the response field is
-`encoded_jit_config`, and JIT runners are single-use by design — one job, then
-deregister). The POST creates the runner registration immediately, so a launch that
-fails to start triggers a best-effort DELETE of that registration (Settings →
-runners covers the residual case) instead of leaking one offline runner per poll. Fork
-and non-conforming runs are never claimed: they wait in the queue and expire. One
-caveat is stated, not hidden — the JIT service hands a started runner the oldest
-queued job carrying the label (FIFO), so an *already approved* fork job can still be
-picked up by a runner dispatched for a trusted run; the review gate stays the fork
-approval policy above, while the dispatcher removes the standing listener that would
-execute unreviewed queue contents unconditionally.
-
-- **Enable (host-side, one Mac at a time)**: unpack the pinned `actions/runner`
-  archive into a **fresh** directory (`mkdir -p ~/jit-runner && tar -xzf
-  <runner-archive> -C ~/jit-runner`; never reuse the resident runner directory, whose
-  `.runner`/`.credentials` a JIT run would overwrite and deregister) and copy in the
-  provisioned environment files — `cp <resident-runner>/.path <resident-runner>/.env
-  ~/jit-runner/`, environment only, never `.runner*`/`.credentials*`/`.service` —
-  because the Apple jobs resolve `python`, `DEVELOPER_DIR` and the cache keys from
-  exactly those files; symlink the new directory's `_work` to the pool volume; stop
-  the resident runner's user agent (`./svc.sh stop` in the runner directory, or its
-  `launchctl bootout gui/$(id -u)/<runner-agent>`); preview one queue pass with
-  `RAWLAB_JIT_TOKEN=<PAT> python3 scripts/ci/jit_dispatch.py --once --dry-run`
-  (plain `--once` decides *and dispatches one job*; both preview and dispatch take
-  `--runner-dir ~/jit-runner` for the real launch). The dispatcher starts `./run.sh`
-  from the archive root with the config in `ACTIONS_RUNNER_INPUT_JITCONFIG` —
-  `./runsvc.sh` at the root exists only after `svc.sh install`, and `--launch-command
-  ./bin/runsvc.sh` is the service-mode override; store `RAWLAB_JIT_TOKEN=<PAT>` in a `0600`
-  env file (`mkdir -p ~/RawLabCI && chmod 600 ~/RawLabCI/jit.env`) instead of putting the
-  plaintext token in the plist, then copy
-  [`scripts/ci/launchd/com.rawlab.jit-dispatcher.plist`](../../scripts/ci/launchd/com.rawlab.jit-dispatcher.plist)
-  to `~/Library/LaunchAgents/`, adjust the host paths (keeping `RAWLAB_JIT_ENV_FILE` pointing
-  at `jit.env`), and load it with `launchctl bootstrap gui/$(id -u)
-  ~/Library/LaunchAgents/com.rawlab.jit-dispatcher.plist`. The dispatcher strips
-  `RAWLAB_JIT_TOKEN`, `GITHUB_TOKEN`, and `GH_TOKEN` from the runner child environment. The token needs repository
-  `Administration` (write) for `generate-jitconfig` plus `Actions` (read) for the
-  queue poll on fine-grained PATs — `Actions: write` alone answers 403 on the dispatch
-  POST — or the classic `repo` scope. Same-repository `pull_request` and
-  `workflow_dispatch` (manual *Run workflow*) jobs are not push events, so add the
-  `@<head_sha>`-pinned entry (`pr#<number>@<head_sha>` or `<run_id>@<head_sha>` for
-  same-repo PRs, or `<run_id>@<head_sha>` / `<owner>/<repo>:<branch>@<head_sha>` for
-  external fork PRs) to
-  `RAWLAB_JIT_ALLOWLIST` if this machine must keep serving them.
-- **Disable**: `launchctl bootout gui/$(id -u)/com.rawlab.jit-dispatcher`, remove the
-  copied plist, and restart the resident `Runner.Listener` agent; the fresh
-  `~/jit-runner` directory can stay for the next activation. Queued jobs resume being
-  served unchanged because no workflow file changed while the dispatcher was on.
-- **Attack-verification PR (one-time, after enabling)**: open a pull request from a
-  throwaway fork whose diff edits `.github/workflows/ci.yml` to drop one self-hosted
-  job's `head.repo.full_name` clause (or route it to `[self-hosted, macOS, ARM64,
-  rawlab-apple]`), and confirm all four observations: the dispatcher logs the run as
-  `skip (untrusted …)`; no JIT token is generated for it while the allowlist stays
-  empty, so with the resident listener stopped the job only queues; after allowlisting
-  `<run_id>@<40-char-sha>` and re-running `--once --runner-dir ~/jit-runner`, one ephemeral runner claims it and deregisters;
-  without the allowlist entry the job expires in the queue instead of executing on the
-  machine.
-- **Retirement for hosted runners (deprecation path)**: the dispatcher keeps no state
-  outside this repository — decisions are in memory and the queue is GitHub's. When the
-  self-hosted jobs move to hosted runners, bootout the LaunchAgent, drop the host-side
-  leftovers (the copied plist and the pristine `~/jit-runner` directory), and delete
-  `scripts/ci/jit_dispatch.py`, `scripts/ci/test_jit_dispatch.py`,
-  `scripts/ci/launchd/com.rawlab.jit-dispatcher.plist` and this subsection; nothing
-  else references them, so the repository is back at zero.
 
 ## Local and Targeted Entry Points
 
@@ -429,12 +340,9 @@ gate's honest skip pair otherwise.
 
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`;
 only the selection job adds `actions: read` to look up earlier runs. Checkout
-credentials are not persisted, and no `pull_request_target` is used. The
-`macos` and `ios` jobs also require the pull request head to come from
-this repository, so a normal fork PR skips both; the `windows` job carries the
-same clause but admits the hosted `windows-2022` route, so only that route can
-execute fork code. Workflow edits in a fork PR
-require security review ([External fork pull requests](#external-fork-pull-requests)).
+credentials are not persisted, and no `pull_request_target` is used. Workflow
+edits in a fork PR require security review
+([External fork pull requests](#external-fork-pull-requests)).
 The workflow has bounded jobs and cancels obsolete runs for the same PR/ref;
 manual runs use their own concurrency groups so a push neither cancels nor is
 cancelled by a manual verification.
@@ -444,71 +352,19 @@ workflow runs when a same-repository PR closes. With `actions: write` and no
 checkout, it deletes only the caches stored under that PR's merge ref, which no
 other PR or branch can use.
 
-## Local Android Runner
+## Hosted Android Runner
 
-The Android job currently runs on GitHub's hosted `ubuntu-24.04` runner with two
-Gradle workers, and the dedicated guest below is paused. From that guest, the
-Android SDK's CMake 3.22 download client fails the TLS handshake to github.com,
-libraw.org and other upstream hosts, while the system `curl` succeeds.
-Prefetching LibRaw alone was not enough, because the native build fetches more
-archives from GitHub. Return the job to the guest only after its CMake client can
-download them: restore the runner label, the environment and eight-worker limit
-described below, and the LibRaw prefetch step, then update the workflow-policy test.
-
-GitHub Actions still owns triggers, check results, logs and dependency caches.
-When enabled, the Android job selects `[self-hosted, linux, x64, rawlab-android]`. This label
-belongs only to a dedicated Ubuntu
-24.04 KVM guest with 32 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
-Proxmox host must not carry a runner, JDK or Android toolchain.
-
-Run `sudo bash scripts/ci/provision-android-runner.sh` inside the new guest to
-install the Android toolchain. The script rejects a non-KVM/non-Ubuntu guest,
-verifies the pinned command-line tools archive, and installs the SDK under
-`/opt/android-sdk`. Register the official GitHub runner separately as the
-unprivileged `runner` account with the `rawlab-android` label. Do not copy an
-administrator's SSH keys or long-lived GitHub token into that account. The job
-sets `ANDROID_HOME=/opt/android-sdk`; keep SDK and Gradle
-download caches outside its checkout. No Docker socket, host filesystem mount,
-GPU passthrough or nested virtualization is needed for the current suite.
-
-`RAWLAB_LENS_SOURCE_CACHE=/var/cache/rawlab-ci/lens-sources` holds source archives
-from `lutools/cmake/lens-dependencies.json`, not compiled libraries. Pre-seed
-checksum-matching archives there when an upstream endpoint is unavailable;
-the existing builder verifies every archive again before use. Missing archives
-still download from their pinned upstream URL and failures remain fatal.
-`RAWLAB_ANDROID_SOURCE_CACHE=/var/cache/rawlab-ci/android-sources` holds the
-LibRaw source archive. On this guest the job prefetched the archive with the
-system `curl` and checked its SHA-256. The Android build uses a local copy there
-first when the variable is set; `URL_HASH` verifies it again.
-
-This is a persistent, trusted-contributor runner: SDKs, download caches and the
-runner installation survive jobs. Checkout cleanup is not a security boundary
-against malicious workflow code. Review external contributions before allowing
-them onto this runner; do not treat it as an untrusted-code sandbox. The Android
-job has no head-repository source gate because it currently runs on hosted
-Ubuntu; returning it to this guest without one would execute fork PR code here
-([External fork pull requests](#external-fork-pull-requests)).
-
-Only one job runs in this runner workspace at a time. Checkout retains its
-default clean behavior, so product output and previous test results cannot
-make another job pass. Native dependencies still use the exact-key restore/save
-policy below; a persistent VM is not permission to bypass an explicitly selected cold build.
-On this guest, the Android job caps Gradle workers at eight. Native tools can use their own
-limits: AGP invokes Ninja directly, while Lensfun's builder retains four jobs;
-the guest's CPU and memory allocation is the overall resource boundary.
-This does not change parallelism or coverage on another platform.
-
-While the job uses the guest, the runner must be online for required Android
-checks to finish. GitHub does not automatically fall back to hosted execution
-when a self-hosted runner is offline. The hosted route above, with two Gradle
-workers, is the rollback. Do not skip the check or weaken branch protection. Keep device/GLES acceptance separate from this
-build-only runner.
+All Android groups run on GitHub-hosted `ubuntu-24.04` with Temurin JDK 17,
+Python 3.12, and Gradle capped at `--max-workers=2`. Build jobs install the
+pinned Android SDK/NDK/CMake components (`platforms;android-35`,
+`build-tools;35.0.0`, `ndk;27.2.12479018`, `cmake;3.22.1`) via `sdkmanager`,
+build both arm64 and x86_64 ABIs, run `lintDebug`, and compile the app and
+instrumentation APKs without running connected-device or GLES tests.
 
 ## Windows Runner Scheduling
 
 All Windows groups, including release/hotfix cold builds and manual
-`build/native/full`, select GitHub-hosted `windows-2022`. There is no dependency
-on the Windows 11 KVM guest and no offline-host fallback to wait for. Forks use
+`build/native/full`, select GitHub-hosted `windows-2022`. Forks use
 the same affected model route with read-only permissions. Drafts still defer
 platform jobs; hosted concurrency limits still apply.
 
@@ -536,62 +392,12 @@ summary are retained in `windows-batch-selection-results` for seven days. Manual
 groups and release/hotfix full gates retain their existing scope. This narrow WPF
 exception does not replace local UI, physical DPI, Narrator, Snap or hardware checks.
 
-The first Windows setup step uses `runner.environment` to select paths and limits.
-Hosted jobs keep .NET and lens source downloads under `RUNNER_TEMP\rawlab-ci`,
-with four CMake workers and a four-process cross-project MSVC cap for the standard
-four-core, 16 GiB runner. Dedicated jobs keep `E:\RawLabCI` and the existing
-16-worker/24-process limits. The native dependency key includes workspace, host,
-image and compiler identities, so these hosts cannot restore each other's build
-trees. Product outputs and test results are always rebuilt.
-
-### Dedicated Windows Runner (Inactive Reference)
-
-The provisioning and dedicated-limit support below is retained for an explicitly
-authorized future rollback only; the active workflow never selects this runner.
-It is not required for cloud verification.
-
-Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, `_work`,
-toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
-belong there, not on the existing system drive or developer build workspace.
-`provision-windows-runner.ps1` rejects system-drive and relative roots. Supply
-the pinned PowerShell 7.6.7, runner 2.338.0 and actions/python-versions 3.12.10
-ZIPs from their official GitHub releases plus the source-archive bundle and `lens-dependencies.json`; the
-script verifies all SHA-256 values before use. Run
-`test_windows_runner_provisioning.ps1` as an administrator in the guest to
-exercise the no-install safety guards; add `-VerifyToolchain` after provisioning
-to verify the completed Python cache and a GNU tar/gzip cache round-trip. The
-administrator seeds the official Python tool cache once because setup-python invokes Windows PowerShell without
-an execution-policy override and the installer needs administrator privileges.
-The bootstrap overrides policy only in that installer process, not on the
-machine or service account. It refuses to replace an existing Python 3.12
-installation outside this cache. Keep the runner service unprivileged.
-
-Register the runner separately with the `rawlab-windows` label, `_work` on the
-data volume, and `NT AUTHORITY\NETWORK SERVICE`, not LocalSystem or the
-developer's interactive account. The provisioning script restricts its root
-ACL to that service account, SYSTEM and administrators, and prepares its
-environment/tool paths. Keep `cmake` and `ctest` discoverable on the runner
-PATH before cache identification. `setup-python` and `setup-dotnet` still
-select the workflow's Python 3.12 and .NET 8 SDK; their caches/install directory
-are on the data volume. No registration token or service credentials belong
-in source control or uploaded logs.
-
-Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
-directory. The cache action selects Git's GNU tar, which must also find `gzip`;
-a missing compressor can leave the job green while silently losing its cache.
-
-The dedicated Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
-which otherwise leaves each project's sources compiling one at a time. A single
-cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
-`EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
-are CI environment settings; `build.ps1` and local builds are unchanged.
-
-Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
-exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
-requires physical GPU/external-RAW evidence. Service-session results do not
-cover real Explorer/UIA interaction. Any future return to a persistent route must
-update selector, workflow safety conditions and fork policy together; do not
-restore a self-hosted route by editing only one label or skip required checks.
+The Windows setup step configures download and tool caches under
+`RUNNER_TEMP\rawlab-ci`, with four CMake workers and a four-process
+cross-project MSVC cap (`CL_MPCount`) for the standard four-core, 16 GiB
+hosted runner. The native dependency key includes workspace, host, image
+and compiler identities, and product outputs and test results are always
+rebuilt.
 
 ## GitHub-Hosted Apple Runners
 
@@ -619,21 +425,12 @@ The Intel shards and arm64 `all` coverage, cache cold/warm rules and bounded
 CTest parallelism stay unchanged. Moving hosts does not authorize model uploads;
 see the model prerequisites above.
 
-### Local Apple Runners (Inactive Reference)
-
-The remaining provisioning guidance is only for an explicitly authorized future
-persistent route. It does not describe the active workflow.
-
 The macOS, iOS and Android build jobs use `scripts/ci/prepare-rust.sh` to select
 Rust 1.99.1, its standard-library notices and the required target slices. If
 `rustup` is absent from the job PATH, the helper verifies the official installer
 checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job's
 Cargo/Rustup paths. It does not require an administrator or change the runner's
 login profile. Windows prepares the same pinned toolchain in its own job directory.
-
-The inactive local-pool configuration used `[self-hosted, macOS, ARM64, rawlab-apple]`
-for macOS arm64 and iOS, with six build workers. Either pool machine needed both
-complete toolchains; none of that is a prerequisite of the hosted route above.
 
 The Intel `agent` shard isolates Agent recipe rendering from the remaining
 `render` checks. Every Intel shard still builds the complete app and executes
@@ -650,77 +447,6 @@ Intel's portable FP16 conversion. The default Swift app uses whole-module optimi
 `-O` and all sources. The full-source straighten UI harness runs locally. No app or test executable is cached. Each Mac regression
 stage records elapsed seconds and its exit code in `build/ci/macos-timings.log`; command failures
 still fail the job rather than being hidden by the timing wrapper.
-
-These two runners run directly on user-approved physical Macs, unlike the
-Android/Windows KVM guests. Prefer the dedicated non-administrator `rawlab-ci`
-account. An owner-approved personal account may opt in by appending
-`--allow-current-user` to the provisioning command; this is not isolation and
-CI inherits that user's access to personal files and credentials. Root is
-always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
-`pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
-administrator. Use `DEVELOPER_DIR` rather than changing another user's selected
-developer tools.
-
-For iOS builds, both pool Macs need Xcode 27.1+ with device and simulator SDKs
-at least 27.1. This enables iPhone Duo's full display without raising RawLab's
-iOS 18.0 deployment target. `bash scripts/ci/check-ios-sdk.sh` checks the selected
-toolchain during runner provisioning and before the iOS build job prepares Rust
-or native caches. The app target checks its actual SDK for local and release
-builds too. Model-only jobs retain their standalone macOS-SDK route. Upgrade
-the prepared Xcode copy on each pool host before running iOS build/native/full
-checks; CI does not install Xcode or change global toolchain selection.
-
-Native dependency outputs embed the workspace, Xcode SDK and Python paths, so the
-cache key includes them. Both pool Macs therefore use one identical layout on a
-case-sensitive APFS volume named `RawLabCI`, mounted at `/Volumes/RawLabCI`
-(an administrator adds it with `diskutil apfs addVolume <container> APFSX RawLabCI`;
-it shares the container's free space): the runner workspace `_work`, a CI-only
-Xcode copy at `tools/Xcode.app` and the Python venv `venv`, which pins CMake via
-[`requirements-apple-runner.txt`](../../scripts/ci/requirements-apple-runner.txt).
-A key computed on one Mac then matches the other, and either Mac reuses the
-other's dependencies. The pool Macs must also keep the same macOS build, Xcode
-build, Homebrew `pkgconf`/autotools and Python 3.12 patch release. A mismatch does
-not break builds; it only gives each Mac separate cache keys again. Compare
-`build/ci/native-cache.json` from each Mac's artifacts to find the differing field.
-
-Keep the CI root with runner startup files and credentials inside the CI user's
-home on the internal disk. A LaunchAgent can be denied access to an external
-volume even when SSH under the same user works; allow only the necessary
-external-storage access when macOS prompts in the CI desktop session. Do not
-grant system-wide shells Full Disk Access to work around this restriction.
-After installing or updating Xcode, an administrator must accept that version's
-license and run its first-launch initialization with the same `DEVELOPER_DIR`.
-The CI account must pass `xcodebuild -checkFirstLaunchStatus` and SDK discovery
-without sudo before runner registration; an older Xcode license is not sufficient.
-The iOS simulator SDK alone is not enough: both pool hosts need an available iOS
-simulator runtime for the look-import regression. Prepare one with the selected
-Xcode's `xcodebuild -downloadPlatform iOS -architectureVariant arm64`, or export
-and import an official runtime using `-exportPath` and `-importPlatform`.
-Provisioning checks `xcrun simctl list runtimes available -j` as the runner user
-before creating runner files; it never installs system components from a CI job.
-`provision-macos-runner.sh <ci-root> /Volumes/RawLabCI/tools/Xcode.app <runner-archive>`
-checks the account, pool volume and SDKs, verifies the pinned official arm64
-runner archive, creates the shared-path Python 3.12 venv with pinned CMake and
-dedicated cache/temp directories, and names the `--work` directory to register. Do not
-copy private SSH keys, personal Keychains or signing credentials into this account.
-
-Local Apple jobs use that prepared Python instead of setup-python's macOS
-installer, whose fixed framework installation requires elevated privileges.
-CI installs its pinned requirements only in the venv. Keep the complete PATH in
-the runner's `.path` and literal SDK/cache variables in `.env`. PATH is also
-stored in `.env` because `config.sh` rewrites `.path` during registration.
-Configure each runner separately with its shared pool label and own workspace, then install its
-official user LaunchAgent while the selected runner user is logged in. A user LaunchAgent
-depends on that login session: fast user switching is fine, logout or machine
-sleep makes the runner unavailable. Do not grant the CI account sudo or change
-sleep/security settings silently on a developer's laptop.
-
-This remains trusted-code execution, not a security sandbox. Use separate
-workspaces per machine and keep persistent source/download caches separate from
-the exact dependency-output cache. Logs record the actual macOS/Xcode versions;
-moving hosts is not evidence for minimum-OS, physical GPU or device acceptance.
-To roll back, restore hosted `macos-26` for the relevant job and its Python setup
-step, parallelism, policy tests and actionlint declarations. Keep every platform check.
 
 ## Native Dependency Caches
 
@@ -774,10 +500,8 @@ cold/restore regression also verifies that changed JNI code is rebuilt.
 `build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
 records the selected file count and bytes. Compare cold and warm hosted runs on
 the same source, separating queue time from job time. A successful restore alone
-does not demonstrate a speedup. Hosted Intel uses four build workers and two
-CTest processes; local Android and Windows jobs use the bounded settings
-documented above;
-measure changes on their own guests rather than extrapolating from hosted timings.
+does not demonstrate a speedup. Hosted Intel uses four build workers and two CTest processes; hosted Android
+and Windows jobs use the bounded worker settings documented above.
 
 ### Hosted Measurement: 2026-10-18
 
