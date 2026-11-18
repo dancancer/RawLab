@@ -2,7 +2,7 @@ import Foundation
 
 // ============================================================================
 //  Q6 保留策略：常量集中定义（各端一处）。
-//  裁定（docs/architecture/remediation-plan-2026-11-13/g-product-decisions.md）：
+//  裁定（docs/archive/architecture/remediation-plan-2026-11-13/g-product-decisions.md）：
 //  「批量产物保留 30 天 / 100 条；相机原件不自动删、只提供手动清理入口；联机记录保留 90 天」
 //  清理时机：场景创建前的启动路径（RawLabApp.init），与 #249 遗留产物清理同一时机，
 //  此刻没有导入或批量任务在跑，不引入后台任务框架。

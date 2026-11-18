@@ -7,10 +7,10 @@
 | 文档 | 作用 |
 |---|---|
 | 本文 | 路线、阶段、验收不变量、决策登记、执行纪律 |
-| [remediation-plan-2026-11-13.md](../../architecture/remediation-plan-2026-11-13.md) | **活台账**：178 行任务的状态与依据，随每次合入更新 |
+| [remediation-plan-2026-11-13.md](remediation-plan-2026-11-13.md) | **活台账**：178 行任务的状态与依据，随每次合入更新 |
 | [codebase-review-2026-11-12.md](codebase-review-2026-11-12.md) | 主评审（缺陷层，§14 为补充评审） |
-| [codebase-review-followup-2026-11-13.md](../../architecture/codebase-review-followup-2026-11-13.md) | 整改后复审（新发现与台账核对） |
-| [architecture-review-2026-11-13.md](../../architecture/architecture-review-2026-11-13.md) | 结构评审（AR-1…AR-7，解释「为什么修不完」） |
+| [codebase-review-followup-2026-11-13.md](codebase-review-followup-2026-11-13.md) | 整改后复审（新发现与台账核对） |
+| [architecture-review-2026-11-13.md](architecture-review-2026-11-13.md) | 结构评审（AR-1…AR-7，解释「为什么修不完」） |
 
 ## 1. 目标
 
@@ -53,7 +53,7 @@
 
 ## 5. 产品决策登记（2026-11-13 裁定）
 
-决策全文与落地状态只在台账登记：[g-product-decisions.md](../../architecture/remediation-plan-2026-11-13/g-product-decisions.md)（Q1–Q14，Q11 为历史空号，共 13 项）。本文不复述决策内容，避免两份真相。
+决策全文与落地状态只在台账登记：[g-product-decisions.md](remediation-plan-2026-11-13/g-product-decisions.md)（Q1–Q14，Q11 为历史空号，共 13 项）。本文不复述决策内容，避免两份真相。
 
 ## 6. 阶段计划
 
@@ -101,4 +101,4 @@
 
 ## 11. 进度快照
 
-P0 已收口；P1 三步与 P2-16/P2-09 等在途批次的实际状态一律以[活台账](../../architecture/remediation-plan-2026-11-13.md)与其 changelog 为准，本文不再维护静态计数（旧快照随合入必然过期）。
+P0 已收口；P1 三步与 P2-16/P2-09 等在途批次的实际状态一律以[活台账](remediation-plan-2026-11-13.md)与其 changelog 为准，本文不再维护静态计数（旧快照随合入必然过期）。
