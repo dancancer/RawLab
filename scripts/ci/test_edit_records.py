@@ -10,6 +10,7 @@ Pins:
 import json
 from pathlib import Path
 import re
+import tomllib
 import unittest
 
 
@@ -476,7 +477,9 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertIn("editing/EditWorkflow.Tests.csproj", win_ps1)
 
         ci_yml = CI_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("python -m unittest discover -s scripts/ci -p 'test_*.py' -v", ci_yml)
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertIn("scripts/ci", pyproject["tool"]["pytest"]["ini_options"]["testpaths"])
+        self.assertIn("python -m pytest -v", ci_yml)
         self.assertIn("bash scripts/ci/apple-models.sh macos", ci_yml)
         self.assertIn("bash scripts/ci/apple-models.sh ios", ci_yml)
         self.assertIn("& ./scripts/ci/windows-models.ps1", ci_yml)

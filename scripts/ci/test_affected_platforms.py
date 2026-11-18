@@ -73,7 +73,8 @@ class ClassificationTests(unittest.TestCase):
                      "lutools/x3f-bridge/vendor/x3f-sys/RAWLAB.md",
                      "lutools/x3f-bridge/vendor/x3f-sys/README.md",
                      "lutools/tests/fixtures/README.md", "lutools/tests/fixtures/hdr/README.md",
-                     "lutools/tests/hdr_codec/README.md", "new-top-level/file", "notes.txt"):
+                     "lutools/tests/hdr_codec/README.md", "pyproject.toml",
+                     "new-top-level/file", "notes.txt"):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), set())
 
@@ -124,6 +125,7 @@ class SelectionTests(unittest.TestCase):
             "lutools/README.md",
             "experiments/hamada-neural/runs/a.cube",
             "tools/mcp/README.md",
+            "pyproject.toml",
             "new-top-level/notes.txt",
         ]}
         platforms, cold, draft, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)

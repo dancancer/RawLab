@@ -1,0 +1,36 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+pythonpath = ["."]
+testpaths = [
+    "scripts/ci",
+    "scripts/release/tests",
+    "scripts/rum",
+    "tests",
+    "Shared/tests",
+    "lutools/tests",
+    "RawLabAndroid/tests",
+    "RawLabMac/tests",
+    "RawLabWindows/tests",
+]
+python_files = ["test_*.py", "*_test.py"]
+# Native CLI and DCP compiler harnesses are driven by CTest (lutools/CMakeLists.txt)
+# or platform build scripts with compiled binary arguments (--cli / compiler path).
+# tools/mcp/tests runs in its own uv project environment (tools/mcp/pyproject.toml).
+addopts = [
+    "--ignore=lutools/tests/test_agent_commands.py",
+    "--ignore=lutools/tests/test_agent_preview.py",
+    "--ignore=lutools/tests/test_dcp_compiler.py",
+    "--ignore=lutools/tests/test_edit_recipe_cli.py",
+    "--ignore=lutools/tests/test_edit_recipe_schema.py",
+    "--ignore=lutools/tests/test_geometry_cli.py",
+    "--ignore=lutools/tests/test_hdr_agent.py",
+    "--ignore=lutools/tests/test_raw_info_cli.py",
+]
+norecursedirs = [
+    ".git",
+    ".cache",
+    "build",
+    "experiments",
+    "output",
+    "tools/mcp",
+]
