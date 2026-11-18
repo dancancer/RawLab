@@ -68,6 +68,8 @@ class NativeCacheTests(unittest.TestCase):
             with self.subTest(platform=platform):
                 inputs = self.cache.dependency_inputs(ROOT, platform)
                 for path in ("lutools/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                             "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/libraw/libraw.cmake",
+                             "lutools/cmake/libraw/manifest.json", "lutools/cmake/libraw/manifest.py",
                              "lutools/cmake/dng-sdk/CMakeLists.txt", "lutools/cmake/lens-dependencies.json",
                              "lutools/third_party/rawspeed-camera-calibration.inc",
                              "lutools/third_party/nikon_he/codec.h",
@@ -164,14 +166,14 @@ class NativeCacheTests(unittest.TestCase):
                  "build/windows-native/lib/sony2fuji_core.lib",
                  "build/windows-native/core/CMakeFiles/sony2fuji_core.dir/a.obj"]),
             "ios": (
-                ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/rawlab_dng_sdk.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/cvconfig.h",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/raw-dependencies/libraw/Release-iphoneos/libraw.a",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/XCBuildData/build.db"],
-                ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/lib/libsony2fuji_core.a",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji_core.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/output/sony2fuji.framework/sony2fuji",
+                [f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/rawlab_dng_sdk.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/cvconfig.h",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/raw-dependencies/libraw/Release-iphoneos/libraw.a",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/XCBuildData/build.db"],
+                [f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/sony2fuji.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/lib/libsony2fuji_core.a",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/sony2fuji_core.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/output/sony2fuji.framework/sony2fuji",
                  "lutools/build-ios/sony2fuji.xcframework/sony2fuji"]),
             "android": (
                 ["RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/_deps/rawlab_opencv-build/modules/core/a.o",

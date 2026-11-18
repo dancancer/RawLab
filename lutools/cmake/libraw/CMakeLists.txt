@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(RawLabRawDependencies LANGUAGES C CXX)
+
+include("${CMAKE_CURRENT_LIST_DIR}/libraw.cmake")
+rawlab_load_libraw_manifest()
 
 if(NOT LIBRAW_CMAKE_SOURCE_DIR OR NOT LIBRAW_PATH)
     message(FATAL_ERROR "LIBRAW_CMAKE_SOURCE_DIR and LIBRAW_PATH are required")
@@ -17,7 +20,7 @@ set(ENABLE_X3FTOOLS ON CACHE BOOL "Enable the bundled Sigma X3F decoder" FORCE)
 add_subdirectory("${LIBRAW_CMAKE_SOURCE_DIR}" "libraw")
 foreach(raw_target raw raw_r)
     target_compile_features(${raw_target} PRIVATE cxx_std_17)
-    target_compile_definitions(${raw_target} PRIVATE USE_DNGSDK qDNGSupportJXL=1)
+    target_compile_definitions(${raw_target} PRIVATE ${RAWLAB_LIBRAW_DNGSDK_COMPILE_DEFINITIONS})
     target_include_directories(${raw_target} SYSTEM PRIVATE
         "$<TARGET_PROPERTY:rawlab_dng_sdk,INTERFACE_INCLUDE_DIRECTORIES>")
     target_compile_definitions(${raw_target} PRIVATE

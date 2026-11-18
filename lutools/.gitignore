@@ -26,6 +26,7 @@ cmake-build-*/
 !cmake/rawlab_add_test.cmake
 !CMakeLists.txt
 !cmake/patch-libraw.cmake
+!cmake/libraw/libraw.cmake
 
 # Compiled Object files
 *.o

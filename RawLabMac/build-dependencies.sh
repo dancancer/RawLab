@@ -11,6 +11,9 @@ PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 mkdir -p "$SOURCES" "$PREFIX" "$BUILD/lcms"
 
+libraw_env="$(python3 "$ROOT/lutools/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
+
 fetch() {
     rawlab_fetch "$@"
 }
@@ -25,15 +28,15 @@ fetch openmp-21.1.8.src.tar.xz 856b023748b41ac7b2c83fd8e9f765ff48a4df2fe6777d281
     https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/openmp-21.1.8.src.tar.xz openmp-21.1.8.src
 fetch cmake-21.1.8.src.tar.xz 85735f20fd8c81ecb0a09abb0c267018475420e93b65050cc5b7634eab744de9 \
     https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/cmake-21.1.8.src.tar.xz cmake-21.1.8.src
-fetch LibRaw-0.22.2.tar.gz de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa \
-    https://www.libraw.org/data/LibRaw-0.22.2.tar.gz LibRaw-0.22.2
-fetch LibRaw-cmake-eb98e43.tar.gz 3cd218bf6d1254de86e27269541277fbfc5bae57a9002ce0b46fbe2a97088b43 \
-    https://github.com/LibRaw/LibRaw-cmake/archive/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.tar.gz LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3
+fetch "$RAWLAB_LIBRAW_ARCHIVE" "$RAWLAB_LIBRAW_SHA256" \
+    "$RAWLAB_LIBRAW_URL" "$RAWLAB_LIBRAW_DIRECTORY"
+fetch "$RAWLAB_LIBRAW_CMAKE_ARCHIVE" "$RAWLAB_LIBRAW_CMAKE_SHA256" \
+    "$RAWLAB_LIBRAW_CMAKE_URL" "$RAWLAB_LIBRAW_CMAKE_DIRECTORY"
 if [ ! -e "$SOURCES/cmake" ]; then ln -s cmake-21.1.8.src "$SOURCES/cmake"; fi
 # 重新生成可重建的工作副本，避免旧补丁或已删除的 codec 文件留在源码缓存。
-rm -r "$SOURCES/LibRaw-0.22.2"
-tar -xf "$SOURCES/LibRaw-0.22.2.tar.gz" -C "$SOURCES"
-cmake -DLIBRAW_SOURCE_DIR="$SOURCES/LibRaw-0.22.2" -P "$ROOT/lutools/cmake/patch-libraw.cmake"
+rm -r "$SOURCES/$RAWLAB_LIBRAW_DIRECTORY"
+tar -xf "$SOURCES/$RAWLAB_LIBRAW_ARCHIVE" -C "$SOURCES"
+cmake -DLIBRAW_SOURCE_DIR="$SOURCES/$RAWLAB_LIBRAW_DIRECTORY" -P "$ROOT/lutools/cmake/patch-libraw.cmake"
 
 COMMON=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH"
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" -DCMAKE_OSX_SYSROOT="$SDK"
@@ -76,8 +79,8 @@ if [ "$ARCH" = arm64 ]; then HOST=aarch64-apple-darwin; fi
     make install
 )
 cmake -S "$ROOT/lutools/cmake/libraw" \
-    -B "$BUILD/libraw-dng-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/LibRaw-0.22.2" \
-    -DLIBRAW_CMAKE_SOURCE_DIR="$SOURCES/LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3" \
+    -B "$BUILD/libraw-dng-cmake" "${COMMON[@]}" -DLIBRAW_PATH="$SOURCES/$RAWLAB_LIBRAW_DIRECTORY" \
+    -DLIBRAW_CMAKE_SOURCE_DIR="$SOURCES/$RAWLAB_LIBRAW_CMAKE_DIRECTORY" \
     -DRAWLAB_DNGSDK_SHARED=ON -DLIBRAW_INSTALL=ON \
     -DBUILD_SHARED_LIBS=ON -DENABLE_EXAMPLES=OFF -DENABLE_OPENMP=ON \
     -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp" -DOpenMP_CXX_LIB_NAMES=omp \
