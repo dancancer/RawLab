@@ -6,19 +6,27 @@
 
 namespace rawlab::test {
 
-// Single-threaded assertion counter: failureCount(), check(), and resetFailures()
-// mutate a non-atomic static int and must only be called from one thread.
+// Single-threaded assertion counters: failureCount(), checkCount(), check(),
+// require(), and resetFailures() mutate non-atomic static ints and must only
+// be called from one thread.
 inline int& failureCount() {
+    static int count = 0;
+    return count;
+}
+
+inline int& checkCount() {
     static int count = 0;
     return count;
 }
 
 inline void resetFailures() {
     failureCount() = 0;
+    checkCount() = 0;
 }
 
 inline bool check(bool condition, const std::string& message,
                   const char* file = nullptr, int line = 0) {
+    ++checkCount();
     if (!condition) {
         ++failureCount();
         if (file != nullptr && line > 0) {
@@ -30,14 +38,29 @@ inline bool check(bool condition, const std::string& message,
     return condition;
 }
 
+inline bool checkPass(bool condition, const std::string& message,
+                      const char* file = nullptr, int line = 0) {
+    if (check(condition, message, file, line)) {
+        std::cout << "PASS " << message << '\n';
+    }
+    return condition;
+}
+
 inline void require(bool condition, const std::string& message,
                     const char* file = nullptr, int line = 0) {
+    ++checkCount();
     if (!condition) {
         if (file != nullptr && line > 0) {
             throw std::runtime_error(std::string(file) + ':' + std::to_string(line) + ": " + message);
         }
         throw std::runtime_error(message);
     }
+}
+
+inline void requirePass(bool condition, const std::string& message,
+                        const char* file = nullptr, int line = 0) {
+    require(condition, message, file, line);
+    std::cout << "PASS " << message << '\n';
 }
 
 inline int exitCode() {

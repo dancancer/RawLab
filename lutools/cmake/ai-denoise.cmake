@@ -12,56 +12,103 @@ if(BUILD_TESTING OR SONY2FUJI_ENABLE_AI_DENOISE)
         target_link_libraries(rawlab_dualdn_core PUBLIC ${SONY2FUJI_DENOISE_LIBRARIES})
     endif()
     if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
-        add_executable(ai_device_policy_tests tests/ai_device_policy_tests.cpp)
-        target_link_libraries(ai_device_policy_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME ai_device_policy COMMAND ai_device_policy_tests)
-        add_executable(ai_diagnostics_tests tests/ai_diagnostics_tests.cpp)
-        target_include_directories(ai_diagnostics_tests PRIVATE third_party)
-        target_link_libraries(ai_diagnostics_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME ai_diagnostics COMMAND ai_diagnostics_tests)
-        add_executable(ai_device_abi_tests tests/ai_device_abi_tests.cpp)
-        target_include_directories(ai_device_abi_tests PRIVATE third_party)
-        target_link_libraries(ai_device_abi_tests PRIVATE sony2fuji_core)
-        add_test(NAME ai_device_abi COMMAND ai_device_abi_tests)
-        add_executable(dualdn_gpu_policy_tests tests/dualdn_gpu_policy_tests.cpp src/ai/network_graph.cpp)
-        target_include_directories(dualdn_gpu_policy_tests PRIVATE src include)
-        add_test(NAME dualdn_gpu_policy COMMAND dualdn_gpu_policy_tests)
-        add_executable(dualdn_geometry_tests tests/dualdn_geometry_tests.cpp)
-        target_link_libraries(dualdn_geometry_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME dualdn_geometry COMMAND dualdn_geometry_tests)
-        add_executable(raw_noise_estimate_tests tests/raw_noise_estimate_tests.cpp)
-        target_link_libraries(raw_noise_estimate_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME raw_noise_estimate COMMAND raw_noise_estimate_tests)
-        add_executable(dualdn_package_tests tests/dualdn_package_tests.cpp)
-        target_include_directories(dualdn_package_tests PRIVATE third_party)
-        target_compile_definitions(dualdn_package_tests PRIVATE RESTORMER_TEST_LICENSE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/restormer-v1-LICENSE.txt")
-        target_link_libraries(dualdn_package_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME dualdn_package COMMAND dualdn_package_tests "${CMAKE_CURRENT_BINARY_DIR}/dualdn-package-fixture")
+        rawlab_add_test(
+            NAME ai_device_policy
+            SOURCES tests/ai_device_policy_tests.cpp
+            LIBRARIES rawlab_dualdn_core
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME ai_diagnostics
+            SOURCES tests/ai_diagnostics_tests.cpp
+            INCLUDES third_party
+            LIBRARIES rawlab_dualdn_core
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME ai_device_abi
+            SOURCES tests/ai_device_abi_tests.cpp
+            INCLUDES third_party
+            LIBRARIES sony2fuji_core
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_gpu_policy
+            SOURCES tests/dualdn_gpu_policy_tests.cpp src/ai/network_graph.cpp
+            INCLUDES src include
+            LABELS ai gpu ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_geometry
+            SOURCES tests/dualdn_geometry_tests.cpp
+            LIBRARIES rawlab_dualdn_core
+            LABELS ai geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME raw_noise_estimate
+            SOURCES tests/raw_noise_estimate_tests.cpp
+            LIBRARIES rawlab_dualdn_core
+            LABELS ai raw ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_package
+            SOURCES tests/dualdn_package_tests.cpp
+            INCLUDES third_party
+            DEFINES RESTORMER_TEST_LICENSE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/restormer-v1-LICENSE.txt"
+            LIBRARIES rawlab_dualdn_core
+            ARGS "${CMAKE_CURRENT_BINARY_DIR}/dualdn-package-fixture"
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
         foreach(path_case IN ITEMS chinese supplementary)
-            add_test(NAME dualdn_package_${path_case} COMMAND dualdn_package_tests
-                "${CMAKE_CURRENT_BINARY_DIR}/dualdn-package-${path_case}-fixture" ${path_case})
+            rawlab_add_test(
+                NAME dualdn_package_${path_case}
+                COMMAND dualdn_package_tests "${CMAKE_CURRENT_BINARY_DIR}/dualdn-package-${path_case}-fixture" ${path_case}
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
         endforeach()
-        add_executable(dualdn_raw_bridge_tests tests/dualdn_raw_bridge_tests.cpp)
-        target_link_libraries(dualdn_raw_bridge_tests PRIVATE sony2fuji_core)
-        add_test(NAME dualdn_raw_bridge COMMAND dualdn_raw_bridge_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng")
-        add_executable(dualdn_color_tests tests/dualdn_color_tests.cpp)
-        target_link_libraries(dualdn_color_tests PRIVATE rawlab_dualdn_core sony2fuji_core)
-        add_test(NAME dualdn_color COMMAND dualdn_color_tests)
-        add_executable(scene_rgb_adapter_tests tests/scene_rgb_adapter_tests.cpp)
-        target_link_libraries(scene_rgb_adapter_tests PRIVATE rawlab_dualdn_core sony2fuji_core)
-        add_test(NAME scene_rgb_adapter COMMAND scene_rgb_adapter_tests)
-        add_executable(dualdn_cache_tests tests/dualdn_cache_tests.cpp)
-        target_link_libraries(dualdn_cache_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME dualdn_cache COMMAND dualdn_cache_tests "${CMAKE_CURRENT_BINARY_DIR}/dualdn-cache-fixture")
-        add_executable(dualdn_identity_tests tests/dualdn_identity_tests.cpp)
-        target_link_libraries(dualdn_identity_tests PRIVATE rawlab_dualdn_core)
-        add_test(NAME dualdn_identity COMMAND dualdn_identity_tests "${CMAKE_CURRENT_BINARY_DIR}/dualdn-identity-fixture")
+        rawlab_add_test(
+            NAME dualdn_raw_bridge
+            SOURCES tests/dualdn_raw_bridge_tests.cpp
+            LIBRARIES sony2fuji_core
+            ARGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng"
+            LABELS ai raw ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_color
+            SOURCES tests/dualdn_color_tests.cpp
+            LIBRARIES rawlab_dualdn_core sony2fuji_core
+            LABELS ai core ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME scene_rgb_adapter
+            SOURCES tests/scene_rgb_adapter_tests.cpp
+            LIBRARIES rawlab_dualdn_core sony2fuji_core
+            LABELS ai core ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_cache
+            SOURCES tests/dualdn_cache_tests.cpp
+            LIBRARIES rawlab_dualdn_core
+            ARGS "${CMAKE_CURRENT_BINARY_DIR}/dualdn-cache-fixture"
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        rawlab_add_test(
+            NAME dualdn_identity
+            SOURCES tests/dualdn_identity_tests.cpp
+            LIBRARIES rawlab_dualdn_core
+            ARGS "${CMAKE_CURRENT_BINARY_DIR}/dualdn-identity-fixture"
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
         add_executable(dualdn_api_tests tests/dualdn_api_tests.cpp)
         target_include_directories(dualdn_api_tests PRIVATE third_party)
         target_link_libraries(dualdn_api_tests PRIVATE sony2fuji_core rawlab_dualdn_core)
         if(NOT SONY2FUJI_ENABLE_AI_DENOISE)
-            add_test(NAME dualdn_api_disabled COMMAND dualdn_api_tests
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "unused-model" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-api-cache")
+            rawlab_add_test(
+                NAME dualdn_api_disabled
+                COMMAND dualdn_api_tests
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "unused-model" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-api-cache"
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
         endif()
     endif()
 endif()
@@ -95,7 +142,7 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
     target_include_directories(rawlab_dualdn_runtime PUBLIC src PRIVATE third_party)
     target_include_directories(rawlab_dualdn_runtime SYSTEM PRIVATE "${RAWLAB_ORT_INCLUDE}")
     target_link_libraries(rawlab_dualdn_runtime PUBLIC rawlab_dualdn_core "${RAWLAB_ORT_LIBRARY}")
-    foreach(core_target sony2fuji_core sony2fuji)
+    foreach(core_target sony2fuji_core_objects sony2fuji_core sony2fuji)
         if(TARGET ${core_target})
             target_compile_definitions(${core_target} PRIVATE SONY2FUJI_ENABLE_AI_DENOISE)
             target_link_libraries(${core_target} rawlab_dualdn_runtime)
@@ -125,24 +172,52 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
             find_package(Python3 REQUIRED COMPONENTS Interpreter)
         endif()
         if(RAWLAB_DUALDN_TEST_MODEL)
-            add_test(NAME dualdn_onnx COMMAND dualdn_onnx_tests "${RAWLAB_DUALDN_TEST_MODEL}")
+            rawlab_add_test(
+                NAME dualdn_onnx
+                COMMAND dualdn_onnx_tests "${RAWLAB_DUALDN_TEST_MODEL}"
+                LABELS ai onnx ai_model
+            )
         else()
-            add_test(NAME dualdn_onnx_skip COMMAND "${Python3_EXECUTABLE}" -c
-                "import sys; print('SKIP dualdn_onnx: supply RAWLAB_DUALDN_TEST_MODEL'); sys.exit(77)")
-            set_tests_properties(dualdn_onnx_skip PROPERTIES SKIP_RETURN_CODE 77)
+            rawlab_add_test(
+                NAME dualdn_onnx_skip
+                COMMAND "${Python3_EXECUTABLE}" -c
+                    "import sys; print('SKIP dualdn_onnx: supply RAWLAB_DUALDN_TEST_MODEL'); sys.exit(77)"
+                SKIP_RETURN_CODE 77
+                LABELS ai onnx ai_model ci_macos_arm64 ci_macos_x86_64
+            )
         endif()
         if(RAWLAB_DUALDN_TEST_PACKAGE)
             target_compile_definitions(dualdn_api_tests PRIVATE RAWLAB_TEST_AI)
-            add_test(NAME dualdn_session COMMAND dualdn_session_tests "${RAWLAB_DUALDN_TEST_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-session-cache")
-            add_test(NAME dualdn_api COMMAND dualdn_api_tests
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "${RAWLAB_DUALDN_TEST_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-api-cache")
-            add_test(NAME dualdn_native COMMAND dualdn_native_tests "${RAWLAB_DUALDN_TEST_PACKAGE}")
-            set_tests_properties(dualdn_native PROPERTIES SKIP_RETURN_CODE 77)
-            add_test(NAME dualdn_directml COMMAND dualdn_directml_tests "${RAWLAB_DUALDN_TEST_PACKAGE}")
+            rawlab_add_test(
+                NAME dualdn_session
+                COMMAND dualdn_session_tests "${RAWLAB_DUALDN_TEST_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-session-cache"
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
+            rawlab_add_test(
+                NAME dualdn_api
+                COMMAND dualdn_api_tests
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "${RAWLAB_DUALDN_TEST_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-api-cache"
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
+            rawlab_add_test(
+                NAME dualdn_native
+                COMMAND dualdn_native_tests "${RAWLAB_DUALDN_TEST_PACKAGE}"
+                SKIP_RETURN_CODE 77
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
+            rawlab_add_test(
+                NAME dualdn_directml
+                COMMAND dualdn_directml_tests "${RAWLAB_DUALDN_TEST_PACKAGE}"
+                LABELS ai directml ci_windows
+            )
         else()
-            add_test(NAME dualdn_skip COMMAND "${Python3_EXECUTABLE}" -c
-                "import sys; print('SKIP dualdn: supply RAWLAB_DUALDN_TEST_PACKAGE'); sys.exit(77)")
-            set_tests_properties(dualdn_skip PROPERTIES SKIP_RETURN_CODE 77)
+            rawlab_add_test(
+                NAME dualdn_skip
+                COMMAND "${Python3_EXECUTABLE}" -c
+                    "import sys; print('SKIP dualdn: supply RAWLAB_DUALDN_TEST_PACKAGE'); sys.exit(77)"
+                SKIP_RETURN_CODE 77
+                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
         endif()
     endif()
     if(WIN32)

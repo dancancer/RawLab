@@ -12,9 +12,9 @@ import shlex
 
 REPO = Path(__file__).resolve().parents[2]
 NUMERICAL_TEST = str(REPO / "lutools/tests/wavelet_denoise_tests.cpp")
-TARGETS = {"sony2fuji_core", "wavelib", "opencv_core", "opencv_imgproc"}
+TARGETS = {"sony2fuji_core_objects", "wavelib", "opencv_core", "opencv_imgproc"}
 REQUIRED = {
-    str(REPO / "lutools/src/core/wavelet_denoise.cpp"): "sony2fuji_core",
+    str(REPO / "lutools/src/core/wavelet_denoise.cpp"): "sony2fuji_core_objects",
     "core/wavelib/wavelib.c": "wavelib",
     "_deps/rawlab_wavelib-src/src/wtmath.c": "wavelib",
     "_deps/rawlab_opencv-src/modules/core/src/matrix.cpp": "opencv_core",
@@ -35,7 +35,7 @@ SAFE_FP_VALUES = {
     "-mrecip": {"none"},
 }
 OPAQUE_OPTIONS = ("-Xclang", "-mllvm", "--config")
-DEPENDENCIES = TARGETS - {"sony2fuji_core"}
+DEPENDENCIES = TARGETS - {"sony2fuji_core_objects"}
 
 
 def arguments(entry):

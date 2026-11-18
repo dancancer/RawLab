@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "gpu/image_stats.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
@@ -14,14 +15,7 @@
 
 namespace {
 
-int failures = 0;
-
-void check(bool condition, const std::string& name) {
-    std::cout << (condition ? "PASS " : "FAIL ") << name << '\n';
-    if (!condition) {
-        ++failures;
-    }
-}
+using rawlab::test::checkPass;
 
 struct Fixture {
     std::vector<uint8_t> bytes;
@@ -149,16 +143,16 @@ void testSynthetic(uint32_t channels, const std::string& label) {
     const std::vector<uint8_t> before = fixture.bytes;
 
     sony2fuji::ImageStats actual;
-    check(sony2fuji::computeImageStatsCPU(fixture.buffer, actual), label + " CPU computes");
+    checkPass(sony2fuji::computeImageStatsCPU(fixture.buffer, actual), label + " CPU computes");
     const auto expected = expectedStats(fixture.buffer);
-    check(sameStats(actual, expected), label + " exact bins/counters/mask");
-    check(actual.clipping.size() == static_cast<size_t>(fixture.buffer.width) * fixture.buffer.height * 4,
+    checkPass(sameStats(actual, expected), label + " exact bins/counters/mask");
+    checkPass(actual.clipping.size() == static_cast<size_t>(fixture.buffer.width) * fixture.buffer.height * 4,
           label + " packed mask size");
-    check(actual.histogram[0] == 2 && actual.histogram[255] == 1,
+    checkPass(actual.histogram[0] == 2 && actual.histogram[255] == 1,
           label + " red all-bin counts");
-    check(actual.histogram[256 + 0] == 2 && actual.histogram[256 + 255] == 1,
+    checkPass(actual.histogram[256 + 0] == 2 && actual.histogram[256 + 255] == 1,
           label + " green all-bin counts");
-    check(actual.histogram[512 + 0] == 2 && actual.histogram[512 + 255] == 1,
+    checkPass(actual.histogram[512 + 0] == 2 && actual.histogram[512 + 255] == 1,
           label + " blue all-bin counts");
     bool allBinsPresent = true;
     for (size_t channel = 0; channel < 3; ++channel) {
@@ -166,25 +160,25 @@ void testSynthetic(uint32_t channels, const std::string& label) {
             allBinsPresent = allBinsPresent && actual.histogram[channel * 256 + bin] != 0;
         }
     }
-    check(allBinsPresent, label + " all 256 bins populated");
-    check(actual.shadows == 1 && actual.highlights == 3,
+    checkPass(allBinsPresent, label + " all 256 bins populated");
+    checkPass(actual.shadows == 1 && actual.highlights == 3,
           label + " clipping counters");
-    check(actual.clipping == expected.clipping, label + " clipping colors");
-    check(std::all_of(actual.clipping.begin() + 257 * 4, actual.clipping.end(),
+    checkPass(actual.clipping == expected.clipping, label + " clipping colors");
+    checkPass(std::all_of(actual.clipping.begin() + 257 * 4, actual.clipping.end(),
                       [](uint8_t value) { return value == 0; }),
           label + " ordinary pixels remain transparent");
-    check(fixture.bytes == before, label + " leaves source colors unchanged");
+    checkPass(fixture.bytes == before, label + " leaves source colors unchanged");
 
     sony2fuji::ImageStats withoutMask;
-    check(sony2fuji::computeImageStatsCPU(fixture.buffer, withoutMask, false) &&
+    checkPass(sony2fuji::computeImageStatsCPU(fixture.buffer, withoutMask, false) &&
           withoutMask.clipping.empty() && withoutMask.histogram == actual.histogram &&
           withoutMask.shadows == actual.shadows && withoutMask.highlights == actual.highlights,
           label + " optional mask preserves exact counts without allocating pixels");
 
     sony2fuji::ImageStats gpu;
     if (sony2fuji::computeImageStatsMetal(fixture.buffer, gpu)) {
-        check(sameStats(gpu, actual), label + " Metal/CPU exact parity");
-        check(fixture.bytes == before, label + " Metal leaves source colors unchanged");
+        checkPass(sameStats(gpu, actual), label + " Metal/CPU exact parity");
+        checkPass(fixture.bytes == before, label + " Metal leaves source colors unchanged");
     } else {
         std::cout << "SKIP " << label << " Metal parity (no usable Metal device)\n";
     }
@@ -196,8 +190,8 @@ void testOneByOne() {
     highlight.bytes = {255, 1, 2};
     highlight.bind();
     sony2fuji::ImageStats stats;
-    check(sony2fuji::computeImageStatsCPU(highlight.buffer, stats), "1x1 highlight computes");
-    check(stats.highlights == 1 && stats.shadows == 0 &&
+    checkPass(sony2fuji::computeImageStatsCPU(highlight.buffer, stats), "1x1 highlight computes");
+    checkPass(stats.highlights == 1 && stats.shadows == 0 &&
           stats.clipping == std::vector<uint8_t>({255, 0, 0, 160}),
           "1x1 highlight mask");
 
@@ -205,8 +199,8 @@ void testOneByOne() {
     shadow.bind();
     shadow.bytes = {0, 0, 0, 255};
     shadow.bind();
-    check(sony2fuji::computeImageStatsCPU(shadow.buffer, stats), "1x1 RGBA shadow computes");
-    check(stats.shadows == 1 && stats.highlights == 0 &&
+    checkPass(sony2fuji::computeImageStatsCPU(shadow.buffer, stats), "1x1 RGBA shadow computes");
+    checkPass(stats.shadows == 1 && stats.highlights == 0 &&
           stats.clipping == std::vector<uint8_t>({0, 130, 255, 160}),
           "1x1 RGBA shadow mask");
 }
@@ -223,22 +217,22 @@ void testInvalidBuffers() {
 
     auto invalid = fixture.buffer;
     invalid.size_bytes = static_cast<size_t>(invalid.stride_bytes) + 4;
-    check(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
+    checkPass(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
           "short size_bytes rejected without output mutation");
 
     invalid = fixture.buffer;
     invalid.stride_bytes = 1;
-    check(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
+    checkPass(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
           "short stride rejected without output mutation");
 
     invalid = fixture.buffer;
     invalid.width = std::numeric_limits<uint32_t>::max();
     invalid.stride_bytes = std::numeric_limits<uint32_t>::max();
     invalid.size_bytes = std::numeric_limits<size_t>::max();
-    check(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
+    checkPass(!sony2fuji::computeImageStatsCPU(invalid, sentinel) && sameStats(sentinel, original),
           "overflowing dimensions rejected without output mutation");
 
-    check(!sony2fuji::computeImageStatsMetal(invalid, sentinel) && sameStats(sentinel, original),
+    checkPass(!sony2fuji::computeImageStatsMetal(invalid, sentinel) && sameStats(sentinel, original),
           "Metal invalid buffer leaves output unchanged");
 }
 
@@ -261,7 +255,7 @@ void testPublicCAPI() {
     const uint64_t before = checksumBytes(fixture.bytes);
 
     sony2fuji::ImageStats expected;
-    check(sony2fuji::computeImageStatsCPU(fixture.buffer, expected),
+    checkPass(sony2fuji::computeImageStatsCPU(fixture.buffer, expected),
           "public C API RGBA reference computes");
     sony2fuji::ImageStats metalReference;
     const bool metalAvailable = sony2fuji::computeImageStatsMetal(fixture.buffer, metalReference);
@@ -275,9 +269,9 @@ void testPublicCAPI() {
         sony2fuji_buffer* maskOutput = withMask ? &mask : nullptr;
         const auto status = sony2fuji_analyze_image(
             &fixture.buffer, mode, bins, &shadows, &highlights, maskOutput);
-        check(status == SONY2FUJI_STATUS_OK, std::string(label) + " returns OK");
+        checkPass(status == SONY2FUJI_STATUS_OK, std::string(label) + " returns OK");
         if (status == SONY2FUJI_STATUS_OK) {
-            check(samePublicStats(expected, bins, shadows, highlights,
+            checkPass(samePublicStats(expected, bins, shadows, highlights,
                                   withMask ? &mask : nullptr),
                   std::string(label) + (withMask ?
                       " matches CPU bins/counters/mask" :
@@ -286,7 +280,7 @@ void testPublicCAPI() {
                 sony2fuji_release_buffer(&mask);
             }
         }
-        check(checksumBytes(fixture.bytes) == before,
+        checkPass(checksumBytes(fixture.bytes) == before,
               std::string(label) + " leaves RGBA source unchanged");
     };
 
@@ -303,27 +297,27 @@ void testPublicCAPI() {
         &fixture.buffer, SONY2FUJI_GPU_FORCE, forceBins, &forceShadows,
         &forceHighlights, &forceMask);
     if (metalAvailable) {
-        check(forceStatus == SONY2FUJI_STATUS_OK, "public C API Force uses Metal");
+        checkPass(forceStatus == SONY2FUJI_STATUS_OK, "public C API Force uses Metal");
         if (forceStatus == SONY2FUJI_STATUS_OK) {
-            check(samePublicStats(metalReference, forceBins, forceShadows,
+            checkPass(samePublicStats(metalReference, forceBins, forceShadows,
                                   forceHighlights, &forceMask),
                   "public C API Force matches direct Metal");
             sony2fuji_release_buffer(&forceMask);
         }
     } else {
 #ifdef SONY2FUJI_ENABLE_METAL
-        check(forceStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
+        checkPass(forceStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
               "public C API Force rejects unavailable Metal");
 #else
-        check(forceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+        checkPass(forceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
               "public C API Force returns UNSUPPORTED without a Metal backend");
 #endif
-        check(forceMask.data == nullptr && forceMask.size_bytes == 0 &&
+        checkPass(forceMask.data == nullptr && forceMask.size_bytes == 0 &&
               forceShadows == 0x2468ace0u && forceHighlights == 0xdeadbeefu &&
               forceBins[0] == 0x13579bdfu && forceBins[767] == 0x13579bdfu,
               "public C API Force leaves outputs unchanged on failure");
     }
-    check(checksumBytes(fixture.bytes) == before,
+    checkPass(checksumBytes(fixture.bytes) == before,
           "public C API Force leaves RGBA source unchanged");
 }
 
@@ -343,9 +337,9 @@ void testPublicCAPIInvalidBounds() {
     sony2fuji_buffer mask{};
     const auto status = sony2fuji_analyze_image(
         &invalid, SONY2FUJI_GPU_AUTO, bins, &shadows, &highlights, &mask);
-    check(status == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+    checkPass(status == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "public C API rejects short size_bytes");
-    check(bins[0] == originalBins && bins[767] == originalBins &&
+    checkPass(bins[0] == originalBins && bins[767] == originalBins &&
           shadows == originalShadows && highlights == originalHighlights &&
           mask.data == nullptr && mask.size_bytes == 0,
           "public C API invalid bounds leave outputs unchanged");
@@ -354,7 +348,7 @@ void testPublicCAPIInvalidBounds() {
     invalid.stride_bytes = 1;
     const auto strideStatus = sony2fuji_analyze_image(
         &invalid, SONY2FUJI_GPU_OFF, bins, &shadows, &highlights, nullptr);
-    check(strideStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+    checkPass(strideStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "public C API rejects short stride");
 }
 
@@ -389,7 +383,7 @@ void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
             break;
         }
     }
-    check(cpuOk, label + " CPU warmup computes");
+    checkPass(cpuOk, label + " CPU warmup computes");
     if (!cpuOk) {
         return;
     }
@@ -403,7 +397,7 @@ void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
         }
         cpuTimes.push_back(std::chrono::duration<double, std::milli>(end - start).count());
     }
-    check(cpuOk && cpuTimes.size() == measuredRuns, label + " CPU measured computes");
+    checkPass(cpuOk && cpuTimes.size() == measuredRuns, label + " CPU measured computes");
     if (!cpuOk || cpuTimes.size() != measuredRuns) {
         return;
     }
@@ -412,7 +406,7 @@ void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
     std::cout << "BENCH image_stats " << label << " CPU warmup=5 measured=10 avg="
               << cpuAverage << " ms min="
               << *std::min_element(cpuTimes.begin(), cpuTimes.end()) << " ms\n";
-    check(checksumBytes(fixture.bytes) == before, label + " CPU leaves source colors unchanged");
+    checkPass(checksumBytes(fixture.bytes) == before, label + " CPU leaves source colors unchanged");
 
     sony2fuji::ImageStats gpu;
     bool gpuOk = true;
@@ -433,7 +427,7 @@ void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
             }
             gpuTimes.push_back(std::chrono::duration<double, std::milli>(end - start).count());
         }
-        check(gpuOk && gpuTimes.size() == measuredRuns, label + " Metal measured computes");
+        checkPass(gpuOk && gpuTimes.size() == measuredRuns, label + " Metal measured computes");
         if (!gpuOk || gpuTimes.size() != measuredRuns) {
             return;
         }
@@ -442,8 +436,8 @@ void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
         std::cout << "BENCH image_stats " << label << " Metal warmup=5 measured=10 avg="
                   << gpuAverage << " ms min="
                   << *std::min_element(gpuTimes.begin(), gpuTimes.end()) << " ms\n";
-        check(sameStats(gpu, cpu), label + " Metal/CPU exact parity");
-        check(checksumBytes(fixture.bytes) == before,
+        checkPass(sameStats(gpu, cpu), label + " Metal/CPU exact parity");
+        checkPass(checksumBytes(fixture.bytes) == before,
               label + " Metal leaves source colors unchanged");
     } else {
         std::cout << "SKIP " << label << " Metal benchmark (no usable Metal device)\n";
@@ -465,5 +459,5 @@ int main() {
     testPublicCAPI();
     testPublicCAPIInvalidBounds();
     testLargeBenchmark();
-    return failures == 0 ? 0 : 1;
+    return rawlab::test::exitCode();
 }

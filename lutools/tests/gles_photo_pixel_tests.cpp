@@ -1,4 +1,5 @@
 #define SONY2FUJI_GLES_VM_IMPLEMENT
+#include "test_harness.h"
 #include "gles_spirv_vm.h"
 
 #include "core/chroma_denoise.h"
@@ -27,13 +28,7 @@
 
 namespace {
 
-int gFailures = 0;
-
-void check(bool ok, const std::string& label) {
-    std::cout << (ok ? "PASS " : "FAIL ") << label << '\n';
-    if (!ok) ++gFailures;
-}
-
+using rawlab::test::checkPass;
 sony2fuji_request makeBaseRequest(int width, int height) {
     sony2fuji_request r{};
     r.version = SONY2FUJI_REQUEST_VERSION;
@@ -291,7 +286,7 @@ void testPixelAndTextureContract() {
     sony2fuji::GlesPhotoRenderer renderer;
     const auto flogLut = buildSyntheticLut("F-Log to ITU-R BT.709", "F-Gamut to ITU-R BT.709", 5, false, true);
     const auto srgbLut = buildSyntheticLut("sRGB to sRGB", "ITU-R BT.709 to ITU-R BT.709", 5, true, true);
-    check(srgbLut != nullptr && srgbLut->inputTransfer() == sony2fuji::LUTTransfer::SRGB,
+    checkPass(srgbLut != nullptr && srgbLut->inputTransfer() == sony2fuji::LUTTransfer::SRGB,
           "Synthetic sRGB input LUT loads cleanly");
 
     const auto input = makeColorfulTestImage(6, 4);
@@ -302,11 +297,11 @@ void testPixelAndTextureContract() {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 8);
     const bool flogOk = renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, {1.f, 1.f, 1.f}, 6, 4, 1, output);
     const auto& stats = rawlabtest::glesVmStats();
-    check(flogOk && stats.texImage3DCalls == 1, "glTexImage3D uploads 3D LUT texture once");
-    check(stats.lastTexUnpackAlignment == 1,
+    checkPass(flogOk && stats.texImage3DCalls == 1, "glTexImage3D uploads 3D LUT texture once");
+    checkPass(stats.lastTexUnpackAlignment == 1,
           "GLES photo sets GL_UNPACK_ALIGNMENT = 1 before glTexImage3D (got " +
           std::to_string(stats.lastTexUnpackAlignment) + ")");
-    check(stats.lastTexInternalFormat == GL_RGBA32F &&
+    checkPass(stats.lastTexInternalFormat == GL_RGBA32F &&
           stats.lastTexFormat == GL_RGBA &&
           stats.lastTexType == GL_FLOAT &&
           stats.lastTexMinFilter == GL_NEAREST &&
@@ -318,19 +313,19 @@ void testPixelAndTextureContract() {
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 8);
     const bool srgbOk = renderer.render(input, sony2fuji::ColorSpace::sRGB, req, srgbLut, {1.f, 1.f, 1.f}, 6, 4, 2, output);
-    check(srgbOk, "GLES photo renderer accepts LUTTransfer::SRGB (P2-10 / C29)");
-    check(stats.lastTexUnpackAlignment == 1,
+    checkPass(srgbOk, "GLES photo renderer accepts LUTTransfer::SRGB (P2-10 / C29)");
+    checkPass(stats.lastTexUnpackAlignment == 1,
           "GLES sRGB LUT upload preserves GL_UNPACK_ALIGNMENT = 1 (got " +
           std::to_string(stats.lastTexUnpackAlignment) + ")");
 
     // Contract rejections.
     sony2fuji::ImageData badInput = input;
     badInput.pixels.pop_back();
-    check(!renderer.render(badInput, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 6, 4, 0, output),
+    checkPass(!renderer.render(badInput, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 6, 4, 0, output),
           "Rejects mismatched pixel buffer length");
-    check(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 0, 4, 0, output),
+    checkPass(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 0, 4, 0, output),
           "Rejects zero output width");
-    check(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 6, 4, 0, output, {}, 3),
+    checkPass(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, 6, 4, 0, output, {}, 3),
           "Rejects out-of-range chromaDenoise mode");
 
     const auto contractCpuLut = buildSyntheticLut("F-Log to ITU-R BT.709", "F-Gamut to ITU-R BT.709", 3, false, false);
@@ -339,7 +334,7 @@ void testPixelAndTextureContract() {
                              "0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
         auto vlt = std::make_shared<sony2fuji::LUT3D>();
         if (vlt->loadFromData(vltText, true) == sony2fuji::ErrorCode::Success) {
-            check(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, vlt, {1.f, 1.f, 1.f}, 6, 4, 0, output),
+            checkPass(!renderer.render(input, sony2fuji::ColorSpace::sRGB, req, vlt, {1.f, 1.f, 1.f}, 6, 4, 0, output),
                   "Rejects requiresCPU() VLT LUT");
         }
     }
@@ -355,7 +350,7 @@ void testShaderBranchesPixelParity() {
     const auto flog2ToFlogLut = buildSyntheticLut("F-Log2 to F-Log", "F-Gamut to ITU-R BT.709", 5, false, false);
     const auto flog2ToFlog2Lut = buildSyntheticLut("F-Log2 to F-Log2", "F-Gamut to ITU-R BT.709", 5, true, false);
     const auto srgbLut = buildSyntheticLut("sRGB to sRGB", "ITU-R BT.709 to ITU-R BT.709", 5, true, true);
-    check(flogLut && flog2ToFlogLut && flog2ToFlog2Lut && srgbLut, "All parity LUTs load");
+    checkPass(flogLut && flog2ToFlogLut && flog2ToFlog2Lut && srgbLut, "All parity LUTs load");
 
     sony2fuji::ToneControlsOptions tc;
     tc.blackPoint = 0.10f;
@@ -434,7 +429,7 @@ void testShaderBranchesPixelParity() {
         const auto cpuOut = cpuRenderPhoto(
             input, c.space, req, c.lut, wb, 8, 6, {}, hslUse, tcUse, cgUse, curveUse);
         const float diff = ok ? maxPixelDiff(gpuOut, cpuOut) : std::numeric_limits<float>::infinity();
-        check(ok && diff <= 2e-4f,
+        checkPass(ok && diff <= 2e-4f,
               "Pixel parity [" + c.name + "] maxDiff=" + std::to_string(diff));
     }
 
@@ -448,7 +443,7 @@ void testShaderBranchesPixelParity() {
         const bool ok1 = renderer.render(input, sony2fuji::ColorSpace::sRGB, reqLut, srgbLut, wb, 8, 6, 0, withSrgb);
         const bool ok2 = renderer.render(input, sony2fuji::ColorSpace::sRGB, reqNone, nullptr, wb, 8, 6, 0, withoutLut);
         const float branchDelta = (ok1 && ok2) ? maxPixelDiff(withSrgb, withoutLut) : 0.f;
-        check(ok1 && ok2 && branchDelta > 0.1f,
+        checkPass(ok1 && ok2 && branchDelta > 0.1f,
               "sRGB LUT produces distinct look vs neutral (delta=" + std::to_string(branchDelta) + ")");
     }
 }
@@ -466,43 +461,43 @@ void testResizeStagesEffectsAndMultiBand() {
     req.contrast = 1.3f;
     sony2fuji::ImageData prev1, prev2, finalOut;
 
-    check(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, prev1),
+    checkPass(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, prev1),
           "PREVIEW resized render rev=77 succeeds");
     const size_t dispatchesFirst = rawlabtest::glesVmStats().dispatchCalls;
-    check(dispatchesFirst == 2,
+    checkPass(dispatchesFirst == 2,
           "PREVIEW uncached rev=77 runs stage 0 resize + stage 1 evaluate (dispatches=" +
           std::to_string(dispatchesFirst) + ")");
     const auto cpuPrev1 = cpuRenderPhoto(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, {}, {}, {}, {}, {});
-    check(maxPixelDiff(prev1, cpuPrev1) <= 2e-4f, "PREVIEW rev=77 matches CPU resize-then-evaluate");
+    checkPass(maxPixelDiff(prev1, cpuPrev1) <= 2e-4f, "PREVIEW rev=77 matches CPU resize-then-evaluate");
 
     rawlabtest::glesVmStats().resetCounters();
     req.exposure_ev = 0.5f;
-    check(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, prev2),
+    checkPass(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, prev2),
           "PREVIEW cached render rev=77 succeeds");
-    check(rawlabtest::glesVmStats().dispatchCalls == 1,
+    checkPass(rawlabtest::glesVmStats().dispatchCalls == 1,
           "PREVIEW cached rev=77 skips stage 0 resize and runs stage 1 only (dispatches=" +
           std::to_string(rawlabtest::glesVmStats().dispatchCalls) + ")");
     const auto cpuPrev2 = cpuRenderPhoto(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, {}, {}, {}, {}, {});
-    check(maxPixelDiff(prev2, cpuPrev2) <= 2e-4f, "PREVIEW cached rev=77 reflects updated exposure");
+    checkPass(maxPixelDiff(prev2, cpuPrev2) <= 2e-4f, "PREVIEW cached rev=77 reflects updated exposure");
 
     // 2. FINAL resize evaluates at native resolution then resizes (must match CPU FINAL & differ from PREVIEW).
     req.intent = SONY2FUJI_INTENT_FINAL;
-    check(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, finalOut),
+    checkPass(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 77, finalOut),
           "FINAL resized render succeeds");
     const auto cpuFinal = cpuRenderPhoto(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, {}, {}, {}, {}, {});
-    check(maxPixelDiff(finalOut, cpuFinal) <= 2e-4f, "FINAL resized matches CPU evaluate-then-resize");
-    check(maxPixelDiff(finalOut, prev2) > 1e-3f, "FINAL and PREVIEW resize ordering produce measurably different pixels");
+    checkPass(maxPixelDiff(finalOut, cpuFinal) <= 2e-4f, "FINAL resized matches CPU evaluate-then-resize");
+    checkPass(maxPixelDiff(finalOut, prev2) > 1e-3f, "FINAL and PREVIEW resize ordering produce measurably different pixels");
 
     // 3. PreserveSourceResolution + PhotoEffects + stage 4 resize.
     sony2fuji::PhotoEffectsOptions fx;
     fx.vignetteAmount = -35.f;
     fx.grainAmount = 30.f;
     sony2fuji::ImageData fxOut;
-    check(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 79, fxOut, fx, 0, true),
+    checkPass(renderer.render(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, 79, fxOut, fx, 0, true),
           "GLES gpuPhotoEffects + stage 4 resize succeeds");
     const auto cpuFx = cpuRenderPhoto(input, sony2fuji::ColorSpace::sRGB, req, flogLut, wb, 4, 3, fx, {}, {}, {}, {});
     const float fxDiff = maxPixelDiff(fxOut, cpuFx);
-    check(fxDiff <= 3e-4f, "GLES gpuPhotoEffects + resize parity maxDiff=" + std::to_string(fxDiff));
+    checkPass(fxDiff <= 3e-4f, "GLES gpuPhotoEffects + resize parity maxDiff=" + std::to_string(fxDiff));
 
     // 4. Multi-band tiling under tight GL_MAX_SHADER_STORAGE_BLOCK_SIZE (4096 bytes) on FINAL resize!
     {
@@ -520,9 +515,9 @@ void testResizeStagesEffectsAndMultiBand() {
         rawlabtest::glesVmConfig() = savedCfg;
         const auto cpuBand = cpuRenderPhoto(
             bigInput, sony2fuji::ColorSpace::AdobeRGB, bigReq, flogLut, wb, 24, 18, {}, {}, {}, {}, {});
-        check(bandOk && bandDispatches >= 3,
+        checkPass(bandOk && bandDispatches >= 3,
               "Small SSBO limit triggers multi-band tiling (dispatches=" + std::to_string(bandDispatches) + ")");
-        check(maxPixelDiff(bandOut, cpuBand) <= 2e-4f,
+        checkPass(maxPixelDiff(bandOut, cpuBand) <= 2e-4f,
               "Multi-band GLES FINAL resize matches CPU output pixel-for-pixel");
     }
 }
@@ -548,17 +543,17 @@ void testChromaDenoiseUsesWorkingBands() {
     const bool ok = renderer.render(noisy, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, W, H, 0, gpuOut, {}, 1);
     const size_t maxSsbo = rawlabtest::glesVmStats().maxBufferDataBytes;
 
-    check(ok, "GLES photo with chromaDenoise=1 succeeds");
-    check(maxSsbo > 0 && maxSsbo <= 2300000,
+    checkPass(ok, "GLES photo with chromaDenoise=1 succeeds");
+    checkPass(maxSsbo > 0 && maxSsbo <= 2300000,
           "GLES chroma denoise runs bounded working bands instead of full frame (maxSsboBytes=" +
           std::to_string(maxSsbo) + ")");
 
     // Verify denoised pixels match CPU applyChromaDenoiseWorking reference.
     sony2fuji::ImageData cpuRef = cpuRenderPhoto(noisy, sony2fuji::ColorSpace::sRGB, req, nullptr, {1.f, 1.f, 1.f}, W, H, {}, {}, {}, {}, {});
     const auto err = sony2fuji::applyChromaDenoiseWorking(cpuRef, 1, nullptr, sony2fuji::GpuMode::Off);
-    check(err == sony2fuji::ErrorCode::Success, "CPU applyChromaDenoiseWorking reference succeeds");
+    checkPass(err == sony2fuji::ErrorCode::Success, "CPU applyChromaDenoiseWorking reference succeeds");
     const float diff = maxPixelDiff(gpuOut, cpuRef);
-    check(diff <= 5e-3f, "GLES chroma denoise pixel parity with CPU working-band reference (maxDiff=" +
+    checkPass(diff <= 5e-3f, "GLES chroma denoise pixel parity with CPU working-band reference (maxDiff=" +
           std::to_string(diff) + ")");
 }
 
@@ -579,8 +574,8 @@ int main(int argc, char** argv) {
     testResizeStagesEffectsAndMultiBand();
     testChromaDenoiseUsesWorkingBands();
 
-    if (gFailures != 0) {
-        std::cerr << gFailures << " check(s) failed\n";
+    if (rawlab::test::failureCount() != 0) {
+        std::cerr << rawlab::test::failureCount() << " checkPass(s) failed\n";
         return 1;
     }
     return 0;

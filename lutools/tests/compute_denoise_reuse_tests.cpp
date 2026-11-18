@@ -1,4 +1,5 @@
 #define SONY2FUJI_GLES_VM_IMPLEMENT
+#include "test_harness.h"
 #include "gles_spirv_vm.h"
 
 #include "gpu/compute_denoise.h"
@@ -54,13 +55,7 @@ void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 
 namespace {
 
-int gFailures = 0;
-
-void check(bool ok, const std::string& label) {
-    std::cout << (ok ? "PASS " : "FAIL ") << label << '\n';
-    if (!ok) ++gFailures;
-}
-
+using rawlab::test::checkPass;
 struct MockBuffer : sony2fuji::FilterBuffer {
     std::vector<float> data;
 };
@@ -156,18 +151,18 @@ void testImageFilterBandAndScratchReuse() {
         ok = sony2fuji::computePhotoEffects(dev, image, fx);
         largeAllocs = probe.count();
     }
-    check(ok, "computePhotoEffects multi-band succeeds");
-    check(dev.allocateCalls == 2,
+    checkPass(ok, "computePhotoEffects multi-band succeeds");
+    checkPass(dev.allocateCalls == 2,
           "imageFilter allocates input/output SSBO once outside band loop (got " +
           std::to_string(dev.allocateCalls) + ")");
-    check(dev.writeCalls == 4,
+    checkPass(dev.writeCalls == 4,
           "imageFilter reuploads each band into reused buffer via write() (got " +
           std::to_string(dev.writeCalls) + ")");
-    check(dev.dispatchCalls == 4 && dev.readCalls == 4, "imageFilter dispatches and reads all 4 bands");
-    check(largeAllocs <= 2,
+    checkPass(dev.dispatchCalls == 4 && dev.readCalls == 4, "imageFilter dispatches and reads all 4 bands");
+    checkPass(largeAllocs <= 2,
           "imageFilter + finiteOutput reuse host scratch across multi-band readback (got " +
           std::to_string(largeAllocs) + " allocs >= 4 MiB)");
-    check(std::fabs(image.pixels.front().r - 0.205f) < 1e-6f &&
+    checkPass(std::fabs(image.pixels.front().r - 0.205f) < 1e-6f &&
           std::fabs(image.pixels.back().b - 0.505f) < 1e-6f,
           "imageFilter preserves pixel exactness across reused bands");
 }
@@ -190,8 +185,8 @@ void testDetailFilterCopiesAndAtomicity() {
             ok = sony2fuji::computeDetailFilter(dev, zero, 0.f, 0.f);
             fullCopies = probe.count();
         }
-        check(ok && dev.allocateCalls == 0, "computeDetailFilter 0/0 performs no GPU work");
-        check(fullCopies == 0,
+        checkPass(ok && dev.allocateCalls == 0, "computeDetailFilter 0/0 performs no GPU work");
+        checkPass(fullCopies == 0,
               "computeDetailFilter 0/0 performs zero full-image allocations (got " +
               std::to_string(fullCopies) + ")");
     }
@@ -206,12 +201,12 @@ void testDetailFilterCopiesAndAtomicity() {
             ok = sony2fuji::computeDetailFilter(dev, onePass, 0.5f, 0.f);
             fullCopies = probe.count();
         }
-        check(ok && dev.allocateCalls == 2 && dev.writeCalls == 2,
+        checkPass(ok && dev.allocateCalls == 2 && dev.writeCalls == 2,
               "computeDetailFilter 1-pass reuses band SSBOs across halo bands");
-        check(fullCopies == 1,
+        checkPass(fullCopies == 1,
               "computeDetailFilter 1-pass allocates only 1 full result buffer instead of 2 (got " +
               std::to_string(fullCopies) + ")");
-        check(std::fabs(onePass.pixels.front().r - 0.31f) < 1e-6f,
+        checkPass(std::fabs(onePass.pixels.front().r - 0.31f) < 1e-6f,
               "computeDetailFilter 1-pass output is accurate");
     }
 
@@ -220,8 +215,8 @@ void testDetailFilterCopiesAndAtomicity() {
         MockFilterDevice dev;
         dev.injectNaNOnSecondDirection = true;
         const bool ok = sony2fuji::computeDetailFilter(dev, twoPassFail, 0.5f, 0.6f);
-        check(!ok, "computeDetailFilter 2-pass rejects non-finite pass 2 output");
-        check(twoPassFail.pixels[0].r == base.pixels[0].r &&
+        checkPass(!ok, "computeDetailFilter 2-pass rejects non-finite pass 2 output");
+        checkPass(twoPassFail.pixels[0].r == base.pixels[0].r &&
               twoPassFail.pixels.back().b == base.pixels.back().b,
               "computeDetailFilter 2-pass failure preserves caller image atomically");
     }
@@ -233,7 +228,7 @@ void testGlesDenoiseBufferPooling() {
 #else
     rawlabtest::resetGlesVmState();
     auto device = sony2fuji::createGlesFilterDevice();
-    check(device != nullptr, "createGlesFilterDevice returns non-null");
+    checkPass(device != nullptr, "createGlesFilterDevice returns non-null");
     if (!device) return;
 
     auto makePattern = [](int w, int h) {
@@ -258,7 +253,7 @@ void testGlesDenoiseBufferPooling() {
     std::vector<float> outEdge(64 * 48 * 2, 0.f);
     {
         auto scope = device->activate();
-        check(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out1.data()),
+        checkPass(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out1.data()),
               "computeGuidedFilter warmup 64x64 succeeds on GLES SPIR-V VM");
     }
 
@@ -273,7 +268,7 @@ void testGlesDenoiseBufferPooling() {
     std::vector<float> wavOut2(32 * 32, 0.f);
     {
         auto scope = device->activate();
-        check(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut1.data()),
+        checkPass(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut1.data()),
               "computeWaveletFilter warmup 32x32 succeeds on GLES SPIR-V VM");
     }
 
@@ -282,39 +277,39 @@ void testGlesDenoiseBufferPooling() {
     auto [guideEdge, srcEdge] = makePattern(64, 48);
     {
         auto scope = device->activate();
-        check(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out2.data()),
+        checkPass(sony2fuji::computeGuidedFilter(*device, guide64.data(), src64.data(), 64, 64, 2, 0.01f, out2.data()),
               "computeGuidedFilter repeat 64x64 succeeds");
-        check(sony2fuji::computeGuidedFilter(*device, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdge.data()),
+        checkPass(sony2fuji::computeGuidedFilter(*device, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdge.data()),
               "computeGuidedFilter trailing band 64x48 succeeds");
-        check(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut2.data()),
+        checkPass(sony2fuji::computeWaveletFilter(*device, wavIn.data(), 32, 32, wav, wavOut2.data()),
               "computeWaveletFilter repeat tile 32x32 succeeds");
     }
 
     const auto stats = rawlabtest::glesVmStats();
-    check(stats.genBufferCalls == 0,
+    checkPass(stats.genBufferCalls == 0,
           "gles_denoise reuses pooled SSBOs without glGenBuffers (got " +
           std::to_string(stats.genBufferCalls) + ")");
-    check(stats.bufferDataCalls == 0,
+    checkPass(stats.bufferDataCalls == 0,
           "gles_denoise reuses pooled SSBOs without glBufferData reallocation (got " +
           std::to_string(stats.bufferDataCalls) + ")");
-    check(stats.deleteBufferCalls == 0,
+    checkPass(stats.deleteBufferCalls == 0,
           "gles_denoise retains pooled SSBOs without glDeleteBuffers churn (got " +
           std::to_string(stats.deleteBufferCalls) + ")");
-    check(stats.ssboBufferSubDataCalls == 5,
+    checkPass(stats.ssboBufferSubDataCalls == 5,
           "gles_denoise uploads new data into pooled SSBOs via GL_SHADER_STORAGE_BUFFER glBufferSubData (got " +
           std::to_string(stats.ssboBufferSubDataCalls) + ")");
-    check(out1 == out2 && wavOut1 == wavOut2,
+    checkPass(out1 == out2 && wavOut1 == wavOut2,
           "pooled SSBO execution is bit-identical to unpooled warmup results");
 
     auto refDevice = sony2fuji::createGlesFilterDevice();
     std::vector<float> outEdgeRef(64 * 48 * 2, 0.f);
     {
         auto scope = refDevice->activate();
-        check(sony2fuji::computeGuidedFilter(*refDevice, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdgeRef.data()),
+        checkPass(sony2fuji::computeGuidedFilter(*refDevice, guideEdge.data(), srcEdge.data(), 64, 48, 2, 0.01f, outEdgeRef.data()),
               "unpooled fresh device computes 64x48 guided filter reference");
     }
     bool edgeFinite = std::all_of(outEdge.begin(), outEdge.end(), [](float v) { return std::isfinite(v); });
-    check(edgeFinite && outEdge == outEdgeRef,
+    checkPass(edgeFinite && outEdge == outEdgeRef,
           "trailing 64x48 band produces exact unpooled output when reusing 64x64 buffers");
 #endif
 }
@@ -337,10 +332,10 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
                 },
                 [](sony2fuji::FilterBuffer&, size_t, const float*) {}));
         }
-        check(created == 24 && pool.idleFloats() == 0,
+        checkPass(created == 24 && pool.idleFloats() == 0,
               "FilterBufferPool holds 24x9 MiB active buffers during wavelet peak without premature eviction");
         peak.clear();
-        check(pool.idleFloats() == 24 * kNineMiBFloats,
+        checkPass(pool.idleFloats() == 24 * kNineMiBFloats,
               "dropping peak leases turns 216 MiB into idle pool entries before trim");
         {
             // Pool-hit branch for a subsequent small 512x512 request must trim excess idle buffers too.
@@ -352,11 +347,11 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
                     return b;
                 },
                 [](sony2fuji::FilterBuffer&, size_t, const float*) {});
-            check(created == 24 && pool.idleFloats() <= kBudgetFloats,
+            checkPass(created == 24 && pool.idleFloats() <= kBudgetFloats,
                   "FilterBufferPool acquire() hit trims idle pool entries to <= 64 MiB");
         }
         pool.trimIdleToBudget();
-        check(pool.idleFloats() <= kBudgetFloats && pool.entryCount() <= 7,
+        checkPass(pool.idleFloats() <= kBudgetFloats && pool.entryCount() <= 7,
               "FilterBufferPool trimIdleToBudget() caps idle memory at <= 64 MiB after peak");
     }
 
@@ -397,7 +392,7 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
         reused.reset();
         pool.trimIdleToBudget();
         const bool writeIsolated = inFlightMock.data[123] == 7.5f && reusedMock.data[123] == 9.25f;
-        check(distinctFromInFlight && readsMatch && writeIsolated,
+        checkPass(distinctFromInFlight && readsMatch && writeIsolated,
               "FilterBufferPool mixed-size hit (bestIndex > 0 before inUse tail) avoids aliasing in-flight buffer");
     }
 
@@ -425,14 +420,14 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
         const size_t idleWhileHeld = pool.idleFloats();
         hit.reset();
         const bool leaseReleased = pool.idleFloats() == idleWhileHeld + kOneMiBFloats;
-        check(hitValid && leaseReleased,
+        checkPass(hitValid && leaseReleased,
               "FilterBufferPool mixed-size hit at tail slot preserves valid Lease across trim");
     }
 
 #ifdef RAWLAB_GLSLANG_PATH
     rawlabtest::resetGlesVmState();
     auto device = sony2fuji::createGlesFilterDevice();
-    check(device != nullptr, "createGlesFilterDevice succeeds for budget trim probe");
+    checkPass(device != nullptr, "createGlesFilterDevice succeeds for budget trim probe");
     if (!device) return;
     {
         auto scope = device->activate();
@@ -441,16 +436,16 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
         for (int i = 0; i < 24; ++i) {
             peak.push_back(device->allocate(kNineMiBFloats));
         }
-        check(rawlabtest::glesVmLiveBufferBytes() >= 216ULL * 1024 * 1024,
+        checkPass(rawlabtest::glesVmLiveBufferBytes() >= 216ULL * 1024 * 1024,
               "GLES VM tracks 24x9 MiB = 216 MiB peak SSBO allocations");
         peak.clear();
         {
             auto small = device->allocate(512 * 512);
-            check(rawlabtest::glesVmLiveBufferBytes() <= 72ULL * 1024 * 1024 + 4096,
+            checkPass(rawlabtest::glesVmLiveBufferBytes() <= 72ULL * 1024 * 1024 + 4096,
                   "GLES pool-hit acquire(512x512) trims excess idle SSBOs while context is bound");
         }
         device->trimPool();
-        check(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
+        checkPass(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
               "GLES device->trimPool() caps idle SSBO memory at <= 64 MiB (got " +
               std::to_string(rawlabtest::glesVmLiveBufferBytes()) + " bytes)");
     }
@@ -463,15 +458,15 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
         }
         peak.clear();
     }
-    check(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
+    checkPass(rawlabtest::glesVmLiveBufferBytes() <= 64ULL * 1024 * 1024 + 4096,
           "GLES FilterContext Binding destructor trims idle SSBOs to <= 64 MiB on exit");
-    check(rawlabtest::glesVmStats().deleteBuffersWithoutContextCalls == 0,
+    checkPass(rawlabtest::glesVmStats().deleteBuffersWithoutContextCalls == 0,
           "GLES pool glDeleteBuffers only runs while EGL context is active");
     {
         // Mixed-size tail hit on real GLES FilterDevice within single activate() scope.
         constexpr size_t kOneMiBFloats = 1024 * 1024 / sizeof(float);
         auto mixedDevice = sony2fuji::createGlesFilterDevice();
-        check(mixedDevice != nullptr, "createGlesFilterDevice succeeds for mixed-size tail probe");
+        checkPass(mixedDevice != nullptr, "createGlesFilterDevice succeeds for mixed-size tail probe");
         if (mixedDevice) {
             auto scope = mixedDevice->activate();
             std::vector<sony2fuji::FilterBufferPtr> prefixLarge;
@@ -487,7 +482,7 @@ void testFilterBufferPoolBudgetAndGlesContextTrim() {
             auto hit = mixedDevice->allocate(kOneMiBFloats);
             mixedDevice->write(*hit, kOneMiBFloats, pattern.data());
             mixedDevice->read(*hit, kOneMiBFloats, readback.data());
-            check(readback == pattern,
+            checkPass(readback == pattern,
                   "GLES mixed-size tail allocate/write/read succeeds after prefix trim");
         }
     }
@@ -500,24 +495,24 @@ int main() {
     {
         sony2fuji::DeviceRetry retry;
         sony2fuji::DeviceRetry::Clock::time_point now{};
-        check(retry.ready(now), "A new device may initialize immediately");
+        checkPass(retry.ready(now), "A new device may initialize immediately");
         for (int delay : {100, 200, 400, 800, 1600, 3200, 6400, 6400}) {
             retry.failed(now);
             now += std::chrono::milliseconds(delay - 1);
-            check(!retry.ready(now), "Failed device stays in exponential cooldown");
+            checkPass(!retry.ready(now), "Failed device stays in exponential cooldown");
             now += std::chrono::milliseconds(1);
-            check(retry.ready(now), "Failed device retries at its deadline");
+            checkPass(retry.ready(now), "Failed device retries at its deadline");
         }
         retry.succeeded();
         retry.failed(now);
-        check(retry.ready(now + std::chrono::milliseconds(100)), "Successful work resets the failure streak");
+        checkPass(retry.ready(now + std::chrono::milliseconds(100)), "Successful work resets the failure streak");
     }
     testImageFilterBandAndScratchReuse();
     testDetailFilterCopiesAndAtomicity();
     testGlesDenoiseBufferPooling();
     testFilterBufferPoolBudgetAndGlesContextTrim();
-    if (gFailures != 0) {
-        std::cerr << gFailures << " check(s) failed\n";
+    if (rawlab::test::failureCount() != 0) {
+        std::cerr << rawlab::test::failureCount() << " checkPass(s) failed\n";
         return 1;
     }
     return 0;
