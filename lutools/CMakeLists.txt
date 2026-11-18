@@ -1024,6 +1024,22 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LIBRARIES rawlab_edit_protocol
         LABELS recipe geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME edit_pixel_golden
+        SOURCES tests/edit_pixel_golden_tests.cpp
+        INCLUDES third_party
+        DEFINES TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        LIBRARIES rawlab_edit_protocol sony2fuji_core
+        LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    if(APPLE AND SONY2FUJI_ENABLE_GPU)
+        rawlab_add_test(
+            NAME metal_edit_pixel_golden
+            COMMAND edit_pixel_golden_tests --metal
+            ENVIRONMENT "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            LABELS gpu metal metal_arm64 ci_macos_arm64
+        )
+    endif()
     if(BUILD_CLI)
         find_package(Python3 QUIET COMPONENTS Interpreter)
         if(Python3_Interpreter_FOUND)
