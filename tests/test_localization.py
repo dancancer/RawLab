@@ -128,7 +128,7 @@ class GeneratorSourceTests(unittest.TestCase):
         key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
         mappings = (
             ("Shared/Native/HDRSource.swift", r'case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT:\s*return L10n\.text\("([^"]+)"\)', key),
-            ("RawLabWindows/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
+            ("RawLabWindows/Core/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
             ("RawLabAndroid/app/src/main/java/com/rawlab/android/engine/HDRProcessingException.kt",
              r'19\s*->\s*AppStrings\.text\(R\.string\.([a-z_]+)\)', "hdr_camera_development_unavailable"),
         )

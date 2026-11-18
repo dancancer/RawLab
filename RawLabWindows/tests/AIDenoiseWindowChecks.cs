@@ -128,7 +128,6 @@ internal static class AIDenoiseWindowChecks
                 Settings().AIDenoiseEnabled=false;window.ResetAITaskForTests();window.CancelTransformDraftForTests();
                 window.Close();Pump(()=>!window.IsVisible);
             }
-            app.Shutdown();
         }
     }
     private static void Pump(Func<bool> done)

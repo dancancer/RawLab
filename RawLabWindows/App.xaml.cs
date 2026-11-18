@@ -8,6 +8,11 @@ using System.Windows.Threading;
 namespace RawLab.Windows;
 public partial class App : Application
 {
+#if RAWLAB_RUM_SDK
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void RegisterUsageAnalyticsTransport() =>
+        UsageAnalytics.DefaultTransportFactory = RumUsageAnalyticsTransport.CreateDefault;
+#endif
     private static App? currentApp;
     private static int processHooksInstalled;
     private readonly AppPaths appPaths;

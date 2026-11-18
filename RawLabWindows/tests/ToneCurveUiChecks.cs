@@ -113,6 +113,6 @@ internal static class ToneCurveUiChecks
                     "Curve layout grows for large text: "+language);
                 PhotoFeatureChecks.Screenshot(window,Path.Combine(output,"curve-large-"+language+".png"));
             }
-        } finally {mouse_event(4,0,0,0,UIntPtr.Zero);window.Close();app.Shutdown();}
+        } finally {mouse_event(4,0,0,0,UIntPtr.Zero);window.Close();}
     }
 }

@@ -174,7 +174,7 @@ internal static class BatchSelectionUiChecks
             }
             batch.Close();collection.Close();
             check(store.Find(target)!.Settings.Restore()[Parameter.Exposure]==2 && File.Exists(target),"Closing the frozen export preserves saved micro-edits and source files");
-        }finally{window.Close();app.Shutdown();}
+        }finally{window.Close();}
     }
     private static byte[] Pixels(BitmapSource image)
     {

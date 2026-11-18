@@ -71,15 +71,11 @@ internal static class ExifToolSessionChecks
                 captured = start.ArgumentList.ToList();
                 var sessionMode = start.ArgumentList.Contains("-stay_open");
                 if (sessionMode && failNextStartup) throw new IOException("stub refuses session start");
-                var path = Environment.ProcessPath ?? throw new IOException("no re-exec process path");
-                start.FileName = path;
+                var stubStart = RawLab.Windows.Tests.IsolatedChildRunner.CreateStartInfo(
+                    sessionMode ? ["--exif-stub", marker, "-stay_open"] : ["--exif-stub", marker]);
+                start.FileName = stubStart.FileName;
                 start.ArgumentList.Clear();
-                // dotnet X.dll 形态下需把入口程序集放在参数首位；apphost 形态直接自重启。
-                if (string.Equals(Path.GetFileNameWithoutExtension(path), "dotnet", StringComparison.OrdinalIgnoreCase))
-                    start.ArgumentList.Add(Assembly.GetEntryAssembly()!.Location);
-                start.ArgumentList.Add("--exif-stub");
-                start.ArgumentList.Add(marker);
-                if (sessionMode) start.ArgumentList.Add("-stay_open");
+                foreach (var arg in stubStart.ArgumentList) start.ArgumentList.Add(arg);
                 var spawned = new Process { StartInfo = start };
                 if (!spawned.Start()) throw new IOException("stub did not start");
                 return spawned;

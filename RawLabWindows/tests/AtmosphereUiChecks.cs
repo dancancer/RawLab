@@ -69,6 +69,6 @@ internal static class AtmosphereUiChecks
                     PhotoFeatureChecks.Screenshot(window, Path.Combine(output, "atmosphere-" + language + "-" + id + ".png"));
                 }
             }
-        } finally { window.Close(); app.Shutdown(); }
+        } finally { window.Close(); }
     }
 }

@@ -58,7 +58,7 @@ internal static class ResourceChecks
         catch(Exception ex){error=ex.ToString();throw;}
         finally
         {
-            timer.Stop();if(active?.IsVisible==true)active.Close();active=null;app.Shutdown();
+            timer.Stop();if(active?.IsVisible==true)active.Close();active=null;
             File.WriteAllText(Path.Combine(output,"resources.json"),JsonSerializer.Serialize(new{error,rounds,samples,peakPrivate,peakWorking,peakCache,
                 scope="One warmup plus three real-RAW CPU editor cycles. Sampled process memory, not a total native/GPU memory bound or a physical GPU acceptance."},new JsonSerializerOptions{WriteIndented=true}));
             Console.WriteLine("Resource samples: "+output);

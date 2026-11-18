@@ -47,7 +47,7 @@ internal static class QuickPresetHDRChecks
             check(window.QuickPresetPhase == QuickPresetPhase.Failed && store.ReadState(source).SameAs(before),
                 "Quick relative HDR white balance cannot overwrite SDR editing mode");
             Console.WriteLine("Quick HDR artifacts: " + root);
-        } finally { window.Close(); app.Shutdown(); }
+        } finally { window.Close(); }
     }
     private static void Done(Task work) { InteractionChecks.PumpUntil(() => work.IsCompleted); work.GetAwaiter().GetResult(); }
     private static void Ready(MainWindow window) => InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);

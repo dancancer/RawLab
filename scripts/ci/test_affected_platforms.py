@@ -33,6 +33,10 @@ class ClassificationTests(unittest.TestCase):
                                ("RawLabMac/Sources/Editor/Model/EditorModel.swift", {"macos"}),
                                ("RawLabMac/build.sh", {"macos"}),
                                ("RawLabWindows/README.md", {"windows"}),
+                               ("RawLabWindows/Directory.Build.props", {"windows"}),
+                               ("RawLabWindows/.editorconfig", {"windows"}),
+                               ("RawLabWindows/RawLabWindows.sln", {"windows"}),
+                               ("global.json", {"windows"}),
                                ("RawLabAndroid/app/build.gradle.kts", {"android"})):
             with self.subTest(path=path):
                 self.assertEqual(selection.platforms_for(path), expected)

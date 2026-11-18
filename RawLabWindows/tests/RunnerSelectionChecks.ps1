@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string]$Output)
 $ErrorActionPreference='Stop'
 if(!$Output){$Output=Join-Path ([IO.Path]::GetTempPath()) ('rawlab-runner-'+[guid]::NewGuid().ToString('N'))}
@@ -15,20 +15,19 @@ $ErrorActionPreference='Stop'
 ConvertTo-Json -InputObject @($args) -Compress | Add-Content -LiteralPath $env:RAWLAB_RUNNER_CALLS
 if(($env:RAWLAB_RUNNER_FAIL -eq 'build' -and $args[0] -eq 'build') -or
    ($env:RAWLAB_RUNNER_FAIL -eq 'msbuild' -and $args[0] -eq 'msbuild') -or
-   ($env:RAWLAB_RUNNER_FAIL -eq 'about' -and $args -contains '--about')){exit 7}
-if($env:RAWLAB_RUNNER_FAIL -eq 'timeout' -and $args -contains '--about'){
+   ($env:RAWLAB_RUNNER_FAIL -eq 'about' -and ($args -contains 'Suite=about'))){exit 7}
+if($env:RAWLAB_RUNNER_FAIL -eq 'timeout' -and ($args -contains 'Suite=about')){
     Write-Output 'suite reached timeout probe';Start-Sleep -Seconds 90
 }
 if($env:RAWLAB_RUNNER_FAIL -eq 'msbuild-timeout' -and $args[0] -eq 'msbuild'){Start-Sleep -Seconds 90}
 if($args[0] -eq 'msbuild'){
-    $name=if($args[1] -like '*localization-ui*'){'ui'}else{'main'}
-    $path=Join-Path $env:RAWLAB_RUNNER_TARGET $name
+    $path=Join-Path $env:RAWLAB_RUNNER_TARGET 'main'
     New-Item -ItemType Directory -Force $path | Out-Null
     Write-Output ($path+[IO.Path]::DirectorySeparatorChar)
 }
 exit 0
 '@)
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default','batch-selection')
+$names=@('build','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default','batch-selection')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}
@@ -63,34 +62,32 @@ try{
     }
     foreach($selection in @(' about ','ABOUT','about,, ,ABOUT')){
         $result=Run $selection ''
-        Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,build-localization-ui,target-RawLabWindows.Tests,target-LocalizationUiChecks,about') "Trim, case and duplicates select exactly one suite: $selection"
+        Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,target-RawLabWindows.Tests,about') "Trim, case and duplicates select exactly one suite: $selection"
         Check (@($result.Rows | Where-Object {$_.log -ne ($_.name+'.log')}).Count -eq 0) "Summary log paths stay valid beside downloaded logs: $selection"
-        Check ($result.Calls.Count -eq 5) "Only two builds, two target queries and the selected suite run: $selection"
+        Check ($result.Calls.Count -eq 3) "Only one build, one target query and the selected suite run: $selection"
         $last=ConvertFrom-Json $result.Calls[-1]
-        Check ($last[1] -eq '--about' -and $last[0] -like '*RawLabWindows.Tests.dll') "Selected suite uses its actual DLL mode: $selection"
+        Check ($last[0] -eq 'test' -and $last[1] -like '*RawLabWindows.Tests.csproj' -and ($last -contains 'Suite=about')) "Selected suite uses dotnet test Suite filter: $selection"
     }
     $result=Run '' ''
-    $expected=@($names[0..1])+@('target-RawLabWindows.Tests','target-LocalizationUiChecks')+@($names[2..($names.Count-1)])
-    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($expected -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+2) 'Empty selection runs the complete declared suite list successfully'
+    $expected=@('build','target-RawLabWindows.Tests')+@($names[1..($names.Count-1)])
+    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq ($expected -join ',') -and @($result.Rows | Where-Object {$_.exitCode -ne 0}).Count -eq 0 -and $result.Calls.Count -eq $names.Count+1) 'Empty selection runs the complete declared suite list successfully'
     $result=Run 'batch-selection' ''
-    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,build-localization-ui,target-RawLabWindows.Tests,target-LocalizationUiChecks,batch-selection') 'Batch selection runs alone after WPF build and layout prerequisites'
+    Check ($result.Code -eq 0 -and ($result.Rows.name -join ',') -eq 'build,target-RawLabWindows.Tests,batch-selection') 'Batch selection runs alone after WPF build and layout prerequisites'
     $last=ConvertFrom-Json $result.Calls[-1]
-    Check ($last.Count -eq 4 -and $last[0] -like '*RawLabWindows.Tests.dll' -and $last[1] -eq '--batch-selection' -and $last[2] -eq $root -and $last[3] -eq (Join-Path $root 'fixture.arw')) 'Batch selection receives its actual DLL mode, repository and RAW fixture'
+    Check ($last[0] -eq 'test' -and $last[1] -like '*RawLabWindows.Tests.csproj' -and ($last -contains 'Suite=batch-selection')) 'Batch selection invokes dotnet test with Suite=batch-selection'
     foreach($name in @('sony2fuji.dll','raw.dll','ExifTool/sentinel')) {
         Check (Test-Path (Join-Path $env:RAWLAB_RUNNER_TARGET "main/$name")) "Batch selection receives its runtime dependency: $name"
     }
     $result=Run 'ai-panel' ''
-    Check ($result.Code -eq 0 -and 'ai-panel' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-panel') 'AI panel is selectable without an installed model'
+    Check ($result.Code -eq 0 -and 'ai-panel' -in $result.Rows.name -and ((ConvertFrom-Json $result.Calls[-1]) -contains 'Suite=ai-panel')) 'AI panel is selectable without an installed model'
     $result=Run 'ai-window' ''
     Check ($result.Code -ne 0 -and $result.Text -match 'Selected suites did not run: ai-window' -and 'ai-window' -notin $result.Rows.name) 'Explicit AI window selection cannot pass without its model'
     $model=Join-Path $native 'AI/DualDn';New-Item -ItemType Directory -Force $model | Out-Null
     foreach($name in @('AI/DualDn/manifest.json','onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')){[IO.File]::WriteAllText((Join-Path $native $name),'private AI test artifact')}
     $result=Run 'ai-window' ''
-    Check ($result.Code -eq 0 -and 'ai-window' -in $result.Rows.name -and (ConvertFrom-Json $result.Calls[-1])[1] -eq '--ai-window') 'Installed model enables the explicitly selected AI window suite'
-    foreach($target in @('main','ui')){
-        $destination=Join-Path $env:RAWLAB_RUNNER_TARGET $target
-        Check ((Test-Path (Join-Path $destination 'AI/DualDn/manifest.json')) -and (Test-Path (Join-Path $destination 'DirectML.dll'))) "AI model and runtime reach the $target test output"
-    }
+    Check ($result.Code -eq 0 -and 'ai-window' -in $result.Rows.name -and ((ConvertFrom-Json $result.Calls[-1]) -contains 'Suite=ai-window')) 'Installed model enables the explicitly selected AI window suite'
+    $destination=Join-Path $env:RAWLAB_RUNNER_TARGET 'main'
+    Check ((Test-Path (Join-Path $destination 'AI/DualDn/manifest.json')) -and (Test-Path (Join-Path $destination 'DirectML.dll'))) 'AI model and runtime reach the test output'
     foreach($failure in @('build','msbuild','about','log','missing-command','missing-artifacts','timeout','msbuild-timeout')){
         $result=Run 'about,profile-isolation' $failure
         Check ($result.Code -ne 0 -and $result.Text -notmatch 'PASS: Windows v08') "External failure stays nonzero: $failure"

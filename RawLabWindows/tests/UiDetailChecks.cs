@@ -73,7 +73,7 @@ internal static class UiDetailChecks
                 UiPanelChecks.Run(output,language,check);
             }
         }
-        finally { Loc.Initialize(previous);app.Shutdown(); }
+        finally { Loc.Initialize(previous); }
     }
 
     private static void SystemOpenModal(MainWindow window,string output,Action<bool,string> check)

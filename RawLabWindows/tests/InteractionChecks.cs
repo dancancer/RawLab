@@ -118,6 +118,6 @@ internal static class InteractionChecks
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(shot));
             using(var stream=File.Create(Path.Combine(output,"zoom.png")))encoder.Save(stream);
         }
-        finally {window.Close();app.Shutdown();}
+        finally {window.Close();}
     }
 }

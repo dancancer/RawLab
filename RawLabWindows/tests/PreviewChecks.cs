@@ -70,7 +70,7 @@ internal static class PreviewChecks
             InteractionChecks.PumpUntil(()=>Mask()?.PixelWidth==fit.Image.PixelWidth);
             check(!ReferenceEquals(mask,Mask()),"A new preview size receives its own clipping mask");
         }
-        finally {status.RemoveValueChanged(window.Status,onStatus);window.Close();app.Shutdown();}
+        finally {status.RemoveValueChanged(window.Status,onStatus);window.Close();}
     }
 
     internal static bool SameMask(BitmapSource expected,BitmapSource actual)

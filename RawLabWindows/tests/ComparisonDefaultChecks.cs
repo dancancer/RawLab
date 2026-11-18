@@ -152,7 +152,6 @@ internal static class ComparisonDefaultChecks
         finally
         {
             if (window.IsVisible) window.Close();
-            app.Shutdown();
         }
 
         string? CurrentFile()=>window.CurrentFile;

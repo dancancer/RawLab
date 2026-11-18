@@ -84,7 +84,7 @@ internal static class HslTargetUiChecks
             export.GetAwaiter().GetResult();
             check(HDRNative.Probe(destination, out _) == HDRProbeState.Supported, "HDR color edits export and read back");
         }
-        finally { mouse_event(4, 0, 0, 0, UIntPtr.Zero); window.Close(); app.Shutdown(); }
+        finally { mouse_event(4, 0, 0, 0, UIntPtr.Zero); window.Close(); }
     }
 
     internal static void Run(string repo,string unusedRaw,Action<bool,string> check)
@@ -163,6 +163,6 @@ internal static class HslTargetUiChecks
             window.BeginHslTargetForTests(new Point(.5,.5),null);window.MoveHslTargetForTests(20.0);window.OpenFile(other);Settled();
             check(window.Settings.Hsl.IsIdentity && !window.HslTarget.Waiting,
                 "Source switch cannot accept the previous photo's pending sample");
-        } finally {window.Close();app.Shutdown();}
+        } finally {window.Close();}
     }
 }

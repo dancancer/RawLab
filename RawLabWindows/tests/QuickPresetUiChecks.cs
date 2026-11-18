@@ -80,7 +80,7 @@ internal static class QuickPresetUiChecks
             check(window.QuickPresetPhase == QuickPresetPhase.UndoFailed && edits.ReadState(source).SameAs(ordinary),
                 "Quick Undo cannot undo a later ordinary edit");
             Console.WriteLine("Quick preset artifacts: " + output);
-        } finally { window.Close(); app.Shutdown(); }
+        } finally { window.Close(); }
     }
     private static void Done(Task work) { InteractionChecks.PumpUntil(() => work.IsCompleted); work.GetAwaiter().GetResult(); }
     private static void Ready(MainWindow window) => InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);

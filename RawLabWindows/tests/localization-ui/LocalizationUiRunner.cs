@@ -1,5 +1,5 @@
-using System.Text.Json;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -7,52 +7,47 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using RawLab.Windows;
 
-internal static class Program
+internal static class LocalizationUiRunner
 {
     private static int failures;
     private static string preferencePath = "";
     private static int changedCount;
 
-    [STAThread]
-    private static int Main(string[] args)=>Admit(BatchJournal.DefaultDirectory,()=>
+    internal static int Admit(string journalDirectory, Func<int> startup)
     {
-        if(args.Length==2 && args[0]=="--default-isolation"){AdmissionChecks.Run(args[1]);return 0;}
-        if(args.Length!=0)throw new ArgumentException("Expected no arguments or --default-isolation <output>.");
-        return RunUi();
-    });
-
-    internal static int Admit(string journalDirectory,Func<int> startup)
-    {
-        try{TestWindowState.PreserveExistingBatch(journalDirectory);return startup();}
-        catch(Exception error){Console.Error.WriteLine(error);return 1;}
+        try { TestWindowState.PreserveExistingBatch(journalDirectory); return startup(); }
+        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }
 
-    private static int RunUi()
+    internal static int RunUi()
     {
+        failures = 0;
+        preferencePath = "";
+        changedCount = 0;
         try
         {
-            var output=Path.Combine(Path.GetTempPath(),"rawlab-localization-"+Guid.NewGuid().ToString("N"));
+            var output = Path.Combine(Path.GetTempPath(), "rawlab-localization-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(output);
-            var paths=TestWindowState.CreateIsolatedPaths(output);
-            preferencePath=paths.LanguagePreferencePath;
-            Console.WriteLine("Localization fixtures: "+output);
-            Loc.SetPreference("en",preferencePath);
+            var paths = TestWindowState.CreateIsolatedPaths(output);
+            preferencePath = paths.LanguagePreferencePath;
+            Console.WriteLine("Localization fixtures: " + output);
+            Loc.SetPreference("en", preferencePath);
 
-            var analytics=TestWindowState.CreateDisabledAnalytics(paths);
+            var analytics = TestWindowState.CreateDisabledAnalytics(paths);
             var app = new App(null, paths, automaticUpdateCheck: false, usageAnalytics: analytics);
             app.InitializeComponent();
             app.Startup += (_, _) =>
             {
-                Loc.Initialize(null,preferencePath);
+                Loc.Initialize(null, preferencePath);
                 Loc.NotifyChangedForTests();
                 Loc.Changed += LanguageChanged;
                 // 启动先在后台准备更新适配器，之后才创建编辑器窗口；等窗口加载完成再检查。
-                var deadline=DateTime.UtcNow.AddSeconds(60);
-                var timer=new DispatcherTimer(DispatcherPriority.ApplicationIdle,app.Dispatcher){Interval=TimeSpan.FromMilliseconds(100)};
-                timer.Tick+=(_,_)=>
+                var deadline = DateTime.UtcNow.AddSeconds(60);
+                var timer = new DispatcherTimer(DispatcherPriority.ApplicationIdle, app.Dispatcher) { Interval = TimeSpan.FromMilliseconds(100) };
+                timer.Tick += (_, _) =>
                 {
-                    if(!Application.Current.Windows.OfType<MainWindow>().Any(window=>window.IsLoaded) && DateTime.UtcNow<deadline) return;
-                    timer.Stop();RunStartupChecks(app);
+                    if (!Application.Current.Windows.OfType<MainWindow>().Any(window => window.IsLoaded) && DateTime.UtcNow < deadline) return;
+                    timer.Stop(); RunStartupChecks(app);
                 };
                 timer.Start();
             };
@@ -81,9 +76,9 @@ internal static class Program
                 ?? throw new InvalidOperationException("Application startup did not create the editor window.");
 
             Check(Loc.Language == "en", "Startup test window uses its persisted private English preference");
-            var updates=window.DesktopUpdates;
-            var updateStore=updates.Store;
-            Check(!updates.Preferences.AutomaticCheck && updateStore.DirectoryPath.StartsWith(Path.GetDirectoryName(preferencePath)!+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),
+            var updates = window.DesktopUpdates;
+            var updateStore = updates.Store;
+            Check(!updates.Preferences.AutomaticCheck && updateStore.DirectoryPath.StartsWith(Path.GetDirectoryName(preferencePath)! + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase),
                 "Production StartupUri window receives private updates before its Loaded handler");
             Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), "Application resources contain the active catalog");
 
@@ -120,22 +115,22 @@ internal static class Program
 
             foreach (var language in new[] { "zh-Hans", "en", "de", "fr", "ja", "es" })
             {
-                Loc.SetPreference(language,preferencePath);
+                Loc.SetPreference(language, preferencePath);
                 Pump();
                 lensPanel.Refresh(adjustments.Lens, lensInfo);
                 geometryPanel.Refresh(adjustments.Geometry);
                 Check(Loc.Language == language, $"Resolved language {language}");
-                foreach(var (name,key) in new[]{("AddDirectoryButton","添加目录"),("ExportRevealButton","在资源管理器中查看"),("BatchNotice","继续上次批量任务"),("RetrySave","重试保存"),("RetryButton","重试")})
+                foreach (var (name, key) in new[] { ("AddDirectoryButton", "添加目录"), ("ExportRevealButton", "在资源管理器中查看"), ("BatchNotice", "继续上次批量任务"), ("RetrySave", "重试保存"), ("RetryButton", "重试") })
                 {
-                    var button=(Button)window.FindName(name);
-                    Check(UIElementAutomationPeer.CreatePeerForElement(button)?.GetName()==Loc.Text(key),$"Sidebar/status action has a localized automation name: {name}/{language}");
+                    var button = (Button)window.FindName(name);
+                    Check(UIElementAutomationPeer.CreatePeerForElement(button)?.GetName() == Loc.Text(key), $"Sidebar/status action has a localized automation name: {name}/{language}");
                 }
                 Check(File.ReadAllText(preferencePath).Trim() == language, $"Persisted preference {language}");
                 Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), $"Dynamic catalog resource {language}");
 
-                var groups=(Panel)window.FindName("Groups");
-                Check(groups.Children.OfType<Button>().Where(button=>button.Visibility==Visibility.Visible).Select(AutomationProperties.GetName).SequenceEqual(
-                    EditorAdjustmentRules.VisibleGroups(false).Select(group=>Loc.Text(EditorAdjustmentRules.Title(group)))), $"Six group captions and accessibility names {language}");
+                var groups = (Panel)window.FindName("Groups");
+                Check(groups.Children.OfType<Button>().Where(button => button.Visibility == Visibility.Visible).Select(AutomationProperties.GetName).SequenceEqual(
+                    EditorAdjustmentRules.VisibleGroups(false).Select(group => Loc.Text(EditorAdjustmentRules.Title(group)))), $"Six group captions and accessibility names {language}");
                 var tools = (Panel?)window.FindName("Tools");
                 var vignette = tools?.Children.OfType<Button>()
                     .FirstOrDefault(button => AutomationProperties.GetAutomationId(button) == "Vignette");
@@ -161,7 +156,7 @@ internal static class Program
                 Check(ReferenceEquals(window.Settings, adjustments), $"Editor settings identity preserved {language}");
                 Check(JsonSerializer.Serialize(adjustments.Capture()) == snapshot, $"Recipe, HSL and editor snapshot preserved {language}");
                 var hslPanel = (HslPanel)window.FindName("HslEditor");
-                Check(Descendants(hslPanel).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider).EndsWith(Loc.Text("色相"),StringComparison.Ordinal)),
+                Check(Descendants(hslPanel).OfType<Slider>().Any(slider => AutomationProperties.GetName(slider).EndsWith(Loc.Text("色相"), StringComparison.Ordinal)),
                     $"HSL axis automation name {language}");
 
                 Check(AutomationProperties.GetName((RadioButton)lensPanel.FindName("Automatic")!) == Loc.Text("镜头匹配") &&
@@ -248,5 +243,4 @@ internal static class Program
         failures++;
         Console.WriteLine($"FAIL: {message}");
     }
-
 }

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>RawLab.Windows.Core</AssemblyName>
+    <RootNamespace>RawLab.Windows</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../Resources/Localization/*.json"
+                      LogicalName="RawLab.Windows.Localization.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Target Name="UseRawLabVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo"
+          Condition="'$(Version)' == '' or '$(Version)' == '1.0.0'">
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)../RawLabWindows.csproj"
+             Query="/Project/PropertyGroup/Version/text()">
+      <Output TaskParameter="Result" PropertyName="Version" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)../RawLabWindows.csproj"
+             Query="/Project/PropertyGroup/FileVersion/text()">
+      <Output TaskParameter="Result" PropertyName="FileVersion" />
+    </XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildThisFileDirectory)../RawLabWindows.csproj"
+             Query="/Project/PropertyGroup/InformationalVersion/text()">
+      <Output TaskParameter="Result" PropertyName="InformationalVersion" />
+    </XmlPeek>
+  </Target>
+</Project>

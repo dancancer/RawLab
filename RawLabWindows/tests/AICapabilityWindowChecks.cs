@@ -23,6 +23,6 @@ internal static class AICapabilityWindowChecks
                 window.GpuMode.SelectedIndex=0;
                 check(!status.Text.Contains(Loc.Text("普通显影使用 CPU；AI 降噪仍使用硬件 GPU。")),"Changing the photo backend refreshes the AI explanation immediately");
             }
-        } finally {window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();}
+        } finally {window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
     }
 }

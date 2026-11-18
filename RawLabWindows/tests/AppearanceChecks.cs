@@ -158,7 +158,7 @@ internal static class AppearanceChecks
             check(Contrast(input.Foreground,input.Background)>=4.5 && input.Background.ToString()=="#FF212124","Retained input returns from high contrast to the normal palette");
             check((double)app.Resources["OverlayGridWidth"]==.6 && (Brush)app.Resources["HistogramOutline"] is SolidColorBrush{Color.A:0},"Normal palette restores overlay grid width and hides the histogram envelope");
         }
-        finally{tip.IsOpen=menu.IsOpen=false;host.Close();sizeDialog.Close();about.Close();settings.Close();batch.Close();editor.Close();app.Shutdown();}
+        finally{tip.IsOpen=menu.IsOpen=false;host.Close();sizeDialog.Close();about.Close();settings.Close();batch.Close();editor.Close();}
         void Apply(bool light)
         {
             EditorAppearance.Apply(app.Resources,true,new(light ? Brushes.White : Brushes.Black,light ? Brushes.Black : Brushes.White,

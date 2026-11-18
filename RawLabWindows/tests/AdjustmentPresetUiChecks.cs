@@ -75,7 +75,7 @@ internal static class AdjustmentPresetUiChecks
             dialog.Close();
             AdjustmentPresetDialogChecks.Run(window, library, output, check);
             Console.WriteLine("Native preset artifacts: " + output);
-        } finally { window.Close(); app.Shutdown(); }
+        } finally { window.Close(); }
     }
     private static void Ready(MainWindow window) => InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
     private static IEnumerable<DependencyObject> Children(DependencyObject parent)

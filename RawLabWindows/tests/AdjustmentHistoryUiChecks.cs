@@ -109,7 +109,7 @@ internal static class AdjustmentHistoryUiChecks
             PartialResultsDialog(window,photo,output,check);
             ReplacedSourceRetry(window,photo,raw,output,check);
             Console.WriteLine("Native adjustment artifacts: "+output);
-        }catch(Exception error){Console.Error.WriteLine("History check failed before teardown: "+error);throw;}finally{window.Close();app.Shutdown();}
+        }catch(Exception error){Console.Error.WriteLine("History check failed before teardown: "+error);throw;}finally{window.Close();}
     }
     private static void DialogChecks(MainWindow owner,AdjustmentTransferSession session,string photo,string output,Action<bool,string> check)
     {

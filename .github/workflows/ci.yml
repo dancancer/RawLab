@@ -467,12 +467,11 @@ jobs:
               $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
               $env:RAWLAB_TEST_NATIVE_HDR_LIBRARY = Join-Path $package 'sony2fuji.dll'
-              Invoke-Checked dotnet @('run', '--project', 'RawLabWindows/tests/editing/EditWorkflow.Tests.csproj', '-c', 'Release', '--', '--hdr-look-import')
+              Invoke-Checked dotnet @('test', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release', '--filter', 'Suite=hdr-look-import')
               & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'agent-recipe,raster,looks'
             }
             else {
               Invoke-Checked dotnet @('build', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release')
-              Invoke-Checked dotnet @('build', 'RawLabWindows/tests/localization-ui/LocalizationUiChecks.csproj', '-c', 'Release')
             }
             Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }

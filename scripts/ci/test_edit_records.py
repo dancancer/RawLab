@@ -4,7 +4,7 @@ Pins:
 1. Full 83-field coverage anchored to Shared/specs/adjustment-fields-v1.json.
 2. X1 read-side unknown-field scenarios, cross-version compatibility, and boundary rejections.
 3. Monotonically non-increasing per-platform divergence ledgers with non-blank ledgerId and reason.
-4. Explicit CI inclusion in scripts/ci/apple-models.sh and RawLabWindows/tests/editing/Program.cs
+4. Explicit CI inclusion in scripts/ci/apple-models.sh and RawLabWindows/tests/editing/EditWorkflowTests.cs
    (executed by scripts/ci/windows-models.ps1).
 """
 import json
@@ -19,7 +19,7 @@ FIXTURE = ROOT / "Shared" / "fixtures" / "edit-records-v1.json"
 SPEC = ROOT / "Shared" / "specs" / "adjustment-fields-v1.json"
 APPLE_MODELS = ROOT / "scripts" / "ci" / "apple-models.sh"
 WINDOWS_MODELS = ROOT / "scripts" / "ci" / "windows-models.ps1"
-WINDOWS_PROGRAM = ROOT / "RawLabWindows" / "tests" / "editing" / "Program.cs"
+WINDOWS_PROGRAM = ROOT / "RawLabWindows" / "tests" / "editing" / "EditWorkflowTests.cs"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
 RUNNERS = {
@@ -474,7 +474,8 @@ class EditRecordFixtureContracts(unittest.TestCase):
         win_prog = WINDOWS_PROGRAM.read_text(encoding="utf-8")
         self.assertIn("EditRecordFixtureChecks.Run();", win_prog)
         win_ps1 = WINDOWS_MODELS.read_text(encoding="utf-8")
-        self.assertIn("editing/EditWorkflow.Tests.csproj", win_ps1)
+        self.assertIn("RawLabWindows/tests/RawLabWindows.Tests.csproj", win_ps1)
+        self.assertIn("Category=Model", win_ps1)
 
         ci_yml = CI_WORKFLOW.read_text(encoding="utf-8")
         pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))

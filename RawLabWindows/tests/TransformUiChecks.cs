@@ -234,7 +234,7 @@ internal static class TransformUiChecks
         {
             Console.WriteLine("CLEANUP transform UI: cancel draft, save, close window");
             if(window.TransformDraft.Active)window.CancelTransformDraftForTests();
-            window.EditStoreInstance=store;window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);app.Shutdown();
+            window.EditStoreInstance=store;window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
             Console.WriteLine("CLEANUP transform UI completed");
         }
     }
