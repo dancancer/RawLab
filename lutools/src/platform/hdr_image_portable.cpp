@@ -9,7 +9,6 @@
 #include "core/resource_file_stamp.h"
 #include "sony2fuji/raw_processor.h"
 #include <lcms2.h>
-#include <zlib.h>
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
@@ -244,15 +243,6 @@ std::vector<uint8_t> srgbICC(const std::vector<uint8_t>& jpeg) {
     std::vector<uint8_t> output{255,0xd8,255,0xe2,uint8_t(length>>8),uint8_t(length),'I','C','C','_','P','R','O','F','I','L','E',0,1,1};
     output.insert(output.end(),icc.begin(),icc.end()); output.insert(output.end(),jpeg.begin()+2,jpeg.end()); return output;
 }
-void pngExif(const std::filesystem::path& path,const std::vector<uint8_t>& exif) {
-    std::ifstream input(path,std::ios::binary); std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input),{}}; input.close();
-    if (bytes.size()<33) throw std::runtime_error("Cannot read SDR PNG output");
-    std::vector<uint8_t> chunk;
-    auto integer=[&](uint32_t v) { for (int i=3;i>=0;--i) chunk.push_back(uint8_t(v>>(8*i))); };
-    integer(uint32_t(exif.size())); chunk.insert(chunk.end(),{'e','X','I','f'}); chunk.insert(chunk.end(),exif.begin(),exif.end());
-    integer(uint32_t(crc32(0,chunk.data()+4,uInt(chunk.size()-4))));
-    bytes.insert(bytes.begin()+33,chunk.begin(),chunk.end()); write(path,bytes);
-}
 }
 
 void admitMemory(uint64_t additionalBytes) {
@@ -409,9 +399,10 @@ void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v
         for (auto& pixel:display.pixels) for (float* p:{&pixel.r,&pixel.g,&pixel.b}) {
             const float value=std::clamp(*p,0.0f,1.0f); *p=value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
         }
-        if (ImageEncoder::savePNG(display,output.path().u8string())!=ErrorCode::Success)
+        ImageEncoder::PngMetadata metadata;
+        metadata.exif=exif;
+        if (ImageEncoder::savePNG(display,output.path().u8string(),&metadata)!=ErrorCode::Success)
             fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot encode SDR PNG");
-        pngExif(output.path(),exif);
     } else fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported SDR export format");
     output.publish(path);
 }

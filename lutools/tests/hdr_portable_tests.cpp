@@ -4,6 +4,9 @@
 #include "platform/hdr_heif_color.h"
 #include <libheif/heif.h>
 #include <lcms2.h>
+#include <spng.h>
+#include <memory>
+#include <cstring>
 #include <libheif/heif_items.h>
 #include <ultrahdr/gainmapmetadata.h>
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
@@ -13,6 +16,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 #ifdef RAWLAB_HDR_TEST_APPLE_AUTHOR
 std::vector<uint8_t> authorISOHEIF();
 std::vector<uint8_t> authorAppleJPEG(const char* path);
@@ -101,6 +107,55 @@ std::vector<uint8_t> amplifiedExif(size_t whole) {
     return tiff;
 }
 
+void pngExport(const std::filesystem::path& root, const sony2fuji::HDRImagePair& image) {
+    auto config=init<sony2fuji_hdr_sdr_export_config_v1>(); config.output_format=SONY2FUJI_OUTPUT_PNG;
+    const auto target=root/"metadata-16bit.png";
+#ifndef _WIN32
+    // Newly staged outputs can be write-only under the caller's umask. Encoding
+    // metadata must not depend on reopening the completed PNG for input.
+    const mode_t previousMask=::umask(0444);
+    try { sony2fuji::hdr::exportSDR(image,config,target.u8string().c_str()); }
+    catch (...) { ::umask(previousMask); throw; }
+    ::umask(previousMask);
+    std::filesystem::permissions(target,std::filesystem::perms::owner_read|std::filesystem::perms::owner_write);
+#else
+    sony2fuji::hdr::exportSDR(image,config,target.u8string().c_str());
+#endif
+    const auto bytes=read(target);
+    const std::unique_ptr<spng_ctx,decltype(&spng_ctx_free)> decoder(spng_ctx_new(0),spng_ctx_free);
+    check(decoder && spng_set_png_buffer(decoder.get(),bytes.data(),bytes.size())==0,"PNG decoder setup failed");
+    spng_ihdr header{};
+    check(spng_get_ihdr(decoder.get(),&header)==0 && header.width==uint32_t(image.sdr.width) &&
+        header.height==uint32_t(image.sdr.height) && header.bit_depth==16 &&
+        header.color_type==SPNG_COLOR_TYPE_TRUECOLOR,"SDR PNG must retain its 16-bit RGB canvas");
+    std::vector<uint16_t> pixels(image.sdr.pixels.size()*3);
+    check(spng_decode_image(decoder.get(),pixels.data(),pixels.size()*sizeof(uint16_t),SPNG_FMT_PNG,0)==0 &&
+        spng_decode_chunks(decoder.get())==0,"SDR PNG pixel/chunk readback failed");
+    const auto expectedExif=sony2fuji::hdr::sanitizedExif(nullptr,0,image.sdr.width,image.sdr.height);
+    spng_exif exif{}; uint8_t intent=255;
+    check(spng_get_exif(decoder.get(),&exif)==0 && exif.length==expectedExif.size() &&
+        std::memcmp(exif.data,expectedExif.data(),expectedExif.size())==0,"SDR PNG EXIF did not roundtrip");
+    check(spng_get_srgb(decoder.get(),&intent)==0 && intent==0,"SDR PNG lost its sRGB color interpretation");
+    for (size_t i=0;i<image.sdr.pixels.size();++i) {
+        const auto& rgb=image.sdr.pixels[i]; const float channels[]={rgb.r,rgb.g,rgb.b};
+        for (size_t c=0;c<3;++c) {
+            const float linear=std::clamp(channels[c],0.0f,1.0f);
+            const float display=linear<=.0031308f ? 12.92f*linear : 1.055f*std::pow(linear,1/2.4f)-.055f;
+            check(pixels[i*3+c]==uint16_t(std::lround(display*65535)),"SDR PNG changed sRGB-encoded 16-bit pixels");
+        }
+    }
+    const auto blocked=root/"png-directory"; std::filesystem::create_directory(blocked);
+    write(blocked/"keep",{'k','e','e','p'});
+    try { sony2fuji::hdr::exportSDR(image,config,blocked.u8string().c_str()); check(false,"directory PNG output admitted"); }
+    catch (const sony2fuji::hdr::Error& error) {
+        check(error.status==SONY2FUJI_STATUS_OUTPUT_IO_ERROR && error.reason==SONY2FUJI_HDR_REASON_OUTPUT_IO,
+            "PNG output failure lost its diagnostic");
+    }
+    check(read(blocked/"keep")==std::vector<uint8_t>({'k','e','e','p'}),"failed PNG export damaged destination");
+    for (const auto& entry:std::filesystem::directory_iterator(root))
+        check(entry.path().filename().u8string().find(".rawlab-")!=0,"PNG export leaked a staging file");
+}
+
 void metadataCompatibility(const std::filesystem::path& root) {
     for (bool little : {true, false}) {
         std::vector<uint8_t> bytes(26, 0);
@@ -185,6 +240,7 @@ int main(int argc, const char* argv[]) {
             synthetic.sdr.at(x,y)={.18f,.4f,.6f};
             synthetic.hdr.at(x,y)={.18f*gain,.4f*gain,.6f*gain};
         }
+        pngExport(root,synthetic);
         // JPEG 的线性化路径仅支持 sRGB TRC；HEIF 的 LCMS 路径仍可处理线性 profile。
         for (const bool linear : {false,true}) {
             auto profile=cmsCreate_sRGBProfile();check(profile!=nullptr,"cannot create ICC fixture");
