@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="${RAWLAB_VIEWING_OUTPUT_DIR:-$(mktemp -d /tmp/rawlab-mac-viewing-model.XXXXXX)}"
@@ -12,7 +13,8 @@ while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
 done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
-swiftc -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     -module-cache-path "$OUT/ModuleCache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$ROOT/RawLabMac/tests/MacViewingModelTests.swift" \

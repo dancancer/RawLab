@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/Shared/tests/hdr-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
@@ -8,7 +9,6 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-edited-preview.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SOURCES=(
-    "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
@@ -16,10 +16,7 @@ SOURCES=(
     "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
     "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
     "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
-    "$ROOT/Shared/LookBrowser.swift"
-    "$ROOT/Shared/UsageAnalytics.swift"
     "$ROOT/Shared/LookLibrary.swift"
-    "$ROOT/Shared/BatchSelectionSession.swift"
     "$ROOT/Shared/LUTCompatibilityView.swift"
     "$ROOT/Shared/LUTCompatibilityPreview.swift"
     "$ROOT/Shared/DCPCompiler.swift"
@@ -33,21 +30,11 @@ SOURCES=(
     "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift"
     "$ROOT/RawLabMac/Sources/Looks/Film.swift"
     "$ROOT/RawLabMac/Sources/Looks/LUTCompatibilityDialog.swift"
-    "$ROOT/Shared/ExportMetadata.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"
     "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift"
-    "$ROOT/Shared/HSLSettings.swift"
-    "$ROOT/Shared/HSLTargetAdjustment.swift"
-    "$ROOT/Shared/GeometrySettings.swift"
-    "$ROOT/Shared/HDRSettings.swift"
-    "$ROOT/Shared/ProcessingMigration.swift"
     "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
     "${HDR_SWIFT_SOURCES[@]}"
-    "$ROOT/Shared/ToneControlsSettings.swift"
-    "$ROOT/Shared/AtmosphereSettings.swift"
-    "$ROOT/Shared/ColorGradingSettings.swift"
-    "$ROOT/Shared/ToneCurveSettings.swift"
     "$ROOT/Shared/HSLNative.swift"
     "$ROOT/Shared/HSLTargetNative.swift"
     "$ROOT/Shared/ToneControlsNative.swift"
@@ -71,10 +58,10 @@ SOURCES=(
     "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowserState.swift"
     "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowser.swift"
 )
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
-    "$ROOT/Shared/BundledLook.swift" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-15.0}" \
   -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-  "${SOURCES[@]}" "$ROOT/Shared/EditedPhotoPreviewCache.swift" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" "$ROOT/RawLabMac/tests/EditedPhotoPreviewTests.swift" \
+  "${SOURCES[@]}" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" "$ROOT/RawLabMac/tests/EditedPhotoPreviewTests.swift" \
   "${CORE_LINK[@]}" -L "$(pkg-config --variable=libdir libraw_r)" \
   -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -framework MetalKit -o "$OUT/test"
 "$OUT/test"

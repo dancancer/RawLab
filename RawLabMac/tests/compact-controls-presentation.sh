@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
@@ -23,7 +24,8 @@ RPATHS=()
 for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
-swiftc -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" \

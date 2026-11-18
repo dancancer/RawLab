@@ -38,11 +38,9 @@ HARNESSES = (
     "update-ui",
     "ai-denoise",
 )
-# The three sources the breaking commits added; the shared list must resolve
-# all of them so no harness can compile the app sources without them again.
+# The shared native sources the breaking commits added (HDRDisplay moved into RawLabKit).
 DRIFT_SOURCES = (
     "Shared/Native/HDRPresentation.swift",
-    "Shared/HDRDisplay.swift",
     "Shared/Native/HDRImage.swift",
 )
 

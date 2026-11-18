@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 enum HDRRequestError: Error { case invalidSettings }

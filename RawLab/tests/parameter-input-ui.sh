@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Dedicated simulator UDID}"
 TEMPLATE="${2:?Existing xctestrun used only to copy the XCTest host shell}"
 OUT="${3:?New output directory}"
@@ -39,8 +40,8 @@ if [[ -z "${RAWLAB_PARAMETER_BASELINE:-}" ]]; then
     FLAGS=(-D PARAMETER_INPUT_CONTEXT)
     GRADING_SOURCES=("$ROOT/Shared/ColorGradingWheelControl.swift" "$ROOT/RawLab/RawLab/UI/Panels/ColorGradingControls.swift")
 fi
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -module-name ParameterInputTests -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
- "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -module-name ParameterInputTests -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
  "${GRADING_SOURCES[@]}" \
  "$OUT/source/AdjustmentScale.swift" "$OUT/source/AdjustmentRuler.swift" \
  "$OUT/source/AdjustmentControl.swift" "$OUT/source/NativeValueWheel.swift" \

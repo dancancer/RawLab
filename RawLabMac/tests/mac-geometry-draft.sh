@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
@@ -17,12 +18,10 @@ for name in MacNeutralReference Engine RenderError Film Adjustments AdjustmentTy
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in Localization BatchSelectionSession GeometrySettings AtmosphereSettings AtmosphereNative HDRDisplay HDRSettings HSLSettings HSLTargetAdjustment HSLNative HSLTargetNative ToneControlsSettings ToneControlsNative ToneCurveSettings ToneCurveNative ProcessingMigration HDRRecipe ColorGradingSettings ColorGradingNative ExportMetadata UsageAnalytics BundledLook DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView LookBrowser; do
+for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCurveNative ColorGradingNative DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
-  "$ROOT/Shared/AdjustmentTransfer.swift" "$ROOT/Shared/HDRAdjustmentTransfer.swift"
-  "$ROOT/Shared/AdjustmentPresetStore.swift" "$ROOT/Shared/PresetJSONScanner.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
   "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
@@ -31,7 +30,8 @@ TRANSFER_SOURCES=(
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
-swiftc "${TRANSFER_SOURCES[@]}" -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" "${TRANSFER_SOURCES[@]}" -parse-as-library -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_NATIVE_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
     "${CORE_LINK[@]}" $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \

@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Pass an already booted dedicated simulator UDID}"
 OUT="${2:-$(mktemp -d "${TMPDIR:-/tmp}/rawlab-hdr-rendition-slider.XXXXXX")}"
 OWN_OUT=0
@@ -53,17 +54,9 @@ cat > "$APP/Info.plist" << 'PLIST'
 </dict></plist>
 PLIST
 
-swiftc -swift-version 5 -parse-as-library -module-name HDRRenditionSliderHarness \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -parse-as-library -module-name HDRRenditionSliderHarness \
     -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
-    "$ROOT/Shared/Localization.swift" \
-    "$ROOT/Shared/GeometrySettings.swift" \
-    "$ROOT/Shared/HDRSettings.swift" \
-    "$ROOT/Shared/HSLSettings.swift" \
-    "$ROOT/Shared/ColorGradingSettings.swift" \
-    "$ROOT/Shared/ToneCurveSettings.swift" \
-    "$ROOT/Shared/AdjustmentTransfer.swift" \
-    "$ROOT/Shared/HDRAdjustmentTransfer.swift" \
-    "$ROOT/Shared/HDRDisplay.swift" \
     "$ROOT/Shared/Native/HDRCanvas.swift" \
     "$ROOT/Shared/Native/HDRMonitoring.swift" \
     "$ROOT/RawLab/tests/HDRRenditionSliderHarness.swift" \

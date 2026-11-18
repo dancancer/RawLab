@@ -119,6 +119,11 @@ class SelectionTests(unittest.TestCase):
         platforms, cold, draft, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
         self.assertEqual((platforms, cold, draft), ({"ios"}, False, False))
 
+    def test_apple_spm_files_select_macos_and_ios(self):
+        for path in ("Package.swift", "tests/RawLabKitTests/HDRTransferTests.swift"):
+            with self.subTest(path=path):
+                self.assertEqual(selection.affected([path]), {"macos", "ios"})
+
     def test_docs_and_bookkeeping_pull_request_runs_only_contracts(self):
         files = {"HEAD^1": [
             ".dsh-kanban.json",
@@ -157,7 +162,7 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(internal["checks"], "full")
 
     def test_fork_pull_requests_select_the_same_hosted_platforms(self):
-        for path in ("Shared/AdjustmentTransfer.swift", "RawLab/RawLab/App.swift", "RawLabMac/build.sh"):
+        for path in ("Shared/RawLabKit/AdjustmentTransfer.swift", "RawLab/RawLab/App.swift", "RawLabMac/build.sh"):
             with self.subTest(path=path):
                 files = {"HEAD^1": [path]}
                 internal, _, _, _ = selection.select("pull_request", pull(), "s", files.__getitem__, unavailable)
@@ -167,7 +172,7 @@ class SelectionTests(unittest.TestCase):
                 self.assertFalse(cold)
 
     def test_fork_pull_request_leaves_a_consistent_verify_result(self):
-        files = {"HEAD^1": ["Shared/AdjustmentTransfer.swift"]}
+        files = {"HEAD^1": ["Shared/RawLabKit/AdjustmentTransfer.swift"]}
         platforms, _, _, _ = selection.select("pull_request", pull(external=True), "s", files.__getitem__, unavailable)
         self.assertEqual(platforms, EVERY)
         results = {platform: "success" for platform in selection.PLATFORMS}

@@ -1,14 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 OUT="$(mktemp -d /tmp/rawlab-camera-skip-limit.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 
 ln -s "$ROOT/RawLab/RawLab/Resources/zh-Hans.lproj" "$OUT/zh-Hans.lproj"
 ln -s "$ROOT/RawLab/RawLab/Resources/en.lproj" "$OUT/en.lproj"
 
-swiftc -swift-version 5 -whole-module-optimization -module-cache-path "$OUT/modules" \
-    "$ROOT/Shared/Localization.swift" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -whole-module-optimization -module-cache-path "$OUT/modules" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \
@@ -26,9 +27,9 @@ mkdir -p "$OUT/profile"
 CFFIXED_USER_HOME="$OUT/profile" "$OUT/tests"
 
 if SIM_SDK="$(env -u SDKROOT xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null)" && [[ -n "$SIM_SDK" ]]; then
-    swiftc -typecheck -swift-version 5 -sdk "$SIM_SDK" -target arm64-apple-ios18.0-simulator \
+    rawlabkit_flags typecheck "$OUT/swiftpm" iphonesimulator 0
+    swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -typecheck -swift-version 5 -sdk "$SIM_SDK" -target arm64-apple-ios18.0-simulator \
         -module-cache-path "$OUT/sim-modules" \
-        "$ROOT/Shared/Localization.swift" \
         "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
         "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
         "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \

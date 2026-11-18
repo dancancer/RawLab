@@ -68,3 +68,5 @@ experiments/rum-local/windows/obj/
 /docs/superpowers/
 
 /.dsh-kanban.json
+.build/
+.swiftpm/

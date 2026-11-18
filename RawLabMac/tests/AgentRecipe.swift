@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 // 测试工具（remediation Q9/R18）：生产 UI 没有复制配方入口，只有 tests 的 Agent

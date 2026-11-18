@@ -42,7 +42,8 @@ IOS_PACKAGED_DOCS = {"lutools/platform/ios/ThirdPartyNotices.md"}
 # Mac artwork, recipes and licenses are packaged by every client; iOS compiles one Mac test fixture
 # and sources the shared AX gate (RawLab/tests/ios-reset-entry-ui.sh) from a Mac path.
 SHARED_MAC_PREFIXES = ("RawLabMac/Resources/",)
-MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift", "RawLabMac/tests/ax-gate.sh"}
+MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift", "RawLabMac/tests/ax-gate.sh", "Package.swift"}
+APPLE_SHARED_PREFIXES = ("tests/RawLabKitTests/",)
 CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
                       "RawLabWindows/": "windows", "RawLabAndroid/": "android"}
 SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
@@ -79,7 +80,7 @@ def platforms_for(path):
         return set()
     if path.startswith(SHARED_MAC_PREFIXES):
         return set(PLATFORMS)
-    if path in MAC_AND_IOS_FILES:
+    if path in MAC_AND_IOS_FILES or path.startswith(APPLE_SHARED_PREFIXES):
         return {"macos", "ios"}
     for prefix, platform in CLIENT_DIRECTORIES.items():
         if path.startswith(prefix):

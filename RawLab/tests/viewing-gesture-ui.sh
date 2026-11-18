@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 DEVICE="${1:?Dedicated simulator UUID}"
 OUT="${2:?New output directory}"
 mkdir -p "$OUT/source"
@@ -24,7 +25,7 @@ for n in ['ZoomablePhoto','PhotoZoomGeometry','PhotoHSLTargetInput']:
  name='RawLab/RawLab/UI/Preview/'+n+'.swift'
  text=subprocess.check_output(['git','show',os.environ['RAWLAB_VIEWING_BASELINE']+':'+name],cwd=root) if os.environ.get('RAWLAB_VIEWING_BASELINE') and n=='ZoomablePhoto' else (root/name).read_bytes()
  (out/'source'/ (n+'.swift')).write_bytes(text)
-for name in ['Shared/Localization.swift','Shared/HSLSettings.swift','Shared/HSLTargetAdjustment.swift','RawLab/tests/ViewingGestureHarness.swift','RawLab/tests/ViewingGestureUITests.swift']:
+for name in ['RawLab/tests/ViewingGestureHarness.swift','RawLab/tests/ViewingGestureUITests.swift']:
  (out/'source'/pathlib.Path(name).name).write_bytes((root/name).read_bytes())
 import hashlib,json
 sources={str(f.relative_to(out/'source')):hashlib.sha256(f.read_bytes()).hexdigest() for f in (out/'source').glob('*.swift')}
@@ -32,7 +33,8 @@ sources={str(f.relative_to(out/'source')):hashlib.sha256(f.read_bytes()).hexdige
 PY
 FLAGS=(-D VIEWING_CURRENT)
 if [[ -n "${RAWLAB_VIEWING_BASELINE:-}" ]]; then FLAGS=(-D VIEWING_BASELINE); fi
-xcrun --sdk iphonesimulator swiftc -parse-as-library -module-name ViewingGesture -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" "${FLAGS[@]}" "$OUT/source/Localization.swift" "$OUT/source/HSLSettings.swift" "$OUT/source/HSLTargetAdjustment.swift" "$OUT/source/PhotoHSLTargetInput.swift" "$OUT/source/PhotoZoomGeometry.swift" "$OUT/source/ZoomablePhoto.swift" "$OUT/source/ViewingGestureHarness.swift" -o "$APP/viewing-gesture"
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -module-name ViewingGesture -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" "${FLAGS[@]}" "$OUT/source/PhotoHSLTargetInput.swift" "$OUT/source/PhotoZoomGeometry.swift" "$OUT/source/ZoomablePhoto.swift" "$OUT/source/ViewingGestureHarness.swift" -o "$APP/viewing-gesture"
 xcrun --sdk iphonesimulator swiftc -emit-library -module-name RawLabUITests -sdk "$SDK" -target arm64-apple-ios18.0-simulator -module-cache-path "$OUT/module-cache" -F "$PLATFORM/Developer/Library/Frameworks" -I "$PLATFORM/Developer/usr/lib" -L "$PLATFORM/Developer/usr/lib" -lXCTestSwiftSupport -framework XCTest "$OUT/source/ViewingGestureUITests.swift" -o "$RUNNER/PlugIns/RawLabUITests.xctest/RawLabUITests"
 codesign --force --deep --sign - "$APP" >/dev/null
 codesign --force --deep --sign - "$RUNNER" >/dev/null

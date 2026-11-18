@@ -1,3 +1,4 @@
+import RawLabKit
 import XCTest
 
 final class CameraImportFaultToleranceXCTests: XCTestCase {

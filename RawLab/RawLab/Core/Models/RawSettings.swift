@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 enum X3fMode: String, CaseIterable, Identifiable, Codable {

@@ -161,7 +161,7 @@ def _parse_quoted_list(expr):
 
 def _curve_default(platform):
     if platform in ("macos", "ios"):
-        where = "Shared/ToneCurveSettings.swift"
+        where = "Shared/RawLabKit/ToneCurveSettings.swift"
         src = _strip_line_comments(_read(where))
         mode = _need(r"var mode: ToneCurveMode = \.(\w+)", src, "light.curve default", where).group(1)
         raw = _need(r"var points: \[ToneCurvePoint\] = (\[[^\]]*\])", src, "light.curve default", where).group(1)
@@ -184,7 +184,7 @@ def _curve_default(platform):
 
 def _look_default(platform):
     if platform in ("macos", "ios"):
-        where = "Shared/HDRSettings.swift"
+        where = "Shared/RawLabKit/HDRSettings.swift"
         src = _strip_line_comments(_read(where))
         _need(r"struct HDRLookSettings", src, "hdr.look default", where)
         sha = _need(r"var sha256: String\? = (\w+)", src, "hdr.look default", where).group(1)
@@ -220,11 +220,11 @@ OBJECT_SUBS_FIDS = (
 
 def _sub_end_sources(platform):
     if platform in ("macos", "ios"):
-        xfer_p = "Shared/AdjustmentTransfer.swift"
+        xfer_p = "Shared/RawLabKit/AdjustmentTransfer.swift"
         payload_p = xfer_p
-        hdr_p = "Shared/HDRSettings.swift"
-        hdr_tr_p = "Shared/HDRAdjustmentTransfer.swift"
-        tc_p = "Shared/ToneCurveSettings.swift"
+        hdr_p = "Shared/RawLabKit/HDRSettings.swift"
+        hdr_tr_p = "Shared/RawLabKit/HDRAdjustmentTransfer.swift"
+        tc_p = "Shared/RawLabKit/ToneCurveSettings.swift"
     elif platform == "android":
         base = "RawLabAndroid/app/src/main/java/com/rawlab/android/"
         xfer_p = base + "adjustments/AdjustmentTransfer.kt"
@@ -374,7 +374,7 @@ def _object_sub_fields(platform):
     out["looks.reference"] = _parse_looks_reference()
 
     if platform in ("macos", "ios"):
-        cg_where = "Shared/ColorGradingSettings.swift"
+        cg_where = "Shared/RawLabKit/ColorGradingSettings.swift"
         cg_src = _strip_line_comments(_read(cg_where))
         cg_hue = _need(r"hue >= ([0-9.]+) && hue < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
         cg_sat = _need(r"\(([0-9.]+)\.\.\.([0-9.]+)\)\.contains\(saturation\)", cg_src, "color.grading.wheel saturation bounds", cg_where)
@@ -454,7 +454,7 @@ def _object_sub_fields(platform):
 
     def _cam_version():
         if platform in ("macos", "ios"):
-            v_model = int(_need(r"var version = (\d+)", cam_scope, "hdr.camera_development version", hdr_path).group(1))
+            v_model = int(_need(r"(?:public\s+)?var version = (\d+)", cam_scope, "hdr.camera_development version", hdr_path).group(1))
             v_wire = int(_need(r'"version": \.number\((\d+)\)', hdr_tr, "hdr.camera_development wire version", hdr_tr_path).group(1))
             if v_model != v_wire:
                 raise AssertionError(f"Apple hdr.camera_development version mismatch: {v_model} != {v_wire}")
@@ -606,9 +606,9 @@ def _ui_curve_entry(platform: str, mac_fine: dict[str, float] | None = None) -> 
     """Per-end parsed light.curve UI truth (bounds, steps, channels, defaults)."""
     if platform == "macos":
         assert mac_fine is not None
-        tcs_path = "Shared/ToneCurveSettings.swift"
+        tcs_path = "Shared/RawLabKit/ToneCurveSettings.swift"
         tcs_src = _strip_line_comments(_read(tcs_path))
-        mac_shared_int = "Shared/ToneCurveInteraction.swift"
+        mac_shared_int = "Shared/RawLabKit/ToneCurveInteraction.swift"
         mac_shared_ed = "Shared/ToneCurveEditor.swift"
         shared_ed = _read(mac_shared_ed)
         coord_m = _need(r"\((-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)\)\.contains\(point\.x\)", tcs_src, "light.curve mac coord bounds", tcs_path)
@@ -629,7 +629,7 @@ def _ui_curve_entry(platform: str, mac_fine: dict[str, float] | None = None) -> 
         )
 
     if platform == "ios":
-        tcs_path = "Shared/ToneCurveSettings.swift"
+        tcs_path = "Shared/RawLabKit/ToneCurveSettings.swift"
         tcs_src = _strip_line_comments(_read(tcs_path))
         ios_path = "RawLab/RawLab/UI/Panels/ToneCurveControls.swift"
         ios_src = _strip_line_comments(_read(ios_path))
@@ -740,10 +740,10 @@ def _make_proto(
 
 def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
     """Parse Shared/AdjustmentTransfer.swift protocol definitions for Mac & iOS."""
-    src = _strip_line_comments(_read("Shared/AdjustmentTransfer.swift"))
+    src = _strip_line_comments(_read("Shared/RawLabKit/AdjustmentTransfer.swift"))
 
     enum_match = re.search(
-        r"enum AdjustmentTransferField:\s*String.*?\{(.*?)\n    var isHDRRelative",
+        r"enum AdjustmentTransferField:\s*String.*?\{(.*?)\n    (?:public\s+)?var isHDRRelative",
         src,
         re.S,
     )
@@ -759,7 +759,7 @@ def parse_apple_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
     hdr_only_cases = {"hdrLook", "hdrCameraDevelopment"} | hdr_relative | hdr_rendition
 
     groups: dict[str, str] = {}
-    group_block = _need(r"var group: String \{\n(.*?)\n    \}", src, "protocol groups", "Shared/AdjustmentTransfer.swift", re.S).group(1)
+    group_block = _need(r"(?:public\s+)?var group: String \{\n(.*?)\n    \}", src, "protocol groups", "Shared/RawLabKit/AdjustmentTransfer.swift", re.S).group(1)
     apple_rel_group = _need(r'if isHDRRelative \{ return "(\w+)" \}', group_block, "hdr.relative group", "apple group block").group(1)
     apple_look_group = _need(r'if self == \.hdrLook \{ return "(\w+)" \}', group_block, "hdr.look group", "apple group block").group(1)
     apple_cam_group = _need(r'if self == \.hdrCameraDevelopment \{ return "(\w+)" \}', group_block, "hdr.camera_development group", "apple group block").group(1)
@@ -1387,13 +1387,13 @@ def _model_entry(
 
 def _parse_apple_shared_models() -> dict:
     """Parse models defined in Shared/*.swift (compiled into macOS and iOS only)."""
-    hdr_swift = _strip_line_comments(_read("Shared/HDRSettings.swift"))
-    hdr_transfer_swift = _strip_line_comments(_read("Shared/HDRAdjustmentTransfer.swift"))
-    geom_swift = _strip_line_comments(_read("Shared/GeometrySettings.swift"))
-    hsl_swift = _strip_line_comments(_read("Shared/HSLSettings.swift"))
-    tone_swift = _strip_line_comments(_read("Shared/ToneControlsSettings.swift"))
-    atmos_swift = _strip_line_comments(_read("Shared/AtmosphereSettings.swift"))
-    grading_swift = _strip_line_comments(_read("Shared/ColorGradingSettings.swift"))
+    hdr_swift = _strip_line_comments(_read("Shared/RawLabKit/HDRSettings.swift"))
+    hdr_transfer_swift = _strip_line_comments(_read("Shared/RawLabKit/HDRAdjustmentTransfer.swift"))
+    geom_swift = _strip_line_comments(_read("Shared/RawLabKit/GeometrySettings.swift"))
+    hsl_swift = _strip_line_comments(_read("Shared/RawLabKit/HSLSettings.swift"))
+    tone_swift = _strip_line_comments(_read("Shared/RawLabKit/ToneControlsSettings.swift"))
+    atmos_swift = _strip_line_comments(_read("Shared/RawLabKit/AtmosphereSettings.swift"))
+    grading_swift = _strip_line_comments(_read("Shared/RawLabKit/ColorGradingSettings.swift"))
 
     def _swift_bounds(text: str, prop: str, label: str, rel: str) -> tuple[float, float]:
         m = re.search(rf"\((-?\d+)\.\.\.(-?\d+)\)\.contains\({re.escape(prop)}\)", text)
@@ -1407,46 +1407,46 @@ def _parse_apple_shared_models() -> dict:
         return (float(m.group(1)), float(m.group(2)))
 
     # HDRSettings
-    hdr_settings_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRSettings\b", "hdr settings", "Shared/HDRSettings.swift")
-    hdr_exp_def = float(_need(r"(?:public\s+)?var exposure(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.exposure default", "Shared/HDRSettings.swift").group(1))
-    hdr_temp_def = float(_need(r"(?:public\s+)?var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.relative_temperature default", "Shared/HDRSettings.swift").group(1))
-    hdr_tint_def = float(_need(r"(?:public\s+)?var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.relative_tint default", "Shared/HDRSettings.swift").group(1))
-    hdr_exp_range = _swift_bounds(hdr_settings_blk, "exposure", "hdr.exposure bounds", "Shared/HDRSettings.swift")
-    hdr_temp_range = _swift_bounds(hdr_settings_blk, "temperature", "hdr.relative_temperature bounds", "Shared/HDRSettings.swift")
-    hdr_tint_range = _swift_bounds(hdr_settings_blk, "tint", "hdr.relative_tint bounds", "Shared/HDRSettings.swift")
+    hdr_settings_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRSettings\b", "hdr settings", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_exp_def = float(_need(r"(?:public\s+)?var exposure(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.exposure default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_temp_def = float(_need(r"(?:public\s+)?var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.relative_temperature default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_tint_def = float(_need(r"(?:public\s+)?var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, "hdr.relative_tint default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_exp_range = _swift_bounds(hdr_settings_blk, "exposure", "hdr.exposure bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_temp_range = _swift_bounds(hdr_settings_blk, "temperature", "hdr.relative_temperature bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_tint_range = _swift_bounds(hdr_settings_blk, "tint", "hdr.relative_tint bounds", "Shared/RawLabKit/HDRSettings.swift")
     hdr_scalar_100: dict[str, tuple[float, float]] = {}
     hdr_scalar_defs: dict[str, float] = {}
     for prop in ("contrast", "highlights", "shadows", "saturation"):
-        hdr_scalar_100[prop] = _swift_bounds(hdr_settings_blk, prop, f"hdr.{prop} bounds", "Shared/HDRSettings.swift")
+        hdr_scalar_100[prop] = _swift_bounds(hdr_settings_blk, prop, f"hdr.{prop} bounds", "Shared/RawLabKit/HDRSettings.swift")
         hdr_scalar_defs[prop] = float(
-            _need(rf"(?:public\s+)?var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, f"hdr.{prop} default", "Shared/HDRSettings.swift").group(1)
+            _need(rf"(?:public\s+)?var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_settings_blk, f"hdr.{prop} default", "Shared/RawLabKit/HDRSettings.swift").group(1)
         )
 
     # HDRToneSettings + HDRColorSettings + HDRRenditionSettings + HDRDetailSettings + HDRPhotoEffectsSettings
-    hdr_tone_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRToneSettings\b", "hdr tone", "Shared/HDRSettings.swift")
-    hdr_color_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRColorSettings\b", "hdr color", "Shared/HDRSettings.swift")
-    hdr_rend_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRRenditionSettings\b", "hdr rendition", "Shared/HDRSettings.swift")
-    hdr_det_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRDetailSettings\b", "hdr detail", "Shared/HDRSettings.swift")
-    hdr_fx_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRPhotoEffectsSettings\b", "hdr effects", "Shared/HDRSettings.swift")
-    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr camera dev", "Shared/HDRSettings.swift")
+    hdr_tone_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRToneSettings\b", "hdr tone", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_color_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRColorSettings\b", "hdr color", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_rend_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRRenditionSettings\b", "hdr rendition", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_det_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRDetailSettings\b", "hdr detail", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_fx_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRPhotoEffectsSettings\b", "hdr effects", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr camera dev", "Shared/RawLabKit/HDRSettings.swift")
 
-    hdr_peak_range = _swift_bounds(hdr_rend_blk, "peakLimitEV", "hdr.peak bounds", "Shared/HDRSettings.swift")
-    hdr_sdr_exp_range = _swift_bounds(hdr_rend_blk, "sdrExposureEV", "hdr.sdr_exposure bounds", "Shared/HDRSettings.swift")
-    hdr_sdr_con_range = _swift_bounds(hdr_rend_blk, "sdrContrast", "hdr.sdr_contrast bounds", "Shared/HDRSettings.swift")
-    hdr_sdr_sat_range = _swift_bounds(hdr_rend_blk, "sdrSaturation", "hdr.sdr_saturation bounds", "Shared/HDRSettings.swift")
-    hdr_peak_def = float(_need(r"(?:public\s+)?var peakLimitEV(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.peak default", "Shared/HDRSettings.swift").group(1))
-    hdr_sdr_exp_def = float(_need(r"(?:public\s+)?var sdrExposureEV(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_exposure default", "Shared/HDRSettings.swift").group(1))
-    hdr_sdr_con_def = float(_need(r"(?:public\s+)?var sdrContrast(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_contrast default", "Shared/HDRSettings.swift").group(1))
-    hdr_sdr_sat_def = float(_need(r"(?:public\s+)?var sdrSaturation(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_saturation default", "Shared/HDRSettings.swift").group(1))
+    hdr_peak_range = _swift_bounds(hdr_rend_blk, "peakLimitEV", "hdr.peak bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_sdr_exp_range = _swift_bounds(hdr_rend_blk, "sdrExposureEV", "hdr.sdr_exposure bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_sdr_con_range = _swift_bounds(hdr_rend_blk, "sdrContrast", "hdr.sdr_contrast bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_sdr_sat_range = _swift_bounds(hdr_rend_blk, "sdrSaturation", "hdr.sdr_saturation bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_peak_def = float(_need(r"(?:public\s+)?var peakLimitEV(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.peak default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_sdr_exp_def = float(_need(r"(?:public\s+)?var sdrExposureEV(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_exposure default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_sdr_con_def = float(_need(r"(?:public\s+)?var sdrContrast(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_contrast default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_sdr_sat_def = float(_need(r"(?:public\s+)?var sdrSaturation(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_blk, "hdr.sdr_saturation default", "Shared/RawLabKit/HDRSettings.swift").group(1))
 
-    hdr_sharp_range = _swift_bounds(hdr_det_blk, "sharpening", "hdr.sharpen bounds", "Shared/HDRSettings.swift")
-    hdr_clarity_range = _swift_bounds(hdr_det_blk, "clarity", "hdr.clarity bounds", "Shared/HDRSettings.swift")
-    hdr_dehaze_range = _swift_bounds(hdr_det_blk, "dehaze", "hdr.dehaze bounds", "Shared/HDRSettings.swift")
-    hdr_denoise_range = _swift_bounds(hdr_det_blk, "denoise", "hdr.denoise bounds", "Shared/HDRSettings.swift")
-    hdr_sharp_def = float(_need(r"(?:public\s+)?var sharpening(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.sharpen default", "Shared/HDRSettings.swift").group(1))
-    hdr_clarity_def = float(_need(r"(?:public\s+)?var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.clarity default", "Shared/HDRSettings.swift").group(1))
-    hdr_dehaze_def = float(_need(r"(?:public\s+)?var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.dehaze default", "Shared/HDRSettings.swift").group(1))
-    hdr_denoise_def = float(_need(r"(?:public\s+)?var denoise(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.denoise default", "Shared/HDRSettings.swift").group(1))
+    hdr_sharp_range = _swift_bounds(hdr_det_blk, "sharpening", "hdr.sharpen bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_clarity_range = _swift_bounds(hdr_det_blk, "clarity", "hdr.clarity bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_dehaze_range = _swift_bounds(hdr_det_blk, "dehaze", "hdr.dehaze bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_denoise_range = _swift_bounds(hdr_det_blk, "denoise", "hdr.denoise bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_sharp_def = float(_need(r"(?:public\s+)?var sharpening(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.sharpen default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_clarity_def = float(_need(r"(?:public\s+)?var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.clarity default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_dehaze_def = float(_need(r"(?:public\s+)?var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.dehaze default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_denoise_def = float(_need(r"(?:public\s+)?var denoise(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_det_blk, "hdr.denoise default", "Shared/RawLabKit/HDRSettings.swift").group(1))
 
     hdr_fx_defs = {}
     hdr_fx_ranges = {}
@@ -1454,73 +1454,73 @@ def _parse_apple_shared_models() -> dict:
         "vignetteAmount", "vignetteMidpoint", "vignetteRoundness", "vignetteFeather",
         "vignetteHighlights", "grainAmount", "grainSize", "grainRoughness",
     ):
-        hdr_fx_defs[prop] = float(_need(rf"(?:public\s+)?var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_fx_blk, f"hdr fx.{prop} default", "Shared/HDRSettings.swift").group(1))
-        hdr_fx_ranges[prop] = _swift_bounds(hdr_fx_blk, prop, f"hdr fx.{prop} bounds", "Shared/HDRSettings.swift")
+        hdr_fx_defs[prop] = float(_need(rf"(?:public\s+)?var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_fx_blk, f"hdr fx.{prop} default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+        hdr_fx_ranges[prop] = _swift_bounds(hdr_fx_blk, prop, f"hdr fx.{prop} bounds", "Shared/RawLabKit/HDRSettings.swift")
 
-    hdr_cam_wb = _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr.cam wb wire", "Shared/HDRSettings.swift").group(1)
-    _need(r"var whiteBalance(?:\s*:\s*WhiteBalance)?\s*=\s*(?:WhiteBalance)?\.asShot", hdr_cam_blk, "hdr.cam wb default", "Shared/HDRSettings.swift")
-    hdr_cam_expref = _need(r'case (\w+),\s*\w+', hdr_cam_blk, "hdr.cam expref wire", "Shared/HDRSettings.swift").group(1)
-    _need(r"var exposureReference(?:\s*:\s*ExposureReference)?\s*=\s*(?:ExposureReference)?\.metadata", hdr_cam_blk, "hdr.cam expref default", "Shared/HDRSettings.swift")
+    hdr_cam_wb = _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr.cam wb wire", "Shared/RawLabKit/HDRSettings.swift").group(1)
+    _need(r"var whiteBalance(?:\s*:\s*WhiteBalance)?\s*=\s*(?:WhiteBalance)?\.asShot", hdr_cam_blk, "hdr.cam wb default", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_cam_expref = _need(r'case (\w+),\s*\w+', hdr_cam_blk, "hdr.cam expref wire", "Shared/RawLabKit/HDRSettings.swift").group(1)
+    _need(r"var exposureReference(?:\s*:\s*ExposureReference)?\s*=\s*(?:ExposureReference)?\.metadata", hdr_cam_blk, "hdr.cam expref default", "Shared/RawLabKit/HDRSettings.swift")
     hdr_cam_def = {
-        "version": int(_need(r"var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr.cam version", "Shared/HDRSettings.swift").group(1)),
+        "version": int(_need(r"(?:public\s+)?var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr.cam version", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         "white_balance_mode": hdr_cam_wb,
-        "temperature": float(_need(r"var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr.cam temp", "Shared/HDRSettings.swift").group(1)),
-        "tint": float(_need(r"var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr.cam tint", "Shared/HDRSettings.swift").group(1)),
+        "temperature": float(_need(r"(?:public\s+)?var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr.cam temp", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+        "tint": float(_need(r"(?:public\s+)?var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr.cam tint", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         "exposure_reference": hdr_cam_expref,
-        "fbdd_level": int(_need(r"var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr.cam fbdd", "Shared/HDRSettings.swift").group(1)),
+        "fbdd_level": int(_need(r"(?:public\s+)?var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr.cam fbdd", "Shared/RawLabKit/HDRSettings.swift").group(1)),
     }
 
     # HDRAdjustmentTransfer scales
-    _require("(number - 1) * 100", hdr_transfer_swift, "hdr contrast/saturation scale", "Shared/HDRAdjustmentTransfer.swift")
-    _require("-number * 100", hdr_transfer_swift, "hdr highlights scale", "Shared/HDRAdjustmentTransfer.swift")
-    _require("number * 100", hdr_transfer_swift, "hdr shadows scale", "Shared/HDRAdjustmentTransfer.swift")
-    _require("tone.curveStrength = value * 100", hdr_transfer_swift, "hdr sCurve scale", "Shared/HDRAdjustmentTransfer.swift")
-    _require("field == .clarity || field == .dehaze ? value * 100 : value", hdr_transfer_swift, "hdr clarity/dehaze scale", "Shared/HDRAdjustmentTransfer.swift")
-    _require("field == .clarity || field == .dehaze ? value / 100 : value", hdr_transfer_swift, "hdr clarity/dehaze decode scale", "Shared/HDRAdjustmentTransfer.swift")
+    _require("(number - 1) * 100", hdr_transfer_swift, "hdr contrast/saturation scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
+    _require("-number * 100", hdr_transfer_swift, "hdr highlights scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
+    _require("number * 100", hdr_transfer_swift, "hdr shadows scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
+    _require("tone.curveStrength = value * 100", hdr_transfer_swift, "hdr sCurve scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
+    _require("field == .clarity || field == .dehaze ? value * 100 : value", hdr_transfer_swift, "hdr clarity/dehaze scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
+    _require("field == .clarity || field == .dehaze ? value / 100 : value", hdr_transfer_swift, "hdr clarity/dehaze decode scale", "Shared/RawLabKit/HDRAdjustmentTransfer.swift")
 
     # ToneControlsSettings & AtmosphereSettings & HSLSettings & ColorGradingSettings
-    tone_blk = _extract_brace_block(tone_swift, r"(?:public\s+)?struct ToneControlsSettings\b", "tone controls", "Shared/ToneControlsSettings.swift")
-    tone_range = _swift_bounds(tone_blk, "blackPoint", "tone controls bounds", "Shared/ToneControlsSettings.swift")
-    tone_bp_def = float(_need(r"(?:public\s+)?var blackPoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "tone.black_point default", "Shared/ToneControlsSettings.swift").group(1))
-    tone_wp_def = float(_need(r"(?:public\s+)?var whitePoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "tone.white_point default", "Shared/ToneControlsSettings.swift").group(1))
-    vib_def = float(_need(r"(?:public\s+)?var vibrance(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_color_blk, "hdr color.vibrance default", "Shared/HDRSettings.swift").group(1))
-    hdr_vib_range = _swift_bounds(hdr_color_blk, "vibrance", "hdr color.vibrance bounds", "Shared/HDRSettings.swift")
-    hdr_bp_range = _swift_bounds(hdr_tone_blk, "blackPoint", "hdr blackPoint bounds", "Shared/HDRSettings.swift")
-    hdr_wp_range = _swift_bounds(hdr_tone_blk, "whitePoint", "hdr whitePoint bounds", "Shared/HDRSettings.swift")
+    tone_blk = _extract_brace_block(tone_swift, r"(?:public\s+)?struct ToneControlsSettings\b", "tone controls", "Shared/RawLabKit/ToneControlsSettings.swift")
+    tone_range = _swift_bounds(tone_blk, "blackPoint", "tone controls bounds", "Shared/RawLabKit/ToneControlsSettings.swift")
+    tone_bp_def = float(_need(r"(?:public\s+)?var blackPoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "tone.black_point default", "Shared/RawLabKit/ToneControlsSettings.swift").group(1))
+    tone_wp_def = float(_need(r"(?:public\s+)?var whitePoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "tone.white_point default", "Shared/RawLabKit/ToneControlsSettings.swift").group(1))
+    vib_def = float(_need(r"(?:public\s+)?var vibrance(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_color_blk, "hdr color.vibrance default", "Shared/RawLabKit/HDRSettings.swift").group(1))
+    hdr_vib_range = _swift_bounds(hdr_color_blk, "vibrance", "hdr color.vibrance bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_bp_range = _swift_bounds(hdr_tone_blk, "blackPoint", "hdr blackPoint bounds", "Shared/RawLabKit/HDRSettings.swift")
+    hdr_wp_range = _swift_bounds(hdr_tone_blk, "whitePoint", "hdr whitePoint bounds", "Shared/RawLabKit/HDRSettings.swift")
 
-    atmos_blk = _extract_brace_block(atmos_swift, r"(?:public\s+)?struct AtmosphereSettings\b", "atmosphere", "Shared/AtmosphereSettings.swift")
-    atmos_range = _swift_bounds(atmos_blk, "clarity", "atmosphere bounds", "Shared/AtmosphereSettings.swift")
-    atmos_cl_def = float(_need(r"(?:public\s+)?var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "effects.clarity default", "Shared/AtmosphereSettings.swift").group(1))
-    atmos_dh_def = float(_need(r"(?:public\s+)?var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "effects.dehaze default", "Shared/AtmosphereSettings.swift").group(1))
+    atmos_blk = _extract_brace_block(atmos_swift, r"(?:public\s+)?struct AtmosphereSettings\b", "atmosphere", "Shared/RawLabKit/AtmosphereSettings.swift")
+    atmos_range = _swift_bounds(atmos_blk, "clarity", "atmosphere bounds", "Shared/RawLabKit/AtmosphereSettings.swift")
+    atmos_cl_def = float(_need(r"(?:public\s+)?var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "effects.clarity default", "Shared/RawLabKit/AtmosphereSettings.swift").group(1))
+    atmos_dh_def = float(_need(r"(?:public\s+)?var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "effects.dehaze default", "Shared/RawLabKit/AtmosphereSettings.swift").group(1))
 
-    hsl_blk = _extract_brace_block(hsl_swift, r"(?:public\s+)?struct HSLSettings\b", "color.hsl", "Shared/HSLSettings.swift")
-    hsl_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(\$0\)", hsl_blk, "color.hsl bounds", "Shared/HSLSettings.swift").groups())
-    _need(r"repeating:\s*0,\s*count:\s*8", hsl_blk, "color.hsl default 0", "Shared/HSLSettings.swift")
+    hsl_blk = _extract_brace_block(hsl_swift, r"(?:public\s+)?struct HSLSettings\b", "color.hsl", "Shared/RawLabKit/HSLSettings.swift")
+    hsl_range = tuple(float(x) for x in _need(r"\((-?\d+)\.\.\.(-?\d+)\)\.contains\(\$0\)", hsl_blk, "color.hsl bounds", "Shared/RawLabKit/HSLSettings.swift").groups())
+    _need(r"repeating:\s*0,\s*count:\s*8", hsl_blk, "color.hsl default 0", "Shared/RawLabKit/HSLSettings.swift")
 
-    grad_blk = _extract_brace_block(grading_swift, r"(?:public\s+)?struct ColorGradingWheel\b", "color.grading.*", "Shared/ColorGradingSettings.swift")
-    grad_hue_def = float(_need(r"(?:public\s+)?var hue(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", grad_blk, "color.grading hue default", "Shared/ColorGradingSettings.swift").group(1))
-    grad_sat_def = float(_need(r"(?:public\s+)?var saturation(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", grad_blk, "color.grading saturation default", "Shared/ColorGradingSettings.swift").group(1))
+    grad_blk = _extract_brace_block(grading_swift, r"(?:public\s+)?struct ColorGradingWheel\b", "color.grading.*", "Shared/RawLabKit/ColorGradingSettings.swift")
+    grad_hue_def = float(_need(r"(?:public\s+)?var hue(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", grad_blk, "color.grading hue default", "Shared/RawLabKit/ColorGradingSettings.swift").group(1))
+    grad_sat_def = float(_need(r"(?:public\s+)?var saturation(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", grad_blk, "color.grading saturation default", "Shared/RawLabKit/ColorGradingSettings.swift").group(1))
 
     # GeometrySettings
-    geom_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "geometry.*", "Shared/GeometrySettings.swift")
-    geom_crop_x = float(_need(r"(?:public\s+)?var cropX(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.x default", "Shared/GeometrySettings.swift").group(1))
-    geom_crop_y = float(_need(r"(?:public\s+)?var cropY(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.y default", "Shared/GeometrySettings.swift").group(1))
-    geom_crop_w = float(_need(r"(?:public\s+)?var cropWidth(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.width default", "Shared/GeometrySettings.swift").group(1))
-    geom_crop_h = float(_need(r"(?:public\s+)?var cropHeight(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.height default", "Shared/GeometrySettings.swift").group(1))
-    crop_min = float(_need(r"cropX\s*>=\s*(-?\d+(?:\.\d+)?)\s*&&\s*cropY\s*>=\s*\1", geom_blk, "geometry.crop min bound", "Shared/GeometrySettings.swift").group(1))
-    _need(r"cropWidth\s*>\s*0\s*&&\s*cropHeight\s*>\s*0", geom_blk, "geometry.crop positive size guard", "Shared/GeometrySettings.swift")
-    crop_max = float(_need(r"cropX\s*\+\s*cropWidth\s*<=\s*(-?\d+(?:\.\d+)?)\s*&&\s*cropY\s*\+\s*cropHeight\s*<=\s*\1", geom_blk, "geometry.crop max bound", "Shared/GeometrySettings.swift").group(1))
+    geom_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "geometry.*", "Shared/RawLabKit/GeometrySettings.swift")
+    geom_crop_x = float(_need(r"(?:public\s+)?var cropX(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.x default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    geom_crop_y = float(_need(r"(?:public\s+)?var cropY(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.y default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    geom_crop_w = float(_need(r"(?:public\s+)?var cropWidth(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.width default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    geom_crop_h = float(_need(r"(?:public\s+)?var cropHeight(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.crop.height default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    crop_min = float(_need(r"cropX\s*>=\s*(-?\d+(?:\.\d+)?)\s*&&\s*cropY\s*>=\s*\1", geom_blk, "geometry.crop min bound", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    _need(r"cropWidth\s*>\s*0\s*&&\s*cropHeight\s*>\s*0", geom_blk, "geometry.crop positive size guard", "Shared/RawLabKit/GeometrySettings.swift")
+    crop_max = float(_need(r"cropX\s*\+\s*cropWidth\s*<=\s*(-?\d+(?:\.\d+)?)\s*&&\s*cropY\s*\+\s*cropHeight\s*<=\s*\1", geom_blk, "geometry.crop max bound", "Shared/RawLabKit/GeometrySettings.swift").group(1))
     geom_crop_bounds = (crop_min, crop_max)
-    qt_range = tuple(int(x) for x in _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(quarterTurns\)", geom_blk, "geometry.quarter_turns bounds", "Shared/GeometrySettings.swift").groups())
-    qt_def = int(_need(r"(?:public\s+)?var quarterTurns(?:\s*:\s*Int)?\s*=\s*(\d+)", geom_blk, "geometry.quarter_turns default", "Shared/GeometrySettings.swift").group(1))
-    flip_h_def = _need(r"(?:public\s+)?var flipHorizontal(?:\s*:\s*Bool)?\s*=\s*(true|false)", geom_blk, "geometry.flip_horizontal default", "Shared/GeometrySettings.swift").group(1) == "true"
-    flip_v_def = _need(r"(?:public\s+)?var flipVertical(?:\s*:\s*Bool)?\s*=\s*(true|false)", geom_blk, "geometry.flip_vertical default", "Shared/GeometrySettings.swift").group(1) == "true"
-    straight_range = _swift_bounds(geom_blk, "straightenDegrees", "geometry.straighten bounds", "Shared/GeometrySettings.swift")
-    straight_def = float(_need(r"(?:public\s+)?var straightenDegrees(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.straighten default", "Shared/GeometrySettings.swift").group(1))
-    persp_h_range = _swift_bounds(geom_blk, "perspectiveHorizontal", "geometry.perspective.horizontal bounds", "Shared/GeometrySettings.swift")
-    persp_v_range = _swift_bounds(geom_blk, "perspectiveVertical", "geometry.perspective.vertical bounds", "Shared/GeometrySettings.swift")
-    persp_h_def = float(_need(r"(?:public\s+)?var perspectiveHorizontal(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.perspective.horizontal default", "Shared/GeometrySettings.swift").group(1))
-    persp_v_def = float(_need(r"(?:public\s+)?var perspectiveVertical(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.perspective.vertical default", "Shared/GeometrySettings.swift").group(1))
+    qt_range = tuple(int(x) for x in _need(r"\((\d+)\.\.\.(\d+)\)\.contains\(quarterTurns\)", geom_blk, "geometry.quarter_turns bounds", "Shared/RawLabKit/GeometrySettings.swift").groups())
+    qt_def = int(_need(r"(?:public\s+)?var quarterTurns(?:\s*:\s*Int)?\s*=\s*(\d+)", geom_blk, "geometry.quarter_turns default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    flip_h_def = _need(r"(?:public\s+)?var flipHorizontal(?:\s*:\s*Bool)?\s*=\s*(true|false)", geom_blk, "geometry.flip_horizontal default", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
+    flip_v_def = _need(r"(?:public\s+)?var flipVertical(?:\s*:\s*Bool)?\s*=\s*(true|false)", geom_blk, "geometry.flip_vertical default", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
+    straight_range = _swift_bounds(geom_blk, "straightenDegrees", "geometry.straighten bounds", "Shared/RawLabKit/GeometrySettings.swift")
+    straight_def = float(_need(r"(?:public\s+)?var straightenDegrees(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.straighten default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    persp_h_range = _swift_bounds(geom_blk, "perspectiveHorizontal", "geometry.perspective.horizontal bounds", "Shared/RawLabKit/GeometrySettings.swift")
+    persp_v_range = _swift_bounds(geom_blk, "perspectiveVertical", "geometry.perspective.vertical bounds", "Shared/RawLabKit/GeometrySettings.swift")
+    persp_h_def = float(_need(r"(?:public\s+)?var perspectiveHorizontal(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.perspective.horizontal default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    persp_v_def = float(_need(r"(?:public\s+)?var perspectiveVertical(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_blk, "geometry.perspective.vertical default", "Shared/RawLabKit/GeometrySettings.swift").group(1))
 
     return {
         "hdr_exp_range": hdr_exp_range,
@@ -2447,8 +2447,8 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     mac_geom_ctrl = _strip_line_comments(_read("RawLabMac/Sources/Geometry/GeometryControls.swift"))
     mac_lens = _strip_line_comments(_read("RawLabMac/Sources/Lens/LensControls.swift"))
     hdr_mon = _strip_line_comments(_read("Shared/Native/HDRMonitoring.swift"))
-    hdr_swift = _strip_line_comments(_read("Shared/HDRSettings.swift"))
-    geom_swift = _strip_line_comments(_read("Shared/GeometrySettings.swift"))
+    hdr_swift = _strip_line_comments(_read("Shared/RawLabKit/HDRSettings.swift"))
+    geom_swift = _strip_line_comments(_read("Shared/RawLabKit/GeometrySettings.swift"))
 
     # ParameterRow defaults & AdjustmentRow routing (AdjustmentRow.swift + AdjustmentDock.swift)
     mac_row_blk = _extract_brace_block(mac_adj_row, r"struct ParameterRow\b", "ParameterRow", "AdjustmentRow.swift")
@@ -2540,7 +2540,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     _require('Button(L10n.text("重置")) { draft = HDRCameraDevelopmentSettings() }', hdr_cam_ctrl_blk, "hdr.camera_development mac reset", "Shared/Native/HDRMonitoring.swift")
     hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam temp step", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam tint step", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam mac ui", "Shared/HDRSettings.swift")
+    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam mac ui", "Shared/RawLabKit/HDRSettings.swift")
 
     _require('PhotoEditState(settings: defaults, filmID: "")', mac_tx, "looks.reference mac", "MacAdjustmentTransfer.swift")
     mac_look_neutral = _need(r'look\s*=\s*\["kind":\s*\.string\("(\w+)"\),\s*"id":\s*\.null\]', mac_tv, "looks.reference mac wire", "MacAdjustmentTransferValues.swift").group(1)
@@ -2699,17 +2699,17 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     crop_unit = crop_field_m.group(2)
     qt_mod = int(_need(r"\.quarterTurns\s*=\s*\(\$0\.quarterTurns \+ \(clockwise \? 1 : 3\)\) % (\d+)", mac_geom_ctrl, "qt mod mac ui", "GeometryControls.swift").group(1))
 
-    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults mac", "Shared/GeometrySettings.swift")
-    qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def mac ui", "Shared/GeometrySettings.swift").group(1))
-    flip_h_def = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    flip_v_def = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def mac ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    crop_x_def = float(_need(r"var cropX(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropX def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
-    crop_y_def = float(_need(r"var cropY(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropY def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
-    crop_w_def = float(_need(r"var cropWidth(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropW def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
-    crop_h_def = float(_need(r"var cropHeight(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropH def mac ui", "Shared/GeometrySettings.swift").group(1)) * crop_mult
-    straight_def = float(_need(r"var straightenDegrees(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "straight def mac ui", "Shared/GeometrySettings.swift").group(1)) * straight_mult
-    persp_h_def = float(_need(r"var perspectiveHorizontal(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspH def mac ui", "Shared/GeometrySettings.swift").group(1)) * persp_mult
-    persp_v_def = float(_need(r"var perspectiveVertical(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspV def mac ui", "Shared/GeometrySettings.swift").group(1)) * persp_mult
+    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults mac", "Shared/RawLabKit/GeometrySettings.swift")
+    qt_def = int(_need(r"(?:public\s+)?var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    flip_h_def = _need(r"(?:public\s+)?var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
+    flip_v_def = _need(r"(?:public\s+)?var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
+    crop_x_def = float(_need(r"var cropX(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropX def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * crop_mult
+    crop_y_def = float(_need(r"var cropY(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropY def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * crop_mult
+    crop_w_def = float(_need(r"var cropWidth(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropW def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * crop_mult
+    crop_h_def = float(_need(r"var cropHeight(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "cropH def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * crop_mult
+    straight_def = float(_need(r"var straightenDegrees(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "straight def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * straight_mult
+    persp_h_def = float(_need(r"var perspectiveHorizontal(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspH def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * persp_mult
+    persp_v_def = float(_need(r"var perspectiveVertical(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", geom_struct_blk, "perspV def mac ui", "Shared/RawLabKit/GeometrySettings.swift").group(1)) * persp_mult
 
     mac_lens_options = _need(r"private var correctionOptions.*?\}", mac_lens, "geometry.lens.vignetting mac sdr scope", "LensControls.swift", re.S).group(0)
     _require_absent("vignetting", mac_lens_options, "geometry.lens.vignetting mac sdr", "LensControls.swift")
@@ -2825,12 +2825,12 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
         default={
-            "version": int(_need(r"var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam ver", "Shared/HDRSettings.swift").group(1)),
-            "white_balance_mode": _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr cam wb", "Shared/HDRSettings.swift").group(1),
-            "temperature": float(_need(r"var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam temp", "Shared/HDRSettings.swift").group(1)),
-            "tint": float(_need(r"var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam tint", "Shared/HDRSettings.swift").group(1)),
-            "exposure_reference": _need(r"enum ExposureReference[^{]*\{\s*case (\w+)", hdr_cam_blk, "hdr cam ref", "Shared/HDRSettings.swift").group(1),
-            "fbdd_level": int(_need(r"var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam fbdd", "Shared/HDRSettings.swift").group(1)),
+            "version": int(_need(r"(?:public\s+)?var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam ver", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "white_balance_mode": _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr cam wb", "Shared/RawLabKit/HDRSettings.swift").group(1),
+            "temperature": float(_need(r"(?:public\s+)?var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam temp", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "tint": float(_need(r"(?:public\s+)?var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam tint", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "exposure_reference": _need(r"(?:public\s+)?enum ExposureReference[^{]*\{\s*case (\w+)", hdr_cam_blk, "hdr cam ref", "Shared/RawLabKit/HDRSettings.swift").group(1),
+            "fbdd_level": int(_need(r"(?:public\s+)?var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam fbdd", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         },
         step={"temperature": hdr_mon_cam_temp_step, "tint": hdr_mon_cam_tint_step},
     )
@@ -2933,10 +2933,10 @@ def _parse_ios_ui() -> dict[str, dict]:
     ios_geom = _strip_line_comments(_read("RawLab/RawLab/UI/Controls/GeometryControls.swift"))
     ios_lens = _strip_line_comments(_read("RawLab/RawLab/UI/Controls/LensControls.swift"))
     hdr_mon = _strip_line_comments(_read("Shared/Native/HDRMonitoring.swift"))
-    hdr_swift = _strip_line_comments(_read("Shared/HDRSettings.swift"))
-    geom_swift = _strip_line_comments(_read("Shared/GeometrySettings.swift"))
-    tone_swift = _strip_line_comments(_read("Shared/ToneControlsSettings.swift"))
-    atmos_swift = _strip_line_comments(_read("Shared/AtmosphereSettings.swift"))
+    hdr_swift = _strip_line_comments(_read("Shared/RawLabKit/HDRSettings.swift"))
+    geom_swift = _strip_line_comments(_read("Shared/RawLabKit/GeometrySettings.swift"))
+    tone_swift = _strip_line_comments(_read("Shared/RawLabKit/ToneControlsSettings.swift"))
+    atmos_swift = _strip_line_comments(_read("Shared/RawLabKit/AtmosphereSettings.swift"))
 
     # AdjustmentControl default params (step = 1, unit = "")
     ctrl_init_m = _need(
@@ -2999,8 +2999,8 @@ def _parse_ios_ui() -> dict[str, dict]:
     raw_def_nums: dict[str, float] = {}
     for prop in ("exposure", "contrast", "saturation", "temperature", "tint", "highlights", "shadows", "toneCurve", "noiseReduction", "sharpening", "lutStrength"):
         raw_def_nums[prop] = float(_need(rf"\b{prop}:\s*(-?\d+(?:\.\d+)?)", raw_def_blk, f"RawSettings.default.{prop} ios", "RawSettings.swift").group(1))
-    tone_blk = _extract_brace_block(tone_swift, r"(?:public\s+)?struct ToneControlsSettings\b", "ToneControlsSettings ios", "Shared/ToneControlsSettings.swift")
-    atmos_blk = _extract_brace_block(atmos_swift, r"(?:public\s+)?struct AtmosphereSettings\b", "AtmosphereSettings ios", "Shared/AtmosphereSettings.swift")
+    tone_blk = _extract_brace_block(tone_swift, r"(?:public\s+)?struct ToneControlsSettings\b", "ToneControlsSettings ios", "Shared/RawLabKit/ToneControlsSettings.swift")
+    atmos_blk = _extract_brace_block(atmos_swift, r"(?:public\s+)?struct AtmosphereSettings\b", "AtmosphereSettings ios", "Shared/RawLabKit/AtmosphereSettings.swift")
     val_from_blk = _extract_brace_block(ios_kind, r"func value\(from settings:\s*RawSettings\)\s*->\s*Double", "AdjustmentKind.value(from:)", "AdjustmentKind.swift")
     _require("case .contrast:\n            return (settings.contrast - 1) * 100", val_from_blk, "contrast value(from:)", "AdjustmentKind.swift")
     _require("case .highlights:\n            return -settings.highlights * 100", val_from_blk, "highlights value(from:)", "AdjustmentKind.swift")
@@ -3182,7 +3182,7 @@ def _parse_ios_ui() -> dict[str, dict]:
     _require("HDRCameraDevelopmentControls(", ios_content, "HDRCameraDevelopmentControls embedded on ios", "ContentView+Panels.swift")
     hdr_rend_ctrl_blk = _extract_brace_block(hdr_mon, r"struct HDRRenditionControls:\s*View\b", "HDRRenditionControls ios", "Shared/Native/HDRMonitoring.swift")
     _require("func reset() {\n        settings = HDRRenditionSettings()\n    }", hdr_rend_ctrl_blk, "HDRRenditionControls reset ios", "Shared/Native/HDRMonitoring.swift")
-    hdr_rend_defs_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRRenditionSettings\b", "HDRRenditionSettings defaults ios", "Shared/HDRSettings.swift")
+    hdr_rend_defs_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRRenditionSettings\b", "HDRRenditionSettings defaults ios", "Shared/RawLabKit/HDRSettings.swift")
 
     def _hdr_slider(title: str, field: str):
         return _need(
@@ -3235,7 +3235,7 @@ def _parse_ios_ui() -> dict[str, dict]:
     _require('Button(L10n.text("重置")) { draft = HDRCameraDevelopmentSettings() }', hdr_cam_ctrl_blk, "hdr.camera_development ios reset", "Shared/Native/HDRMonitoring.swift")
     hdr_mon_cam_temp_step = float(_need(r'cameraSlider\("色温".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam temp ios", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam tint ios", "Shared/Native/HDRMonitoring.swift").group(1))
-    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam ios ui", "Shared/HDRSettings.swift")
+    hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam ios ui", "Shared/RawLabKit/HDRSettings.swift")
 
     ios_look_neutral = _need(r'look\s*=\s*\["kind":\s*\.string\("(\w+)"\),\s*"id":\s*\.null\]', ios_tv, "looks.reference ios wire", "IOSAdjustmentTransferValues.swift").group(1)
     ios_raw_struct = _extract_brace_block(ios_raw, r"struct RawSettings\b", "RawSettings ios ui", "RawSettings.swift")
@@ -3251,12 +3251,12 @@ def _parse_ios_ui() -> dict[str, dict]:
         "contrast": (raw_def_nums["contrast"] - 1.0) * 100.0,
         "highlights": -raw_def_nums["highlights"] * 100.0,
         "shadows": raw_def_nums["shadows"] * 100.0,
-        "blackPoint": float(_need(r"var blackPoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "blackPoint default ios", "Shared/ToneControlsSettings.swift").group(1)),
-        "whitePoint": float(_need(r"var whitePoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "whitePoint default ios", "Shared/ToneControlsSettings.swift").group(1)),
-        "vibrance": float(_need(r"var vibrance(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "vibrance default ios", "Shared/ToneControlsSettings.swift").group(1)),
+        "blackPoint": float(_need(r"(?:public\s+)?var blackPoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "blackPoint default ios", "Shared/RawLabKit/ToneControlsSettings.swift").group(1)),
+        "whitePoint": float(_need(r"(?:public\s+)?var whitePoint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "whitePoint default ios", "Shared/RawLabKit/ToneControlsSettings.swift").group(1)),
+        "vibrance": float(_need(r"(?:public\s+)?var vibrance(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", tone_blk, "vibrance default ios", "Shared/RawLabKit/ToneControlsSettings.swift").group(1)),
         "saturation": (raw_def_nums["saturation"] - 1.0) * 100.0,
-        "clarity": float(_need(r"var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "clarity default ios", "Shared/AtmosphereSettings.swift").group(1)),
-        "dehaze": float(_need(r"var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "dehaze default ios", "Shared/AtmosphereSettings.swift").group(1)),
+        "clarity": float(_need(r"(?:public\s+)?var clarity(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "clarity default ios", "Shared/RawLabKit/AtmosphereSettings.swift").group(1)),
+        "dehaze": float(_need(r"(?:public\s+)?var dehaze(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", atmos_blk, "dehaze default ios", "Shared/RawLabKit/AtmosphereSettings.swift").group(1)),
         "sharpening": raw_def_nums["sharpening"] * 100.0,
         "noiseReduction": (1.0 if ios_w_enabled else 0.0) * strength_scale,
     }
@@ -3303,7 +3303,7 @@ def _parse_ios_ui() -> dict[str, dict]:
         unit=ios_hdr_peak_m.group(4),
         min_val=float(ios_hdr_peak_m.group(1)),
         max_val=float(ios_hdr_peak_m.group(2)),
-        default=float(_need(r"var peakLimitEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.peak def ios", "Shared/HDRSettings.swift").group(1)),
+        default=float(_need(r"(?:public\s+)?var peakLimitEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.peak def ios", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         step=float(ios_hdr_peak_m.group(3)),
     )
     ui["hdr.sdr_exposure_ev"] = _ui_entry(
@@ -3311,7 +3311,7 @@ def _parse_ios_ui() -> dict[str, dict]:
         unit=ios_hdr_exp_m.group(4),
         min_val=float(ios_hdr_exp_m.group(1)),
         max_val=float(ios_hdr_exp_m.group(2)),
-        default=float(_need(r"var sdrExposureEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_exp def ios", "Shared/HDRSettings.swift").group(1)),
+        default=float(_need(r"(?:public\s+)?var sdrExposureEV\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_exp def ios", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         step=float(ios_hdr_exp_m.group(3)),
     )
     ui["hdr.sdr_contrast"] = _ui_entry(
@@ -3319,7 +3319,7 @@ def _parse_ios_ui() -> dict[str, dict]:
         unit=ios_hdr_con_m.group(4),
         min_val=float(ios_hdr_con_m.group(1)),
         max_val=float(ios_hdr_con_m.group(2)),
-        default=float(_need(r"var sdrContrast\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_con def ios", "Shared/HDRSettings.swift").group(1)),
+        default=float(_need(r"(?:public\s+)?var sdrContrast\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_con def ios", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         step=float(ios_hdr_con_m.group(3)),
     )
     ui["hdr.sdr_saturation"] = _ui_entry(
@@ -3327,19 +3327,19 @@ def _parse_ios_ui() -> dict[str, dict]:
         unit=ios_hdr_sat_m.group(4),
         min_val=float(ios_hdr_sat_m.group(1)),
         max_val=float(ios_hdr_sat_m.group(2)),
-        default=float(_need(r"var sdrSaturation\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_sat def ios", "Shared/HDRSettings.swift").group(1)),
+        default=float(_need(r"(?:public\s+)?var sdrSaturation\s*=\s*(-?\d+(?:\.\d+)?)", hdr_rend_defs_blk, "hdr.sdr_sat def ios", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         step=float(ios_hdr_sat_m.group(3)),
     )
     ui["hdr.look"] = _ui_entry(modes=("hdr",), unit=hdr_look_unit, min_val=float(hdr_mon_look_m.group(1)) * 100.0, max_val=float(hdr_mon_look_m.group(2)) * 100.0, default=_UNANCHORED, step={"strength": hdr_mon_look_step})
     ui["hdr.camera_development"] = _ui_entry(
         modes=("hdr",),
         default={
-            "version": int(_need(r"var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam ver", "Shared/HDRSettings.swift").group(1)),
-            "white_balance_mode": _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr cam wb", "Shared/HDRSettings.swift").group(1),
-            "temperature": float(_need(r"var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam temp", "Shared/HDRSettings.swift").group(1)),
-            "tint": float(_need(r"var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam tint", "Shared/HDRSettings.swift").group(1)),
-            "exposure_reference": _need(r"enum ExposureReference[^{]*\{\s*case (\w+)", hdr_cam_blk, "hdr cam ref", "Shared/HDRSettings.swift").group(1),
-            "fbdd_level": int(_need(r"var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam fbdd", "Shared/HDRSettings.swift").group(1)),
+            "version": int(_need(r"(?:public\s+)?var version(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam ver", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "white_balance_mode": _need(r'case asShot\s*=\s*"([^"]+)"', hdr_cam_blk, "hdr cam wb", "Shared/RawLabKit/HDRSettings.swift").group(1),
+            "temperature": float(_need(r"(?:public\s+)?var temperature(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam temp", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "tint": float(_need(r"(?:public\s+)?var tint(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", hdr_cam_blk, "hdr cam tint", "Shared/RawLabKit/HDRSettings.swift").group(1)),
+            "exposure_reference": _need(r"(?:public\s+)?enum ExposureReference[^{]*\{\s*case (\w+)", hdr_cam_blk, "hdr cam ref", "Shared/RawLabKit/HDRSettings.swift").group(1),
+            "fbdd_level": int(_need(r"(?:public\s+)?var fbddLevel(?:\s*:\s*Int)?\s*=\s*(\d+)", hdr_cam_blk, "hdr cam fbdd", "Shared/RawLabKit/HDRSettings.swift").group(1)),
         },
         step={"temperature": hdr_mon_cam_temp_step, "tint": hdr_mon_cam_tint_step},
     )
@@ -3372,10 +3372,10 @@ def _parse_ios_ui() -> dict[str, dict]:
         ui[fid] = _ui_entry(unit=ios_crop_unit, min_val=0.0, max_val=ios_crop_scale, default=ios_crop_pos_def, step=ios_crop_step)
     for fid in ("geometry.crop.width", "geometry.crop.height"):
         ui[fid] = _ui_entry(unit=ios_crop_unit, min_val=ios_crop_min_pct, max_val=ios_crop_scale, default=ios_crop_dim_def, step=ios_crop_step)
-    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults ios", "Shared/GeometrySettings.swift")
-    ios_qt_def = int(_need(r"var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def ios ui", "Shared/GeometrySettings.swift").group(1))
-    ios_flip_h = _need(r"var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
-    ios_flip_v = _need(r"var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def ios ui", "Shared/GeometrySettings.swift").group(1) == "true"
+    geom_struct_blk = _extract_brace_block(geom_swift, r"(?:public\s+)?struct GeometrySettings\b", "GeometrySettings defaults ios", "Shared/RawLabKit/GeometrySettings.swift")
+    ios_qt_def = int(_need(r"(?:public\s+)?var quarterTurns:\s*Int\s*=\s*(\d+)", geom_struct_blk, "qt def ios ui", "Shared/RawLabKit/GeometrySettings.swift").group(1))
+    ios_flip_h = _need(r"(?:public\s+)?var flipHorizontal:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipH def ios ui", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
+    ios_flip_v = _need(r"(?:public\s+)?var flipVertical:\s*Bool\s*=\s*(true|false)", geom_struct_blk, "flipV def ios ui", "Shared/RawLabKit/GeometrySettings.swift").group(1) == "true"
     ios_lens_blk = _extract_brace_block(ios_raw, r"struct LensCorrectionSettings\b", "geometry.lens ios ui", "RawSettings.swift")
     ios_lens_defs = {
         "distortion": _need(r"var distortion(?:\s*:\s*Bool)?\s*=\s*(true|false)", ios_lens_blk, "lens.distortion ios ui", "RawSettings.swift").group(1) == "true",
@@ -4456,25 +4456,31 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                     )
 
     def test_apple_shared_protocol_source_is_linked_by_macos_and_ios(self):
+        package_swift = _read("Package.swift")
         mac_build = _read("RawLabMac/build.sh")
         ios_pbxproj = _read("RawLab/RawLab.xcodeproj/project.pbxproj")
+        self.assertIn('name: "RawLabKit"', package_swift)
+        self.assertIn('path: "Shared/RawLabKit"', package_swift)
+        self.assertIn('swift build "${SWIFTPM_FLAGS[@]}"', mac_build)
+        self.assertIn('"$SWIFTPM_BIN/libRawLabKit.a"', mac_build)
         self.assertIn('"$ROOT"/Shared/*.swift', mac_build)
         self.assertIn('"$ROOT"/Shared/Native/*.swift', mac_build)
-        for rel_shared in (
-            "../Shared/AdjustmentTransfer.swift",
-            "../Shared/HDRSettings.swift",
-            "../Shared/HDRAdjustmentTransfer.swift",
-            "../Shared/Native/HDRMonitoring.swift",
-            "../Shared/GeometrySettings.swift",
-            "../Shared/ToneControlsSettings.swift",
-            "../Shared/AtmosphereSettings.swift",
-            "../Shared/HSLSettings.swift",
-            "../Shared/ColorGradingSettings.swift",
-            "../Shared/ToneCurveSettings.swift",
+        self.assertIn("productName = RawLabKit;", ios_pbxproj)
+        self.assertIn("RawLabKit in Frameworks", ios_pbxproj)
+        self.assertIn("../Shared/Native/HDRMonitoring.swift", ios_pbxproj)
+        self.assertIn("HDRMonitoring.swift in Sources", ios_pbxproj)
+        for moved_name in (
+            "AdjustmentTransfer.swift",
+            "HDRSettings.swift",
+            "HDRAdjustmentTransfer.swift",
+            "GeometrySettings.swift",
+            "ToneControlsSettings.swift",
+            "AtmosphereSettings.swift",
+            "HSLSettings.swift",
+            "ColorGradingSettings.swift",
+            "ToneCurveSettings.swift",
         ):
-            name = Path(rel_shared).name
-            self.assertIn(rel_shared, ios_pbxproj)
-            self.assertIn(f"{name} in Sources", ios_pbxproj)
+            self.assertTrue((ROOT / "Shared/RawLabKit" / moved_name).is_file(), moved_name)
 
     def test_unanchored_skips_are_explicit(self):
         src = Path(__file__).read_text(encoding="utf-8")

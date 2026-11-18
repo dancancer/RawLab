@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 // 只替换测试应用入口，真实 EditorView、模型、prepare/CAS/history 与渲染器均使用产品源码。

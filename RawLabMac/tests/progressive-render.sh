@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 source "$ROOT/Shared/tests/mac-native-sources.sh"
 source "$ROOT/RawLabMac/tests/native-env.sh"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
@@ -16,7 +17,8 @@ while IFS= read -r -d '' source; do
     case "$source" in */RawLabMacApp.swift) continue ;; esac
     SOURCES+=("$source")
 done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
-swiftc -parse-as-library -swift-version 5 -O -sdk "$SDK" \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx26.0" \
     -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" \

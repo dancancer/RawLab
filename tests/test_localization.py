@@ -396,6 +396,28 @@ class LocalizationTests(unittest.TestCase):
             keys.update(re.findall(r"\{DynamicResource '([^']+)'\}", source.read_text()))
         self.assertEqual(sorted(keys - catalogs["en"].keys()), [])
 
+    def test_ios_catalog_terms(self):
+        catalog = {
+            language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+            for language in ("en", "de", "fr", "es", "ja")
+        }
+        # 白平衡的"色调"（tint）和 HSL 的"色相"（hue）同屏出现，不能译成同一个词
+        # 法语沿用 Lightroom 的惯例两处都叫 Teinte，此处不查
+        for language in ("en", "de", "es", "ja"):
+            self.assertNotEqual(
+                catalog[language]["色调"],
+                catalog[language]["色相"],
+                f"{language}: tint {catalog[language]['色调']!r} matches hue {catalog[language]['色相']!r}",
+            )
+        # 进行中的状态（正在…）不能和动作按钮同文；德语统一用"wird / werden"被动进行式
+        for key, value in catalog["de"].items():
+            if key.startswith("正在"):
+                lowered = value.lower()
+                self.assertTrue(" wird " in f" {lowered} " or "werden" in lowered, f"de: progress {key} -> {value!r}")
+        # "重置某项"与通用的"重置%@"套出来的说法一致（英文大小写、日文语序）
+        for language in ("en", "ja"):
+            expected = catalog[language]["重置%@"].replace("%@", catalog[language]["降噪"])
+            self.assertEqual(catalog[language]["重置降噪"], expected, language)
 
 
 if __name__ == "__main__":

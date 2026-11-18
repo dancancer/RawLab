@@ -152,14 +152,38 @@ cp -R "$BUILD/licenses/libjpeg-turbo" "$APP/Contents/Resources/Licenses/"
 cp -R "$BUILD/licenses/libspng" "$APP/Contents/Resources/Licenses/"
 SDK="$(rawlab_mac_sdk_path)"
 RAW_LIB="$(pkg-config --variable=libdir libraw_r)"
+SWIFTPM_FLAGS=(--package-path "$ROOT" --scratch-path "$BUILD/swiftpm" -c release --arch "$ARCH"
+    -Xswiftc -sdk -Xswiftc "$SDK" -Xswiftc -target -Xswiftc "$ARCH-apple-macosx$DEPLOYMENT_TARGET")
+if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+    SWIFTPM_FLAGS+=(-Xswiftc -DRAWLAB_RUM_LOCAL)
+fi
+SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}"
+SWIFTPM_BIN="$(SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --show-bin-path)"
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --target RawLabKit
+fi
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    echo "error: RawLabKit.swiftmodule not found under $SWIFTPM_BIN" >&2
+    exit 1
+fi
+test -f "$SWIFTPM_BIN/libRawLabKit.a" || {
+    echo "error: libRawLabKit.a not found under $SWIFTPM_BIN" >&2
+    exit 1
+}
+SWIFTPM_INCLUDE_FLAGS=(-I "$SWIFTPM_BIN")
+if [ -d "$SWIFTPM_BIN/Modules" ]; then
+    SWIFTPM_INCLUDE_FLAGS+=(-I "$SWIFTPM_BIN/Modules")
+fi
 APP_SOURCES=()
 while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
+    "${SWIFTPM_INCLUDE_FLAGS[@]}" \
     "${RUM_FLAGS[@]}" \
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift \
+    "$SWIFTPM_BIN/libRawLabKit.a" "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
     "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
     $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \

@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {

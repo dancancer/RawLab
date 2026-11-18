@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 /// Catalog identity and calibration capability are separate from the last

@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass the task simulator UUID}"
 OUT="${RAWLAB_IMPORT_STATE_OUT:-$(mktemp -d /tmp/rawlab-ios-import-state.XXXXXX)}"
@@ -15,10 +16,11 @@ TARGET=arm64-apple-ios18.0-simulator
 xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
     -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
 SOURCES=()
-while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**')
+while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' -g '!**/RawLabKit/**')
 TEST_SOURCES=("$ROOT/RawLab/tests/ImportState/"*.swift)
 if [[ -n "${RAWLAB_IMPORT_STATE_TEST_SOURCE:-}" ]]; then TEST_SOURCES=("$RAWLAB_IMPORT_STATE_TEST_SOURCE"); fi
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/RawLab/UI/EditorState/EditorCropOverlay.swift" \

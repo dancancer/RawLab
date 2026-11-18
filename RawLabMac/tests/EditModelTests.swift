@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private struct Failure: Error { let message: String }

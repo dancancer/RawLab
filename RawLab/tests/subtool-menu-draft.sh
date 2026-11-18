@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
 APP="${1:?Pass the built arm64-simulator RawLab.app absolute path}"
 DEVICE="${2:?Pass the dedicated simulator UDID}"
 OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-subtool-draft.XXXXXX")"
@@ -28,7 +29,7 @@ plistlib.dump(info, (app / 'Info.plist').open('wb'))
 
 for folder in ['RawLab/RawLab/Core', 'RawLab/RawLab/UI', 'Shared']:
     for p in (root / folder).rglob('*.swift'):
-        if 'tests' in p.relative_to(root).parts:
+        if {'tests', 'RawLabKit'} & set(p.relative_to(root).parts):
             continue
         rel = p.relative_to(root)
         text = p.read_text()
@@ -54,7 +55,8 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK
 
 SOURCES=()
 while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$OUT/source" -g '*.swift' | sort)
-xcrun --sdk iphonesimulator swiftc -enable-testing -c -parse-as-library -emit-module \
+rawlabkit_flags typecheck "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -enable-testing -c -parse-as-library -emit-module \
     -emit-module-path "$OUT/RawLabSubtoolCoreUI.swiftmodule" -swift-version 5 \
     -module-name RawLabSubtoolCoreUI -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
@@ -66,7 +68,8 @@ PY
 )
 ar rcs "$OUT/libRawLabSubtoolCoreUI.a" "$OUT/coreobjs"/*.o "$OUT/bridge.o"
 
-xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -module-name SubtoolMenuDraftTests \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -module-name SubtoolMenuDraftTests \
     -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -I "$OUT" \
     -Xcc -I"$ROOT/lutools/include" -Xcc -I"$ROOT/RawLab/RawLab/Support" \
     "$ROOT/RawLab/tests/SubtoolMenuDraftTests.swift" "$OUT/libRawLabSubtoolCoreUI.a" \
