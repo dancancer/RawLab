@@ -14,10 +14,8 @@ CHECK_GROUPS = ("contracts", "models", "build", "native", "full")
 # Unclassified root/misc paths also default to `set()` (`contracts` only) rather than all 4 platforms.
 DOC_PREFIXES = (
     "docs/",
-    "reviews/",
     ".impeccable/",
     "experiments/",
-    "release-artifacts/",
     "tools/camera-transfer/",
     # `contracts` runs `tools/mcp/tests` on every PR (skipping `test_real_cli.py` when
     # `RAWLAB_MCP_CLI` is unset); `macos` `native`/`full` and release/hotfix PRs (which
@@ -32,7 +30,6 @@ DOC_FILES = {
     "PRODUCT.md",
     ".gitignore",
     ".dsh-kanban.json",
-    "raw_decode_check.swift",
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/CODEOWNERS",
 }

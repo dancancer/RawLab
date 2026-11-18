@@ -161,7 +161,7 @@ Tests requiring optional RAW fixtures are omitted when those files are absent. M
 - [Mac 客户端 / Mac editor](../RawLabMac/README.md)
 - [平台集成说明 / Platform integration](docs/platform-integration.md)
 - [iOS 指南 / iOS guide](platform/ios/README.md)
-- [Android 指南 / Android guide](platform/android/README.md)
+- [Android 指南 / Android guide](../RawLabAndroid/README.md)
 - [富士 F-Log2 LUT 说明 / Fujifilm F-Log2 LUT overview](F-Log2/F-Log2_LUT_overview_Ver.1.1E.pdf)
 - [LUTCalc 参考实现 / LUTCalc reference implementation](https://github.com/cameramanben/LUTCalc)
 

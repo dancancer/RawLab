@@ -11,7 +11,7 @@
 #include <vector>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBI_WRITE_NO_STDIO
-#include "core/stb_image_write.h"
+#include "stb_image_write.h"
 
 namespace {
 void require(bool ok, const std::string& message) {

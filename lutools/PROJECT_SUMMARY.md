@@ -29,9 +29,8 @@
    - 线性输出模式
 
 5. **图像编码器** (`raw_processor.cpp`)
-   - JPEG 输出 (可调质量)
-   - PNG 输出 (16-bit)
-   - 使用 stb_image_write
+   - JPEG 输出 (可调质量，使用 `libjpeg-turbo`)
+   - PNG 输出 (16-bit，使用 `libspng`；`stb_image_write.h` 仅用于 `tests/` 参考对比)
 
 ### 平台集成
 
@@ -45,7 +44,7 @@
    - Swift 封装
    - 异步处理支持
 
-3. **Android 集成** (`platform/android/`)
+3. **Android 集成** (`../RawLabAndroid/`)
    - JNI 封装
    - Kotlin 接口
    - Coroutines 支持
@@ -70,17 +69,16 @@ lutools/
 │   │   ├── lut_parser.cpp
 │   │   ├── lut_applicator.cpp
 │   │   ├── color_converter.cpp
-│   │   ├── raw_processor.cpp
-│   │   └── stb_image_write.h
+│   │   └── raw_processor.cpp
 │   └── cli/                    # 命令行工具
 │       └── main.cpp
+├── tests/                      # 单元测试与参考编码器
+│   └── stb_image_write.h
 ├── examples/                   # 示例代码
 │   └── simple_example.cpp
 ├── platform/                   # 平台集成
-│   ├── ios/
-│   │   └── README.md          # iOS 集成指南
-│   └── android/
-│       └── README.md          # Android 集成指南
+│   └── ios/
+│       └── README.md          # iOS 集成指南（Android 见 ../RawLabAndroid/README.md）
 ├── docs/                       # 文档
 │   ├── platform-integration.md # 平台集成总览
 │   └── usage-guide.md         # 使用指南

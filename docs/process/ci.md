@@ -179,7 +179,7 @@ Preview paths with `git diff --name-only origin/development... | python3 scripts
 - Client directories select their own platform. `RawLabMac/Resources/` is packaged
   by every client; `RawLabMac/tests/DCPTestFixtures.swift` and the shared AX gate
   `RawLabMac/tests/ax-gate.sh` (sourced by the mixed iOS model suite) also select iOS.
-- `docs/` except packaged licensing, `reviews/`, `.impeccable/`, AGENTS/CLAUDE files
+- `docs/` except packaged licensing, `.impeccable/`, AGENTS/CLAUDE files
   and root README/CHANGELOG/DESIGN/PRODUCT/.gitignore select no platform.
 - Shared core/resources, CI/tooling, licensing and unknown paths select all platforms.
 
