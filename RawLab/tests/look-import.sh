@@ -75,7 +75,7 @@ SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 TARGET="$(uname -m)-apple-ios18.0-simulator"
 SOURCES=(
     "$ROOT/Shared/DCPCompiler.swift"
-    "$ROOT/Shared/LookLibrary.swift" 
+    "$ROOT/Shared/LookLibrary.swift"
     "$ROOT/RawLab/RawLab/Core/Looks/LookImportCoordinator.swift"
     "$ROOT/RawLabMac/tests/DCPTestFixtures.swift"
     "$ROOT/RawLab/tests/LookImportTests.swift"

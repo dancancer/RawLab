@@ -198,20 +198,109 @@ class BuildEnvironmentTests(unittest.TestCase):
             compiler.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\nexit 73\n')
             package_config = binaries / "pkg-config"
             package_config.write_text("#!/bin/bash\nexit 0\n")
+            swift_cli = binaries / "swift"
+            swift_cli.write_text(
+                '#!/bin/bash\n'
+                'set -euo pipefail\n'
+                'scratch=""\n'
+                'show_bin=0\n'
+                'while [ "$#" -gt 0 ]; do\n'
+                '  case "$1" in\n'
+                '    --scratch-path) scratch="$2"; shift 2 ;;\n'
+                '    --show-bin-path) show_bin=1; shift ;;\n'
+                '    *) shift ;;\n'
+                '  esac\n'
+                'done\n'
+                'test -n "$scratch"\n'
+                'bin="$scratch/fake-bin"\n'
+                'if [ "$show_bin" = 1 ]; then printf "%s\\n" "$bin"; exit 0; fi\n'
+                'mkdir -p "$bin/Modules"\n'
+                'touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a"\n'
+            )
             compiler.chmod(0o755)
             package_config.chmod(0o755)
+            swift_cli.chmod(0o755)
             build = root / "release candidate"
-            env = {**os.environ, "PATH": f"{binaries}:{os.environ['PATH']}",
-                   "RAWLAB_ARCH": "arm64", "RAWLAB_BUILD_DIR": str(build)}
+            env = {key: value for key, value in os.environ.items() if key != "RAWLAB_SWIFTPM_CACHE"}
+            env.update({"PATH": f"{binaries}:{os.environ['PATH']}",
+                        "RAWLAB_ARCH": "arm64", "RAWLAB_BUILD_DIR": str(build)})
             for script in ("wavelet-render.sh", "agent-recipe-render.sh", "edit-model.sh"):
                 with self.subTest(script=script):
                     result = subprocess.run(["bash", str(ROOT / "RawLabMac/tests" / script),
                                              "/unused/raw", "/unused/cli"], env=env,
                                             capture_output=True, text=True)
                     self.assertEqual(result.returncode, 73, result.stderr)
-                    self.assertIn(str(build / "libsony2fuji_core.a"), result.stdout.splitlines())
-                    self.assertNotIn(str(ROOT / "lutools/build-macos/libsony2fuji_core.a"),
-                                     result.stdout.splitlines())
+                    args = result.stdout.splitlines()
+                    self.assertIn(str(build / "libsony2fuji_core.a"), args)
+                    self.assertNotIn(str(ROOT / "lutools/build-macos/libsony2fuji_core.a"), args)
+                    self.assertTrue(any(arg.endswith("/fake-bin/libRawLabKit.a") for arg in args), args)
+
+    def test_swiftpm_helper_supports_native_modules_and_rejects_noop_builds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binaries = root / "bin"
+            binaries.mkdir()
+            swift_cli = binaries / "swift"
+            swift_cli.write_text(
+                '#!/bin/bash\n'
+                'set -euo pipefail\n'
+                'scratch=""\n'
+                'show_bin=0\n'
+                'while [ "$#" -gt 0 ]; do\n'
+                '  case "$1" in\n'
+                '    --scratch-path) scratch="$2"; shift 2 ;;\n'
+                '    --show-bin-path) show_bin=1; shift ;;\n'
+                '    *) shift ;;\n'
+                '  esac\n'
+                'done\n'
+                'bin="$scratch/fake-bin"\n'
+                'if [ "$show_bin" = 1 ]; then printf "%s\\n" "$bin"; exit 0; fi\n'
+                'case "$TEST_LAYOUT" in\n'
+                '  swiftbuild)\n'
+                '    mkdir -p "$bin/RawLabKit.swiftmodule"\n'
+                '    touch "$bin/libRawLabKit.a"\n'
+                '    ;;\n'
+                '  native)\n'
+                '    mkdir -p "$bin/Modules"\n'
+                '    touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a"\n'
+                '    ;;\n'
+                '  noop)\n'
+                '    mkdir -p "$bin"\n'
+                '    ;;\n'
+                'esac\n'
+            )
+            swift_cli.chmod(0o755)
+            helper = ROOT / "scripts/ci/swiftpm-rawlabkit.sh"
+            for layout, mode, expected_code in (
+                ("swiftbuild", "typecheck", 0),
+                ("native", "typecheck", 0),
+                ("native", "link", 0),
+                ("noop", "typecheck", 1),
+                ("noop", "link", 1),
+            ):
+                with self.subTest(layout=layout, mode=mode):
+                    scratch = root / f"scratch-{layout}-{mode}"
+                    cmd = (
+                        f'ROOT="{ROOT}"; SDKROOT=/unused/sdk; '
+                        f'source "{helper}"; '
+                        f'rawlabkit_flags "{mode}" "{scratch}" macos 0; '
+                        f'printf "%s\\n" "${{RAWLABKIT_SWIFTC_FLAGS[@]}}"'
+                    )
+                    test_env = {key: value for key, value in os.environ.items() if key != "RAWLAB_SWIFTPM_CACHE"}
+                    test_env.update({"PATH": f"{binaries}:{os.environ['PATH']}",
+                                     "TEST_LAYOUT": layout, "RAWLAB_ARCH": "arm64"})
+                    result = subprocess.run(
+                        ["bash", "-ec", cmd],
+                        env=test_env,
+                        capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode, expected_code, result.stderr)
+                    if expected_code == 0:
+                        lines = result.stdout.splitlines()
+                        if layout == "native":
+                            self.assertTrue(any(line.endswith("/fake-bin/Modules") for line in lines), lines)
+                        if mode == "link":
+                            self.assertTrue(any(line.endswith("/fake-bin/libRawLabKit.a") for line in lines), lines)
 
 
 if __name__ == "__main__":

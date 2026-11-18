@@ -43,15 +43,32 @@ rawlabkit_flags() {
     mkdir -p "$scratch"
 
     if [ "$platform" = macos ]; then
-        SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" --product RawLabKit >&2
+        SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" >&2
         RAWLABKIT_BIN="$(SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" --show-bin-path)"
     else
-        env -u SDKROOT swift build "${build_args[@]}" --scratch-path "$scratch" --product RawLabKit >&2
+        env -u SDKROOT swift build "${build_args[@]}" --scratch-path "$scratch" >&2
         RAWLABKIT_BIN="$(env -u SDKROOT swift build "${build_args[@]}" --scratch-path "$scratch" --show-bin-path)"
     fi
-    if [ "$mode" = typecheck ]; then
-        RAWLABKIT_SWIFTC_FLAGS=(-I "$RAWLABKIT_BIN")
-    else
-        RAWLABKIT_SWIFTC_FLAGS=(-I "$RAWLABKIT_BIN" "$RAWLABKIT_BIN/libRawLabKit.a")
+    if [ ! -e "$RAWLABKIT_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$RAWLABKIT_BIN/Modules/RawLabKit.swiftmodule" ]; then
+        if [ "$platform" = macos ]; then
+            SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" --target RawLabKit >&2
+        else
+            env -u SDKROOT swift build "${build_args[@]}" --scratch-path "$scratch" --target RawLabKit >&2
+        fi
+    fi
+    if [ ! -e "$RAWLABKIT_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$RAWLABKIT_BIN/Modules/RawLabKit.swiftmodule" ]; then
+        echo "error: RawLabKit.swiftmodule not found under $RAWLABKIT_BIN" >&2
+        return 1
+    fi
+    RAWLABKIT_SWIFTC_FLAGS=(-I "$RAWLABKIT_BIN")
+    if [ -d "$RAWLABKIT_BIN/Modules" ]; then
+        RAWLABKIT_SWIFTC_FLAGS+=(-I "$RAWLABKIT_BIN/Modules")
+    fi
+    if [ "$mode" != typecheck ]; then
+        if [ ! -f "$RAWLABKIT_BIN/libRawLabKit.a" ]; then
+            echo "error: libRawLabKit.a not found under $RAWLABKIT_BIN" >&2
+            return 1
+        fi
+        RAWLABKIT_SWIFTC_FLAGS+=("$RAWLABKIT_BIN/libRawLabKit.a")
     fi
 }

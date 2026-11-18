@@ -27,7 +27,8 @@ class AppleShellOwnershipTests(unittest.TestCase):
         for directory in SHELL_TEST_DIRS:
             for script in sorted((ROOT / directory).glob("*.sh")):
                 rel = str(script.relative_to(ROOT))
-                if rel not in owner_corpus and script.name not in owner_corpus:
+                pattern = re.compile(r"(?<![A-Za-z0-9_.-])" + re.escape(rel) + r"(?![A-Za-z0-9_.-])")
+                if not pattern.search(owner_corpus):
                     unowned.append(rel)
         self.assertEqual(unowned, [], f"Unowned Apple shell scripts: {unowned}")
 

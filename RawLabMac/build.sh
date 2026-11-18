@@ -153,13 +153,28 @@ SWIFTPM_FLAGS=(--package-path "$ROOT" --scratch-path "$BUILD/swiftpm" -c release
 if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
     SWIFTPM_FLAGS+=(-Xswiftc -DRAWLAB_RUM_LOCAL)
 fi
-SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --product RawLabKit
+SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}"
 SWIFTPM_BIN="$(SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --show-bin-path)"
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --target RawLabKit
+fi
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    echo "error: RawLabKit.swiftmodule not found under $SWIFTPM_BIN" >&2
+    exit 1
+fi
+test -f "$SWIFTPM_BIN/libRawLabKit.a" || {
+    echo "error: libRawLabKit.a not found under $SWIFTPM_BIN" >&2
+    exit 1
+}
+SWIFTPM_INCLUDE_FLAGS=(-I "$SWIFTPM_BIN")
+if [ -d "$SWIFTPM_BIN/Modules" ]; then
+    SWIFTPM_INCLUDE_FLAGS+=(-I "$SWIFTPM_BIN/Modules")
+fi
 APP_SOURCES=()
 while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
-    -I "$SWIFTPM_BIN" \
+    "${SWIFTPM_INCLUDE_FLAGS[@]}" \
     "${RUM_FLAGS[@]}" \
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \

@@ -585,27 +585,32 @@ local/pre-release integration harnesses:
   `RawLab/tests/raster-export.sh`, `RawLab/tests/raw-import-history.sh`,
   `RawLab/tests/seed-sim-ui-fixtures.sh`, `RawLab/tests/viewing-canvas.sh`,
   `RawLab/tests/viewing-editor-ui.sh`, `RawLab/tests/viewing-gesture-ui.sh`,
-  `RawLab/tests/viewing-render.sh`, `RawLab/tests/viewport-state.sh`.
+  `RawLab/tests/viewing-render.sh`, `RawLab/tests/viewport-state.sh`,
+  `RawLab/tests/x3f-ui.sh`.
 - **Mac native/AppKit/UI/Sparkle harnesses** (owned by Mac local native/UI/release acceptance in `RawLabMac/README.md` and `docs/process/desktop-release.md`):
   `RawLabMac/tests/agent-sdr-fallback.sh`, `RawLabMac/tests/atmosphere-render.sh`,
   `RawLabMac/tests/batch-flow-ui.sh`, `RawLabMac/tests/batch-import-presentation.sh`,
-  `RawLabMac/tests/chroma-render.sh`, `RawLabMac/tests/compact-controls-presentation.sh`,
-  `RawLabMac/tests/denoise-model.sh`, `RawLabMac/tests/edit-memory.sh`,
+  `RawLabMac/tests/batch-render.sh`, `RawLabMac/tests/chroma-render.sh`,
+  `RawLabMac/tests/compact-controls-presentation.sh`, `RawLabMac/tests/denoise-model.sh`,
+  `RawLabMac/tests/edit-memory.sh`, `RawLabMac/tests/edited-photo-ui.sh`,
   `RawLabMac/tests/file-browser.sh`, `RawLabMac/tests/folder-drop.sh`,
   `RawLabMac/tests/fuji-compatibility.sh`, `RawLabMac/tests/geometry-render.sh`,
   `RawLabMac/tests/geometry-viewport.sh`, `RawLabMac/tests/hdr-agent.sh`,
-  `RawLabMac/tests/hdr-history.sh`, `RawLabMac/tests/hdr-sdr-preview.sh`,
+  `RawLabMac/tests/hdr-batch.sh`, `RawLabMac/tests/hdr-history.sh`,
+  `RawLabMac/tests/hdr-sdr-preview.sh`, `RawLabMac/tests/horizontal-picker-native.sh`,
   `RawLabMac/tests/hsl-target-render.sh`, `RawLabMac/tests/lens-render.sh`,
   `RawLabMac/tests/lens-settings.sh`, `RawLabMac/tests/lut-preview.sh`,
-  `RawLabMac/tests/mac-crop-presentation.sh`, `RawLabMac/tests/mac-lens-draft-controls.sh`,
-  `RawLabMac/tests/mac-lens-draft-presentation.sh`, `RawLabMac/tests/mac-perspective-integration.sh`,
-  `RawLabMac/tests/mac-rotation-ruler.sh`, `RawLabMac/tests/mac-viewing-model.sh`,
-  `RawLabMac/tests/master-recipe-render.sh`, `RawLabMac/tests/processing-migration-input.sh`,
-  `RawLabMac/tests/proraw-stream.sh`, `RawLabMac/tests/quick-presets-ui.sh`,
-  `RawLabMac/tests/rendered-dng.sh`, `RawLabMac/tests/single-preview-interaction.sh`,
-  `RawLabMac/tests/sparkle-signature.sh`, `RawLabMac/tests/text-fit.sh`,
-  `RawLabMac/tests/tone-curve-input.sh`, `RawLabMac/tests/tone-curve-render.sh`,
-  `RawLabMac/tests/update-ui.sh`, `RawLabMac/tests/wavelet-render.sh`.
+  `RawLabMac/tests/mac-canvas-input.sh`, `RawLabMac/tests/mac-crop-presentation.sh`,
+  `RawLabMac/tests/mac-lens-draft-controls.sh`, `RawLabMac/tests/mac-lens-draft-presentation.sh`,
+  `RawLabMac/tests/mac-perspective-integration.sh`, `RawLabMac/tests/mac-rotation-ruler.sh`,
+  `RawLabMac/tests/mac-straighten-preview.sh`, `RawLabMac/tests/mac-viewing-model.sh`,
+  `RawLabMac/tests/master-recipe-render.sh`, `RawLabMac/tests/parameter-value.sh`,
+  `RawLabMac/tests/processing-migration-input.sh`, `RawLabMac/tests/proraw-stream.sh`,
+  `RawLabMac/tests/quick-presets-ui.sh`, `RawLabMac/tests/rendered-dng.sh`,
+  `RawLabMac/tests/single-preview-interaction.sh`, `RawLabMac/tests/sparkle-signature.sh`,
+  `RawLabMac/tests/text-fit.sh`, `RawLabMac/tests/tone-curve-input.sh`,
+  `RawLabMac/tests/tone-curve-render.sh`, `RawLabMac/tests/update-ui.sh`,
+  `RawLabMac/tests/wavelet-render.sh`, `RawLabMac/tests/x3f-workflow.sh`.
 
 The [archived 0.8 preparation ledger](../archive/releases/v0.8/preparation.md)
 retains its original candidate scope. Use [release notes](../releases/v0.8/v0.8.1.md)

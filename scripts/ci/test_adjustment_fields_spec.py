@@ -4461,7 +4461,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         ios_pbxproj = _read("RawLab/RawLab.xcodeproj/project.pbxproj")
         self.assertIn('name: "RawLabKit"', package_swift)
         self.assertIn('path: "Shared/RawLabKit"', package_swift)
-        self.assertIn('swift build "${SWIFTPM_FLAGS[@]}" --product RawLabKit', mac_build)
+        self.assertIn('swift build "${SWIFTPM_FLAGS[@]}"', mac_build)
         self.assertIn('"$SWIFTPM_BIN/libRawLabKit.a"', mac_build)
         self.assertIn('"$ROOT"/Shared/*.swift', mac_build)
         self.assertIn('"$ROOT"/Shared/Native/*.swift', mac_build)
