@@ -36,6 +36,10 @@ current camera or style-quality certification.
 - [HSL calibration](recipes/master-recipes-hsl-20261011.md)
 - [Refinement and integration](recipes/master-recipes-optimization-20261011.md)
 
+## Architecture
+
+- [Remediation roadmap, 2026-11-13](architecture/remediation-roadmap-2026-11-13.md): superseded by the [Owner transformation ADR](../architecture/adr-2026-11-19-owner-transformation.md).
+
 ## Reviews And Compatibility
 
 - [Repository-wide rendering review, 2026-09-27](reviews/self-main-20260927-1115.md)

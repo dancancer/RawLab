@@ -67,6 +67,7 @@ Mac 的 HDR 编辑需要 macOS 15+。Android HDR 显示需要 API 34+ 及适当�
 - [集成协作](process/integration-workflow.md)、[CI 门禁](process/ci.md)和[多语言维护](process/localization.md)
 - [格式契约](reference/formats/)、[镜头校正](reference/platforms/lens-correction.md)、[统计契约](reference/rum-analytics.md)和[LUT 来源审计](luts/README.md)
 - [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md)和[跨相机路线图](architecture/cross-camera-presets-roadmap.md)
+- [Owner 架构与工程改造决策 ADR（2026-11-19）](architecture/adr-2026-11-19-owner-transformation.md)：根因诊断、修正裁定、四波次退出标准与 D1-D7 决策
 - [本次迭代总需求](design/editing-iteration/requirements.md)与[总技术方案](design/editing-iteration/technical-design.md)：第一阶段收尾、第二阶段全量和桌面更新
 - [已编辑照片与效果缩略图](design/editor-workspace/edited-photo-previews.md)：四端铅笔标记、保存效果预览、移动端筛选和 iOS 最近打开
 - [四端设计资产](design/README.md)、ITER-02 工作区的[详细子需求](design/editor-workspace/requirements.md)与[技术子方案](design/editor-workspace/technical-design.md)

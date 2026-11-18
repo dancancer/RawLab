@@ -41,6 +41,7 @@ published packages, checksums and package provenance.
 - [Workspace sub-requirements](design/editor-workspace/requirements.md) and [native sub-design](design/editor-workspace/technical-design.md), ITER-02 based on the r4 four-platform prototype
 - [Active architecture and performance review, 2026-10-18](architecture/architecture-and-performance-review-2026-10-18.md), with separate historical measurements and current-code static recheck
 - [Active cross-camera preset roadmap](architecture/cross-camera-presets-roadmap.md), including outstanding quality gates
+- [Owner transformation ADR, 2026-11-19](architecture/adr-2026-11-19-owner-transformation.md): root causes, overturned decisions, four-wave roadmap exit criteria and settled D1-D7 rulings
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
 - [Phone HDR photo design](design/hdr-photos/technical-design.md) and [Android/Windows scope](design/hdr-photos/android-windows.md): four-client gain-map import, basic editing, HDR/SDR previews and compatible JPEG output; supported systems and remaining device coverage are listed in the [0.10.0 release notes](releases/v0.10/v0.10.0.md)
 - [Normal X3F rendering](../lutools/docs/x3f-rendering.md): supported Sigma camera families, rendering modes, CPU execution and compatibility limits
