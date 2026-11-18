@@ -107,7 +107,9 @@ class BuildEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("RawLabMac/build-env.sh", "RawLabMac/build-dependencies.sh",
-                         "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                         "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/libraw/libraw.cmake",
+                         "lutools/cmake/libraw/manifest.json", "lutools/cmake/libraw/manifest.py",
+                         "lutools/cmake/patch-libraw.cmake",
                          "lutools/cmake/libraw-cameras.cmake", "lutools/cmake/libraw-sony-arw6.cmake",
                          "lutools/cmake/libraw-vng.cmake", "lutools/third_party/libraw/vng_parallel.inc",
                          "lutools/third_party/rawspeed-camera-calibration.inc",
@@ -134,6 +136,7 @@ class BuildEnvironmentTests(unittest.TestCase):
             self.assertEqual(invoke("rawlab_libraw_patch_current").returncode, 0)
             for name in ("lutools/third_party/nikon_he/entropy.cpp",
                          "lutools/third_party/libraw/sony_arw6.cpp", "lutools/cmake/libraw-cameras.cmake",
+                         "lutools/cmake/libraw/manifest.json",
                          "lutools/cmake/libraw-vng.cmake", "lutools/third_party/libraw/vng_parallel.inc"):
                 with self.subTest(source=name):
                     source = root / name

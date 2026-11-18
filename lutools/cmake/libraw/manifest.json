@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "libraw": {
+    "version": "0.22.2",
+    "tag": "0.22.2-Release",
+    "archive": "LibRaw-0.22.2.tar.gz",
+    "directory": "LibRaw-0.22.2",
+    "url": "https://www.libraw.org/data/LibRaw-0.22.2.tar.gz",
+    "sha256": "de86b035655accff8d4010f1a221fdf50d353cb7b1422ba26f14a0db92612cfa",
+    "license_files": [
+      "COPYRIGHT",
+      "LICENSE.CDDL",
+      "LICENSE.LGPL"
+    ]
+  },
+  "libraw_cmake": {
+    "revision": "eb98e4325aef2ce85d2eb031c2ff18640ca616d3",
+    "archive": "LibRaw-cmake-eb98e43.tar.gz",
+    "directory": "LibRaw-cmake-eb98e4325aef2ce85d2eb031c2ff18640ca616d3",
+    "url": "https://github.com/LibRaw/LibRaw-cmake/archive/eb98e4325aef2ce85d2eb031c2ff18640ca616d3.tar.gz",
+    "sha256": "3cd218bf6d1254de86e27269541277fbfc5bae57a9002ce0b46fbe2a97088b43"
+  }
+}

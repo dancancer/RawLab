@@ -61,6 +61,8 @@ if(ANDROID)
 endif()
 
 # LibRaw
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/libraw/libraw.cmake")
+rawlab_load_libraw_manifest()
 option(SONY2FUJI_BUILD_RAW_DEPS "Build pinned LibRaw and DNG SDK dependencies" OFF)
 if(SONY2FUJI_BUILD_RAW_DEPS)
     add_subdirectory(cmake/libraw raw-dependencies)
@@ -70,7 +72,7 @@ endif()
 if(SONY2FUJI_LIBRAW_TARGET AND TARGET ${SONY2FUJI_LIBRAW_TARGET})
     set(LIBRAW_LIBRARY ${SONY2FUJI_LIBRAW_TARGET})
 else()
-    pkg_check_modules(LIBRAW REQUIRED libraw_r>=0.22.2)
+    pkg_check_modules(LIBRAW REQUIRED "libraw_r>=${RAWLAB_LIBRAW_VERSION}")
     # Keep the library in sync with headers when switching dependency prefixes.
     unset(LIBRAW_LIBRARY CACHE)
     find_library(LIBRAW_LIBRARY NAMES raw_r HINTS ${LIBRAW_LIBRARY_DIRS} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)

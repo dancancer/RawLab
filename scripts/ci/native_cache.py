@@ -118,7 +118,12 @@ def archives_key(platform, arch, pairs):
     return f"rawlab-dep-archives-v1-{platform}-{arch}-{hashlib.sha256(identity.encode()).hexdigest()}"
 
 
-def cache_paths(platform, arch):
+def libraw_version(root=ROOT):
+    manifest = json.loads((root / "lutools/cmake/libraw/manifest.json").read_text(encoding="utf-8"))
+    return manifest["libraw"]["version"]
+
+
+def cache_paths(platform, arch, root=ROOT):
     if platform == "macos":
         if arch not in ("arm64", "x86_64"):
             raise ValueError(f"Unsupported Mac architecture: {arch}")
@@ -133,7 +138,7 @@ def cache_paths(platform, arch):
                              ".ninja_deps", ".ninja_log", "configure_fingerprint.bin",
                              "metadata_generation_command.txt", *OPENCV_HEADERS)]
     if platform == "ios":
-        base = "lutools/build-ios-libraw/0.22.2"
+        base = f"lutools/build-ios-libraw/{libraw_version(root)}"
         paths = [f"{base}/sources"]
         for config in ("iphoneos-arm64", "iphonesimulator-arm64", "iphonesimulator-x86_64"):
             core = f"{base}/core-{config}"

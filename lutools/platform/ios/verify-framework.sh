@@ -2,11 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FRAMEWORK="${1:-$ROOT/build-ios/sony2fuji.xcframework}"
+libraw_env="$(python3 "$ROOT/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
 
 for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     binary="$FRAMEWORK/$slice/sony2fuji.framework/sony2fuji"
     test -f "$binary"
-    for marker in 0.22.2-Release GFX100RF 'EOS R6 Mark III'; do
+    for marker in "$RAWLAB_LIBRAW_TAG" GFX100RF 'EOS R6 Mark III'; do
         if ! strings "$binary" | grep -F "$marker" >/dev/null; then
             echo "FAIL: $slice is missing patched LibRaw marker: $marker" >&2
             exit 1

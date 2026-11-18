@@ -69,8 +69,12 @@ if [ "${RAWLAB_RUM:-1}" = 1 ] || [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LENS_PREFIX="$RAWLAB_LENS_PREFIX"
+LIBRAW_PYTHON="$(command -v python3 || true)"
+if [ -z "$LIBRAW_PYTHON" ]; then LIBRAW_PYTHON="$PYTHON_EXECUTABLE"; fi
+libraw_env="$("$LIBRAW_PYTHON" "$ROOT/lutools/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
 if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
-    if ! pkg-config --exists 'libraw_r >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
+    if ! pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
     if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
@@ -80,7 +84,7 @@ if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-tiff-dependency.sh"
 fi
 RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" PYTHON="$PYTHON_EXECUTABLE" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
-pkg-config --exists 'libraw_r >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
+pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
 cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "-DPython3_EXECUTABLE=$PYTHON_EXECUTABLE" "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
