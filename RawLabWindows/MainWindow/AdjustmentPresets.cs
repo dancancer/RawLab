@@ -5,7 +5,7 @@ namespace RawLab.Windows;
 
 public partial class MainWindow
 {
-    private AdjustmentPresetStore presetStore = new(AdjustmentPresetStore.DefaultDirectory);
+    private AdjustmentPresetStore presetStore;
 
     internal AdjustmentPayload PreviewAdjustmentPayload(AdjustmentScope scope)
     {

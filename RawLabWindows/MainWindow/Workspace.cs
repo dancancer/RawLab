@@ -33,8 +33,7 @@ public partial class MainWindow
         }
     }
     private readonly WorkspaceLayout workspaceLayout = new();
-    private string workspaceWidthsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "workspace-widths.json");
+    private string workspaceWidthsPath = "";
     private sealed record WorkspaceWidths(double Library, double Inspector);
     private (EditorAdjustmentTool Tool, bool Perspective)? suspendedTransform;
     private bool histogramExpanded = true;

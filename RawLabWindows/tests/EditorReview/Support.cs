@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -84,21 +83,10 @@ internal static partial class EditorReviewChecks
         public void SetData(Type format,object data)=>throw new NotSupportedException();
         public void SetData(object data)=>throw new NotSupportedException();
     }
-    private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
-    private static void Set(object owner,string name,object value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);
     // 更新退出准备是 3326555c 加入的异步关口，由 CloseJournalRetry 覆盖；这里从已批准的关闭开始，
     // 让其余用例在 Close() 返回时检查批量日志、渲染和引擎的真实关闭顺序。
-    private static void CloseApproved(MainWindow window){Set(window,"updateQuitApproved",true);window.Close();}
-    private static object? Invoke(object owner,string name,params object[] args)=>owner.GetType().GetMethod(name,Private)!.Invoke(owner,args);
+    private static void CloseApproved(MainWindow window){window.UpdateQuitApproved=true;window.Close();}
     private static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-    private static DragEventArgs RouteDrop(UIElement target,IDataObject data,bool drop,DragDropEffects allowed=DragDropEffects.Copy|DragDropEffects.Move)
-    {
-        var args=(DragEventArgs)Activator.CreateInstance(typeof(DragEventArgs),BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic,
-            null,[data,DragDropKeyStates.None,allowed,target,new Point()],null)!;
-        args.RoutedEvent=drop ? UIElement.PreviewDropEvent : UIElement.PreviewDragOverEvent;target.RaiseEvent(args);
-        if(!args.Handled){args.RoutedEvent=drop ? UIElement.DropEvent : UIElement.DragOverEvent;target.RaiseEvent(args);}
-        return args;
-    }
     private static byte[] Pixels(BitmapSource image)
     {
         var stride=image.PixelWidth*4;var bytes=new byte[stride*image.PixelHeight];image.CopyPixels(bytes,stride,0);return bytes;

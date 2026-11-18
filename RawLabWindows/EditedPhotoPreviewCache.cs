@@ -16,35 +16,39 @@ internal static class EditedPhotoPreviewKey
     internal static bool IsEdited(PhotoEditState state) => state.Edit is {} edit &&
         EditorAdjustmentRules.IsModified(new(EditorResetKind.All), edit);
 
-    internal static string Create(PhotoEditState state, string? look, int edge = Edge, int aiBackend = 2, string aiDevice = "", string? rendererVersion = null)
+    internal static string Create(PhotoEditState state, string? look, int edge = Edge, int aiBackend = 2, string aiDevice = "", string? rendererVersion = null,
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
     {
         if (state.Edit == null) throw new AdjustmentOperationExpiredException();
-        var resources = ResourceFingerprint(state.Edit.Settings, look, FileDigestCache.Shared, aiBackend, aiDevice);
+        var resources = ResourceFingerprint(state.Edit.Settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory);
         return Digest(JsonSerializer.SerializeToUtf8Bytes(new { Schema = 1,
             Renderer = rendererVersion ?? typeof(EditedPhotoPreviewKey).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "development",
             Source = state.Identity,
             Adjustments = state.Edit, Resources = resources, Edge = edge }));
     }
 
-    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, int aiBackend = 2, string aiDevice = "") =>
-        ResourceFingerprint(settings, look, FileDigestCache.Shared, aiBackend, aiDevice);
+    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, int aiBackend = 2, string aiDevice = "",
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null) =>
+        ResourceFingerprint(settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory);
 
-    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, FileDigestCache digestCache, int aiBackend = 2, string aiDevice = "")
+    internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, FileDigestCache digestCache, int aiBackend = 2, string aiDevice = "",
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
     {
-        if (settings.HDR is { Mode: HDRMode.Hdr } hdr && !hdr.LookSettings.AssetIsAvailable(null, digestCache))
+        if (settings.HDR is { Mode: HDRMode.Hdr } hdr && !hdr.LookSettings.AssetIsAvailable(hdrLookDirectory, digestCache))
             throw new FileNotFoundException(Loc.Text("外观不可用。"));
-        var fingerprints = ResourcePaths(settings, look).Select(path => {
+        var fingerprints = ResourcePaths(settings, look, hdrLookDirectory, hdrCameraProfileDirectory).Select(path => {
             var (identity, sha256) = digestCache.GetDigest(path);
             return new { Identity = identity, SHA256 = sha256 };
         }).ToArray();
         return Digest(JsonSerializer.SerializeToUtf8Bytes(new { Files = fingerprints,
             Backend = settings.ActiveAIDenoise ? aiBackend : 0, Device = settings.ActiveAIDenoise ? aiDevice : "" }));
     }
-    internal static IEnumerable<string> ResourcePaths(AdjustmentSnapshot settings, string? look)
+    internal static IEnumerable<string> ResourcePaths(AdjustmentSnapshot settings, string? look,
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
     {
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr) {
-            if (hdr.LookSettings.AssetPath() is {} hdrLook) yield return hdrLook;
-            if (hdr.CameraDevelopment?.CameraProfile is {} profile) yield return profile.AssetPath;
+            if (hdr.LookSettings.AssetPath(hdrLookDirectory) is {} hdrLook) yield return hdrLook;
+            if (hdr.CameraDevelopment?.CameraProfile is {} profile) yield return profile.AssetPathFor(hdrCameraProfileDirectory);
         } else if (look != null) yield return look;
         if (settings.ActiveAIDenoise) yield return Path.Combine(AppContext.BaseDirectory,"AI","DualDn","manifest.json");
     }

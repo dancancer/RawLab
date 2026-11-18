@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../AppPaths.cs" Link="AppPaths.cs" />
     <Compile Include="../../BundledLook.cs" Link="BundledLook.cs" />
     <Compile Include="../../FilmGrouping.cs" Link="FilmGrouping.cs" />
     <Compile Include="../../LookBrowser.cs" Link="LookBrowser.cs" />

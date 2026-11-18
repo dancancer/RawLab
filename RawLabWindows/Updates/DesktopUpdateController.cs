@@ -14,8 +14,16 @@ public sealed class DesktopUpdateController : INotifyPropertyChanged
     private UpdatePreferences preferences;
     private readonly IDesktopUpdateAdapter adapter;
     private readonly UpdateInstallGate gate;
-    private readonly UpdateStore store;
-    private readonly UpdateDataBackup backup;
+    private UpdateStore store;
+    private UpdateDataBackup backup;
+    internal UpdateStore Store => store;
+    internal UpdateDataBackup Backup => backup;
+    internal void IsolateForTests(UpdateStore isolatedStore, UpdateDataBackup isolatedBackup, UpdatePreferences isolatedPreferences)
+    {
+        store = isolatedStore;
+        backup = isolatedBackup;
+        preferences = isolatedPreferences;
+    }
     private readonly Func<DateTimeOffset> now;
     private readonly string currentVersion, currentBuild;
     private CancellationTokenSource? operation;

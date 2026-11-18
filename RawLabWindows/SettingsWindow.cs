@@ -15,13 +15,17 @@ public sealed class SettingsWindow : Window
     {
         public override string ToString()=>Label;
     }
+    private readonly string? languagePreferencePath;
     internal AIGpuPreference AIPreference=>aiGpu.SelectedItem is GPUChoice choice ? new(choice.DeviceID,choice.DeviceName) : new();
     public int Backend=>backend.SelectedIndex;
     public SettingsWindow(int currentBackend,Action? openSoftwareUpdates=null)
-        : this(currentBackend,new AIGpuPreferenceStore(AIGpuPreferenceStore.DefaultPath).Read(),RenderEngine.GetAIDevices(),false,null,false,openSoftwareUpdates) { }
+        : this(currentBackend,AppPaths.Default,openSoftwareUpdates) { }
+    internal SettingsWindow(int currentBackend,AppPaths appPaths,Action? openSoftwareUpdates=null)
+        : this(currentBackend,new AIGpuPreferenceStore(appPaths.AiGpuPreferencesPath).Read(),RenderEngine.GetAIDevices(),false,null,false,openSoftwareUpdates,appPaths.LanguagePreferencePath) { }
     internal SettingsWindow(int currentBackend,AIGpuPreference preference,AIDeviceInventory inventory,bool aiBusy,
-        Func<Window,Task<bool>>? exportDiagnostics,bool hasReport,Action? openSoftwareUpdates=null)
+        Func<Window,Task<bool>>? exportDiagnostics,bool hasReport,Action? openSoftwareUpdates=null,string? languagePreferencePath=null)
     {
+        this.languagePreferencePath=languagePreferencePath;
         Style=(Style)FindResource(typeof(Window));
         Title=Loc.Text("设置");Width=560;MinWidth=420;SizeToContent=SizeToContent.Height;
         WindowStartupLocation=WindowStartupLocation.CenterOwner;ShowInTaskbar=false;ResizeMode=ResizeMode.NoResize;
@@ -77,7 +81,7 @@ public sealed class SettingsWindow : Window
         var apply=new Button{Content=Loc.Text("应用"),IsDefault=true};
         AutomationProperties.SetAutomationId(cancel,"settings.cancel");AutomationProperties.SetAutomationId(apply,"settings.apply");
         apply.Click+=(_,_)=>{
-            try{if(language.SelectedValue is string code && code!=Loc.Preference)Loc.SetPreference(code);DialogResult=true;}
+            try{if(language.SelectedValue is string code && code!=Loc.Preference)Loc.SetPreference(code,languagePreferencePath);DialogResult=true;}
             catch(Exception ex) when(ex is IOException or UnauthorizedAccessException){MessageBox.Show(this,Loc.Text("无法保存语言设置。")+"\n"+ex.Message,Title);}
         };
         actions.Children.Add(cancel);actions.Children.Add(apply);panel.Children.Add(actions);Content=panel;

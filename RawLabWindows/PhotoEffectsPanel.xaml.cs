@@ -10,6 +10,7 @@ public partial class PhotoEffectsPanel : UserControl
     private PhotoEffectTool tool;
     private bool syncing;
     private readonly Dictionary<PhotoEffectParameter,ParameterRow> rows=[];
+    internal IReadOnlyDictionary<PhotoEffectParameter,ParameterRow> Rows => rows;
     // ┌─ 每个参数行的完整翻译键，按 PhotoEffectParameter 顺序：行标题、读屏名、重置按钮、数值框 ─┐
     // └─ 键全部是字面量，目录检查能逐个核对；不在运行时拼接 ──────────────────────────────────┘
     private sealed record RowKeys(string Title,string Name,string Reset,string Number);

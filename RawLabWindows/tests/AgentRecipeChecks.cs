@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows.Media;
@@ -11,13 +10,11 @@ internal static class AgentRecipeChecks
 {
     internal static void Run(string repo,string raw,string cli,Action<bool,string> check)
     {
-        var method=typeof(AgentRecipeTestTool).GetMethod("AgentRecipe",BindingFlags.Static|BindingFlags.NonPublic);
-        check(method!=null,"Windows test tool exposes effective-state Agent v5 serialization");
         var output=Path.Combine(repo,"build","windows-agent-recipe",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(output);var hash=SHA256.HashData(File.ReadAllBytes(raw));
-        using var engine=new RenderEngine(0);
+        using var engine=new RenderEngine(0,appPaths:AppPaths.CreateIsolated(output));
         string Recipe(string input,Adjustments state,string? look,string target,int? edge)=>
-            (string)method!.Invoke(null,[engine,input,state,look,target,edge])!;
+            engine.AgentRecipe(input,state,look,target,edge);
         var unicodeRecipe=Path.Combine(output,"recipe-\u6D4B\u8BD5-\U0001F308.json");
         File.WriteAllText(unicodeRecipe,Recipe(raw,new Adjustments(),null,Path.Combine(output,"unicode.png"),128));
         RunCli("--recipe",unicodeRecipe,"--print-recipe");

@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -16,7 +15,6 @@ using RawLab.Windows;
 // └──────────────────────────────────────────────────────────────────────────────────┘
 internal static class UiDetailChecks
 {
-    private const BindingFlags PrivateInstance=BindingFlags.Instance|BindingFlags.NonPublic;
     internal static readonly Regex Cjk=new("[㐀-鿿]");
 
     internal static void Run(string output,Action<bool,string> strict)
@@ -47,7 +45,7 @@ internal static class UiDetailChecks
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
                 var lookRoot=Path.Combine(Path.GetTempPath(),"rawlab-ui-looks-"+Guid.NewGuid().ToString("N"));
-                var window=new MainWindow(lookRoot);TestWindowState.Isolate(window,output);window.Show();window.UpdateLayout();
+                var window=TestWindowState.CreateIsolatedWindow(output,lookLibraryDirectory:lookRoot);window.Show();window.UpdateLayout();
                 try
                 {
                     Icons(window,language,check);
@@ -112,23 +110,22 @@ internal static class UiDetailChecks
     private static void ActiveLook(MainWindow window,string language,Action<bool,string> check)
     {
         var recipe=MasterRecipe.All.First(item=>Cjk.IsMatch(item.Name));
-        var settings=(Adjustments)typeof(MainWindow).GetField("settings",PrivateInstance)!.GetValue(window)!;
-        var lut=typeof(MainWindow).GetField("lut",PrivateInstance)!;
-        settings.ApplyMasterRecipe(recipe);lut.SetValue(window,recipe.LutPath);Refresh(window);
+        var settings=window.Settings;
+        settings.ApplyMasterRecipe(recipe);window.CurrentLut=recipe.LutPath;Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text(recipe.Name) && window.FilmLabelText.Text==Loc.Text("调整后"),
             $"Active look names the recipe while comparison identifies the adjusted image in {language}: {window.ActiveFilm.Text} / {window.FilmLabelText.Text}");
         // Precondition declared for this file-less fixture: clearing a recipe whose tint delta differs from
         // neutral needs as-shot calibration (the guard added with the v4 recipe controls); resolving it is
         // exactly what opening a calibrated RAW does, so ClearMasterRecipe keeps its real contract here.
         settings.ResolveWhiteBalance((5500,0));
-        settings.ClearMasterRecipe();lut.SetValue(window,null);Refresh(window);
+        settings.ClearMasterRecipe();window.CurrentLut=null;Refresh(window);
         check(window.ActiveFilm.Text==Loc.Text("中性"),$"Neutral look is named in {language}: {window.ActiveFilm.Text}");
     }
     // 语言下拉框、文件树的读屏名称：显示名字，不显示记录或类的类型名
     private static void TypeNames(MainWindow window,string output,string language,Action<bool,string> check)
     {
         var expected=Loc.Choices.Single(choice=>choice.Code==language).NativeName;
-        var settings=new SettingsWindow(0){Owner=window};settings.Show();settings.UpdateLayout();
+        var settings=new SettingsWindow(0,window.Paths){Owner=window};settings.Show();settings.UpdateLayout();
         try { var box=Descendants(settings).OfType<ComboBox>().First();check(Shown(box)==expected,$"Settings language picker shows {expected}: {Shown(box)}"); }
         finally { settings.Close(); }
         var about=About(window,output);
@@ -160,10 +157,9 @@ internal static class UiDetailChecks
         check(window.MenuImportLook.IsEnabled && window.AdjustmentPanel.Visibility==Visibility.Collapsed &&
               window.FilmPanel.Visibility==Visibility.Collapsed,
             $"File menu exposes look import before a RAW photo is opened: {language}");
-        var foreground=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
-        foreground.SetValue(window,true);Refresh(window);
+        window.ForegroundBusy=true;Refresh(window);
         check(!window.MenuImportLook.IsEnabled,$"File menu disables look import during foreground work: {language}");
-        foreground.SetValue(window,false);Refresh(window);
+        window.ForegroundBusy=false;Refresh(window);
         check(window.MenuImportLook.IsEnabled,$"File menu re-enables look import after foreground work: {language}");
     }
     private static void NoRawImport(string output,Action<bool,string> check)
@@ -171,13 +167,13 @@ internal static class UiDetailChecks
         var root=Path.Combine(Path.GetTempPath(),"rawlab-ui-dcp-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var lookRoot=Path.Combine(root,"looks");
-        var appWindow=new MainWindow(lookRoot);
-        TestWindowState.Isolate(appWindow,output);appWindow.Show();appWindow.UpdateLayout();
+        var appWindow=TestWindowState.CreateIsolatedWindow(output,lookLibraryDirectory:lookRoot);
+        appWindow.Show();appWindow.UpdateLayout();
         var source=Path.Combine(root,"without-photo.dcp");File.WriteAllBytes(source,[1,2,3]);
         var library=new LookLibrary(lookRoot,
             compileDcp:_=>Encoding.ASCII.GetBytes("RLOOKDCP synthetic"),
             validateLook:_=>new LookValidation(LookFormat.Rlook,1));
-        typeof(MainWindow).GetField("lookLibrary",PrivateInstance)!.SetValue(appWindow,library);
+        appWindow.LookLibraryInstance=library;
         try
         {
             var import=appWindow.ImportLookFiles([source]);
@@ -185,10 +181,10 @@ internal static class UiDetailChecks
             check(import.IsCompleted,"DCP import completes without a RAW photo");
             if(!import.IsCompleted)return;
             var errors=import.GetAwaiter().GetResult();
-            var selected=(string?)typeof(MainWindow).GetField("lut",PrivateInstance)!.GetValue(appWindow);
+            var selected=appWindow.CurrentLut;
             check(errors.Count==0 && selected!=null && File.Exists(selected),
                 "DCP import selects a durable look without opening a RAW photo");
-            check(typeof(MainWindow).GetField("engine",PrivateInstance)!.GetValue(appWindow)==null,
+            check(appWindow.EngineInstance==null,
                 "DCP import does not create a renderer when no RAW photo is open");
         }
         finally
@@ -213,11 +209,11 @@ internal static class UiDetailChecks
         var raw=File.ReadAllText(registryPath);
         var insertAt=raw.IndexOf("\"Looks\": [",StringComparison.Ordinal)+"\"Looks\": [".Length;
         File.WriteAllText(registryPath,raw.Insert(insertAt,"\n    "+namedBad+",\n    "+unnamedBad+","));
-        var appWindow=new MainWindow(lookRoot);
-        TestWindowState.Isolate(appWindow,output);appWindow.Show();appWindow.UpdateLayout();
+        var appWindow=TestWindowState.CreateIsolatedWindow(output,lookLibraryDirectory:lookRoot);
+        appWindow.Show();appWindow.UpdateLayout();
         try
         {
-            var library=(LookLibrary)typeof(MainWindow).GetField("lookLibrary",PrivateInstance)!.GetValue(appWindow)!;
+            var library=appWindow.LookLibraryInstance!;
             check(library.Looks.Count==1 && library.ListUnreadable().Count==2,
                 "MainWindow loads valid and unreadable looks side by side");
             var texts=Descendants(appWindow.UnreadableLooksPanel).OfType<TextBlock>().Select(item=>item.Text).ToArray();
@@ -233,11 +229,10 @@ internal static class UiDetailChecks
             appWindow.LookSearch.Text="";appWindow.UpdateLayout();
             var deleteButton=Descendants(appWindow.UnreadableLooksPanel).OfType<Button>()
                 .Single(button=>Equals(AutomationProperties.GetAutomationId(button),"looks.unreadable.delete."+namedId));
-            var foregroundBusyField=typeof(MainWindow).GetField("foregroundBusy",PrivateInstance)!;
             Click(deleteButton);
             Pump(()=>library.ListUnreadable().Count==1 &&
                    appWindow.UnreadableLooksPanel.Children.Count==1 &&
-                   !(bool)foregroundBusyField.GetValue(appWindow)!,
+                   !appWindow.ForegroundBusy,
                 TimeSpan.FromSeconds(5));
             check(library.Looks.Single().Id==valid.Id &&
                   library.ListUnreadable().Single().Json==unnamedBad &&
@@ -275,7 +270,7 @@ internal static class UiDetailChecks
     // 编辑菜单与调整栏重置菜单：分组重置写成“重置…”，两处叫法一致
     private static void ResetMenus(MainWindow window,string language,Action<bool,string> check)
     {
-        typeof(MainWindow).GetMethod("BuildResetMenu",PrivateInstance)!.Invoke(window,null);
+        window.BuildResetMenuForTests();
         var edit=(MenuItem)window.MainMenu.Items[1];
         var editItems=edit.Items.OfType<MenuItem>().Where(item=>item.Tag is EditorResetScope).ToArray();
         check(new[]{window.CopyAdjustmentMenu,window.PasteAdjustmentMenu,window.PastePhotosAdjustmentMenu,window.HistoryAdjustmentMenu,window.UndoAdjustmentMenu,window.RedoAdjustmentMenu}.All(edit.Items.Contains),
@@ -327,12 +322,11 @@ internal static class UiDetailChecks
     private static void ToolCaptions(MainWindow window,string language,Action<bool,string> check)
     {
         BuildTools(window);Refresh(window);
-        var expanded=typeof(MainWindow).GetField("expandedGroup",PrivateInstance)!;
-        var previous=expanded.GetValue(window);var checkedTools=new HashSet<string>();
+        var previous=window.ExpandedGroup;var checkedTools=new HashSet<string>();
         try {
             foreach(var group in EditorAdjustmentRules.VisibleGroups(false)) {
                 // 无 RAW 的布局检查只建立组会话；真实导航与草稿守卫由 WorkspaceGroupChecks 覆盖。
-                expanded.SetValue(window,group);Refresh(window);
+                window.ExpandedGroup=group;Refresh(window);
                 window.AdjustmentPanel.Visibility=Visibility.Visible;window.InspectorColumn.Width=new GridLength(280);window.UpdateLayout();
                 var buttons=window.Tools.Children.OfType<Button>().Where(button=>button.IsVisible).ToList();
                 var ids=buttons.Select(AutomationProperties.GetAutomationId).ToArray();
@@ -351,12 +345,12 @@ internal static class UiDetailChecks
             }
             check(checkedTools.SetEquals(EditorAdjustmentRules.VisibleGroups(false).SelectMany(EditorAdjustmentRules.Tools).Where(tool=>tool!=EditorAdjustmentTool.Strength).Select(tool=>tool.ToString()).Append("Perspective").Append("preset.quick.open")),
                 "Caption alignment covers all adjustment tools and Perspective navigation: "+language);
-        } finally {expanded.SetValue(window,previous);Refresh(window);}
+        } finally {window.ExpandedGroup=previous;Refresh(window);}
     }
     private static double LineHeight(TextBlock text)=>new System.Windows.Media.FormattedText("Ag",System.Globalization.CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,new System.Windows.Media.Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,
         System.Windows.Media.Brushes.Black,1).Height;
-    private static void BuildTools(MainWindow window)=>typeof(MainWindow).GetMethod("BuildTools",PrivateInstance)!.Invoke(window,null);
+    private static void BuildTools(MainWindow window)=>window.BuildToolsForTests();
     // 直方图统计与曝光基准选择框：译文完整显示，不被硬生生截掉半个词
     private static void WholeText(MainWindow window,string language,Action<bool,string> check)
     {
@@ -382,7 +376,7 @@ internal static class UiDetailChecks
         var about=new AboutWindow("0.8.0",usage){Owner=window};about.Show();about.UpdateLayout();
         return about;
     }
-    private static void Refresh(MainWindow window)=>typeof(MainWindow).GetMethod("RefreshControls",PrivateInstance)!.Invoke(window,null);
+    private static void Refresh(MainWindow window)=>window.RefreshControlsForTests();
     internal static FrameworkElement Toolbar(MainWindow window)=>(FrameworkElement)((FrameworkElement)window.OpenPhoto.Parent).Parent;
     internal static void Click(Button button)=>button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     private static string Caption(Button button)=>string.Concat(Descendants(button).OfType<TextBlock>().Select(text=>text.Text));

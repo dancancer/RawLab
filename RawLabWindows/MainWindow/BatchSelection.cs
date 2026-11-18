@@ -151,13 +151,13 @@ public partial class MainWindow
     }
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
-        editStore ??=new(EditStore.DefaultDirectory);
+        editStore ??=new(appPaths.EditsDirectory);
         return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
     internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
         if(CollectionBusy)return null;
-        editStore ??=new(EditStore.DefaultDirectory);
+        editStore ??=new(appPaths.EditsDirectory);
         var photos=Collection.SelectedPhotos.ToArray();var skipped=skipping.ToHashSet(StringComparer.Ordinal);
         var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
@@ -176,7 +176,7 @@ public partial class MainWindow
         if(CurrentBatch is {} running && running.SelectedCount>running.SucceededCount)
             throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
-        editStore ??=new(EditStore.DefaultDirectory);
+        editStore ??=new(appPaths.EditsDirectory);
         var selectionIDs=Collection.SelectedPhotos.Select(photo=>photo.ID).ToList();
         var failures=review.Rows.ToDictionary(row=>row.Photo.ID,row=>CollectionDraftFailure(row.Photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;

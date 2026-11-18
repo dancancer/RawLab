@@ -70,7 +70,7 @@ public static class PresetLibraryDataSource
 public sealed class AdjustmentPresetStore
 {
     private sealed record Registry(List<AdjustmentPreset> Presets, List<string> RetiredIDs, List<UnreadablePreset> Unreadable);
-    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Presets");
+    public static string DefaultDirectory => AppPaths.Default.PresetsDirectory;
     public string DirectoryPath { get; }
     private readonly string path;
     private readonly Action<string, object> write;

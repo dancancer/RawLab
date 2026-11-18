@@ -50,9 +50,7 @@ internal static class TempCleanup
 
     private sealed record ExportStagingRecord(string StagingPath, int ProcessId, long StartTicks);
 
-    internal static string DefaultExportStagingDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "RawLab", "Cache", "ExportStaging");
+    internal static string DefaultExportStagingDirectory => AppPaths.Default.ExportStagingDirectory;
 
     internal static void SweepStartup()
     {

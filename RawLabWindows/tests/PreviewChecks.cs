@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,15 +13,13 @@ internal static class PreviewChecks
     {
         var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window=new MainWindow{Width=1280,Height=820};
-        TestWindowState.Isolate(window,Path.Combine(repo,"build","viewport-reuse"));
+        var window=TestWindowState.CreateIsolatedWindow(Path.Combine(repo,"build","viewport-reuse"),width:1280,height:820);
         window.GpuMode.SelectedIndex=1;
         window.Show();
-        var field=typeof(MainWindow).GetField("result",BindingFlags.Instance|BindingFlags.NonPublic)!;
         RenderedImage Ready()
         {
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            return (RenderedImage)field.GetValue(window)!;
+            return window.CurrentResult!;
         }
         var status=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
         var developments=0;
@@ -45,12 +42,11 @@ internal static class PreviewChecks
                 "Returning to Actual pixels reuses the native frame without a developing status");
             window.MenuCompareSwipe.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check(ReferenceEquals(actual,Ready()) &&
-                (bool)typeof(MainWindow).GetProperty("ReferenceCurrent",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!,
+                window.ReferenceCurrentForTests,
                 "Turning comparison on develops only the missing reference");
             window.MenuCompareOff.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check(ReferenceEquals(actual,Ready()),"Turning comparison off retains the edited WPF pixels");
-            var maskField=typeof(PhotoCanvas).GetField("mask",BindingFlags.Instance|BindingFlags.NonPublic)!;
-            BitmapSource? Mask()=>maskField.GetValue(window.ResultCanvas) as BitmapSource;
+            BitmapSource? Mask()=>window.ResultCanvas.MaskSource;
             void ToggleClipping()=>window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             developments=0;
             ToggleClipping();
@@ -65,8 +61,8 @@ internal static class PreviewChecks
             InteractionChecks.PumpUntil(()=>Mask()!=null);
             check(ReferenceEquals(mask,Mask()) && ReferenceEquals(actual,Ready()),
                 "Re-enabling clipping reuses the current overlay and image");
-            using var oracle=new RenderEngine(0);
-            var settings=(Adjustments)typeof(MainWindow).GetField("settings",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+            using var oracle=new RenderEngine(0,appPaths:window.Paths);
+            var settings=window.Settings;
             var expected=oracle.Render(raw,settings,null,0,statistics:false,clipping:true,viewportPreview:true)!.Clipping!;
             check(SameMask(expected,mask!),"The displayed RAW clipping overlay matches the native highlight and shadow mask");
             viewport.ToggleActualPixels();

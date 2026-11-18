@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,47 +13,45 @@ internal static class AIDenoiseRealWindowChecks
     {
         var app=Application.Current ?? TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var paths=TestWindowState.CreateIsolatedPaths(output);
         var job=new AIDenoiseJob((identity,snapshot,progress)=>{
-            using var worker=new RenderEngine(0,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:identity.Backend);
+            using var worker=new RenderEngine(0,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:identity.Backend,appPaths:paths);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
         });
-        var window=new MainWindow(new UsageAnalytics(),null,job){Width=1440,Height=920};
-        TestWindowState.Isolate(window,output);
-        const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
-        var engine=new RenderEngine(1,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:2);
-        typeof(MainWindow).GetField("engine",flags)!.SetValue(window,engine);
-        object? Call(string name,params object[] args)=>typeof(MainWindow).GetMethod(name,flags)!.Invoke(window,args);
-        Adjustments Settings()=>(Adjustments)typeof(MainWindow).GetField("settings",flags)!.GetValue(window)!;
+        var window=TestWindowState.CreateIsolatedWindow(output,aiJob:job,width:1440,height:920);
+        var engine=new RenderEngine(1,aiModelDirectory:model,aiCacheDirectory:cache,aiBackend:2,appPaths:paths);
+        window.EngineInstance=engine;
+        Adjustments Settings()=>window.Settings;
         try {
             window.Show();window.OpenFile(raw);Pump(()=>window.ExportPng.IsEnabled);
-            Call("SelectTool",EditorAdjustmentTool.Denoise);
+            window.SelectToolForTests(EditorAdjustmentTool.Denoise);
             var before=Settings().Denoise;
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=true;
             var committedLens=Settings().Lens;
-            Call("BeginTransform",TransformTool.Lens);
-            Call("UpdateLensDraft",committedLens with{Distortion=!committedLens.Distortion});
+            window.BeginTransformForTests(TransformTool.Lens);
+            window.UpdateLensDraftForTests(committedLens with{Distortion=!committedLens.Distortion});
             Pump(()=>Settings().AIDenoiseEnabled && window.ApplyDraftButton.IsEnabled);
             check(Settings().Lens==committedLens && job.Identity?.Lens.Distortion!=committedLens.Distortion,
                 "First AI completion prepares the draft lens without committing it");
-            check((bool)Call("ApplyTransformDraft")!,"AI-prepared lens draft applies after first enablement");
+            check(window.ApplyTransformDraftForTests(),"AI-prepared lens draft applies after first enablement");
             Pump(()=>Settings().AIDenoiseEnabled && window.ExportPng.IsEnabled);
             check(job.State.Status==AIDenoiseStatus.Ready && (engine.LastAIBackend=="RAW=DirectML; RGB=ISP:CPU/RGB:DirectML" ||
                 engine.LastAIBackend=="SceneRGB=DirectML"),
                 "Real WPF AI toggle and lens preview use the completed hardware result");
             check(engine.LastBackend==3,"Real WPF photo preview executes on Direct3D 11 hardware");
-            var accepted=(RenderedImage)typeof(MainWindow).GetField("result",flags)!.GetValue(window)!;
+            var accepted=window.CurrentResult!;
             ViewComparisonChecks.CheckHistogram(accepted,check,"AI after frame");
             window.SetComparisonMode(true,false);Pump(()=>window.ExportPng.IsEnabled);
-            var neutral=(RenderedImage)typeof(MainWindow).GetField("neutralResult",flags)!.GetValue(window)!;
+            var neutral=window.NeutralResult!;
             ViewComparisonChecks.CheckHistogram(neutral,check,"AI neutral comparison");
             window.SetComparisonMode(false,false);Pump(()=>window.ExportPng.IsEnabled);
-            Call("BeginHoldingBeforeCore",true);
+            window.BeginHoldingBeforeCoreForTests(true);
             check(window.HistogramSource.Text==Loc.Text("调整前"),"Holding Before switches AI comparison statistics to the neutral frame");
-            Call("EndHoldingBefore");
+            window.EndHoldingBeforeForTests();
             check(!((StackPanel)window.DenoiseEditor.FindName("OrdinaryDenoise")).IsEnabled && Settings().Denoise==before,
                 "Real WPF keeps ordinary denoise parameters while AI is active");
             Directory.CreateDirectory(output);Capture(window,Path.Combine(output,"ai-ready.png"));
-            Settings().Set(Parameter.Exposure,1);Call("MarkEdited");Call("Schedule",false,false);
+            Settings().Set(Parameter.Exposure,1);window.MarkEditedForTests();window.ScheduleForTests(false,false);
             Pump(()=>window.ExportPng.IsEnabled);
             check(Settings().AIDenoiseEnabled && job.State.Status==AIDenoiseStatus.Ready,"Exposure adjustment retains prepared AI state");
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;
@@ -67,16 +64,15 @@ internal static class AIDenoiseRealWindowChecks
     {
         var app = Application.Current ?? TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var paths = TestWindowState.CreateIsolatedPaths(output);
         var job = new AIDenoiseJob((identity,snapshot,progress) => {
-            using var worker = new RenderEngine(0, aiModelDirectory:model, aiCacheDirectory:cache, aiBackend:identity.Backend);
+            using var worker = new RenderEngine(0, aiModelDirectory:model, aiCacheDirectory:cache, aiBackend:identity.Backend, appPaths:paths);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
         });
-        var window = new MainWindow(new UsageAnalytics(),null,job) { Width=1440, Height=920 };
-        TestWindowState.Isolate(window,output);
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var engine = new RenderEngine(1, aiModelDirectory:model, aiCacheDirectory:cache);
-        typeof(MainWindow).GetField("engine",flags)!.SetValue(window,engine);
-        Adjustments Settings() => (Adjustments)typeof(MainWindow).GetField("settings",flags)!.GetValue(window)!;
+        var window = TestWindowState.CreateIsolatedWindow(output, aiJob:job, width:1440, height:920);
+        var engine = new RenderEngine(1, aiModelDirectory:model, aiCacheDirectory:cache, appPaths:paths);
+        window.EngineInstance = engine;
+        Adjustments Settings() => window.Settings;
         try
         {
             window.Show();
@@ -85,7 +81,7 @@ internal static class AIDenoiseRealWindowChecks
             window.HDREditMenu.IsChecked = true;
             window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             Pump(() => Settings().IsHDREditing && window.ExportHdrJpeg.IsEnabled);
-            typeof(MainWindow).GetMethod("SelectTool",flags)!.Invoke(window,[EditorAdjustmentTool.Denoise]);
+            window.SelectToolForTests(EditorAdjustmentTool.Denoise);
             window.UpdateLayout();
             var toggle = (CheckBox)window.DenoiseEditor.FindName("AIEnabledBox");
             var hint = (TextBlock)window.DenoiseEditor.FindName("AIStatus");

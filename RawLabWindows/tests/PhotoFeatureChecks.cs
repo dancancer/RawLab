@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows;
@@ -22,10 +21,6 @@ internal static class PhotoFeatureChecks
         Console.WriteLine("PASS " + name); checks++;
     }
 
-    internal static object? Field(object value, string name) => value.GetType()
-        .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(value);
-    private static void SetField(object value, string name, object? data) => value.GetType()
-        .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(value, data);
     internal static void Click(ButtonBase button) => button.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
     internal static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {
@@ -72,9 +67,8 @@ internal static class PhotoFeatureChecks
 
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window = new MainWindow { Width = 1200, Height = 800 };
-        TestWindowState.Isolate(window,output);
-        var store = new EditStore(Path.Combine(output, "edits")); SetField(window, "editStore", store);
+        var window = TestWindowState.CreateIsolatedWindow(output, width: 1200, height: 800);
+        var store = new EditStore(Path.Combine(output, "edits")); window.EditStoreInstance = store;
         window.GpuMode.SelectedIndex = 1;
         window.Show();
         try
@@ -94,7 +88,7 @@ internal static class PhotoFeatureChecks
             Check(busyEvents.SequenceEqual(new[]{true,false}),"RAW preflight reports its full busy lifetime to the main-window gate");
             Check(preflightJob.Items.Single(item=>item.Input==invalidRaw) is {CanSelect:false,Selected:false,ValidationError:not null},
                 "RAW preflight retains a failed target as unselectable with an error");
-            preflightWindow.GetType().GetMethod("SelectAll",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(preflightWindow,[true]);
+            preflightWindow.SelectAll(true);
             Check(!preflightJob.Items.Single(item=>item.Input==invalidRaw).Selected && preflightJob.Settings.SameAs(frozen.Capture()),
                 "Select-all cannot bypass RAW validation or mutate frozen settings");
             preflightWindow.Close();
@@ -139,9 +133,9 @@ internal static class PhotoFeatureChecks
             window.ExportPhoto(ExportFormat.Png,source).GetAwaiter().GetResult();
             Check(window.Status.Text==Loc.Text("不能覆盖原始文件。"),"RAW export uses the dedicated original-file protection message");
             window.ExportSize2048.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            Check((int?)Field(window, "exportLongEdge") == 2048 && window.ExportSize2048.IsChecked, "Single export preset updates the real menu state");
+            Check(window.ExportLongEdge == 2048 && window.ExportSize2048.IsChecked, "Single export preset updates the real menu state");
             window.ExportOriginalSize.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            Check(Field(window, "exportLongEdge") == null && window.ExportOriginalSize.IsChecked, "Single export can return to original dimensions");
+            Check(window.ExportLongEdge == null && window.ExportOriginalSize.IsChecked, "Single export can return to original dimensions");
             var custom = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
             custom.Tick += (_, _) => {
                 var dialog = app.Windows.OfType<Window>().FirstOrDefault(candidate => candidate.Title == "自定义导出尺寸");
@@ -153,7 +147,7 @@ internal static class PhotoFeatureChecks
                 field.Text = "512"; custom.Stop(); Click(accept);
             };
             custom.Start(); window.ExportCustomSize.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); custom.Stop();
-            Check((int?)Field(window, "exportLongEdge") == 512 && window.ExportCustomSize.IsChecked, "Single custom dialog commits a valid pixel size");
+            Check(window.ExportLongEdge == 512 && window.ExportCustomSize.IsChecked, "Single custom dialog commits a valid pixel size");
             Click(window.InfoButton);
             InteractionChecks.PumpUntil(() => window.InfoOverlay.Visibility == Visibility.Visible);
             Check(window.InfoFileText.Text.Contains(Path.GetFileName(source)) && window.InfoFileText.Text.Contains(info.CaptureTime!), "Real WPF file overlay uses source metadata");
@@ -171,18 +165,18 @@ internal static class PhotoFeatureChecks
             Click(Descendants<Button>(window.PhotoEffectsEditor).Single(button =>
                 AutomationProperties.GetName(button) == "重置当前效果"));
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-            Check(((Adjustments)Field(window, "settings")!).Effects.VignetteAmount == 0,
+            Check(window.Settings.Effects.VignetteAmount == 0,
                 "Current effect reset clears the vignette edited by the tool-group checks");
             Click(window.FilmCategory);
-            var films = (Dictionary<string, Button>)Field(window, "filmButtons")!;
+            var films = window.FilmButtons;
             Click(films.First(pair => File.Exists(pair.Key) && StringComparer.OrdinalIgnoreCase.Equals(
                 Path.GetDirectoryName(pair.Key), Path.Combine(AppContext.BaseDirectory, "LUTs"))).Value);
             InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled);
-            var current = ((Adjustments)Field(window, "settings")!).Capture();
+            var current = window.Settings.Capture();
             var currentLook = window.CurrentLookIdentity();
             Check(currentLook != null && current.CameraWhiteBalance && current.MasterRecipeID == null,
                 "Folder fixture has a real look and camera white balance compatible with RAW and raster targets");
-            Check((bool)window.GetType().GetMethod("SaveEdits", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!,
+            Check(window.SaveEditsForTests(),
                 "Folder fixture saves the source before copying adjustments");
             var sourceState = store.ReadState(source);
             var directTargets = new[] { target, second, rasterTarget };
@@ -190,7 +184,7 @@ internal static class PhotoFeatureChecks
             foreach (var path in directTargets)
                 store.Save(path, new Adjustments { Geometry = targetGeometry, ExposureMode = PhotoInput.IsRaw(path) ? 1 : 2 }.Capture(), null);
             var folder = new LibraryEntry(targets, true);
-            var library = (Library)Field(window, "library")!;
+            var library = window.LibraryInstance;
             library.Roots.Add(folder);
             if (!window.LibraryPanel.IsVisible) Click(window.LibraryToggleButton);
             InteractionChecks.PumpUntil(() => Descendants<Button>(window.SidebarGallery).Any(button => button.DataContext is LibraryEntry entry && entry.Path == target));
@@ -198,7 +192,7 @@ internal static class PhotoFeatureChecks
             var root = (TreeViewItem)window.Files.ItemContainerGenerator.ContainerFromItem(folder);
             OpenContext(window, tile);
             Check(tile.ContextMenu!.IsOpen && tile.ContextMenu.Items.OfType<MenuItem>().Count() == 3, "Photo right-click opens the native photo context actions");
-            Check((string?)Field(window, "file") == source, "Photo right-click preserves current settings source");
+            Check(window.CurrentFile == source, "Photo right-click preserves current settings source");
             tile.ContextMenu.IsOpen = false;
             OpenContext(window, root);
             Check(window.FileTreeContextMenu.IsOpen && window.ApplyTreeEntryMenu.IsEnabled, "Folder context menu offers enabled apply-current-settings action");
@@ -219,7 +213,7 @@ internal static class PhotoFeatureChecks
                     "Folder action copies Standard fields and preserves target geometry: " + Path.GetFileName(path));
             }
             Check(store.Find(excluded) == null && store.ReadState(source).SameAs(sourceState) &&
-                  ((Adjustments)Field(window, "settings")!).Capture().SameAs(current) && (string?)Field(window, "file") == source,
+                  window.Settings.Capture().SameAs(current) && window.CurrentFile == source,
                 "Folder action excludes nested files and never changes the source photo");
             Check(directTargets.All(path => store.Find(path)?.Look == currentLook), "Apply-current-settings also copies the current look identity");
             Screenshot(window, Path.Combine(output, "context.png"));
@@ -232,7 +226,7 @@ internal static class PhotoFeatureChecks
                     OpenContext(window, tile);
                     var openItem = tile.ContextMenu!.Items.OfType<MenuItem>()
                         .Single(item => Equals(item.Header, Loc.Text("在资源管理器中打开")));
-                    var resolved = (LibraryEntry?)window.GetType().GetMethod("ResolveContextEntry", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [openItem]);
+                    var resolved = window.ResolveContextEntryForTests(openItem);
                     Check(resolved?.Path == target, "Explorer menu resolves the clicked photo rather than the previous folder");
                     Console.WriteLine("Explorer action header=" + openItem.Header + "; placement=" + ((LibraryEntry)((FrameworkElement)tile.ContextMenu.PlacementTarget).DataContext).Path);
                     window.Dispatcher.Invoke(() => {
@@ -287,7 +281,7 @@ internal static class PhotoFeatureChecks
             }
             else Console.WriteLine("NOT REACHED Explorer desktop interaction: process is in session 0");
 
-            using var engine = new RenderEngine(0);
+            using var engine = new RenderEngine(0, appPaths: window.Paths);
             var rasterGuard=Path.Combine(output,"overwrite-raster.png");
             File.Copy(rasterTarget,rasterGuard);
             window.OpenFile(rasterGuard);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);

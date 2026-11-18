@@ -25,6 +25,9 @@ public partial class BatchExportWindow : Window
     private volatile bool closeRequested;
     private Task? thumbnailLoading;
     private AIDenoiseState? aiProgress;
+    internal ObservableCollection<BatchRow> Rows => rows;
+    internal CancellationTokenSource Cancellation => cancellation;
+    internal bool CloseRequested => closeRequested;
     public bool Running { get; private set; }
     public bool Busy=>Running || preflighting;
     public bool UpdateJournalFailed { get; private set; }
@@ -37,7 +40,9 @@ public partial class BatchExportWindow : Window
     public event Action<bool>? BusyChanged;
     public event Action<BatchJob, BatchJob, int>? RunCompleted;
 
-    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID)) { }
+    public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,AppPaths.Default) { }
+    internal BatchExportWindow(BatchJob job, BatchJournal journal, AppPaths appPaths)
+        : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID,appPaths:appPaths),new(appPaths.AiDiagnosticsDirectory)) { }
     internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,
         AIDiagnosticStore? aiDiagnostics=null, BatchHDRPreparation? hdrPreparation=null)
     {
@@ -88,7 +93,7 @@ public partial class BatchExportWindow : Window
     private static string OnOff(bool on) => Loc.Text(on ? "开启" : "停用");
     private static string Number(double value) => value.ToString("0.#", CultureInfo.GetCultureInfo(Loc.Language));
 
-    private void Refresh()
+    internal void Refresh()
     {
         Heading.Text = preflighting ? Loc.Text("正在检查照片…") : Running ? cancellation.IsCancellationRequested ? Loc.Text("正在停止…") : Loc.Text("正在导出") :
             job.Interrupted ? Loc.Text("导出已中断") : job.Cancelled ? Loc.Text("导出已取消") : job.Started ? Loc.Text("导出完成") : Loc.Text("批量导出");
@@ -208,7 +213,7 @@ public partial class BatchExportWindow : Window
             ? item with {ValidationError=Loc.Text("HDR JPEG 需要启用 HDR 编辑。"),Selected=false}
             : item with {ValidationError=null};
     }
-    private Task LoadThumbnails()
+    internal Task LoadThumbnails()
     {
         if(thumbnailLoading is { IsCompleted:false })return thumbnailLoading;
         return thumbnailLoading=ReadThumbnails();
@@ -228,7 +233,7 @@ public partial class BatchExportWindow : Window
     }
     private void SelectAllClicked(object sender, RoutedEventArgs e) => SelectAll(true);
     private void SelectNoneClicked(object sender, RoutedEventArgs e) => SelectAll(false);
-    private void SelectAll(bool value)
+    internal void SelectAll(bool value)
     {
         if (Frozen || job.Started || Running || preflighting) return;
         job.Items = job.Items.Select(x => x with { Selected = value && x.CanSelect }).ToList(); SaveDraft();
@@ -362,7 +367,7 @@ public partial class BatchExportWindow : Window
     }
     public void CancelExecution() { cancellation.Cancel(); Refresh(); }
     private BatchHDRPreparation RequireHDRPreparation() => hdrPreparation ?? throw new InvalidOperationException(Loc.Text("无法读取调整记录"));
-    private async void PrimaryClicked(object sender, RoutedEventArgs e)
+    internal async void PrimaryClicked(object sender, RoutedEventArgs e)
     {
         if (Running) { CancelExecution(); return; }
         await StartExecution();

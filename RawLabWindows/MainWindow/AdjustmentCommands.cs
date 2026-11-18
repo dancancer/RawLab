@@ -74,7 +74,7 @@ public partial class MainWindow
                         defaults.RepairLegacyNormalX3f(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
-                            using var native=new RenderEngine(1);
+                            using var native=CreateRenderEngine(1);
                             calibration=native.Render(path,defaults,null,32,statistics:false,clipping:false)?.WhiteBalance;
                         }
                         if(!OriginalIdentity.Read(path).SameFile(identity))throw new PhotoChangedException();
@@ -84,13 +84,13 @@ public partial class MainWindow
                                 if (PhotoInput.ProbeCameraRaw(path,out var source) != HDRProbeState.Supported ||
                                     source is not { IsCameraRaw: true, IsProRAW: false })
                                     throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
-                                using var native = new RenderEngine(1);
+                                using var native = CreateRenderEngine(1);
                                 var preflight=candidate.Clone();
                                 preflight.HDRCameraAIEnabled=false;
                                 _ = native.Render(path,preflight,null,128,statistics:false,clipping:false);
                             },ValidateLens:lens=>{
                             var probe=X3fModeReset.CreateLensProbe(path,defaults,lens);
-                            using var native=new RenderEngine(1);
+                            using var native=CreateRenderEngine(1);
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
                             if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca || lens.Vignetting && !report.AppliedVignetting)
                                 throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");

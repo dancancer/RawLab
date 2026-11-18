@@ -79,7 +79,7 @@ internal sealed record HDRDetailSettings(double Sharpening = 0, double Clarity =
 internal sealed record HDRLookSettings(string? Sha256 = null, string? Name = null, double Strength = 0)
 {
     internal const long MaximumBytes = 32 * 1024 * 1024;
-    internal static string Directory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Looks", "HDR");
+    internal static string Directory => AppPaths.Default.HdrLooksDirectory;
     internal static bool IsFingerprint(string? value) => value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     internal bool IsDefault => Sha256 == null && Name == null && Strength == 0;
     internal bool IsValid => IsDefault || IsFingerprint(Sha256) && Name is { Length: > 0 } &&
@@ -99,10 +99,11 @@ internal sealed record HDRLookSettings(string? Sha256 = null, string? Name = nul
 
 internal sealed record HDRCameraProfile(string Sha256, string Name)
 {
-    internal static string Directory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "HDRCameraProfiles");
+    internal static string Directory => AppPaths.Default.HdrCameraProfilesDirectory;
     internal bool IsValid => HDRLookSettings.IsFingerprint(Sha256) && Name is { Length: > 0 } &&
         Encoding.UTF8.GetByteCount(Name) <= 512 && !Name.Any(char.IsControl);
-    internal string AssetPath => Path.Combine(Directory, Sha256 + ".profile");
+    internal string AssetPath => AssetPathFor(null);
+    internal string AssetPathFor(string? directory) => Path.Combine(directory ?? Directory, Sha256 + ".profile");
 }
 
 internal sealed record HDRCameraDevelopmentSettings(bool CustomWhiteBalance = false, double Temperature = 0, double Tint = 0,
@@ -228,7 +229,7 @@ public sealed record HDRSettings
         };
     }
 
-    internal Native.HDRRequestV8 NativeRenderRequest(HDRIntent intent, uint longEdge = 0)
+    internal Native.HDRRequestV8 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null)
     {
         var tone = ToneSettings;
         var color = ColorSettings;
@@ -255,7 +256,7 @@ public sealed record HDRSettings
         var lookRequest = new Native.HDRRequestV7 {
             Base = new() { Base = effects, Sharpening = (float)detail.Sharpening, Clarity = (float)detail.Clarity,
                 Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
-            LookPath = look.AssetPath(), LookStrength = (float)look.Strength, LookSha256 = fingerprint
+            LookPath = look.AssetPath(lookDirectory), LookStrength = (float)look.Strength, LookSha256 = fingerprint
         };
         return new() { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
             Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };

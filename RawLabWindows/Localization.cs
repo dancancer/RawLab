@@ -17,8 +17,7 @@ public static class Loc
         new("system", "跟随系统"), new("zh-Hans", "简体中文"), new("en", "English"),
         new("de", "Deutsch"), new("fr", "Français"), new("ja", "日本語"), new("es", "Español")
     ];
-    private static readonly string preferenceFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "language.txt");
+    private static string preferenceFile => AppPaths.Default.LanguagePreferencePath;
     private static Dictionary<string, string> english = new();
     private static Dictionary<string, string> translated = new();
     private static readonly string systemLanguage = CultureInfo.CurrentUICulture.Name;
@@ -26,6 +25,8 @@ public static class Loc
     public static string Language { get; private set; } = "en";
     public static IReadOnlyDictionary<string, string> Strings => translated;
     public static event Action? Changed;
+    internal static void NotifyChangedForTests() => Changed?.Invoke();
+    internal static int ChangedSubscriberCount => Changed?.GetInvocationList().Length ?? 0;
 
     public static string Resolve(string preference, string systemLanguage)
     {

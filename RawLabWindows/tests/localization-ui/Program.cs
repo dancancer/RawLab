@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using System.IO;
 using System.Windows;
@@ -33,18 +32,19 @@ internal static class Program
         try
         {
             var output=Path.Combine(Path.GetTempPath(),"rawlab-localization-"+Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(output);preferencePath=Path.Combine(output,"language.txt");
+            Directory.CreateDirectory(output);
+            var paths=TestWindowState.CreateIsolatedPaths(output);
+            preferencePath=paths.LanguagePreferencePath;
             Console.WriteLine("Localization fixtures: "+output);
             Loc.SetPreference("en",preferencePath);
 
-            var app = new App();
+            var analytics=TestWindowState.CreateDisabledAnalytics(paths);
+            var app = new App(null, paths, automaticUpdateCheck: false, usageAnalytics: analytics);
             app.InitializeComponent();
-            EventManager.RegisterClassHandler(typeof(MainWindow),FrameworkElement.LoadedEvent,new RoutedEventHandler((sender,_)=>
-                TestWindowState.Isolate((MainWindow)sender,output)));
             app.Startup += (_, _) =>
             {
                 Loc.Initialize(null,preferencePath);
-                ((Action?)typeof(Loc).GetField("Changed",BindingFlags.Static|BindingFlags.NonPublic)!.GetValue(null))?.Invoke();
+                Loc.NotifyChangedForTests();
                 Loc.Changed += LanguageChanged;
                 // 启动先在后台准备更新适配器，之后才创建编辑器窗口；等窗口加载完成再检查。
                 var deadline=DateTime.UtcNow.AddSeconds(60);
@@ -81,15 +81,13 @@ internal static class Program
                 ?? throw new InvalidOperationException("Application startup did not create the editor window.");
 
             Check(Loc.Language == "en", "Startup test window uses its persisted private English preference");
-            var updates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
-            var updateStore=(UpdateStore)typeof(DesktopUpdateController).GetField("store",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(updates)!;
+            var updates=window.DesktopUpdates;
+            var updateStore=updates.Store;
             Check(!updates.Preferences.AutomaticCheck && updateStore.DirectoryPath.StartsWith(Path.GetDirectoryName(preferencePath)!+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),
                 "Production StartupUri window receives private updates before its Loaded handler");
             Check(Application.Current.Resources["暗角"]?.ToString() == Loc.Text("暗角"), "Application resources contain the active catalog");
 
-            var settingsField = typeof(MainWindow).GetField("settings", BindingFlags.NonPublic | BindingFlags.Instance)
-                ?? throw new InvalidOperationException("Editor settings field is missing.");
-            var adjustments = (Adjustments)settingsField.GetValue(window)!;
+            var adjustments = window.Settings;
             adjustments.ApplyMasterRecipe(MasterRecipe.All[0]);
             adjustments.Set(Parameter.Exposure, 1.25);
             adjustments.Hsl = adjustments.Hsl.WithValue(0, 2, 19).WithValue(1, 2, -23);

@@ -41,7 +41,7 @@ public partial class MainWindow
             {
                 if (!source.SameFile(OriginalIdentity.Read(path))) return;
                 var lookIdentity = expectedLook == null ? null : OriginalIdentity.Read(expectedLook);
-                using var worker=new RenderEngine(gpuMode:gpu);
+                using var worker=CreateRenderEngine(gpuMode:gpu);
                 var result=worker.MigrateProcessing(path,snapshot,expectedLook,cancellation.Token);
                 if (!source.SameFile(OriginalIdentity.Read(path)) ||
                     (lookIdentity != null && !lookIdentity.SameFile(OriginalIdentity.Read(expectedLook!))))

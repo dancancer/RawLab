@@ -64,6 +64,10 @@ public sealed partial class PhotoCanvas : FrameworkElement
     public event Action? DividerChanged;
     public bool PhotoMargin {get=>photoMargin;set{if(photoMargin==value)return;photoMargin=value;UpdateTransform();}}
     public bool ShowingBefore {get=>showingBefore;set{showingBefore=value;UpdateComparison();}}
+    internal BitmapSource? ImageSource => image;
+    internal BitmapSource? MaskSource => mask;
+    internal Point? DragPoint => drag;
+    internal DispatcherTimer HoldTimer => holdTimer;
     internal Rect VisibleImageBounds=>Rect.Intersect(ImageBounds,new Rect(RenderSize));
     private double DividerX=>ImageBounds.X+ImageBounds.Width*Divider;
     private bool showClipping;

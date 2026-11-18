@@ -257,10 +257,7 @@ static class Program
             TestWindowState.PreserveExistingBatch(journalDirectory);
             var app=TestWindowState.CreateApplication();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-            var window=new MainWindow {Width=1440,Height=920};
-            TestWindowState.Isolate(window,output);
-            typeof(MainWindow).GetField("editStore",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
-                .SetValue(window,new EditStore(Path.Combine(output,"edits",Guid.NewGuid().ToString("N"))));
+            var window=TestWindowState.CreateIsolatedWindow(output,editDirectory:Path.Combine(output,"edits",Guid.NewGuid().ToString("N")),width:1440,height:920);
             window.Show();
             var folder=new LibraryEntry(Path.GetDirectoryName(raw)!,true);
             window.Files.ItemsSource=new[]{folder};
@@ -278,8 +275,7 @@ static class Program
             statusText.RemoveValueChanged(window.Status,previewChanged);
             Check(proxyPublished && !proxyAllowedExport,"Opening publishes a fast RAW proxy before exact work and never exports the proxy");
             Console.WriteLine($"WPF open: first proxy {proxyMs:F1} ms; exact {openClock.Elapsed.TotalMilliseconds:F1} ms");
-            var settled=(RenderedImage)typeof(MainWindow).GetField("result",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
-                .GetValue(window)!;
+            var settled=window.CurrentResult!;
             Console.WriteLine($"WPF settled: bitmap={settled.Image.PixelWidth}x{settled.Image.PixelHeight}, viewport-edge={window.ResultCanvas.PreviewLongEdge}, status={window.Status.Text}");
             Check(window.Status.Text.StartsWith("预览 ") && Math.Max(settled.Image.PixelWidth,settled.Image.PixelHeight)==window.ResultCanvas.PreviewLongEdge,
                 "WPF settled render uses the current viewport dimensions and enables export");
@@ -288,8 +284,7 @@ static class Program
             PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
             window.OpenFile(unicodeRaw);Check(Math.Abs(window.ValueSlider.Value-.5)<.001,"New photo starts with default exposure");
             PumpUntil(()=>window.ExportPng.IsEnabled,TimeSpan.FromMinutes(3));
-            var switched=(RenderedImage)typeof(MainWindow).GetField("result",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!
-                .GetValue(window)!;
+            var switched=window.CurrentResult!;
             Check(Math.Max(switched.Image.PixelWidth,switched.Image.PixelHeight)==window.ResultCanvas.PreviewLongEdge,
                 "Opening without a supplied embedded image settles at the current viewport resolution");
             window.OpenFile(raw);Check(Math.Abs(window.ValueSlider.Value-.625)<.001,"Photo switch restores its own exposure");

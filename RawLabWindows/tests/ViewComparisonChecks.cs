@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -14,10 +13,6 @@ using RawLab.Windows;
 
 internal static class ViewComparisonChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
-    private static T Get<T>(object owner,string name)=>(T)owner.GetType().GetField(name,Private)!.GetValue(owner)!;
-    private static void Set(object owner,string name,object? value)=>owner.GetType().GetField(name,Private)!.SetValue(owner,value);
-    private static object? Invoke(MainWindow window,string name,params object[] args)=>typeof(MainWindow).GetMethod(name,Private)!.Invoke(window,args);
     private static void Click(Control control)=>control.RaiseEvent(new RoutedEventArgs(control is MenuItem ? MenuItem.ClickEvent : Button.ClickEvent));
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
     internal static void CheckHistogram(RenderedImage frame,Action<bool,string> check,string label)
@@ -35,18 +30,18 @@ internal static class ViewComparisonChecks
         var app=application ?? TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         void ApplyLanguage(){foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;}
         Loc.Changed+=ApplyLanguage;
-        var window=new MainWindow{Width=1200,Height=800};TestWindowState.Isolate(window,output);window.GpuMode.SelectedIndex=1;window.Show();
+        var window=TestWindowState.CreateIsolatedWindow(output,width:1200,height:800);window.GpuMode.SelectedIndex=1;window.Show();
         Console.WriteLine("S3 artifacts: "+output);
         try {
-            window.OpenFile(raw);Ready(window);var view=Get<EditorViewState>(window,"view");
-            var initial=Get<Adjustments>(window,"settings").Capture();var revision=Get<long>(window,"editRevision");
+            window.OpenFile(raw);Ready(window);var view=window.ViewState;
+            var initial=window.Settings.Capture();var revision=window.EditRevision;
             check(System.Windows.Automation.AutomationProperties.GetAutomationId(window.CompareModeButton)=="CompareModeButton","Comparison mode dropdown has a stable native automation identifier");
             if(labelsOnly){TargetedLabels(window,app,output,check);return;}
             if(pointerOnly) {
                 check(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1","Pointer-only acceptance explicitly requires native input authorization");
                 Click(window.BeforeViewMenu);InteractionChecks.PumpUntil(()=>window.ResultCanvas.ShowingBefore);Click(window.BeforeViewMenu);
                 PointerChecks(window,output,check);
-                check(initial.SameAs(Get<Adjustments>(window,"settings").Capture()) && revision==Get<long>(window,"editRevision"),"Native viewing input creates no parameter edit");return;
+                check(initial.SameAs(window.Settings.Capture()) && revision==window.EditRevision,"Native viewing input creates no parameter edit");return;
             }
             Click(window.CompareButton);Ready(window);Capture(window,output,"first-side");
             check(view.Enabled && view.PreferredMode==ComparisonMode.SideBySide && window.NeutralCanvas.IsVisible,"First real toolbar toggle enables side-by-side comparison");
@@ -58,7 +53,7 @@ internal static class ViewComparisonChecks
             var source=Path.Combine(output,"same-values"+Path.GetExtension(raw));File.Copy(raw,source,true);window.OpenFile(source);Ready(window);
             check(!view.Enabled && !view.HoldingBefore && view.PreferredMode==ComparisonMode.Wipe,"Actual photo replacement closes comparison and remembers the session mode");
             Click(window.BeforeViewMenu);InteractionChecks.PumpUntil(()=>window.ResultCanvas.ShowingBefore);Capture(window,output,"semantic-before");
-            var neutral=Get<RenderedImage>(window,"neutralResult");CheckHistogram(neutral,check,"held before");
+            var neutral=window.NeutralResult!;CheckHistogram(neutral,check,"held before");
             check(view.HoldingBefore && ReferenceEquals(window.Histogram.Bins,neutral.Histogram) && window.HistogramSource.Text==Loc.Text("调整前"),"Before action displays statistics from the actual neutral frame and labels its source");
             Click(window.BeforeViewMenu);check(!window.ResultCanvas.ShowingBefore && window.HistogramSource.Text==Loc.Text("调整后"),"Accessible before action returns to the adjusted frame and statistics source");
             ReferenceReadinessChecks(window,source,output,check);
@@ -66,32 +61,32 @@ internal static class ViewComparisonChecks
             check(!view.PhotoMargin && !window.ZoomPhotoMargin.IsChecked && window.ResultCanvas.ImageBounds.Width>=inset.Width && window.ResultCanvas.ImageBounds.Height>=inset.Height,"View menu removes margins while keeping the entire photograph fitted");
             Click(window.ZoomPhotoMargin);check(view.PhotoMargin && window.MenuPhotoMargin.IsChecked,"Zoom and View menus share one photo-margin preference");
             Click(window.InfoEntryButton);InteractionChecks.PumpUntil(()=>window.InfoOverlay.IsVisible);Click(window.InfoButton);Capture(window,output,"capture-info");
-            check(Get<PhotoInfoMode>(window,"photoInfoMode")==PhotoInfoMode.Capture,"Photo corner and toolbar advance the same information mode");
+            check(window.PhotoInfoModeValue==PhotoInfoMode.Capture,"Photo corner and toolbar advance the same information mode");
             Click(window.InfoEntryButton);check(!window.InfoOverlay.IsVisible,"Photo corner completes the information cycle back to hidden");
             Click(window.CompareSide);Ready(window);EditorShellChecks.ArrangeLayout(window,new Size(1230,980));Ready(window);Capture(window,output,"vertical-side");
             check(window.PhotoArea.ActualHeight>window.PhotoArea.ActualWidth && Grid.GetRow(window.NeutralCanvas)==0 && Grid.GetRow(window.ResultCanvas)==1,"A tall narrow photo area stacks comparison without changing the inspector width");
             CheckLabels(window,check);
             EditorShellChecks.ArrangeLayout(window,new Size(1200,800));Ready(window);
-            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;Invoke(window,"Schedule",false,false);window.UpdateLayout();Capture(window,output,"busy");
+            Click(window.CompareButton);var area=window.PhotoArea.RenderSize;var dock=window.AdjustmentPanel.ActualWidth;window.ScheduleForTests(false,false);window.UpdateLayout();Capture(window,output,"busy");
             check(window.BusyIndicator.IsVisible && window.BusyIndicator.ActualHeight==2 && window.PhotoArea.RenderSize==area && window.AdjustmentPanel.ActualWidth==dock,"Latest-preview busy is a two-DIP photo overlay with no canvas or inspector layout jump");Ready(window);
             if(Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_POINTER")=="1")PointerChecks(window,output,check);
             else Console.WriteLine("NOT REACHED: native S3 pointer/keyboard checks require RAWLAB_TEST_NATIVE_POINTER=1 on the interactive input desktop");
             LayoutChecks(window,app,output,check);
             StatisticsFailureUi(window,output,check);
-            check(initial.SameAs(Get<Adjustments>(window,"settings").Capture()) && revision==Get<long>(window,"editRevision") && !Get<bool>(window,"editDirty"),"Comparison, hold, info, margins and layout create no parameter edit or autosave");
-            var image=Get<BitmapSource>(window.ResultCanvas,"image");var accepted=Get<RenderedImage>(window,"result");
-            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");Set(window,"lut",invalid);Invoke(window,"Schedule",false,false);
-            InteractionChecks.PumpUntil(()=>Get<bool>(window,"renderFailed") && !(bool)Get<object>(window,"scheduler").GetType().GetProperty("Busy")!.GetValue(Get<object>(window,"scheduler"))!);
+            check(initial.SameAs(window.Settings.Capture()) && revision==window.EditRevision && !window.EditDirty,"Comparison, hold, info, margins and layout create no parameter edit or autosave");
+            var image=window.ResultCanvas.ImageSource!;var accepted=window.CurrentResult!;
+            var invalid=Path.Combine(output,"invalid.cube");File.WriteAllText(invalid,"invalid LUT");window.CurrentLut=invalid;window.ScheduleForTests(false,false);
+            InteractionChecks.PumpUntil(()=>window.RenderFailed && !window.SchedulerBusy);
             Capture(window,output,"failed-preview");
-            check(ReferenceEquals(image,Get<BitmapSource>(window.ResultCanvas,"image")) && ReferenceEquals(accepted,Get<RenderedImage>(window,"result")) && window.RetryButton.IsVisible && !window.ExportPng.IsEnabled,"Failed latest preview keeps the last accepted pixels, marks outdated and offers retry without pretending exact");
-            Set(window,"lut",null);Click(window.RetryButton);Ready(window);
+            check(ReferenceEquals(image,window.ResultCanvas.ImageSource) && ReferenceEquals(accepted,window.CurrentResult) && window.RetryButton.IsVisible && !window.ExportPng.IsEnabled,"Failed latest preview keeps the last accepted pixels, marks outdated and offers retry without pretending exact");
+            window.CurrentLut=null;Click(window.RetryButton);Ready(window);
             // 前面的同路径替换场景已改变物理来源；先重新打开，再用真实修改验证 I/O 失败。
             window.OpenFile(source);Ready(window);
-            var store=Get<EditStore>(window,"editStore");var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));Set(window,"editStore",new EditStore(blocked));
-            var changed=Get<Adjustments>(window,"settings");changed.Set(Parameter.Exposure,changed[Parameter.Exposure]+.1);Invoke(window,"MarkEdited");Invoke(window,"SaveEdits");
-            Invoke(window,"Schedule",false,false);Ready(window);Capture(window,output,"save-error-after-preview");
-            check(window.RetrySave.IsVisible && Get<bool>(window,"editDirty"),"Successful preview does not clear the independent unsaved-adjustment error");Set(window,"editStore",store);Invoke(window,"SaveEdits");
-            check(!Get<bool>(window,"editDirty") && store.Find(source)!.Settings.SameAs(changed.Capture()),"Retry durably saves the changed value after storage is restored");
+            var store=window.EditStoreInstance!;var blocked=Path.Combine(output,"blocked-save");Directory.CreateDirectory(Path.Combine(blocked,"edits.json"));window.EditStoreInstance=new EditStore(blocked);
+            var changed=window.Settings;changed.Set(Parameter.Exposure,changed[Parameter.Exposure]+.1);window.MarkEditedForTests();window.SaveEditsForTests();
+            window.ScheduleForTests(false,false);Ready(window);Capture(window,output,"save-error-after-preview");
+            check(window.RetrySave.IsVisible && window.EditDirty,"Successful preview does not clear the independent unsaved-adjustment error");window.EditStoreInstance=store;window.SaveEditsForTests();
+            check(!window.EditDirty && store.Find(source)!.Settings.SameAs(changed.Capture()),"Retry durably saves the changed value after storage is restored");
             NeutralChecks(raw,output,check);
         } catch {
             try{Capture(window,output,"failure-before-close");}catch(Exception diagnostic){Console.WriteLine("Failure screenshot unavailable: "+diagnostic.Message);}
@@ -176,8 +171,9 @@ internal static class ViewComparisonChecks
     internal static void NeutralChecks(string raw,string output,Action<bool,string> check)
     {
         Directory.CreateDirectory(output);
+        var paths=TestWindowState.CreateIsolatedPaths(output);
         byte[] Pixels(BitmapSource bitmap){var bytes=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];new FormatConvertedBitmap(bitmap,PixelFormats.Bgra32,null,0).CopyPixels(bytes,bitmap.PixelWidth*4,0);return bytes;}
-        using var engine=new RenderEngine(0);var edited=new Adjustments();edited.Set(Parameter.Exposure,.8);
+        using var engine=new RenderEngine(0,appPaths:paths);var edited=new Adjustments();edited.Set(Parameter.Exposure,.8);
         var first=engine.RenderPreview(raw,edited,null,256,false,true,false);
         CheckHistogram(first.Neutral,check,"RAW neutral");CheckHistogram(first.Result,check,"RAW after");
         var expected=engine.Render(raw,new Adjustments(),null,256,statistics:false,clipping:false,viewportPreview:true)!;
@@ -193,27 +189,27 @@ internal static class ViewComparisonChecks
         CheckHistogram(resized.Neutral,check,"resized neutral");CheckHistogram(resized.Result,check,"resized after");
         check(!ReferenceEquals(geometry.Neutral,resized.Neutral) && Math.Max(resized.Neutral.Image.PixelWidth,resized.Neutral.Image.PixelHeight)==384,"Neutral reference demand changes produce the requested exact size");
         engine.RenderPreview(raw,edited,null,384,false,false,false);
-        check(Get<object?>(engine,"original")!=null,"Closing comparison retains a same-key neutral for temporary before reuse");
+        check(engine.HasOriginal,"Closing comparison retains a same-key neutral for temporary before reuse");
         engine.RenderPreview(raw,edited,null,256,false,false,false);
-        check(Get<object?>(engine,"original")==null,"A new demand releases the obsolete neutral even while comparison is closed");
+        check(!engine.HasOriginal,"A new demand releases the obsolete neutral even while comparison is closed");
         engine.RenderPreview(raw,edited,null,256,false,true,false);edited.Geometry=new();
         engine.RenderPreview(raw,edited,null,256,false,false,false);
-        check(Get<object?>(engine,"original")==null,"A composition change releases the obsolete neutral while comparison is closed");
+        check(!engine.HasOriginal,"A composition change releases the obsolete neutral while comparison is closed");
         var raster=Path.Combine(output,"neutral-raster.png");var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(first.Result.Image));using(var stream=File.Create(raster))encoder.Save(stream);
         var rasterEdit=new Adjustments();rasterEdit.Set(Parameter.Exposure,.7);var rasterFrame=engine.RenderPreview(raster,rasterEdit,null,192,false,true,false);
         CheckHistogram(rasterFrame.Neutral,check,"raster neutral");CheckHistogram(rasterFrame.Result,check,"raster after");
         var rasterDefault=engine.Render(raster,new Adjustments(),null,192,statistics:false,clipping:false,viewportPreview:true)!;
         check(Pixels(rasterFrame.Neutral.Image).SequenceEqual(Pixels(rasterDefault.Image)) && !Pixels(rasterFrame.Neutral.Image).SequenceEqual(Pixels(rasterFrame.Result.Image)),"Real raster before uses the sensor/none default without copying the adjusted exposure");
-        using var unavailable=new RenderEngine(0,statisticsAnalyzer:FailStatistics);
+        using var unavailable=new RenderEngine(0,appPaths:paths,statisticsAnalyzer:FailStatistics);
         foreach(var clipping in new[]{false,true}) {
             var frame=unavailable.Render(raster,rasterEdit,null,192,clipping:clipping,viewportPreview:true)!;
             check(Pixels(frame.Image).SequenceEqual(Pixels(rasterFrame.Result.Image)) && frame.Histogram.Length==0 && frame.Clipping==null,
                 "Native analysis failure retains current pixels and clears statistics/mask: clipping="+clipping);
         }
-        AnalysisRecoveryChecks(raster,rasterEdit,check);
+        AnalysisRecoveryChecks(raster,rasterEdit,paths,check);
         SourceIdentityChecks(output,check);
     }
-    private static void AnalysisRecoveryChecks(string raster,Adjustments settings,Action<bool,string> check)
+    private static void AnalysisRecoveryChecks(string raster,Adjustments settings,AppPaths paths,Action<bool,string> check)
     {
         foreach(var failingCalls in new[]{new[]{1},new[]{2},new[]{1,2}}) {
             var calls=0;
@@ -222,7 +218,7 @@ internal static class ViewComparisonChecks
                 return failingCalls.Contains(calls) ? FailStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask) :
                     RenderEngine.AnalyzeStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask);
             }
-            using var engine=new RenderEngine(0,statisticsAnalyzer:Analyze);
+            using var engine=new RenderEngine(0,appPaths:paths,statisticsAnalyzer:Analyze);
             var first=engine.RenderPreview(raster,settings,null,192,false,true,false);
             check(engine.CachedPreviewBytes==0,"Unavailable statistics do not populate the accepted-preview cache: "+string.Join(",",failingCalls));
             var recovered=engine.RenderPreview(raster,settings,null,192,false,true,false);
@@ -238,28 +234,28 @@ internal static class ViewComparisonChecks
     }
     private static void StatisticsFailureUi(MainWindow window,string output,Action<bool,string> check)
     {
-        var engine=Get<RenderEngine>(window,"engine");var previous=Get<RenderedImage>(window,"result");
+        var engine=window.EngineInstance!;var previous=window.CurrentResult!;
         var fail=true;
         int Analyze(ref Native.Buffer buffer,bool clipping,uint[] bins,out uint shadows,out uint highlights,out Native.Buffer mask)=>
             fail ? FailStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask) :
                 RenderEngine.AnalyzeStatistics(ref buffer,clipping,bins,out shadows,out highlights,out mask);
-        using var unavailable=new RenderEngine(0,statisticsAnalyzer:Analyze);
-        Set(window,"engine",unavailable);
+        using var unavailable=new RenderEngine(0,appPaths:window.Paths,statisticsAnalyzer:Analyze);
+        window.EngineInstance=unavailable;
         try {
-            Invoke(window,"Schedule",false,false);Ready(window);window.UpdateLayout();
-            var accepted=Get<RenderedImage>(window,"result");
-            check(!ReferenceEquals(previous,accepted) && accepted.Image.PixelWidth>0 && window.Histogram.Bins==null && window.ClipStats.Text==Loc.Text("统计不可用") && !Get<bool>(window,"renderFailed"),"Actual WPF accepts a photo with unavailable statistics without keeping the prior bins or failing the photo");
+            window.ScheduleForTests(false,false);Ready(window);window.UpdateLayout();
+            var accepted=window.CurrentResult!;
+            check(!ReferenceEquals(previous,accepted) && accepted.Image.PixelWidth>0 && window.Histogram.Bins==null && window.ClipStats.Text==Loc.Text("统计不可用") && !window.RenderFailed,"Actual WPF accepts a photo with unavailable statistics without keeping the prior bins or failing the photo");
             Capture(window,output,"statistics-unavailable");
-            fail=false;Invoke(window,"Schedule",false,false);Ready(window);
+            fail=false;window.ScheduleForTests(false,false);Ready(window);
             check(window.Histogram.Bins?.Length==768 && window.HistogramSource.Text==Loc.Text("调整后"),"Same-engine same-settings statistics retry restores current after bins");
-        } finally {Set(window,"engine",engine);Invoke(window,"Schedule",false,false);Ready(window);}
+        } finally {window.EngineInstance=engine;window.ScheduleForTests(false,false);Ready(window);}
     }
     internal static void SourceIdentityChecks(string output,Action<bool,string> check)
     {
         Directory.CreateDirectory(output);var path=Path.Combine(output,"same-stamp.tif");
         void Write(byte value){var pixels=Enumerable.Repeat(new byte[]{value,value,value,255},32*32).SelectMany(x=>x).ToArray();var encoder=new TiffBitmapEncoder{Compression=TiffCompressOption.None};encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(32,32,96,96,PixelFormats.Bgra32,null,pixels,32*4)));using(var stream=File.Create(path))encoder.Save(stream);}
         byte[] Pixels(RenderedImage frame){var bytes=new byte[frame.Image.PixelWidth*frame.Image.PixelHeight*4];new FormatConvertedBitmap(frame.Image,PixelFormats.Bgra32,null,0).CopyPixels(bytes,frame.Image.PixelWidth*4,0);return bytes;}
-        Write(40);var previous=OriginalIdentity.Read(path);using var engine=new RenderEngine(0);
+        Write(40);var previous=OriginalIdentity.Read(path);using var engine=new RenderEngine(0,appPaths:TestWindowState.CreateIsolatedPaths(output));
         var first=engine.RenderPreview(path,new Adjustments(),null,32,false,true,false);
         Write(200);File.SetLastWriteTimeUtc(path,new DateTime(previous.Modified,DateTimeKind.Utc));File.SetCreationTimeUtc(path,new DateTime(previous.Created,DateTimeKind.Utc).AddSeconds(2));
         var current=OriginalIdentity.Read(path);check(current.Length==previous.Length && current.Modified==previous.Modified && current.Created!=previous.Created,"Native raster replacement fixture changes only creation identity while preserving length and modified time");
@@ -268,19 +264,19 @@ internal static class ViewComparisonChecks
     }
     private static void ReferenceReadinessChecks(MainWindow window,string source,string output,Action<bool,string> check)
     {
-        bool Current()=>(bool)typeof(MainWindow).GetProperty("ReferenceCurrent",Private)!.GetValue(window)!;
-        var old=Get<RenderedImage>(window,"neutralResult");
-        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));Invoke(window,"Schedule",false,false);Ready(window);
+        bool Current()=>window.ReferenceCurrentForTests;
+        var old=window.NeutralResult;
+        File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(2));window.ScheduleForTests(false,false);Ready(window);
         Capture(window,output,"source-replaced-after");
-        check(!Current() && Get<RenderedImage?>(window,"neutralResult")==null,"An accepted after from a replaced same-path source releases the old neutral before reopening comparison");
-        check(Get<object?>(Get<RenderEngine>(window,"engine"),"original")==null,"The same-source replacement also releases the obsolete engine reference while comparison is closed");
+        check(!Current() && window.NeutralResult==null,"An accepted after from a replaced same-path source releases the old neutral before reopening comparison");
+        check(!window.EngineInstance!.HasOriginal,"The same-source replacement also releases the obsolete engine reference while comparison is closed");
         Click(window.CompareButton);check(!Current(),"Reopening comparison cannot briefly publish the replaced source's neutral");Ready(window);
-        check(Current() && !ReferenceEquals(old,Get<RenderedImage>(window,"neutralResult")),"Comparison accepts a new same-source neutral and after together");
-        Click(window.CompareButton);Invoke(window,"ActualClicked",window,new RoutedEventArgs());Ready(window);
-        check(!Current() && Get<RenderedImage?>(window,"neutralResult")==null,"A single-view native-size after does not make the previous smaller neutral ready");
+        check(Current() && !ReferenceEquals(old,window.NeutralResult),"Comparison accepts a new same-source neutral and after together");
+        Click(window.CompareButton);window.ActualClickedForTests(window,new RoutedEventArgs());Ready(window);
+        check(!Current() && window.NeutralResult==null,"A single-view native-size after does not make the previous smaller neutral ready");
         Click(window.CompareButton);check(!Current(),"A native-size comparison waits for its matching reference demand");Ready(window);Capture(window,output,"native-demand-reference");
-        check(Current() && Get<NeutralReferenceKey>(window,"acceptedReference").Edge==0,"Native-size comparison publishes a matching native neutral");
-        Click(window.CompareButton);Invoke(window,"FitClicked",window,new RoutedEventArgs());Ready(window);
+        check(Current() && window.AcceptedReference?.Edge==0,"Native-size comparison publishes a matching native neutral");
+        Click(window.CompareButton);window.FitClickedForTests(window,new RoutedEventArgs());Ready(window);
     }
     private static void Capture(MainWindow window,string output,string name)
     {
@@ -288,7 +284,7 @@ internal static class ViewComparisonChecks
         var state=new {photoArea=window.PhotoArea.RenderSize,dock=window.AdjustmentPanel.ActualWidth,busy=window.BusyIndicator.ActualHeight,windowState=window.WindowState.ToString(),font=window.FontSize,dpi=VisualTreeHelper.GetDpi(window).DpiScaleX,
             neutral=RectValue(window.NeutralCanvas.ImageBounds),result=RectValue(window.ResultCanvas.ImageBounds),split=window.ResultCanvas.Divider,
             labels=new[]{window.NeutralLabel,window.FilmLabel}.Select(label=>new {label.Name,visible=label.IsVisible,bounds=RectValue(label.TransformToAncestor(window.PhotoArea).TransformBounds(new Rect(label.RenderSize)))}),
-            before=window.ResultCanvas.ShowingBefore,mode=Get<EditorViewState>(window,"view").PreferredMode.ToString()};
+            before=window.ResultCanvas.ShowingBefore,mode=window.ViewState.PreferredMode.ToString()};
         File.WriteAllText(Path.Combine(output,name+".bounds.json"),JsonSerializer.Serialize(state));PhotoFeatureChecks.Screenshot(window,Path.Combine(output,name+".png"));
     }
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x,int y);
@@ -301,13 +297,13 @@ internal static class ViewComparisonChecks
     private static void Pump(int milliseconds){var time=Stopwatch.StartNew();InteractionChecks.PumpUntil(()=>time.ElapsedMilliseconds>=milliseconds);}
     private static void PointerChecks(MainWindow window,string output,Action<bool,string> check)
     {
-        var view=Get<EditorViewState>(window,"view");var activated=window.Activate();var focused=window.ResultCanvas.Focus();var bounds=window.ResultCanvas.VisibleImageBounds;
+        var view=window.ViewState;var activated=window.Activate();var focused=window.ResultCanvas.Focus();var bounds=window.ResultCanvas.VisibleImageBounds;
         var center=window.ResultCanvas.PointToScreen(new(bounds.X+bounds.Width/2,bounds.Y+bounds.Height/2));
         var trace=new List<object>();var timer=Stopwatch.StartNew();var keyDowns=0;var keyUps=0;var lastVirtualKey=0;var lastReleasedKey=0;var lastKeyRepeat=false;
         void Await(Func<bool> condition,string message){var wait=Stopwatch.StartNew();InteractionChecks.PumpUntil(()=>condition() || wait.ElapsedMilliseconds>=3000);check(condition(),message);}
         void Trace(string kind,object? source=null)=>trace.Add(new {kind,source=source?.ToString(),elapsed=timer.ElapsedMilliseconds,activated,focused,window.IsActive,window.ResultCanvas.IsMouseCaptured,window.ResultCanvas.IsKeyboardFocusWithin,
             foreground=GetForegroundWindow().ToInt64(),target=new WindowInteropHelper(window).Handle.ToInt64(),hit=WindowFromPoint(new ScreenPoint{X=(int)center.X,Y=(int)center.Y}).ToInt64(),center.X,center.Y,
-            mouse=Mouse.LeftButton.ToString(),nativeLeft=(GetAsyncKeyState(1)&0x8000)!=0,over=Mouse.DirectlyOver?.ToString(),keyboard=Keyboard.FocusedElement?.ToString(),modifiers=Keyboard.Modifiers.ToString(),blocked=typeof(MainWindow).GetProperty("ViewInputBlocked",Private)!.GetValue(window),position=Mouse.GetPosition(window.ResultCanvas),drag=Get<Point?>(window.ResultCanvas,"drag"),holdTimer=Get<DispatcherTimer>(window.ResultCanvas,"holdTimer").IsEnabled,view.HoldingBefore,window.ResultCanvas.ShowingBefore});
+            mouse=Mouse.LeftButton.ToString(),nativeLeft=(GetAsyncKeyState(1)&0x8000)!=0,over=Mouse.DirectlyOver?.ToString(),keyboard=Keyboard.FocusedElement?.ToString(),modifiers=Keyboard.Modifiers.ToString(),blocked=window.ViewInputBlockedForTests,position=Mouse.GetPosition(window.ResultCanvas),drag=window.ResultCanvas.DragPoint,holdTimer=window.ResultCanvas.HoldTimer.IsEnabled,view.HoldingBefore,window.ResultCanvas.ShowingBefore});
         ProcessInputEventHandler keyboardTrace=(_,e)=>{
             if(e.StagingItem.Input is not KeyEventArgs key)return;
             var virtualKey=KeyInterop.VirtualKeyFromKey(key.Key==Key.ImeProcessed ? key.ImeProcessedKey : key.Key==Key.System ? key.SystemKey : key.Key);
@@ -340,8 +336,8 @@ internal static class ViewComparisonChecks
         KeyDown(0xdc);check(view.HoldingBefore,"Native backslash down temporarily shows before");keybd_event(0xdc,0,2,UIntPtr.Zero);Await(()=>!view.HoldingBefore,"Native backslash key-up restores after");
         MouseHold();check(view.HoldingBefore,"Native before is active before panning");SetCursorPos((int)center.X+40,(int)center.Y+20);Await(()=>!view.HoldingBefore,"Native pan cancels before while the button remains down");Capture(window,output,"native-pan-cancel");
         check(!view.HoldingBefore,"Native pan cancels temporary before before moving the shared photo viewport");mouse_event(4,0,0,0,UIntPtr.Zero);Pump(40);
-        window.ValueText.Focus();var info=Get<PhotoInfoMode>(window,"photoInfoMode");KeyDown(0xdc);check(!view.HoldingBefore,"Native backslash down inside numeric text remains text input before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);KeyDown(0x49);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(40);
-        check(!view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==info,"Native backslash and I inside a text box remain text input rather than viewing commands");
+        window.ValueText.Focus();var info=window.PhotoInfoModeValue;KeyDown(0xdc);check(!view.HoldingBefore,"Native backslash down inside numeric text remains text input before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);KeyDown(0x49);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(40);
+        check(!view.HoldingBefore && window.PhotoInfoModeValue==info,"Native backslash and I inside a text box remain text input rather than viewing commands");
         // 先用真实 Escape 结束输入法组合，再开始下一段独立的画布快捷键操作。
         keybd_event(0x1b,0,0,UIntPtr.Zero);keybd_event(0x1b,0,2,UIntPtr.Zero);Pump(120);
         window.OrdinaryParameter.CancelInput();window.ResultCanvas.Focus();
@@ -351,8 +347,8 @@ internal static class ViewComparisonChecks
             menu.PlacementTarget=ReferenceEquals(menu,window.FileTreeContextMenu) ? window.Files : window.ResultCanvas;menu.IsOpen=true;Pump(60);
             Capture(window,output,"native-menu-"+(ReferenceEquals(menu,window.FileTreeContextMenu) ? "tree" : ReferenceEquals(menu,window.ExportButton.ContextMenu) ? "export" : "zoom"));
             check(!view.HoldingBefore,"The real context menu Opened event cancels an active before hold");keybd_event(0xdc,0,2,UIntPtr.Zero);
-            var mode=Get<PhotoInfoMode>(window,"photoInfoMode");KeyDown(0xdc);check(!view.HoldingBefore,"Native backslash down stays excluded inside the open menu before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);KeyDown(0x49);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(60);
-            check(menu.IsOpen && !view.HoldingBefore && Get<PhotoInfoMode>(window,"photoInfoMode")==mode,"Native backslash and I remain excluded while a zoom/export/tree menu is active");CloseMenu(menu);
+            var mode=window.PhotoInfoModeValue;KeyDown(0xdc);check(!view.HoldingBefore,"Native backslash down stays excluded inside the open menu before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);KeyDown(0x49);keybd_event(0x49,0,2,UIntPtr.Zero);Pump(60);
+            check(menu.IsOpen && !view.HoldingBefore && window.PhotoInfoModeValue==mode,"Native backslash and I remain excluded while a zoom/export/tree menu is active");CloseMenu(menu);
         }
         window.ResultCanvas.Focus();SetCursorPos((int)center.X,(int)center.Y);MouseHold();check(view.HoldingBefore,"Native before is active before losing mouse capture");Mouse.Capture(null);Pump(40);
         check(!view.HoldingBefore,"Losing actual photo mouse capture cancels before");mouse_event(4,0,0,0,UIntPtr.Zero);
@@ -368,7 +364,7 @@ internal static class ViewComparisonChecks
         KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before minimizing");window.WindowState=WindowState.Minimized;Await(()=>!view.HoldingBefore,"Native minimize deactivation cancels hold before release");check(!view.HoldingBefore,"Minimizing the real window cancels before");keybd_event(0xdc,0,2,UIntPtr.Zero);
         Await(()=>(GetAsyncKeyState(0xdc)&0x8000)==0,"Native backslash is released while the window is minimized");
         window.WindowState=WindowState.Normal;window.Activate();Ready(window);
-        window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before reopening the source");window.OpenFile(Get<string>(window,"file"));Ready(window);Capture(window,output,"native-source-cancel");
+        window.ResultCanvas.Focus();KeyDown(0xdc);check(view.HoldingBefore,"Native before is active before reopening the source");window.OpenFile(window.CurrentFile!);Ready(window);Capture(window,output,"native-source-cancel");
         check(!view.HoldingBefore && !view.Enabled,"Reopening even the same photo cancels native held-before state before key-up");keybd_event(0xdc,0,2,UIntPtr.Zero);
         } finally {keybd_event(0xdc,0,2,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);Mouse.Capture(null);Trace("FinallyReleased");InputManager.Current.PostProcessInput-=keyboardTrace;File.WriteAllText(Path.Combine(output,"pointer.trace.json"),JsonSerializer.Serialize(trace));}
     }

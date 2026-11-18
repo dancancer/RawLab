@@ -27,7 +27,7 @@ public sealed class UpdateStore(string directory)
 
     public string DirectoryPath { get; } = directory;
     public string StatePath => Path.Combine(DirectoryPath, "state.json");
-    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "Updates");
+    public static string DefaultDirectory => AppPaths.Default.UpdatesDirectory;
     public UpdatePreferences Load(bool automaticCheck)
     {
         byte[] data;

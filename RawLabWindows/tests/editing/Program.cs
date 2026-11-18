@@ -391,11 +391,7 @@ try
     ProtectedProcessingChecks(root);
     // Tool scope must own the full logical tool, independently from its containing group.
     Check(Enum.IsDefined(typeof(EditorResetKind), 4), "Current-tool reset is a first-class scope");
-    EditorResetScope Tool(EditorAdjustmentTool tool) {
-        var scope = new EditorResetScope((EditorResetKind)4);
-        typeof(EditorResetScope).GetProperty("Tool")!.SetValue(scope, tool);
-        return scope;
-    }
+    EditorResetScope Tool(EditorAdjustmentTool tool) => new((EditorResetKind)4, Tool: tool);
     var toolState = new Adjustments { Processing = ProcessingIdentity.Legacy };
     toolState.ResolveWhiteBalance((5200, 8));
     toolState.Set(Parameter.Exposure, .7); toolState.Set(Parameter.Contrast, 23);

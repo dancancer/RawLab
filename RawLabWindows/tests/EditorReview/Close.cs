@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,7 +18,7 @@ internal static partial class EditorReviewChecks
                 bool? batchFirst=scenario==0 ? null : scenario==1;
                 var recover=scenario==3;
                 var window=Open("close-pending-"+batchFirst+"-"+recover);var held=new HeldContext(SynchronizationContext.Current!);
-                var scheduler=Get<object>(window,"scheduler");Task? preflight=null;
+                Task? preflight=null;
                 FileStream? journalLock=null;
                 using var releaseBatch=new ManualResetEventSlim();
                 try
@@ -28,53 +27,53 @@ internal static partial class EditorReviewChecks
                     if(batchFirst!=null)
                     {
                         var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
-                        Get<BatchJournal>(window,"batchJournal").Save(job);Invoke(window,"ShowBatch",job,false);batch=Get<BatchExportWindow>(window,"batchWindow");
+                        window.BatchJournalInstance.Save(job);window.ShowBatchForTests(job,false);batch=window.BatchWindowInstance;
                     }
                     held.Capture(()=>{window.ValueSlider.Value=.6;window.ValueSlider.Value=.65;});
                     InteractionChecks.PumpUntil(()=>held.Pending);
-                    var queued=Get<object?>(scheduler,"pending");
-                    check(queued!=null && scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)!=null,
+                    var queued=window.SchedulerPending;
+                    check(queued!=null && window.SchedulerHasActive,
                         "Close fixture has a real active render and a distinct queued preview: "+batchFirst);
                     if(batch!=null)preflight=batch.AddInputs(BlockedInputs());
                     if(recover)
                     {
-                        check(!Get<bool>(window,"previewDeferred") && Get<int>(window,"previewLongEdge")==Get<int>(window,"requestedPreviewLongEdge"),
+                        check(!window.PreviewDeferred && window.PreviewLongEdge==window.RequestedPreviewLongEdge,
                             "Queued-close recovery has no resize or deferred-content fallback to hide a stranded pending request");
-                        journalLock=new FileStream(Path.Combine(Get<BatchJournal>(window,"batchJournal").DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read);
+                        journalLock=new FileStream(Path.Combine(window.BatchJournalInstance.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read);
                     }
-                    var revision=scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler);
+                    var revision=window.SchedulerRevision;
                     CloseApproved(window);
-                    check(window.IsVisible && !window.IsEnabled && !Get<bool>(window,"closeFinished"),
+                    check(window.IsVisible && !window.IsEnabled && !window.CloseFinished,
                         "Close waits for the active worker even with another preview queued: "+batchFirst);
                     if(batchFirst==true){releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);}
                     held.Release();
-                    InteractionChecks.PumpUntil(()=>scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)==null);
+                    InteractionChecks.PumpUntil(()=>!window.SchedulerHasActive);
                     if(batchFirst==false){releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight!.IsCompleted);}
                     if(recover)
                     {
-                        check(window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") && batch!.CloseFailed,
+                        check(window.IsVisible && window.IsEnabled && !window.ClosingFlag && batch!.CloseFailed,
                             "Journal cleanup failure restores the owner after its active render already retired");
-                        check((!(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)! || scheduler.GetType().GetProperty("Active")!.GetValue(scheduler)!=null) &&
-                            Equals(revision,scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)),
+                        check((!window.SchedulerBusy || window.SchedulerHasActive) &&
+                            revision==window.SchedulerRevision,
                             "Failed close resumes the existing queued preview without a new revision or stranded busy state");
                         journalLock!.Dispose();journalLock=null;
                         InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-                        var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
-                        var expected=oracle.Render(photo,Get<Adjustments>(window,"settings").Clone(),Get<string?>(window,"lut"),
+                        var actual=window.CurrentResult!;using var oracle=new RenderEngine(0,appPaths:window.Paths);
+                        var expected=oracle.Render(photo,window.Settings.Clone(),window.CurrentLut,
                             Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight),clipping:false,viewportPreview:true)!;
                         check(Pixels(actual.Image).SequenceEqual(Pixels(expected.Image)),"Recovered queued preview matches the accepted settings and independent CPU pixels");
                         window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
                         continue;
                     }
-                    check(!window.IsVisible && Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null &&
-                        ReferenceEquals(queued,Get<object?>(scheduler,"pending")) &&
-                        Equals(revision,scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)),
+                    check(!window.IsVisible && window.CloseFinished && window.EngineInstance==null &&
+                        ReferenceEquals(queued,window.SchedulerPending) &&
+                        revision==window.SchedulerRevision,
                         "Last busy owner closes without starting the queued preview: "+batchFirst);
                 }
                 finally
                 {
                     journalLock?.Dispose();held.Release();releaseBatch.Set();InteractionChecks.PumpUntil(()=>preflight?.IsCompleted ?? true);
-                    if(window.IsVisible){Invoke(window,"FinishClose");window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
+                    if(window.IsVisible){window.FinishCloseForTests();window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);}
                 }
                 IEnumerable<string> BlockedInputs(){releaseBatch.Wait();yield return photo;}
             }
@@ -83,42 +82,42 @@ internal static partial class EditorReviewChecks
         {
             var window=Open("close-journal-retry");var held=new HeldContext(SynchronizationContext.Current!);
             var folder=new LibraryEntry(Path.GetDirectoryName(photo)!,true);
-            Get<Library>(window,"library").Roots.Add(folder);
+            window.LibraryInstance.Roots.Add(folder);
             if (!window.LibraryPanel.IsVisible) PhotoFeatureChecks.Click(window.LibraryToggleButton);
             InteractionChecks.PumpUntil(()=>window.FolderPhotoCount.Text.Length>0);
             check(folder.Photos.Count==2 && folder.Photos.All(entry=>entry.Path==photo || entry.Path==other),
                 "Close recovery library excludes earlier exported images and contains only its two source photos");
             var visible=folder.Photos.First(entry=>entry.Path==photo);
             InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);
-            check(Get<HashSet<LibraryEntry>>(window,"visibleThumbnails").Contains(visible),"Close recovery starts with an actually visible loaded library thumbnail");
-            var journal=Get<BatchJournal>(window,"batchJournal");var engine=Get<object>(window,"engine");
+            check(window.VisibleThumbnails.Contains(visible),"Close recovery starts with an actually visible loaded library thumbnail");
+            var journal=window.BatchJournalInstance;var engine=window.EngineInstance;
             var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);
             using var releasePreflight=new ManualResetEventSlim();
             Task? preflight=null;var recovered=false;var reported=false;
             try
             {
-                Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
+                window.ShowBatchForTests(job,false);var batch=window.BatchWindowInstance!;
                 batch.BusyChanged+=active=>{
                     if(active || !batch.CloseFailed)return;
-                    recovered=window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") &&
-                        !Get<bool>(window,"closeFinished") && ReferenceEquals(engine,Get<object?>(window,"engine"));
+                    recovered=window.IsVisible && window.IsEnabled && !window.ClosingFlag &&
+                        !window.CloseFinished && ReferenceEquals(engine,window.EngineInstance);
                     reported=batch.Job.Error!=null && window.Status.Text==batch.Job.Error;
                 };
                 held.Capture(()=>preflight=batch.AddInputs(BlockedInputs()));releasePreflight.Set();InteractionChecks.PumpUntil(()=>held.Pending);
-                var previousEdge=Get<int>(window,"previewLongEdge");window.ResultCanvas.Viewport!.Magnify(.5);var edge=window.ResultCanvas.PreviewLongEdge;
-                check(edge>0 && edge!=previousEdge && Get<int>(window,"requestedPreviewLongEdge")==edge && !window.ExportPng.IsEnabled,
+                var previousEdge=window.PreviewLongEdge;window.ResultCanvas.Viewport!.Magnify(.5);var edge=window.ResultCanvas.PreviewLongEdge;
+                check(edge>0 && edge!=previousEdge && window.RequestedPreviewLongEdge==edge && !window.ExportPng.IsEnabled,
                     "Journal retry fixture retains a genuinely changed viewport request while preflight is busy");
                 using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
                 {
                     window.Close();
                     // The update guard dispatches the actual close request to the batch window.
-                    InteractionChecks.PumpUntil(() => Get<bool>(batch, "closeRequested") || !window.IsVisible);
+                    InteractionChecks.PumpUntil(() => batch.CloseRequested || !window.IsVisible);
                     window.Dispatcher.Invoke(() => { }, DispatcherPriority.Normal);
-                    var ownerClosing = Get<bool>(window, "closing");
-                    var shutdownStarted = Get<bool>(window, "analyticsDisposed");
+                    var ownerClosing = window.ClosingFlag;
+                    var shutdownStarted = window.AnalyticsDisposed;
                     check(window.IsVisible && !window.IsEnabled && ownerClosing && !shutdownStarted &&
                         batch.IsVisible && batch.Busy && !preflight!.IsCompleted &&
-                        ReferenceEquals(engine, Get<object?>(window, "engine")),
+                        ReferenceEquals(engine, window.EngineInstance),
                         $"Owner waits for preflight before attempting journal cleanup (visible={window.IsVisible}, " +
                         $"closing={ownerClosing}, shutdownStarted={shutdownStarted}, batchBusy={batch.Busy})");
                     check(visible.Thumbnail==null,"Deferred owner close releases the visible library thumbnail");
@@ -126,21 +125,21 @@ internal static partial class EditorReviewChecks
                     check(batch.IsVisible && batch.CloseFailed && !batch.Discarded && recovered,"Journal cleanup failure restores the real owner without disposing its engine");
                     check(reported,"Journal cleanup failure reaches the restored main-window error state");
                     InteractionChecks.PumpUntil(()=>visible.Thumbnail!=null);
-                    check(Get<HashSet<LibraryEntry>>(window,"visibleThumbnails").Contains(visible),"Failed close reloads visible library thumbnails without scroll or resize");
+                    check(window.VisibleThumbnails.Contains(visible),"Failed close reloads visible library thumbnails without scroll or resize");
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-                    check(window.AdjustmentPanel.IsEnabled && !Get<bool>(window,"closing"),"Failed owner close resumes an exact preview and editing");
-                    var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
-                    var expected=oracle.Render(photo,Get<Adjustments>(window,"settings").Clone(),Get<string?>(window,"lut"),edge,clipping:false,viewportPreview:true)!;
+                    check(window.AdjustmentPanel.IsEnabled && !window.ClosingFlag,"Failed owner close resumes an exact preview and editing");
+                    var actual=window.CurrentResult!;using var oracle=new RenderEngine(0,appPaths:window.Paths);
+                    var expected=oracle.Render(photo,window.Settings.Clone(),window.CurrentLut,edge,clipping:false,viewportPreview:true)!;
                     check(Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight)==edge && Pixels(actual.Image).SequenceEqual(Pixels(expected.Image)),
                         "Failed owner close restores the deferred viewport size and exact preview pixels");
-                    var before=Get<Adjustments>(window,"settings")[Parameter.Exposure];window.ValueSlider.Value+=.025;
-                    check(Get<Adjustments>(window,"settings")[Parameter.Exposure]>before,"Restored owner accepts an actual adjustment after cleanup failure");
+                    var before=window.Settings[Parameter.Exposure];window.ValueSlider.Value+=.025;
+                    check(window.Settings[Parameter.Exposure]>before,"Restored owner accepts an actual adjustment after cleanup failure");
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
                 }
                 window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-                check(Get<string>(window,"file")==other,"Restored owner permits photo switching after cleanup failure");
+                check(window.CurrentFile==other,"Restored owner permits photo switching after cleanup failure");
                 window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
-                check(batch.Discarded && journal.Load()==null && Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null,
+                check(batch.Discarded && journal.Load()==null && window.CloseFinished && window.EngineInstance==null,
                     "Retry closes the recovered owner and discards the journal after its lock is released");
             }
             finally
@@ -152,13 +151,13 @@ internal static partial class EditorReviewChecks
         }
         void CloseIdleJournalRetry(bool foreground)
         {
-            var window=Open("close-idle-"+foreground);var journal=Get<BatchJournal>(window,"batchJournal");
-            var engine=Get<object>(window,"engine");var held=new HeldContext(SynchronizationContext.Current!);Task? import=null;
-            var adjustment=Get<Adjustments>(window,"settings");adjustment.Denoise=DenoiseSettings.Clean;Invoke(window,"Schedule",false,false);
+            var window=Open("close-idle-"+foreground);var journal=window.BatchJournalInstance;
+            var engine=window.EngineInstance;var held=new HeldContext(SynchronizationContext.Current!);Task? import=null;
+            var adjustment=window.Settings;adjustment.Denoise=DenoiseSettings.Clean;window.ScheduleForTests(false,false);
             InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job,false);
-            var batch=Get<BatchExportWindow>(window,"batchWindow");var previous=Get<int>(window,"previewLongEdge");
-            var look=Get<string?>(window,"lut");var timer=Get<DispatcherTimer>(window,"previewResize");
+            var job=BatchJob.Create(photo,adjustment.Capture(),null,"Neutral");journal.Save(job);window.ShowBatchForTests(job,false);
+            var batch=window.BatchWindowInstance!;var previous=window.PreviewLongEdge;
+            var look=window.CurrentLut;var timer=window.PreviewResizeTimer;
             try
             {
                 using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
@@ -167,11 +166,11 @@ internal static partial class EditorReviewChecks
                     check(timer.IsEnabled && edge!=previous && !window.ExportPng.IsEnabled,"Idle-close fixture has a real pending denoise resize: "+foreground);
                     if(foreground){look=Path.Combine(repo,"lutools","flog-2-new","FLog2_to_Velvia_65grid_V.1.00.cube");held.Capture(()=>import=window.ImportLookFiles([look]));}
                     CloseApproved(window);
-                    check(window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing") && !Get<bool>(window,"closeFinished") &&
-                        batch.IsVisible && batch.CloseFailed && !batch.Busy && !batch.Discarded && ReferenceEquals(engine,Get<object>(window,"engine")),
+                    check(window.IsVisible && window.IsEnabled && !window.ClosingFlag && !window.CloseFinished &&
+                        batch.IsVisible && batch.CloseFailed && !batch.Busy && !batch.Discarded && ReferenceEquals(engine,window.EngineInstance),
                         "Synchronous journal failure cancels owner close without disposing its engine: "+foreground);
-                    var scheduler=Get<object>(window,"scheduler");var rendering=(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!;
-                    if(foreground)check(!timer.IsEnabled && !rendering && Get<int>(window,"requestedPreviewLongEdge")==edge,
+                    var rendering=window.SchedulerBusy;
+                    if(foreground)check(!timer.IsEnabled && !rendering && window.RequestedPreviewLongEdge==edge,
                         "Synchronous close failure retains the pending size without rendering during foreground work");
                     else check(timer.IsEnabled || rendering,"Synchronous close failure resubmits the pending resize without another input");
                     check(window.Status.Text==batch.Job.Error,"Synchronous journal failure reaches the main-window error state: "+foreground);
@@ -182,17 +181,17 @@ internal static partial class EditorReviewChecks
                         held.Release();InteractionChecks.PumpUntil(()=>import!.IsCompleted);import!.GetAwaiter().GetResult();
                     }
                     InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-                    var actual=Get<RenderedImage>(window,"result");using var oracle=new RenderEngine(0);
+                    var actual=window.CurrentResult!;using var oracle=new RenderEngine(0,appPaths:window.Paths);
                     var expected=oracle.Render(photo,adjustment.Clone(),look,edge,clipping:false,viewportPreview:true)!;
-                    check(Get<int>(window,"previewLongEdge")==edge && !timer.IsEnabled && Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight)==edge &&
+                    check(window.PreviewLongEdge==edge && !timer.IsEnabled && Math.Max(actual.Image.PixelWidth,actual.Image.PixelHeight)==edge &&
                         Pixels(actual.Image).SequenceEqual(Pixels(expected.Image)),"Synchronous close failure resumes exact resized pixels: "+foreground);
                     check(window.AdjustmentPanel.IsEnabled && window.BusyIndicator.Visibility==Visibility.Collapsed && !batch.Job.Started,
                         "Synchronous close failure restores editing and clears stale busy state: "+foreground);
                 }
                 window.OpenFile(other);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-                check(Get<string>(window,"file")==other,"Synchronous close recovery permits photo switching: "+foreground);
+                check(window.CurrentFile==other,"Synchronous close recovery permits photo switching: "+foreground);
                 window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);
-                check(batch.Discarded && journal.Load()==null && Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null,
+                check(batch.Discarded && journal.Load()==null && window.CloseFinished && window.EngineInstance==null,
                     "Synchronous close retries successfully after releasing the journal: "+foreground);
             }
             finally
@@ -204,12 +203,12 @@ internal static partial class EditorReviewChecks
         void CloseRunning()
         {
             var window=Open("close-running");var held=new HeldContext(SynchronizationContext.Current!);
-            var journal=Get<BatchJournal>(window,"batchJournal");var engine=Get<object>(window,"engine");
+            var journal=window.BatchJournalInstance;var engine=window.EngineInstance;
             var destination=Path.Combine(output,"running-output");Directory.CreateDirectory(destination);
             var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
             job.Format=ExportFormat.Png;job.LongEdge=128;job.OutputDirectory=destination;
             job.Items=[BatchItem.Create(photo) with{Selected=true},BatchItem.Create(other) with{Selected=true}];journal.Save(job);
-            Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            window.ShowBatchForTests(job,false);var batch=window.BatchWindowInstance!;
             using var progress=new BatchProgressGate(window.Dispatcher);
             try
             {
@@ -218,22 +217,22 @@ internal static partial class EditorReviewChecks
                 check(batch.Running && running.Items[0].Status==BatchStatus.Running && running.Items[1].Status==BatchStatus.Waiting,
                     "Running-close fixture pauses the real worker after its first journaled item starts");
                 CloseApproved(window);
-                check(window.IsVisible && !window.IsEnabled && Get<bool>(window,"closing") && !Get<bool>(window,"closeFinished") &&
-                    ReferenceEquals(engine,Get<object?>(window,"engine")),"Owner close waits for the running batch and retains the render engine");
-                check(Get<CancellationTokenSource>(batch,"cancellation").IsCancellationRequested,"Owner close requests stop-after-current-item on the real batch");
+                check(window.IsVisible && !window.IsEnabled && window.ClosingFlag && !window.CloseFinished &&
+                    ReferenceEquals(engine,window.EngineInstance),"Owner close waits for the running batch and retains the render engine");
+                check(batch.Cancellation.IsCancellationRequested,"Owner close requests stop-after-current-item on the real batch");
                 progress.Release();InteractionChecks.PumpUntil(()=>held.Pending);
                 var completed=journal.Load()!;var first=completed.Items[0].Output;
                 check(completed.Cancelled && completed.SucceededCount==1 && completed.Items[1].Status==BatchStatus.Waiting &&
                     Directory.GetFiles(destination,"*.png").Length==1 && first!=null && File.ReadAllBytes(first)[24]==16,
                     "Running close publishes the current native PNG and leaves the next item unprocessed");
-                check(window.IsVisible && batch.Running && ReferenceEquals(engine,Get<object?>(window,"engine")),
+                check(window.IsVisible && batch.Running && ReferenceEquals(engine,window.EngineInstance),
                     "Owner remains alive until the batch completion callback is released");
                 held.Release();InteractionChecks.PumpUntil(()=>!window.IsVisible);
                 var saved=journal.Load()!;
                 check(saved.Started && saved.Cancelled && saved.SucceededCount==1 && saved.RemainingCount==1 &&
                     saved.Items[0].Output==first && File.Exists(first) && !Directory.GetFiles(destination,".rawlab-*").Any(),
                     "Deferred running close preserves the completed output and recoverable journal without staging files");
-                check(Get<bool>(window,"closeFinished") && Get<object?>(window,"engine")==null && !batch.IsVisible,
+                check(window.CloseFinished && window.EngineInstance==null && !batch.IsVisible,
                     "Running batch completion finishes owner close and releases the engine exactly at the end");
             }
             finally
@@ -244,21 +243,21 @@ internal static partial class EditorReviewChecks
         }
         void CloseIdleNoop()
         {
-            var window=Open("close-idle-noop");var journal=Get<BatchJournal>(window,"batchJournal");
-            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);Invoke(window,"ShowBatch",job,false);
-            var batch=Get<BatchExportWindow>(window,"batchWindow");
-            var scheduler=Get<object>(window,"scheduler");long Revision()=>(long)scheduler.GetType().GetProperty("Revision")!.GetValue(scheduler)!;
-            var revision=Revision();var previous=Get<RenderedImage>(window,"result");
+            var window=Open("close-idle-noop");var journal=window.BatchJournalInstance;
+            var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");journal.Save(job);window.ShowBatchForTests(job,false);
+            var batch=window.BatchWindowInstance!;
+            long Revision()=>window.SchedulerRevision;
+            var revision=Revision();var previous=window.CurrentResult!;
             try
             {
-                check(!Get<DispatcherTimer>(window,"previewResize").IsEnabled && Get<int>(window,"previewLongEdge")==Get<int>(window,"requestedPreviewLongEdge"),"No-op close fixture has no pending viewport resize");
+                check(!window.PreviewResizeTimer.IsEnabled && window.PreviewLongEdge==window.RequestedPreviewLongEdge,"No-op close fixture has no pending viewport resize");
                 using(var locked=new FileStream(Path.Combine(journal.DirectoryPath,"job.json"),FileMode.Open,FileAccess.Read,FileShare.Read))
                 {
                     for(var attempt=0;attempt<3;attempt++)
                     {
                         CloseApproved(window);
-                        check(batch.CloseFailed && window.IsVisible && window.IsEnabled && !Get<bool>(window,"closing"),"Repeated idle close failure restores the owner");
-                        check(Revision()==revision && ReferenceEquals(previous,Get<RenderedImage>(window,"result")) && window.ExportPng.IsEnabled,
+                        check(batch.CloseFailed && window.IsVisible && window.IsEnabled && !window.ClosingFlag,"Repeated idle close failure restores the owner");
+                        check(Revision()==revision && ReferenceEquals(previous,window.CurrentResult) && window.ExportPng.IsEnabled,
                             "Idle close failure with an exact unchanged frame submits no render: "+attempt);
                     }
                 }
@@ -267,7 +266,7 @@ internal static partial class EditorReviewChecks
         }
         void CloseThumbnailQueue(bool initial)
         {
-            var window=Open("thumbnail-queue-"+initial);var journal=Get<BatchJournal>(window,"batchJournal");
+            var window=Open("thumbnail-queue-"+initial);var journal=window.BatchJournalInstance;
             var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
             if(initial)job.Items=[BatchItem.Create(photo),BatchItem.Create(other)];journal.Save(job);
             var step=new SteppedContext(SynchronizationContext.Current!);Task? preflight=null;BatchExportWindow? batch=null;
@@ -275,22 +274,22 @@ internal static partial class EditorReviewChecks
             {
                 if(initial)
                 {
-                    step.Capture(()=>Invoke(window,"ShowBatch",job,false));batch=Get<BatchExportWindow>(window,"batchWindow");
+                    step.Capture(()=>window.ShowBatchForTests(job,false));batch=window.BatchWindowInstance!;
                     // Loaded is delivered by WPF; explicitly step its real async body under the held context.
                     InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
-                    InteractionChecks.PumpUntil(()=>Get<System.Collections.IEnumerable>(batch,"rows").Cast<BatchRow>().All(row=>row.Thumbnail!=null));
-                    foreach(var row in Get<System.Collections.IEnumerable>(batch,"rows").Cast<BatchRow>())row.SetThumbnail(null);
-                    step.Capture(()=>preflight=(Task)Invoke(batch,"LoadThumbnails")!);
+                    InteractionChecks.PumpUntil(()=>batch.Rows.All(row=>row.Thumbnail!=null));
+                    foreach(var row in batch.Rows)row.SetThumbnail(null);
+                    step.Capture(()=>preflight=batch.LoadThumbnails());
                 }
                 else
                 {
-                    Invoke(window,"ShowBatch",job,false);batch=Get<BatchExportWindow>(window,"batchWindow");
+                    window.ShowBatchForTests(job,false);batch=window.BatchWindowInstance!;
                     InteractionChecks.PumpUntil(()=>batch.SourceThumbnail.Source!=null);
                     step.Capture(()=>preflight=batch.AddInputs([photo,other]));
                     step.Next();
                 }
                 InteractionChecks.PumpUntil(()=>step.Pending);
-                var posts=step.Posts;var rows=Get<System.Collections.IEnumerable>(batch!,"rows").Cast<BatchRow>().ToArray();
+                var posts=step.Posts;var rows=batch!.Rows.ToArray();
                 check(rows.Length==2,"Thumbnail cancellation fixture has two real RAW rows: "+initial);
                 var clock=Stopwatch.StartNew();if(initial)Click(batch!.CloseAction);else window.Close();step.Release();
                 InteractionChecks.PumpUntil(()=>preflight!.IsCompleted && (initial ? !batch!.IsVisible : !window.IsVisible));preflight!.GetAwaiter().GetResult();
@@ -303,7 +302,7 @@ internal static partial class EditorReviewChecks
         void CloseSourceThumbnail()
         {
             var window=Open("source-thumbnail-close");var job=BatchJob.Create(photo,new Adjustments().Capture(),null,"Neutral");
-            Invoke(window,"ShowBatch",job,false);var batch=Get<BatchExportWindow>(window,"batchWindow");
+            window.ShowBatchForTests(job,false);var batch=window.BatchWindowInstance!;
             var step=new SteppedContext(SynchronizationContext.Current!);
             try
             {

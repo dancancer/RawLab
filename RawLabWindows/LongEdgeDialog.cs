@@ -11,7 +11,7 @@ internal sealed class LongEdgeDialog : Window
     private readonly TextBlock errorText;
     private int? result;
 
-    private LongEdgeDialog(int? current, Window owner)
+    internal LongEdgeDialog(int? current, Window owner)
     {
         Style=(Style)FindResource(typeof(Window));
         Owner=owner; WindowStartupLocation=WindowStartupLocation.CenterOwner;
@@ -34,7 +34,7 @@ internal sealed class LongEdgeDialog : Window
         Content=panel;
     }
 
-    private void Accept()
+    internal void Accept()
     {
         if (ExportSize.Parse(valueBox.Text) is not { } edge)
         {

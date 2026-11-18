@@ -31,10 +31,11 @@ internal static class HDRSourceCache
     private static ulong bytes;
     internal static ulong CachedBytes {get {lock(Gate)return bytes;}}
     internal static HDRSourceLease Acquire(string path,HDRSourceInfo info,bool final,uint edge,Native.Session? session=null,
-        HDRCameraDevelopmentSettings? development=null,string? lensDatabase=null,string? cameraAIKey=null)
+        HDRCameraDevelopmentSettings? development=null,string? lensDatabase=null,string? cameraAIKey=null,
+        string? temporaryRoot=null,string? cameraProfileDirectory=null)
     {
         if(final) {
-            Clear();var owner=HDRNative.Decode(path,HDRIntent.Final,0,info,session,development,cameraAIKey!=null);
+            Clear();var owner=HDRNative.Decode(path,HDRIntent.Final,0,info,session,development,cameraAIKey!=null,temporaryRoot,cameraProfileDirectory);
             return new(owner,owner.Dispose);
         }
         var canonical=System.IO.Path.GetFullPath(path);var identity=info.CacheIdentity;
@@ -48,10 +49,10 @@ internal static class HDRSourceCache
                 if(value.Identity!=identity){Remove(node);node=next;continue;}
                 if(value.Edge<edge || value.Development!=development || value.LensDatabase!=lensDatabase ||
                     value.CameraAIKey!=cameraAIKey){node=next;continue;}
-                development?.CameraProfile?.RequireAsset();
+                development?.CameraProfile?.RequireAsset(cameraProfileDirectory);
                 Entries.Remove(node);Entries.AddFirst(node);return Lease(value);
             }
-            var decoded=HDRNative.Decode(path,HDRIntent.Preview,edge,info,session,development,cameraAIKey!=null);
+            var decoded=HDRNative.Decode(path,HDRIntent.Preview,edge,info,session,development,cameraAIKey!=null,temporaryRoot,cameraProfileDirectory);
             var entry=new Entry(canonical,identity,edge,development,lensDatabase,cameraAIKey,decoded,decoded.Pair.Hdr.SizeBytes+decoded.Pair.Sdr.SizeBytes);
             if(entry.Bytes<=Budget) {
                 while(bytes+entry.Bytes>Budget && Entries.Last!=null)Remove(Entries.Last);

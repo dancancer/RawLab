@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,15 +9,12 @@ using RawLab.Windows;
 
 internal static class ToneCurveUiChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
     [DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr owner);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
     [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog,int id);
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);
-    private static T Get<T>(object value,string name)=>(T)value.GetType().GetField(name,Private)!.GetValue(value)!;
-    private static object? Invoke(object value,string name,params object?[] args)=>value.GetType().GetMethod(name,Private)!.Invoke(value,args);
     private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
     private static void Pump(int milliseconds){var timer=Stopwatch.StartNew();InteractionChecks.PumpUntil(()=>timer.ElapsedMilliseconds>=milliseconds);}
     internal static void Run(string repo,string raw,Action<bool,string> check)
@@ -28,22 +24,22 @@ internal static class ToneCurveUiChecks
         var photo=Path.Combine(output,"source"+Path.GetExtension(raw));File.Copy(raw,photo);
         var app=TestWindowState.CreateApplication();SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         Loc.Initialize("en");foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-        var window=new MainWindow {Width=1200,Height=900};TestWindowState.Isolate(window,output);
-        var store=new EditStore(Path.Combine(output,"edits"));typeof(MainWindow).GetField("editStore",Private)!.SetValue(window,store);
+        var window=TestWindowState.CreateIsolatedWindow(output,editDirectory:Path.Combine(output,"edits"),width:1200,height:900);
+        var store=window.EditStoreInstance!;
         try {
             window.GpuMode.SelectedIndex=1;window.Show();window.OpenFile(photo);Ready(window);
-            var settings=Get<Adjustments>(window,"settings");var hdr=settings.IsHDREditing;
+            var settings=window.Settings;var hdr=settings.IsHDREditing;
             settings.EditingCurve=ToneCurveSettings.Identity.Inserting(.5,.5);
-            ToneCurveSettings ActiveCurve()=>Get<Adjustments>(window,"settings").EditingCurve;
+            ToneCurveSettings ActiveCurve()=>window.Settings.EditingCurve;
             ToneCurveSettings StoredCurve()=>store.Find(photo)!.Settings.Restore().EditingCurve;
-            settings.Set(Parameter.ToneCurve,65);Invoke(window,"MarkEdited");Invoke(window,"SelectTool",EditorAdjustmentTool.ToneCurve);Ready(window);
-            var session=(AdjustmentTransferSession)typeof(MainWindow).GetProperty("TransferSession",Private)!.GetValue(window)!;
-            var canvas=Get<ToneCurveCanvas>(window.CurveEditor,"canvas");window.Activate();InteractionChecks.PumpUntil(()=>window.IsActive);
+            settings.Set(Parameter.ToneCurve,65);window.MarkEditedForTests();window.SelectToolForTests(EditorAdjustmentTool.ToneCurve);Ready(window);
+            var session=window.TransferSessionForTests;
+            var canvas=window.CurveEditor.CanvasControl;window.Activate();InteractionChecks.PumpUntil(()=>window.IsActive);
             canvas.Focus();canvas.BringIntoView();Pump(100);window.UpdateLayout();
             var baseline=session.Transactions.Count;var before=ActiveCurve();
-            var originalHDR=hdr ? Get<RenderedImage>(window,"result").HDR!.HDR : null;
-            if (hdr) check(Get<Grid>(window.CurveEditor,"exposureAxis").IsVisible &&
-                Get<TextBlock>(window.CurveEditor,"referenceWhite").Text.Contains("Reference White"),
+            var originalHDR=hdr ? window.CurrentResult!.HDR!.HDR : null;
+            if (hdr) check(window.CurveEditor.ExposureAxis.IsVisible &&
+                window.CurveEditor.ReferenceWhiteText.Text.Contains("Reference White"),
                 "HDR curve shows EV scale and reference white");
             var start=canvas.PointToScreen(new Point(canvas.ActualWidth/2,canvas.ActualHeight/2));
             Console.WriteLine($"CURVE_POINTER visible={canvas.IsVisible} enabled={canvas.IsEnabled} active={window.IsActive} size={canvas.RenderSize} screen={start} hit={window.InputHitTest(canvas.TranslatePoint(new Point(canvas.ActualWidth/2,canvas.ActualHeight/2),window))?.GetType().Name}");
@@ -57,7 +53,7 @@ internal static class ToneCurveUiChecks
                 "Native curve drag changes preview without saving an intermediate history entry");
             mouse_event(4,0,0,0,UIntPtr.Zero);Ready(window);
             var changed=ActiveCurve();
-            if (originalHDR != null) check(!originalHDR.RGB.SequenceEqual(Get<RenderedImage>(window,"result").HDR!.HDR.RGB),
+            if (originalHDR != null) check(!originalHDR.RGB.SequenceEqual(window.CurrentResult!.HDR!.HDR.RGB),
                 "HDR curve drag changes the floating-point preview");
             check(session.Transactions.Count==baseline+1 && StoredCurve()==changed,
                 "One native curve drag saves one complete history entry");
@@ -71,9 +67,9 @@ internal static class ToneCurveUiChecks
             SetCursorPos((int)start.X-20,(int)start.Y+15);Pump(80);window.CurveEditor.CancelInputs();mouse_event(4,0,0,0,UIntPtr.Zero);Ready(window);
             check(ActiveCurve()==changed && store.ReadState(photo).SameAs(saved) && session.Transactions.Count==baseline,
                 "Cancelled native curve drag restores its starting state and ignores late mouse-up");
-            var x=Get<ParameterRow>(window.CurveEditor,"x");x.Number.BringIntoView();x.Number.Focus();x.Number.Text=hdr ? "-4" : "0.250000000000001";
+            var x=window.CurveEditor.XRow;x.Number.BringIntoView();x.Number.Focus();x.Number.Text=hdr ? "-4" : "0.250000000000001";
             x.Number.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(x.Number),Environment.TickCount,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent});Ready(window);
-            check(ActiveCurve().Points[1].X==(hdr ? .25 : .250000000000001) && Get<Adjustments>(window,"settings")[Parameter.ToneCurve]==65,
+            check(ActiveCurve().Points[1].X==(hdr ? .25 : .250000000000001) && window.Settings[Parameter.ToneCurve]==65,
                 "Native coordinate input preserves Double precision and inactive legacy scalar");
             PhotoFeatureChecks.Screenshot(window,Path.Combine(output,"curve-native.png"));
             var exact=ActiveCurve();baseline=session.Transactions.Count;
@@ -86,13 +82,13 @@ internal static class ToneCurveUiChecks
                     var button=GetDlgItem(dialog,confirm ? 1 : 2);if(button==IntPtr.Zero)return;
                     if(Interlocked.Exchange(ref clicked,1)==0)SendMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
                 },null,30,30);
-                Get<Button>(window.CurveEditor,"switchMode").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                window.CurveEditor.SwitchModeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 timer.Change(Timeout.Infinite,Timeout.Infinite);
                 check(Volatile.Read(ref clicked)==1,"Native curve confirmation responds through its owned dialog button");Ready(window);
             }
             Switch(false);check(ActiveCurve()==exact && session.Transactions.Count==baseline,
                 "Cancelling curve mode confirmation preserves the points and history");
-            Switch(true);check(ActiveCurve().IsDefault && Get<Adjustments>(window,"settings")[Parameter.ToneCurve]==65,
+            Switch(true);check(ActiveCurve().IsDefault && window.Settings[Parameter.ToneCurve]==65,
                 "Confirmed legacy mode restores the retained S curve scalar");
             Switch(true);check(ActiveCurve()==ToneCurveSettings.Identity && session.Transactions.Count==baseline+2,
                 "Confirmed custom mode starts at identity and saves one mode transaction");
@@ -101,7 +97,7 @@ internal static class ToneCurveUiChecks
             check(ActiveCurve()==exact,"Mode Undo restores the complete precise curve");
             if (hdr) {
                 window.OpenFile(photo);Ready(window);
-                check(ActiveCurve()==exact && Get<Adjustments>(window,"settings").Curve.IsDefault,
+                check(ActiveCurve()==exact && window.Settings.Curve.IsDefault,
                     "Reopened HDR curve leaves the dormant SDR curve intact");
                 var destination=Path.Combine(output,"hdr-curve.jpg");
                 var export=window.ExportPhoto(ExportFormat.HdrJpeg,destination);
@@ -112,7 +108,7 @@ internal static class ToneCurveUiChecks
             }
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"}) {
                 Loc.Initialize(language);System.Windows.Documents.TextElement.SetFontSize(window.CurveEditor,26);window.CurveEditor.RefreshLanguage();window.UpdateLayout();
-                var remove=Get<Button>(window.CurveEditor,"remove");remove.BringIntoView();window.UpdateLayout();
+                var remove=window.CurveEditor.RemoveButton;remove.BringIntoView();window.UpdateLayout();
                 check(remove.ActualHeight>=32 && x.Number.ActualHeight>=26 && window.CurveEditor.ActualWidth<=window.ActualWidth,
                     "Curve layout grows for large text: "+language);
                 PhotoFeatureChecks.Screenshot(window,Path.Combine(output,"curve-large-"+language+".png"));

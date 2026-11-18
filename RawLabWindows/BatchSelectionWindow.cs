@@ -171,6 +171,10 @@ internal sealed class CollectionExportDialog : Window
     private readonly ComboBox formats=new(){MinWidth=150};
     private readonly TextBox edge=new(){MinWidth=100};
     private string? directory;
+    internal ComboBox FormatsBox => formats;
+    internal TextBox EdgeBox => edge;
+    internal string? DirectoryPath { get => directory; set => directory = value; }
+    internal Task ConfirmAsync() => Confirm();
     internal CollectionExportDialog(Window owner,MainWindow editor)
     {
         this.editor=editor;var root=AdjustmentDialogLayout.Configure(this,owner,"逐张导出","collection.export-review");

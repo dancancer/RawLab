@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -10,7 +9,6 @@ using RawLab.Windows;
 
 internal static class ResourceChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal static void Run(string repo,string raw,Action<bool,string> check)
     {
         var output=Path.Combine(repo,"build","windows-resource-checks",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
@@ -27,9 +25,8 @@ internal static class ResourceChecks
             var owner=window ?? active;
             if(owner!=null)
             {
-                var scheduler=typeof(MainWindow).GetField("scheduler",Private)!.GetValue(owner)!;
-                if(!(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!)
-                    cache=((RenderEngine?)typeof(MainWindow).GetField("engine",Private)!.GetValue(owner))?.CachedPreviewBytes ?? 0;
+                if(!owner.SchedulerBusy)
+                    cache=owner.EngineInstance?.CachedPreviewBytes ?? 0;
             }
             peakPrivate=Math.Max(peakPrivate,process.PrivateMemorySize64);peakWorking=Math.Max(peakWorking,process.WorkingSet64);peakCache=Math.Max(peakCache,cache);
             observedCache|=cache>=0;
@@ -71,15 +68,19 @@ internal static class ResourceChecks
     private static void DescribeRetention(WeakReference weak,Application app)
     {
         if(weak.Target is not MainWindow window)return;
-        var handlers=((Delegate?)typeof(Loc).GetField("Changed",BindingFlags.Static|BindingFlags.NonPublic)!.GetValue(null))?.GetInvocationList() ?? [];
-        Console.WriteLine("Retention diagnostic: windows="+app.Windows.Count+"; main="+(app.MainWindow!=null)+"; Loc="+string.Join(",",handlers.Select(handler=>handler.Target?.GetType().FullName+"."+handler.Method.Name)));
-        foreach(var name in new[]{"editSaveTimer","editNoticeTimer","thumbnailRefresh","previewResize"})
-            Console.WriteLine(name+" enabled="+((DispatcherTimer)typeof(MainWindow).GetField(name,Private)!.GetValue(window)!).IsEnabled);
+        Console.WriteLine("Retention diagnostic: windows="+app.Windows.Count+"; main="+(app.MainWindow!=null)+"; LocCount="+Loc.ChangedSubscriberCount);
+        foreach(var (name, timer) in new (string, DispatcherTimer)[]{
+            ("editSaveTimer", window.EditSaveTimer),
+            ("editNoticeTimer", window.EditNoticeTimer),
+            ("thumbnailRefresh", window.ThumbnailRefreshTimer),
+            ("previewResize", window.PreviewResizeTimer)
+        })
+            Console.WriteLine(name+" enabled="+timer.IsEnabled);
     }
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static WeakReference Cycle(Application app,string raw,string output,int round,Action<MainWindow?> active,Action<string,MainWindow?> sample,Action<bool,string> check)
     {
-        var window=new MainWindow();TestWindowState.Isolate(window,output);window.GpuMode.SelectedIndex=1;active(window);
+        var window=TestWindowState.CreateIsolatedWindow(output);window.GpuMode.SelectedIndex=1;active(window);
         try
         {
             window.Show();window.OpenFile(raw);InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);sample("open-"+round,window);
@@ -95,7 +96,7 @@ internal static class ResourceChecks
         {
             window.Close();InteractionChecks.PumpUntil(()=>!window.IsVisible);sample("closed-"+round,window);
             check(app.Windows.Count==0,"Closing leaves no implicit StartupUri editor: "+round);
-            check(typeof(MainWindow).GetField("engine",Private)!.GetValue(window)==null,"Closed soak window disposes its native session: "+round);
+            check(window.EngineInstance==null,"Closed soak window disposes its native session: "+round);
             if(ReferenceEquals(app.MainWindow,window))app.MainWindow=null;
             active(null);
         }

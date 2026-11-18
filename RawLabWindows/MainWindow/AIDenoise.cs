@@ -4,8 +4,8 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private readonly AIDenoiseJob aiJob;
-    private AIGpuPreferenceStore aiPreferenceStore=new(AIGpuPreferenceStore.DefaultPath);
-    private AIDiagnosticStore aiDiagnostics=AIDiagnosticStore.Default;
+    private AIGpuPreferenceStore aiPreferenceStore;
+    private AIDiagnosticStore aiDiagnostics;
     private AIGpuPreference aiPreference=new();
     private bool aiManuallyRequested;
     private AIDenoiseIdentity? aiNotReadyIdentity;

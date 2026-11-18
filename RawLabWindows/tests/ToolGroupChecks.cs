@@ -17,8 +17,7 @@ internal static class ToolGroupChecks
         Directory.CreateDirectory(output);
         var app = TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window = new MainWindow { Width = 1200, Height = 800 };
-        TestWindowState.Isolate(window, output);
+        var window = TestWindowState.CreateIsolatedWindow(output, width: 1200, height: 800);
         window.GpuMode.SelectedIndex = 1;
         var checks = 0;
         void Check(bool success, string name)

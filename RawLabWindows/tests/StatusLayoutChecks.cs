@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -19,8 +18,7 @@ internal static class StatusLayoutChecks
             foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"})
             {
                 Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
-                var window=new MainWindow();
-                TestWindowState.Isolate(window,output);window.Show();
+                var window=TestWindowState.CreateIsolatedWindow(output);window.Show();
                 try
                 {
                     foreach(var font in new[]{13.0,26.0})foreach(var size in new[]{new Size(1000,680),new Size(1440,920)})

@@ -204,7 +204,7 @@ public partial class MainWindow
             (neutral,rendered)=await Task.Run(()=> {
                 var w=ticket.Value;
                 if(w.Probe is {} probe) {
-                    engine ??= new(aiDiagnostics:aiDiagnostics); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
@@ -212,12 +212,12 @@ public partial class MainWindow
                 workerLookAvailable = LookAvailabilityTracker.ProbeExists(w.Settings.IsHDREditing, w.Lut);
                 try
                 {
-                    try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice);}catch { }
+                    try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice,appPaths.HdrLooksDirectory,appPaths.HdrCameraProfilesDirectory);}catch { }
                     PreviewFrame frame;
                     if (RenderPreviewHook != null)
                         frame=RenderPreviewHook(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,renderStarted);
                     else {
-                        engine ??= new(aiDiagnostics:aiDiagnostics); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                        engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                         frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted);
                     }
                     return(frame.Neutral,frame.Result);
@@ -438,7 +438,7 @@ public partial class MainWindow
         autoExposing=true;RefreshControls();
         try
         {
-            var ev=await Task.Run(()=>{using var meter=new RenderEngine(gpuMode:gpuMode,aiBackend:aiBackend,aiDeviceID:aiDevice,aiDiagnostics:aiDiagnostics);return meter.AutoExposure(path,snapshot);});
+            var ev=await Task.Run(()=>{using var meter=CreateRenderEngine(gpuMode:gpuMode,aiBackend:aiBackend,aiDeviceID:aiDevice);return meter.AutoExposure(path,snapshot);});
             if(closing || file!=path || openRevision!=photoRevision || editRevision!=revision || !snapshot.Capture().SameAs(settings.Capture()) ||
                 snapshot.IsHDREditing && RequestedGpuMode!=gpuMode)return;
             var exposure=settings.IsHDREditing ? ev : NumericRange.For(ParameterSpec.All[(int)Parameter.Exposure]).Clamp(ev);

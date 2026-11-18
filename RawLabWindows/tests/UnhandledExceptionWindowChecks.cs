@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
@@ -12,8 +11,6 @@ using RawLab.Windows;
 
 internal static class UnhandledExceptionWindowChecks
 {
-    private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
-
     internal static void Run(Action<bool, string> check)
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-unhandled-ui-" + Guid.NewGuid().ToString("N"));
@@ -45,11 +42,12 @@ internal static class UnhandledExceptionWindowChecks
 
             // 2. Real async void -> BrowseFolder unhandled exception -> App.OnDispatcherUnhandledException ->
             //    ShowUnhandledExceptionDialog ("继续编辑") -> readingFolder & heading recover cleanly.
-            window = new MainWindow();
-            TestWindowState.Isolate(window, root);
+            var paths = TestWindowState.CreateIsolatedPaths(root);
+            window = new MainWindow(paths, TestWindowState.CreateDisabledAnalytics(paths), aiDiagnostics: diagnostics);
+            window.UpdateNotice.Visibility = Visibility.Collapsed;
             app.MainWindow = window;
             window.Show();
-            typeof(App).GetField("startupCompleted", PrivateInstance)!.SetValue(app, true);
+            app.StartupCompleted = true;
             Pump(app.Dispatcher);
 
             var validParentDir = Path.Combine(root, "LibraryRoot");
@@ -58,8 +56,8 @@ internal static class UnhandledExceptionWindowChecks
             validParent.Load().GetAwaiter().GetResult();
 
             var brokenChild = new LibraryEntry("   ", true);
-            typeof(LibraryEntry).GetProperty("Parent")!.SetValue(brokenChild, validParent);
-            typeof(MainWindow).GetField("browsedFolder", PrivateInstance)!.SetValue(window, brokenChild);
+            brokenChild.Parent = validParent;
+            window.BrowsedFolder = brokenChild;
 
             var continueDialogHandled = false;
             var continueButtonPresent = false;
@@ -93,14 +91,14 @@ internal static class UnhandledExceptionWindowChecks
                       doc.RootElement.GetProperty("error_type").GetString() == typeof(ArgumentException).FullName,
                     "App.OnDispatcherUnhandledException records async void fault as unhandled.dispatcher");
             }
-            check(!(bool)typeof(MainWindow).GetField("readingFolder", PrivateInstance)!.GetValue(window)! &&
+            check(!window.ReadingFolder &&
                   window.SidebarGalleryNotice.Text != Loc.Text("正在读取目录…"),
                 "BrowseFolder finally resets readingFolder and clears the loading notice after unhandled exception");
 
             window.UpFolderButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(app.Dispatcher, () =>
-                ReferenceEquals(typeof(MainWindow).GetField("browsedFolder", PrivateInstance)!.GetValue(window), validParent) &&
-                !(bool)typeof(MainWindow).GetField("readingFolder", PrivateInstance)!.GetValue(window)!,
+                ReferenceEquals(window.BrowsedFolder, validParent) &&
+                !window.ReadingFolder,
                 "Timed out navigating to parent folder after recovery");
             check(window.FolderBreadcrumb.Text == "LibraryRoot",
                 "Folder browser remains operable after unhandled BrowseFolder exception");
@@ -121,7 +119,7 @@ internal static class UnhandledExceptionWindowChecks
                 window.OpenFile(dummyPhoto);
                 PumpUntil(app.Dispatcher, () => embeddedFallbackLogged, "Timed out waiting for embedded preview fallback");
                 check(observedExitCode == null, "PumpEmbedded FormatException does not crash the application");
-                check(typeof(MainWindow).GetField("openingPreview", PrivateInstance)!.GetValue(window) == null,
+                check(window.OpeningPreview == null,
                     "Embedded preview degrades to no preview state upon FormatException");
 
                 // 3b. ReadEmbeddedPreviewCore & PumpEmbedded OverflowException fallback:
@@ -148,18 +146,16 @@ internal static class UnhandledExceptionWindowChecks
                 PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for initial hooked render");
 
                 window.RenderPreviewHook = (_, _, _, _, _, _, _) => throw new OverflowException("Simulated overflow in main preview render");
-                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
-                var scheduler = typeof(MainWindow).GetField("scheduler", PrivateInstance)!.GetValue(window)!;
+                window.ScheduleForTests(false, false);
                 PumpUntil(app.Dispatcher, () =>
-                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
-                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    window.RenderFailed &&
+                    !window.SchedulerBusy,
                     "Timed out waiting for main preview OverflowException fallback");
 
-                var canvasImageField = typeof(PhotoCanvas).GetField("image", PrivateInstance)!;
                 check(observedExitCode == null &&
                       !app.Windows.OfType<Window>().Any(w => w.IsVisible && AutomationProperties.GetAutomationId(w) == "app.unhandledException"),
                     "Main preview OverflowException does not show exit modal dialog");
-                check(ReferenceEquals(canvasImageField.GetValue(window.ResultCanvas), validResultBitmap),
+                check(ReferenceEquals(window.ResultCanvas.ImageSource, validResultBitmap),
                     "Main preview OverflowException preserves previous rendered frame without blanking out");
                 check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
                       window.Status.Text.Contains("Simulated overflow in main preview render", StringComparison.Ordinal),
@@ -168,7 +164,7 @@ internal static class UnhandledExceptionWindowChecks
                 window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
                 window.RetryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for Retry recovery");
-                check(!(bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
+                check(!window.RenderFailed &&
                       window.RetryButton.Visibility != Visibility.Visible,
                     "Clicking Retry recovers main preview cleanly after OverflowException");
 
@@ -181,12 +177,12 @@ internal static class UnhandledExceptionWindowChecks
                 File.WriteAllBytes(initialOverflowPhoto, [5, 6, 7, 8]);
                 window.OpenFile(initialOverflowPhoto, embeddedPlaceholder);
                 PumpUntil(app.Dispatcher, () =>
-                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
-                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    window.RenderFailed &&
+                    !window.SchedulerBusy,
                     "Timed out waiting for initial-open OverflowException fallback");
                 check(observedExitCode == null &&
-                      ReferenceEquals(canvasImageField.GetValue(window.ResultCanvas), embeddedPlaceholder) &&
-                      canvasImageField.GetValue(window.NeutralCanvas) == null &&
+                      ReferenceEquals(window.ResultCanvas.ImageSource, embeddedPlaceholder) &&
+                      window.NeutralCanvas.ImageSource == null &&
                       window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
                       window.Status.Text.Contains("Initial open main preview overflow", StringComparison.Ordinal),
                     "Initial open OverflowException keeps embedded fallback on ResultCanvas without crashing or allowing export");
@@ -206,10 +202,10 @@ internal static class UnhandledExceptionWindowChecks
                     File.Delete(vanishPhoto);
                     throw new System.ComponentModel.Win32Exception(5, "Access denied during render");
                 };
-                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
+                window.ScheduleForTests(false, false);
                 PumpUntil(app.Dispatcher, () =>
-                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
-                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    window.RenderFailed &&
+                    !window.SchedulerBusy,
                     "Timed out waiting for Win32Exception with vanished CurrentViewSource to degrade");
                 check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
                       window.Status.Text.Contains("Access denied during render", StringComparison.Ordinal),
@@ -225,10 +221,10 @@ internal static class UnhandledExceptionWindowChecks
                     File.Delete(vanishPhoto);
                     return okFrame;
                 };
-                typeof(MainWindow).GetMethod("Schedule", PrivateInstance)!.Invoke(window, [false, false]);
+                window.ScheduleForTests(false, false);
                 PumpUntil(app.Dispatcher, () =>
-                    (bool)typeof(MainWindow).GetField("renderFailed", PrivateInstance)!.GetValue(window)! &&
-                    !(bool)scheduler.GetType().GetProperty("Busy")!.GetValue(scheduler)!,
+                    window.RenderFailed &&
+                    !window.SchedulerBusy,
                     "Timed out waiting for null CurrentViewSource after clean render to degrade");
                 check(window.RetryButton.Visibility == Visibility.Visible && !window.ExportPng.IsEnabled &&
                       window.Status.Text.Contains(Loc.Text("预览未更新"), StringComparison.Ordinal),
@@ -246,7 +242,7 @@ internal static class UnhandledExceptionWindowChecks
             window.Close();
             window = null;
             app.MainWindow = null;
-            typeof(App).GetField("startupCompleted", PrivateInstance)!.SetValue(app, false);
+            app.StartupCompleted = false;
 
             var startupDialogHandled = false;
             var startupContinueHidden = false;

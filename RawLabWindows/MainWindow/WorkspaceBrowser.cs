@@ -41,7 +41,7 @@ public partial class MainWindow
             photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
             _=photoPreviews.DisposeAsync();
         }
-        photoPreviews=new(editStore,photoPreviewCacheDirectory);
+        photoPreviews=new(editStore,photoPreviewCacheDirectory,appPaths);
         photoPreviews.Store.Changed+=PhotoEditChanged;
         photoPreviews.Ready+=PhotoPreviewReady;
         photoPreviews.SetPaused(scheduler.Busy || exporting || aiJob.State.IsRunning);

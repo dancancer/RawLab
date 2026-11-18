@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
@@ -14,8 +13,6 @@ using RawLab.Windows;
 // 真实 MainWindow 入口回归：覆盖不可用记录恢复弹窗钩子/模态窗与完整重置链路（含迁移回执清理及撤销行为）。
 internal static class EditDurabilityWindowChecks
 {
-    private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
-
     internal static void Run(string output, Action<bool, string> check)
     {
         TestWindowState.PreserveExistingBatch(BatchJournal.DefaultDirectory);
@@ -93,14 +90,13 @@ internal static class EditDurabilityWindowChecks
             siblingReceiptBefore = beforeDoc.RootElement.GetProperty("MigrationReceipts").GetProperty(siblingId.Path).GetRawText();
         }
 
-        var window = new MainWindow(lookRoot);
-        TestWindowState.Isolate(window, root, editDirectory: storeDirectory);
+        var window = TestWindowState.CreateIsolatedWindow(root, lookLibraryDirectory: lookRoot, editDirectory: storeDirectory);
         DispatcherTimer? timer = null;
         window.Show();
         window.UpdateLayout();
         try
         {
-            var store = Get<EditStore>(window, "editStore");
+            var store = window.EditStoreInstance!;
 
             // 1) 取消恢复（confirmUnusableRecordReset 返回 false）：不打开该照片、不改动磁盘记录与回执。
             string? hookInput = null;
@@ -116,7 +112,7 @@ internal static class EditDurabilityWindowChecks
             check(StringComparer.OrdinalIgnoreCase.Equals(hookInput, brokenId.Path) &&
                   hookError is UnusableEditRecordException { InnerException: ArgumentOutOfRangeException },
                 "OpenFile routes out-of-range sub-setting failure through confirmUnusableRecordReset hook");
-            check(GetNullable<string>(window, "file") == null && File.ReadAllText(editsPath) == editsBeforeDecline,
+            check(window.CurrentFile == null && File.ReadAllText(editsPath) == editsBeforeDecline,
                 "Declining unusable-record reset aborts photo open and preserves disk edits.json byte-identical");
 
             // 2) 确认恢复（confirmUnusableRecordReset 返回 true）：ResetToUnmodified 仅删除目标照片记录与迁移回执，并以默认设置打开。
@@ -133,10 +129,10 @@ internal static class EditDurabilityWindowChecks
             window.UpdateLayout();
             check(StringComparer.OrdinalIgnoreCase.Equals(hookInput, brokenId.Path) && hookError is UnusableEditRecordException,
                 "Confirming unusable-record reset invokes hook for target photo");
-            check(StringComparer.OrdinalIgnoreCase.Equals(GetNullable<string>(window, "file"), brokenId.Path) &&
-                  GetNullable<PhotoEditState>(window, "currentEditRecord") is { Edit: null } &&
-                  GetNullable<ProcessingMigrationReceipt>(window, "processingMigrationReceipt") == null &&
-                  Get<Adjustments>(window, "settings")[Parameter.Exposure] == 0,
+            check(StringComparer.OrdinalIgnoreCase.Equals(window.CurrentFile, brokenId.Path) &&
+                  window.CurrentEditRecord is { Edit: null } &&
+                  window.ProcessingMigrationReceiptValue == null &&
+                  window.Settings[Parameter.Exposure] == 0,
                 "Confirming unusable-record reset opens target photo in unmodified default state");
             check(window.ProcessingMigrationState.Visibility == Visibility.Collapsed &&
                   window.RollbackProcessingMigrationButton.Visibility == Visibility.Collapsed,
@@ -152,9 +148,9 @@ internal static class EditDurabilityWindowChecks
             check(StringComparer.OrdinalIgnoreCase.Equals(hookInput, hdrId.Path) &&
                   hookError is HDRModeException { Failure: HDRModeFailure.InvalidSettings },
                 "Incompatible active ProRAW HDR record triggers confirmUnusableRecordReset hook");
-            check(StringComparer.OrdinalIgnoreCase.Equals(GetNullable<string>(window, "file"), hdrId.Path) &&
-                  GetNullable<PhotoEditState>(window, "currentEditRecord") is { Edit: null } &&
-                  !Get<Adjustments>(window, "settings").IsHDREditing &&
+            check(StringComparer.OrdinalIgnoreCase.Equals(window.CurrentFile, hdrId.Path) &&
+                  window.CurrentEditRecord is { Edit: null } &&
+                  !window.Settings.IsHDREditing &&
                   store.ReadState(hdrBrokenPhoto).Edit == null,
                 "Confirming active HDR unusable-record reset clears target record and opens unmodified");
 
@@ -184,7 +180,7 @@ internal static class EditDurabilityWindowChecks
             timer.Stop();
             SettleWindow(window);
             check(sawUnusableDialog &&
-                  StringComparer.OrdinalIgnoreCase.Equals(GetNullable<string>(window, "file"), dialogBrokenId.Path) &&
+                  StringComparer.OrdinalIgnoreCase.Equals(window.CurrentFile, dialogBrokenId.Path) &&
                   store.ReadState(dialogBrokenPhoto).Edit == null &&
                   store.ReadProcessingMigration(dialogBrokenPhoto) == null,
                 "Real editor.reset.unusable modal dialog confirms ResetToUnmodified for malformed record");
@@ -248,20 +244,19 @@ internal static class EditDurabilityWindowChecks
                     seedStore.RollbackProcessingMigration(identity, migratedState);
             }
 
-            var window = new MainWindow(lookRoot);
-            TestWindowState.Isolate(window, root, editDirectory: storeDirectory);
+            var window = TestWindowState.CreateIsolatedWindow(root, lookLibraryDirectory: lookRoot, editDirectory: storeDirectory);
             DispatcherTimer? timer = null;
             window.Show();
             window.UpdateLayout();
             try
             {
-                var store = Get<EditStore>(window, "editStore");
+                var store = window.EditStoreInstance!;
 
                 // 1) 打开照片：内存回执与迁移状态控件按 initialStatus 呈现。
                 window.OpenFile(photo);
                 SettleWindow(window);
                 window.UpdateLayout();
-                check(GetNullable<ProcessingMigrationReceipt>(window, "processingMigrationReceipt")?.Status == initialStatus,
+                check(window.ProcessingMigrationReceiptValue?.Status == initialStatus,
                     "OpenFile loads migration receipt into MainWindow for status " + initialStatus);
                 check(window.ProcessingMigrationState.Visibility == Visibility.Visible &&
                       window.RollbackProcessingMigrationButton.Visibility ==
@@ -273,20 +268,20 @@ internal static class EditDurabilityWindowChecks
                 var partialPrepared = window.PrepareReset(partialScope);
                 check(partialPrepared is { Status: EditorResetStatus.Ready },
                     "Partial tool reset is ready on MainWindow for status " + initialStatus);
-                var partialRevision = Get<long>(window, "editRevision");
+                var partialRevision = window.EditRevision;
                 check(window.CommitReset(partialPrepared!, partialRevision),
                     "Partial tool CommitReset succeeds on MainWindow for status " + initialStatus);
                 SettleWindow(window);
                 window.UpdateLayout();
-                check(Get<Adjustments>(window, "settings")[Parameter.Contrast] == 0 &&
+                check(window.Settings[Parameter.Contrast] == 0 &&
                       store.ReadProcessingMigration(photo)?.Status == initialStatus &&
-                      GetNullable<ProcessingMigrationReceipt>(window, "processingMigrationReceipt")?.Status == initialStatus &&
+                      window.ProcessingMigrationReceiptValue?.Status == initialStatus &&
                       window.ProcessingMigrationState.Visibility == Visibility.Visible,
                     "Partial tool reset on MainWindow preserves migration receipt and UI state for status " + initialStatus);
 
-                var preResetSnapshot = Get<Adjustments>(window, "settings").Capture();
-                var preResetProcessing = Get<Adjustments>(window, "settings").Processing;
-                var preResetExposure = Get<Adjustments>(window, "settings")[Parameter.Exposure];
+                var preResetSnapshot = window.Settings.Capture();
+                var preResetProcessing = window.Settings.Processing;
+                var preResetExposure = window.Settings[Parameter.Exposure];
 
                 // 3) 真实完整重置入口：RequestReset(All) -> ExecuteReset -> ConfirmReset 模态窗 -> CommitReset -> MarkEditedCore(true)
                 //    -> SaveEditsCore(true) -> CommitResetEdit -> ClearProcessingMigrationReceiptState。
@@ -310,14 +305,14 @@ internal static class EditDurabilityWindowChecks
                     PhotoFeatureChecks.Click(confirmButton);
                 };
                 timer.Start();
-                Invoke(window, "RequestReset", new EditorResetScope(EditorResetKind.All));
+                window.RequestResetForTests(new EditorResetScope(EditorResetKind.All));
                 timer.Stop();
                 SettleWindow(window);
                 window.UpdateLayout();
 
                 check(sawResetDialog, "RequestReset(All) opens real editor.reset.confirmation modal dialog for status " + initialStatus);
-                check(Get<Adjustments>(window, "settings")[Parameter.Exposure] == 0 &&
-                      Get<Adjustments>(window, "settings").Processing == preResetProcessing &&
+                check(window.Settings[Parameter.Exposure] == 0 &&
+                      window.Settings.Processing == preResetProcessing &&
                       store.Find(photo) is { } neutralSaved &&
                       neutralSaved.Settings.Processing == preResetProcessing,
                     "Full reset through MainWindow writes neutral SavedEdit retaining Processing for status " + initialStatus);
@@ -325,7 +320,7 @@ internal static class EditDurabilityWindowChecks
                       new EditStore(storeDirectory).ReadProcessingMigration(photo) == null &&
                       store.ReadProcessingMigration(sibling)?.Status == ProcessingMigrationReceipt.Migrated,
                     "Full reset through MainWindow removes only target photo migration receipt on disk for status " + initialStatus);
-                check(GetNullable<ProcessingMigrationReceipt>(window, "processingMigrationReceipt") == null &&
+                check(window.ProcessingMigrationReceiptValue == null &&
                       window.ProcessingMigrationState.Visibility == Visibility.Collapsed &&
                       window.RollbackProcessingMigrationButton.Visibility == Visibility.Collapsed,
                     "Full reset through MainWindow clears in-memory receipt and collapses migration controls for status " + initialStatus);
@@ -342,12 +337,12 @@ internal static class EditDurabilityWindowChecks
                 SettleWindow(window);
                 window.UpdateLayout();
 
-                check(Math.Abs(Get<Adjustments>(window, "settings")[Parameter.Exposure] - preResetExposure) < 1e-5 &&
-                      Get<Adjustments>(window, "settings").Capture().SameAs(preResetSnapshot) &&
+                check(Math.Abs(window.Settings[Parameter.Exposure] - preResetExposure) < 1e-5 &&
+                      window.Settings.Capture().SameAs(preResetSnapshot) &&
                       store.Find(photo) is { } undoneSaved &&
                       undoneSaved.Settings.SameAs(preResetSnapshot),
                     "MainWindow Undo after all-reset restores pre-reset adjustment values for status " + initialStatus);
-                check(GetNullable<ProcessingMigrationReceipt>(window, "processingMigrationReceipt") == null &&
+                check(window.ProcessingMigrationReceiptValue == null &&
                       store.ReadProcessingMigration(photo) == null &&
                       new EditStore(storeDirectory).ReadProcessingMigration(photo) == null &&
                       window.ProcessingMigrationState.Visibility == Visibility.Collapsed &&
@@ -399,21 +394,17 @@ internal static class EditDurabilityWindowChecks
 
     private static void SettleWindow(MainWindow window)
     {
-        var scheduler = Get<object>(window, "scheduler");
-        var embedded = Get<object>(window, "embeddedScheduler");
-        var busyScheduler = scheduler.GetType().GetProperty("Busy")!;
-        var busyEmbedded = embedded.GetType().GetProperty("Busy")!;
         InteractionChecks.PumpUntil(() =>
-            !(bool)busyScheduler.GetValue(scheduler)! &&
-            !(bool)busyEmbedded.GetValue(embedded)! &&
-            (GetNullable<string>(window, "file") == null ||
-             Get<bool>(window, "exactReady") ||
-             Get<bool>(window, "renderFailed")));
+            !window.SchedulerBusy &&
+            !window.EmbeddedSchedulerBusy &&
+            (window.CurrentFile == null ||
+             window.ExactReady ||
+             window.RenderFailed));
     }
 
     private static void CloseApproved(MainWindow window)
     {
-        typeof(MainWindow).GetField("updateQuitApproved", PrivateInstance)!.SetValue(window, true);
+        window.UpdateQuitApproved = true;
         window.Close();
     }
 
@@ -430,13 +421,4 @@ internal static class EditDurabilityWindowChecks
             catch (UnauthorizedAccessException) when (attempt < 4) { Thread.Sleep(40); }
         }
     }
-
-    private static T Get<T>(object owner, string name) =>
-        (T)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner)!;
-
-    private static T? GetNullable<T>(object owner, string name) =>
-        (T?)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner);
-
-    private static object? Invoke(object owner, string name, params object[] args) =>
-        owner.GetType().GetMethod(name, PrivateInstance)!.Invoke(owner, args);
 }
