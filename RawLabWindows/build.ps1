@@ -9,9 +9,15 @@ $repo = Split-Path $PSScriptRoot -Parent
 $native = Join-Path $repo 'build/windows-native'
 $output = Join-Path $repo 'build/RawLab-Windows'
 if ($ReleasePackage) {
+    $versionSource = Get-Content -LiteralPath (Join-Path $repo 'Shared/version.json') -Raw | ConvertFrom-Json
+    if (!$PSBoundParameters.ContainsKey('ReleaseVersion')) { $ReleaseVersion = [string]$versionSource.version }
+    if (!$PSBoundParameters.ContainsKey('ReleaseBuild')) { $ReleaseBuild = [int]$versionSource.build }
     if (!$DualDnModel -or !$DualDnManifestSha256) { throw 'Release packages require -DualDnModel and its -DualDnManifestSha256.' }
     if (!$UpdateTrustFile) { throw 'Release packages require -UpdateTrustFile with the permanent public key.' }
     if ($ReleaseVersion -notmatch '^\d+\.\d+\.\d+$' -or $ReleaseBuild -lt 1) { throw 'Supply the authorized -ReleaseVersion and positive -ReleaseBuild.' }
+    if ($ReleaseVersion -ne [string]$versionSource.version -or $ReleaseBuild -ne [int]$versionSource.build) {
+        throw "ReleaseVersion/ReleaseBuild ($ReleaseVersion/$ReleaseBuild) must match Shared/version.json ($($versionSource.version)/$($versionSource.build))."
+    }
     if ((Get-FileHash -LiteralPath "$DualDnModel/manifest.json" -Algorithm SHA256).Hash -ne $DualDnManifestSha256) { throw 'Release model manifest SHA-256 mismatch.' }
     foreach ($resource in @('blind_rgb.onnx','Restormer-LICENSE.txt')) {
         if (!(Test-Path -LiteralPath "$DualDnModel/$resource" -PathType Leaf)) { throw "Incomplete release model: $resource" }
