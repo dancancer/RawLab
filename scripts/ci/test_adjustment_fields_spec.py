@@ -171,7 +171,7 @@ def _curve_default(platform):
         mode = _need(r"val mode: ToneCurveMode = ToneCurveMode\.(\w+)", src, "light.curve default", where).group(1).lower()
         raw = _need(r"points: List<ToneCurvePoint> = (\w+\(\)|\[[^\]]*\])", src, "light.curve default", where).group(1)
     else:
-        where = "RawLabWindows/ToneCurveSettings.cs"
+        where = "RawLabWindows/Core/ToneCurveSettings.cs"
         src = _strip_line_comments(_read(where))
         mode = _need(r"ToneCurveMode mode = ToneCurveMode\.(\w+)", src, "light.curve default", where).group(1).lower()
         raw = _need(r"IEnumerable<ToneCurvePoint>\? points = (\w+|\[[^\]]*\])", src, "light.curve default", where).group(1)
@@ -196,7 +196,7 @@ def _look_default(platform):
         m = _need(r"data class HDRLookSettings\(val sha256: String\? = (\w+), val name: String\? = (\w+), val strength: Float = (-?[\d.]+)f", src, "hdr.look default", where)
         sha, name, strength = m.group(1), m.group(2), float(m.group(3))
     else:
-        where = "RawLabWindows/HDRSettings.cs"
+        where = "RawLabWindows/Core/HDRSettings.cs"
         src = _strip_line_comments(_read(where))
         m = _need(r"record HDRLookSettings\(string\? Sha256 = (\w+), string\? Name = (\w+), double Strength = (-?[\d.]+)", src, "hdr.look default", where)
         sha, name, strength = m.group(1), m.group(2), float(m.group(3))
@@ -233,11 +233,11 @@ def _sub_end_sources(platform):
         hdr_tr_p = xfer_p
         tc_p = base + "settings/ToneCurveSettings.kt"
     else:
-        xfer_p = "RawLabWindows/AdjustmentPayload.cs"
+        xfer_p = "RawLabWindows/Core/AdjustmentPayload.cs"
         payload_p = xfer_p
-        hdr_p = "RawLabWindows/HDRSettings.cs"
-        hdr_tr_p = "RawLabWindows/HDRAdjustmentTransfer.cs"
-        tc_p = "RawLabWindows/ToneCurveSettings.cs"
+        hdr_p = "RawLabWindows/Core/HDRSettings.cs"
+        hdr_tr_p = "RawLabWindows/Core/HDRAdjustmentTransfer.cs"
+        tc_p = "RawLabWindows/Core/ToneCurveSettings.cs"
     return {
         "xfer": (xfer_p, _strip_line_comments(_read(xfer_p))),
         "payload": (payload_p, _strip_line_comments(_read(payload_p))),
@@ -384,7 +384,7 @@ def _object_sub_fields(platform):
         cg_hue = _need(r"hue >= ([0-9.]+) && hue < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
         cg_sat = _need(r"saturation in ([0-9.]+)\.\.([0-9.]+)", cg_src, "color.grading.wheel saturation bounds", cg_where)
     else:
-        cg_where = "RawLabWindows/ColorGradingSettings.cs"
+        cg_where = "RawLabWindows/Core/ColorGradingSettings.cs"
         cg_src = _strip_line_comments(_read(cg_where))
         cg_hue = _need(r"Hue is >= ([0-9.]+) and < ([0-9.]+)", cg_src, "color.grading.wheel hue bounds", cg_where)
         cg_sat = _need(r"Saturation is >= ([0-9.]+) and <= ([0-9.]+)", cg_src, "color.grading.wheel saturation bounds", cg_where)
@@ -1132,9 +1132,9 @@ def parse_android_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
 
 
 def parse_windows_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]]:
-    """Parse RawLabWindows/AdjustmentPayload.cs + ToneCurveSettings.cs protocol rules."""
-    src = _strip_line_comments(_read("RawLabWindows/AdjustmentPayload.cs"))
-    curve_src = _strip_line_comments(_read("RawLabWindows/ToneCurveSettings.cs"))
+    """Parse RawLabWindows/Core/AdjustmentPayload.cs + ToneCurveSettings.cs protocol rules."""
+    src = _strip_line_comments(_read("RawLabWindows/Core/AdjustmentPayload.cs"))
+    curve_src = _strip_line_comments(_read("RawLabWindows/Core/ToneCurveSettings.cs"))
 
     enum_body = re.search(r"public enum AdjustmentField\s*\{(.*?)\}", src, re.S).group(1)
     enum_names = [tok.strip() for tok in enum_body.replace("\n", " ").split(",") if tok.strip()]
@@ -1260,17 +1260,17 @@ def parse_windows_protocol() -> tuple[list[str], dict[str, dict], dict[str, str]
     hdr_cam_keys = re.findall(r'"([^"]+)"', re.search(r"ObjectKeys\(obj,([^)]+)\)", hdr_cam_fn).group(1))
 
     curve_parse = re.search(r"internal static ToneCurveSettings Parse\(JsonElement \w+\)\s*\{(.*?)\n    \}", curve_src, re.S).group(1)
-    _need(r"is not \(\"legacy\" or \"custom\"\)", curve_src, "light.curve mode values", "RawLabWindows/ToneCurveSettings.cs")
-    _need(r"GetArrayLength\(\) > 33", curve_src, "light.curve points max", "RawLabWindows/ToneCurveSettings.cs")
+    _need(r"is not \(\"legacy\" or \"custom\"\)", curve_src, "light.curve mode values", "RawLabWindows/Core/ToneCurveSettings.cs")
+    _need(r"GetArrayLength\(\) > 33", curve_src, "light.curve points max", "RawLabWindows/Core/ToneCurveSettings.cs")
     if 'TryGetProperty("channels"' not in curve_parse:
         raise AssertionError(
             "Parse failed for light.curve optional keys: pattern 'TryGetProperty(\"channels\")' "
-            "not found in RawLabWindows/ToneCurveSettings.cs"
+            "not found in RawLabWindows/Core/ToneCurveSettings.cs"
         )
     curve_opt = ["channels"]
     curve_req = sorted(re.findall(
         r'"([^"]+)"',
-        _need(r"SequenceEqual\(new\[\] \{ ([^}]+) \}\)", curve_src, "light.curve required keys", "RawLabWindows/ToneCurveSettings.cs").group(1),
+        _need(r"SequenceEqual\(new\[\] \{ ([^}]+) \}\)", curve_src, "light.curve required keys", "RawLabWindows/Core/ToneCurveSettings.cs").group(1),
     ))
 
     protocols: dict[str, dict] = {}
@@ -2143,18 +2143,18 @@ def _parse_android_model() -> dict[str, dict]:
 
 def _parse_windows_model() -> dict[str, dict]:
     """Parse Windows model entries solely from RawLabWindows C# sources."""
-    cs_adj = _strip_line_comments(_read("RawLabWindows/Adjustments.cs"))
-    cs_fx = _strip_line_comments(_read("RawLabWindows/PhotoEffectsSettings.cs"))
-    cs_dn = _strip_line_comments(_read("RawLabWindows/DenoiseSettings.cs"))
-    cs_tone = _strip_line_comments(_read("RawLabWindows/ToneControlsSettings.cs"))
-    cs_atmos = _strip_line_comments(_read("RawLabWindows/AtmosphereSettings.cs"))
-    cs_hsl = _strip_line_comments(_read("RawLabWindows/HslSettings.cs"))
-    cs_grad = _strip_line_comments(_read("RawLabWindows/ColorGradingSettings.cs"))
-    cs_geom = _strip_line_comments(_read("RawLabWindows/GeometrySettings.cs"))
-    cs_hdr = _strip_line_comments(_read("RawLabWindows/HDRSettings.cs"))
-    cs_tr = _strip_line_comments(_read("RawLabWindows/AdjustmentTransfer.cs"))
-    cs_tv = _strip_line_comments(_read("RawLabWindows/AdjustmentTransferValues.cs"))
-    cs_hdr_tr = _strip_line_comments(_read("RawLabWindows/HDRAdjustmentTransfer.cs"))
+    cs_adj = _strip_line_comments(_read("RawLabWindows/Core/Adjustments.cs"))
+    cs_fx = _strip_line_comments(_read("RawLabWindows/Core/PhotoEffectsSettings.cs"))
+    cs_dn = _strip_line_comments(_read("RawLabWindows/Core/DenoiseSettings.cs"))
+    cs_tone = _strip_line_comments(_read("RawLabWindows/Core/ToneControlsSettings.cs"))
+    cs_atmos = _strip_line_comments(_read("RawLabWindows/Core/AtmosphereSettings.cs"))
+    cs_hsl = _strip_line_comments(_read("RawLabWindows/Core/HslSettings.cs"))
+    cs_grad = _strip_line_comments(_read("RawLabWindows/Core/ColorGradingSettings.cs"))
+    cs_geom = _strip_line_comments(_read("RawLabWindows/Core/GeometrySettings.cs"))
+    cs_hdr = _strip_line_comments(_read("RawLabWindows/Core/HDRSettings.cs"))
+    cs_tr = _strip_line_comments(_read("RawLabWindows/Core/AdjustmentTransfer.cs"))
+    cs_tv = _strip_line_comments(_read("RawLabWindows/Core/AdjustmentTransferValues.cs"))
+    cs_hdr_tr = _strip_line_comments(_read("RawLabWindows/Core/HDRAdjustmentTransfer.cs"))
 
     _require("context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.RetainedTargetProcessingVersion)", cs_tr, "processing version windows", "AdjustmentTransfer.cs")
     _require("context.OnTransferNotice?.Invoke(", cs_tv, "detail.denoise cs sdr ignored with notice", "AdjustmentTransferValues.cs")
@@ -3825,27 +3825,27 @@ def _parse_android_ui() -> dict[str, dict]:
 
 def _parse_windows_ui() -> dict[str, dict]:
     """Parse Windows UI metadata solely from RawLabWindows C# / XAML sources."""
-    cs_inter = _strip_line_comments(_read("RawLabWindows/ParameterInteraction.cs"))
+    cs_inter = _strip_line_comments(_read("RawLabWindows/Core/ParameterInteraction.cs"))
     cs_row = _strip_line_comments(_read("RawLabWindows/ParameterRow.cs"))
-    cs_adj = _strip_line_comments(_read("RawLabWindows/Adjustments.cs"))
-    cs_fx = _strip_line_comments(_read("RawLabWindows/PhotoEffectsSettings.cs"))
+    cs_adj = _strip_line_comments(_read("RawLabWindows/Core/Adjustments.cs"))
+    cs_fx = _strip_line_comments(_read("RawLabWindows/Core/PhotoEffectsSettings.cs"))
     cs_fx_panel = _strip_line_comments(_read("RawLabWindows/PhotoEffectsPanel.xaml.cs"))
     cs_fx_win_unit = _fx_windows_unit()
-    cs_dn = _strip_line_comments(_read("RawLabWindows/DenoiseSettings.cs"))
+    cs_dn = _strip_line_comments(_read("RawLabWindows/Core/DenoiseSettings.cs"))
     cs_dn_panel = _strip_line_comments(_read("RawLabWindows/DenoisePanel.xaml.cs"))
     cs_wb_panel = _strip_line_comments(_read("RawLabWindows/WhiteBalancePanel.cs"))
     cs_hsl_panel = _strip_line_comments(_read("RawLabWindows/HslPanel.cs"))
     cs_grad_panel = _strip_line_comments(_read("RawLabWindows/ColorGradingPanel.cs"))
     cs_curve_panel = _strip_line_comments(_read("RawLabWindows/ToneCurvePanel.cs"))
     cs_hdr = _strip_line_comments(_read("RawLabWindows/MainWindow.HDR.cs"))
-    cs_hdr_model = _strip_line_comments(_read("RawLabWindows/HDRSettings.cs"))
+    cs_hdr_model = _strip_line_comments(_read("RawLabWindows/Core/HDRSettings.cs"))
     cs_geom = _strip_line_comments(_read("RawLabWindows/GeometryPanel.xaml.cs"))
-    cs_geom_model = _strip_line_comments(_read("RawLabWindows/GeometrySettings.cs"))
+    cs_geom_model = _strip_line_comments(_read("RawLabWindows/Core/GeometrySettings.cs"))
     cs_lens_xaml = _read("RawLabWindows/LensPanel.xaml")
     cs_tools = _strip_line_comments(_read("RawLabWindows/MainWindow/Tools.cs"))
     cs_ai = _strip_line_comments(_read("RawLabWindows/MainWindow/AIDenoise.cs"))
-    cs_tv = _strip_line_comments(_read("RawLabWindows/AdjustmentTransferValues.cs"))
-    cs_hdr_tx = _strip_line_comments(_read("RawLabWindows/HDRAdjustmentTransfer.cs"))
+    cs_tv = _strip_line_comments(_read("RawLabWindows/Core/AdjustmentTransferValues.cs"))
+    cs_hdr_tx = _strip_line_comments(_read("RawLabWindows/Core/HDRAdjustmentTransfer.cs"))
 
     cs_default_grid = float(_need(r"record NumericRange\(double Min,\s*double Max,\s*double Grid\s*=\s*(\.\d+|\d+(?:\.\d+)?)", cs_inter, "windows default grid", "ParameterInteraction.cs").group(1))
     cs_row_default_suffix = _need(r'public void Refresh\(string title,NumericRange limits,double current,double reset,string suffix="([^"]*)"', cs_row, "windows ParameterRow default suffix", "ParameterRow.cs").group(1)
@@ -4300,7 +4300,7 @@ def parse_editor_groups_from_sources() -> dict[str, dict[str, str]]:
     ios_rules = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift"))
     kt_rules = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorAdjustmentRules.kt"))
     kt_scope = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorToolScope.kt"))
-    cs_rules = _strip_line_comments(_read("RawLabWindows/EditorAdjustmentRules.cs"))
+    cs_rules = _strip_line_comments(_read("RawLabWindows/Core/EditorAdjustmentRules.cs"))
 
     _need(r"\bhdrRendition\b", _extract_brace_block(mac_types, r"enum EditorAdjustmentGroup\b", "mac EditorAdjustmentGroup", "AdjustmentTypes.swift"), "mac hdrRendition group", "AdjustmentTypes.swift")
     mac_tools_str = _need(r"case \.hdrRendition:\s*return\s*\[([^\]]+)\]", mac_types, "mac hdrRendition tools", "AdjustmentTypes.swift").group(1)
@@ -4693,7 +4693,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         with mock.patch(
             f"{__name__}._read",
             side_effect=_mutated_reader(
-                "RawLabWindows/PhotoEffectsSettings.cs",
+                "RawLabWindows/Core/PhotoEffectsSettings.cs",
                 'new(PhotoEffectParameter.VignetteMidpoint, Loc.Text("中点"), true, 0, 100, 50)',
                 'new(PhotoEffectParameter.VignetteMidpoint, Loc.Text("中点"), true, 10, 90, 50)',
             ),

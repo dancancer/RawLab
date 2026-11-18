@@ -90,7 +90,7 @@ internal static class HDRWorkflowChecks
                 check(probe == (format == ExportFormat.HdrJpeg ? HDRProbeState.Supported : HDRProbeState.NotHDR),
                     "Rendition output reopens with the expected gain-map presence");
             }
-        } finally { window.Close(); app.Shutdown(); }
+        } finally { window.Close(); }
     }
 
     internal static void RunEffects(string repo, string fixture, Action<bool,string> check)
@@ -248,7 +248,7 @@ internal static class HDRWorkflowChecks
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR == look,"Undo reverts the entire HDR Master recipe");
         } finally {
-            window.Close(); app.Shutdown();
+            window.Close();
             if (!silverWasInstalled) File.Delete(silverAsset);
         }
     }
@@ -413,7 +413,7 @@ internal static class HDRWorkflowChecks
                     PhotoInput.ProbeHDR(published.Output,out _)==HDRProbeState.Supported,
                     "Per-photo ProRAW collection publishes the HDR gain-map JPEG");
             } finally {collectionWindow.Close();}
-        } finally {window.Close(); app.Shutdown();}
+        } finally {window.Close();}
     }
 
     internal static void RunCameraRaw(string repo, string fixture, Action<bool, string> check)
@@ -605,7 +605,6 @@ internal static class HDRWorkflowChecks
         finally
         {
             window?.Close();
-            app.Shutdown();
         }
     }
 
@@ -876,7 +875,7 @@ internal static class HDRWorkflowChecks
             } finally {File.WriteAllBytes(source,originalBytes);File.SetCreationTimeUtc(source,created);File.SetLastWriteTimeUtc(source,modified);}
             check(hash.SequenceEqual(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(source))),"Original phone photo remains unchanged");
             Console.WriteLine("HDR screenshots and outputs: "+root);
-        } finally {window.Close();app.Shutdown();}
+        } finally {window.Close();}
     }
     private static void CheckCollectionPreflight(string root,string source,Action<bool,string> check)
     {

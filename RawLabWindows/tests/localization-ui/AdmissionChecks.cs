@@ -20,7 +20,7 @@ internal static class AdmissionChecks
         }
         Reject(BatchStatus.Running,locked:true);Reject(BatchStatus.Publishing,malformed:true);
         var started=false;
-        Check(Program.Admit(Path.Combine(root,"empty"),()=>{started=true;return 73;})==73 && started,
+        Check(LocalizationUiRunner.Admit(Path.Combine(root,"empty"),()=>{started=true;return 73;})==73 && started,
             "Empty journal admission executes and preserves the startup result");
         Check(!Directory.Exists(Path.Combine(root,"empty")) && Application.Current==null,"Empty admission creates no persistence or WPF by itself");
         Console.WriteLine($"PASS {checks} localization admission checks; fixtures: {root}");
@@ -32,7 +32,7 @@ internal static class AdmissionChecks
             using var errors=new StringWriter();var previous=Console.Error;
             using(var held=locked ? new FileStream(fixture.Record,FileMode.Open,FileAccess.ReadWrite,FileShare.None) : null)
             {
-                try{Console.SetError(errors);result=Program.Admit(fixture.Journal.DirectoryPath,()=>{reached=true;return 0;});}
+                try{Console.SetError(errors);result=LocalizationUiRunner.Admit(fixture.Journal.DirectoryPath,()=>{reached=true;return 0;});}
                 finally{Console.SetError(previous);}
             }
             var name=$"{status}-{locked}-{malformed}";

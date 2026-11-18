@@ -303,7 +303,7 @@ internal static class PhotoFeatureChecks
             foreach (var path in hashes.Keys) Check(hashes[path].SequenceEqual(SHA256.HashData(File.ReadAllBytes(path))), "RAW byte identity preserved: " + Path.GetFileName(path));
             Console.WriteLine($"PASS {checks} photo feature checks; artifacts: {output}");
         }
-        finally { window.Close(); app.Shutdown(); }
+        finally { window.Close(); }
     }
 
     private static void OpenContext(MainWindow window, FrameworkElement target)

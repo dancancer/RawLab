@@ -10,7 +10,8 @@ public sealed record UpdateTrustConfiguration(string FeedUrl, string PublicKey, 
 {
     public static UpdateTrustConfiguration? Load()
     {
-        using var source = Assembly.GetExecutingAssembly().GetManifestResourceStream("RawLab.UpdateTrust.json");
+        using var source = Assembly.GetEntryAssembly()?.GetManifestResourceStream("RawLab.UpdateTrust.json")
+            ?? Assembly.GetExecutingAssembly().GetManifestResourceStream("RawLab.UpdateTrust.json");
         if (source == null) return null;
         using var reader = new StreamReader(source); return Parse(reader.ReadToEnd());
     }

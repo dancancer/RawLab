@@ -64,7 +64,7 @@ internal static class EditorShellChecks
             host.Close();
             ParameterInputUiChecks.Run(output,check);
         }
-        finally{window?.Close();Loc.Initialize(previous);app.Shutdown();}
+        finally{window?.Close();Loc.Initialize(previous);}
     }
     internal static FrameworkElement ArrangeLayout(Window window,Size requested)
     {

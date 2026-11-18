@@ -91,7 +91,7 @@ internal static class ViewComparisonChecks
         } catch {
             try{Capture(window,output,"failure-before-close");}catch(Exception diagnostic){Console.WriteLine("Failure screenshot unavailable: "+diagnostic.Message);}
             throw;
-        } finally {window.Close();Loc.Changed-=ApplyLanguage;if(application==null)app.Shutdown();}
+        } finally {window.Close();Loc.Changed-=ApplyLanguage;}
         Console.WriteLine("S3 artifacts: "+output);
     }
     private static void LayoutChecks(MainWindow window,Application app,string output,Action<bool,string> check)

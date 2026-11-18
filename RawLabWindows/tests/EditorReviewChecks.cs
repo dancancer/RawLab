@@ -63,7 +63,7 @@ internal static partial class EditorReviewChecks
                 check(new[]{raw,photo,other}.All(path=>originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(path)))),
                     "Editor review regressions preserve the external RAW and both source copies");
             }
-            finally{app.Shutdown();}
+            finally{}
         }
 
         MainWindow Open(string name)

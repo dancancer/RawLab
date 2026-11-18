@@ -7,10 +7,18 @@ internal static class TestWindowState
 {
     internal static System.Windows.Application CreateApplication()
     {
-        var app=new System.Windows.Application{ShutdownMode=System.Windows.ShutdownMode.OnExplicitShutdown};
-        app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
-        app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
-        foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+        var app = System.Windows.Application.Current;
+        if (app == null)
+        {
+            app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+            app.Resources.MergedDictionaries.Add(new() { Source = new Uri("/RawLab;component/FileTreeStyles.xaml", UriKind.Relative) });
+            app.Resources.MergedDictionaries.Add(new() { Source = new Uri("/RawLab;component/Controls.xaml", UriKind.Relative) });
+        }
+        else
+        {
+            EditorAppearance.Apply(app.Resources);
+        }
+        foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
         return app;
     }
     internal static void PreserveExistingBatch(string directory)

@@ -58,7 +58,7 @@ internal static class AIDenoiseRealWindowChecks
             Pump(()=>window.ExportPng.IsEnabled);
             check(!Settings().AIDenoiseEnabled && ((StackPanel)window.DenoiseEditor.FindName("OrdinaryDenoise")).IsEnabled,
                 "Disabling real AI returns to the ordinary preview and export path");
-        } finally {window.Close();Pump(()=>!window.IsVisible);app.Shutdown();}
+        } finally {window.Close();Pump(()=>!window.IsVisible);}
     }
     internal static void RunHDR(string model, string raw, string cache, string output, Action<bool,string> check)
     {
@@ -105,7 +105,7 @@ internal static class AIDenoiseRealWindowChecks
             check(Settings().IsHDREditing && Settings().HDRCameraAIEnabled && window.ExportHdrJpeg.IsEnabled,
                 "Reopening the RAW restores the HDR AI edit and enables export");
         }
-        finally { window.Close(); Pump(() => !window.IsVisible); app.Shutdown(); }
+        finally { window.Close(); Pump(() => !window.IsVisible); }
     }
 
     private static void Capture(MainWindow window,string path)

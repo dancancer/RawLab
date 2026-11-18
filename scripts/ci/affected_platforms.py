@@ -46,6 +46,7 @@ MAC_AND_IOS_FILES = {"RawLabMac/tests/DCPTestFixtures.swift", "RawLabMac/tests/a
 APPLE_SHARED_PREFIXES = ("tests/RawLabKitTests/",)
 CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
                       "RawLabWindows/": "windows", "RawLabAndroid/": "android"}
+CLIENT_FILES = {"global.json": "windows"}
 SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
 SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".github/actionlint.yaml"}
 
@@ -82,6 +83,8 @@ def platforms_for(path):
         return set(PLATFORMS)
     if path in MAC_AND_IOS_FILES or path.startswith(APPLE_SHARED_PREFIXES):
         return {"macos", "ios"}
+    if path in CLIENT_FILES:
+        return {CLIENT_FILES[path]}
     for prefix, platform in CLIENT_DIRECTORIES.items():
         if path.startswith(prefix):
             return {platform}

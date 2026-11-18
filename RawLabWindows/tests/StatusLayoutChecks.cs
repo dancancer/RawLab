@@ -64,6 +64,6 @@ internal static class StatusLayoutChecks
                 finally{window.Close();}
             }
         }
-        finally{app.Shutdown();}
+        finally{}
     }
 }

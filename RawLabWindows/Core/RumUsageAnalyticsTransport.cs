@@ -1,4 +1,3 @@
-#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
 using System.IO;
 using System.Runtime.InteropServices;
 
@@ -372,4 +371,3 @@ public sealed class RumUsageAnalyticsTransport : IUsageAnalyticsTransport
         internal static extern void alibabacloud_rum_custom_event_report(IntPtr nativeEvent);
     }
 }
-#endif

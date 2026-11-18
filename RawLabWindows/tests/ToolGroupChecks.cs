@@ -35,7 +35,7 @@ internal static class ToolGroupChecks
             WorkspaceGroupChecks.Run(window,output,Check);
             Console.WriteLine($"PASS {checks} tool-group checks; artifacts: {output}");
         }
-        finally { window.Close(); app.Shutdown(); }
+        finally { window.Close(); }
     }
 
     // The full photo suite calls this same assertion block before its native confirmation path.

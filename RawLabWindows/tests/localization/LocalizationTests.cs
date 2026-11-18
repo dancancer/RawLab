@@ -1,0 +1,80 @@
+using System.IO;
+using RawLab.Windows;
+using Xunit;
+
+namespace RawLab.Windows.Tests;
+
+[Trait("Category", "Model")]
+[Trait("Suite", "localization")]
+public sealed class LocalizationTests
+{
+    [Fact]
+    public void LocalizationCatalogsAndStaticKeysAreValid()
+    {
+        static void Check(bool condition, string name) => Assert.True(condition, name);
+
+        var previousLanguage = Loc.Preference;
+        try
+        {
+            Check(Loc.Resolve("system", "de-DE") == "de", "Regional system language");
+            Check(Loc.Resolve("system", "zh-Hans-CN") == "zh-Hans", "Simplified Chinese");
+            Check(Loc.Resolve("system", "zh-Hant-TW") == "en", "Unsupported Chinese script");
+            Check(Loc.Resolve("system", "pt-BR") == "en", "Unsupported language fallback");
+            Check(Loc.Resolve("ja", "fr-FR") == "ja", "Explicit language selection");
+            var nestedSources = Path.Combine(Path.GetTempPath(), "rawlab-localization-sources-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                foreach (var directory in new[] { "", "MainWindow", "tests", "bin", "obj" })
+                {
+                    var path = Path.Combine(nestedSources, directory);
+                    Directory.CreateDirectory(path);
+                    File.WriteAllText(Path.Combine(path, "Probe.cs"), "Loc.Text(\"Language\")");
+                }
+                Check(StaticKeyChecks.Arguments(nestedSources).Count() == 2, "Source scanning includes nested production files but excludes tests and build outputs");
+            }
+            finally { if (Directory.Exists(nestedSources)) Directory.Delete(nestedSources, true); }
+            foreach (var (argument, composed) in new[] {
+                ("\"暗角强度\"", false), ("titles[i + 1]", false), ("recipe?.Subtitle ?? \"中性直出\"", false),
+                ("selected ? \"暗角\" : \"颗粒\"", false), ("(spec.IsVignette ? \"暗角\" : \"颗粒\")+titles[(int)spec.Id]", true),
+                ("\"重置\"+name", true), ("(\"重置\" + name)", true), ("$\"重置{name}\"", true), ("string.Concat(a, b)", true) })
+                Check(StaticKeyChecks.IsComposed(argument) == composed, "Composed-key scanner classifies " + argument);
+            var keyArguments = StaticKeyChecks.Arguments(StaticKeyChecks.SourceDirectory()).ToList();
+            var composedKeys = keyArguments.Where(argument => StaticKeyChecks.IsComposed(argument.Text))
+                .Select(argument => "\n  " + argument.Location + ": " + argument.Text).ToList();
+            Check(keyArguments.Count > 150 && composedKeys.Count == 0,
+                $"{keyArguments.Count} Loc calls use static keys" + string.Concat(composedKeys));
+            var expected = new Dictionary<string, string> { ["en"] = "Language", ["zh-Hans"] = "语言",
+                ["de"] = "Sprache", ["fr"] = "Langue", ["ja"] = "言語", ["es"] = "Idioma" };
+            foreach (var pair in expected)
+            {
+                Loc.Initialize(pair.Key);
+                Check(Loc.Text("语言") == pair.Value, pair.Key + " embedded catalog");
+                Check(Loc.Strings.Count > 250, pair.Key + " full catalog");
+                Check(Loc.Strings.ContainsKey("裁切、旋转、翻转和拉直") && Loc.Strings.ContainsKey("裁切宽度") &&
+                      Loc.Strings.ContainsKey("重置几何编辑"), pair.Key + " geometry labels");
+                Check(Loc.Format("导出 {0} 张", 2).Contains('2'), pair.Key + " formatted arguments");
+                Check(Loc.Text("unknown.key") == "unknown.key", pair.Key + " unknown key fallback");
+                Check(Loc.Strings.ContainsKey("更多"), pair.Key + " quick preset menu label is translated");
+                var missing = keyArguments.SelectMany(argument => StaticKeyChecks.Literals(argument.Text)
+                    .Where(key => !Loc.Strings.ContainsKey(key)).Select(key => "\n  " + argument.Location + ": " + key)).ToList();
+                Check(missing.Count == 0, pair.Key + " literal keys inside Loc calls are catalogued" + string.Concat(missing));
+            }
+
+            Loc.Initialize("en");
+            var english = Loc.Strings.ToDictionary(pair => pair.Key, pair => pair.Value);
+            foreach (var language in new[] { "zh-Hans", "ja" })
+            {
+                Loc.Initialize(language);
+                var mixed = Loc.Strings.Where(pair => pair.Key.Any(c => c >= '㐀' && c <= '鿿') &&
+                        english[pair.Key].Any(char.IsLower) && pair.Value != english[pair.Key] &&
+                        pair.Value.Contains(english[pair.Key], StringComparison.Ordinal))
+                    .Select(pair => "\n  " + pair.Key + " => " + pair.Value).ToList();
+                Check(mixed.Count == 0, language + " values do not repeat the English text beside the translation" + string.Concat(mixed));
+            }
+        }
+        finally
+        {
+            Loc.Initialize(previousLanguage);
+        }
+    }
+}

@@ -50,7 +50,7 @@ internal static class AIBatchWindowChecks
             check(File.Exists(item.Output),"AI batch publishes its rendered output");
             check(File.Exists(window.Job.Items.Single(item=>item.Input==raster).Output),"Raster output is published without AI preparation");
             check(window.AIProgress.Visibility==Visibility.Collapsed,"Completed batch clears AI progress");
-        } finally {window.CancelExecution();Pump(()=>!window.Running);window.Close();app.Shutdown();}
+        } finally {window.CancelExecution();Pump(()=>!window.Running);window.Close();}
     }
     private static void Pump(Func<bool> done)
     {

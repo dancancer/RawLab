@@ -46,7 +46,7 @@ internal static class HDRReviewChecks
             RunCase("HDR and SDR clipping overlays",()=>Clipping(window,root,check));
             Console.WriteLine("HDR review outputs: "+root);
             if(failures.Count>0)throw new Exception(string.Join("; ",failures));
-        } finally {window.Close();app.Shutdown();}
+        } finally {window.Close();}
         void RunCase(string name,Action action) {
             try {action();} catch(Exception error) {failures.Add(name+": "+error.GetBaseException().Message);Console.WriteLine("REGRESSION FAILED "+failures[^1]);}
         }

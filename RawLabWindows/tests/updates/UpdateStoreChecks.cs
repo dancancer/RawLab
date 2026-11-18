@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Diagnostics;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class UpdateStoreChecks
 {
@@ -56,9 +57,7 @@ internal static class UpdateStoreChecks
             catch (IOException) { rejected = true; }
             check(rejected && File.ReadAllText(photo) == "latest format" && !backup.HasPendingRecovery,
                 "A mid-recovery failure rolls back moved directories without losing new data");
-            var start = new ProcessStartInfo("dotnet") { UseShellExecute = false };
-            start.ArgumentList.Add(typeof(UpdateStoreChecks).Assembly.Location);
-            start.ArgumentList.Add("--crash-recovery"); start.ArgumentList.Add(root); start.ArgumentList.Add(saved);
+            var start = RawLab.Windows.Tests.IsolatedChildRunner.CreateStartInfo("--crash-recovery", root, saved);
             using var child = Process.Start(start)!;
             if (!child.WaitForExit(10000)) { child.Kill(); child.WaitForExit(); throw new Exception("Recovery crash fixture timed out"); }
             check(child.ExitCode == 71 && backup.HasPendingRecovery && !File.Exists(photo), "An actual process crash leaves a recovery journal between directory moves");

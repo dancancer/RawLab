@@ -110,7 +110,7 @@ internal static class PhotoInfoReader
     {
         try
         {
-            var json = ExportMetadata.Run(["-json", "-S", path]);
+            var json = ExifToolSession.Run(["-json", "-S", path]);
             return Parse(json, path);
         }
         catch (Exception)

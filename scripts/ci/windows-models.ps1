@@ -7,27 +7,22 @@ $results=Join-Path $repo 'build/ci/windows-models'
 New-Item -ItemType Directory -Force $results|Out-Null
 $summary=@()
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
-$projects=[ordered]@{
-    editing='editing/EditWorkflow.Tests.csproj'
-    looks='looks/LookGrouping.Tests.csproj'
-    denoise='denoise/DenoiseSettingsTests.csproj'
-    localization='localization/LocalizationChecks.csproj'
-    updates='updates/UpdateChecks.csproj'
-    updateSdk='updates-sdk/UpdateSdkChecks.csproj'
-    usage='usage/UsageAnalytics.Tests.csproj'
-    systemOpen='system-open/SystemOpen.Tests.csproj'
-}
+$project=Join-Path $repo 'RawLabWindows/tests/RawLabWindows.Tests.csproj'
+$checks=@(
+    @{name='list-tests';args=@('test',$project,'-c','Release','--list-tests')}
+    @{name='models';args=@('test',$project,'-c','Release','--no-build','--filter','Category=Model','--logger','console;verbosity=normal')}
+)
 try {
-    foreach($name in $projects.Keys) {
-        $project=Join-Path $repo ('RawLabWindows/tests/'+$projects[$name])
-        $result=Invoke-CheckProcess -Name $name -Executable $DotNet -Arguments @('run','--project',$project,'-c','Release') -Directory $repo -Log (Join-Path $results ($name+'.log')) -TimeoutSeconds $TimeoutSeconds
+    foreach($check in $checks) {
+        $name=$check.name
+        $result=Invoke-CheckProcess -Name $name -Executable $DotNet -Arguments $check.args -Directory $repo -Log (Join-Path $results ($name+'.log')) -TimeoutSeconds $TimeoutSeconds
         $summary+=@{name=$name;exitCode=$result.exitCode;timedOut=$result.timedOut;durationSeconds=$result.durationSeconds;log=($name+'.log')}
         ConvertTo-Json -InputObject @($summary) -Depth 4|Set-Content (Join-Path $results 'summary.json') -Encoding utf8
+        if($result.exitCode -ne 0){throw "Windows model check '$name' failed."}
     }
-    if(@($summary|Where-Object {$_.exitCode -ne 0}).Count){throw 'Some Windows model checks failed.'}
 }
 catch {
-    $summary+=@{name='runner';exitCode=1;error=$_.Exception.Message}
+    if(@($summary|Where-Object {$_.exitCode -ne 0}).Count -eq 0){$summary+=@{name='runner';exitCode=1;error=$_.Exception.Message}}
     throw
 }
 finally {ConvertTo-Json -InputObject @($summary) -Depth 4|Set-Content (Join-Path $results 'summary.json') -Encoding utf8}

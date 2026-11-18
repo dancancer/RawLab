@@ -15,5 +15,6 @@ if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 $feed=Join-Path $out ("feed-"+[Guid]::NewGuid().ToString('N'))
 & "$out/tools/vpk.exe" pack --packId RawLab.Desktop --packVersion 0.9.1 --runtime win-x64 --packDir "$out/publish" --mainExe RawLab.exe --channel stable --outputDir $feed
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-dotnet run --project "$repo/RawLabWindows/tests/updates-sdk/UpdateSdkChecks.csproj" -c Release -- --offline $feed
+$env:RAWLAB_TEST_OFFLINE_FEED=$feed
+dotnet test "$repo/RawLabWindows/tests/RawLabWindows.Tests.csproj" -c Release --filter "Suite=updates-sdk-offline"
 exit $LASTEXITCODE

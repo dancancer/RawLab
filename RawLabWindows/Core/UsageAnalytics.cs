@@ -131,14 +131,9 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
             Path.GetFileNameWithoutExtension(full) + "-rum-cache");
     }
 
-    internal static bool IsCacheInUse(string directory)
-    {
-#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
-        return RumUsageAnalyticsTransport.IsCacheInUse(directory);
-#else
-        return false;
-#endif
-    }
+    internal static Func<string, IUsageAnalyticsTransport>? DefaultTransportFactory { get; set; }
+
+    internal static bool IsCacheInUse(string directory) => RumUsageAnalyticsTransport.IsCacheInUse(directory);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -148,10 +143,8 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
         CacheDirectory = CacheDirectoryFor(this.settingsPath);
         installId = new UsageInstallId(InstallIdPathFor(this.settingsPath));
         this.transport = transport ?? CreateDefaultTransport(CacheDirectory);
-#if RAWLAB_RUM_SDK || RAWLAB_RUM_TRANSPORT_TEST
         if (this.transport is RumUsageAnalyticsTransport rumTransport)
             rumTransport.BindDefaultCacheDirectory(CacheDirectory);
-#endif
         consentGiven = ReadConsent();
         RefreshStatus();
     }
@@ -165,6 +158,7 @@ public sealed class UsageAnalytics : INotifyPropertyChanged, IAsyncDisposable
 
     private static IUsageAnalyticsTransport CreateDefaultTransport(string cacheDirectory)
     {
+        if (DefaultTransportFactory != null) return DefaultTransportFactory(cacheDirectory);
 #if RAWLAB_RUM_SDK
         return RumUsageAnalyticsTransport.CreateDefault(cacheDirectory);
 #else

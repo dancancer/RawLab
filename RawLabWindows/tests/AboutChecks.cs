@@ -86,7 +86,6 @@ internal static class AboutChecks
             Loc.Changed -= ApplyLanguage;
             Loc.Initialize(previousLanguage);
             SynchronizationContext.SetSynchronizationContext(previousContext);
-            app.Shutdown();
             Directory.Delete(directory, recursive: true);
         }
     }

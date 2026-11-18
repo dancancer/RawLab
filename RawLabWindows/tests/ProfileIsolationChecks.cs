@@ -56,7 +56,7 @@ internal static class ProfileIsolationChecks
                 check(Path.GetFullPath(path).StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),"Private window persistence: "+field);
             }
         }
-        finally{window.Close();app.Shutdown();}
+        finally{window.Close();}
         var folderRoot=Path.Combine(root,"folders-p108");
         var foldersPath=Path.Combine(folderRoot,"folders.json");
         var folderMoves=0;

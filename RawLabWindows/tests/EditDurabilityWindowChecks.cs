@@ -17,10 +17,9 @@ internal static class EditDurabilityWindowChecks
     {
         TestWindowState.PreserveExistingBatch(BatchJournal.DefaultDirectory);
         Directory.CreateDirectory(output);
-        var ownsApp = Application.Current == null;
         var previous = Loc.Preference;
         Loc.Initialize("zh-Hans");
-        var app = ownsApp ? TestWindowState.CreateApplication() : Application.Current!;
+        var app = TestWindowState.CreateApplication();
         foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         try
@@ -30,7 +29,6 @@ internal static class EditDurabilityWindowChecks
         finally
         {
             Loc.Initialize(previous);
-            if (ownsApp) app.Shutdown();
         }
     }
 

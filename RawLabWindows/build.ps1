@@ -122,7 +122,7 @@ if (!$Python) { $Python = & "$PSScriptRoot/build-host-python.ps1" -Directory "$r
 $fixture = ''
 if ($Test) {
     & "$PSScriptRoot/tests/BuildScriptChecks.ps1"
-    Invoke-Checked $DotNet @('run','--project',"$PSScriptRoot/tests/updates/UpdateChecks.csproj",'-c','Release')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--filter','Suite=updates')
     if (!$RawPath) { $RawPath = (Get-ChildItem -LiteralPath $RawDirectory -File -Filter '*.ARW' | Sort-Object Name | Select-Object -First 1).FullName }
     if (!$RawPath -or !(Test-Path -LiteralPath $RawPath)) { throw 'Supply -RawPath pointing to an external RAW fixture.' }
     # Test only a local copy; the external photo directory is read-only input.
@@ -221,14 +221,18 @@ if ($Test) {
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
     Copy-Item "$native/hdr-display/Release/rawlab-hdr-display.dll" $testOut -Force
     Copy-Item "$output/ExifTool" $testOut -Recurse -Force
+    $env:RAWLAB_TEST_REPO = $repo
+    $env:RAWLAB_TEST_RAW = $fixture
+    $env:RAWLAB_TEST_RESULTS = "$repo/build/windows-v08-results"
     if ($DualDnModel) {
         foreach ($name in $runtimePins.Keys) { Copy-Item -LiteralPath "$output/$name" $testOut -Force }
         Copy-Item "$output/AI" $testOut -Recurse -Force
-        Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--ai-window',"$repo/lutools/tests/fixtures/bayer-demosaic.dng","$repo/build/windows-ai-window")
+        $env:RAWLAB_TEST_AI_RAW = "$repo/lutools/tests/fixtures/bayer-demosaic.dng"
+        Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=ai-window')
     }
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--ai-panel',"$repo/build/windows-ai-panel")
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--about')
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=ai-panel')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=about')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=default')
 }
 if ($ReleasePackage) {
     # Package only after native libraries, models, notices and compiler runtimes are copied.

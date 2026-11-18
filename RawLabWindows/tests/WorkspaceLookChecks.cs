@@ -137,7 +137,7 @@ internal static class WorkspaceLookChecks
                 "Unavailable lens calibration explains why while retained correction can be disabled");
             distortion.IsChecked=false;check(!distortion.IsEnabled,"Turning off a retained unavailable correction prevents re-enabling it");
             Console.WriteLine("Workspace artifacts: "+output);
-        } finally {window.Close();app.Shutdown();}
+        } finally {window.Close();}
     }
     private static bool WorkspaceModeGapIsClickable(Button button)
     {

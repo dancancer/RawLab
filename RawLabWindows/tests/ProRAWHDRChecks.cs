@@ -132,19 +132,15 @@ internal static class ProRAWHDRChecks
             }
         }
 
-        if (typeof(Adjustments).Assembly.GetType("RawLab.Windows.RenderEngine")
-                ?.GetMethod("ValidateHDRRender", Static) is { } validateRender)
+        try
         {
-            try
-            {
-                validateRender.Invoke(null, [restoredUnknown, true]);
-                check(false, "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
-            }
-            catch (TargetInvocationException wrapped) when (wrapped.InnerException is HDRModeException error)
-            {
-                check(error.Failure == HDRModeFailure.InvalidSettings,
-                    "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
-            }
+            RenderEngine.ValidateHDRRender(restoredUnknown, true);
+            check(false, "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
+        }
+        catch (HDRModeException error)
+        {
+            check(error.Failure == HDRModeFailure.InvalidSettings,
+                "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
         }
 
         if (TryFindProjectRoot() is { } projectRoot)

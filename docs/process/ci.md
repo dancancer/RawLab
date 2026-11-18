@@ -247,8 +247,10 @@ gate's honest skip pair otherwise.
   environment required): the mixed HDR-JPEG collection assertions fail on the simulator even on a
   pristine `development` base with the same framework and harness, so a simulator failure is not
   a product delta and the suite stays a real-device HDR gate.
-- Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
-  rendering DLL, RAW fixture or self-contained app build is required.
+- Windows fast models: `./scripts/ci/windows-models.ps1` runs
+  `dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --list-tests`
+  and `--filter Category=Model`; no WPF window, native rendering DLL, RAW fixture
+  or self-contained app build is required.
 - Android models: `./gradlew :app:testDebugUnitTest` plus
   `RawLabAndroid/tests/jni-session-lock.sh`, `recipe-probe-stages.sh` and
   `ndk-compile.sh` (arm64 NDK CMake compile check for GLES/test targets without
@@ -378,13 +380,13 @@ For ordinary automatic PR/push events selecting Windows, **Windows batch-selecti
 runs independently on `windows-2022`, alongside the unchanged models job. It builds
 the current checkout's `sony2fuji` target and its `raw.dll` dependency, retaining the
 production rendering features while omitting native test executables and CLI builds.
-`run-v08.ps1 -Only 'batch-selection'` compiles the WPF app through its test project
-reference, compiles the existing localization UI prerequisite, resolves their real
-`TargetDir` values, and copies the native DLLs, MSVC CRT/OpenMP and complete pinned
-ExifTool 13.59 distribution there. The suite uses the tracked DJI DNG, CPU editing
-and ordinary Auto export with CPU fallback; it does not require AI models or a
-physical GPU. Only `BatchSelectionUiChecks` executes: the default/legacy suite and
-all other UI subsets stay outside this automatic job. Native products are rebuilt
+`run-v08.ps1 -Only 'batch-selection'` compiles the unified xUnit test project
+`RawLabWindows.Tests.csproj` (referencing `RawLab.Windows.Core` and the WPF app),
+resolves its real `TargetDir`, and copies the native DLLs, MSVC CRT/OpenMP and
+complete pinned ExifTool 13.59 distribution there. The suite uses the tracked DJI
+DNG, CPU editing and ordinary Auto export with CPU fallback; it does not require
+AI models or a physical GPU. Only the `Suite=batch-selection` xUnit test executes:
+the default/legacy suite and all other UI subsets stay outside this automatic job. Native products are rebuilt
 from source on every run; only checksum-verified source archives are shared by cache.
 The aggregate result requires this job to succeed when selected, so a skipped,
 failed or cancelled suite cannot produce a green automatic gate. Its v08 logs and

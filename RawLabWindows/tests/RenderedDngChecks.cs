@@ -217,6 +217,6 @@ internal static class RenderedDngChecks
             Console.WriteLine("PASS Windows rendered DNG runtime regression");
             Console.WriteLine("NOT REACHED MainWindow SaveFileDialog and Explorer desktop integration");
         }
-        finally { batch.Close(); app.Shutdown(); }
+        finally { batch.Close(); }
     }
 }
