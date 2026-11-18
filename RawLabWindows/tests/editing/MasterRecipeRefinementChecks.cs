@@ -52,7 +52,7 @@ internal static class MasterRecipeRefinementChecks
         var detached = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Looks),
             new(new("photo.ARW", 1, 2, 3), state.Capture(), null));
         Check(detached.Status == EditorResetStatus.Ready, "V4 look reset is representable");
-        Check(detached.MaterializedFields!.Contains(Loc.Text("曲线")) && detached.MaterializedFields!.Contains(Loc.Text("颜色分级")),
+        Check(detached.MaterializedFields!.Contains("曲线") && detached.MaterializedFields!.Contains("颜色分级"),
             "Recipe removal reports materialized curve and grading controls");
         var independent = detached.Candidate!.Settings.Restore();
         Check(independent.MasterRecipeID == null && independent.ToneControls == state.RenderToneControls &&
