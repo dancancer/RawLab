@@ -87,7 +87,7 @@ internal static class PhotoInput
     internal static X3fMode X3fDefaultMode(string path)
     {
         var status = Native.sony2fuji_x3f_default_mode(path, out var mode);
-        Native.Check(status);
+        Native.CheckWithoutSession(status);
         return mode;
     }
 

@@ -28,7 +28,7 @@ internal static class RenderedDngChecks
 
     private static string StatusMessage(int status)
     {
-        try { Native.Check(status); }
+        try { Native.CheckWithoutSession(status); }
         catch (InvalidOperationException error) { return error.Message; }
         throw new ArgumentOutOfRangeException(nameof(status));
     }

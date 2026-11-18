@@ -98,7 +98,7 @@ public partial class MainWindow
 
         Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)> ImportOne(string path,LUTCompatibility? compatibility,DcpImportOptions? dcpOptions=null) => Task.Run(()=>{
             var suffix=Path.GetExtension(path).ToLowerInvariant();
-            if(compatibility!=null || dcpOptions!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && PInvokeNative.InspectLutColor(path) is 4 or 7 or 8)
+            if(compatibility!=null || dcpOptions!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && Native.InspectLutColor(path) is 4 or 7 or 8)
             {
                 if(library==null) throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
                 var imported=library.ImportLook(path,compatibility,dcpOptions);

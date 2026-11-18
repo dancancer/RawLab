@@ -20,7 +20,7 @@ internal static class WhiteBalanceChecks
             Native.CancellationCallback countCalls=_=>{Interlocked.Increment(ref polls);return 0;};
             // Replacing the RAW may recreate the native session. Keep the observer registered through that path.
             engine.CancellationCallback=countCalls;
-            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero));
+            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero), session);
             var recipe=new Adjustments();recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
             recipe.Set(Parameter.Strength,100);recipe.Set(Parameter.Tint,10);
             var first=Resolve(recipe);

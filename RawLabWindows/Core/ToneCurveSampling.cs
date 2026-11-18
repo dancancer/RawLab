@@ -8,7 +8,7 @@ internal static class ToneCurveSampling
         var config = curve.NativeConfig();
         var x = Enumerable.Range(0, count).Select(i => (double)i / (count - 1)).ToArray();
         var y = new double[count];
-        Native.Check(Native.sony2fuji_sample_tone_curve(ref config, x, y, (uint)count));
+        Native.CheckWithoutSession(Native.sony2fuji_sample_tone_curve(ref config, x, y, (uint)count));
         return x.Zip(y, (input, output) => new ToneCurvePoint(input, output)).ToArray();
     }
 }

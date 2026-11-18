@@ -46,14 +46,15 @@ public partial class MainWindow : Window
     private readonly EditorViewState view=new();
     private bool compare=>view.Enabled;
     private bool swipe=>view.Enabled && view.PreferredMode==ComparisonMode.Wipe;
-    private bool clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance;
+    private bool clipping;
+    private EditorToolMode toolMode = EditorToolMode.Parameter;
     private RenderedImage? neutralResult;
     private long neutralRevision;
     private NeutralReferenceKey? acceptedReference;
     private NeutralReferenceKey? acceptedAfter;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
-    private bool choosingHsl,choosingGrading,autoExposing;
+    private bool autoExposing;
     private long editRevision;
     private int? exportLongEdge;
     private string? lastExportedPath;

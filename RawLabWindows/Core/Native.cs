@@ -293,6 +293,31 @@ internal static partial class Native
         public int AppliedDistortion, AppliedTca;
         public float CropScale;
     }
+    internal const int StatusOk = 0;
+    internal const int StatusInvalidArgument = 1;
+    internal const int StatusUnsupported = 2;
+    internal const int StatusIoError = 3;
+    internal const int StatusOutOfMemory = 5;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DcpBlob
+    {
+        public IntPtr Data;
+        public nuint SizeBytes;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct AIConfig
+    {
+        public uint Version, StructSize;
+        public int Enabled, Backend;
+        [MarshalAs(UnmanagedType.LPUTF8Str)] public string ModelDirectory;
+        [MarshalAs(UnmanagedType.LPUTF8Str)] public string CacheDirectory;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int AIProgress(IntPtr context, int phase, ulong completed, ulong total);
+
     internal static string Text(byte[]? value)
     {
         if (value == null) return "";
@@ -301,7 +326,7 @@ internal static partial class Native
     }
     internal sealed class Session : SafeHandleZeroOrMinusOneIsInvalid
     {
-        public Session() : base(true) { Check(sony2fuji_session_create(out var value)); SetHandle(value); }
+        public Session() : base(true) { CheckWithoutSession(sony2fuji_session_create(out var value)); SetHandle(value); }
         protected override bool ReleaseHandle() => sony2fuji_session_destroy(handle) == 0;
     }
     internal enum UnsupportedReason
@@ -323,14 +348,21 @@ internal static partial class Native
             _ => Loc.Text("照片处理失败。")
         };
     }
-    internal static void Check(int status, Session? session = null)
+    internal static void Check(int status, Session session)
     {
+        ArgumentNullException.ThrowIfNull(session);
         if (status == 0) return;
-        var detail = session != null ? Marshal.PtrToStringUTF8(sony2fuji_session_x3f_error(session)) : null;
-        var unsupportedReason = status == 2 && session != null
+        var detail = Marshal.PtrToStringUTF8(sony2fuji_session_x3f_error(session));
+        var unsupportedReason = status == 2
             ? (UnsupportedReason)sony2fuji_session_get_unsupported_reason(session)
             : UnsupportedReason.None;
         throw new InvalidOperationException(FormatErrorMessage(status, detail, unsupportedReason));
+    }
+
+    internal static void CheckWithoutSession(int status)
+    {
+        if (status == 0) return;
+        throw new InvalidOperationException(FormatErrorMessage(status, null, UnsupportedReason.None));
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_destroy(IntPtr session);
@@ -431,4 +463,61 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hdr_release_pair(ref HDRImagePair image);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe_look(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRLookInfo info, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_prepare_camera_raw_ai(Session session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, AIProgress progress, IntPtr context, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_camera_ai_key(Session session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, [Out] byte[] key, uint capacity, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_hdr_decode_camera_raw_with_ai(Session? session,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options, ref HDRCameraDevelopment development,
+        ref HDRImagePair result, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_available();
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_hardware_available();
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_ai_get_devices();
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_device(
+        Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string deviceID);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_diagnostics(Session session);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_denoise(Session session,ref AIConfig config);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_prepare_ai(Session session,ref Request request,AIProgress progress,IntPtr context);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_error(Session session);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_backend(Session session);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_preview_lut_compatibility(Session session, ref Request request,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string configuration, ref Buffer output);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_compare_lut_previews(ref Buffer candidate, ref Buffer reference,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string conditions, ref DcpBlob output);
+    [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int CompileDcp(
+        IntPtr source,
+        nuint sourceSizeBytes,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceName,
+        ref DcpBlob output,
+        ref DcpErrorReason reason);
+    [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp_with_options", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int CompileDcpWithOptions(
+        IntPtr source,
+        nuint sourceSizeBytes,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceName,
+        IntPtr toneCurveJson,
+        nuint toneCurveSizeBytes,
+        uint omitAutomaticBlack,
+        ref DcpBlob output,
+        ref DcpErrorReason reason);
+    [DllImport(Dll, EntryPoint = "sony2fuji_release_blob", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void ReleaseBlob(ref DcpBlob blob);
+    [DllImport(Dll, EntryPoint = "sony2fuji_validate_look", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int ValidateLook(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        out LookFormat format,
+        out uint formatVersion);
+    [DllImport(Dll, EntryPoint = "sony2fuji_inspect_lut_color", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int InspectLutColor([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
+    [DllImport(Dll, EntryPoint = "sony2fuji_inspect_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int InspectLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref DcpBlob output);
+    [DllImport(Dll, EntryPoint = "sony2fuji_prepare_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int PrepareLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string request, ref DcpBlob output);
 }

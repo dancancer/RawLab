@@ -102,16 +102,16 @@ internal static class ToolGroupChecks
         PhotoFeatureChecks.Click(neutralRecipe);
 
         PhotoFeatureChecks.Click(whiteBalanceTool);
-        check(window.ChoosingWhiteBalance,
+        check(window.ToolMode == EditorToolMode.WhiteBalance,
             "Selecting white balance marks its editor as active before a transform");
         PhotoFeatureChecks.Click(window.GeometryCategory);
         var transform = window.TransformDraft;
-        check(transform.Active && !window.ChoosingWhiteBalance,
+        check(transform.Active && window.ToolMode != EditorToolMode.WhiteBalance,
             "Entering a transform clears stale white-balance selection state");
         var cancel = PhotoFeatureChecks.Descendants<Button>(window.DraftActions).Single(button =>
             string.Equals(button.Content?.ToString(), Loc.Text("取消"), StringComparison.Ordinal));
         PhotoFeatureChecks.Click(cancel);
-        check(!transform.Active && !window.ChoosingWhiteBalance,
+        check(!transform.Active && window.ToolMode != EditorToolMode.WhiteBalance,
             "Leaving a transform does not restore stale white-balance selection state");
 
         var grainTool = window.Tools.Children.OfType<Button>().Single(button =>
