@@ -19,7 +19,7 @@
   <!-- 阿里云 RUM PC SDK（使用统计）：Release 默认带，规则与开关见 RumSdk.targets -->
   <Import Project="RumSdk.targets" />
   <ItemGroup>
-    <ProjectReference Include="Core/RawLab.Windows.Core.csproj" />
+    <ProjectReference Include="Core/RawLab.Windows.Core.csproj" GlobalPropertiesToRemove="RawLabRumSdk;RawLabRumLocal;RawLabRumSdkZip;RawLabRumSdkRoot;RawLabUpdateTrustFile" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <EmbeddedResource Include="$(RawLabUpdateTrustFile)" LogicalName="RawLab.UpdateTrust.json" />
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />

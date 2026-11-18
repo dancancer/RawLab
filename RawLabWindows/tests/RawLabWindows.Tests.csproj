@@ -14,8 +14,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="Xunit.StaFact" Version="1.2.69" />
-    <ProjectReference Include="../Core/RawLab.Windows.Core.csproj" />
-    <!-- 测试永远不带统计 SDK：只用不可用或假的 transport，不可能发出正式数据 -->
+    <!-- 测试永远不带统计 SDK：只用不可用或假的 transport，不可能发出正式数据；Core 经 RawLabWindows 传递引用以免并行双构建 -->
     <ProjectReference Include="../RawLabWindows.csproj" AdditionalProperties="RawLabRumSdk=false" />
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
   </ItemGroup>
