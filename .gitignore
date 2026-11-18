@@ -74,3 +74,5 @@ experiments/rum-local/windows/obj/
 /release-artifacts
 
 /reviews
+
+/.dsh-kanban.json
