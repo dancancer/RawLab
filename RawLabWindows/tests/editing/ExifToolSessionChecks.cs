@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 // ExifTool stay_open 会话的行为测试：用 EditWorkflow.Tests 自身重启为
 // --exif-stub 替身进程实现协议，不依赖打包的 ExifTool.exe（真机 ExifTool

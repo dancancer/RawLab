@@ -1,9 +1,11 @@
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.IO.Compression;
 using System.Reflection.PortableExecutable;
 using System.Xml.Linq;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 using Velopack;
 using Velopack.Locators;
 using Velopack.Sources;

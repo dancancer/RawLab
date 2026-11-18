@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Diagnostics;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class UpdateStoreChecks
 {
