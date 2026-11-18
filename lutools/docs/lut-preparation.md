@@ -310,7 +310,7 @@ look. The clients do not guess unknown input/output colors or camera base styles
 ```bash
 cmake --build lutools/build-macos -j 6
 RAWLAB_DCP_PROBE=lutools/build-macos/dcp_look_tests \
-  lutools/.venv-lutprep/bin/python -m unittest discover -s lutools/tests -p 'test_*.py' -v
+  lutools/.venv-lutprep/bin/python -m pytest lutools/tests -v
 ctest --test-dir lutools/build-macos --output-on-failure
 lutools/build-macos/acceleration_tests lutools/examples/DSC06251.ARW output/lutprep/profile-look.rlook
 lutools/build-macos/acceleration_tests lutools/examples/DJI_20250602164503_0444_D.DNG output/lutprep/profile-look.rlook

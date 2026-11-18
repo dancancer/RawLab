@@ -90,19 +90,15 @@ jobs:
           python --version
           python -m pip install -r scripts/ci/requirements.txt
           python -m pip install -r lutools/requirements-lutprep.txt
+          python -m pip install pytest==9.0.2
           lint_dir="$(mktemp -d)"
           trap 'rm -rf "$lint_dir"' EXIT
           curl -fL --retry 2 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
-          python -m unittest discover -s scripts/ci -p 'test_*.py' -v
+          python -m pytest -v
           python scripts/localization/generate.py --check
-          python tests/test_localization.py
-          python lutools/tests/test_cli_test_encoding.py
-          python lutools/tests/test_tiff_dependencies.py
-          python lutools/tests/test_hdr_sources.py
-          python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
           python -m pip install uv==0.9.5
           uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v
           git diff --check

@@ -32,6 +32,8 @@ DOC_FILES = {
     ".dsh-kanban.json",
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/CODEOWNERS",
+    # Governs Python test discovery in `contracts` only; platform jobs do not consume it.
+    "pyproject.toml",
 }
 DOC_NAMES = {"AGENTS.md", "CLAUDE.md"}
 # Clients package these notices/schemas even though they live under doc-like paths.
