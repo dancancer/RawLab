@@ -141,17 +141,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
         with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
             midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        return nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
-            pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, null, effective.strength,
-            effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-            effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
-            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, null,
-            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration, migration)
+        return nativeProcess(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = edge,
+                interactive = interactive,
+                revision = revision,
+                probe = probe,
+                cancellationGeneration = cancellationGeneration,
+                migrationOut = migration,
+            ),
+        )
     }
 
     @Synchronized
@@ -209,18 +212,19 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
                     with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
                         midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
                     val backend = intArrayOf(-1)
-                    nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
-                        pixels?.pixelFormat ?: 0, lut?.path, staging.path, effective.strength,
-                        effective.exposure, effective.customWb, effective.temperature, effective.tint,
-                        effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-                        effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
-                        effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-                        effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-                        effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-                        effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-                        effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null,
-                        effective.processing.version, effective.x3fMode.nativeValue, backend,
-                        0, 0, null, generation, null)
+                    nativeProcess(
+                        handle,
+                        effective.toNativeProcessRequest(
+                            inputPath = input.path,
+                            pixels = pixels,
+                            lutPath = lut?.path,
+                            outputPath = staging.path,
+                            format = format,
+                            longEdge = longEdge ?: 0,
+                            backendOut = backend,
+                            cancellationGeneration = generation,
+                        ),
+                    )
                     check(backend[0] >= 0) { "Native export did not report a backend" }
                     backend[0]
                 },
@@ -384,17 +388,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
-    private external fun nativeProcess(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
-        pixelFormat: Int, lut: String?, output: String?,
-        strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
-        highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
-        edge: Int, interactive: Boolean, format: Int, longEdge: Int,
-        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
-        vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
-        vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, x3fMode: Int, backend: IntArray? = null,
-        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
-        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame?
+    private external fun nativeProcess(handle: Long, request: NativeProcessRequest): NativeFrame?
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean
