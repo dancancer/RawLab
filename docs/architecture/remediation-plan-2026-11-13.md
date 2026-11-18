@@ -10,14 +10,14 @@
      ../archive/architecture/remediation-roadmap-2026-11-13.md 是同内容的早期快照（§2/§5/§6 已滞后并已归档，参见 adr-2026-11-19-owner-transformation.md），以本目录两文件为准，后续合并。
 复核说明：独立复核请直接按「依据」列的命令与断言复跑，并撤掉对应修复确认变红——
 本表的「已修」只以代码核实和红/绿证据为准，不以 PR 标题为准。
-文档来源：codebase-review-2026-11-12.md、codebase-review-followup-2026-11-13.md、
+文档来源：../archive/architecture/codebase-review-2026-11-12.md、codebase-review-followup-2026-11-13.md、
 architecture-review-2026-11-13.md。
 -->
 
 # RawLab 综合整改任务清单（两份评审 + 实际合并台账，2026-11-13）
 
 - **代码基线**：`origin/development` @ `0cf4a88a`（PR #269）。本机工作区 HEAD 停在 `d05c8d7d`，所以全部代码核实都用 `git show 0cf4a88a:<path>` 和对当前 `development` 的实时检查完成。
-- **输入**：主评审 `docs/architecture/codebase-review-2026-11-12.md`（下称“主”）；复审 `docs/architecture/codebase-review-followup-2026-11-13.md`（下称“复”）；架构评审 `docs/architecture/architecture-review-2026-11-13.md`。
+- **输入**：主评审 `docs/archive/architecture/codebase-review-2026-11-12.md`（下称“主”）；复审 `docs/architecture/codebase-review-followup-2026-11-13.md`（下称“复”）；架构评审 `docs/architecture/architecture-review-2026-11-13.md`。
 - **行号**：表里写的行号都按 `0cf4a88a` 实测。不在改动清单里的文件，复审行号仍然有效；这类引用标“文件未改，沿用复审”。
 - **负责人图例**：Core 核心、Mac、iOS、And(roid)、Win(dows)、CI、Apple（Mac 和 iOS 同一个 PR）、Shared；“主”指与协调者同一模型，“轻”指机械改动，可用轻量模型。
 

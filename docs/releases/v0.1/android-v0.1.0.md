@@ -37,4 +37,4 @@
 - 相册只展示已授权且被系统收录的 RAW，其他文件通过系统文件选择器导入。
 - 这是独立项目，不是 Fujifilm 官方应用，胶片效果不保证与相机 JPEG 完全一致。
 
-详细颜色约定、构建方式与性能测量见仓库的 `RawLabAndroid/README.md`、`RawLabAndroid/gpu-verification.md` 和 `lutools/docs/color-contract.md`。
+详细颜色约定、构建方式与性能测量见仓库的 `RawLabAndroid/README.md`、`docs/archive/verification/android/gpu-verification.md` 和 `lutools/docs/color-contract.md`。

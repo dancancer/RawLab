@@ -237,7 +237,7 @@ contract on/off、IEEE denormal 模式允许通过；限制只作用于被检查
 `wavelet_denoise_tests` 也可作为 Android CMake 的独立 `EXCLUDE_FROM_ALL` 目标构建，
 在设备上执行现有的 SWT golden、纹理/颜色边缘、缓存和逐像素一致性测试；不打包进 APK。
 原尺寸 CPU 批处理仍以既有 240 秒用例验证，GPU 开关的模式约定和画质不变。
-热点证据、逐像素对照和真机结果见 [CPU 性能验证](cpu-denoise-performance-verification.md)。
+热点证据、逐像素对照和真机结果见 [CPU 性能验证](../docs/archive/verification/android/cpu-denoise-performance-verification.md)。
 
 ```sh
 # Repository root: shared rendering regressions.
@@ -311,9 +311,9 @@ LD_LIBRARY_PATH=. ./rawlab_large_image_tests photo.RAF velvia.cube 100000000 exp
 
 设备测试通过 `RAWLAB_TEST_RAW` 或 `-PrawlabTestRaw=/path/to/photo.ARW` 使用外部样片，只将其放入测试 APK，不放入正式应用 APK。v0.2 使用 Sony 样片验证了 7008x4672 原尺寸 JPEG / 16-bit PNG 和 EXIF，并在正式签名 APK 上通过了 10 项模拟器测试。
 测试报告位于 `app/build/reports/`，APK 位于 `app/build/outputs/apk/debug/`。
-实际验证记录见 [verification.md](verification.md)。
+实际验证记录见 [verification.md](../docs/archive/verification/android/verification.md)。
 
-Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestRaw=/path/to/photo.ARW`, packaged only into the test APK. v0.2 verified native 7008x4672 JPEG/16-bit PNG and EXIF with a Sony fixture, and passed 10 emulator tests against the release-signed APK. See [verification.md](verification.md) for coverage details.
+Device tests use an external fixture through `RAWLAB_TEST_RAW` or `-PrawlabTestRaw=/path/to/photo.ARW`, packaged only into the test APK. v0.2 verified native 7008x4672 JPEG/16-bit PNG and EXIF with a Sony fixture, and passed 10 emulator tests against the release-signed APK. See [verification.md](../docs/archive/verification/android/verification.md) for coverage details.
 
 JPEG XL 原生回归使用已运行的本机模拟器，不安装应用，也不修改原始 RAW：
 
@@ -331,7 +331,7 @@ Stage2 GainMap、白平衡重载、解码器复用、损坏文件错误分类以
 
 - GLES 3.1 加速缩放、曝光/色彩转换、中性映射、胶片及强度、明暗处理、细节、暗角/颗粒、小波过滤和显示色度引导滤波。RAW 解码、去马赛克、噪声估计、OpenCV Lab 转换及文件编码仍在 CPU。
   GLES 3.1 accelerates resizing, exposure/matrices, neutral mapping, LUT/blending, tone, detail, vignette/grain, wavelet filtering and display-chroma guided filtering. RAW decoding/demosaic, noise estimation, OpenCV Lab conversion and encoding stay on CPU.
-- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](gpu-verification.md)。
+- 暗角/颗粒的 8 项参数与 Mac/iOS/Windows 一致，预览、导出、编辑记忆和批量快照均传递完整配置。Auto 在 GPU 失败时回退 CPU；Force 不隐藏失败。新能力的真机范围见 [跨平台验证记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)，历史基线见 [GPU 验证记录](../docs/archive/verification/android/gpu-verification.md)。
   All eight effect parameters match Mac/iOS/Windows and survive preview, export, edit memory and batch snapshots. Auto retains CPU fallback; Force reports GPU failure. See the [cross-platform verification](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md) for current coverage.
 - 全尺寸 RAW 显影需要较多 native 内存。低内存设备可能失败或被系统终止；没有验证所有相机和像素尺寸。
   Full-resolution RAW development is memory-intensive; low-memory devices may fail or be killed by the OS.

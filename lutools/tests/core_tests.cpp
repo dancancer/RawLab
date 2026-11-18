@@ -10,7 +10,7 @@
 #ifdef _WIN32
 #define STBIW_WINDOWS_UTF8
 #endif
-#include "core/stb_image_write.h"
+#include "stb_image_write.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "core/stb_image.h"
 #include "core/processing_cancellation.h"

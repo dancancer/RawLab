@@ -38,7 +38,14 @@ current camera or style-quality certification.
 
 ## Architecture
 
+- [Codebase review, 2026-11-12](architecture/codebase-review-2026-11-12.md): historical repo-wide defect inventory referenced by the 2026-11-13 remediation records.
 - [Remediation roadmap, 2026-11-13](architecture/remediation-roadmap-2026-11-13.md): superseded by the [Owner transformation ADR](../architecture/adr-2026-11-19-owner-transformation.md).
+
+## Platform Verification Records
+
+- macOS: [v0.8 native geometry verification](verification/macos/verification-native-v08-2026-10-15.md).
+- Android: [verification](verification/android/verification.md), [GPU](verification/android/gpu-verification.md), [v0.8 implementation](verification/android/v08-implementation.md), [batch timeout diagnosis](verification/android/batch-timeout-diagnosis.md), [batch GPU preference](verification/android/batch-gpu-preference-verification.md), [CPU denoise performance](verification/android/cpu-denoise-performance-verification.md).
+- Windows: [verification](verification/windows/verification.md), [performance](verification/windows/performance.md), [v0.8 implementation](verification/windows/IMPLEMENTATION-v08.md), [v0.8 verification](verification/windows/VERIFICATION-v08.md), [Agent v0.8 implementation](verification/windows/IMPLEMENTATION-agent-v08.md), [Agent v0.8 verification](verification/windows/VERIFICATION-agent-v08.md).
 
 ## Reviews And Compatibility
 

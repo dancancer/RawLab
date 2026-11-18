@@ -197,7 +197,7 @@ New-Item -ItemType Directory -Force "$licenses/x3f-rust" | Out-Null
 Copy-Item "$native/core/x3f-rust-licenses/*" "$licenses/x3f-rust" -Recurse -Force
 Copy-Item "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/lutools/third_party/rawspeed-camera-calibration.inc", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt", "$repo/RawLabMac/Resources/Licenses/libspng-LICENSE.txt" $licenses -Force
 Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
-Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force
+Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md" $output -Force
 Copy-Item "$repo/LICENSE" $output -Force
 Copy-Item "$repo/LICENSE" "$licenses/RawLab-GPL-3.0.txt" -Force
 Copy-Item "$repo/LICENSE-ALIYUN-RUM-EXCEPTION" "$licenses/RawLab-Aliyun-RUM-Exception.txt" -Force

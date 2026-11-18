@@ -8,7 +8,7 @@
 |---|---|
 | 本文 | 路线、阶段、验收不变量、决策登记、执行纪律 |
 | [remediation-plan-2026-11-13.md](../../architecture/remediation-plan-2026-11-13.md) | **活台账**：178 行任务的状态与依据，随每次合入更新 |
-| [codebase-review-2026-11-12.md](../../architecture/codebase-review-2026-11-12.md) | 主评审（缺陷层，§14 为补充评审） |
+| [codebase-review-2026-11-12.md](codebase-review-2026-11-12.md) | 主评审（缺陷层，§14 为补充评审） |
 | [codebase-review-followup-2026-11-13.md](../../architecture/codebase-review-followup-2026-11-13.md) | 整改后复审（新发现与台账核对） |
 | [architecture-review-2026-11-13.md](../../architecture/architecture-review-2026-11-13.md) | 结构评审（AR-1…AR-7，解释「为什么修不完」） |
 

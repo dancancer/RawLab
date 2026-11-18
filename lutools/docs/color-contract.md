@@ -228,7 +228,7 @@ An active master recipe's tint remains a relative style offset against that
 target WB, not a source-camera WB value to copy or discard.
 Mobile Agent interfaces remain out
 of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
-in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
+in `docs/archive/verification/windows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
 the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
@@ -916,7 +916,7 @@ cached by RAW decode revision. Native-resolution exports never use that preview.
 `SONY2FUJI_BACKEND_GLES` reports actual GPU completion, including neutral renders;
 Auto preserves the CPU source when GPU work fails. RAW decoding and encoding
 remain on CPU. Physical-device parity and timing are recorded in
-`../../RawLabAndroid/gpu-verification.md`.
+`../../docs/archive/verification/android/gpu-verification.md`.
 
 `sony2fuji_analyze_image` returns exact channel-major 256-bin RGB counts and an
 optional RGBA clipping mask. Its Auto mode prefers CPU for CPU-resident bytes,
