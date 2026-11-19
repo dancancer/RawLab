@@ -10,7 +10,7 @@ enum MacUITestRobot {
         print("PASS: \(message)")
     }
 
-    @MainActor static func makeEditorModel(root: URL) -> EditorModel {
+    @MainActor static func isolatedModel(root: URL) -> EditorModel {
         EditorModel(
             lookDirectory: root.appendingPathComponent("looks", isDirectory: true),
             editDirectory: root.appendingPathComponent("edits", isDirectory: true),

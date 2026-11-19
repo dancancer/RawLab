@@ -61,7 +61,7 @@ struct MacUISmokeRunner {
 
     @MainActor
     private static func runWorkspaceSmoke(photo: URL, root: URL) async throws {
-        let model = MacUITestRobot.makeEditorModel(root: root)
+        let model = MacUITestRobot.isolatedModel(root: root)
         let (win, host) = MacUITestRobot.window(EditorView(model: model), width: 950, height: 620, title: "Workspace")
         defer { win.contentView = nil; win.close() }
         model.open(photo)
@@ -76,7 +76,7 @@ struct MacUISmokeRunner {
 
     @MainActor
     private static func runSinglePreviewSmoke(photo: URL, root: URL) async throws {
-        let model = MacUITestRobot.makeEditorModel(root: root)
+        let model = MacUITestRobot.isolatedModel(root: root)
         let (win, host) = MacUITestRobot.window(EditorView(model: model), width: 1320, height: 850, title: "SinglePreview")
         defer { win.contentView = nil; win.close() }
         model.open(photo)
@@ -90,7 +90,7 @@ struct MacUISmokeRunner {
 
     @MainActor
     private static func runQuickPresetSmoke(photo: URL, root: URL) async throws {
-        let model = MacUITestRobot.makeEditorModel(root: root)
+        let model = MacUITestRobot.isolatedModel(root: root)
         let payload = try AdjustmentTransferPayload(
             source: .init(identifier: "quick-ui-fixture", isRaw: false, processingVersion: 2, recipe: nil),
             values: ["light.exposure": .number(0.7)]
@@ -113,7 +113,7 @@ struct MacUISmokeRunner {
         edits.exposureMode = .sensor
         edits.exposure = 1.2
         try store.save(photo, state: .init(settings: edits, filmID: ""))
-        let model = MacUITestRobot.makeEditorModel(root: root)
+        let model = MacUITestRobot.isolatedModel(root: root)
         let (win, host) = MacUITestRobot.window(EditorView(model: model), width: 1380, height: 900, title: "EditedPhoto")
         defer { win.contentView = nil; win.close() }
         model.open(photo)
@@ -124,7 +124,7 @@ struct MacUISmokeRunner {
 
     @MainActor
     private static func runBatchFlowSmoke(photos: [URL], root: URL) async throws {
-        let model = MacUITestRobot.makeEditorModel(root: root)
+        let model = MacUITestRobot.isolatedModel(root: root)
         model.addCollectionPhotos(photos)
         let (win, host) = MacUITestRobot.window(BatchSelectionView(model: model), width: 950, height: 620, title: "BatchFlow")
         defer { win.contentView = nil; win.close() }
