@@ -10,10 +10,6 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 OUT="$(mktemp -d /tmp/rawlab-denoise-model.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 TRANSFER_SOURCES=(
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
-  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"

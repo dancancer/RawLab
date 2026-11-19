@@ -269,10 +269,18 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         mutate(&jobObj, &settingsObj)
         jobObj["settings"] = settingsObj
         let badData = try JSONSerialization.data(withJSONObject: jobObj)
-        let decodedUniform = try JSONDecoder().decode(MacBatchExportJob.self, from: badData)
-        var saveRejected = false
-        do { try semanticJournal.save(decodedUniform) } catch { saveRejected = true }
-        try check(saveRejected, "\(label): uniform job save rejects semantically unusable value")
+        if label == "out-of-range photoEffects" {
+            // PhotoEffectsSettings.init(from:) enforces fail-closed decoding for out-of-range parameters.
+            var decodeRejected = false
+            do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badData) }
+            catch is DecodingError { decodeRejected = true }
+            try check(decodeRejected, "\(label): uniform job decode rejects out-of-range photoEffects")
+        } else {
+            let decodedUniform = try JSONDecoder().decode(MacBatchExportJob.self, from: badData)
+            var saveRejected = false
+            do { try semanticJournal.save(decodedUniform) } catch { saveRejected = true }
+            try check(saveRejected, "\(label): uniform job save rejects semantically unusable value")
+        }
         try badData.write(to: semanticURL)
         try check(try semanticJournal.load() == nil, "\(label): uniform job load isolates semantically unusable value")
         guard let archived = semanticJournal.lastQuarantinedURL, semanticJournal.consumeQuarantinedError() != nil else {
@@ -282,7 +290,18 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
                   "\(label): uniform job load preserves archived bytes")
     }
 
-    // Per-target frozen settings also enforce Adjustmens.validateResetValues() (scalars, effects, denoise, unknown recipe).
+    // Also verify semanticJournal.save / Adjustments.validateResetValues() rejects invalid in-memory photoEffects.
+    var nanEffectsSettings = Adjustments()
+    nanEffectsSettings.photoEffects = PhotoEffectsSettings(vignetteAmount: .nan)
+    var nanUniformJob = MacBatchExportJob(source: inputs[0], settings: nanEffectsSettings, look: nil, lookName: "NaN")
+    nanUniformJob.outputDirectory = output
+    nanUniformJob.items = [try MacBatchExportItem(url: inputs[0])]
+    nanUniformJob.items[0].selected = true
+    var nanUniformSaveRejected = false
+    do { try semanticJournal.save(nanUniformJob) } catch { nanUniformSaveRejected = true }
+    try check(nanUniformSaveRejected, "non-finite photoEffects: uniform job save rejects invalid photoEffects")
+
+    // Per-target frozen settings also enforce Adjustments.validateResetValues() (scalars, effects, denoise, unknown recipe).
     let dummyLook = isolationRoot.appendingPathComponent("dummy.cube")
     try Data("LUT_3D_SIZE 2\n".utf8).write(to: dummyLook)
     let dummyChecksum = try MacBatchFrozenSettings.checksum(dummyLook)
@@ -306,16 +325,36 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         itemRows[0]["frozen"] = frozenObj
         perTargetObj["items"] = itemRows
         let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
-        let decodedFrozen = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData)
-        var frozenRejected = false
-        do { try semanticJournal.save(decodedFrozen) } catch { frozenRejected = true }
-        try check(frozenRejected, "\(label): per-target frozen job save rejects semantically unusable value")
+        if label == "out-of-range photoEffects" {
+            var frozenDecodeRejected = false
+            do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData) }
+            catch is DecodingError { frozenDecodeRejected = true }
+            try check(frozenDecodeRejected, "\(label): per-target frozen job decode rejects out-of-range photoEffects")
+        } else {
+            let decodedFrozen = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData)
+            var frozenRejected = false
+            do { try semanticJournal.save(decodedFrozen) } catch { frozenRejected = true }
+            try check(frozenRejected, "\(label): per-target frozen job save rejects semantically unusable value")
+        }
         try badFrozenData.write(to: semanticURL)
         try check(try semanticJournal.load() == nil && semanticJournal.consumeQuarantinedError() != nil,
                   "\(label): per-target frozen job load isolates semantically unusable value")
         try check((try Data(contentsOf: semanticJournal.lastQuarantinedURL!)) == badFrozenData,
                   "\(label): per-target frozen job load preserves archived bytes")
     }
+
+    var nanFrozenJob = MacBatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "NaN Frozen")
+    nanFrozenJob.version = 3
+    nanFrozenJob.settingsMode = .perTargetFrozen
+    nanFrozenJob.outputDirectory = output
+    var nanFrozenItem = try MacBatchExportItem(url: inputs[0])
+    nanFrozenItem.selected = true
+    nanFrozenItem.frozen = MacBatchFrozenSettings(ordinal: 0, settings: nanEffectsSettings, look: nil,
+                                                  lookSHA256: nil, lookName: "Frozen", outputFormat: .png, longEdge: 1024)
+    nanFrozenJob.items = [nanFrozenItem]
+    var nanFrozenSaveRejected = false
+    do { try semanticJournal.save(nanFrozenJob) } catch { nanFrozenSaveRejected = true }
+    try check(nanFrozenSaveRejected, "non-finite photoEffects: per-target frozen job save rejects invalid photoEffects")
 
     let dirAtJobJournal = MacBatchJournal(directory: isolationRoot.appendingPathComponent("dir-at-job"))
     let dirJobURL = dirAtJobJournal.directory.appendingPathComponent("job.json")

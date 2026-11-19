@@ -13,7 +13,7 @@ test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2;
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
 SOURCES=()
-for name in MacNeutralReference Engine RenderError Film Adjustments AdjustmentTypes MasterRecipe EditPersistence BatchExport BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget RenderScheduling FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField ParameterPrecision AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
+for name in MacNeutralReference Engine RenderError Adjustments+Native BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
     source="$(find "$ROOT/RawLabMac/Sources" -name "$name.swift" -print -quit)"
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
@@ -22,10 +22,6 @@ for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCu
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"
-  "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift"
-  "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
