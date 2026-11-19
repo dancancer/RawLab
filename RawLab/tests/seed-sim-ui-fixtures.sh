@@ -11,6 +11,9 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 udid="${IOS_SIMULATOR_UDID:-$(xcrun simctl list devices booted | grep -oE '[0-9A-F-]{36}' | head -1)}"
 [ -n "$udid" ] || { echo "No booted simulator; pass IOS_SIMULATOR_UDID." >&2; exit 1; }
 raw="${RAWLAB_TEST_RAW:-$repo_root/lutools/examples/DJI_20250602164503_0444_D.DNG}"
+if [ -z "${RAWLAB_TEST_RAW:-}" ] && [ ! -f "$raw" ] && [ -f "$repo_root/scripts/assets/prepare.py" ]; then
+    python3 "$repo_root/scripts/assets/prepare.py" --group raw --quiet
+fi
 [ -f "$raw" ] || { echo "Missing RAW fixture: $raw" >&2; exit 1; }
 
 # The Files picker needs the Files app to have materialized its local storage once.

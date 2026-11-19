@@ -2,6 +2,8 @@ import XCTest
 
 @MainActor
 final class EditorWorkflowSmokeTests: XCTestCase {
+    private let seedRawStem = "DJI_20250602164503_0444_D"
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
@@ -11,8 +13,15 @@ final class EditorWorkflowSmokeTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    private func launchWithSeededPhoto(language: String = "en", arguments: [String] = []) throws -> (LibraryImportRobot, EditorRobot) {
+    private func launchWithSeededPhoto(
+        language: String = "en",
+        arguments: [String] = [],
+        preferDownloadsRaw: Bool = true
+    ) throws -> (LibraryImportRobot, EditorRobot) {
         let importer = LibraryImportRobot.launch(language: language, arguments: arguments)
+        if preferDownloadsRaw, importer.importFileFromDownloadsIfPresent(stem: seedRawStem) {
+            return (importer, EditorRobot(app: importer.app))
+        }
         let emptyImport = importer.app.buttons["editor.import.empty"]
         guard emptyImport.waitForExistence(timeout: 10) else {
             XCTFail("Missing empty import button")
@@ -21,7 +30,7 @@ final class EditorWorkflowSmokeTests: XCTestCase {
         emptyImport.tap()
         let cell = importer.app.images.matching(identifier: "PXGGridLayout-Info").firstMatch
         guard cell.waitForExistence(timeout: 5) else {
-            throw XCTSkip("Dedicated simulator with seeded Photos fixture required")
+            throw XCTSkip("Dedicated simulator with seeded Photos/Downloads fixture required")
         }
         cell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         importer.dismissPhotosPermissionIfNeeded()
@@ -36,6 +45,7 @@ final class EditorWorkflowSmokeTests: XCTestCase {
         let (_, editor) = try launchWithSeededPhoto()
         editor.openTool("exposure", in: "light")
         let valueButton = editor.app.buttons["adjustment.value"]
+        XCTAssertTrue(valueButton.waitForExistence(timeout: 10), editor.app.debugDescription)
         let before = valueButton.value as? String
         editor.dragRuler(increasing: true)
         let dragged = valueButton.value as? String
@@ -58,29 +68,35 @@ final class EditorWorkflowSmokeTests: XCTestCase {
         editor.openTool("exposure", in: "light")
         editor.toggleFineMode()
         let value = editor.app.buttons["adjustment.value"]
-        XCTAssertTrue(value.waitForExistence(timeout: 5))
+        XCTAssertTrue(value.waitForExistence(timeout: 5), editor.app.debugDescription)
         value.tap()
         let applyWheel = editor.app.buttons["adjustment.wheel.apply"]
-        if applyWheel.waitForExistence(timeout: 5) {
-            editor.app.buttons["adjustment.wheel.default"].tap()
-            applyWheel.tap()
-        }
+        XCTAssertTrue(applyWheel.waitForExistence(timeout: 5), editor.app.debugDescription)
+        editor.app.buttons["adjustment.wheel.default"].tap()
+        applyWheel.tap()
+        editor.waitForCondition(timeout: 5) { !applyWheel.exists }
         editor.cancelDraft()
     }
 
     func testLooksSearchRecentAndMasterRecipeSmoke() throws {
         let (_, editor) = try launchWithSeededPhoto()
         editor.openTool("film", in: "looks")
+        let openSearch = editor.app.buttons["looks.search.open"]
+        XCTAssertTrue(openSearch.waitForExistence(timeout: 5), editor.app.debugDescription)
+        openSearch.tap()
         let search = editor.app.textFields["looks.search"]
-        if search.waitForExistence(timeout: 5) {
-            search.tap()
-            search.typeText("ACROS\n")
-            let acros = editor.app.buttons["ACROS"]
-            if acros.waitForExistence(timeout: 5) { acros.tap() }
-        }
+        XCTAssertTrue(search.waitForExistence(timeout: 5), editor.app.debugDescription)
+        search.tap()
+        search.typeText("ACROS\n")
+        let acros = editor.app.buttons["ACROS"]
+        XCTAssertTrue(acros.waitForExistence(timeout: 5), editor.app.debugDescription)
+        acros.tap()
+        XCTAssertTrue(acros.isSelected, editor.app.debugDescription)
         editor.applyDraft()
+        XCTAssertEqual(editor.app.buttons["tool.film"].value as? String, "ACROS")
 
-        editor.openTool("recipe", in: "looks")
+        editor.openTool("masterRecipe", in: "looks")
+        XCTAssertTrue(editor.app.scrollViews["masterRecipe.choices"].waitForExistence(timeout: 5), editor.app.debugDescription)
         editor.cancelDraft()
     }
 
@@ -105,13 +121,19 @@ final class EditorWorkflowSmokeTests: XCTestCase {
     func testExportPrivacyAndAboutNavigationSmoke() throws {
         let (importer, editor) = try launchWithSeededPhoto()
         editor.openExportSheet()
-        XCTAssertTrue(editor.app.buttons["editor.export.confirm"].waitForExistence(timeout: 10))
-        editor.app.buttons["Cancel"].firstMatch.tap()
+        let cancel = editor.app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), editor.app.debugDescription)
+        cancel.tap()
 
-        importer.openOverflowMenu()
+        editor.exportCurrentPhotoToLibrary(longEdge: 128)
+        editor.exportCurrentPhotoToLibrary(longEdge: 1024)
+        editor.exportCurrentPhotoToLibrary(longEdge: nil)
+
+        importer.openMenuAction(identifier: "editor.privacy.open", labels: ["Privacy settings"])
         let usage = importer.app.switches["usage.consent"]
-        if usage.waitForExistence(timeout: 5) {
-            XCTAssertTrue(usage.isHittable)
-        }
+        XCTAssertTrue(usage.waitForExistence(timeout: 5), importer.app.debugDescription)
+        XCTAssertTrue(usage.isHittable)
+        XCTAssertEqual(usage.value as? String, "1")
+        importer.app.buttons["usage.done"].tap()
     }
 }

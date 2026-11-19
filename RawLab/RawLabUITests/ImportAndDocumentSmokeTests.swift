@@ -24,6 +24,58 @@ final class ImportAndDocumentSmokeTests: XCTestCase {
         robot.assertEmptyEditor()
     }
 
+    func testDocumentImportLookAndErrorLogSmoke() throws {
+        guard ProcessInfo.processInfo.environment["RAWLAB_DOCUMENT_IMPORT_UI"] == "1" else {
+            throw XCTSkip("Run document-import-ui.sh on a dedicated simulator with seeded Documents fixtures")
+        }
+        let robot = LibraryImportRobot.launch(language: "en")
+        robot.assertEmptyEditor()
+
+        let rejectedFile = "RawLabTextAsJPEG.jpeg"
+        let unsupported = robot.app.staticTexts["Selected Item Is Not a Supported Image."].firstMatch
+
+        robot.openMenuAction(identifier: "collection.open", labels: ["Batch editing"])
+        let collectionFiles = robot.app.buttons["collection.files"]
+        XCTAssertTrue(collectionFiles.waitForExistence(timeout: 10), robot.app.debugDescription)
+        collectionFiles.tap()
+        robot.selectDocumentFromRawLabFolder(rejectedFile)
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), robot.app.debugDescription)
+        robot.app.buttons["Close"].firstMatch.tap()
+
+        robot.importFileFromRawLabFolder("RawLabImportFixture.png")
+        let editor = EditorRobot(app: robot.app)
+        editor.waitForCondition(timeout: 30) { robot.app.buttons["editor.export"].isEnabled }
+
+        editor.openTool("film", in: "looks")
+        let addLook = robot.app.buttons["looks.import"]
+        XCTAssertTrue(addLook.waitForExistence(timeout: 10), robot.app.debugDescription)
+        addLook.tap()
+        robot.selectDocumentFromRawLabFolder("RawLabImportFixture.cube")
+        editor.applyDraft()
+        let film = robot.app.buttons["tool.film"]
+        robot.waitForCondition(timeout: 15) { film.value as? String == "RawLabImportFixture" }
+        XCTAssertTrue(robot.app.descendants(matching: .any)["editor.photo"].exists)
+
+        robot.openMenuAction(identifier: "adjustment.copy.open", labels: ["Copy Adjustments"])
+        let copy = robot.app.buttons["adjustment.copy.confirm"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 10), robot.app.debugDescription)
+        robot.revealInMenu(copy)
+        robot.waitForCondition(timeout: 5) { copy.isEnabled && copy.isHittable }
+        copy.tap()
+        robot.waitForCondition(timeout: 10) { !copy.exists }
+
+        robot.openMenuAction(identifier: "adjustment.paste.open", labels: ["Paste Adjustments"])
+        let pasteFiles = robot.app.buttons["adjustment.paste.chooseFiles"]
+        XCTAssertTrue(pasteFiles.waitForExistence(timeout: 10), robot.app.debugDescription)
+        pasteFiles.tap()
+        robot.selectDocumentFromRawLabFolder(rejectedFile)
+        XCTAssertTrue(unsupported.waitForExistence(timeout: 15), robot.app.debugDescription)
+        robot.app.buttons["adjustment.transfer.close"].tap()
+
+        robot.openMenuAction(identifier: "diagnostics.export", labels: ["Export Error Log"])
+        robot.saveDocumentToRawLabFolder()
+    }
+
     func testDocumentAndUnreadableLookDeleteSurvivesRestartSmoke() throws {
         guard ProcessInfo.processInfo.environment["RAWLAB_DOCUMENT_IMPORT_UI"] == "1" else {
             throw XCTSkip("Run document-import-ui.sh on a dedicated simulator with seeded unreadable looks")
@@ -36,11 +88,18 @@ final class ImportAndDocumentSmokeTests: XCTestCase {
         let unreadable = robot.app.buttons["looks.unreadable"]
         XCTAssertTrue(unreadable.waitForExistence(timeout: 10), robot.app.debugDescription)
         unreadable.tap()
-        let deleteButton = robot.app.buttons.matching(identifier: "looks.deleteUnreadable").firstMatch
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), robot.app.debugDescription)
-        deleteButton.tap()
-        robot.app.alerts.buttons["looks.deleteUnreadable.confirm"].firstMatch.tap()
+        let deleteButtons = robot.app.buttons.matching(identifier: "looks.deleteUnreadable")
+        XCTAssertTrue(deleteButtons.firstMatch.waitForExistence(timeout: 5), robot.app.debugDescription)
+        while deleteButtons.count > 0 {
+            let remaining = deleteButtons.count
+            deleteButtons.element(boundBy: 0).tap()
+            let confirm = robot.app.alerts.buttons["looks.deleteUnreadable.confirm"].firstMatch
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5), robot.app.debugDescription)
+            confirm.tap()
+            robot.waitForCondition(timeout: 10) { deleteButtons.count < remaining }
+        }
         robot.app.buttons["Done"].tap()
+        XCTAssertFalse(unreadable.exists)
 
         robot.app.terminate()
         robot.app.launch()
@@ -72,8 +131,16 @@ final class ImportAndDocumentSmokeTests: XCTestCase {
         robot.app.segmentedControls["recents.filter"].buttons["Edited"].tap()
         robot.waitForCondition(timeout: 10) { rows.count == 1 }
         rows.firstMatch.tap()
+        robot.waitForCondition(timeout: 20) {
+            robot.app.descendants(matching: .any)["editor.photo"].exists || robot.app.buttons["editor.group.looks"].exists
+        }
         editor.openTool("exposure", in: "light")
         editor.resetDraft()
         editor.applyDraft()
+
+        robot.openRecents()
+        robot.waitForCondition(timeout: 10) { rows.count == 0 }
+        robot.app.segmentedControls["recents.filter"].buttons["Unedited"].tap()
+        robot.waitForCondition(timeout: 10) { rows.count == 1 }
     }
 }

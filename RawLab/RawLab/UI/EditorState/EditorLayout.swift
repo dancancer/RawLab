@@ -126,7 +126,7 @@ extension ContentView {
                                 }
 
                             }.padding(.horizontal, 8).padding(.vertical, 4)
-                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility))
+                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility).map { CGFloat($0) })
                             .accessibilityIdentifier("editor.tools")
                         groupNavigation(side: false, singleLine: true, availableWidth: side ? panelWidth : size.width)
                     } else {
