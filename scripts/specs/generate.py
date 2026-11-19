@@ -677,6 +677,8 @@ def _render_csharp(doc: dict[str, Any]) -> str:
     lines = [
         f"// {NOTICE}",
         "",
+        "#nullable enable",
+        "",
         "namespace RawLab.Windows;",
         "",
         "public enum AdjustmentProtocolValueType { Number, Integer, Boolean, String, Object }",

@@ -80,10 +80,6 @@ public enum AdjustmentField
 
 public static class AdjustmentFields
 {
-    // Keep the legacy catalog/index contract stable; HDR-only fields are
-    // addressable through HDRSupported but are not legacy "common" fields.
-    public static readonly IReadOnlyList<AdjustmentField> All = Array.AsReadOnly(
-        Enum.GetValues<AdjustmentField>().Where(field => !field.IsHDROnly()).ToArray());
     private static readonly string[] ids = [
         "looks.reference",
         "looks.strength",
@@ -156,6 +152,10 @@ public static class AdjustmentFields
         "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint",
         "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development"
     ];
+    // Keep the legacy catalog/index contract stable; HDR-only fields are
+    // addressable through HDRSupported but are not legacy "common" fields.
+    public static readonly IReadOnlyList<AdjustmentField> All = Array.AsReadOnly(
+        Enum.GetValues<AdjustmentField>().Where(field => !field.IsHDROnly()).ToArray());
     public static AdjustmentFieldDefinition Spec(this AdjustmentField field) => AdjustmentFieldSpec.RequireById(field.ID());
     public static string ID(this AdjustmentField field) => ids[(int)field];
     public static string Group(this AdjustmentField field) => field.Spec().Group;
