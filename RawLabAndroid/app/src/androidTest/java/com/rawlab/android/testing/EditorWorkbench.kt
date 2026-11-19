@@ -102,3 +102,36 @@ fun ComposeTestRule.cycleWorkbenchPhotoInfo(label: String) {
     else openEditorMenu()
     onNodeWithText(label).performScrollTo().assertIsDisplayed().performClick()
 }
+
+fun ComposeTestRule.waitUntilEditorReady(model: com.rawlab.android.editor.EditorViewModel, timeoutMs: Long = 180_000) {
+    waitUntil(timeoutMs) { model.state.value.let { (it.canExport && !it.previewResizePending) || it.error != null } }
+    org.junit.Assert.assertNull(model.state.value.error)
+}
+
+fun ComposeTestRule.waitUntilDraftReady(model: com.rawlab.android.editor.EditorViewModel, timeoutMs: Long = 120_000) {
+    waitUntil(timeoutMs) { model.state.value.let { it.draftReady || it.error != null } }
+    org.junit.Assert.assertNull(model.state.value.error)
+}
+
+fun ComposeTestRule.applyWorkbenchDraft(model: com.rawlab.android.editor.EditorViewModel) {
+    waitUntilDraftReady(model)
+    onNodeWithTag("draft.apply").assertIsEnabled().performClick()
+    waitUntilEditorReady(model)
+    org.junit.Assert.assertNull(model.state.value.draft)
+}
+
+fun ComposeTestRule.cancelWorkbenchDraft(model: com.rawlab.android.editor.EditorViewModel) {
+    onNodeWithTag("draft.cancel").assertIsEnabled().performClick()
+    waitUntil(30_000) { model.state.value.draft == null }
+}
+
+fun ComposeTestRule.setNumericAdjustmentValue(stringResId: Int, text: String) {
+    onNodeWithTag("adjustment-value-$stringResId").performScrollTo().performClick()
+    onNodeWithTag("adjustment-input").performTextReplacement(text)
+    onNodeWithTag("adjustment-input-apply").performClick()
+}
+
+fun ComposeTestRule.openWorkbenchMenuItem(tag: String) {
+    openEditorMenu()
+    onNodeWithTag(tag).performScrollTo().performClick()
+}

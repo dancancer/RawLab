@@ -4,22 +4,18 @@ import UIKit
 
 extension ContentView {
     var mobileEditorGroups: [EditorAdjustmentGroup] {
-        let base: [EditorAdjustmentGroup] = [.looks, .light, .color, .detail, .geometry, .effects]
-        return settings.isHDREditing ? base + [.hdrRendition] : base
+        EditorLayoutPolicy.mobileEditorGroups(isHDREditing: settings.isHDREditing)
     }
     var mobileEditorTools: [EditorToolSelection] {
-        switch selectedGroup {
-        case .looks: return [.film, .recipe]
-        case .light: return [.adjustment(.exposure), .adjustment(.contrast), .adjustment(.highlights), .adjustment(.shadows), .adjustment(.whitePoint), .adjustment(.blackPoint), .adjustment(.toneCurve)]
-        case .color: return [.adjustment(.temperature), .adjustment(.vibrance), .adjustment(.saturation), .adjustment(.hsl), .adjustment(.colorGrading)]
-        case .detail: return [.adjustment(.sharpening), .adjustment(.noiseReduction)]
-        default: return EditorAdjustmentRules.tools(selectedGroup)
-        }
+        EditorLayoutPolicy.mobileEditorTools(for: selectedGroup)
     }
 
     var editorToolHeight: CGFloat {
-        guard UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory else { return toolHeight }
-        return max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16)
+        EditorLayoutPolicy.editorToolHeight(
+            accessibility: UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory,
+            bodyLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            standardHeight: toolHeight
+        )
     }
 
     func editorToolRowHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
@@ -57,7 +53,9 @@ extension ContentView {
     }
 
     var singleLineGroupNavigationHeight: CGFloat {
-        max(44, ceil(UIFont.preferredFont(forTextStyle: .caption1).lineHeight) + 8)
+        EditorLayoutPolicy.singleLineGroupNavigationHeight(
+            captionLineHeight: UIFont.preferredFont(forTextStyle: .caption1).lineHeight
+        )
     }
 
     private func groupTextMetrics(_ title: String, width: CGFloat, font: UIFont,
@@ -79,20 +77,26 @@ extension ContentView {
     }
 
     private func scrollsToolsWithParameters(size: CGSize, accessibility: Bool) -> Bool {
-        let bodyLine = UIFont.preferredFont(forTextStyle: .body).lineHeight
-        let actionSpace = max(44, bodyLine + 16) + 16
-        let parameterSpace = max(44, bodyLine) + 8
-        return accessibility && size.width > size.height &&
-            size.height < groupNavigationButtonHeight + editorToolStripHeight(width: size.width, accessibility: accessibility) + actionSpace + parameterSpace + 24
+        EditorLayoutPolicy.scrollsToolsWithParameters(
+            width: size.width,
+            height: size.height,
+            accessibility: accessibility,
+            bodyLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            groupButtonHeight: groupNavigationButtonHeight,
+            toolStripHeight: editorToolStripHeight(width: size.width, accessibility: accessibility)
+        )
     }
 
     func editorWorkspace(size: CGSize, accessibility: Bool) -> some View {
         let side = EditorLayoutPolicy.usesSidePanel(width: size.width, height: size.height, accessibility: accessibility)
         let layout = side ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-        let panelWidth = min(336, size.width * 0.48)
+        let panelWidth = EditorLayoutPolicy.sidePanelWidth(totalWidth: size.width)
         let isTool = toolWorkspaceOpen || viewModel.quickPresetsVisible
-        let measured = parameterContentHeight > 0 ? parameterContentHeight : 240
-        let parameterHeight = min(measured, max(44, min(size.height * (accessibility ? 0.62 : 0.52), size.height - 140)))
+        let parameterHeight = EditorLayoutPolicy.parameterPanelHeight(
+            measuredHeight: parameterContentHeight,
+            totalHeight: size.height,
+            accessibility: accessibility
+        )
         return layout {
             previewSection
                 .overlay(alignment: .bottom) {
@@ -104,14 +108,14 @@ extension ContentView {
                 VStack(spacing: 0) {
                     if !isTool {
                         ScrollView {
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: accessibility ? 3 : 4), spacing: 4) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: EditorLayoutPolicy.toolGridColumns(accessibility: accessibility)), spacing: 4) {
                                 ForEach(mobileEditorTools, id: \.self) { tool in
                                     Button { coordinator.geometryPerspective = false; coordinator.geometryRotation = false; selectEditorTool(tool) } label: {
                                         VStack(spacing: 4) {
                                             Image(systemName: tool.symbol).font(.system(size: 21)).frame(height: 24)
                                             Text(tool.title).font(.caption).multilineTextAlignment(.center)
                                             Circle().fill(resetModified(.tool(tool)) ? Color.yellow : .clear).frame(width: 3, height: 3)
-                                        }.frame(maxWidth: .infinity, minHeight: accessibility ? 68 : 52).contentShape(Rectangle())
+                                        }.frame(maxWidth: .infinity, minHeight: EditorLayoutPolicy.toolGridMinRowHeight(accessibility: accessibility)).contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(editorBusy || (settings.isHDREditing && !supportsHDR(tool)) ||
@@ -122,7 +126,7 @@ extension ContentView {
                                 }
 
                             }.padding(.horizontal, 8).padding(.vertical, 4)
-                        }.frame(height: side ? nil : accessibility ? 148 : 116)
+                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility).map { CGFloat($0) })
                             .accessibilityIdentifier("editor.tools")
                         groupNavigation(side: false, singleLine: true, availableWidth: side ? panelWidth : size.width)
                     } else {

@@ -56,4 +56,39 @@ public static class CropInteraction
         return new(verticalEdge ? rect.X+(rect.Width-width)/2 : left ? anchorX-width : anchorX,
             horizontalEdge ? rect.Y+(rect.Height-height)/2 : top ? anchorY-height : anchorY,width,height);
     }
+
+    public static CropHandle? HitTest(
+        double boundsX,
+        double boundsY,
+        double boundsWidth,
+        double boundsHeight,
+        double pointX,
+        double pointY,
+        double handleRadius = 10)
+    {
+        if (boundsWidth <= 0 || boundsHeight <= 0 ||
+            !double.IsFinite(pointX) || !double.IsFinite(pointY) ||
+            !double.IsFinite(handleRadius) || handleRadius < 0)
+            return null;
+        var right = boundsX + boundsWidth;
+        var bottom = boundsY + boundsHeight;
+        var midX = boundsX + boundsWidth / 2;
+        var midY = boundsY + boundsHeight / 2;
+        (CropHandle Handle, double X, double Y)[] handles = [
+            (CropHandle.TopLeft, boundsX, boundsY),
+            (CropHandle.Top, midX, boundsY),
+            (CropHandle.TopRight, right, boundsY),
+            (CropHandle.Right, right, midY),
+            (CropHandle.BottomRight, right, bottom),
+            (CropHandle.Bottom, midX, bottom),
+            (CropHandle.BottomLeft, boundsX, bottom),
+            (CropHandle.Left, boundsX, midY),
+        ];
+        foreach (var (handle, hx, hy) in handles)
+            if (Math.Abs(pointX - hx) <= handleRadius && Math.Abs(pointY - hy) <= handleRadius)
+                return handle;
+        return pointX >= boundsX && pointX <= right && pointY >= boundsY && pointY <= bottom
+            ? CropHandle.Move
+            : null;
+    }
 }

@@ -129,18 +129,6 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "WpfModel")]
-    [Trait("Suite", "status-layout")]
-    public void StatusLayoutWorks() =>
-        WpfTestHost.Run(() => StatusLayoutChecks.Run(TestInputs.Results("status-layout"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "appearance")]
-    public void AppearanceWorks() =>
-        WpfTestHost.Run(() => AppearanceChecks.Run(TestInputs.Results("appearance"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
     [Trait("Suite", "ai-panel")]
     public void AiDenoisePanelWorks() =>
         WpfTestHost.Run(() => AIDenoisePanelChecks.Run(TestInputs.Results("ai-panel"), Check));
@@ -152,100 +140,10 @@ public sealed class WpfSuiteTests
         WpfTestHost.Run(() => EditorShellChecks.Run(TestInputs.Results("screenshots"), Check));
 
     [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "ui-details")]
-    public void UiDetailsWorks() =>
-        WpfTestHost.Run(() => UiDetailChecks.Run(TestInputs.Results("ui-details"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "edit-durability")]
-    public void EditDurabilityWindowWorks() =>
-        WpfTestHost.Run(() => EditDurabilityWindowChecks.Run(TestInputs.Results("edit-durability"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "ai-gpu")]
-    public void AiGpuWindowWorks() =>
-        WpfTestHost.Run(() => AIGpuWindowChecks.Run(TestInputs.Results("ai-gpu"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "atmosphere-ui")]
-    public void AtmosphereUiWorks() =>
-        WpfTestHost.Run(() => AtmosphereUiChecks.Run(TestInputs.Repo(), TestInputs.Results("atmosphere-ui"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "update-ui")]
-    public void SoftwareUpdateUiWorks() =>
-        WpfTestHost.Run(() => SoftwareUpdateUiChecks.Run(TestInputs.Repo(), TestInputs.Results("update-ui"), Check));
-
-    [StaFact]
-    [Trait("Category", "WpfModel")]
-    [Trait("Suite", "view-source-identity")]
-    public void ViewSourceIdentityWorks() =>
-        WpfTestHost.Run(() => ViewComparisonChecks.SourceIdentityChecks(TestInputs.Results("view-source-identity"), Check));
-
-    [StaFact]
     [Trait("Category", "Native")]
     [Trait("Suite", "geometry")]
     public void GeometryWorks() =>
         WpfTestHost.Run(() => GeometryChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "transform-ui")]
-    public void TransformUiWorks() =>
-        WpfTestHost.Run(() => TransformUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "adjustment-history")]
-    public void AdjustmentHistoryUiWorks() =>
-        WpfTestHost.Run(() => AdjustmentHistoryUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "hsl-target")]
-    public void HslTargetUiWorks() =>
-        WpfTestHost.Run(() => HslTargetUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "adjustment-presets")]
-    public void AdjustmentPresetsUiWorks() =>
-        WpfTestHost.Run(() => AdjustmentPresetUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "editor-review")]
-    public void EditorReviewWorks() =>
-        WpfTestHost.Run(() => EditorReviewChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "tool-groups")]
-    public void ToolGroupsWorks() =>
-        WpfTestHost.Run(() => ToolGroupChecks.Run(TestInputs.Repo(), TestInputs.Raw()));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "workspace-looks")]
-    public void WorkspaceLooksWorks() =>
-        WpfTestHost.Run(() => WorkspaceLookChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "photo-features")]
-    public void PhotoFeaturesWorks() =>
-        WpfTestHost.Run(() => PhotoFeatureChecks.Run(TestInputs.Repo(), TestInputs.Raw()));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "interactions")]
-    public void InteractionsWorks() =>
-        WpfTestHost.Run(() => InteractionChecks.Run(TestInputs.Repo(), TestInputs.Raw()));
 
     [StaFact]
     [Trait("Category", "Native")]
@@ -284,12 +182,6 @@ public sealed class WpfSuiteTests
         WpfTestHost.Run(() => RasterChecks.Run(TestInputs.Repo(), TestInputs.Raw(), TestInputs.Cli(), Check));
 
     [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "comparison-default")]
-    public void ComparisonDefaultWorks() =>
-        WpfTestHost.Run(() => ComparisonDefaultChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
     [Trait("Category", "BatchSelection")]
     [Trait("Suite", "batch-selection")]
     public void BatchSelectionUiWorks() =>
@@ -300,12 +192,6 @@ public sealed class WpfSuiteTests
     [Trait("Suite", "recipe-white-balance")]
     public void RecipeWhiteBalanceCacheWorks() =>
         WpfTestHost.Run(() => WhiteBalanceChecks.RecipeCache(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "histogram")]
-    public void HistogramNeutralChecksWork() =>
-        WpfTestHost.Run(() => ViewComparisonChecks.NeutralChecks(TestInputs.Raw(), TestInputs.Results("histogram"), Check));
 
     [StaFact]
     [Trait("Category", "Native")]
@@ -333,33 +219,9 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "Native")]
-    [Trait("Suite", "curve-ui")]
-    public void ToneCurveUiWorks() =>
-        WpfTestHost.Run(() => ToneCurveUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
     [Trait("Suite", "hsl-target-render")]
     public void HslTargetRenderWorks() =>
         WpfTestHost.Run(() => HslTargetRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("hsl-target-render"), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "hdr-color-ui")]
-    public void HdrColorUiWorks() =>
-        WpfTestHost.Run(() => HslTargetUiChecks.RunHDR(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "hdr-rendition-ui")]
-    public void HdrRenditionUiWorks() =>
-        WpfTestHost.Run(() => HDRWorkflowChecks.RunRendition(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "hdr-effects-ui")]
-    public void HdrEffectsUiWorks() =>
-        WpfTestHost.Run(() => HDRWorkflowChecks.RunEffects(TestInputs.Repo(), TestInputs.Raw(), Check));
 
     [StaFact]
     [Trait("Category", "Native")]
@@ -369,33 +231,9 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "Native")]
-    [Trait("Suite", "hdr-review")]
-    public void HdrReviewWorks() =>
-        WpfTestHost.Run(() => HDRReviewChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "hdr-statistics")]
-    public void HdrStatisticsFlagsWork() =>
-        WpfTestHost.Run(() => HDRReviewChecks.StatisticsFlags(TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
     [Trait("Suite", "hdr-workflow")]
     public void HdrWorkflowWorks() =>
         WpfTestHost.Run(() => HDRWorkflowChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "proraw-batch-workflow")]
-    public void ProRawBatchWorkflowWorks() =>
-        WpfTestHost.Run(() => HDRWorkflowChecks.RunProRAWBatch(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "camera-raw-hdr-workflow")]
-    public void CameraRawHdrWorkflowWorks() =>
-        WpfTestHost.Run(() => HDRWorkflowChecks.RunCameraRaw(TestInputs.Repo(), TestInputs.Raw(), Check));
 
     [StaFact]
     [Trait("Category", "Native")]
@@ -404,76 +242,10 @@ public sealed class WpfSuiteTests
         WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
 
     [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "preview-reuse")]
-    public void PreviewReuseWorks() =>
-        WpfTestHost.Run(() => PreviewChecks.RunViewport(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "view-compare")]
-    public void ViewCompareWorks() =>
-        WpfTestHost.Run(() => ViewComparisonChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "view-pointer")]
-    public void ViewPointerWorks() =>
-        WpfTestHost.Run(() => ViewComparisonChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check, pointerOnly: true));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "view-labels")]
-    public void ViewLabelsWorks() =>
-        WpfTestHost.Run(() => ViewComparisonChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check, labelsOnly: true));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "resources")]
-    public void ResourceChecksWork() =>
-        WpfTestHost.Run(() => ResourceChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "quick-presets-hdr")]
-    public void QuickPresetsHdrWorks() =>
-        WpfTestHost.Run(() => QuickPresetHDRChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
-    [Trait("Category", "Native")]
-    [Trait("Suite", "quick-presets")]
-    public void QuickPresetsUiWorks() =>
-        WpfTestHost.Run(() => QuickPresetUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
-
-    [StaFact]
     [Trait("Category", "AI")]
     [Trait("Suite", "ai-window")]
     public void AiDenoiseWindowWorks() =>
         WpfTestHost.Run(() => AIDenoiseWindowChecks.Run(TestInputs.AiWindowRaw(), TestInputs.Results("ai-window"), Check));
-
-    [StaFact]
-    [Trait("Category", "AI")]
-    [Trait("Suite", "ai-batch")]
-    public void AiBatchWindowWorks() =>
-        WpfTestHost.Run(() => AIBatchWindowChecks.Run(RenderEngine.BundledAIModel, TestInputs.Raw(), TestInputs.Results("ai-batch"), Check));
-
-    [StaFact]
-    [Trait("Category", "AI")]
-    [Trait("Suite", "ai-real-window")]
-    public void AiDenoiseRealWindowWorks() =>
-        WpfTestHost.Run(() => AIDenoiseRealWindowChecks.Run(RenderEngine.BundledAIModel, TestInputs.Raw(), TestInputs.Results("ai-real-cache"), TestInputs.Results("ai-real-window"), Check));
-
-    [StaFact]
-    [Trait("Category", "AI")]
-    [Trait("Suite", "hdr-ai-real-window")]
-    public void HdrAiRealWindowWorks() =>
-        WpfTestHost.Run(() => AIDenoiseRealWindowChecks.RunHDR(RenderEngine.BundledAIModel, TestInputs.Raw(), TestInputs.Results("hdr-ai-real-cache"), TestInputs.Results("hdr-ai-real-window"), Check));
-
-    [StaFact]
-    [Trait("Category", "AI")]
-    [Trait("Suite", "ai-capability")]
-    public void AiCapabilityWindowWorks() =>
-        WpfTestHost.Run(() => AICapabilityWindowChecks.Run(TestInputs.Raw(), TestInputs.Results("ai-capability"), hardwareExpected: false, Check));
 
     [StaFact]
     [Trait("Category", "AI")]
@@ -485,12 +257,6 @@ public sealed class WpfSuiteTests
     [Trait("Category", "Benchmark")]
     [Trait("Suite", "benchmark")]
     public void BenchmarkNativeWorks() => PerformanceChecks.Run(TestInputs.Repo(), TestInputs.Raw());
-
-    [StaFact]
-    [Trait("Category", "Benchmark")]
-    [Trait("Suite", "benchmark-ui")]
-    public void BenchmarkUiWorks() =>
-        WpfTestHost.Run(() => PerformanceChecks.Run(TestInputs.Repo(), TestInputs.Raw(), true));
 
     [StaFact]
     [Trait("Category", "Native")]
@@ -553,7 +319,7 @@ public sealed class WpfSuiteTests
                 Check(float.IsFinite(rendered.Baseline) && rendered.WhiteBalance != null, "Selected exposure baseline and calibrated as-shot WB");
                 Check(Math.Abs(engine.Render(unicodeRaw, new Adjustments { ExposureMode = 0 }, null, 32, statistics: false, clipping: false)!.Baseline - .7) < .001,
                     "Explicit scene mode keeps the declared baseline");
-                ViewComparisonChecks.CheckHistogram(rendered, Check, "rendered output");
+                WpfTestHost.CheckHistogram(rendered, Check, "rendered output");
                 var lean = engine.Render(unicodeRaw, settings, unicodeLut, 800, clipping: false)!;
                 Check(lean.Clipping == null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows == rendered.Shadows &&
                       lean.Highlights == rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),

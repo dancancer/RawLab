@@ -3,6 +3,17 @@ namespace RawLab.Windows;
 internal enum WorkspaceMode { Editing, Selection, Preview }
 internal enum LibraryPresentation { Hidden, Docked, Drawer }
 
+internal readonly record struct ComparisonPlacement(
+    bool SideBySide,
+    bool StackedVertically,
+    bool ShowWipeOverlay,
+    int NeutralRow,
+    int NeutralColumn,
+    int ResultRow)
+{
+    internal bool ShowsNeutralCanvas => SideBySide;
+}
+
 internal sealed class WorkspaceLayout
 {
     internal const double CompactWidth = 1180;
@@ -11,6 +22,28 @@ internal sealed class WorkspaceLayout
     internal const double MinimumInspectorWidth = 280;
     internal const double MaximumInspectorWidth = 360;
     internal const double DrawerWidth = 264;
+    internal const double MinimumCanvasHeight = 160;
+    internal const double PhotoMarginInset = 16;
+
+    internal static ComparisonPlacement ComparisonLayout(
+        bool hasFile,
+        bool compareEnabled,
+        bool wipeMode,
+        double photoAreaWidth,
+        double photoAreaHeight)
+    {
+        var sideBySide = hasFile && compareEnabled && !wipeMode;
+        var vertical = sideBySide && photoAreaHeight > photoAreaWidth;
+        return new ComparisonPlacement(
+            SideBySide: sideBySide,
+            StackedVertically: vertical,
+            ShowWipeOverlay: hasFile && compareEnabled && wipeMode,
+            NeutralRow: vertical ? 0 : 1,
+            NeutralColumn: vertical ? 1 : 0,
+            ResultRow: 1);
+    }
+
+    internal static double ContentCanvasMargin(bool photoMargin) => photoMargin ? PhotoMarginInset : 0;
 
     private WorkspaceMode beforePreview;
     private bool libraryDocked = true;

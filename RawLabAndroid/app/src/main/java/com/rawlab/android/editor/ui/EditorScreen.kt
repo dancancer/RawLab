@@ -586,8 +586,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale)
             // 顶部进度区与底部分隔线不属于照片/面板可分配高度。
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
-            val dockHeight = if (!toolOpen && !quickPresetsVisible) (if (density.fontScale > 1.3f) 196 else 164).dp else dockLayout.height.dp
-            val sideDockWidth = 336.dp
+            val dockHeight = if (!toolOpen && !quickPresetsVisible) com.rawlab.android.editor.controls.editorHomeDockHeight(density.fontScale).dp else dockLayout.height.dp
+            val sideDockWidth = com.rawlab.android.editor.controls.EDITOR_SIDE_DOCK_WIDTH.dp
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {

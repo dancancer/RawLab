@@ -30,7 +30,7 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -whole-module-optimization -num-threads 4 \
     -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" -target "$(uname -m)-apple-macosx14.0" \
     -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
-    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
+    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/MacUITestRobot.swift" "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
     "${CORE_LINK[@]}" \
     $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
     -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \

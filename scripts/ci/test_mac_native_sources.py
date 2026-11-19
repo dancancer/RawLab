@@ -34,7 +34,7 @@ HARNESSES = (
     "mac-straighten-preview",
     "photo-effects-presentation",
     "progressive-render",
-    "single-preview-interaction",
+    "mac-ui-smoke",
     "update-ui",
     "ai-denoise",
 )

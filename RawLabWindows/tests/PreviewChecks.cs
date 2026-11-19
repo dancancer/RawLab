@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class PreviewChecks
 {
@@ -18,7 +19,7 @@ internal static class PreviewChecks
         window.Show();
         RenderedImage Ready()
         {
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+            WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled);
             return window.CurrentResult!;
         }
         var status=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
@@ -50,7 +51,7 @@ internal static class PreviewChecks
             void ToggleClipping()=>window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             developments=0;
             ToggleClipping();
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled && Mask()!=null);
+            WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled && Mask()!=null);
             var mask=Mask();
             check(ReferenceEquals(actual,Ready()) && developments==0,
                 "Turning clipping on generates only the overlay and leaves the current WPF frame ready");
@@ -58,7 +59,7 @@ internal static class PreviewChecks
             check(!window.ResultCanvas.ShowClipping && ReferenceEquals(actual,Ready()) && developments==0,
                 "Turning clipping off hides the overlay without developing the image");
             ToggleClipping();
-            InteractionChecks.PumpUntil(()=>Mask()!=null);
+            WpfTestHost.PumpUntil(()=>Mask()!=null);
             check(ReferenceEquals(mask,Mask()) && ReferenceEquals(actual,Ready()),
                 "Re-enabling clipping reuses the current overlay and image");
             using var oracle=new RenderEngine(0,appPaths:window.Paths);
@@ -67,7 +68,7 @@ internal static class PreviewChecks
             check(SameMask(expected,mask!),"The displayed RAW clipping overlay matches the native highlight and shadow mask");
             viewport.ToggleActualPixels();
             check(ReferenceEquals(fit,Ready()),"Clipping remains a display option when the viewport reuses a different frame");
-            InteractionChecks.PumpUntil(()=>Mask()?.PixelWidth==fit.Image.PixelWidth);
+            WpfTestHost.PumpUntil(()=>Mask()?.PixelWidth==fit.Image.PixelWidth);
             check(!ReferenceEquals(mask,Mask()),"A new preview size receives its own clipping mask");
         }
         finally {status.RemoveValueChanged(window.Status,onStatus);window.Close();}

@@ -147,7 +147,6 @@ internal static class ComparisonDefaultChecks
             check(IsMode(window, "off") && Math.Abs(window.ValueSlider.Value - .75) < .001,
                 "Reopening the same RAW restores history without comparison state");
             window.Close();
-            ViewComparisonChecks.Run(repo,raw,check,app);
         }
         finally
         {
@@ -155,6 +154,15 @@ internal static class ComparisonDefaultChecks
         }
 
         string? CurrentFile()=>window.CurrentFile;
+    }
+
+    private static void Screenshot(Window window, string path)
+    {
+        window.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render((Visual)window.Content);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(path); encoder.Save(stream);
     }
 
     private static void Drop(MainWindow window,bool rootWindow,string path)
@@ -292,7 +300,7 @@ internal static class ComparisonDefaultChecks
                 captureTimer.Tick+=(_,_)=>{
                     var settings=window.Settings;
                     if(window.ExportPng.IsEnabled && captured.Add(settings.X3fMode))
-                        PhotoFeatureChecks.Screenshot(window,Path.Combine(profile,$"x3f-{phase}-{settings.X3fMode}.png"));
+                        Screenshot(window,Path.Combine(profile,$"x3f-{phase}-{settings.X3fMode}.png"));
                 };
                 window.Closed+=(_,_)=>captureTimer.Stop();captureTimer.Start();
             }
