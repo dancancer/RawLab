@@ -487,6 +487,18 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
+// Atomically validates and replaces all session-level edit state from a canonical
+// SDR edit-recipe JSON document (schema_version 1..5 or 7). Omitted edit groups
+// reset to their canonical neutral defaults so prior photo or legacy setter state
+// cannot bleed across renders. Invalid or unsupported payloads leave existing
+// session state intact. Runtime configuration (GPU mode, lens database, display
+// lens metadata, AI denoise, preview proxy hints, cancellation) is preserved.
+sony2fuji_status sony2fuji_apply_params(
+    sony2fuji_session* session,
+    const char* recipe_json
+);
+
+// Legacy compatibility wrapper — frozen in W2-2. New callers must use sony2fuji_apply_params.
 // New sessions use LEGACY. Unsupported versions leave the session unchanged.
 sony2fuji_status sony2fuji_session_set_processing_version(
     sony2fuji_session* session, sony2fuji_processing_version version

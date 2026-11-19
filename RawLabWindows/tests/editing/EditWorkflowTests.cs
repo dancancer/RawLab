@@ -69,6 +69,7 @@ public sealed class EditWorkflowTests
             LookLibraryToleranceChecks.Run();
             HDRChecks.Run();
             AbiLayoutChecks.Run();
+            CanonicalEditRecipeChecks.Run();
             CameraRawHDRChecks.Run();
             ProRAWHDRChecks.Run(Check);
             AdjustmentSummaryChecks.Run();

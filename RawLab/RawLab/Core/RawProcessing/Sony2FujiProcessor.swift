@@ -328,15 +328,7 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: settings.lensSettings)
-            try configureProcessing(session, identity: settings.processing)
-            try configureX3f(session, mode: settings.x3fMode)
-            try configureTone(session, settings: settings.toneSettings)
-            try configureAtmosphere(session, settings: settings.atmosphereSettings)
-            try configureLens(session, settings: settings.lensSettings)
-            let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-            guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
-                throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
-            }
+            try applySessionParams(session, settings: settings, isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType
             var ev: Float = 0

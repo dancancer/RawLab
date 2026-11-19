@@ -1,4 +1,5 @@
 #include "sony2fuji/edit_recipe.h"
+#include "core/edit_recipe_params.h"
 #include "core/photo_tone_curve.h"
 #include "nlohmann/json.hpp"
 #include <algorithm>
@@ -40,10 +41,7 @@ std::string text(const Json& value, const std::string& path) {
 // （maker/model/mount/crop factor），因此 '\n' 是格式自身的分隔符而非损坏字节；
 // 其余 C0/DEL 控制字符或超长 id 会在下游变成不可诊断的失败。
 // HDR 的 lens_profile 与 SDR 的 profile_id 共用这一约束。
-bool validProfileId(const std::string& id) {
-    return id.size() <= 1024 &&
-        !std::any_of(id.begin(), id.end(), [](unsigned char c) { return (c < 32 && c != '\n') || c == 127; });
-}
+// Delegated to Core validProfileId().
 
 float number(const Json& object, const char* key, float fallback, double minimum,
              double maximum, const std::string& path) {
@@ -536,6 +534,146 @@ std::string serializeHDR(const EditRecipe& recipe) {
     return result.dump(2)+"\n";
 }
 
+sony2fuji_tone_curve_config toAbiToneCurve(const ToneCurveConfig& src) {
+    sony2fuji_tone_curve_config out{};
+    out.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+    out.struct_size = sizeof(out);
+    out.mode = src.mode == ToneCurveMode::Custom ? SONY2FUJI_CURVE_CUSTOM : SONY2FUJI_CURVE_LEGACY;
+    out.count = src.count;
+    for (uint32_t i = 0; i < std::min(src.count, kToneCurveMaxPoints); ++i) {
+        out.points[i] = {src.points[i].x, src.points[i].y};
+    }
+    return out;
+}
+
+ToneCurveConfig toCoreToneCurve(const sony2fuji_tone_curve_config& src) {
+    ToneCurveConfig out;
+    out.mode = src.mode == SONY2FUJI_CURVE_CUSTOM ? ToneCurveMode::Custom : ToneCurveMode::Legacy;
+    out.count = src.count;
+    for (uint32_t i = 0; i < std::min(src.count, kToneCurveMaxPoints); ++i) {
+        out.points[i] = {src.points[i].x, src.points[i].y};
+    }
+    return out;
+}
+
+CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
+    CanonicalSdrRecipe core;
+    core.schemaVersion = recipe.schemaVersion;
+    core.processingVersion = static_cast<ProcessingVersion>(recipe.processingVersion);
+    core.x3fMode = static_cast<X3fMode>(recipe.x3fMode);
+    core.inputPath = recipe.inputPath;
+    core.rasterInput = recipe.rasterInput;
+    core.outputPath = recipe.outputPath;
+    core.lookPath = recipe.lookPath;
+    core.exposureMode = static_cast<RawExposureMode>(recipe.exposureMode);
+    core.exposureEv = recipe.exposureEv;
+    core.brightness = recipe.brightness;
+    core.whiteBalanceMode = static_cast<RenderWhiteBalanceMode>(recipe.whiteBalanceMode);
+    core.temperatureKelvin = recipe.temperatureKelvin;
+    core.tint = recipe.tint;
+    core.lookStrength = recipe.lookStrength;
+    core.contrast = recipe.contrast;
+    core.saturation = recipe.saturation;
+    core.highlights = recipe.highlights;
+    core.shadows = recipe.shadows;
+    core.sCurve = recipe.sCurve;
+    core.toneCurve = toCoreToneCurve(recipe.toneCurve);
+    for (size_t i = 0; i < 3; ++i) core.channelCurves[i] = toCoreToneCurve(recipe.channelCurves[i]);
+    core.toneControls = {recipe.toneControls.black_point, recipe.toneControls.white_point, recipe.toneControls.vibrance};
+    core.atmosphere = {recipe.atmosphere.clarity, recipe.atmosphere.dehaze};
+    core.colorGrading.wheels = {
+        ColorGradingWheel{recipe.colorGrading.shadows_hue, recipe.colorGrading.shadows_saturation},
+        ColorGradingWheel{recipe.colorGrading.midtones_hue, recipe.colorGrading.midtones_saturation},
+        ColorGradingWheel{recipe.colorGrading.highlights_hue, recipe.colorGrading.highlights_saturation}
+    };
+    core.sharpening = recipe.sharpening;
+    core.rawNoiseReduction = recipe.rawNoiseReduction;
+    core.chromaDenoise = recipe.chromaDenoise;
+    core.wavelet = {recipe.wavelet.enabled != 0, recipe.wavelet.luma, recipe.wavelet.chroma, recipe.wavelet.coarse, core.processingVersion};
+    std::copy(std::begin(recipe.hsl.hue), std::end(recipe.hsl.hue), core.hsl.hue.begin());
+    std::copy(std::begin(recipe.hsl.saturation), std::end(recipe.hsl.saturation), core.hsl.saturation.begin());
+    std::copy(std::begin(recipe.hsl.lightness), std::end(recipe.hsl.lightness), core.hsl.lightness.begin());
+    core.effects = {
+        recipe.effects.vignette_amount, recipe.effects.vignette_midpoint, recipe.effects.vignette_roundness,
+        recipe.effects.vignette_feather, recipe.effects.vignette_highlights,
+        recipe.effects.grain_amount, recipe.effects.grain_size, recipe.effects.grain_roughness
+    };
+    core.lensDistortion = recipe.lensDistortion;
+    core.lensTca = recipe.lensTca;
+    core.lensVignetting = recipe.lensVignetting;
+    core.lensAutoCrop = recipe.lensAutoCrop;
+    core.lensProfileId = recipe.lensProfileId;
+    core.outputFormat = static_cast<RenderOutputFormat>(recipe.outputFormat);
+    core.jpegQuality = recipe.jpegQuality;
+    core.outputLongEdge = recipe.outputLongEdge;
+    core.geometry = {
+        recipe.geometry.crop_x, recipe.geometry.crop_y, recipe.geometry.crop_width, recipe.geometry.crop_height,
+        recipe.geometry.quarter_turns, recipe.geometry.flip_horizontal != 0, recipe.geometry.flip_vertical != 0,
+        recipe.geometry.straighten_degrees, recipe.perspective.horizontal, recipe.perspective.vertical
+    };
+    return core;
+}
+
+EditRecipe fromCoreSdrRecipe(const CanonicalSdrRecipe& core) {
+    EditRecipe parsed;
+    parsed.schemaVersion = core.schemaVersion;
+    parsed.processingVersion = static_cast<sony2fuji_processing_version>(core.processingVersion);
+    parsed.x3fMode = static_cast<sony2fuji_x3f_mode>(core.x3fMode);
+    parsed.inputPath = core.inputPath;
+    parsed.rasterInput = core.rasterInput;
+    parsed.outputPath = core.outputPath;
+    parsed.lookPath = core.lookPath;
+    parsed.exposureMode = static_cast<sony2fuji_raw_exposure_mode>(core.exposureMode);
+    parsed.exposureEv = core.exposureEv;
+    parsed.brightness = core.brightness;
+    parsed.whiteBalanceMode = static_cast<sony2fuji_wb_mode>(core.whiteBalanceMode);
+    parsed.temperatureKelvin = core.temperatureKelvin;
+    parsed.tint = core.tint;
+    parsed.lookStrength = core.lookStrength;
+    parsed.contrast = core.contrast;
+    parsed.saturation = core.saturation;
+    parsed.highlights = core.highlights;
+    parsed.shadows = core.shadows;
+    parsed.sCurve = core.sCurve;
+    parsed.toneCurve = toAbiToneCurve(core.toneCurve);
+    for (size_t i = 0; i < 3; ++i) parsed.channelCurves[i] = toAbiToneCurve(core.channelCurves[i]);
+    parsed.toneControls = {SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(sony2fuji_tone_controls_config),
+        core.toneControls.blackPoint, core.toneControls.whitePoint, core.toneControls.vibrance};
+    parsed.atmosphere = {SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(sony2fuji_atmosphere_config),
+        core.atmosphere.clarity, core.atmosphere.dehaze};
+    parsed.colorGrading = {SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(sony2fuji_color_grading_config),
+        core.colorGrading.wheels[0].hue, core.colorGrading.wheels[0].saturation,
+        core.colorGrading.wheels[1].hue, core.colorGrading.wheels[1].saturation,
+        core.colorGrading.wheels[2].hue, core.colorGrading.wheels[2].saturation};
+    parsed.sharpening = core.sharpening;
+    parsed.rawNoiseReduction = core.rawNoiseReduction;
+    parsed.chromaDenoise = core.chromaDenoise;
+    parsed.wavelet = {SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(sony2fuji_wavelet_denoise_config),
+        core.wavelet.enabled ? 1 : 0, core.wavelet.luma, core.wavelet.chroma, core.wavelet.coarse};
+    std::copy(core.hsl.hue.begin(), core.hsl.hue.end(), std::begin(parsed.hsl.hue));
+    std::copy(core.hsl.saturation.begin(), core.hsl.saturation.end(), std::begin(parsed.hsl.saturation));
+    std::copy(core.hsl.lightness.begin(), core.hsl.lightness.end(), std::begin(parsed.hsl.lightness));
+    parsed.effects = {SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION, sizeof(sony2fuji_photo_effects_config),
+        core.effects.vignetteAmount, core.effects.vignetteMidpoint, core.effects.vignetteRoundness,
+        core.effects.vignetteFeather, core.effects.vignetteHighlights,
+        core.effects.grainAmount, core.effects.grainSize, core.effects.grainRoughness};
+    parsed.lensDistortion = core.lensDistortion;
+    parsed.lensTca = core.lensTca;
+    parsed.lensVignetting = core.lensVignetting;
+    parsed.lensAutoCrop = core.lensAutoCrop;
+    parsed.lensProfileId = core.lensProfileId;
+    parsed.outputFormat = static_cast<sony2fuji_output_format>(core.outputFormat);
+    parsed.jpegQuality = core.jpegQuality;
+    parsed.outputLongEdge = core.outputLongEdge;
+    parsed.geometry = {SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(sony2fuji_geometry_config),
+        core.geometry.crop_x, core.geometry.crop_y, core.geometry.crop_width, core.geometry.crop_height,
+        core.geometry.quarter_turns, core.geometry.flip_horizontal ? 1 : 0, core.geometry.flip_vertical ? 1 : 0,
+        core.geometry.straighten_degrees};
+    parsed.perspective = {SONY2FUJI_PERSPECTIVE_CONFIG_VERSION, sizeof(sony2fuji_perspective_config),
+        core.geometry.perspective_horizontal, core.geometry.perspective_vertical};
+    return parsed;
+}
+
 } // namespace
 
 bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::string& error) {
@@ -554,154 +692,24 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
         const auto root = Json::parse(document, checkKeys);
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (hdrProcessingVersionForSchema(version)) { recipe=parseHDR(root, version); error.clear(); return true; }
-        if (version < 1 || version > 7) throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
-        if (version == 7) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
-        else if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
-        else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
-
-        EditRecipe parsed;
-        parsed.schemaVersion = version;
-        if (version == 7) {
-            const auto mode = text(required(root, "x3f_mode", "recipe"), "x3f_mode");
-            if (mode == "normal-v1") parsed.x3fMode = SONY2FUJI_X3F_NORMAL;
-            else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
+        if (hdrProcessingVersionForSchema(version)) {
+            recipe = parseHDR(root, version);
+            error.clear();
+            return true;
         }
-        if (version >= 5) {
-            const auto& processing = required(root, "processing", "recipe");
-            fields(processing, "processing", {"family", "version", "quality"});
-            if (text(required(processing, "family", "processing"), "processing.family") != "rawlab")
-                throw std::invalid_argument("Unsupported processing.family");
-            if (text(required(processing, "quality", "processing"), "processing.quality") != "standard")
-                throw std::invalid_argument("Unsupported processing.quality");
-            parsed.processingVersion = static_cast<sony2fuji_processing_version>(
-                integer(required(processing, "version", "processing"), 1, 3, "processing.version"));
-        }
-        const auto& input = required(root, "input", "recipe");
-        if (version >= 4) fields(input, "input", {"path", "type"});
-        else fields(input, "input", {"path"});
-        parsed.inputPath = text(required(input, "path", "input"), "input.path");
-        if (input.contains("type")) {
-            const auto type = text(input.at("type"), "input.type");
-            if (type == "raster") parsed.rasterInput = true;
-            else if (type != "raw") throw std::invalid_argument("input.type must be raw or raster");
-        }
-        if (version == 7 && parsed.rasterInput)
-            throw std::invalid_argument("schema_version 7 requires an X3F raw input");
-
-        const auto& edits = required(root, "edits", "recipe");
-        if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
-        else if (version < 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry"});
-        else if (version == 4) fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "detail", "hsl", "effects", "denoise", "lens_correction"});
-        else fields(edits, "edits", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"});
-        if (version >= 4) completeEdits(edits, parsed);
-        const auto& exposure = required(edits, "exposure", "edits");
-        fields(exposure, "edits.exposure", {"mode", "ev", "brightness"});
-        const auto mode = text(required(exposure, "mode", "edits.exposure"), "edits.exposure.mode");
-        if (mode == "scene") parsed.exposureMode = SONY2FUJI_EXPOSURE_SCENE;
-        else if (mode == "preview") parsed.exposureMode = SONY2FUJI_EXPOSURE_PREVIEW;
-        else if (mode == "sensor") parsed.exposureMode = SONY2FUJI_EXPOSURE_SENSOR;
-        else throw std::invalid_argument("edits.exposure.mode must be scene, preview or sensor");
-        parsed.exposureEv = number(exposure, "ev", 0, -20, 20, "edits.exposure");
-        parsed.brightness = number(exposure, "brightness", 1, std::numeric_limits<float>::min(),
-                                   std::numeric_limits<float>::max(), "edits.exposure");
-
-        if (edits.contains("white_balance")) {
-            const auto& wb = edits.at("white_balance");
-            fields(wb, "edits.white_balance", {"mode", "temperature_kelvin", "tint"});
-            const auto wbMode = text(required(wb, "mode", "edits.white_balance"), "edits.white_balance.mode");
-            if (parsed.rasterInput && wbMode != "none")
-                throw std::invalid_argument("Raster edits.white_balance.mode must be none");
-            if (parsed.rasterInput && wbMode == "none") parsed.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
-            else if (wbMode == "camera") parsed.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
-            else if (wbMode == "auto") parsed.whiteBalanceMode = SONY2FUJI_WB_AUTO;
-            else if (wbMode == "temperature") {
-                parsed.whiteBalanceMode = SONY2FUJI_WB_TEMPERATURE;
-                required(wb, "temperature_kelvin", "edits.white_balance");
-                parsed.temperatureKelvin = number(wb, "temperature_kelvin", 6500, 2000, 50000, "edits.white_balance");
-                parsed.tint = number(wb, "tint", 0, -150, 150, "edits.white_balance");
-            } else throw std::invalid_argument("edits.white_balance.mode must be camera, auto or temperature");
-            if (wbMode != "temperature" && (wb.contains("temperature_kelvin") || wb.contains("tint")))
-                throw std::invalid_argument("Kelvin/tint require edits.white_balance.mode=temperature");
-        }
-
-        if (parsed.rasterInput && (parsed.exposureMode != SONY2FUJI_EXPOSURE_SENSOR ||
-            parsed.rawNoiseReduction != 0 || parsed.lensDistortion || parsed.lensTca || parsed.lensVignetting || !parsed.lensProfileId.empty()))
-            throw std::invalid_argument("Raster inputs require sensor exposure mode and disabled RAW denoise/lens correction");
-
-        if (edits.contains("look")) {
-            const auto& look = edits.at("look");
-            fields(look, "edits.look", {"path", "strength"});
-            const auto& path = required(look, "path", "edits.look");
-            if (!path.is_null()) parsed.lookPath = text(path, "edits.look.path");
-            parsed.lookStrength = number(look, "strength", 1, 0, version >= 4 ? 2 : 1, "edits.look");
-        }
-
-        if (edits.contains("geometry")) {
-            const auto& geometry = edits.at("geometry");
-            const std::string geoPath = "edits.geometry";
-            if (version == 2)
-                fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees"});
-            else fields(geometry, geoPath, {"crop", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees", "perspective"});
-            auto& config = parsed.geometry;
-            if (geometry.contains("quarter_turns"))
-                config.quarter_turns = integer(geometry.at("quarter_turns"), 0, 3, geoPath + ".quarter_turns");
-            config.flip_horizontal = boolean(geometry, "flip_horizontal", geoPath);
-            config.flip_vertical = boolean(geometry, "flip_vertical", geoPath);
-            config.straighten_degrees = number(geometry, "straighten_degrees", 0, -45, 45, geoPath);
-            if (geometry.contains("perspective")) {
-                const auto& perspective = geometry.at("perspective");
-                const auto perspectivePath = geoPath + ".perspective";
-                fields(perspective, perspectivePath, {"horizontal", "vertical"});
-                parsed.perspective.horizontal = number(perspective, "horizontal", 0, -1, 1, perspectivePath);
-                parsed.perspective.vertical = number(perspective, "vertical", 0, -1, 1, perspectivePath);
-            }
-            if (geometry.contains("crop")) {
-                const auto& crop = geometry.at("crop");
-                const std::string cropPath = geoPath + ".crop";
-                fields(crop, cropPath, {"x", "y", "width", "height"});
-                config.crop_x = number(crop, "x", 0, 0, 1, cropPath);
-                config.crop_y = number(crop, "y", 0, 0, 1, cropPath);
-                config.crop_width = number(crop, "width", 1, std::numeric_limits<float>::min(), 1, cropPath);
-                config.crop_height = number(crop, "height", 1, std::numeric_limits<float>::min(), 1, cropPath);
-                if (double(config.crop_x) + config.crop_width > 1 + 1e-6 ||
-                    double(config.crop_y) + config.crop_height > 1 + 1e-6 ||
-                    config.crop_x >= 1 || config.crop_y >= 1)
-                    throw std::invalid_argument(cropPath + " must fit inside the normalized canvas");
-                config.crop_width = std::min(config.crop_width, 1 - config.crop_x);
-                config.crop_height = std::min(config.crop_height, 1 - config.crop_y);
-            }
-        }
-
-        const auto& output = required(root, "output", "recipe");
-        fields(output, "output", {"path", "format", "jpeg_quality", "size"});
-        parsed.outputPath = text(required(output, "path", "output"), "output.path");
-        const auto format = text(required(output, "format", "output"), "output.format");
-        if (format == "jpeg") parsed.outputFormat = SONY2FUJI_OUTPUT_JPEG;
-        else if (format == "png") parsed.outputFormat = SONY2FUJI_OUTPUT_PNG;
-        else if (format == "dng") parsed.outputFormat = SONY2FUJI_OUTPUT_DNG;
-        else throw std::invalid_argument("output.format must be jpeg, png or dng");
-        if (output.contains("jpeg_quality"))
-            parsed.jpegQuality = integer(output.at("jpeg_quality"), 1, 100, "output.jpeg_quality");
-        if (output.contains("size")) {
-            const auto& size = output.at("size");
-            fields(size, "output.size", {"mode", "long_edge"});
-            const auto sizeMode = text(required(size, "mode", "output.size"), "output.size.mode");
-            if (sizeMode == "limit_long_edge")
-                parsed.outputLongEdge = integer(required(size, "long_edge", "output.size"), 1,
-                    std::numeric_limits<uint32_t>::max(), "output.size.long_edge");
-            else if (sizeMode != "native") throw std::invalid_argument("output.size.mode must be native or limit_long_edge");
-            else if (size.contains("long_edge")) throw std::invalid_argument("output.size.long_edge requires limit_long_edge mode");
-        }
-        recipe = std::move(parsed);
-        error.clear();
-        return true;
     } catch (const Json::exception& exception) {
         error = exception.what();
+        return false;
     } catch (const std::invalid_argument& exception) {
         error = exception.what();
+        return false;
     }
-    return false;
+    CanonicalSdrRecipe core;
+    if (!parseCanonicalSdrRecipe(document, core, error, /*allowRasterLensCorrection=*/false)) {
+        return false;
+    }
+    recipe = fromCoreSdrRecipe(core);
+    return true;
 }
 
 std::string serializeEditRecipe(const EditRecipe& recipe) {
@@ -823,31 +831,32 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
 
 sony2fuji_request EditRecipe::toRequest() const {
     if (hdr || hdrProcessingVersionForSchema(schemaVersion)) throw std::invalid_argument("HDR recipes require the typed HDR request");
+    const RenderParams params = toCoreSdrRecipe(*this).toRenderParams();
     sony2fuji_request request{};
     request.version = SONY2FUJI_REQUEST_VERSION;
     request.struct_size = sizeof(request);
-    request.input_type = rasterInput ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_RAW;
+    request.input_type = static_cast<sony2fuji_input_type>(params.inputType);
     request.input_path = inputPath.c_str();
     request.lut_path = lookPath.empty() ? nullptr : lookPath.c_str();
-    request.lut_strength = lookStrength;
-    request.wb_mode = whiteBalanceMode;
-    request.exposure_ev = exposureEv;
-    request.brightness = brightness;
-    request.contrast = contrast;
-    request.saturation = saturation;
-    request.highlights = highlights;
-    request.shadows = shadows;
-    request.tone_curve = sCurve;
-    request.sharpening = sharpening;
-    request.temperature = temperatureKelvin;
-    request.tint = tint;
-    request.size_mode = outputLongEdge ? SONY2FUJI_SIZE_LIMIT_LONG_EDGE : SONY2FUJI_SIZE_NATIVE;
-    request.long_edge = outputLongEdge;
-    request.intent = SONY2FUJI_INTENT_FINAL;
-    request.output_target = SONY2FUJI_TARGET_FILE;
+    request.lut_strength = params.lutStrength;
+    request.wb_mode = static_cast<sony2fuji_wb_mode>(params.wbMode);
+    request.exposure_ev = params.exposureEV;
+    request.brightness = params.brightness;
+    request.contrast = params.contrast;
+    request.saturation = params.saturation;
+    request.highlights = params.highlights;
+    request.shadows = params.shadows;
+    request.tone_curve = params.toneCurve;
+    request.sharpening = params.sharpening;
+    request.temperature = params.temperature;
+    request.tint = params.tint;
+    request.size_mode = static_cast<sony2fuji_size_mode>(params.sizeMode);
+    request.long_edge = params.longEdge;
+    request.intent = static_cast<sony2fuji_intent>(params.intent);
+    request.output_target = static_cast<sony2fuji_output_target>(params.outputTarget);
     request.output_path = outputPath.c_str();
-    request.output_format = outputFormat;
-    request.jpeg_quality = jpegQuality;
+    request.output_format = static_cast<sony2fuji_output_format>(params.outputFormat);
+    request.jpeg_quality = params.jpegQuality;
     return request;
 }
 

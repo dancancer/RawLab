@@ -679,6 +679,12 @@
       "symbol": "sony2fuji_session_create"
     },
     {
+      "name": "sony2fuji_apply_params",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*"],
+      "symbol": "sony2fuji_apply_params"
+    },
+    {
       "name": "sony2fuji_session_set_processing_version",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "sony2fuji_processing_version"],

@@ -1,39 +1,40 @@
 #pragma once
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <stdexcept>
-#include <initializer_list>
+#include <string>
 
 namespace rawlab {
-struct RecipeProbeStages {
-    sony2fuji_tone_controls_config tone{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(tone)};
-    sony2fuji_atmosphere_config atmosphere{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmosphere)};
-    sony2fuji_color_grading_config grading{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(grading)};
-    sony2fuji_tone_curve_config curve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(curve)};
-    sony2fuji_tone_curve_config channels[3]{curve, curve, curve};
 
-    sony2fuji_status apply(sony2fuji_session* session) const {
-        sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
-            {curve, channels[0], channels[1], channels[2]}};
-        for (auto status : {sony2fuji_session_set_tone_controls(session, &tone),
-                            sony2fuji_session_set_atmosphere(session, &atmosphere),
-                            sony2fuji_session_set_color_grading(session, &grading),
-                            sony2fuji_session_set_tone_curves(session, &curves)}) {
-            if (status != SONY2FUJI_STATUS_OK) return status;
-        }
-        return SONY2FUJI_STATUS_OK;
-    }
-};
+inline constexpr const char* kNeutralRecipeProbeParamsJson =
+    "{\"schema_version\":5,"
+    "\"processing\":{\"family\":\"rawlab\",\"version\":2,\"quality\":\"standard\"},"
+    "\"input\":{\"path\":\"probe.raw\",\"type\":\"raw\"},"
+    "\"edits\":{"
+    "\"exposure\":{\"mode\":\"scene\",\"ev\":0.0,\"brightness\":1.0},"
+    "\"white_balance\":{\"mode\":\"camera\"},"
+    "\"look\":{\"path\":null,\"strength\":1.0},"
+    "\"detail\":{\"sharpening\":0.0}},"
+    "\"output\":{\"path\":\"probe.png\",\"format\":\"png\",\"size\":{\"mode\":\"native\"}}}";
 
-// 探测仅使用恒等阶段；无论成功或抛错，都恢复正式请求的已校验配置。
 class RecipeProbeStageScope {
+    sony2fuji_session* session;
+    std::string savedParamsJson;
+    bool active = false;
 public:
-    RecipeProbeStageScope(sony2fuji_session* session, const RecipeProbeStages& saved) : session_(session), saved_(saved) {
-        if (RecipeProbeStages{}.apply(session_) != SONY2FUJI_STATUS_OK)
-            throw std::runtime_error("Cannot configure neutral recipe white balance probe");
+    RecipeProbeStageScope(sony2fuji_session* session, std::string savedParams)
+        : session(session), savedParamsJson(std::move(savedParams)) {
+        if (sony2fuji_apply_params(session, kNeutralRecipeProbeParamsJson) != SONY2FUJI_STATUS_OK) {
+            throw std::runtime_error("Cannot clear recipe probe stages");
+        }
+        active = true;
     }
-    ~RecipeProbeStageScope() { saved_.apply(session_); }
-private:
-    sony2fuji_session* session_;
-    RecipeProbeStages saved_;
+    RecipeProbeStageScope(const RecipeProbeStageScope&) = delete;
+    RecipeProbeStageScope& operator=(const RecipeProbeStageScope&) = delete;
+    ~RecipeProbeStageScope() noexcept {
+        if (active && !savedParamsJson.empty()) {
+            (void)sony2fuji_apply_params(session, savedParamsJson.c_str());
+        }
+    }
 };
-}
+
+} // namespace rawlab
