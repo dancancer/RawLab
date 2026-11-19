@@ -139,7 +139,7 @@ class ProcessingMigrationNavigationTest {
         val store = EditStore(directory)
         store.save(identity, EditSettings(processing = ProcessingIdentity.C5))
         val model = compose.activity.model
-        val migration = field(model, "processingMigrationQueue") as SerialWorkQueue
+        val migration = model.processingMigrationQueue
         val adjustments = field(model, "adjustmentQueue") as SerialWorkQueue
         val migrationRelease = block(migration)
         var commitRelease: CountDownLatch? = null

@@ -2,6 +2,7 @@ package com.rawlab.android.editor.storage
 
 import com.rawlab.android.R
 import com.rawlab.android.editor.EditSaveState
+import com.rawlab.android.editor.EditorStrings
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
@@ -18,7 +19,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal data class EditSaveResult(val state: EditSaveState, val error: Throwable? = null, val reading: Boolean = false) {
     val detail: String? get() = error?.let { it.message?.takeIf(String::isNotBlank) ?: it.javaClass.simpleName }
-    val message: String? get() = error?.let {
+    val message: String? get() = formatMessage(EditorStrings())
+    fun formatMessage(strings: EditorStrings): String? = error?.let {
         val dedicated = when (it) {
             is PhotoChangedException -> R.string.collection_source_changed
             is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message
@@ -26,8 +28,10 @@ internal data class EditSaveResult(val state: EditSaveState, val error: Throwabl
             is AdjustmentNotReadyException -> if (reading) R.string.edit_store_unavailable else R.string.transfer_draft_message
             else -> null
         }
-        dedicated?.let(AppStrings::text) ?: AppStrings.format(if (reading) R.string.edit_read_error else R.string.edit_unsaved_detail,
-            detail.orEmpty())
+        dedicated?.let(strings.text) ?: strings.format(
+            if (reading) R.string.edit_read_error else R.string.edit_unsaved_detail,
+            arrayOf(detail.orEmpty()),
+        )
     }
 }
 

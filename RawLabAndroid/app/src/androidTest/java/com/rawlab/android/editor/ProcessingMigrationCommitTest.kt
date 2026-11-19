@@ -88,9 +88,9 @@ class ProcessingMigrationCommitTest {
             assertEquals("failure must not roll back the stale-work generation", revision + 1, field(model, "sourceRevision"))
             main { model.setEditorActive(true) }
             // Drain the real migration and commit workers: an erroneous retry must not hide behind an early poll.
-            for (name in listOf("processingMigrationQueue", "adjustmentQueue")) {
+            for ((name, queue) in listOf("processingMigrationQueue" to model.processingMigrationQueue, "adjustmentQueue" to (field(model, "adjustmentQueue") as SerialWorkQueue))) {
                 val drained = CountDownLatch(1)
-                (field(model, name) as SerialWorkQueue).submit({}) { drained.countDown() }
+                queue.submit({}) { drained.countDown() }
                 assertTrue("$name drained", drained.await(30, TimeUnit.SECONDS))
                 main {}
             }
@@ -129,7 +129,7 @@ class ProcessingMigrationCommitTest {
                 model.setGpuEnabled(false)
                 model.setEditorActive(false)
             }
-            val queue = field(model, "processingMigrationQueue") as SerialWorkQueue
+            val queue = model.processingMigrationQueue
             val entered = CountDownLatch(1)
             queue.submit({ entered.countDown(); check(releaseFit.await(30, TimeUnit.SECONDS)) }) {}
             assertTrue(entered.await(10, TimeUnit.SECONDS))
@@ -180,7 +180,7 @@ class ProcessingMigrationCommitTest {
                 owner.put("editor", model)
                 model.setGpuEnabled(false)
             }
-            val queue = field(model, "processingMigrationQueue") as SerialWorkQueue
+            val queue = model.processingMigrationQueue
             val entered = CountDownLatch(1)
             queue.submit({ entered.countDown(); check(releaseFit.await(30, TimeUnit.SECONDS)) }) {}
             assertTrue(entered.await(10, TimeUnit.SECONDS))
@@ -396,7 +396,7 @@ class ProcessingMigrationCommitTest {
             assertTrue(discarded.get())
             await { model.state.value.canExport && model.state.value.edits.exposure == .6f }
             assertNull("Discarding unsaved changes must clear pendingResetMigrationClear",
-                field(model, "pendingResetMigrationClear"))
+                model.pendingResetMigrationClear)
 
             failWrites.set(false)
             main {

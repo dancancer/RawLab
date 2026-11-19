@@ -17,7 +17,7 @@ internal class MediaPhotoChanged : IOException("The original photo has changed")
 /** 只登记内容摘要和媒体 URI，不保存第二份原件。 */
 internal class MediaPhotoLibrary(private val context: Context) : MediaPhotoAccess {
     private val resolver = context.contentResolver
-    private val sources = context.getSharedPreferences("camera-media-sources", Context.MODE_PRIVATE)
+    private val sources by lazy { context.getSharedPreferences("camera-media-sources", Context.MODE_PRIVATE) }
     private val marker = "RawLab camera import:"
 
     override fun createPending(name: String, relativePath: String, mime: String, token: String): MediaPhoto {

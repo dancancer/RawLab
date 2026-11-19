@@ -109,7 +109,7 @@ internal class EditorAdjustmentHistory(
             }
         }
         if (published) {
-            session?.refreshSource(photo.identity, historySourceValidation(photo), record) {
+            session?.refreshSource(photo.identity, historyValidation(photo), record) {
                 state.get().sourceToken == token
             }
         }
@@ -131,11 +131,17 @@ internal class EditorAdjustmentHistory(
         val path = photo.file.absolutePath
         while (true) {
             val current = state.get()
-            if (current.interaction != null) return EditSaveResult(EditSaveState.SAVED)
             val expected = current.loaded
                 ?: return EditSaveResult(EditSaveState.FAILED, AdjustmentNotReadyException(), reading = true)
             if (expected.identity != photo.identity || current.sourcePath != path)
                 return EditSaveResult(EditSaveState.FAILED, PhotoChangedException())
+            current.interaction?.let { active ->
+                return if (active.identity == photo.identity && active.path == path && active.revision == revision) {
+                    EditSaveResult(EditSaveState.SAVED)
+                } else {
+                    EditSaveResult(EditSaveState.FAILED, PhotoChangedException())
+                }
+            }
             val next = current.withInteraction(Interaction(photo.identity, path, revision, settings))
             if (state.compareAndSet(current, next)) return EditSaveResult(EditSaveState.SAVED)
         }
@@ -192,7 +198,7 @@ internal class EditorAdjustmentHistory(
             )
             if (state.compareAndSet(current, next)) break
         }
-        session?.refreshSource(photo.identity, historySourceValidation(photo), record) {
+        session?.refreshSource(photo.identity, historyValidation(photo), record) {
             state.get().sourceToken == token
         }
         return record
@@ -222,13 +228,16 @@ internal class EditorAdjustmentHistory(
                 baseline.validator?.invoke()
                 if (state.get().sourceToken != baseline.sourceToken) throw PhotoChangedException()
             },
-            validateHistorySource = historySourceValidation(photo),
+            validateHistorySource = historyValidation(photo),
             clearProcessingMigration = clearProcessingMigration,
             acceptCommit = { saved -> publishCommitted(baseline.sourceToken, saved) },
         )
         if (result.saved != null) return EditSaveResult(EditSaveState.SAVED)
         return EditSaveResult(EditSaveState.FAILED, result.error ?: IOException("Could not save adjustments"))
     }
+
+    private fun historyValidation(photo: ImportedPhoto): () -> Unit =
+        photo.validateOriginal ?: validateSource(photo)
 
     private fun publishCommitted(expectedSourceToken: Long, saved: PhotoEditState): Boolean {
         while (true) {
