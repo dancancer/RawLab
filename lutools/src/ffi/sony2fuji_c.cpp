@@ -2,9 +2,11 @@
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include "core/hsl_probe.h"
+#include "core/jpeg_mpf.h"
 #include "core/render_params.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -341,6 +343,20 @@ sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3
     return toFfiStatus(status);
 }
 
+int32_t sony2fuji_is_normal_x3f(const char* input_path, sony2fuji_x3f_mode mode) {
+    if (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL) return 0;
+    return sony2fuji::Pipeline::isNormalX3f(input_path, static_cast<sony2fuji::X3fMode>(mode)) ? 1 : 0;
+}
+
+int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path) {
+    if (!path || !*path) return -1;
+    try {
+        return sony2fuji::inspectSdrJpegMpf(std::filesystem::u8path(path));
+    } catch (...) {
+        return -1;
+    }
+}
+
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* handle, sony2fuji_x3f_mode mode) {
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease) || (mode != SONY2FUJI_X3F_LEGACY && mode != SONY2FUJI_X3F_NORMAL)) {
@@ -498,6 +514,56 @@ sony2fuji_status sony2fuji_session_get_raw_white_balance(const sony2fuji_session
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease) || !temperature || !tint) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     return toFfiStatus(lease.constRaw()->pipeline.getRawWhiteBalance(*temperature, *tint));
+}
+
+sony2fuji_status sony2fuji_session_get_effective_raw_white_balance(
+    const sony2fuji_session* handle, float* temperature, float* tint
+) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !temperature || !tint) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    return toFfiStatus(lease.constRaw()->pipeline.getEffectiveRawWhiteBalance(*temperature, *tint));
+}
+
+sony2fuji_status sony2fuji_session_resolve_recipe_wb(
+    sony2fuji_session* handle,
+    const sony2fuji_recipe_wb_request* request,
+    sony2fuji_recipe_wb_result* result
+) {
+    if (result) {
+        *result = {};
+        result->version = SONY2FUJI_RECIPE_WB_RESULT_VERSION;
+        result->struct_size = sizeof(*result);
+    }
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !request || !result ||
+        request->version != SONY2FUJI_RECIPE_WB_REQUEST_VERSION ||
+        request->struct_size != sizeof(*request)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    sony2fuji::RecipeWbRequest coreRequest;
+    coreRequest.inputPath = request->input_path ? request->input_path : "";
+    coreRequest.processingVersion = static_cast<sony2fuji::ProcessingVersion>(request->processing_version);
+    coreRequest.x3fMode = static_cast<sony2fuji::X3fMode>(request->x3f_mode);
+    coreRequest.exposureMode = static_cast<sony2fuji::RawExposureMode>(request->exposure_mode);
+    coreRequest.recipeActive = request->recipe_active != 0;
+    coreRequest.recipeStrength = request->recipe_strength;
+    coreRequest.customWb = request->custom_wb != 0;
+    coreRequest.temperature = request->temperature;
+    coreRequest.tint = request->tint;
+
+    sony2fuji::RecipeWbResult coreResult;
+    const auto status = lease.raw()->pipeline.resolveRecipeWhiteBalance(coreRequest, coreResult);
+    result->version = SONY2FUJI_RECIPE_WB_RESULT_VERSION;
+    result->struct_size = sizeof(*result);
+    result->wb_mode = coreResult.wbMode == sony2fuji::RenderWhiteBalanceMode::Temperature
+        ? SONY2FUJI_WB_TEMPERATURE
+        : SONY2FUJI_WB_CAMERA;
+    result->temperature = coreResult.temperature;
+    result->tint = coreResult.tint;
+    result->camera_temperature = coreResult.cameraTemperature;
+    result->camera_tint = coreResult.cameraTint;
+    result->camera_calibrated = coreResult.cameraCalibrated ? 1 : 0;
+    return toFfiStatus(status);
 }
 
 sony2fuji_status sony2fuji_session_set_photo_effects(sony2fuji_session* handle, const sony2fuji_photo_effects_config* config) {

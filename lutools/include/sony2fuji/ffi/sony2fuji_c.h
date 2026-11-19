@@ -421,6 +421,8 @@ typedef struct sony2fuji_session sony2fuji_session;
 int32_t sony2fuji_x3f_available(void);
 // Identifies a source and chooses the renderer for a new edit.
 sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode);
+// Returns 1 when mode is NORMAL and input_path begins with the X3F "FOVb" header, else 0.
+int32_t sony2fuji_is_normal_x3f(const char* input_path, sony2fuji_x3f_mode mode);
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
 // Last normal-X3F error on this session; owned by the session until its next render.
 const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
@@ -513,6 +515,8 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
+// Inspects a display file for JPEG MPF secondary images (image count > 1 for MPF, 0 for single-image/non-MPF, -1 = error).
+int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 
@@ -805,6 +809,49 @@ sony2fuji_status sony2fuji_session_get_raw_exposure(
 // UNSUPPORTED means the file lacks usable calibration; camera WB remains usable.
 sony2fuji_status sony2fuji_session_get_raw_white_balance(
     const sony2fuji_session* session, float* temperature, float* tint
+);
+
+// Effective as-shot RAW white balance rounded half-away-from-zero for UI display
+// (returns fixed 6500/0 for normal X3F; UNSUPPORTED for raster or uncalibrated files).
+sony2fuji_status sony2fuji_session_get_effective_raw_white_balance(
+    const sony2fuji_session* session, float* temperature, float* tint
+);
+
+#define SONY2FUJI_RECIPE_WB_REQUEST_VERSION 1u
+typedef struct sony2fuji_recipe_wb_request {
+    uint32_t version;
+    uint32_t struct_size;
+    const char* input_path;
+    sony2fuji_processing_version processing_version;
+    sony2fuji_x3f_mode x3f_mode;
+    sony2fuji_raw_exposure_mode exposure_mode;
+    int32_t recipe_active;
+    float recipe_strength;
+    int32_t custom_wb;
+    float temperature;
+    float tint;
+} sony2fuji_recipe_wb_request;
+
+#define SONY2FUJI_RECIPE_WB_RESULT_VERSION 1u
+typedef struct sony2fuji_recipe_wb_result {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_wb_mode wb_mode;
+    float temperature;
+    float tint;
+    float camera_temperature;
+    float camera_tint;
+    int32_t camera_calibrated;
+} sony2fuji_recipe_wb_result;
+
+// Resolves recipe white balance for a RAW file, using session file-identity cache and
+// a temporary 32px neutral RAW probe when calibration has not been read yet.
+// Normal X3F files resolve directly to calibrated 6500/0 without probing.
+// Uncalibrated RAW files return SONY2FUJI_STATUS_UNSUPPORTED (with camera_calibrated = 0).
+sony2fuji_status sony2fuji_session_resolve_recipe_wb(
+    sony2fuji_session* session,
+    const sony2fuji_recipe_wb_request* request,
+    sony2fuji_recipe_wb_result* result
 );
 
 sony2fuji_status sony2fuji_session_set_gpu_config(

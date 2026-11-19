@@ -91,7 +91,7 @@ internal sealed partial class RenderEngine
         progress.Token.ThrowIfCancellationRequested();
         if (!settings.IsHDREditing)
         {
-            if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+            if(Native.sony2fuji_is_normal_x3f(path,settings.X3fMode)!=0)throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
             if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
             settings=PrepareRecipe(path,settings);
             ApplyParams(path,settings,includeDenoise:false,validateAiX3f:true);

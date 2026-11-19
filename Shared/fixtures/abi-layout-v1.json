@@ -328,6 +328,37 @@
       ]
     },
     {
+      "name": "sony2fuji_recipe_wb_request",
+      "size": 48,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "input_path", "offset": 8, "size": 8},
+        {"name": "processing_version", "offset": 16, "size": 4},
+        {"name": "x3f_mode", "offset": 20, "size": 4},
+        {"name": "exposure_mode", "offset": 24, "size": 4},
+        {"name": "recipe_active", "offset": 28, "size": 4},
+        {"name": "recipe_strength", "offset": 32, "size": 4},
+        {"name": "custom_wb", "offset": 36, "size": 4},
+        {"name": "temperature", "offset": 40, "size": 4},
+        {"name": "tint", "offset": 44, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_recipe_wb_result",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "wb_mode", "offset": 8, "size": 4},
+        {"name": "temperature", "offset": 12, "size": 4},
+        {"name": "tint", "offset": 16, "size": 4},
+        {"name": "camera_temperature", "offset": 20, "size": 4},
+        {"name": "camera_tint", "offset": 24, "size": 4},
+        {"name": "camera_calibrated", "offset": 28, "size": 4}
+      ]
+    },
+    {
       "name": "sony2fuji_processing_migration_result",
       "size": 80,
       "fields": [
@@ -661,6 +692,12 @@
       "symbol": "sony2fuji_x3f_default_mode"
     },
     {
+      "name": "sony2fuji_is_normal_x3f",
+      "return_type": "int32_t",
+      "params": ["const char*", "sony2fuji_x3f_mode"],
+      "symbol": "sony2fuji_is_normal_x3f"
+    },
+    {
       "name": "sony2fuji_session_set_x3f_mode",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "sony2fuji_x3f_mode"],
@@ -695,6 +732,12 @@
       "return_type": "sony2fuji_status",
       "params": ["const char*", "sony2fuji_buffer*"],
       "symbol": "sony2fuji_load_display_image"
+    },
+    {
+      "name": "sony2fuji_inspect_sdr_jpeg_mpf",
+      "return_type": "int32_t",
+      "params": ["const char*"],
+      "symbol": "sony2fuji_inspect_sdr_jpeg_mpf"
     },
     {
       "name": "sony2fuji_session_destroy",
@@ -1037,6 +1080,18 @@
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_session*", "float*", "float*"],
       "symbol": "sony2fuji_session_get_raw_white_balance"
+    },
+    {
+      "name": "sony2fuji_session_get_effective_raw_white_balance",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_session*", "float*", "float*"],
+      "symbol": "sony2fuji_session_get_effective_raw_white_balance"
+    },
+    {
+      "name": "sony2fuji_session_resolve_recipe_wb",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_recipe_wb_request*", "sony2fuji_recipe_wb_result*"],
+      "symbol": "sony2fuji_session_resolve_recipe_wb"
     },
     {
       "name": "sony2fuji_session_set_gpu_config",

@@ -471,6 +471,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LIBRARIES sony2fuji_core
         LABELS x3f raw ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME recipe_wb_abi
+        SOURCES tests/recipe_wb_abi_tests.cpp
+        LIBRARIES sony2fuji_core
+        ARGS "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(SONY2FUJI_ENABLE_X3F)
         rawlab_add_test(
             NAME x3f_bridge_contracts

@@ -673,7 +673,6 @@ jobs:
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
           cd ..
           bash RawLabAndroid/tests/jni-session-lock.sh
-          bash RawLabAndroid/tests/recipe-probe-stages.sh
           bash RawLabAndroid/tests/ndk-compile.sh
       - name: Build both ABIs, lint and instrumentation test APK
         if: needs.changes.outputs.build == 'true'

@@ -39,12 +39,10 @@ CXX="${CXX:-clang++}"
   -I"$ROOT/RawLabAndroid/tests/host_jni" \
   -I"$ROOT/RawLabAndroid/app/src/main/cpp" \
   -I"$ROOT/lutools/include" \
-  -I"$ROOT/lutools/src" \
   -I"$LCMS_DIR/include" \
   -I"$JDK/include" \
   -I"$JDK/include/$JNI_MD" \
   "$ROOT/RawLabAndroid/tests/jni_session_lock_test.cpp" \
-  "$ROOT/lutools/src/core/jpeg_mpf.cpp" \
   "$TMP/liblcms2.a" "$TMP/spng.o" \
   -lm -lz \
   -o "$TMP/jni_session_lock_test"

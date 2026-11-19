@@ -9,7 +9,6 @@ struct Sony2FujiProcessor {
     let gpuMode: sony2fuji_gpu_mode
     let lensDatabaseURL: URL?
     let lensCatalog = LensCatalogCache()
-    let recipeWhiteBalance = RecipeWhiteBalanceCache()
 
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil) {
         self.gpuMode = gpuMode
@@ -486,8 +485,7 @@ struct Sony2FujiProcessor {
             let normalX3f = isNormalX3f(url, settings: settings)
             var output = try takeBuffer(&buffer, semantic: normalX3f ? .display : .legacy)
             output.nativeSize = geometrySize(session)
-            let rawWhiteBalance = normalX3f ? RawWhiteBalance(temperature: 6500, tint: 0, isCalibrated: true)
-                : readRawWhiteBalance(from: session)
+            let rawWhiteBalance = readRawWhiteBalance(from: session)
             return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: normalX3f ? nil : try readLens(session, url: url))
         }
     }

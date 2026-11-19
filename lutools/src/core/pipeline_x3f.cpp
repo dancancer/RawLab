@@ -46,6 +46,17 @@ RenderStatus Pipeline::x3fDefaultMode(const char* inputPath, X3fMode& outMode) {
     }
 }
 
+bool Pipeline::isNormalX3f(const char* inputPath, X3fMode mode) {
+    if (mode != X3fMode::Normal || inputPath == nullptr || inputPath[0] == '\0') {
+        return false;
+    }
+    try {
+        return hasX3fSignature(inputPath);
+    } catch (...) {
+        return false;
+    }
+}
+
 RenderStatus Pipeline::setX3fMode(X3fMode mode) {
     if (mode != X3fMode::Legacy && mode != X3fMode::Normal) {
         return RenderStatus::InvalidArgument;

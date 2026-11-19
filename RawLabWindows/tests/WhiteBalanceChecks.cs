@@ -48,6 +48,9 @@ internal static class WhiteBalanceChecks
         finally { Directory.Delete(directory,true); }
     }
 
+    private static (double Temperature,double Tint) RoundWb(float temperature,float tint) =>
+        (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
+
     internal static void Run(Action<bool,string> check)
     {
         foreach(var sample in new[] {
@@ -58,7 +61,7 @@ internal static class WhiteBalanceChecks
             (Temperature:5000.75f,Tint:-12.75f,Offset:5.0,Strength:50.0,CameraTemperature:5001.0,CameraTint:-13.0,RequestTint:-10.5f)
         })
         {
-            var camera=RenderEngine.RoundCameraWhiteBalance(sample.Temperature,sample.Tint);
+            var camera=RoundWb(sample.Temperature,sample.Tint);
             var settings=new Adjustments();
             settings.ApplyMasterRecipe(MasterRecipe.All[0]);
             settings.Set(Parameter.Tint,sample.Offset);
@@ -93,7 +96,7 @@ internal static class WhiteBalanceChecks
         {
             var input=Path.Combine(root,"input.ARW");File.WriteAllText(input,"identity only");
             var store=new EditStore(root);
-            var settings=new Adjustments();settings.ResolveWhiteBalance(RenderEngine.RoundCameraWhiteBalance(5000.5f,12.5f));
+            var settings=new Adjustments();settings.ResolveWhiteBalance(RoundWb(5000.5f,12.5f));
             store.Save(input,settings.Capture(),null);
             var saved=new EditStore(root).Find(input)!.Settings;
             check(saved.AsShotTemperature==5001 && saved.AsShotTint==13 && saved.Values[2]==5001 && saved.Values[3]==13,
@@ -108,7 +111,7 @@ internal static class WhiteBalanceChecks
                 var restored=new EditStore(root).Find(input)!.Settings.Restore();
                 check(restored.AsShot==(5000,12) && restored[Parameter.Temperature]==5000 && restored[Parameter.Tint]==(custom ? 17 : 12),
                     "Existing Windows camera metadata and explicit WB load without migration");
-                restored.ResolveWhiteBalance(RenderEngine.RoundCameraWhiteBalance(5000.5f,12.5f));
+                restored.ResolveWhiteBalance(RoundWb(5000.5f,12.5f));
                 var request=restored.Request(input,null,32,null);
                 check(custom ? request is {WbMode:3,Temperature:5000,Tint:17} : request.WbMode==0 && restored.AsShot==(5001,13),
                     "Fresh camera metadata preserves explicit edits and original-gain camera mode");
@@ -123,7 +126,7 @@ internal static class WhiteBalanceChecks
                 var journal=new BatchJournal(Path.Combine(root,"batch"));journal.Save(job);
                 var path=Path.Combine(journal.DirectoryPath,"job.json");var before=File.ReadAllBytes(path);
                 var frozen=journal.Load()!.Settings;
-                var target=frozen.Restore();target.ResolveWhiteBalance(RenderEngine.RoundCameraWhiteBalance(5000.5f,12.5f));
+                var target=frozen.Restore();target.ResolveWhiteBalance(RoundWb(5000.5f,12.5f));
                 var request=target.Request(input,null,0,"output.png");
                 check(request.WbMode==3 && request.Temperature==(custom ? 4500 : 5001) && request.Tint==18,
                     "Legacy frozen recipe uses fresh target camera tint and preserves explicit temperature");

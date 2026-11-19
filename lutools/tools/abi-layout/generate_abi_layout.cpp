@@ -386,6 +386,37 @@ int main() {
             },
         },
         {
+            "sony2fuji_recipe_wb_request",
+            sizeof(sony2fuji_recipe_wb_request),
+            {
+                ABI_FIELD(sony2fuji_recipe_wb_request, version),
+                ABI_FIELD(sony2fuji_recipe_wb_request, struct_size),
+                ABI_FIELD(sony2fuji_recipe_wb_request, input_path),
+                ABI_FIELD(sony2fuji_recipe_wb_request, processing_version),
+                ABI_FIELD(sony2fuji_recipe_wb_request, x3f_mode),
+                ABI_FIELD(sony2fuji_recipe_wb_request, exposure_mode),
+                ABI_FIELD(sony2fuji_recipe_wb_request, recipe_active),
+                ABI_FIELD(sony2fuji_recipe_wb_request, recipe_strength),
+                ABI_FIELD(sony2fuji_recipe_wb_request, custom_wb),
+                ABI_FIELD(sony2fuji_recipe_wb_request, temperature),
+                ABI_FIELD(sony2fuji_recipe_wb_request, tint),
+            },
+        },
+        {
+            "sony2fuji_recipe_wb_result",
+            sizeof(sony2fuji_recipe_wb_result),
+            {
+                ABI_FIELD(sony2fuji_recipe_wb_result, version),
+                ABI_FIELD(sony2fuji_recipe_wb_result, struct_size),
+                ABI_FIELD(sony2fuji_recipe_wb_result, wb_mode),
+                ABI_FIELD(sony2fuji_recipe_wb_result, temperature),
+                ABI_FIELD(sony2fuji_recipe_wb_result, tint),
+                ABI_FIELD(sony2fuji_recipe_wb_result, camera_temperature),
+                ABI_FIELD(sony2fuji_recipe_wb_result, camera_tint),
+                ABI_FIELD(sony2fuji_recipe_wb_result, camera_calibrated),
+            },
+        },
+        {
             "sony2fuji_processing_migration_result",
             sizeof(sony2fuji_processing_migration_result),
             {

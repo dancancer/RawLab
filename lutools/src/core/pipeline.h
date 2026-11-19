@@ -87,6 +87,27 @@ struct ProcessingMigrationResult {
     MigrationQuality quality{};
 };
 
+struct RecipeWbRequest {
+    std::string inputPath;
+    ProcessingVersion processingVersion = ProcessingVersion::Legacy;
+    X3fMode x3fMode = X3fMode::Legacy;
+    RawExposureMode exposureMode = RawExposureMode::Scene;
+    bool recipeActive = false;
+    float recipeStrength = 1.0f;
+    bool customWb = false;
+    float temperature = 6500.0f;
+    float tint = 0.0f;
+};
+
+struct RecipeWbResult {
+    RenderWhiteBalanceMode wbMode = RenderWhiteBalanceMode::Camera;
+    float temperature = 6500.0f;
+    float tint = 0.0f;
+    float cameraTemperature = 0.0f;
+    float cameraTint = 0.0f;
+    bool cameraCalibrated = false;
+};
+
 class Pipeline {
 public:
     using AiProgressCallback = std::function<bool(int32_t phase, uint64_t completed, uint64_t total)>;
@@ -145,6 +166,8 @@ public:
     RenderStatus getRawNoiseReductionSupport(int32_t& supported) const;
     RenderStatus getRawExposure(float& baselineEv, float& metadataEv) const;
     RenderStatus getRawWhiteBalance(float& temperature, float& tint) const;
+    RenderStatus getEffectiveRawWhiteBalance(float& temperature, float& tint) const;
+    RenderStatus resolveRecipeWhiteBalance(const RecipeWbRequest& request, RecipeWbResult& result);
 
     RenderStatus setPhotoEffects(const PhotoEffectsOptions& options);
     RenderStatus setHsl(const HslOptions& options);
@@ -155,6 +178,7 @@ public:
     RenderStatus setToneCurves(const ToneCurveConfig& master, const std::array<ToneCurveConfig, 3>& channels);
 
     // X3F per-pipeline state (pipeline_x3f.cpp)
+    static bool isNormalX3f(const char* inputPath, X3fMode mode);
     RenderStatus setX3fMode(X3fMode mode);
     const std::string& x3fError() const noexcept { return x3fError_; }
 
@@ -284,6 +308,20 @@ private:
     float asShotTemperature_ = 6500.0f;
     float asShotTint_ = 0.0f;
     bool calibratedWb_ = false;
+    bool lastRenderRendered_ = false;
+    bool lastRenderWasRaw_ = false;
+    bool lastRenderWasNormalX3f_ = false;
+    struct RecipeWbCacheEntry {
+        bool valid = false;
+        std::string fileKey;
+        ProcessingVersion processingVersion = ProcessingVersion::Legacy;
+        X3fMode x3fMode = X3fMode::Legacy;
+        RawExposureMode exposureMode = RawExposureMode::Scene;
+        bool calibrated = false;
+        float temperature = 0.0f;
+        float tint = 0.0f;
+    };
+    RecipeWbCacheEntry recipeWbCache_{};
     std::string previewExposureKey_;
     float previewCameraEv_ = 0.0f;
     PreviewExposureCache previewExposureCache_{};
