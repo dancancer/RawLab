@@ -70,3 +70,10 @@ experiments/rum-local/windows/obj/
 /.dsh-kanban.json
 .build/
 .swiftpm/
+
+# Externalized LUT & test RAW assets (fetched into .cache/shared/assets/ via scripts/assets/prepare.py)
+/RawLabMac/Resources/MasterRecipes/*.cube
+/lutools/flog-2-new/*.cube
+/lutools/F-Log2/*.cube
+/Shared/BundledLooks/*.cube
+/lutools/examples/DJI_20250602164503_0444_D.DNG

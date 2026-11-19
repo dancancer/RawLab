@@ -204,6 +204,7 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 bash "$ROOT/RawLabMac/build-icon.sh" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $DEPLOYMENT_TARGET" "$APP/Contents/Info.plist"
+"$PYTHON_EXECUTABLE" "$ROOT/scripts/assets/prepare.py" --group luts
 for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     case "$lut" in *FLog2-709*|*to_WDR*) continue ;; esac
     cp "$lut" "$APP/Contents/Resources/LUTs/"

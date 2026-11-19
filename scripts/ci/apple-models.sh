@@ -36,6 +36,7 @@ fail_on_logged_skip() {
 }
 case "${1:-}" in
     macos)
+        python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet
         pre_checks=(RawLabMac/tests/test_build_environment.py lutools/tests/test_lens_dependencies.py)
         # HDR 渲染重置按钮契约由不依赖辅助功能授权的 hdr-rendition-reset.sh 覆盖；
         # 依赖 AXUIElement 的 hdr-rendition-ui.sh 保留为本地/发布前手工检查，CI 不执行。
