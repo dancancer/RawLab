@@ -296,8 +296,8 @@ extension ContentView {
              "exposure": settings.exposure, "crop": settings.geometry.cropWidth,
              "draftCrop": geometryDraft?.cropWidth ?? -1, "draftActive": isEditorDraftActive,
              "draftChanged": isEditorDraftChanged, "draftAlert": draftExitPresented,
-             "pendingPhoto": pendingPhotoImport, "pendingFile": pendingFileImport,
-             "photoPicker": showingPhotoImporter, "filePicker": showingDocumentImporter,
+             "pendingPhoto": coordinator.pendingPhotoImport, "pendingFile": coordinator.pendingFileImport,
+             "photoPicker": coordinator.showingPhotoImporter, "filePicker": coordinator.showingDocumentImporter,
              "saveState": String(describing: viewModel.editSaveState),
              "recentLookIDs": viewModel.recentLooks.ids, "selectedLookID": settings.lutID ?? "",
              "historyCount": viewModel.adjustmentSession?.transactions.count ?? 0,
@@ -309,8 +309,8 @@ extension ContentView {
              "quickPreparing": viewModel.quickPresetState.isPreparing,
              "quickVisible": viewModel.quickPresetsVisible,
              "adjustmentSheet": adjustmentSheet?.rawValue ?? "",
-             "pendingAdjustmentAction": String(describing: pendingAdjustmentAction),
-             "queuedPresetAction": String(describing: queuedPresetAction),
+             "pendingAdjustmentAction": String(describing: coordinator.pendingAdjustmentAction),
+             "queuedPresetAction": String(describing: coordinator.queuedPresetAction),
              "sourceStoredExposure": (try? store.state(for: identity))?.settings.exposure as Any? ?? NSNull(),
              "sourceStoredSnapshot": probe.storedStateText(try? store.state(for: identity)),
              "targetStoredExposure": probe.transferTarget.flatMap { (try? store.state(for: $0))?.settings.exposure } as Any? ?? NSNull(),
@@ -330,24 +330,24 @@ extension ContentView {
              "previewOnly": photoViewing.previewOnly, "hold": photoViewing.holdingBefore,
              "compare": photoViewing.enabled, "mode": String(describing: photoViewing.preferredMode),
              "margin": photoViewing.photoMargin, "split": photoViewing.split,
-             "referenceAvailable": viewModel.basePreviewImage != nil, "hslChannel": hslChannel, "infoMode": photoInfoMode.rawValue,
-             "hslTargetEnabled": hslTargetEnabled, "hslTargetAxis": hslTargetAxis.rawValue,
-             "hslTargetWaiting": hslTargetInteraction.isWaiting,
+             "referenceAvailable": viewModel.basePreviewImage != nil, "hslChannel": hslChannel, "infoMode": coordinator.photoInfoMode.rawValue,
+             "hslTargetEnabled": coordinator.hslTargetEnabled, "hslTargetAxis": coordinator.hslTargetAxis.rawValue,
+             "hslTargetWaiting": coordinator.hslTargetInteraction.isWaiting,
              "hslValues": settings.hsl.hue + settings.hsl.saturation + settings.hsl.lightness,
              "relativeScale": photoViewport.relativeScale,
              "focus": [photoViewport.focus.x, photoViewport.focus.y],
              "group": selectedGroup.rawValue, "tool": currentEditorTool.stableID,
              "fine": adjustmentFine, "expanded": adjustmentsExpanded,
              "previewSize": viewModel.previewImage.map { [$0.size.width, $0.size.height] } ?? [],
-             "histogramExpanded": histogramExpanded,
+             "histogramExpanded": coordinator.histogramExpanded,
              "shownHistogram": probe.histogramInfo(currentHistogram),
              "afterHistogram": probe.histogramInfo(viewModel.histogram),
              "beforeHistogram": probe.histogramInfo(viewModel.baseHistogram),
              "referenceSize": viewModel.basePreviewImage.map { [$0.size.width, $0.size.height] } ?? []]
-            receipt["hslTargetNotice"] = hslTargetNotice.map { String(describing: $0) } ?? ""
+            receipt["hslTargetNotice"] = coordinator.hslTargetNotice.map { String(describing: $0) } ?? ""
             receipt["curveMode"] = settings.curveSettings.mode.rawValue
             receipt["curvePoints"] = settings.curveSettings.points.map { [$0.x, $0.y] }
-            receipt["hslTargetSelection"] = hslTargetInteraction.selection.map { String(describing: $0.availability) } ?? ""
+            receipt["hslTargetSelection"] = coordinator.hslTargetInteraction.selection.map { String(describing: $0.availability) } ?? ""
             receipt["collectionShowing"] = showingBatchSelection
             receipt["collectionOrdered"] = viewModel.batchSelection.selection.ordered
             receipt["collectionSelected"] = viewModel.batchSelection.selection.selected.sorted()
@@ -391,10 +391,48 @@ private final class ViewingSceneState: ObservableObject {
 
 private struct ViewingRootView: View {
     @ObservedObject var scene: ViewingSceneState
+    @StateObject private var viewModel: RawEditorViewModel = {
+        let model = RawEditorViewModel(resultDelivery: { callback in
+            DispatchQueue.main.async { ViewingEditorProbe.shared.deliver(callback) }
+        })
+        model.onPreviewRequest = { request, sourceRevision in
+            MainActor.assumeIsolated {
+                ViewingEditorProbe.shared.recordPreview(request, source: sourceRevision)
+            }
+        }
+        return model
+    }()
+
     var body: some View {
-        ContentView().environment(\.scenePhase, scene.phase)
-            .onChange(of: scene.phase, initial: true) { _, phase in ViewingEditorProbe.shared.scenePhase = String(describing: phase) }
-            .overlay(alignment: .topLeading) { ViewingReceiptView().frame(width: 1, height: 1).allowsHitTesting(false) }
+        ContentView(
+            viewModel: viewModel,
+            testHooks: EditorTestHooks(
+                onAppear: { view in
+                    Task { await view.prepareViewingReview() }
+                },
+                onHoldingBeforeChange: { view in
+                    ViewingEditorProbe.shared.recordHistogram(view.currentHistogram, showingBefore: view.showingBefore)
+                },
+                onPreviewSizeChange: { _, apply in
+                    ViewingEditorProbe.shared.resizing = true
+                    defer { ViewingEditorProbe.shared.resizing = false }
+                    apply()
+                },
+                onBatchHandoff: { automatic, phase in
+                    ViewingEditorProbe.shared.recordBatchHandoff(automatic, phase: phase)
+                },
+                onBatchModelCreated: { model in
+                    model.onStart = { id in
+                        MainActor.assumeIsolated {
+                            ViewingEditorProbe.shared.batchStarts.append(id.uuidString)
+                        }
+                    }
+                }
+            )
+        )
+        .environment(\.scenePhase, scene.phase)
+        .onChange(of: scene.phase, initial: true) { _, phase in ViewingEditorProbe.shared.scenePhase = String(describing: phase) }
+        .overlay(alignment: .topLeading) { ViewingReceiptView().frame(width: 1, height: 1).allowsHitTesting(false) }
     }
 }
 

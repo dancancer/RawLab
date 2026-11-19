@@ -221,6 +221,8 @@ final class RawEditorViewModel: ObservableObject {
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
+    var onPreviewRequest: ((PreviewRequest, UUID) -> Void)?
+    var onViewportResize: ((Bool) -> Void)?
     var completedPreviewCache: [CompletedPreview] = []
     let completedPreviewCacheLimit = 3
     var completedPreviewCacheBytes = 0

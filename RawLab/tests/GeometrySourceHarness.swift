@@ -341,7 +341,7 @@ extension ContentView {
             try await geometryReviewSettled()
             var pairedLens = settings
             pairedLens.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false)
-            lensDraft = pairedLens
+            coordinator.lensDraft = pairedLens
             try await geometryReviewSettled()
             probe.check("pairedDraft.LensChangeDetectedWithUnchangedGeometry", isEditorDraftChanged)
             probe.check("pairedDraft.ProjectsBothObjects", effectivePreviewSettings.geometry == bSettings.geometry &&
@@ -538,7 +538,7 @@ extension ContentView {
         probe.check("workspace.NavigationNoSaveOrPreview", probe.saveAttempts.count == navigationSaves && probe.previewRequests.count == navigationPreviews)
         selectEditorGroup(.color)
         selectEditorTool(.adjustment(.hsl))
-        hslChannel = 6
+        coordinator.hslChannel = 6
         selectEditorGroup(.light)
         selectEditorGroup(.color)
         selectEditorTool(.adjustment(.hsl))
@@ -556,7 +556,7 @@ extension ContentView {
             let prefix = "workspace.Collapse.\(apply ? "apply" : "discard")"
             requestAdjustmentExpansion(false)
             probe.check(prefix + ".AsksDirtyDraft", draftExitPresented && adjustmentsExpanded)
-            cancelDraftNavigation(); draftExitPresented = false
+            cancelDraftNavigation(); coordinator.draftExitPresented = false
             probe.check(prefix + ".StayKeepsDraft", isEditorDraftChanged && adjustmentsExpanded && geometrySelected)
             requestAdjustmentExpansion(false)
             let saves = probe.saveAttempts.count
@@ -614,7 +614,7 @@ extension ContentView {
                 requestEditorReset(.all)
                 probe.check(prefix + ".IndependentConfirmation", resetConfirmationPresented && preparedReset != nil)
                 cancelEditorReset()
-                resetConfirmationPresented = false
+                coordinator.resetConfirmationPresented = false
                 try await geometryReviewSettled()
                 probe.check(prefix + ".CancelKeepsResolvedState", settings == resolved && !isEditorDraftActive && !geometrySelected)
                 probe.check(prefix + ".CancelNoExtraSave", probe.saveAttempts.count == beforeResolutionSaves + (apply ? 1 : 0))
@@ -622,7 +622,7 @@ extension ContentView {
                 requestEditorReset(.all)
                 try await geometryReviewSettled()
                 confirmEditorReset()
-                resetConfirmationPresented = false
+                coordinator.resetConfirmationPresented = false
                 try await geometryReviewSettled()
                 probe.check(prefix + ".ConfirmResetsAll", !isEditorDraftActive && !geometrySelected && preparedReset == nil &&
                             settings.exposure == 0 && settings.geometry.isIdentity)
@@ -639,7 +639,7 @@ extension ContentView {
         geometryDraftBinding.wrappedValue.quarterTurns = 1
         var lens = settings
         lens.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "disabled-workspace-profile")
-        lensDraft = lens
+        coordinator.lensDraft = lens
         try await geometryReviewSettled()
         guard case .prepared(let geometryOnly) = prepareEditorReset(.tool(.geometry)) else { throw EditorError.renderFailed }
         probe.check("workspace.GeometryToolAccepted", commitEditorReset(geometryOnly))
@@ -742,7 +742,52 @@ final class GeometrySourceSceneDelegate: NSObject, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: ContentView().environment(\.locale, Locale(identifier: "en")))
+        let viewModel = RawEditorViewModel()
+        viewModel.onPreviewRequest = { request, source in
+            MainActor.assumeIsolated {
+                GeometrySourceProbe.shared.recordPreview(request.settings, request: request, source: source)
+            }
+        }
+        viewModel.onViewportResize = { resizing in
+            MainActor.assumeIsolated {
+                GeometrySourceProbe.shared.isViewportResizeRequest = resizing
+            }
+        }
+        let hooks = EditorTestHooks(
+            onAppear: { view in
+                Task { await view.runGeometrySourceReview() }
+            },
+            onPreviewSizeChange: { edge, apply in
+                GeometrySourceProbe.shared.viewportEdges.append(edge)
+                apply()
+            },
+            onPanelLayout: { frame, metrics in
+                GeometrySourceProbe.shared.layoutFrames["panel"] = [frame.minX, frame.minY, frame.width, frame.height]
+                GeometrySourceProbe.shared.layoutPolicy = [
+                    "width": metrics.width,
+                    "height": metrics.height,
+                    "accessibility": metrics.accessibility,
+                    "buttonWidth": metrics.buttonWidth,
+                    "buttonHeight": metrics.buttonHeight,
+                    "scrollTools": metrics.scrollTools,
+                    "sideWidth": metrics.sideWidth,
+                    "side": metrics.side,
+                    "contentSizeCategory": UIApplication.shared.preferredContentSizeCategory.rawValue
+                ]
+            },
+            onFineToggleFrame: { frame in
+                GeometrySourceProbe.shared.layoutFrames["fine"] = [frame.minX, frame.minY, frame.width, frame.height]
+            },
+            onGroupTextFrame: { group, frame in
+                GeometrySourceProbe.shared.groupTextRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height]
+            },
+            onGroupButtonFrame: { group, frame, height in
+                GeometrySourceProbe.shared.groupRects[group.rawValue] = [frame.minX, frame.minY, frame.width, frame.height]
+                GeometrySourceProbe.shared.layoutFrames["buttonHeight"] = [Double(height)]
+            }
+        )
+        let host = UIHostingController(rootView: ContentView(viewModel: viewModel, testHooks: hooks)
+            .environment(\.locale, Locale(identifier: "en")))
         window.rootViewController = host
         window.makeKeyAndVisible()
         let probe = GeometryReviewLabel(frame: CGRect(x: 10, y: 30, width: 300, height: 20))

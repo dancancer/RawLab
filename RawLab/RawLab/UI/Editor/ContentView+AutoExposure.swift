@@ -3,12 +3,12 @@ import SwiftUI
 
 extension ContentView {
     func autoExposure() {
-        guard viewModel.hasImage, !autoExposing, !viewModel.isBusy else { return }
+        guard viewModel.hasImage, !coordinator.autoExposing, !viewModel.isBusy else { return }
         let snapshot = workingSettings, revision = settingsRevision, sourceRevision = viewModel.sourceRevision, draftID = workspaceDraftID
         let sourceFile = snapshot.isHDREditing || viewModel.sourceKind == .raw ? viewModel.sourceFile : nil
         let buffer = viewModel.draftBuffer
         let processor = viewModel.processor
-        autoExposing = true
+        coordinator.autoExposing = true
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result {
                 if let sourceFile {
@@ -17,7 +17,7 @@ extension ContentView {
                 return try processor.autoExposure(url: nil, buffer: buffer, settings: snapshot)
             }
             DispatchQueue.main.async {
-                autoExposing = false
+                coordinator.autoExposing = false
                 guard workspaceDraftID == draftID, viewModel.sourceRevision == sourceRevision, settingsRevision == revision, workingSettings == snapshot else { return }
                 switch result {
                 case .success(let ev):

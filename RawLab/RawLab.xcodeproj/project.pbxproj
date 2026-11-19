@@ -114,6 +114,9 @@
 		B3D998046DAF5568B14233EF /* EditorLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */; };
 		D8A16E4C92B04F35817CC001 /* EditorWorkspaceResetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */; };
 		6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */; };
+		E2C000010000000000000001 /* EditorCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000010000000000000011 /* EditorCoordinator.swift */; };
+		E2C000020000000000000001 /* EditorCoordinator+ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */; };
+		E2C000030000000000000001 /* EditorTestHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000030000000000000011 /* EditorTestHooks.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
 		A7894D11E1234B7FBE0F0CC1 /* GeometryDraftCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */; };
 		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
@@ -416,6 +419,9 @@
 		C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorLayout.swift"; sourceTree = SOURCE_ROOT; };
 		D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorWorkspaceResetControl.swift"; sourceTree = SOURCE_ROOT; };
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000010000000000000011 /* EditorCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCoordinator.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCoordinator+ViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000030000000000000011 /* EditorTestHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorTestHooks.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
 		A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/GeometryDraftCanvas.swift"; sourceTree = SOURCE_ROOT; };
 		BC236099D6C65BBF9F3BBE58 = {
@@ -699,6 +705,9 @@
 				C33A1CD0D88E5254A47F3CA5,
 				D8A16E4C92B04F35817CC002,
 				2F40F7AA6DE556A4A238F267,
+				E2C000010000000000000011 /* EditorCoordinator.swift */,
+				E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */,
+				E2C000030000000000000011 /* EditorTestHooks.swift */,
 				442ED03D4FD75EBCA83B9DFE,
 				A7894D11E1234B7FBE0F0CC2,
 				BFDCFB6A137F996DD48D076B,
@@ -1216,6 +1225,9 @@
 				B3D998046DAF5568B14233EF,
 				D8A16E4C92B04F35817CC001,
 				6BD98E141C695971B42798C6,
+				E2C000010000000000000001 /* EditorCoordinator.swift in Sources */,
+				E2C000020000000000000001 /* EditorCoordinator+ViewModel.swift in Sources */,
+				E2C000030000000000000001 /* EditorTestHooks.swift in Sources */,
 				C3A803626CF750D1B9AFFCDA,
 				A7894D11E1234B7FBE0F0CC1,
 				D14200000000000000000001,

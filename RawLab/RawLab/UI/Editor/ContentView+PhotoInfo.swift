@@ -7,24 +7,24 @@ extension ContentView {
         VStack(alignment: .leading, spacing: 4) {
             if showsButton && viewModel.hasImage && !editorBusy {
                 Button {
-                    photoInfoMode = photoInfoMode.next
+                    coordinator.photoInfoMode = coordinator.photoInfoMode.next
                 } label: {
                     Image(systemName: "info.circle")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(photoInfoMode == .hidden ? .white : .yellow)
+                        .foregroundStyle(coordinator.photoInfoMode == .hidden ? .white : .yellow)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.text("照片信息"))
-                .accessibilityValue(photoInfoMode.title)
+                .accessibilityValue(coordinator.photoInfoMode.title)
                 .accessibilityIdentifier("editor.photoInfo")
                 .help(L10n.text("照片信息"))
             }
 
-            if photoInfoMode != .hidden, let photoInformation, !editorBusy {
+            if coordinator.photoInfoMode != .hidden, let photoInformation = coordinator.photoInformation, !editorBusy {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(photoInformation.lines(for: photoInfoMode).enumerated()), id: \.offset) { index, line in
+                    ForEach(Array(photoInformation.lines(for: coordinator.photoInfoMode).enumerated()), id: \.offset) { index, line in
                         Text(line)
                             .font(index == 0 ? .subheadline.weight(.semibold) : .caption)
                             .lineLimit(2)
@@ -44,8 +44,8 @@ extension ContentView {
         }
         .padding(12)
         .task(id: viewModel.sourceRevision) {
-            photoInformation = nil
-            photoInfoMode = .hidden
+            coordinator.photoInformation = nil
+            coordinator.photoInfoMode = .hidden
             guard let sourceFile = viewModel.sourceFile else { return }
             let revision = viewModel.sourceRevision
             let displayName = viewModel.sourceDisplayName ?? sourceFile.displayName
@@ -54,7 +54,7 @@ extension ContentView {
             }.value
             guard !Task.isCancelled, viewModel.sourceRevision == revision,
                   viewModel.sourceFile == sourceFile else { return }
-            photoInformation = info
+            coordinator.photoInformation = info
         }
     }
 }

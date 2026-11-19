@@ -25,21 +25,21 @@ extension ContentView {
                     HStack { Text(L10n.text(viewModel.lookBrowser.category.titleKey)); Image(systemName: "chevron.down").font(.caption); Spacer() }
                         .frame(minHeight: 44).contentShape(Rectangle())
                 }.accessibilityLabel(L10n.text("外观分类")).accessibilityIdentifier("looks.category")
-                Button { lookSearchExpanded.toggle(); if !lookSearchExpanded { viewModel.lookBrowser.query = "" } } label: {
-                    Image(systemName: lookSearchExpanded ? "xmark" : "magnifyingglass").frame(width: 44, height: 44)
-                }.accessibilityLabel(L10n.text(lookSearchExpanded ? "清除搜索" : "搜索外观"))
-                    .accessibilityIdentifier(lookSearchExpanded ? "looks.search.close" : "looks.search.open")
+                Button { coordinator.lookSearchExpanded.toggle(); if !coordinator.lookSearchExpanded { viewModel.lookBrowser.query = "" } } label: {
+                    Image(systemName: coordinator.lookSearchExpanded ? "xmark" : "magnifyingglass").frame(width: 44, height: 44)
+                }.accessibilityLabel(L10n.text(coordinator.lookSearchExpanded ? "清除搜索" : "搜索外观"))
+                    .accessibilityIdentifier(coordinator.lookSearchExpanded ? "looks.search.close" : "looks.search.open")
                 Button(action: requestLookImport) { Image(systemName: "plus").frame(width: 44, height: 44) }
                     .accessibilityLabel(L10n.text("导入外观")).accessibilityIdentifier("looks.import")
                     .disabled(editorBusy || viewModel.isImportingLooks)
             }.padding(.horizontal, 16)
             if !viewModel.unreadableLooks.isEmpty {
-                Button { showingUnreadableLooks = true } label: {
+                Button { coordinator.presentUnreadableLooks() } label: {
                     Label(L10n.text("不可读外观") + " (\(viewModel.unreadableLooks.count))", systemImage: "exclamationmark.triangle")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }.padding(.horizontal, 16).accessibilityIdentifier("looks.unreadable")
             }
-            if lookSearchExpanded {
+            if coordinator.lookSearchExpanded {
                 TextField(L10n.text("搜索外观"), text: $viewModel.lookBrowser.query)
                     .textFieldStyle(.roundedBorder).frame(minHeight: 44).padding(.horizontal, 16)
                     .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier("looks.search")
@@ -62,7 +62,7 @@ extension ContentView {
                                     .contextMenu {
                                         if viewModel.lutMap[lut.id]?.isCustom == true {
                                             Button(L10n.text("重命名外观"), systemImage: "pencil") {
-                                                renamingLUT = lut; renamedLUTName = lut.name; showingLookRename = true
+                                                coordinator.beginLookRename(id: lut.id, name: lut.name)
                                             }.disabled(editingLocked || viewModel.isImportingLooks)
                                         }
                                     }
@@ -81,7 +81,7 @@ extension ContentView {
                     .environment(\.compactAdjustmentRows, true).padding(.horizontal, 16)
             }
         }
-        .sheet(isPresented: $showingUnreadableLooks) {
+        .sheet(isPresented: $coordinator.showingUnreadableLooks) {
             IOSUnreadableLooksView(model: viewModel)
         }
         .overlay {

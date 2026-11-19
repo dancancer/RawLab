@@ -6,21 +6,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct FileExportRequest: Identifiable {
-    let id = UUID()
-    let urls: [URL]
-    let removeAfterExport: Bool
-    let successMessage: String?
-    let cancelMessage: String?
-    var recordsPhotoExport = true
-    // Q6（B1）：另存成功后要登记的导出证据（源照片内容标识，如相机原件 digest）；
-    // 空数组表示该导出与相机原件账本无关（如错误日志）。
-    var evidenceIdentifiers: [String] = []
-}
-
 extension ContentView {
     var canStartFileExport: Bool {
-        !isSaving && !showingExportSize && fileExportRequest == nil
+        coordinator.canStartFileExport
     }
 
     @MainActor func exportErrorDiagnostics() {
@@ -36,8 +24,8 @@ extension ContentView {
                     viewModel.statusMessage = L10n.text("暂无可导出的错误日志。")
                     return
                 }
-                fileExportRequest = FileExportRequest(urls: [file], removeAfterExport: true, successMessage: nil,
-                                                      cancelMessage: nil, recordsPhotoExport: false)
+                coordinator.fileExportRequest = FileExportRequest(urls: [file], removeAfterExport: true, successMessage: nil,
+                                                                  cancelMessage: nil, recordsPhotoExport: false)
             } catch {
                 guard canStartFileExport else { return }
                 viewModel.statusMessage = L10n.text("无法导出错误日志。")
