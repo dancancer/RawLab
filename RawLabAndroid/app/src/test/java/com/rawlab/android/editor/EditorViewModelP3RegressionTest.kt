@@ -15,18 +15,23 @@ import java.util.concurrent.atomic.AtomicInteger
 class EditorViewModelP3RegressionTest {
     @Test fun p3_31_constructionDefersSharedPreferencesAndUsesApplyForWrites() {
         EditorViewModelTestHarness().use { harness ->
-            val mediaLibrary = MediaPhotoLibrary(harness.app)
-            assertTrue("MediaPhotoLibrary must not read SharedPreferences on construction", harness.app.getSharedPreferencesCalls.isEmpty())
-
             val (_, uri) = harness.createTempPhoto("p3_31.raw")
             val lookFile = harness.syntheticCube("p3_31.cube")
-            val model = harness.createViewModel()
-            try {
+            val (mediaLibrary, model) = harness.onMain {
+                val library = MediaPhotoLibrary(harness.app)
+                assertTrue(
+                    "MediaPhotoLibrary must not read SharedPreferences on construction",
+                    harness.app.getSharedPreferencesThreadCalls.none { (_, thread) -> thread == "test-vm-main" },
+                )
+                val vm = EditorViewModel(harness.app, harness.createDependencies())
                 // Constructing EditorViewModel must not eagerly call getSharedPreferences on the main thread.
                 assertTrue(
-                    "Unexpected eager getSharedPreferences during VM construction: ${harness.app.getSharedPreferencesCalls}",
-                    harness.app.getSharedPreferencesCalls.isEmpty(),
+                    "Unexpected eager main-thread getSharedPreferences during VM construction: ${harness.app.getSharedPreferencesThreadCalls}",
+                    harness.app.getSharedPreferencesThreadCalls.none { (_, thread) -> thread == "test-vm-main" },
                 )
+                library to vm
+            }
+            try {
                 assertNotNull(mediaLibrary)
 
                 harness.onMain { model.importPhoto(uri) }

@@ -143,6 +143,7 @@ internal class TestEditorApplication(private val root: File) : Application() {
     val cacheDirectory = File(root, "cache").apply { mkdirs() }
     val sharedPrefsMap = ConcurrentHashMap<String, InMemorySharedPreferences>()
     val getSharedPreferencesCalls = CopyOnWriteArrayList<String>()
+    val getSharedPreferencesThreadCalls = CopyOnWriteArrayList<Pair<String, String>>()
 
     override fun getFilesDir(): File = filesDirectory
     override fun getCacheDir(): File = cacheDirectory
@@ -150,6 +151,7 @@ internal class TestEditorApplication(private val root: File) : Application() {
     override fun getApplicationInfo(): ApplicationInfo = ApplicationInfo().apply { flags = 0 }
     override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
         getSharedPreferencesCalls += name
+        getSharedPreferencesThreadCalls += name to Thread.currentThread().name
         return sharedPrefsMap.getOrPut(name) { InMemorySharedPreferences() }
     }
 }
