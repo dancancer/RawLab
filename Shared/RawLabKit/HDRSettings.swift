@@ -77,8 +77,10 @@ public struct HDRRenditionSettings: Equatable, Codable {
 
     public var isDefault: Bool { peakLimitEV == 0 && sdrExposureEV == 0 && sdrContrast == 0 && sdrSaturation == 0 }
     public var isValid: Bool {
-        (0...6).contains(peakLimitEV) && (-4...4).contains(sdrExposureEV) &&
-        (-100...100).contains(sdrContrast) && (-100...100).contains(sdrSaturation)
+        AdjustmentFieldSpec.Fields.hdrPeakLimitEv.macosModel.closedRange!.contains(peakLimitEV) &&
+        AdjustmentFieldSpec.Fields.hdrSdrExposureEv.macosModel.closedRange!.contains(sdrExposureEV) &&
+        AdjustmentFieldSpec.Fields.hdrSdrContrast.macosModel.closedRange!.contains(sdrContrast) &&
+        AdjustmentFieldSpec.Fields.hdrSdrSaturation.macosModel.closedRange!.contains(sdrSaturation)
     }
 
     private enum CodingKeys: String, CodingKey, CaseIterable {

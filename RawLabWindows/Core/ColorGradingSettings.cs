@@ -13,8 +13,8 @@ public sealed record ColorGradingWheel
     public ColorGradingWheel(double hue, double saturation) { Hue = hue; Saturation = saturation; }
     [JsonIgnore] public bool IsDefault => Hue == 0 && Saturation == 0;
     [JsonIgnore] public bool IsIdentity => Saturation == 0;
-    [JsonIgnore] public bool IsValid => double.IsFinite(Hue) && Hue is >= 0 and < 360
-        && double.IsFinite(Saturation) && Saturation is >= 0 and <= 100;
+    [JsonIgnore] public bool IsValid => double.IsFinite(Hue) && Hue >= AdjustmentFieldSpec.SubFields.ColorGradingWheel.HueMin && Hue < AdjustmentFieldSpec.SubFields.ColorGradingWheel.HueMax
+        && double.IsFinite(Saturation) && Saturation >= AdjustmentFieldSpec.SubFields.ColorGradingWheel.SaturationMin && Saturation <= AdjustmentFieldSpec.SubFields.ColorGradingWheel.SaturationMax;
     internal float NativeHue => (float)Hue == 360 ? 0 : (float)Hue;
     public static double? InputHue(double value) => double.IsFinite(value) && value is >= 0 and <= 360 ? value == 360 ? 0 : value : null;
     [JsonIgnore] public (double X, double Y) Point => (Math.Cos(Hue * Math.PI / 180) * Saturation / 100, Math.Sin(Hue * Math.PI / 180) * Saturation / 100);

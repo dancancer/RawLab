@@ -49,14 +49,14 @@ public struct ProcessingIdentity: Equatable, Hashable, Codable, Sendable {
 }
 
 public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
-    public static let vignetteAmountRange: ClosedRange<Double> = -100...100
-    public static let vignetteMidpointRange: ClosedRange<Double> = 0...100
-    public static let vignetteRoundnessRange: ClosedRange<Double> = -100...100
-    public static let vignetteFeatherRange: ClosedRange<Double> = 0...100
-    public static let vignetteHighlightsRange: ClosedRange<Double> = 0...100
-    public static let grainAmountRange: ClosedRange<Double> = 0...100
-    public static let grainSizeRange: ClosedRange<Double> = 0...100
-    public static let grainRoughnessRange: ClosedRange<Double> = 0...100
+    public static let vignetteAmountRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsVignetteAmount.macosModel.closedRange!
+    public static let vignetteMidpointRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsVignetteMidpoint.macosModel.closedRange!
+    public static let vignetteRoundnessRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsVignetteRoundness.macosModel.closedRange!
+    public static let vignetteFeatherRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsVignetteFeather.macosModel.closedRange!
+    public static let vignetteHighlightsRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsVignetteHighlights.macosModel.closedRange!
+    public static let grainAmountRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsGrainAmount.macosModel.closedRange!
+    public static let grainSizeRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsGrainSize.macosModel.closedRange!
+    public static let grainRoughnessRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.effectsGrainRoughness.macosModel.closedRange!
 
     public var vignetteAmount: Double {
         didSet { vignetteAmount = Self.clamped(vignetteAmount, to: Self.vignetteAmountRange) }
@@ -83,14 +83,14 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
         didSet { grainRoughness = Self.clamped(grainRoughness, to: Self.grainRoughnessRange) }
     }
 
-    public init(vignetteAmount: Double = 0,
-                vignetteMidpoint: Double = 50,
-                vignetteRoundness: Double = 0,
-                vignetteFeather: Double = 50,
-                vignetteHighlights: Double = 0,
-                grainAmount: Double = 0,
-                grainSize: Double = 25,
-                grainRoughness: Double = 50) {
+    public init(vignetteAmount: Double = AdjustmentFieldSpec.Fields.effectsVignetteAmount.macosModel.defaultValue.numberValue!,
+                vignetteMidpoint: Double = AdjustmentFieldSpec.Fields.effectsVignetteMidpoint.macosModel.defaultValue.numberValue!,
+                vignetteRoundness: Double = AdjustmentFieldSpec.Fields.effectsVignetteRoundness.macosModel.defaultValue.numberValue!,
+                vignetteFeather: Double = AdjustmentFieldSpec.Fields.effectsVignetteFeather.macosModel.defaultValue.numberValue!,
+                vignetteHighlights: Double = AdjustmentFieldSpec.Fields.effectsVignetteHighlights.macosModel.defaultValue.numberValue!,
+                grainAmount: Double = AdjustmentFieldSpec.Fields.effectsGrainAmount.macosModel.defaultValue.numberValue!,
+                grainSize: Double = AdjustmentFieldSpec.Fields.effectsGrainSize.macosModel.defaultValue.numberValue!,
+                grainRoughness: Double = AdjustmentFieldSpec.Fields.effectsGrainRoughness.macosModel.defaultValue.numberValue!) {
         self.vignetteAmount = Self.clamped(vignetteAmount, to: Self.vignetteAmountRange)
         self.vignetteMidpoint = Self.clamped(vignetteMidpoint, to: Self.vignetteMidpointRange)
         self.vignetteRoundness = Self.clamped(vignetteRoundness, to: Self.vignetteRoundnessRange)

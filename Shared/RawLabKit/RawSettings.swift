@@ -76,9 +76,9 @@ public struct RawSettings: Codable, Equatable {
     public var hdr: HDRSettings?
     public var proRAWDecodeVersion: Int?
     public var isHDREditing: Bool { hdr?.mode == .hdr }
-    public static let lutStrengthRange: ClosedRange<Double> = 0...2
-    public static let temperatureRange: ClosedRange<Double> = 2000...50000
-    public static let tintRange: ClosedRange<Double> = -150...150
+    public static let lutStrengthRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.looksStrength.iosModel.closedRange!
+    public static let temperatureRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.colorWhiteBalanceTemperatureKelvin.iosModel.closedRange!
+    public static let tintRange: ClosedRange<Double> = AdjustmentFieldSpec.Fields.colorWhiteBalanceTint.iosModel.closedRange!
 
     public var toneCurveConfig: ToneCurveSettings?
     public var curveSettings: ToneCurveSettings {
