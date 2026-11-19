@@ -1,6 +1,7 @@
 #include "platform/display_image.h"
 #include "platform/hdr_heif.h"
 #include "core/jpeg_mpf.h"
+#include "core/tiff_ifd.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -213,34 +214,28 @@ uint32_t readEndian32(const uint8_t* data, bool littleEndian) {
 }
 
 std::optional<uint32_t> parseExifOrientation(const uint8_t* data, size_t size) {
-    if (size < 8) fail(sony2fuji::RenderStatus::Unsupported);
-    const bool littleEndian = data[0] == 'I' && data[1] == 'I';
-    const bool bigEndian = data[0] == 'M' && data[1] == 'M';
-    if (!littleEndian && !bigEndian) fail(sony2fuji::RenderStatus::Unsupported);
-    if (readEndian16(data + 2, littleEndian) != 42) fail(sony2fuji::RenderStatus::Unsupported);
-    const auto ifdOffset = static_cast<uint64_t>(readEndian32(data + 4, littleEndian));
-    if (ifdOffset > size - 2) fail(sony2fuji::RenderStatus::Unsupported);
-    const auto count = readEndian16(data + ifdOffset, littleEndian);
-    const auto entriesBytes = static_cast<uint64_t>(count) * 12u;
-    if (entriesBytes > size - ifdOffset - 2u) fail(sony2fuji::RenderStatus::Unsupported);
-    for (uint16_t index = 0; index < count; ++index) {
-        const auto* entry = data + ifdOffset + 2u + static_cast<uint64_t>(index) * 12u;
-        const auto tag = readEndian16(entry, littleEndian);
-        if (tag != 274) continue;
-        const auto type = readEndian16(entry + 2, littleEndian);
-        const auto valueCount = readEndian32(entry + 4, littleEndian);
-        if (valueCount != 1 || (type != 3 && type != 4))
+    sony2fuji::tiff::Reader reader(data, size);
+    uint32_t ifdOffset = 0;
+    sony2fuji::tiff::Directory dir;
+    if (!reader.header(ifdOffset) || !reader.directory(ifdOffset, dir))
+        fail(sony2fuji::RenderStatus::Unsupported);
+    std::optional<uint32_t> orientation;
+    if (!reader.entries(dir, [&](const sony2fuji::tiff::Entry& entry) {
+        if (entry.tag != 274) return true;
+        if (entry.count != 1 || (entry.type != 3 && entry.type != 4))
             fail(sony2fuji::RenderStatus::Unsupported);
-        uint32_t value = 0;
-        if (type == 3) {
-            value = readEndian16(entry + 8, littleEndian);
-        } else {
-            value = readEndian32(entry + 8, littleEndian);
+        sony2fuji::tiff::Payload payload;
+        uint64_t value = 0;
+        if (!reader.payload(entry, payload) || !reader.integer(payload.offset, payload.width, value) ||
+            value < 1 || value > 8) {
+            fail(sony2fuji::RenderStatus::Unsupported);
         }
-        if (value < 1 || value > 8) fail(sony2fuji::RenderStatus::Unsupported);
-        return value;
+        orientation = static_cast<uint32_t>(value);
+        return false;
+    })) {
+        if (!orientation) fail(sony2fuji::RenderStatus::Unsupported);
     }
-    return std::nullopt;
+    return orientation;
 }
 
 struct MetadataInfo {
@@ -413,164 +408,125 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
     }
 }
 
-class TiffReader final {
-public:
-    explicit TiffReader(const std::wstring& path) : file_(path, std::ios::binary) {
-        if (!file_) fail(sony2fuji::RenderStatus::IoError);
-        file_.seekg(0, std::ios::end);
-        const auto end = file_.tellg();
-        if (end < 0) fail(sony2fuji::RenderStatus::ProcessingError);
-        size_ = static_cast<uint64_t>(end);
-        file_.seekg(0, std::ios::beg);
-    }
-
-    uint64_t size() const noexcept { return size_; }
-
-    void ensure(uint64_t offset, uint64_t length) const {
-        if (offset > size_ || length > size_ - offset)
-            fail(sony2fuji::RenderStatus::ProcessingError);
-    }
-
-    void readAt(uint64_t offset, void* destination, size_t length) {
-        ensure(offset, length);
-        if (length > static_cast<size_t>(std::numeric_limits<std::streamsize>::max()))
-            fail(sony2fuji::RenderStatus::ProcessingError);
-        file_.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-        file_.read(static_cast<char*>(destination), static_cast<std::streamsize>(length));
-        if (!file_ || file_.gcount() != static_cast<std::streamsize>(length))
-            fail(sony2fuji::RenderStatus::ProcessingError);
-    }
-
-    uint16_t read16(uint64_t offset, bool littleEndian) {
-        std::array<uint8_t, 2> bytes{};
-        readAt(offset, bytes.data(), bytes.size());
-        return readEndian16(bytes.data(), littleEndian);
-    }
-
-    uint32_t read32(uint64_t offset, bool littleEndian) {
-        std::array<uint8_t, 4> bytes{};
-        readAt(offset, bytes.data(), bytes.size());
-        return readEndian32(bytes.data(), littleEndian);
-    }
-
-private:
-    std::ifstream file_;
-    uint64_t size_ = 0;
-};
-
-struct TiffEntry {
-    uint16_t tag = 0;
-    uint16_t type = 0;
-    uint32_t count = 0;
-    uint64_t dataOffset = 0;
-    uint64_t dataBytes = 0;
-};
-
-uint32_t tiffTypeSize(uint16_t type) {
-    switch (type) {
-        case 1: case 2: case 6: case 7: return 1;
-        case 3: case 8: return 2;
-        case 4: case 9: case 11: return 4;
-        case 5: case 10: case 12: return 8;
-        default: fail(sony2fuji::RenderStatus::Unsupported);
-    }
+sony2fuji::tiff::Payload tiffEntryPayload(const sony2fuji::tiff::Reader& reader,
+                                          const sony2fuji::tiff::Entry& entry) {
+    if (entry.type == 0 || entry.type > 12)
+        fail(sony2fuji::RenderStatus::Unsupported);
+    const size_t width = sony2fuji::tiff::elementWidth(entry.type);
+    if (!width || uint64_t(entry.count) > std::numeric_limits<uint64_t>::max() / width)
+        fail(sony2fuji::RenderStatus::Unsupported);
+    sony2fuji::tiff::Payload payload;
+    if (!reader.payload(entry, payload))
+        fail(sony2fuji::RenderStatus::ProcessingError);
+    return payload;
 }
 
-TiffEntry readTiffEntry(TiffReader& reader, uint64_t offset, bool littleEndian) {
-    std::array<uint8_t, 12> bytes{};
-    reader.readAt(offset, bytes.data(), bytes.size());
-    TiffEntry result;
-    result.tag = readEndian16(bytes.data(), littleEndian);
-    result.type = readEndian16(bytes.data() + 2, littleEndian);
-    result.count = readEndian32(bytes.data() + 4, littleEndian);
-    const auto typeSize = static_cast<uint64_t>(tiffTypeSize(result.type));
-    if (result.count > std::numeric_limits<uint64_t>::max() / typeSize)
-        fail(sony2fuji::RenderStatus::Unsupported);
-    result.dataBytes = static_cast<uint64_t>(result.count) * typeSize;
-    result.dataOffset = result.dataBytes <= 4
-        ? offset + 8u : readEndian32(bytes.data() + 8, littleEndian);
-    reader.ensure(result.dataOffset, result.dataBytes);
+std::vector<uint8_t> readTiffData(const sony2fuji::tiff::Reader& reader,
+                                  const sony2fuji::tiff::Payload& payload, size_t limit) {
+    if (payload.size > limit) fail(sony2fuji::RenderStatus::Unsupported);
+    std::vector<uint8_t> result(payload.size);
+    if (!result.empty() && !reader.read(payload.offset, result.data(), result.size()))
+        fail(sony2fuji::RenderStatus::ProcessingError);
     return result;
 }
 
-std::vector<uint8_t> readTiffData(TiffReader& reader, const TiffEntry& entry, size_t limit) {
-    if (entry.dataBytes > limit || entry.dataBytes > std::numeric_limits<size_t>::max())
-        fail(sony2fuji::RenderStatus::Unsupported);
-    std::vector<uint8_t> result(static_cast<size_t>(entry.dataBytes));
-    if (!result.empty()) reader.readAt(entry.dataOffset, result.data(), result.size());
-    return result;
-}
-
-std::vector<uint32_t> readTiffUnsignedValues(TiffReader& reader, const TiffEntry& entry,
-                                             bool littleEndian, size_t limit = 4096) {
+std::vector<uint32_t> readTiffUnsignedValues(const sony2fuji::tiff::Reader& reader,
+                                             const sony2fuji::tiff::Entry& entry,
+                                             const sony2fuji::tiff::Payload& payload,
+                                             size_t limit = 4096) {
     if (entry.type != 3 && entry.type != 4)
         fail(sony2fuji::RenderStatus::Unsupported);
-    const auto bytes = readTiffData(reader, entry, limit);
+    if (payload.size > limit) fail(sony2fuji::RenderStatus::Unsupported);
     std::vector<uint32_t> result;
     result.reserve(entry.count);
     for (uint32_t index = 0; index < entry.count; ++index) {
-        result.push_back(entry.type == 3
-            ? readEndian16(bytes.data() + static_cast<size_t>(index) * 2, littleEndian)
-            : readEndian32(bytes.data() + static_cast<size_t>(index) * 4, littleEndian));
+        uint64_t value = 0;
+        if (!reader.integer(payload.offset + static_cast<size_t>(index) * payload.width,
+                            payload.width, value)) {
+            fail(sony2fuji::RenderStatus::ProcessingError);
+        }
+        result.push_back(static_cast<uint32_t>(value));
     }
     return result;
 }
 
-bool tiffEntryHasNoPageMarker(TiffReader& reader, const TiffEntry& entry, bool littleEndian) {
+bool tiffEntryHasNoPageMarker(const sony2fuji::tiff::Reader& reader,
+                              const sony2fuji::tiff::Entry& entry,
+                              const sony2fuji::tiff::Payload& payload) {
     if (entry.tag == 297) return false;
     if (entry.tag != 254 && entry.tag != 255) return true;
     if (entry.count != 1 || entry.type != (entry.tag == 254 ? 4 : 3)) return false;
-    const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+    const auto values = readTiffUnsignedValues(reader, entry, payload);
     return entry.tag == 254 ? (values[0] & 2u) == 0 : values[0] != 3;
 }
 
-bool hasSigmaTIFFPreview(TiffReader& reader, uint64_t offset, bool littleEndian,
-                         uint64_t primaryWidth, uint64_t primaryHeight) {
-    reader.ensure(offset, 2);
-    const auto count = reader.read16(offset, littleEndian);
-    if (count == 0 || count > 4096) return false;
-    reader.ensure(offset + 2u, static_cast<uint64_t>(count) * 12u + 4u);
-    if (reader.read32(offset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian) != 0) return false;
+bool hasSigmaTIFFPreview(const sony2fuji::tiff::Reader& reader,
+                         sony2fuji::tiff::Traversal& traversal,
+                         uint32_t offset, uint64_t primaryWidth, uint64_t primaryHeight) {
+    sony2fuji::tiff::Directory dir;
+    if (!traversal.open(reader, offset, 1, dir)) {
+        uint64_t count = 0;
+        if (reader.integer(offset, 2, count) && (count == 0 || count > 4096)) return false;
+        fail(sony2fuji::RenderStatus::ProcessingError);
+    }
+    if (dir.count == 0 || dir.next != 0) return false;
     uint64_t width = 0, height = 0;
     bool depth8 = false;
-    for (uint16_t index = 0; index < count; ++index) {
-        const auto entry = readTiffEntry(reader, offset + 2u + static_cast<uint64_t>(index) * 12u, littleEndian);
-        if (!tiffEntryHasNoPageMarker(reader, entry, littleEndian)) return false;
+    if (!reader.entries(dir, [&](const sony2fuji::tiff::Entry& entry) {
+        const auto payload = tiffEntryPayload(reader, entry);
+        if (!tiffEntryHasNoPageMarker(reader, entry, payload)) return false;
         if (entry.tag == 256 || entry.tag == 257) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
             if (values.size() != 1) return false;
             if (entry.tag == 256) width = values[0];
             else height = values[0];
         } else if (entry.tag == 258) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
-            if (values.empty() || std::any_of(values.begin(), values.end(), [](uint32_t value) { return value != 8; }))
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
+            if (values.empty() || std::any_of(values.begin(), values.end(),
+                    [](uint32_t value) { return value != 8; }))
                 return false;
             depth8 = true;
         }
+        return true;
+    })) {
+        return false;
     }
     // 与 Apple 一致：只识别 160 像素、同比例、无分页标记的第二 IFD。
     const auto aspectDifference = static_cast<int64_t>(primaryWidth * height) -
         static_cast<int64_t>(primaryHeight * width);
     return depth8 && width > 0 && height > 0 && width < primaryWidth && height < primaryHeight &&
-        std::max(width, height) == 160 && std::abs(aspectDifference) <= static_cast<int64_t>(std::max(primaryWidth, primaryHeight));
+        std::max(width, height) == 160 &&
+        std::abs(aspectDifference) <= static_cast<int64_t>(std::max(primaryWidth, primaryHeight));
 }
 
 void scanTiff(const std::wstring& path, MetadataInfo& info) {
-    TiffReader reader(path);
-    if (reader.size() < 8) fail(sony2fuji::RenderStatus::ProcessingError);
-    std::array<uint8_t, 8> header{};
-    reader.readAt(0, header.data(), header.size());
-    const bool littleEndian = header[0] == 'I' && header[1] == 'I';
-    const bool bigEndian = header[0] == 'M' && header[1] == 'M';
-    if (!littleEndian && !bigEndian) fail(sony2fuji::RenderStatus::ProcessingError);
-    const auto magic = readEndian16(header.data() + 2, littleEndian);
-    if (magic == 43) fail(sony2fuji::RenderStatus::Unsupported);
-    if (magic != 42) fail(sony2fuji::RenderStatus::ProcessingError);
-    const auto ifdOffset = static_cast<uint64_t>(readEndian32(header.data() + 4, littleEndian));
-    reader.ensure(ifdOffset, 2);
-    const auto count = reader.read16(ifdOffset, littleEndian);
-    if (count > 4096 || static_cast<uint64_t>(count) * 12u > reader.size() - ifdOffset - 2u)
-        fail(sony2fuji::RenderStatus::Unsupported);
+    std::ifstream file(path, std::ios::binary);
+    if (!file) fail(sony2fuji::RenderStatus::IoError);
+    file.seekg(0, std::ios::end);
+    const auto end = file.tellg();
+    if (end < 0) fail(sony2fuji::RenderStatus::ProcessingError);
+    const uint64_t fileSize = static_cast<uint64_t>(end);
+    if (fileSize > std::numeric_limits<size_t>::max())
+        fail(sony2fuji::RenderStatus::ProcessingError);
+    file.seekg(0, std::ios::beg);
+
+    sony2fuji::tiff::Reader reader(file, static_cast<size_t>(fileSize));
+    uint32_t ifdOffset = 0;
+    if (!reader.header(ifdOffset)) {
+        if (reader.magic() == 43) fail(sony2fuji::RenderStatus::Unsupported);
+        fail(sony2fuji::RenderStatus::ProcessingError);
+    }
+
+    sony2fuji::tiff::Traversal traversal;
+    sony2fuji::tiff::Directory dir;
+    if (!traversal.open(reader, ifdOffset, 0, dir)) {
+        uint64_t count = 0;
+        if (!reader.integer(ifdOffset, 2, count))
+            fail(sony2fuji::RenderStatus::ProcessingError);
+        if (count > 4096 || count * 12ull > fileSize - ifdOffset - 2ull)
+            fail(sony2fuji::RenderStatus::Unsupported);
+        fail(sony2fuji::RenderStatus::ProcessingError);
+    }
 
     bool hasWidth = false;
     bool hasHeight = false;
@@ -582,53 +538,52 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
     bool noPageMarker = true;
     bool nonIccColorMetadata = false;
     size_t metadataBytes = 0;
-    for (uint16_t index = 0; index < count; ++index) {
-        const auto entryOffset = ifdOffset + 2u + static_cast<uint64_t>(index) * 12u;
-        const auto entry = readTiffEntry(reader, entryOffset, littleEndian);
-        noPageMarker &= tiffEntryHasNoPageMarker(reader, entry, littleEndian);
+    if (!reader.entries(dir, [&](const sony2fuji::tiff::Entry& entry) {
+        const auto payload = tiffEntryPayload(reader, entry);
+        noPageMarker &= tiffEntryHasNoPageMarker(reader, entry, payload);
         if (entry.tag == 305) {
             if (entry.type != 2) {
                 sigmaWriter = false;
-                continue;
+                return true;
             }
-            if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+            if (payload.size > kMetadataChunkLimit - metadataBytes)
                 fail(sony2fuji::RenderStatus::Unsupported);
-            metadataBytes += static_cast<size_t>(entry.dataBytes);
-            const auto software = readTiffData(reader, entry, kMetadataChunkLimit);
+            metadataBytes += payload.size;
+            const auto software = readTiffData(reader, payload, kMetadataChunkLimit);
             sigmaWriter = equalBytes(software.data(), software.size(), "SIGMA Photo Pro ", 16);
-            continue;
+            return true;
         }
         if (entry.tag == 34675) {
-            if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+            if (payload.size > kMetadataChunkLimit - metadataBytes)
                 fail(sony2fuji::RenderStatus::Unsupported);
-            metadataBytes += static_cast<size_t>(entry.dataBytes);
+            metadataBytes += payload.size;
             info.colorProfileMarker = true;
-            continue;
+            return true;
         }
         if (entry.tag == 700) {
-            if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+            if (payload.size > kMetadataChunkLimit - metadataBytes)
                 fail(sony2fuji::RenderStatus::Unsupported);
-            metadataBytes += static_cast<size_t>(entry.dataBytes);
-            const auto xmp = readTiffData(reader, entry, kMetadataChunkLimit);
+            metadataBytes += payload.size;
+            const auto xmp = readTiffData(reader, payload, kMetadataChunkLimit);
             if (containsInsensitive(xmp.data(), xmp.size(), "gainmap") ||
                 containsInsensitive(xmp.data(), xmp.size(), "hdrgm") ||
                 containsInsensitive(xmp.data(), xmp.size(), "hdrgainmap"))
                 fail(sony2fuji::RenderStatus::Unsupported);
-            continue;
+            return true;
         }
         if (entry.tag == 270) {
-            if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
+            if (payload.size > kMetadataChunkLimit - metadataBytes)
                 fail(sony2fuji::RenderStatus::Unsupported);
-            metadataBytes += static_cast<size_t>(entry.dataBytes);
-            const auto description = readTiffData(reader, entry, kMetadataChunkLimit);
+            metadataBytes += payload.size;
+            const auto description = readTiffData(reader, payload, kMetadataChunkLimit);
             if (containsInsensitive(description.data(), description.size(), "gainmap") ||
                 containsInsensitive(description.data(), description.size(), "hdrgm") ||
                 containsInsensitive(description.data(), description.size(), "hdrgainmap"))
                 fail(sony2fuji::RenderStatus::Unsupported);
-            continue;
+            return true;
         }
         if (entry.tag == 256 || entry.tag == 257) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
             if (values.size() != 1 || values[0] == 0)
                 fail(sony2fuji::RenderStatus::ProcessingError);
             if (entry.tag == 256) {
@@ -638,41 +593,45 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
                 hasHeight = true;
                 height = values[0];
             }
-            continue;
+            return true;
         }
         if (entry.tag == 258) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
-            if (values.empty() || (values[0] != 8 && values[0] != 16)) fail(sony2fuji::RenderStatus::Unsupported);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
+            if (values.empty() || (values[0] != 8 && values[0] != 16))
+                fail(sony2fuji::RenderStatus::Unsupported);
             for (const auto value : values)
                 if (value != values[0]) fail(sony2fuji::RenderStatus::Unsupported);
             depth = values[0];
-            continue;
+            return true;
         }
         if (entry.tag == 262) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
             if (values.size() != 1 || values[0] != 2)
                 fail(sony2fuji::RenderStatus::Unsupported);
             hasPhotometric = true;
-            continue;
+            return true;
         }
         if (entry.tag == 274) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
             if (values.size() != 1 || values[0] < 1 || values[0] > 8)
                 fail(sony2fuji::RenderStatus::Unsupported);
             mergeOrientation(info, values[0]);
-            continue;
+            return true;
         }
         if (entry.tag == 339) {
-            const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
+            const auto values = readTiffUnsignedValues(reader, entry, payload);
             if (values.empty()) fail(sony2fuji::RenderStatus::Unsupported);
             for (const auto value : values)
                 if (value != 1) fail(sony2fuji::RenderStatus::Unsupported);
-            continue;
+            return true;
         }
         if (entry.tag == 301 || entry.tag == 318 || entry.tag == 319 ||
             entry.tag == 529 || entry.tag == 531 || entry.tag == 532) {
             nonIccColorMetadata = true;
         }
+        return true;
+    })) {
+        fail(sony2fuji::RenderStatus::ProcessingError);
     }
     if (!hasWidth || !hasHeight || !hasPhotometric)
         fail(sony2fuji::RenderStatus::ProcessingError);
@@ -680,10 +639,9 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         fail(sony2fuji::RenderStatus::Unsupported);
     if (nonIccColorMetadata && !info.colorProfileMarker)
         fail(sony2fuji::RenderStatus::Unsupported);
-    const auto next = reader.read32(ifdOffset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian);
     // 其他后续 IFD 仍交给 WIC 帧数判断：WIC 不把缩略图 IFD 计为一帧，这类 TIFF 改动前就能打开。
-    if (next != 0 && depth == 16 && sigmaWriter && noPageMarker && next != ifdOffset &&
-        hasSigmaTIFFPreview(reader, next, littleEndian, width, height))
+    if (dir.next != 0 && depth == 16 && sigmaWriter && noPageMarker && dir.next != ifdOffset &&
+        hasSigmaTIFFPreview(reader, traversal, dir.next, width, height))
         info.sigmaTIFFPreview = true;
 }
 

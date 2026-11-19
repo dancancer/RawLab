@@ -1,11 +1,12 @@
 #pragma once
 
-#include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <istream>
 #include <limits>
+#include <vector>
 
 namespace sony2fuji::tiff {
 
@@ -13,6 +14,7 @@ struct Directory {
     size_t entriesOffset = 0;
     uint16_t count = 0;
     uint32_t next = 0;
+    uint64_t nextOffset = 0;
 };
 
 struct Entry {
@@ -21,6 +23,8 @@ struct Entry {
     uint32_t count = 0;
     uint32_t value = 0;
     size_t inlineOffset = 0;
+    uint64_t count64 = 0;
+    uint64_t value64 = 0;
 };
 
 struct Payload {
@@ -30,7 +34,9 @@ struct Payload {
 };
 
 inline size_t elementWidth(uint16_t type) {
-    static constexpr uint8_t widths[] = {0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8, 4};
+    static constexpr uint8_t widths[] = {
+        0, 1, 1, 2, 4, 8, 1, 1, 2, 4, 8, 4, 8, 4, 0, 0, 8, 0, 8
+    };
     return type < sizeof(widths) ? widths[type] : 0;
 }
 
@@ -41,13 +47,19 @@ public:
     Reader(std::istream& input, size_t size) : size_(size), input_(&input) {}
 
     bool littleEndian() const { return little_; }
+    bool bigTiff() const { return bigTiff_; }
+    uint16_t magic() const { return magic_; }
 
-    bool read(size_t offset, void* target, size_t length) const {
+    bool read(uint64_t offset, void* target, size_t length) const {
         if (!contains(offset, length) || (!data_ && !input_)) return false;
         if (!length) return true;
-        if (data_) std::memcpy(target, data_ + offset, length);
+        if (data_) std::memcpy(target, data_ + size_t(offset), length);
         else {
+            if (offset > uint64_t(std::numeric_limits<std::streamoff>::max()) ||
+                length > size_t(std::numeric_limits<std::streamsize>::max())) return false;
             try {
+                // 部分读取/EOF 会置位流状态标志，重新定位前先清除以允许后续读取恢复。
+                input_->clear();
                 input_->seekg(std::streamoff(offset));
                 if (!input_->read(static_cast<char*>(target), std::streamsize(length))) return false;
             } catch (const std::ios_base::failure&) {
@@ -57,7 +69,7 @@ public:
         return true;
     }
 
-    bool integer(size_t offset, size_t width, uint64_t& value) const {
+    bool integer(uint64_t offset, size_t width, uint64_t& value) const {
         uint8_t bytes[8];
         if (!width || width > sizeof(bytes) || !read(offset, bytes, width)) return false;
         value = 0;
@@ -68,37 +80,80 @@ public:
 
     // 首目录是否允许为零由调用方决定；DCP 另接受 0x4352 魔数。
     bool header(uint32_t& first, uint16_t alternateMagic = 42) {
-        uint8_t bytes[8];
-        if (!read(0, bytes, sizeof(bytes))) return false;
-        if ((bytes[0] != 'I' && bytes[0] != 'M') || bytes[0] != bytes[1]) return false;
-        little_ = bytes[0] == 'I';
-        uint64_t magic = 0, offset = 0;
-        if (!integer(2, 2, magic) || (magic != 42 && magic != alternateMagic) || !integer(4, 4, offset))
+        uint64_t offset = 0;
+        if (!header(offset, false, alternateMagic) || offset > std::numeric_limits<uint32_t>::max())
             return false;
         first = uint32_t(offset);
         return true;
     }
 
-    bool directory(uint32_t offset, Directory& output) const {
+    bool header(uint64_t& first, bool allowBigTiff = true, uint16_t alternateMagic = 42) {
+        bigTiff_ = false;
+        magic_ = 0;
+        uint8_t bytes[8];
+        if (!read(0, bytes, sizeof(bytes))) return false;
+        if ((bytes[0] != 'I' && bytes[0] != 'M') || bytes[0] != bytes[1]) return false;
+        little_ = bytes[0] == 'I';
+        uint64_t magic = 0;
+        if (!integer(2, 2, magic)) return false;
+        magic_ = uint16_t(magic);
+        if (magic == 43) {
+            if (!allowBigTiff) return false;
+            uint64_t byteSize = 0, reserved = 0, offset = 0;
+            if (!integer(4, 2, byteSize) || byteSize != 8 ||
+                !integer(6, 2, reserved) || reserved != 0 ||
+                !integer(8, 8, offset)) return false;
+            bigTiff_ = true;
+            first = offset;
+            return true;
+        }
+        if (magic != 42 && magic != alternateMagic) return false;
+        uint64_t offset = 0;
+        if (!integer(4, 4, offset)) return false;
+        first = offset;
+        return true;
+    }
+
+    bool directory(uint64_t offset, Directory& output) const {
+        const size_t countBytes = bigTiff_ ? 8 : 2;
+        const size_t entryBytes = bigTiff_ ? 20 : 12;
+        const size_t nextBytes = bigTiff_ ? 8 : 4;
         uint64_t count = 0, next = 0;
         // 一次校验整张目录及尾部 next-offset，再向调用方提供条目。
-        if (!integer(offset, 2, count) || count > 4096 || !contains(offset, size_t(count) * 12 + 6))
+        if (!integer(offset, countBytes, count) || count > 4096) return false;
+        const uint64_t tableBytes = count * entryBytes;
+        const uint64_t totalBytes = countBytes + tableBytes + nextBytes;
+        if (totalBytes > std::numeric_limits<size_t>::max() || !contains(offset, size_t(totalBytes)))
             return false;
-        const size_t start = size_t(offset) + 2;
-        if (!integer(start + size_t(count) * 12, 4, next)) return false;
-        output = {start, uint16_t(count), uint32_t(next)};
+        const size_t start = size_t(offset) + countBytes;
+        if (!integer(start + size_t(tableBytes), nextBytes, next)) return false;
+        output = {};
+        output.entriesOffset = start;
+        output.count = uint16_t(count);
+        output.next = uint32_t(next);
+        output.nextOffset = next;
         return true;
     }
 
     template<class Visitor>
     bool entries(const Directory& directory, Visitor&& visitor) const {
+        const size_t entryBytes = bigTiff_ ? 20 : 12;
+        const size_t fieldBytes = bigTiff_ ? 8 : 4;
         for (size_t i = 0; i < directory.count; ++i) {
-            const size_t at = directory.entriesOffset + i * 12;
+            const size_t at = directory.entriesOffset + i * entryBytes;
             uint64_t tag = 0, type = 0, count = 0, value = 0;
             if (!integer(at, 2, tag) || !integer(at + 2, 2, type) ||
-                !integer(at + 4, 4, count) || !integer(at + 8, 4, value)) return false;
-            if (!visitor(Entry{uint16_t(tag), uint16_t(type), uint32_t(count), uint32_t(value), at + 8}))
-                return false;
+                !integer(at + 4, fieldBytes, count) ||
+                !integer(at + 4 + fieldBytes, fieldBytes, value)) return false;
+            Entry entry{};
+            entry.tag = uint16_t(tag);
+            entry.type = uint16_t(type);
+            entry.count = uint32_t(count);
+            entry.value = uint32_t(value);
+            entry.inlineOffset = at + 4 + fieldBytes;
+            entry.count64 = count;
+            entry.value64 = value;
+            if (!visitor(entry)) return false;
         }
         return true;
     }
@@ -107,16 +162,20 @@ public:
     bool payload(const Entry& entry, Payload& output) const {
         const size_t width = elementWidth(entry.type);
         if (!width) return false;
-        const uint64_t length = uint64_t(entry.count) * width;
-        if (length > std::numeric_limits<size_t>::max()) return false;
-        const size_t offset = length <= 4 ? entry.inlineOffset : size_t(entry.value);
-        if (!contains(offset, size_t(length))) return false;
-        output = {offset, size_t(length), width};
+        const uint64_t count = entry.count64 ? entry.count64 : uint64_t(entry.count);
+        if (count > std::numeric_limits<size_t>::max() / width) return false;
+        const size_t length = size_t(count) * width;
+        const size_t inlineLimit = bigTiff_ ? 8 : 4;
+        const uint64_t offset = length <= inlineLimit
+            ? uint64_t(entry.inlineOffset)
+            : (bigTiff_ ? entry.value64 : uint64_t(entry.value));
+        if (!contains(offset, length)) return false;
+        output = {size_t(offset), length, width};
         return true;
     }
 
 private:
-    bool contains(size_t offset, size_t length) const {
+    bool contains(uint64_t offset, size_t length) const {
         return offset <= size_ && length <= size_ - offset;
     }
 
@@ -124,22 +183,32 @@ private:
     size_t size_ = 0;
     std::istream* input_ = nullptr;
     bool little_ = false;
+    bool bigTiff_ = false;
+    uint16_t magic_ = 0;
 };
 
 class Traversal {
 public:
-    // 子目录与 next 链共用访问记录；沿用 HDR 的深度 8、目录总量 32 上限。
-    bool open(const Reader& reader, uint32_t offset, unsigned depth, Directory& output) {
-        if (depth > 8 || count_ == visited_.size()) return false;
-        for (size_t i = 0; i < count_; ++i)
-            if (visited_[i] == offset) return false;
-        visited_[count_++] = offset;
+    Traversal() = default;
+    explicit Traversal(size_t maxDirectories, unsigned maxDepth = 8)
+        : maxDirectories_(maxDirectories), maxDepth_(maxDepth) {}
+
+    bool seen(uint64_t offset) const {
+        return std::find(visited_.begin(), visited_.end(), offset) != visited_.end();
+    }
+
+    // 子目录与 next 链共用访问记录；默认沿用 HDR 的深度 8、目录总量 32 上限。
+    bool open(const Reader& reader, uint64_t offset, unsigned depth, Directory& output) {
+        if (depth > maxDepth_ || visited_.size() >= maxDirectories_) return false;
+        if (seen(offset)) return false;
+        visited_.push_back(offset);
         return reader.directory(offset, output);
     }
 
 private:
-    std::array<uint32_t, 32> visited_{};
-    size_t count_ = 0;
+    size_t maxDirectories_ = 32;
+    unsigned maxDepth_ = 8;
+    std::vector<uint64_t> visited_;
 };
 
 } // namespace sony2fuji::tiff
