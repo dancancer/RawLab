@@ -82,6 +82,7 @@ class PhotoStorage(
     looksDirectory: File = File(context.filesDir, "looks"),
     lookValidator: LookValidator = NativeLookValidator,
     dcpCompiler: DcpCompiler = NativeDcpCompiler,
+    bundledFilms: List<Film>? = null,
 ) : AutoCloseable {
     private val resolver = context.contentResolver
     private val mediaLibrary = MediaPhotoLibrary(context)
@@ -90,7 +91,7 @@ class PhotoStorage(
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     internal val hdrLookDirectory = File(looksDirectory, "HDR")
     internal val hdrCameraProfileDirectory = File(context.filesDir, "HDRCameraProfiles")
-    private val films = Film.all + BundledLooks.load(context)
+    private val films = Film.all + (bundledFilms ?: BundledLooks.load(context))
     private var lensDirectory: File? = null
 
     @Synchronized
@@ -315,16 +316,20 @@ class PhotoStorage(
         } finally { temporary.delete() }
     }
 
+    private fun openStream(uri: Uri): java.io.InputStream? =
+        resolver?.openInputStream(uri)
+            ?: uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf(File::isFile)?.inputStream()
+
     fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
             val curve = dcp?.toneCurve?.let { curveUri ->
-                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                val input = openStream(curveUri) ?: throw IOException("Cannot open tone curve")
                 input.use { readDcpInput(it, 1024 * 1024) }.also {
                     if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
                 }
             }
-            val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
+            val stream = openStream(uri) ?: throw IOException("Cannot open look")
             return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)

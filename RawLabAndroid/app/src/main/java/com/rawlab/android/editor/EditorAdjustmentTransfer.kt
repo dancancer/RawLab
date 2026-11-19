@@ -37,14 +37,18 @@ internal val EditorState.adjustmentTransferFields: Set<AdjustmentField> get() = 
 } else AdjustmentField.entries.filterNot { it.isHDROnly }.toSet()
 
 /** 与普通渲染一样在串行资源队列执行；每个 native processor 在该目标预检结束时释放。 */
-internal class EditorAdjustmentPreparation(private val context: Context, private val storage: PhotoStorage,
-    private val store: EditorEditStore) {
+internal class EditorAdjustmentPreparation(
+    private val context: Context,
+    private val storage: PhotoStorage,
+    private val store: EditorEditStore,
+    private val loadRecipes: () -> List<MasterRecipe> = { MasterRecipe.load(context) },
+) {
     fun prepare(work: AdjustmentPreparationWork, isCancelled: () -> Boolean = { false }): AdjustmentPreparationResult = synchronized(storage) {
         fun checkActive() { if (isCancelled()) throw java.util.concurrent.CancellationException() }
         checkActive()
         val session = store.adjustmentSession ?: throw IOException("Edit store is unavailable; reload saved adjustments")
         val builtin = storage.builtinLookIDs()
-        val recipes = MasterRecipe.load(context)
+        val recipes = loadRecipes()
         val available = builtin.keys.map { "builtin:$it" }.toSet() +
             storage.looks().filter { it.managed && it.available }.map { it.id } +
             recipes.map { "recipe:${it.id}" }
@@ -127,12 +131,12 @@ internal class EditorAdjustmentPreparation(private val context: Context, private
     }
 }
 
-internal fun adjustmentErrorMessage(error: Throwable?): String {
+internal fun adjustmentErrorMessage(error: Throwable?, strings: EditorStrings = EditorStrings()): String {
     if (error is com.rawlab.android.settings.UnusableEditRecordException) {
-        return com.rawlab.android.editor.storage.EditSaveResult(EditSaveState.FAILED, error, reading = true).message
-            ?: AppStrings.text(R.string.transfer_error)
+        return com.rawlab.android.editor.storage.EditSaveResult(EditSaveState.FAILED, error, reading = true).formatMessage(strings)
+            ?: strings.text(R.string.transfer_error)
     }
-    return AppStrings.text(when {
+    return strings.text(when {
         error is PhotoChangedException -> R.string.collection_source_changed
         error is AdjustmentHistoryOrderException -> R.string.transfer_history_order_message
         error is AdjustmentOperationExpiredException -> R.string.transfer_conflict_message

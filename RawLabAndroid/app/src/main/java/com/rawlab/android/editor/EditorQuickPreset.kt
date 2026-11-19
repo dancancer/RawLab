@@ -13,13 +13,13 @@ data class EditorQuickPresetState(val visible: Boolean = false, val phase: Quick
     val busy get() = phase == QuickPresetPhase.PREPARING || phase == QuickPresetPhase.COMMITTING
 }
 
-internal fun quickPresetErrorMessage(error: Throwable?): String = when {
-    error is AdjustmentTransferException && error.reason == AdjustmentFailure.INCOMPATIBLE -> AppStrings.text(when {
+internal fun quickPresetErrorMessage(error: Throwable?, strings: EditorStrings = EditorStrings()): String = when {
+    error is AdjustmentTransferException && error.reason == AdjustmentFailure.INCOMPATIBLE -> strings.text(when {
         error.field == "hdr.relative_white_balance" -> R.string.preset_quick_error_mode
         error.field?.startsWith("select white balance mode") == true -> R.string.preset_quick_error_white_balance_scope
         error.field == "target camera white balance unavailable" -> R.string.tool_white_balance_unavailable
         else -> R.string.preset_quick_error_incompatible
     })
-    error is AdjustmentTransferException && error.reason == AdjustmentFailure.UNREPRESENTABLE -> AppStrings.text(R.string.preset_quick_error_preserve)
-    else -> adjustmentErrorMessage(error)
+    error is AdjustmentTransferException && error.reason == AdjustmentFailure.UNREPRESENTABLE -> strings.text(R.string.preset_quick_error_preserve)
+    else -> adjustmentErrorMessage(error, strings)
 }

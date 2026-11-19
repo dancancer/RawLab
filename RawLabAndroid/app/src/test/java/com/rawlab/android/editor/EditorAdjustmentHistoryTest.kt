@@ -544,4 +544,47 @@ class EditorAdjustmentHistoryTest {
             root.deleteRecursively()
         }
     }
+
+    @Test fun p3_33_beginRejectsSwitchedPhotoPathOrRevisionWhileInteractionIsActive() {
+        val root = Files.createTempDirectory("rawlab-history-p3-33").toFile()
+        try {
+            val photoA = testPhoto(root, "a.RAW")
+            val photoACopy = testPhoto(root, "a-copy.RAW", id = photoA.identity.value)
+            val photoB = testPhoto(root, "b.RAW")
+            val settingsA = EditSettings(exposure = .25f)
+            val settingsB = EditSettings(exposure = -.5f)
+            val store = EditorEditStore(File(root, "edits"))
+            val history = EditorAdjustmentHistory(store) { { } }
+
+            history.acceptSource(photoA, PhotoEditState(photoA.identity, settingsA))
+            assertEquals(EditSaveState.SAVED, history.begin(photoA, settingsA, revision = 1L).state)
+            assertTrue(history.snapshot().interacting)
+
+            // Continuing active drag on the exact same photo/path/revision keeps SAVED and original 'before' settings.
+            val continued = history.begin(photoA, settingsA.copy(exposure = .6f), revision = 1L)
+            assertEquals(EditSaveState.SAVED, continued.state)
+            assertEquals(settingsA, history.snapshot().interaction?.before)
+
+            // Switching to photoB before acceptSource completes must NOT return fake SAVED.
+            val switchedResult = history.begin(photoB, settingsB, revision = 2L)
+            assertEquals(EditSaveState.FAILED, switchedResult.state)
+            assertTrue(switchedResult.error is PhotoChangedException)
+
+            // Different file path or different source revision for the same identity must also fail instead of returning SAVED.
+            val movedPathResult = history.begin(photoACopy, settingsA, revision = 1L)
+            assertEquals(EditSaveState.FAILED, movedPathResult.state)
+            assertTrue(movedPathResult.error is PhotoChangedException)
+
+            val newRevisionResult = history.begin(photoA, settingsA, revision = 2L)
+            assertEquals(EditSaveState.FAILED, newRevisionResult.state)
+            assertTrue(newRevisionResult.error is PhotoChangedException)
+
+            // Original interaction on photoA remains intact until explicitly finished or replaced by acceptSource.
+            assertEquals(photoA.identity, history.snapshot().interaction?.identity)
+            assertTrue(history.finish(photoA, revision = 1L))
+            assertFalse(history.snapshot().interacting)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }
