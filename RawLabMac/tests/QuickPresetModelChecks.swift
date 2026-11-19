@@ -177,7 +177,7 @@ enum QuickPresetModelChecks {
         let model = EditorModel(lookDirectory: directory.appendingPathComponent("looks"), editDirectory: directory.appendingPathComponent("edits"),
             batchDirectory: directory.appendingPathComponent("batch"), presetDirectory: directory.appendingPathComponent("presets"))
         var failWrites = true
-        model.editStore = try EditPersistence(directory: directory.appendingPathComponent("edits"), writeData: { data, url in
+        model.editStore = try MacEditPersistence(directory: directory.appendingPathComponent("edits"), writeData: { data, url in
             if failWrites { throw CocoaError(.fileWriteUnknown) }
             try data.write(to: url, options: .atomic)
         })

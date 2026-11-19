@@ -19,8 +19,8 @@ struct AdjustmentTransferTests {
         do { try operation(); fatalError(message) } catch { print("PASS: \(message)") }
     }
 
-    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> PhotoEditState {
-        PhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
+    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> MacPhotoEditState {
+        MacPhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
     }
 
     static var raw: MacAdjustmentTransferContext {
@@ -28,7 +28,7 @@ struct AdjustmentTransferTests {
             availableLookIDs: ["builtin:PROVIA.cube", "recipe:hamada_daylight_v2"])
     }
 
-    static func request(_ state: PhotoEditState) -> sony2fuji_request {
+    static func request(_ state: MacPhotoEditState) -> sony2fuji_request {
         var request = sony2fuji_request()
         state.settings.apply(to: &request)
         return request
@@ -80,9 +80,9 @@ struct AdjustmentTransferTests {
         check(try MacAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
             "Atmosphere is independent of zero recipe strength")
         var effects = Adjustments(); effects.clarity = 31; effects.dehaze = -23; effects.vibrance = 19
-        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
-        check(EditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.effects), snapshot: state(effects), context: resetContext) {
+        let resetContext = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        check(MacEditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .group(.effects), snapshot: state(effects), context: resetContext) {
             check(reset.settings.atmosphereSettings.isIdentity && reset.settings.vibrance == 19, "Effects reset clears atmosphere and preserves color")
         } else { fatalError("Atmosphere reset must prepare a candidate") }
     }
@@ -125,12 +125,12 @@ struct AdjustmentTransferTests {
             "Tone controls remain independent of source and target recipe strength, including zero")
         var resetSource = source
         resetSource.setTransferRecipe(nil)
-        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let resetContext = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
         let snapshot = state(resetSource)
-        check(EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: snapshot, context: resetContext)
-            && EditorAdjustmentRules.isModified(scope: .tool(.vibrance), snapshot: snapshot, context: resetContext),
+        check(MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: snapshot, context: resetContext)
+            && MacEditorAdjustmentRules.isModified(scope: .tool(.vibrance), snapshot: snapshot, context: resetContext),
             "New controls participate in group and tool modified state")
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: snapshot, context: resetContext) {
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: snapshot, context: resetContext) {
             check(reset.settings.blackPoint == 0 && reset.settings.whitePoint == 0 && reset.settings.vibrance == 18.125,
                 "Light reset clears black and white point while preserving vibrance")
         } else { fatalError("Tone light reset must prepare a candidate") }
@@ -210,14 +210,14 @@ struct AdjustmentTransferTests {
         }
         var resetSource = Adjustments()
         resetSource.gradingSettings = source.gradingSettings
-        let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let context = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
         let snapshot = state(resetSource)
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
             check(reset.settings.gradingSettings.midtones.isDefault && reset.settings.gradingSettings.shadows == source.gradingSettings.shadows
                 && reset.settings.gradingSettings.highlights == source.gradingSettings.highlights, "Zone reset preserves sibling precision")
         } else { fatalError("Expected grading zone reset") }
         for scope in [EditorResetScope.allGrading, .group(.color), .tool(.colorGrading)] {
-            if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+            if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
                 check(reset.settings.gradingSettings.isDefault, "Tool and color-group resets clear every grading value")
             } else { fatalError("Expected grading reset") }
         }

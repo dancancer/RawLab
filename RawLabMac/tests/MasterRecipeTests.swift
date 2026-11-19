@@ -274,9 +274,9 @@ struct MasterRecipeTests {
         check(settings.masterRecipeID == nil, "Reset all clears masterRecipeID")
 
         // 4. Persistence & Serialization
-        let state = PhotoEditState(settings: settings, filmID: "some_film", masterRecipeID: recipe.id)
+        let state = MacPhotoEditState(settings: settings, filmID: "some_film", masterRecipeID: recipe.id)
         let data = try JSONEncoder().encode(state)
-        let restored = try JSONDecoder().decode(PhotoEditState.self, from: data)
+        let restored = try JSONDecoder().decode(MacPhotoEditState.self, from: data)
         check(restored.masterRecipeID == recipe.id, "PhotoEditState encodes and decodes masterRecipeID")
         check(restored.filmID == "some_film", "PhotoEditState preserves filmID")
 
@@ -302,7 +302,7 @@ struct MasterRecipeTests {
             "filmID": "provia"
         }
         """.data(using: .utf8)!
-        let legacyRestored = try JSONDecoder().decode(PhotoEditState.self, from: legacyJSON)
+        let legacyRestored = try JSONDecoder().decode(MacPhotoEditState.self, from: legacyJSON)
         check(legacyRestored.masterRecipeID == nil, "Legacy JSON decodes with masterRecipeID == nil")
         check(legacyRestored.filmID == "provia", "Legacy JSON preserves filmID")
 

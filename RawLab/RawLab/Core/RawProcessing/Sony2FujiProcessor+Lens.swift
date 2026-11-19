@@ -2,86 +2,46 @@ import RawLabKit
 import Foundation
 import ImageIO
 
-struct LensCandidate: Identifiable, Equatable {
-    let id: String
-    let maker: String
-    let model: String
-    let hasDistortion: Bool
-    let hasTCA: Bool
-    let isMatch: Bool
-    var hasVignetting = false
-    var title: String { model.localizedCaseInsensitiveContains(maker) ? model : "\(maker) \(model)" }
-}
-
-struct LensInfo: Equatable {
-    let state: sony2fuji_lens_state
-    let detectedLens: String
-    let selectedLens: String
-    let appliedDistortion: Bool
-    let appliedTCA: Bool
-    let cropScale: Float
-    let candidates: [LensCandidate]
-    var appliedVignetting = false
-    var sourceMetadata: DisplayLensMetadata? = nil
-    var message: String {
+extension LensMatchState {
+    init(native state: sony2fuji_lens_state) {
         switch state {
-        case SONY2FUJI_LENS_OFF: return L10n.text("镜头校正已关闭")
-        case SONY2FUJI_LENS_MATCHED:
-            let applied = [appliedDistortion ? L10n.text("畸变") : nil, appliedTCA ? L10n.text("横向色差") : nil, appliedVignetting ? L10n.text("暗角校正") : nil].compactMap { $0 }
-            return applied.isEmpty ? L10n.text("已匹配镜头") : L10n.format("已校正%@", applied.joined(separator: " / "))
-        case SONY2FUJI_LENS_NO_DATABASE: return L10n.text("镜头数据库不可用")
-        case SONY2FUJI_LENS_NO_CAMERA: return L10n.text("未找到机身或传感器尺寸信息")
-        case SONY2FUJI_LENS_AMBIGUOUS: return L10n.text("有多个匹配镜头，请手动选择")
-        case SONY2FUJI_LENS_NO_CALIBRATION: return L10n.text("此镜头没有所选校正的标定数据")
-        case SONY2FUJI_LENS_MISSING_FOCAL_LENGTH: return L10n.text("照片缺少有效焦距，未应用校正")
-        case SONY2FUJI_LENS_EMBEDDED_GEOMETRY: return L10n.text("DNG 已执行内嵌 Stage3 处理，未叠加校正")
-        case SONY2FUJI_LENS_UNSUPPORTED_INPUT: return L10n.text("此输入不支持镜头校正")
-        default: return L10n.text("未匹配镜头，请手动选择")
+        case SONY2FUJI_LENS_OFF: self = .off
+        case SONY2FUJI_LENS_MATCHED: self = .matched
+        case SONY2FUJI_LENS_NO_DATABASE: self = .noDatabase
+        case SONY2FUJI_LENS_NO_CAMERA: self = .noCamera
+        case SONY2FUJI_LENS_AMBIGUOUS: self = .ambiguous
+        case SONY2FUJI_LENS_NO_CALIBRATION: self = .noCalibration
+        case SONY2FUJI_LENS_MISSING_FOCAL_LENGTH: self = .missingFocalLength
+        case SONY2FUJI_LENS_EMBEDDED_GEOMETRY: self = .embeddedGeometry
+        case SONY2FUJI_LENS_UNSUPPORTED_INPUT: self = .unsupportedInput
+        default: self = .unmatched
         }
     }
 }
 
-
-struct DisplayLensMetadata: Equatable {
-    let sourceURL: URL
-    var cameraMake = "", cameraModel = "", lensMake = "", lensModel = ""
-    var focalLength: Double = 0, aperture: Double = 0, cropFactor: Double = 0
-    var orientation: Int32 = 1
-
-    static func read(_ url: URL) -> DisplayLensMetadata {
-        var result = DisplayLensMetadata(sourceURL: url)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return result }
-        let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
-        let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
-        let auxiliary = properties[kCGImagePropertyExifAuxDictionary] as? [CFString: Any] ?? [:]
-        func text(_ value: Any?, limit: Int) -> String {
-            let value = (value as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return String(decoding: Array(value.utf8.prefix(limit)), as: UTF8.self)
-        }
-        func number(_ value: Any?) -> Double {
-            guard let number = value as? NSNumber, number.doubleValue.isFinite, number.doubleValue > 0 else { return 0 }
-            return number.doubleValue
-        }
-        result.cameraMake = text(tiff[kCGImagePropertyTIFFMake], limit: 120)
-        result.cameraModel = text(tiff[kCGImagePropertyTIFFModel], limit: 120)
-        result.lensMake = text(exif[kCGImagePropertyExifLensMake], limit: 120)
-        result.lensModel = text(exif[kCGImagePropertyExifLensModel] ?? auxiliary[kCGImagePropertyExifAuxLensModel], limit: 248)
-        result.focalLength = number(exif[kCGImagePropertyExifFocalLength])
-        result.aperture = number(exif[kCGImagePropertyExifFNumber])
-        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.int32Value ?? 1
-        result.orientation = (1...8).contains(orientation) ? orientation : 1
-        return result
+extension LensInfo {
+    init(state: sony2fuji_lens_state, detectedLens: String, selectedLens: String,
+         appliedDistortion: Bool, appliedTCA: Bool, cropScale: Float,
+         candidates: [LensCandidate], appliedVignetting: Bool = false, sourceMetadata: DisplayLensMetadata? = nil) {
+        self.init(
+            state: LensMatchState(native: state),
+            detectedLens: detectedLens,
+            selectedLens: selectedLens,
+            appliedDistortion: appliedDistortion,
+            appliedTCA: appliedTCA,
+            cropScale: cropScale,
+            candidates: candidates,
+            appliedVignetting: appliedVignetting,
+            sourceMetadata: sourceMetadata
+        )
     }
+}
 
+extension DisplayLensMetadata {
     func overriding(_ settings: LensCorrectionSettings) throws -> DisplayLensMetadata {
-        guard settings.focalLength.map({ $0.isFinite && (0.1...10000).contains($0) }) ?? true,
-              settings.cropFactor.map({ $0.isFinite && (0.1...100).contains($0) }) ?? true else {
+        guard let value = applying(settings) else {
             throw Sony2FujiProcessor.ProcessorError.processFailed(L10n.text("无效或不可用的镜头校正设置"))
         }
-        var value = self
-        value.focalLength = settings.focalLength ?? focalLength
-        value.cropFactor = settings.cropFactor ?? cropFactor
         return value
     }
 

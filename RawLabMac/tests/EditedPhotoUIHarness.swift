@@ -28,7 +28,7 @@ import SwiftUI
         }
         UserDefaults.standard.set([photos.path], forKey: "photoFolders")
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
-        let store = try! EditPersistence(directory: editDirectory)
+        let store = try! MacEditPersistence(directory: editDirectory)
         let seeded = root.appendingPathComponent("seeded")
         if !FileManager.default.fileExists(atPath: seeded.path) {
             var edits = Adjustments(); edits.exposureMode = .sensor; edits.exposure = 1.2

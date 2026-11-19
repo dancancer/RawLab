@@ -36,14 +36,7 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchExportModels.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
+ "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \

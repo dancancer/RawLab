@@ -63,7 +63,7 @@ extension EditorModel {
                       case .success(let fitted) = outcome else { return }
                 do {
                     try lookIdentity?.requireCurrent()
-                    var candidate: PhotoEditState?
+                    var candidate: MacPhotoEditState?
                     if fitted.accepted && fitted.quality.passes {
                         var adjusted = original.settings
                         let p = fitted.parameters
@@ -78,7 +78,7 @@ extension EditorModel {
                         adjusted.vibrance = p.vibrance * 100
                         adjusted.clarity = p.clarity * 100
                         adjusted.dehaze = p.dehaze * 100
-                        candidate = PhotoEditState(settings: adjusted, filmID: original.filmID,
+                        candidate = MacPhotoEditState(settings: adjusted, filmID: original.filmID,
                             masterRecipeID: original.masterRecipeID)
                     }
                     let saved = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: fitted.quality)

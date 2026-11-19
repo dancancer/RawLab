@@ -26,13 +26,6 @@ SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
 xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/RecentPhotoStore.swift" \
     "$ROOT/RawLab/RawLab/Core/Persistence/IOSPhotoPreviews.swift" \
     "$ROOT/RawLab/tests/IOSPhotoPreviewTests.swift" \
     -o "$APP/ios-photo-previews"

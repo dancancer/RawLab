@@ -139,7 +139,7 @@ struct BatchExportView: View {
                 ForEach(model.job.items) { item in
                     if let frozen = item.frozen {
                         DisclosureGroup(item.input.lastPathComponent + " · " + L10n.text(frozen.lookName)) {
-                            BatchSettingsSummary(settings: frozen.settings)
+                            MacBatchSettingsSummaryView(settings: frozen.settings)
                         }
                     }
                 }
@@ -154,7 +154,7 @@ struct BatchExportView: View {
                 }
             }
             if model.job.settings.isHDREditing {
-                BatchSettingsSummary(settings:model.job.settings)
+                MacBatchSettingsSummaryView(settings: model.job.settings)
             } else {
             valueRow(L10n.text("曝光"), AdjustmentParameter.exposure.spec.display(model.job.settings.exposure))
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)

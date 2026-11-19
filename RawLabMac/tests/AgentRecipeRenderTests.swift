@@ -251,12 +251,12 @@ private func runAgentParity(_ context: AgentRecipeContext, engine: RenderEngine,
 
 private func runBatchFrozen(_ context: AgentRecipeContext, input: URL, settings: Adjustments,
                             lut: URL?, expected: URL) throws {
-    let journal = BatchJournal(directory: context.root.appendingPathComponent("batch-journal"))
-    var job = BatchExportJob(source: input, settings: settings, look: lut, lookName: "Agent")
+    let journal = MacBatchJournal(directory: context.root.appendingPathComponent("batch-journal"))
+    var job = MacBatchExportJob(source: input, settings: settings, look: lut, lookName: "Agent")
     job.outputDirectory = context.root
     job.format = .png
     job.longEdge = 257
-    var item = try BatchExportItem(url: input)
+    var item = try MacBatchExportItem(url: input)
     item.selected = true
     job.items = [item]
     try journal.save(job)
@@ -265,7 +265,7 @@ private func runBatchFrozen(_ context: AgentRecipeContext, input: URL, settings:
               "batch journal freezes complete settings and output size")
     var calls = 0
     let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: context.lensDatabase)
-    try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
+    try MacBatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
         target, frozen, frozenLook, output in
         calls += 1
         try check(frozen == settings && frozenLook == lut, "batch render receives frozen settings and LUT")
@@ -280,9 +280,9 @@ private func runBatchFrozen(_ context: AgentRecipeContext, input: URL, settings:
 private func runPersistence(_ context: AgentRecipeContext, input: URL, settings: Adjustments,
                             lut: URL?, engine: RenderEngine) throws {
     let directory = context.root.appendingPathComponent("edits")
-    let store = try EditPersistence(directory: directory)
-    try store.save(input, state: PhotoEditState(settings: settings, filmID: "", masterRecipeID: settings.masterRecipeID))
-    let reopened = try EditPersistence(directory: directory)
+    let store = try MacEditPersistence(directory: directory)
+    try store.save(input, state: MacPhotoEditState(settings: settings, filmID: "", masterRecipeID: settings.masterRecipeID))
+    let reopened = try MacEditPersistence(directory: directory)
     guard let restored = try reopened.state(for: input) else { throw fail("edit persistence returned no state") }
     try check(restored.settings == settings && restored.masterRecipeID == settings.masterRecipeID,
               "persistent recipe state restores without mutation")
@@ -380,9 +380,9 @@ struct AgentRecipeRenderTests {
                 let output = try runAgentParity(context, engine: cpu, input: input, settings: settings,
                                                 lut: file, label: id, previewCheck: true)
                 try runBatchFrozen(context, input: input, settings: settings, lut: file, expected: output)
-                let store = try EditPersistence(directory: root.appendingPathComponent("edits-" + id))
+                let store = try MacEditPersistence(directory: root.appendingPathComponent("edits-" + id))
                 let identity = "builtin:" + look.fileName
-                try store.save(input, state: PhotoEditState(settings: settings, filmID: identity, masterRecipeID: nil))
+                try store.save(input, state: MacPhotoEditState(settings: settings, filmID: identity, masterRecipeID: nil))
                 try check(try store.state(for: input)?.filmID == identity, "\(look.name): stable builtin identity persists")
             }
             try check(try OriginalFileIdentity(input) == original, "Source RAW remains unchanged")

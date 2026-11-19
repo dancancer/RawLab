@@ -17,7 +17,6 @@ swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -whole-module-optimizatio
     "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
     "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \
     "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift" \
@@ -30,7 +29,6 @@ if SIM_SDK="$(env -u SDKROOT xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/
     rawlabkit_flags typecheck "$OUT/swiftpm" iphonesimulator 0
     swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -typecheck -swift-version 5 -sdk "$SIM_SDK" -target arm64-apple-ios18.0-simulator \
         -module-cache-path "$OUT/sim-modules" \
-        "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
         "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
         "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
@@ -40,7 +38,6 @@ if SIM_SDK="$(env -u SDKROOT xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/
         "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-        "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
         "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
         "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \

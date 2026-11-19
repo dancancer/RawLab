@@ -24,8 +24,8 @@ struct ResetScenarioTests {
         print("PASS: \(message)")
     }
 
-    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> PhotoEditState {
-        PhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
+    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> MacPhotoEditState {
+        MacPhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
     }
 
     /// 棘轮上限按 `(scenario, field)` 计数，只减不增：
@@ -118,7 +118,7 @@ struct ResetScenarioTests {
 
         let scopeObj = scenario["scope"] as! [String: Any]
         let scope = try resetScope(scopeObj)
-        let resetContext = EditorAdjustmentContext(isRaw: kind == "sdr_raw",
+        let resetContext = MacEditorAdjustmentContext(isRaw: kind == "sdr_raw",
             defaultExposureMode: kind == "sdr_raw" ? .preview : .sensor, neutralFilmID: "")
         let expect = scenario["expect"] as! [String: Any]
         let expectValuesRaw = expect["values"] as! [String: Any]
@@ -131,7 +131,7 @@ struct ResetScenarioTests {
         let before = observed.isEmpty ? [:] : try wireValues(MacAdjustmentTransfer.capture(scope: .custom(observed), snapshot: seeded, context: context))
         let expectValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self,
             from: JSONSerialization.data(withJSONObject: expectValuesRaw))
-        switch EditorAdjustmentRules.prepareReset(scope: scope, snapshot: seeded, context: resetContext) {
+        switch MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: seeded, context: resetContext) {
         case .candidate(let candidate):
             let after = observed.isEmpty ? [:] : try wireValues(MacAdjustmentTransfer.capture(scope: .custom(observed), snapshot: candidate, context: context))
             diffs.append(contentsOf: diffWireValues(before: before, after: after, expectValues: expectValues, untouched: untouched))

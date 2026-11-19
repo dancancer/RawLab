@@ -1,12 +1,15 @@
 import RawLabKit
 import Foundation
 
-enum RenderError: LocalizedError {
+enum RenderError: LocalizedError, BatchRenderError {
     case failed(String)
     case outputIO
     case aiNotReady(String)
     case aiFailed(String)
     case aiCancelled
+
+    var isAICancelled: Bool { if case .aiCancelled = self { return true }; return false }
+    var isOutputIO: Bool { if case .outputIO = self { return true }; return false }
 
     var errorDescription: String? {
         switch self {

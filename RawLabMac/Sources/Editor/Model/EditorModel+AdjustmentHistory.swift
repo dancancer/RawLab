@@ -9,7 +9,7 @@ struct AdjustmentHistoryRequest {
 
 extension EditorModel {
     func requireAdjustmentSession() throws -> AdjustmentTransferSession {
-        if editStore == nil { editStore = try EditPersistence(directory: editDirectory) }
+        if editStore == nil { editStore = try MacEditPersistence(directory: editDirectory) }
         if adjustmentSession == nil { adjustmentSession = AdjustmentTransferSession(store: editStore!) }
         return adjustmentSession!
     }
@@ -22,7 +22,7 @@ extension EditorModel {
     }
 
     // 一个正式提交入口；失败保留当前 UI / 草稿，成功回执成为下一次保存的前态。
-    @discardableResult func commitAdjustment(_ candidate: PhotoEditState,
+    @discardableResult func commitAdjustment(_ candidate: MacPhotoEditState,
                                              clearsProcessingMigration: Bool = false) -> Bool {
         guard let file else { return false }
         do {
@@ -109,7 +109,7 @@ extension EditorModel {
            let file, committedEdit?.identity == saved.identity, adjustmentSession?.isCurrentSave(saved) == true {
             if !quickPresetState.isPreparing { cancelQuickPreset() }
             do {
-                let restored = try saved.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: file, sourceIsHDR: sourceIsHDR), filmID: "")
+                let restored = try saved.state ?? MacPhotoEditState(settings: RenderEngine.defaultSettings(for: file, sourceIsHDR: sourceIsHDR), filmID: "")
                 let previous = committedEdit?.state
                 committedEdit = saved
                 restoreAdjustmentState(restored)
@@ -122,7 +122,7 @@ extension EditorModel {
         }
     }
 
-    func restoreAdjustmentState(_ snapshot: PhotoEditState) {
+    func restoreAdjustmentState(_ snapshot: MacPhotoEditState) {
         let returningToCameraSDR = sourceSupportsCameraHDR && settings.isHDREditing && !snapshot.settings.isHDREditing
         let camera = settings.asShotWhiteBalance, support = settings.supportsRawNoiseReduction
         updatingMetadata = true

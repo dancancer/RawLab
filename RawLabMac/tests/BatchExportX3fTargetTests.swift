@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 enum BatchExportX3fTargetTests {
@@ -31,12 +32,12 @@ enum BatchExportX3fTargetTests {
             try Data(url.lastPathComponent.utf8).write(to: url)
         }
 
-        let normalItem = try BatchExportItem(url: normalTargetURL)
-        let lowerNormalItem = try BatchExportItem(url: lowerNormalTargetURL)
-        let legacyItem = try BatchExportItem(url: legacyTargetURL)
-        let rawItem = try BatchExportItem(url: rawTargetURL)
-        let rasterItem = try BatchExportItem(url: rasterTargetURL)
-        let brokenItem = try BatchExportItem(url: brokenTargetURL)
+        let normalItem = try MacBatchExportItem(url: normalTargetURL)
+        let lowerNormalItem = try MacBatchExportItem(url: lowerNormalTargetURL)
+        let legacyItem = try MacBatchExportItem(url: legacyTargetURL)
+        let rawItem = try MacBatchExportItem(url: rawTargetURL)
+        let rasterItem = try MacBatchExportItem(url: rasterTargetURL)
+        let brokenItem = try MacBatchExportItem(url: brokenTargetURL)
 
         // (a) 源为 legacy、resolver 对目标返回 normal → 模式为 .normal，三个镜头标志与 AI 降噪全 false。
         var legacySource = Adjustments()
@@ -47,7 +48,7 @@ enum BatchExportX3fTargetTests {
             distortion: true, tca: true, autoCrop: false, mode: .manual,
             profileID: "sigma-lens", vignetting: true
         )
-        let legacyJob = BatchExportJob(source: legacySourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        let legacyJob = MacBatchExportJob(source: legacySourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         var probed: [URL] = []
         let resolvedNormal = try legacyJob.snapshot(for: normalItem, resolveX3fMode: { url in
             probed.append(url)
@@ -73,7 +74,7 @@ enum BatchExportX3fTargetTests {
         // 非 X3F RAW 源（默认 x3fMode == .normal，但开启了镜头校正与 AI 降噪）导出到小写 .x3f normal 目标，同样执行 normal 契约。
         var rawSource = legacySource
         rawSource.x3fMode = .normal
-        let rawToNormalJob = BatchExportJob(source: rawSourceURL, settings: rawSource, look: nil, lookName: "Neutral")
+        let rawToNormalJob = MacBatchExportJob(source: rawSourceURL, settings: rawSource, look: nil, lookName: "Neutral")
         let rawToNormal = try rawToNormalJob.snapshot(for: lowerNormalItem, resolveX3fMode: { _ in .normal })
         try check(rawToNormal.settings.x3fMode == .normal &&
                   !rawToNormal.settings.lensSettings.distortion &&
@@ -90,7 +91,7 @@ enum BatchExportX3fTargetTests {
         normalWithLens.lensCorrection = LensCorrectionSettings(
             distortion: true, tca: true, autoCrop: true, mode: .automatic, vignetting: true
         )
-        let normalJob = BatchExportJob(source: normalSourceURL, settings: normalWithLens, look: nil, lookName: "Neutral")
+        let normalJob = MacBatchExportJob(source: normalSourceURL, settings: normalWithLens, look: nil, lookName: "Neutral")
         let resolvedLegacy = try normalJob.snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy })
         try check(resolvedLegacy.settings.x3fMode == .legacy,
                   "normal source exporting to a legacy X3F target resolves x3fMode to .legacy")
@@ -116,7 +117,7 @@ enum BatchExportX3fTargetTests {
         dormantRasterSource.rawNoiseReduction = 2
         dormantRasterSource.aiDenoiseEnabled = true
         dormantRasterSource.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
-        let rasterToX3fJob = BatchExportJob(source: rasterSourceURL, settings: dormantRasterSource, look: nil, lookName: "Mixed")
+        let rasterToX3fJob = MacBatchExportJob(source: rasterSourceURL, settings: dormantRasterSource, look: nil, lookName: "Mixed")
         let rasterToLegacyX3f = try rasterToX3fJob.snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy })
         try check(rasterToLegacyX3f.settings.x3fMode == .legacy &&
                   rasterToLegacyX3f.settings.exposureMode == .preview &&
@@ -139,7 +140,7 @@ enum BatchExportX3fTargetTests {
         rawWithCameraControls.temperature = 5100
         rawWithCameraControls.tint = 19
         rawWithCameraControls.rawNoiseReduction = 2
-        let toRasterJob = BatchExportJob(source: legacySourceURL, settings: rawWithCameraControls, look: nil, lookName: "Raster")
+        let toRasterJob = MacBatchExportJob(source: legacySourceURL, settings: rawWithCameraControls, look: nil, lookName: "Raster")
         let resolvedRaster = try toRasterJob.snapshot(for: rasterItem, resolveX3fMode: { _ in throw ProbeFailure.unexpectedProbe })
         try check(resolvedRaster.settings == rawWithCameraControls.resolvedForRaster &&
                   resolvedRaster.settings.exposureMode == .sensor &&
@@ -164,17 +165,17 @@ enum BatchExportX3fTargetTests {
         // 1) 未被替换但 FOVb 头损坏的 .X3F 目标在 snapshot(for:) 探测时抛错，只将该项标为 .failed，不中断整批，后续目标继续导出。
         let runnerOutput = directory.appendingPathComponent("runner-output")
         try FileManager.default.createDirectory(at: runnerOutput, withIntermediateDirectories: true)
-        let runnerJournal = BatchJournal(directory: directory.appendingPathComponent("runner-journal"))
+        let runnerJournal = MacBatchJournal(directory: directory.appendingPathComponent("runner-journal"))
         let corruptFovbURL = directory.appendingPathComponent("target-corrupt-fovb.X3F")
         try Data("FOVb-corrupt-header".utf8).write(to: corruptFovbURL)
-        var isolatedJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        var isolatedJob = MacBatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         isolatedJob.outputDirectory = runnerOutput
-        var invalidX3fItem = try BatchExportItem(url: corruptFovbURL)
+        var invalidX3fItem = try MacBatchExportItem(url: corruptFovbURL)
         invalidX3fItem.selected = true
-        var validRawItem = try BatchExportItem(url: rawTargetURL)
+        var validRawItem = try MacBatchExportItem(url: rawTargetURL)
         validRawItem.selected = true
         isolatedJob.items = [invalidX3fItem, validRawItem]
-        try BatchExportRunner.run(job: &isolatedJob, journal: runnerJournal, scope: .unfinished,
+        try MacBatchExportRunner.run(job: &isolatedJob, journal: runnerJournal, scope: .unfinished,
                                  shouldCancel: { false }) { _, _, _, destination in
             try Data("rendered".utf8).write(to: destination)
         }
@@ -188,15 +189,15 @@ enum BatchExportX3fTargetTests {
         // 2) 导出前被替换为损坏 FOVb 头的 .X3F 目标先命中 OriginalFileIdentity 校验，报 changedInput 而非 X3F 探测错误，且不影响后续目标。
         let replacedURL = directory.appendingPathComponent("target-replaced.X3F")
         try Data("initial".utf8).write(to: replacedURL)
-        var replacedItem = try BatchExportItem(url: replacedURL)
+        var replacedItem = try MacBatchExportItem(url: replacedURL)
         replacedItem.selected = true
         try Data("FOVb-replaced-corrupt-header".utf8).write(to: replacedURL)
-        var secondRawItem = try BatchExportItem(url: rawTargetURL)
+        var secondRawItem = try MacBatchExportItem(url: rawTargetURL)
         secondRawItem.selected = true
-        var replacedJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        var replacedJob = MacBatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         replacedJob.outputDirectory = runnerOutput
         replacedJob.items = [replacedItem, secondRawItem]
-        try BatchExportRunner.run(job: &replacedJob, journal: runnerJournal, scope: .unfinished,
+        try MacBatchExportRunner.run(job: &replacedJob, journal: runnerJournal, scope: .unfinished,
                                  shouldCancel: { false }) { _, _, _, destination in
             try Data("rendered-after-replaced".utf8).write(to: destination)
         }
@@ -207,14 +208,14 @@ enum BatchExportX3fTargetTests {
                   "replaced X3F target reports changedInput before X3F probing and keeps remaining batch running")
 
         // (f) 生产默认 resolver 优先级：先读目标已保存记录的 x3fMode，缺失或文件身份变化时才回退默认探测。
-        let editStore = try EditPersistence(directory: directory.appendingPathComponent("saved-edits"))
+        let editStore = try MacEditPersistence(directory: directory.appendingPathComponent("saved-edits"))
         let dp2MerrillURL = directory.appendingPathComponent("dp2-merrill-edited-legacy.X3F")
         try Data("FOVb-dp2-merrill".utf8).write(to: dp2MerrillURL)
-        let dp2MerrillItem = try BatchExportItem(url: dp2MerrillURL)
+        let dp2MerrillItem = try MacBatchExportItem(url: dp2MerrillURL)
         var savedLegacyEdit = Adjustments()
         savedLegacyEdit.x3fMode = .legacy
-        try editStore.save(dp2MerrillURL, state: PhotoEditState(settings: savedLegacyEdit, filmID: ""))
-        let savedLegacyResolver = BatchExportJob.x3fModeResolver(store: editStore) { _ in
+        try editStore.save(dp2MerrillURL, state: MacPhotoEditState(settings: savedLegacyEdit, filmID: ""))
+        let savedLegacyResolver = MacBatchExportJob.x3fModeResolver(store: editStore) { _ in
             throw ProbeFailure.unexpectedProbe
         }
         let dp2FromLegacyBatch = try legacyJob.snapshot(for: dp2MerrillItem, resolveX3fMode: savedLegacyResolver)
@@ -227,13 +228,13 @@ enum BatchExportX3fTargetTests {
 
         let savedNormalURL = directory.appendingPathComponent("sd15-edited-normal.X3F")
         try Data("sd15-legacy-header".utf8).write(to: savedNormalURL)
-        let savedNormalItem = try BatchExportItem(url: savedNormalURL)
+        let savedNormalItem = try MacBatchExportItem(url: savedNormalURL)
         var savedNormalEdit = Adjustments()
         savedNormalEdit.x3fMode = .normal
-        try editStore.save(savedNormalURL, state: PhotoEditState(settings: savedNormalEdit, filmID: ""))
+        try editStore.save(savedNormalURL, state: MacPhotoEditState(settings: savedNormalEdit, filmID: ""))
         let savedNormalSnapshot = try legacyJob.snapshot(
             for: savedNormalItem,
-            resolveX3fMode: BatchExportJob.x3fModeResolver(store: editStore) { _ in .legacy }
+            resolveX3fMode: MacBatchExportJob.x3fModeResolver(store: editStore) { _ in .legacy }
         )
         try check(savedNormalSnapshot.settings.x3fMode == .normal &&
                   !savedNormalSnapshot.settings.lensSettings.isEnabled &&
@@ -241,7 +242,7 @@ enum BatchExportX3fTargetTests {
                   "saved normal X3F edit overrides legacy file default and enforces normal contract")
 
         var fallbackProbes: [URL] = []
-        let fallbackResolver = BatchExportJob.x3fModeResolver(store: editStore) { url in
+        let fallbackResolver = MacBatchExportJob.x3fModeResolver(store: editStore) { url in
             fallbackProbes.append(url)
             return .normal
         }
@@ -250,19 +251,19 @@ enum BatchExportX3fTargetTests {
                   "unedited X3F target falls back to default mode probe when no saved record exists")
 
         try Data("FOVb-dp2-merrill-rewritten".utf8).write(to: dp2MerrillURL)
-        let rewrittenDp2Item = try BatchExportItem(url: dp2MerrillURL)
+        let rewrittenDp2Item = try MacBatchExportItem(url: dp2MerrillURL)
         fallbackProbes.removeAll()
         let rewrittenSnapshot = try legacyJob.snapshot(for: rewrittenDp2Item, resolveX3fMode: fallbackResolver)
         try check(fallbackProbes == [rewrittenDp2Item.input] && rewrittenSnapshot.settings.x3fMode == .normal,
                   "stale edit record with mismatched file identity falls back to default mode probe")
 
         // (g) 消除重复探测：journal 清理直接复用 job.format.suffix，导出回调直接复用已冻结的 snapshot。
-        let cleanupJournal = BatchJournal(directory: directory.appendingPathComponent("cleanup-journal"))
-        var cleanupJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        let cleanupJournal = MacBatchJournal(directory: directory.appendingPathComponent("cleanup-journal"))
+        var cleanupJob = MacBatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         cleanupJob.outputDirectory = runnerOutput
         cleanupJob.format = .png
         cleanupJob.started = true
-        var interruptedCorruptItem = try BatchExportItem(url: corruptFovbURL)
+        var interruptedCorruptItem = try MacBatchExportItem(url: corruptFovbURL)
         interruptedCorruptItem.selected = true
         interruptedCorruptItem.status = .running
         cleanupJob.items = [interruptedCorruptItem]
@@ -279,15 +280,15 @@ enum BatchExportX3fTargetTests {
                   "BatchJournal.discard cleans uniform temp files via job.format.suffix without probing X3F headers")
 
         var singleProbeCount = 0
-        var singleProbeJob = BatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
+        var singleProbeJob = MacBatchExportJob(source: rawSourceURL, settings: legacySource, look: nil, lookName: "Neutral")
         singleProbeJob.outputDirectory = runnerOutput
         singleProbeJob.format = .png
         singleProbeJob.longEdge = 1024
-        var singleProbeItem = try BatchExportItem(url: normalTargetURL)
+        var singleProbeItem = try MacBatchExportItem(url: normalTargetURL)
         singleProbeItem.selected = true
         singleProbeJob.items = [singleProbeItem]
-        var capturedSnapshot: BatchFrozenSettings?
-        try BatchExportRunner.runSnapshots(
+        var capturedSnapshot: MacBatchFrozenSettings?
+        try MacBatchExportRunner.runSnapshots(
             job: &singleProbeJob,
             journal: runnerJournal,
             scope: .unfinished,
@@ -316,7 +317,7 @@ enum BatchExportX3fTargetTests {
                   legacyAsShot.temperature == 5100 &&
                   legacyAsShot.tint == 16,
                   "legacy source asShot stores camera Kelvin/tint metadata")
-        let legacyAsShotToNormal = try BatchExportJob(
+        let legacyAsShotToNormal = try MacBatchExportJob(
             source: legacySourceURL, settings: legacyAsShot, look: nil, lookName: "WB"
         ).snapshot(for: normalItem, resolveX3fMode: { _ in .normal }).settings
         var normalAsShotRequest = sony2fuji_request()
@@ -331,7 +332,7 @@ enum BatchExportX3fTargetTests {
         var legacyCustomWB = legacyAsShot
         legacyCustomWB.set(.temperature, to: 5400)
         legacyCustomWB.set(.tint, to: 18)
-        let legacyCustomToNormal = try BatchExportJob(
+        let legacyCustomToNormal = try MacBatchExportJob(
             source: legacySourceURL, settings: legacyCustomWB, look: nil, lookName: "WB"
         ).snapshot(for: normalItem, resolveX3fMode: { _ in .normal }).settings
         var normalCustomRequest = sony2fuji_request()
@@ -350,7 +351,7 @@ enum BatchExportX3fTargetTests {
         normalCustomWB.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 0))
         normalCustomWB.set(.temperature, to: 7200)
         normalCustomWB.set(.tint, to: -12)
-        let normalCustomToLegacy = try BatchExportJob(
+        let normalCustomToLegacy = try MacBatchExportJob(
             source: normalSourceURL, settings: normalCustomWB, look: nil, lookName: "WB"
         ).snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy }).settings
         var legacyCustomRequest = sony2fuji_request()
@@ -367,7 +368,7 @@ enum BatchExportX3fTargetTests {
         var normalAsShotWB = Adjustments()
         normalAsShotWB.x3fMode = .normal
         normalAsShotWB.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 0))
-        let normalAsShotToLegacy = try BatchExportJob(
+        let normalAsShotToLegacy = try MacBatchExportJob(
             source: normalSourceURL, settings: normalAsShotWB, look: nil, lookName: "WB"
         ).snapshot(for: legacyItem, resolveX3fMode: { _ in .legacy }).settings
         var legacyAsShotRequest = sony2fuji_request()

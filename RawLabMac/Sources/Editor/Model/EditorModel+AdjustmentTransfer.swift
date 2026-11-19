@@ -97,7 +97,7 @@ extension EditorModel {
             for url in urls {
                 if shouldCancel() { break }
                 guard url.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource,
-                      excludingIdentity == nil || (try? BatchExportItem.resourceKey(url)) != excludingIdentity else { continue }
+                      excludingIdentity == nil || (try? MacBatchExportItem.resourceKey(url)) != excludingIdentity else { continue }
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path
                 let collectionPhoto = collection ? photos.values.first { $0.url.path == path } : nil
                 let sourceIsHDR = Result { path == activePath ? activeHDR : try probeHDRSource(url, {}) != nil }
@@ -125,12 +125,12 @@ extension EditorModel {
                           !lens.distortion || info.appliedDistortion,
                           !lens.tca || info.appliedTCA, !lens.vignetting || info.appliedVignetting else { throw AdjustmentTransferError.incompatible("lens calibration") }
                 }
-                targets.append(AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
+                targets.append(AdjustmentTransferTarget(url: url, defaultState: MacPhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
                     isCurrent: { [weak self] in
                         let check = {
                             guard let self, self.sourceRevision == source else { return false }
                             guard path != excludingSource else { return false }
-                            if let excludingIdentity, (try? BatchExportItem.resourceKey(url)) == excludingIdentity { return false }
+                            if let excludingIdentity, (try? MacBatchExportItem.resourceKey(url)) == excludingIdentity { return false }
                             if collection {
                                 guard let collectionPhoto, (try? collectionPhoto.validate()) != nil else { return false }
                             }
@@ -155,7 +155,7 @@ extension EditorModel {
                         hydrated.settings.resolveRawNoiseReductionSupport(frame.supportsRawNoiseReduction)
                         return hydrated
                     }, resolveDefaultState: {
-                        try PhotoEditState(settings: RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get()), filmID: "")
+                        try MacPhotoEditState(settings: RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get()), filmID: "")
                     }))
             }
             return targets

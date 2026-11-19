@@ -7,7 +7,6 @@ trap 'rm -rf "$OUT"' EXIT
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -D DEBUG -sdk "$SDK" \
-    "$ROOT/RawLab/RawLab/Core/Usage/RUMConfiguration.swift" \
     "$ROOT/RawLab/RawLab/Core/Usage/RUMUsageTransport.swift" \
     "$ROOT/RawLab/tests/RUMTransportTests.swift" \
     -o "$OUT/tests"

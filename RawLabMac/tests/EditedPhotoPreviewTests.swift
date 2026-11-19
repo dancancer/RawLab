@@ -23,11 +23,11 @@ import Combine
         defer { try? FileManager.default.removeItem(at: root) }
         let photo = root.appendingPathComponent("photo.jpg")
         try Data([1, 2, 3]).write(to: photo)
-        let store = try EditPersistence(directory: root.appendingPathComponent("edits"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("edits"))
         let original = try store.readState(for: photo)
         check(!MacPhotoPreviewPlan.isEdited(original))
         var settings = Adjustments(); settings.exposureMode = .sensor
-        let defaults = PhotoEditState(settings: settings, filmID: "")
+        let defaults = MacPhotoEditState(settings: settings, filmID: "")
         try store.save(photo, state: defaults)
         check(!MacPhotoPreviewPlan.isEdited(try store.readState(for: photo)))
         settings.exposure = 1
@@ -40,13 +40,13 @@ import Combine
         check(try !first.isCurrent(in: store, films: []))
         check(!MacPhotoPreviewPlan.isEdited(try store.readState(for: photo)))
         var turn = GeometrySettings(); turn.quarterTurns = 1; settings.geometry = turn
-        let geometry = PhotoEditRecord(identity: edited.identity, state: .init(settings: settings, filmID: ""))
+        let geometry = MacPhotoEditRecord(identity: edited.identity, state: .init(settings: settings, filmID: ""))
         check(try MacPhotoPreviewPlan(record: geometry, films: []).key != first.key)
         let lut = root.appendingPathComponent("look.cube")
         try Data("first".utf8).write(to: lut)
-        let lookState = PhotoEditState(settings: settings, filmID: "look")
+        let lookState = MacPhotoEditState(settings: settings, filmID: "look")
         let film = Film(name: "Test", url: lut, managedID: "look")
-        let lookRecord = PhotoEditRecord(identity: edited.identity, state: lookState)
+        let lookRecord = MacPhotoEditRecord(identity: edited.identity, state: lookState)
         let before = try MacPhotoPreviewPlan(record: lookRecord, films: [film])
         try Data("second".utf8).write(to: lut)
         check(try MacPhotoPreviewPlan(record: lookRecord, films: [film]).key != before.key)
@@ -258,21 +258,21 @@ import Combine
         // M-N3: EditPersistence.editedRevision and MacPhotoPreviewPlan.isEditedState share raster classification.
         var sensorNeutral = Adjustments()
         sensorNeutral.exposureMode = .sensor
-        let sensorState = PhotoEditState(settings: sensorNeutral, filmID: "")
+        let sensorState = MacPhotoEditState(settings: sensorNeutral, filmID: "")
         var modified = Adjustments()
         modified.exposure = 0.5
-        let modifiedState = PhotoEditState(settings: modified, filmID: "")
+        let modifiedState = MacPhotoEditState(settings: modified, filmID: "")
         for ext in ["tiff", "tif", "heic"] {
             let path = "/tmp/mn3-sample.\(ext)"
             let url = URL(fileURLWithPath: path)
             check(PhotoInputClassification.isRasterInput(url) && RenderEngine.isRasterInput(url),
                   "\(ext) is classified as raster on both paths")
             check(MacPhotoPreviewPlan.isEditedState(sensorState, atPath: path) ==
-                  (EditPersistence.editedRevision(for: sensorState, atPath: path) != nil) &&
+                  (MacEditPersistence.editedRevision(for: sensorState, atPath: path) != nil) &&
                   !MacPhotoPreviewPlan.isEditedState(sensorState, atPath: path),
                   "Neutral .sensor state is unedited for \(ext) on both paths")
             check(MacPhotoPreviewPlan.isEditedState(modifiedState, atPath: path) ==
-                  (EditPersistence.editedRevision(for: modifiedState, atPath: path) != nil) &&
+                  (MacEditPersistence.editedRevision(for: modifiedState, atPath: path) != nil) &&
                   MacPhotoPreviewPlan.isEditedState(modifiedState, atPath: path),
                   "Exposure-modified state is edited for \(ext) on both paths")
         }
@@ -281,7 +281,7 @@ import Combine
         check(!PhotoInputClassification.isRasterInput(rawURL) && !RenderEngine.isRasterInput(rawURL),
               "ARW is classified as non-raster on both paths")
         check(MacPhotoPreviewPlan.isEditedState(sensorState, atPath: rawPath) ==
-              (EditPersistence.editedRevision(for: sensorState, atPath: rawPath) != nil) &&
+              (MacEditPersistence.editedRevision(for: sensorState, atPath: rawPath) != nil) &&
               MacPhotoPreviewPlan.isEditedState(sensorState, atPath: rawPath),
               "RAW .sensor state differs from default .preview on both paths")
     }

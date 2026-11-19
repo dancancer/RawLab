@@ -134,7 +134,6 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
     -F "$PLAT/Developer/Library/Frameworks" -F "$PLAT/Developer/Library/PrivateFrameworks" \
     -L "$PLAT/Developer/usr/lib" -framework XCTest \
     -lXCTestSwiftSupport -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @loader_path/../../Frameworks \
-    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
     "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
@@ -144,7 +143,6 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
     "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
     "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \

@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -23,7 +24,7 @@ import SwiftUI
         model.updatingMetadata = true
         model.file = photo; model.settings = old
         model.updatingMetadata = false
-        try model.editStore!.save(photo, state: PhotoEditState(settings: old, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: old, filmID: ""))
         model.committedEdit = try model.editStore!.readState(for: photo)
         model.result = try RenderEngine().render(photo, settings: old, lut: nil, edge: nil)
         model.dirty = false

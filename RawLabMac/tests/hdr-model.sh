@@ -9,8 +9,7 @@ swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" \
     "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
     "$ROOT/RawLabMac/tests/HDRModelTests.swift" \
     -framework Foundation -framework ImageIO -o "$BUILD/hdr-model"
 "$BUILD/hdr-model"

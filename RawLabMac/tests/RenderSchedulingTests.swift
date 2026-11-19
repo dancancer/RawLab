@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 private struct Work: Equatable {

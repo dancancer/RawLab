@@ -17,8 +17,8 @@ struct IOSLensControls: View {
         if tca ? lens.tca : lens.distortion { return true }
         if let info {
             switch info.state {
-            case SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH,
-                 SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT: return false
+            case .noDatabase, .noCamera, .missingFocalLength,
+                 .embeddedGeometry, .unsupportedInput: return false
             default: break
             }
         }
@@ -27,8 +27,8 @@ struct IOSLensControls: View {
     private func correctionReason(tca: Bool) -> String {
         guard let info else { return L10n.text("镜头信息尚未就绪") }
         switch info.state {
-        case SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH,
-             SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT: return info.message
+        case .noDatabase, .noCamera, .missingFocalLength,
+             .embeddedGeometry, .unsupportedInput: return info.message
         default: break
         }
         guard candidate != nil else { return L10n.text("未匹配镜头，请手动选择") }
@@ -62,7 +62,7 @@ struct IOSLensControls: View {
                 .disabled(!correctionEnabled(tca: true))
                 .accessibilityHint(correctionReason(tca: true))
             Toggle(L10n.text("暗角校正"), isOn: value(\.vignetting)).frame(minHeight: 44).accessibilityIdentifier("lens.vignetting")
-                .disabled(!lens.vignetting && (candidate?.hasVignetting != true || info.map { [SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA, SONY2FUJI_LENS_MISSING_FOCAL_LENGTH, SONY2FUJI_LENS_EMBEDDED_GEOMETRY, SONY2FUJI_LENS_UNSUPPORTED_INPUT].contains($0.state) } == true))
+                .disabled(!lens.vignetting && (candidate?.hasVignetting != true || info.map { [LensMatchState.noDatabase, .noCamera, .missingFocalLength, .embeddedGeometry, .unsupportedInput].contains($0.state) } == true))
             Toggle(L10n.text("自动裁边"), isOn: value(\.autoCrop)).frame(minHeight: 44).accessibilityIdentifier("lens.crop")
             Button { choosingProfile = true } label: {
                 HStack {

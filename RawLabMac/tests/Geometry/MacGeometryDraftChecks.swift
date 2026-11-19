@@ -247,11 +247,11 @@ extension MacGeometryDraftTests {
     }
 
     static func batchGuard(raw: URL, output: URL, settings: Adjustments) throws {
-        var job = BatchExportJob(source: raw, settings: settings, look: nil, lookName: "Neutral")
-        var item = try BatchExportItem(url: raw)
+        var job = MacBatchExportJob(source: raw, settings: settings, look: nil, lookName: "Neutral")
+        var item = try MacBatchExportItem(url: raw)
         item.selected = true; job.items = [item]
         job.outputDirectory = output.appendingPathComponent("batch-output", isDirectory: true)
-        let batch = BatchExportModel(job: job, journal: BatchJournal(directory: output.appendingPathComponent("guard-batch")))
+        let batch = BatchExportModel(job: job, journal: MacBatchJournal(directory: output.appendingPathComponent("guard-batch")))
         try check(batch.canRun, "a configured batch otherwise satisfies every run prerequisite")
         batch.sourceEditingGeometry = true
         batch.start()
@@ -473,7 +473,7 @@ extension MacGeometryDraftTests {
         try check(saved(a, directory: edits) == committed && Data(contentsOf: edits.appendingPathComponent("edits.json")) == record,
                   "restoring storage after Cancel reveals the unchanged committed edit")
 
-        let target = try EditPersistence(directory: edits).state(for: b)?.settings ?? Adjustments()
+        let target = try MacEditPersistence(directory: edits).state(for: b)?.settings ?? Adjustments()
         try check(model.beginGeometryDraft(tab: .crop), "failed pending Apply then Discard transaction opens")
         try wait(model, draft: true, "failed pending Apply then Discard draft")
         model.setGeometryDraftParameter(.cropWidth, to: 0.75)

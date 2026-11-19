@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 import Vision
@@ -183,7 +184,7 @@ struct LookImportModelTests {
         check(reloadedBatch.selectedFilmID == recentFilm.id && reloadedBatch.recentLooks == recentSnapshot,
             "Filtering does not change the selected look or saved-use history")
         let realStore = reloadedBatch.editStore, realSession = reloadedBatch.adjustmentSession
-        let failingStore = try EditPersistence(directory: edits) { _, _ in throw CocoaError(.fileWriteNoPermission) }
+        let failingStore = try MacEditPersistence(directory: edits) { _, _ in throw CocoaError(.fileWriteNoPermission) }
         reloadedBatch.editStore = failingStore; reloadedBatch.adjustmentSession = AdjustmentTransferSession(store: failingStore)
         let secondFilm = reloadedBatch.films.first { $0.id != recentFilm.id && $0.managedID != nil && $0.url.pathExtension == "cube" }!
         reloadedBatch.selectFilm(secondFilm.id)

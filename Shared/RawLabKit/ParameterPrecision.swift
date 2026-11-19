@@ -1,0 +1,151 @@
+import Foundation
+
+/// Precision is expressed in the units shown in the editor, not engine units.
+public enum ParameterPrecision: Sendable {
+    case standard, exposure, temperature, cropPercent, curveCoordinate
+
+    public var scale: Double {
+        switch self {
+        case .standard: return 10
+        case .exposure, .cropPercent: return 100
+        case .temperature: return 0.1
+        case .curveCoordinate: return 1000
+        }
+    }
+    public var normalStep: Double {
+        switch self {
+        case .standard: return 1
+        case .exposure, .cropPercent: return 0.1
+        case .temperature: return 100
+        case .curveCoordinate: return 0.01
+        }
+    }
+    public var fineStep: Double { 1 / scale }
+
+    public func clamped(_ value: Double, in range: ClosedRange<Double>) -> Double {
+        min(range.upperBound, max(range.lowerBound, value))
+    }
+
+    public func snapped(_ value: Double, in range: ClosedRange<Double>) -> Double {
+        let bounded = clamped(value, in: range)
+        return clamped((bounded * scale).rounded() / scale, in: range)
+    }
+
+    public func stepped(_ value: Double, direction: Int, fine: Bool, in range: ClosedRange<Double>) -> Double {
+        // Add integer grid ticks to avoid accumulating binary floating-point error.
+        let ticks = (clamped(value, in: range) * scale).rounded()
+        let increment = ((fine ? fineStep : normalStep) * scale).rounded()
+        return clamped((ticks + Double(direction) * increment) / scale, in: range)
+    }
+
+    public func text(_ value: Double, signed: Bool = false) -> String {
+        let clean = abs(value) < 0.005 ? 0 : value
+        let decimals: Int
+        switch self {
+        case .exposure, .cropPercent, .curveCoordinate: decimals = 2
+        case .temperature: decimals = 0
+        case .standard: decimals = abs(clean - clean.rounded()) < 0.0000001 ? 0 : 1
+        }
+        let ordinary = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), decimals, clean)
+        // 显示精度独立于保存和输入精度，历史值最多显示两位小数。
+        var result = Double(ordinary) == clean ? ordinary : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), clean)
+        if self == .cropPercent {
+            result = result.replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+        }
+        return signed && clean > 0 ? "+" + result : result
+    }
+
+    public var fineStepText: String { self == .curveCoordinate ? "1/1000" : text(fineStep) }
+
+    public func accepts(_ value: Double, original: Double, in range: ClosedRange<Double>) -> Bool {
+        guard value.isFinite, range.contains(value) else { return false }
+        if value == original { return true }
+        if self == .curveCoordinate { return true }
+        let ticks = value * scale
+        return value == ticks.rounded() / scale
+    }
+
+    public func parse(_ draft: String) -> Double? {
+        guard let value = Double(draft.trimmingCharacters(in: .whitespacesAndNewlines)), value.isFinite else { return nil }
+        return value
+    }
+
+    public func isUnchangedDisplay(_ draft: String, original: Double) -> Bool {
+        guard let parsed = parse(draft) else { return false }
+        return parsed == parse(text(original))
+    }
+}
+
+public enum ParameterSliderMapping: Sendable {
+    case linear, reciprocalKelvin
+
+    public func position(for value: Double, in range: ClosedRange<Double>) -> Double {
+        let bounded = min(range.upperBound, max(range.lowerBound, value))
+        let position: Double
+        switch self {
+        case .linear: position = (bounded - range.lowerBound) / (range.upperBound - range.lowerBound)
+        case .reciprocalKelvin:
+            position = (1 / range.lowerBound - 1 / bounded) / (1 / range.lowerBound - 1 / range.upperBound)
+        }
+        return position.isFinite ? min(1, max(0, position)) : 0
+    }
+
+    public func fill(from defaultValue: Double, to value: Double, in range: ClosedRange<Double>) -> ClosedRange<Double> {
+        let origin = position(for: defaultValue, in: range)
+        let current = position(for: value, in: range)
+        return min(origin, current)...max(origin, current)
+    }
+
+    public func value(at position: Double, in range: ClosedRange<Double>) -> Double {
+        let position = min(1, max(0, position))
+        switch self {
+        case .linear: return range.lowerBound + position * (range.upperBound - range.lowerBound)
+        case .reciprocalKelvin:
+            return 1 / (1 / range.lowerBound - position * (1 / range.lowerBound - 1 / range.upperBound))
+        }
+    }
+}
+
+/// Per-field wheel state. No delayed work or residual steps are scheduled.
+public struct ParameterWheelAccumulator: Sendable {
+    public enum Result: Equatable, Sendable { case pass, consume, step(Int) }
+    private var remainder = 0.0
+    private var lastEvent: TimeInterval?
+    private var lastAccepted: TimeInterval?
+    private var direction = 0
+    private var fine = false
+
+    public init() {}
+
+    public mutating func reset() { self = Self() }
+
+    public mutating func handle(verticalPixels: Double, timestamp: TimeInterval, fine: Bool,
+                                editable: Bool, validValue: Bool, momentum: Bool = false, discrete: Bool = false) -> Result {
+        guard editable, validValue, verticalPixels.isFinite, timestamp.isFinite else {
+            reset()
+            return .pass
+        }
+        guard verticalPixels != 0 else { return .pass }
+        let newDirection = verticalPixels > 0 ? 1 : -1
+        if let lastEvent, timestamp - lastEvent >= 0.2 || timestamp < lastEvent {
+            remainder = 0
+        }
+        if newDirection != direction || fine != self.fine { remainder = 0 }
+        lastEvent = timestamp
+        direction = newDirection
+        self.fine = fine
+        if momentum { remainder = 0; return .consume }
+        if discrete {
+            remainder = 0
+            lastAccepted = nil
+            return .step(newDirection)
+        }
+        // Cap spikes so a large mouse event cannot leave queued steps behind.
+        remainder += min(80, abs(verticalPixels)) * Double(newDirection)
+        guard abs(remainder) >= 80 else { return .consume }
+        remainder = 0
+        guard lastAccepted == nil || timestamp - lastAccepted! >= 0.125 else { return .consume }
+        lastAccepted = timestamp
+        return .step(newDirection)
+    }
+}

@@ -33,7 +33,7 @@ import SwiftUI
     }
 
     static func saved(_ raw: URL, directory: URL) throws -> Adjustments {
-        guard let state = try EditPersistence(directory: directory).state(for: raw) else {
+        guard let state = try MacEditPersistence(directory: directory).state(for: raw) else {
             throw Failure(description: "Missing persisted edit for \(raw.lastPathComponent)")
         }
         return state.settings

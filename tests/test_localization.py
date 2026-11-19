@@ -15,6 +15,47 @@ sys.path.insert(0, str(ROOT / "scripts/localization"))
 import formats
 SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
                         if "tests" not in path.relative_to(ROOT / "Shared").parts]
+SHARED_CLIENT_SCOPED_SWIFT = {
+    "RawLabMac": {
+        "HistogramPresentation.swift",
+        "MacAdjustmentTransfer.swift",
+        "MacAdjustmentTransferSession.swift",
+        "MacAdjustmentTypes.swift",
+        "MacAdjustments.swift",
+        "MacBatchExport.swift",
+        "MacEditPersistence.swift",
+        "MacEditorAdjustmentRules.swift",
+        "MacExportFormat.swift",
+        "MacFilm.swift",
+        "ParameterPrecision.swift",
+        "RenderScheduling.swift",
+    },
+    "RawLab/RawLab": {
+        "AdjustmentKind.swift",
+        "BatchSettingsSummary.swift",
+        "EditorAdjustmentRules.swift",
+        "EditorToolDraft.swift",
+        "ExportEvidenceStore.swift",
+        "ExportSize.swift",
+        "FileDigestCache.swift",
+        "FilmPresentation.swift",
+        "IOSAdjustmentTransfer.swift",
+        "IOSAdjustmentTransferSession.swift",
+        "IOSBatchExport.swift",
+        "IOSBatchSelection.swift",
+        "PhotoEditPersistence.swift",
+        "PhotoSourceFile.swift",
+        "RawSettings.swift",
+        "RecentPhotoStore.swift",
+        "RetentionPolicy.swift",
+    },
+}
+
+
+def shared_swift_sources_for(client):
+    excluded = set().union(*(files for owner, files in SHARED_CLIENT_SCOPED_SWIFT.items() if owner != client))
+    return [path for path in SHARED_SWIFT_SOURCES
+            if path.parent.name != "RawLabKit" or path.name not in excluded]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
 APPLE_PRINTF = re.compile(r"%(?:(\d+)\$)?([-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc])", re.I)
@@ -343,7 +384,7 @@ class LocalizationTests(unittest.TestCase):
                             for lang in LANGUAGES}
                 self.assert_parity(catalogs, apple_placeholders)
                 missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                                  for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+                                  for source in list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
                                   for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
                                   if json.loads('"' + raw + '"') not in catalogs["en"]})
                 self.assertEqual(missing, [], client)
@@ -353,7 +394,7 @@ class LocalizationTests(unittest.TestCase):
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():
             catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
-            files = list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+            files = list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")

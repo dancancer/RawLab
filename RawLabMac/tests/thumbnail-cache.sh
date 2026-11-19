@@ -18,15 +18,7 @@ swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 
     "$ROOT/Shared/AtmosphereNative.swift" \
     "$ROOT/Shared/ColorGradingNative.swift" \
     "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/MacAdjustmentTransferWB.swift" \
-    "$ROOT/RawLabMac/Sources/Looks/Film.swift" \
-    "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
-    "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" \
-    "$ROOT/RawLabMac/Sources/Editor/Storage/AdjustmentTransferSession.swift" \
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowserState.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" \

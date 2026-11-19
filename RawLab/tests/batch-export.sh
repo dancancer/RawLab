@@ -8,18 +8,7 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchExportModels.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Storage/BatchExportStorage.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Execution/BatchExportRunner.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Model/BatchSettingsSummary.swift" \
     "$ROOT/RawLab/tests/ImportState/BatchSourceJournalTests.swift" \
-    "$ROOT/RawLab/RawLab/Core/Batch/Model/IOSBatchSelection.swift" \
     "$ROOT/RawLab/tests/BatchSelectionTests.swift" \
     "$ROOT/RawLab/tests/BatchExportTests.swift" \
     -o "$OUT/batch-export"

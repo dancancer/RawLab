@@ -122,9 +122,9 @@ func runRasterCase(_ context: RasterContext, fixture: RasterFixture,
 func runPersistence(_ context: RasterContext, input: URL, settings: Adjustments,
                             expected: URL, engine: RenderEngine) throws {
     let directory = context.root.appendingPathComponent("raster-edits")
-    let store = try EditPersistence(directory: directory)
-    try store.save(input, state: PhotoEditState(settings: settings, filmID: "raster", masterRecipeID: nil))
-    let reopened = try EditPersistence(directory: directory)
+    let store = try MacEditPersistence(directory: directory)
+    try store.save(input, state: MacPhotoEditState(settings: settings, filmID: "raster", masterRecipeID: nil))
+    let reopened = try MacEditPersistence(directory: directory)
     guard let restored = try reopened.state(for: input) else { throw fail("raster edit persistence returned no state") }
     try check(restored.settings == settings, "raster persistence restores all settings")
     let output = context.root.appendingPathComponent("raster-persisted.png")
@@ -135,14 +135,14 @@ func runPersistence(_ context: RasterContext, input: URL, settings: Adjustments,
 func runMixedBatch(_ context: RasterContext, raster: URL, expectedRaster: URL,
                            settings: Adjustments, engine: RenderEngine) throws {
     let directory = context.root.appendingPathComponent("raster-batch")
-    let journal = BatchJournal(directory: context.root.appendingPathComponent("raster-batch-journal"))
-    var job = BatchExportJob(source: context.raw, settings: settings, look: nil, lookName: "Raster")
+    let journal = MacBatchJournal(directory: context.root.appendingPathComponent("raster-batch-journal"))
+    var job = MacBatchExportJob(source: context.raw, settings: settings, look: nil, lookName: "Raster")
     job.outputDirectory = directory
     job.format = .png
     job.longEdge = 48
-    var rawItem = try BatchExportItem(url: context.raw)
+    var rawItem = try MacBatchExportItem(url: context.raw)
     rawItem.selected = true
-    var rasterItem = try BatchExportItem(url: raster)
+    var rasterItem = try MacBatchExportItem(url: raster)
     rasterItem.selected = true
     job.items = [rawItem, rasterItem]
     try journal.save(job)
@@ -152,7 +152,7 @@ func runMixedBatch(_ context: RasterContext, raster: URL, expectedRaster: URL,
               "mixed RAW+raster batch freezes both inputs and settings")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     var calls = 0
-    try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
+    try MacBatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
         input, frozenSettings, _, output in
         calls += 1
         _ = try engine.render(input, settings: frozenSettings, lut: nil, edge: nil,

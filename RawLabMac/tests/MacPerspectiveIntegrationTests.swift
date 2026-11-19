@@ -196,10 +196,10 @@ import Darwin
 
     static func persistenceChecks(raw: URL, output: URL, settings: Adjustments, expected: RenderedImage, edge: Int) throws {
         let directory = output.appendingPathComponent("edits", isDirectory: true)
-        let store = try EditPersistence(directory: directory)
-        let state = PhotoEditState(settings: settings, filmID: "")
+        let store = try MacEditPersistence(directory: directory)
+        let state = MacPhotoEditState(settings: settings, filmID: "")
         try store.save(raw, state: state)
-        let reopened = try EditPersistence(directory: directory)
+        let reopened = try MacEditPersistence(directory: directory)
         guard let restored = try reopened.state(for: raw) else { throw RenderError.failed("missing restored perspective edit") }
         try check(restored == state && restored.settings.geometrySettings.perspectiveHorizontal == 0.6 &&
                   restored.settings.geometrySettings.perspectiveVertical == -0.4,
@@ -211,7 +211,7 @@ import Darwin
         var reset = restored
         reset.settings.reset(.geometry)
         try reopened.save(raw, state: reset)
-        let cleared = try EditPersistence(directory: directory).state(for: raw)
+        let cleared = try MacEditPersistence(directory: directory).state(for: raw)
         try check(cleared?.settings.geometry == nil, "saved geometry reset reopens with identity perspective")
     }
 

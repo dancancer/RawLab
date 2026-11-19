@@ -14,7 +14,6 @@ for mode in default rum local; do
     if [[ "$mode" == local ]]; then flags+=(-D RAWLAB_RUM_LOCAL); rum_local=1; fi
     rawlabkit_flags link "$OUT/swiftpm" macos "$rum_local"
     swiftc "${flags[@]}" "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
-        "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
         "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
         "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
         "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" \
