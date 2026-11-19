@@ -26,9 +26,9 @@ import Combine
         let ordinary = try RenderEngine()
         _ = try ordinary.render(raw, settings: Adjustments(), lut: nil, edge: nil, output: raster, exportLongEdge: 128)
         var settings = Adjustments(); settings.aiDenoiseEnabled = true
-        var job = BatchExportJob(source: raw, settings: settings, look: nil, lookName: "Neutral")
+        var job = MacBatchExportJob(source: raw, settings: settings, look: nil, lookName: "Neutral")
         job.outputDirectory = output; job.longEdge = 512; job.format = .png
-        let batch = BatchExportModel(job: job, journal: BatchJournal(directory: root.appendingPathComponent("journal")))
+        let batch = BatchExportModel(job: job, journal: MacBatchJournal(directory: root.appendingPathComponent("journal")))
         let started = Date()
         batch.add([raw, raster])
         wait("AI batch preflight completed") { !batch.validating }
@@ -97,7 +97,7 @@ import Combine
             editDirectory: root.appendingPathComponent("collection-edits"), batchDirectory: root.appendingPathComponent("collection-batch"),
             presetDirectory: root.appendingPathComponent("collection-presets"))
         collection.addCollectionPhotos([raw])
-        try collection.editStore!.save(raw, state: PhotoEditState(settings: settings, filmID: ""))
+        try collection.editStore!.save(raw, state: MacPhotoEditState(settings: settings, filmID: ""))
         let review = try collection.prepareCollectionExport(skipping: [], format: .png, longEdge: 256, directory: output)
         check(review.ready && review.snapshots.count == 1 && review.snapshots[0].settings.aiDenoiseEnabled,
               "Collection preflight retains enabled AI for the RAW target")

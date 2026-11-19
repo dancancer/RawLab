@@ -6,10 +6,7 @@ OUT="$(mktemp -d /tmp/rawlab-ios-presentation.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$SDK" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/FilmPresentation.swift" \
+swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -whole-module-optimization -swift-version 5 -sdk "$SDK" \
     "$ROOT/RawLab/tests/EditorPresentationTests.swift" \
     -o "$OUT/presentation"
 "$OUT/presentation"

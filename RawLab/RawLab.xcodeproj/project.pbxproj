@@ -8,19 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		AA1100000000000000000003 /* RawLabKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000002 /* RawLabKit */; };
-		AABB20261110000000000001 /* EditorToolDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB20261110000000000002 /* EditorToolDraft.swift */; };
         E91100000000000000000001 /* RecentPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91100000000000000000011; };
 		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
 		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
-		38C0B29D936E3C4F3692FF74 /* RecentPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */; };
-		EE71000200000000000000E2 /* ExportEvidenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE71000100000000000000E1 /* ExportEvidenceStore.swift */; };
         B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020A0000000000000000002 /* IOSQuickPresetView.swift */; };
         B010A0000000000000000011 /* IOSAdjustmentSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */; };
         D00800000000000000000005 /* IOSBatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000015; };
         D00800000000000000000004 /* ContentView+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000014; };
         D00800000000000000000003 /* RawEditorViewModel+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000013; };
-        D00800000000000000000002 /* IOSBatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000012; };
         D00700000000000000000006 /* PhotoHSLTargetInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000016; };
         D00700000000000000000005 /* ContentView+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000015; };
         D00700000000000000000004 /* RawEditorViewModel+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000014; };
@@ -36,15 +32,9 @@
 		B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */; };
 		EC14BD5D2B2BC66F70E833AC /* RawEditorViewModel+AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */; };
 		D6F055FF2048FFEF4ED1FBFA /* RawEditorViewModel+AdjustmentHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */; };
-		17BF47482993E867097D4453 /* IOSAdjustmentTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */; };
-		4380F87E87760C793F311583 /* IOSAdjustmentTransferWB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */; };
-		5B805538A93E3A876472B198 /* IOSAdjustmentTransferValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */; };
-		EBB461C838403C5D4A5E6168 /* IOSAdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */; };
 		AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000002 /* EditorResetTransaction.swift */; };
 		AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2400000000000000000002 /* HDRResourceNotice.swift */; };
-		AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2200000000000000000002 /* EditorAdjustmentRules.swift */; };
-        A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000002; };
-        A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
+        A8D1A6000000000000000001 /* ErrorDiagnostics+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
         A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000004; };
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
         D12000000000000000000001 /* DCPCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000011; };
@@ -68,7 +58,6 @@
         D00600000000000000000002 /* ColorGradingNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000012; };
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
 		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
-		AB3900000000000000000003 /* RUMConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMConfiguration.swift */; };
 		AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000006 /* RUMUsageTransport.swift */; };
 		AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMValidationProbe.swift */; };
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
@@ -93,34 +82,26 @@
 		AB1400000000000000000013 /* velvia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000013 /* velvia.png */; };
 		AB1300000000000000000001 /* EditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1300000000000000000002 /* EditorUITests.swift */; };
 		AB1200000000000000000001 /* EditorComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000011 /* EditorComponents.swift */; };
-		AB1200000000000000000002 /* FilmPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000012 /* FilmPresentation.swift */; };
 		AB1200000000000000000003 /* eterna.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000013 /* eterna.png */; };
 		AB1200000000000000000004 /* eterna-bb.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000014 /* eterna-bb.png */; };
 		0B1A0382CA7A4764A8AD3A12 /* UI/ContentView+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */; };
 		26F51EBF7B154D2F744F8B60 /* Resources/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */; };
 		2A9B3E15E0704167ABE93960 /* Core/ViewModel/RawEditorViewModel+IO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4383A5710944379318C704 /* Core/ViewModel/RawEditorViewModel+IO.swift */; };
 		2C5BFAB858B74B81AFAC16D0 /* Core/Models/PhotoImportTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */; };
-		366A9A71BB194587A8AECB5A /* Core/Models/AdjustmentKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */; };
 		474AC2ED2640F238B875DFBA /* App/RawLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B52131DB065AE51B1A552B /* App/RawLabApp.swift */; };
 		54CCF4B9CD4492224FC36730 /* UI/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */; };
 		568E6B659A004F7792056543 /* UI/ContentView+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */; };
 		5925D383E992E267E84A557D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BCB01F09DF53FD6D170136CB /* Foundation.framework */; };
 		7A32C02543E94D8D8AD059DA /* Core/ViewModel/RawEditorViewModel+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893AFB855B8D4C46BF182760 /* Core/ViewModel/RawEditorViewModel+Rendering.swift */; };
 		D883E2F5F205AC0EFBF9C319 /* Core/ViewModel/RawEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */; };
-		EDCB99B43F3C4149B2F7622B /* Core/Models/RawSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */; };
 		F985B27612A241E0BF2D3B6E /* Core/ViewModel/RawEditorViewModel+LUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */; };
 		8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */; };
 		8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F6789012350 /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift */; };
 		8F3A1B2C3D4E5F678901234B /* sony2fuji.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; };
 		8F3A1B2C3D4E5F678901234C /* sony2fuji.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C9A1B2C3D4E5F60718293A4B /* Support/RawMetadataBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */; };
-		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
-		D001000000000000000000FD /* Core/Persistence/FileDigestCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */; };
-		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
-		A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */; };
 		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
-		D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000015 /* Core/Models/ExportSize.swift */; };
 		D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */; };
 		D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000017 /* UI/ExportSizePicker.swift */; };
 		B1A96AA5B2105EE294EE532E /* AdjustmentScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA770F5886885926B9D64E9C /* AdjustmentScale.swift */; };
@@ -145,14 +126,6 @@
 		8B29EC7278F7B9FF41EB8BF0 = {
 			isa = PBXBuildFile;
 			fileRef = 38F6D63A9E8C8B655383DC1A;
-		};
-		8281CB7C705607A246377749 = {
-			isa = PBXBuildFile;
-			fileRef = 02C6D1C4DAC4E804B2A93EBF;
-		};
-		EAB9B7988845FE05C9C227C3 = {
-			isa = PBXBuildFile;
-			fileRef = 1D71FD88C2035DEAC81AC8D3;
 		};
 		22C5A9E739A2E127D0BA221C = {
 			isa = PBXBuildFile;
@@ -229,7 +202,6 @@
 		DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA9FA3A0CD1617F35B39A4E; };
 		C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5145FB279D152EA89CD80D /* CameraNetwork.swift */; };
 		9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */; };
-		D00100000000000000000033 /* RetentionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000032 /* RetentionPolicy.swift */; };
 		FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */; };
 		B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */; };
 		6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */; };
@@ -246,19 +218,15 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		AABB20261110000000000002 /* EditorToolDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorToolDraft.swift; sourceTree = "<group>"; };
         E91100000000000000000011 /* RecentPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/RecentPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
 		B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+RecentPhotos.swift"; sourceTree = SOURCE_ROOT; };
 		BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Library/RecentPhotosView.swift"; sourceTree = SOURCE_ROOT; };
 		DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/IOSPhotoPreviews.swift"; sourceTree = SOURCE_ROOT; };
-		F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/RecentPhotoStore.swift"; sourceTree = SOURCE_ROOT; };
-		EE71000100000000000000E1 /* ExportEvidenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ExportEvidenceStore.swift"; sourceTree = SOURCE_ROOT; };
         B020A0000000000000000002 /* IOSQuickPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSQuickPresetView.swift"; sourceTree = "<group>"; };
         B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSAdjustmentSummaryView.swift"; sourceTree = "<group>"; };
         D00800000000000000000015 /* IOSBatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelectionView.swift"; path = "RawLab/UI/Export/IOSBatchSelectionView.swift"; sourceTree = SOURCE_ROOT; };
         D00800000000000000000014 /* ContentView+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+BatchSelection.swift"; path = "RawLab/UI/Editor/ContentView+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
         D00800000000000000000013 /* RawEditorViewModel+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+BatchSelection.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
-        D00800000000000000000012 /* IOSBatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelection.swift"; path = "RawLab/Core/Batch/Model/IOSBatchSelection.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000016 /* PhotoHSLTargetInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PhotoHSLTargetInput.swift"; path = "RawLab/UI/Preview/PhotoHSLTargetInput.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000015 /* ContentView+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+HSLTarget.swift"; path = "RawLab/UI/Editor/ContentView+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000014 /* RawEditorViewModel+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+HSLTarget.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
@@ -274,15 +242,9 @@
 		1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferPresentation.swift"; path = "RawLab/UI/Editor/IOSAdjustmentTransferPresentation.swift"; sourceTree = SOURCE_ROOT; };
 		224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentTransfer.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentHistory.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentHistory.swift"; sourceTree = SOURCE_ROOT; };
-		A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferSession.swift"; path = "RawLab/Core/Persistence/IOSAdjustmentTransferSession.swift"; sourceTree = SOURCE_ROOT; };
-		87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferWB.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransferWB.swift"; sourceTree = SOURCE_ROOT; };
-		EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferValues.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransferValues.swift"; sourceTree = SOURCE_ROOT; };
-		14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransfer.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		AB2300000000000000000002 /* EditorResetTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResetTransaction.swift; sourceTree = "<group>"; };
 		AB2400000000000000000002 /* HDRResourceNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRResourceNotice.swift; sourceTree = "<group>"; };
-		AB2200000000000000000002 /* EditorAdjustmentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAdjustmentRules.swift; sourceTree = "<group>"; };
-        A8CACE000000000000000002 /* CachedPhotoFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/CachedPhotoFile.swift"; sourceTree = SOURCE_ROOT; };
-        A8D1A6000000000000000002 /* ErrorDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics.swift"; sourceTree = SOURCE_ROOT; };
+        A8D1A6000000000000000002 /* ErrorDiagnostics+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics+iOS.swift"; sourceTree = SOURCE_ROOT; };
         A8CACE000000000000000004 /* ContentView+AutoExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+AutoExposure.swift"; sourceTree = SOURCE_ROOT; };
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
         D12000000000000000000011 /* DCPCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DCPCompiler.swift; path = "../Shared/DCPCompiler.swift"; sourceTree = SOURCE_ROOT; };
@@ -326,7 +288,6 @@
 		AB2100000000000000000013 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja"; path = "ja.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000014 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000015 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		AB3900000000000000000004 /* RUMConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMConfiguration.swift; sourceTree = "<group>"; };
 		AB3900000000000000000006 /* RUMUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMUsageTransport.swift; sourceTree = "<group>"; };
 		AB3900000000000000000008 /* RUMValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMValidationProbe.swift; sourceTree = "<group>"; };
 		AB1800000000000000000011 = {
@@ -372,7 +333,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		AB1200000000000000000012 /* FilmPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPresentation.swift; sourceTree = "<group>"; };
 		AB1200000000000000000013 /* eterna.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = eterna.png; path = "../RawLabMac/Resources/FilmIcons/eterna.png"; sourceTree = SOURCE_ROOT; };
 		AB1200000000000000000014 /* eterna-bb.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "eterna-bb.png"; path = "../RawLabMac/Resources/FilmIcons/eterna-bb.png"; sourceTree = SOURCE_ROOT; };
 		5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawEditorViewModel.swift; sourceTree = "<group>"; };
@@ -383,7 +343,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AdjustmentKind.swift; sourceTree = "<group>"; };
 		7ADA789EA8FD48A0A2CFE618 = {
 			path = "RawLab/UI/Editor/ContentView+Panels.swift";
 			isa = PBXFileReference;
@@ -411,7 +370,6 @@
 		BCB01F09DF53FD6D170136CB /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		CA5CD9BDDDA592CD1F77CFCB /* Resources/Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawSettings.swift; sourceTree = "<group>"; };
 		ED52E5E1D6C957F64808BB11 /* RawLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RawLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RawEditorViewModel+LUT.swift"; sourceTree = "<group>"; };
 		8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Sony2FujiProcessor.swift; sourceTree = "<group>"; };
@@ -420,24 +378,8 @@
 		8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = sony2fuji.xcframework; path = "../lutools/build-ios/sony2fuji.xcframework"; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4C /* Support/RawMetadataBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = RawMetadataBridge.h; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; path = RawMetadataBridge.mm; sourceTree = "<group>"; };
-		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
-		D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FileDigestCache.swift; sourceTree = "<group>"; };
-		D00100000000000000000012 = {
-			path = "RawLab/Core/Batch/Model/BatchExportModels.swift";
-			isa = PBXFileReference;
-			includeInIndex = 1;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
 		D00100000000000000000013 = {
 			path = "RawLab/Core/Batch/Execution/BatchExport.swift";
-			isa = PBXFileReference;
-			includeInIndex = 1;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
-		A0D17B5E0000000000000002 = {
-			path = "RawLab/Core/Batch/Model/BatchSettingsSummary.swift";
 			isa = PBXFileReference;
 			includeInIndex = 1;
 			lastKnownFileType = sourcecode.swift;
@@ -450,7 +392,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
 		D00100000000000000000016 = {
 			path = "RawLab/UI/Editor/ContentView+PhotoInfo.swift";
 			isa = PBXFileReference;
@@ -495,18 +436,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+IOHelpers.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		02C6D1C4DAC4E804B2A93EBF = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/Batch/Storage/BatchExportStorage.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		1D71FD88C2035DEAC81AC8D3 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/Batch/Execution/BatchExportRunner.swift";
 			sourceTree = SOURCE_ROOT;
 		};
 		9D3527EB23A8B1C5D02BC890 = {
@@ -610,7 +539,6 @@
 		8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+ProcessingMigration.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
 		AD5145FB279D152EA89CD80D /* CameraNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraNetwork.swift"; sourceTree = "<group>"; };
 		53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraOriginalStore.swift"; sourceTree = "<group>"; };
-		D00100000000000000000032 /* RetentionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RetentionPolicy.swift"; sourceTree = "<group>"; };
 		6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraPTPClient.swift"; sourceTree = "<group>"; };
 		0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraProtocol.swift"; sourceTree = "<group>"; };
 		136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraWorkspaceBackend.swift"; sourceTree = "<group>"; };
@@ -672,7 +600,6 @@
 		AB390000000000000000000B /* Usage */ = {
 			isa = PBXGroup;
 			children = (
-				AB3900000000000000000004 /* RUMConfiguration.swift */,
 				AB3900000000000000000006 /* RUMUsageTransport.swift */,
 				AB3900000000000000000008 /* RUMValidationProbe.swift */,
 			);
@@ -682,7 +609,6 @@
 		D00100000000000000000031 /* Storage */ = {
 			isa = PBXGroup;
 			children = (
-				D00100000000000000000032 /* RetentionPolicy.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -690,9 +616,6 @@
 		D00100000000000000000021 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
-				A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */,
-				D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */,
-				D001000000000000000000ED /* Core/Persistence/FileDigestCache.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -726,7 +649,6 @@
 				D00700000000000000000014,
 				D00700000000000000000013,
 				D00700000000000000000012,
-				D00800000000000000000012,
 				D00800000000000000000013,
 				D00800000000000000000014,
 				D00800000000000000000015,
@@ -809,13 +731,10 @@
 				D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */,
 				8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */,
 				FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */,
-				A8CACE000000000000000002 /* CachedPhotoFile.swift */,
 				B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */,
 				BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */,
 				DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */,
-				F05A8C0CCFD988FA348FFD20 /* RecentPhotoStore.swift */,
-				EE71000100000000000000E1 /* ExportEvidenceStore.swift */,
-				A8D1A6000000000000000002 /* ErrorDiagnostics.swift */,
+				A8D1A6000000000000000002 /* ErrorDiagnostics+iOS.swift */,
 				A8CACE000000000000000004 /* ContentView+AutoExposure.swift */,
 				8F7749DA9EDF45519E2428F1 /* App */,
 				1CBDC5191AF9405F9B637414 /* UI */,
@@ -892,16 +811,7 @@
 		967181A1C76B4194B0C0185F /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */,
-				EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */,
-				14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */,
-				AB1200000000000000000012 /* FilmPresentation.swift */,
-				75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */,
-				E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */,
-				AB2200000000000000000002 /* EditorAdjustmentRules.swift */,
-				AABB20261110000000000002 /* EditorToolDraft.swift */,
 				99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */,
-				D00100000000000000000015 /* Core/Models/ExportSize.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -975,8 +885,6 @@
 		E2EC8543F458F8B7AC1FA561 = {
 			isa = PBXGroup;
 			children = (
-				A0D17B5E0000000000000002,
-				D00100000000000000000012,
 			);
 			name = Model;
 			sourceTree = "<group>";
@@ -984,7 +892,6 @@
 		D5B491DB91C6308BADC2E23D = {
 			isa = PBXGroup;
 			children = (
-				02C6D1C4DAC4E804B2A93EBF,
 				239F602BE6955B7CAF23FFF9,
 			);
 			name = Storage;
@@ -994,7 +901,6 @@
 			isa = PBXGroup;
 			children = (
 				D00100000000000000000013,
-				1D71FD88C2035DEAC81AC8D3,
 				9D3527EB23A8B1C5D02BC890,
 			);
 			name = Execution;
@@ -1281,7 +1187,6 @@
 				B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */,
 				FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */,
 				9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */,
-				D00100000000000000000033 /* RetentionPolicy.swift in Sources */,
 				D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */,
 				D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */,
 				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
@@ -1292,20 +1197,13 @@
                 B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */,
 				EC14BD5D2B2BC66F70E833AC /* RawEditorViewModel+AdjustmentTransfer.swift in Sources */,
 				D6F055FF2048FFEF4ED1FBFA /* RawEditorViewModel+AdjustmentHistory.swift in Sources */,
-				17BF47482993E867097D4453 /* IOSAdjustmentTransferSession.swift in Sources */,
-				4380F87E87760C793F311583 /* IOSAdjustmentTransferWB.swift in Sources */,
-				5B805538A93E3A876472B198 /* IOSAdjustmentTransferValues.swift in Sources */,
-				EBB461C838403C5D4A5E6168 /* IOSAdjustmentTransfer.swift in Sources */,
 				9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */,
 				909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */,
 				14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */,
-				A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */,
 				D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */,
 				48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */,
 				A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */,
-				38C0B29D936E3C4F3692FF74 /* RecentPhotoStore.swift in Sources */,
-				EE71000200000000000000E2 /* ExportEvidenceStore.swift in Sources */,
-				A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */,
+				A8D1A6000000000000000001 /* ErrorDiagnostics+iOS.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,
 				B1A96AA5B2105EE294EE532E,
 				0993BD6D24DC56B2A37EE51B,
@@ -1335,7 +1233,6 @@
 				D00700000000000000000004,
 				D00700000000000000000003,
 				D00700000000000000000002,
-				D00800000000000000000002,
 				D00800000000000000000003,
 				D00800000000000000000004,
 				D00800000000000000000005,
@@ -1352,13 +1249,11 @@
 				D00500000000000000000002,
 				41C5E5C8C1BF433C837BBFA1,
 				D00600000000000000000002,
-				AB3900000000000000000003,
 				AB3900000000000000000005,
 				AB3900000000000000000007,
 				AB1200000000000000000001,
 				AB1800000000000000000001,
 				AB1800000000000000000002,
-				AB1200000000000000000002,
 				474AC2ED2640F238B875DFBA,
 				025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */,
 				4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */,
@@ -1366,10 +1261,6 @@
 				0B1A0382CA7A4764A8AD3A12,
 				568E6B659A004F7792056543,
 				C9A1B2C3D4E5F60718293A4B,
-				366A9A71BB194587A8AECB5A,
-				EDCB99B43F3C4149B2F7622B,
-				AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */,
-				AABB20261110000000000001 /* EditorToolDraft.swift in Sources */,
 				AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */,
 				AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
@@ -1377,13 +1268,8 @@
 				7A32C02543E94D8D8AD059DA,
 				F985B27612A241E0BF2D3B6E,
 				2A9B3E15E0704167ABE93960,
-				D00100000000000000000001,
-				D001000000000000000000FD,
-				D00100000000000000000002,
 				D00100000000000000000003,
-				A0D17B5E0000000000000001,
 				D00100000000000000000004,
-				D00100000000000000000005,
 				D00100000000000000000006,
 				D00100000000000000000007,
 				8F3A1B2C3D4E5F6789012345,
@@ -1393,8 +1279,6 @@
 				D00200000000000000000002,
 				5D16F3E6AA9AE3153F10EA01,
 				8B29EC7278F7B9FF41EB8BF0,
-				8281CB7C705607A246377749,
-				EAB9B7988845FE05C9C227C3,
 				22C5A9E739A2E127D0BA221C,
 				794E01A20D65C985C5B77449,
 				BE2C8A1B49C3F8091E3DC5CB,

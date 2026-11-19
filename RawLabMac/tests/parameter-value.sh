@@ -10,8 +10,8 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
-    "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
+ "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
+ "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
     "$ROOT/RawLabMac/Sources/Editor/View/AdjustmentRow.swift" \
     "$ROOT/RawLabMac/tests/ParameterValueTests.swift" \
     -framework SwiftUI -framework AppKit -o "$OUT/parameter-value"

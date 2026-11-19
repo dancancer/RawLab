@@ -30,7 +30,7 @@ SOURCES=(
     "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift"
     "$ROOT/RawLabMac/Sources/Looks/Film.swift"
     "$ROOT/RawLabMac/Sources/Looks/LUTCompatibilityDialog.swift"
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift"
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
     "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"
     "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift"
     "$ROOT/Shared/Native/ProcessingMigrationNative.swift"

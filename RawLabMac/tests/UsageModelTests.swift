@@ -106,13 +106,13 @@ import UniformTypeIdentifiers
             waitForRender(model, success: true)
             check(events.filter { $0 == .photoImported }.count == importCount, "editing does not count import again")
             print("PASS: RAW import succeeds once, rendering adjustments do not repeat it")
-            var job = BatchExportJob(source: URL(fileURLWithPath: CommandLine.arguments[1]), settings: Adjustments(), look: nil, lookName: "Private look name")
+            var job = MacBatchExportJob(source: URL(fileURLWithPath: CommandLine.arguments[1]), settings: Adjustments(), look: nil, lookName: "Private look name")
             job.outputDirectory = root; job.longEdge = 512
-            var good = try BatchExportItem(url: job.source), rasterItem = try BatchExportItem(url: png), bad = try BatchExportItem(url: invalid)
+            var good = try MacBatchExportItem(url: job.source), rasterItem = try MacBatchExportItem(url: png), bad = try MacBatchExportItem(url: invalid)
             good.selected = true; rasterItem.selected = true; bad.selected = true
             job.items = [good, rasterItem, bad]
             var batchEvents: [UsageEvent] = []
-            let batch = BatchExportModel(job: job, journal: BatchJournal(directory: root.appendingPathComponent("journal")),
+            let batch = BatchExportModel(job: job, journal: MacBatchJournal(directory: root.appendingPathComponent("journal")),
                 onUsage: { batchEvents.append($0) })
             func waitForBatch() {
                 let deadline = Date().addingTimeInterval(120)

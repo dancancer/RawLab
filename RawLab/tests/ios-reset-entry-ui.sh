@@ -16,13 +16,6 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" \
     -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Persistence/CachedPhotoFile.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransfer.swift" "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/IOSAdjustmentTransferWB.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/EditorToolDraft.swift" \
     "$ROOT/RawLab/RawLab/Core/ViewModel/EditorResetTransaction.swift" \
     "$ROOT/RawLab/RawLab/UI/EditorState/EditorWorkspaceResetControl.swift" \
     "$ROOT/RawLab/tests/IOSResetEntryUITests.swift" \

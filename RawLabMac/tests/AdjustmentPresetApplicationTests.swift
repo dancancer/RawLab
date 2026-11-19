@@ -13,7 +13,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         defer { try? FileManager.default.removeItem(at: root) }
         let source = root.appendingPathComponent("source.ARW"), target = root.appendingPathComponent("target.ARW")
         try Data([1, 2, 3]).write(to: source); try Data([4, 5, 6]).write(to: target)
-        let edits = try EditPersistence(directory: root.appendingPathComponent("edits"))
+        let edits = try MacEditPersistence(directory: root.appendingPathComponent("edits"))
         let session = AdjustmentTransferSession(store: edits)
         let presets = AdjustmentPresetStore(directory: root.appendingPathComponent("presets"))
         var settings = Adjustments(); settings.exposure = 1.25; settings.contrast = 35
@@ -21,7 +21,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
         settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
         settings.hsl = HSLSettings(); settings.hsl!.setExact(.hue, channel: 0, value: 37.25)
-        let state = PhotoEditState(settings: settings, filmID: "")
+        let state = MacPhotoEditState(settings: settings, filmID: "")
         let context = MacAdjustmentTransferContext(identifier: source.path, isRaw: true)
         let clipboard = try session.copy(scope: .custom([.contrast]), snapshot: state, context: context)
         let preview = try MacAdjustmentTransfer.previewCapture(scope: .modified, snapshot: state, committed: state, context: context)
@@ -31,7 +31,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(geometry.fields == [.cropWidth] && geometry[.cropWidth] == .number(1),
                   "Custom scope preview preserves the captured value")
         let empty = Result { try MacAdjustmentTransfer.previewCapture(scope: .modified,
-            snapshot: PhotoEditState(settings: Adjustments(), filmID: ""), committed: nil, context: context) }
+            snapshot: MacPhotoEditState(settings: Adjustments(), filmID: ""), committed: nil, context: context) }
         if case .failure(let error) = empty {
             try check(error as? AdjustmentTransferError == .emptyScope, "Neutral modified preview reports an empty scope")
         } else { try check(false, "Neutral modified preview must be empty") }
@@ -47,7 +47,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(metadataPreview[.temperature] == .null && metadataPreview[.tint] == .null,
                   "Camera metadata hydration preserves target-resolved white-balance preview")
         var hdr = Adjustments(); hdr.hdr = HDRSettings(); hdr.exposureMode = .sensor
-        let hdrState = PhotoEditState(settings: hdr, filmID: "")
+        let hdrState = MacPhotoEditState(settings: hdr, filmID: "")
         let hdrPreview = try MacAdjustmentTransfer.previewCapture(scope: .standard(isHDR: true), snapshot: hdrState,
             committed: nil, context: .init(identifier: "hdr.jpg", isRaw: false, sourceIsHDR: true))
         try check(hdrPreview.fields == AdjustmentTransferField.hdrCommon && hdrPreview.source.isHDR,
@@ -59,7 +59,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(session.clipboard == clipboard && session.transactions.isEmpty, "Saving a preset does not change clipboard or photo history")
         try FileManager.default.removeItem(at: source)
         var initial = Adjustments(); initial.contrast = -10; initial.saturation = 25
-        let before = PhotoEditState(settings: initial, filmID: "")
+        let before = MacPhotoEditState(settings: initial, filmID: "")
         try edits.save(target, state: before)
         let targetContext = MacAdjustmentTransferContext(identifier: target.path, isRaw: true)
         let direct = try MacAdjustmentTransfer.prepare(payload: captured, target: before, context: targetContext)

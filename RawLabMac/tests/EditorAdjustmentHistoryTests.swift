@@ -108,8 +108,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try hslTargetChecks(root: root, second: second)
         try curveNavigationChecks(root: root, photo: first)
         var aiSettings = Adjustments(); aiSettings.aiDenoiseEnabled = true
-        let aiBatch = BatchExportModel(job: BatchExportJob(source: first, settings: aiSettings, look: nil, lookName: "Neutral"),
-            journal: BatchJournal(directory: root.appendingPathComponent("ai-batch")))
+        let aiBatch = BatchExportModel(job: MacBatchExportJob(source: first, settings: aiSettings, look: nil, lookName: "Neutral"),
+            journal: MacBatchJournal(directory: root.appendingPathComponent("ai-batch")))
         aiBatch.add([second])
         let deadline = Date().addingTimeInterval(30)
         while aiBatch.validating && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
@@ -249,7 +249,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(recaptured.fields == [.exposure] && model.presetStore.list() == [preset] &&
             model.adjustmentSession!.transactions.count == beforePresetCaptureHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
             "preset capture uses the current in-memory saved state without a disk revision gate")
-        model.editStore = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
+        model.editStore = try MacEditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
         model.settings.exposure = 1.3
         do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected preset source save failure", code: 1) }
         catch AdjustmentTransferError.draftRequiresPreflight {}

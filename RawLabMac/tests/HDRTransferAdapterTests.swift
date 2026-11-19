@@ -6,12 +6,12 @@ import Foundation
     static func main() throws {
         var settings = Adjustments(); settings.hdr = HDRSettings(); settings.hdr?.exposure = 1
         settings.hdr?.temperature = 10000; settings.aiDenoiseEnabled = true
-        let source = PhotoEditState(settings: settings, filmID: "")
+        let source = MacPhotoEditState(settings: settings, filmID: "")
         let context = MacAdjustmentTransferContext(identifier: "source", isRaw: false, sourceIsHDR: true)
         let payload = try MacAdjustmentTransfer.capture(scope: .all, snapshot: source, context: context)
         check(payload.source.isHDR && payload.payloadVersion == 2, "HDR capture used legacy fields")
         var targetSettings = Adjustments(); targetSettings.exposure = -2; targetSettings.hdr = HDRSettings()
-        let target = PhotoEditState(settings: targetSettings, filmID: "")
+        let target = MacPhotoEditState(settings: targetSettings, filmID: "")
         let prepared = try MacAdjustmentTransfer.prepare(payload: payload, target: target, context: context)
         check(prepared.settings.hdr?.exposure == 1 && prepared.settings.exposure == -2 && prepared.settings.isHDREditing,
             "HDR target lost its dormant SDR snapshot or mode")
@@ -26,7 +26,7 @@ import Foundation
             sourceSupportsCameraHDR: true)
         let proRAWPayload = try MacAdjustmentTransfer.capture(scope: .all, snapshot: source, context: proRAWContext)
         var proRAWTargetSettings = Adjustments(); proRAWTargetSettings.hdr = HDRSettings()
-        let proRAWTarget = PhotoEditState(settings: proRAWTargetSettings, filmID: "")
+        let proRAWTarget = MacPhotoEditState(settings: proRAWTargetSettings, filmID: "")
         let proRAWPrepared = try MacAdjustmentTransfer.prepare(payload: proRAWPayload,
             target: proRAWTarget, context: proRAWContext)
         check(proRAWPrepared.settings.hdr?.exposure == 1 && proRAWPrepared.settings.isHDREditing,
@@ -42,7 +42,7 @@ import Foundation
         var cameraSettings = settings
         cameraSettings.hdr?.renditionSettings.sdrExposureEV = -0.75
         let cameraPayload = try MacAdjustmentTransfer.capture(scope: .modified,
-            snapshot: PhotoEditState(settings: cameraSettings, filmID: ""), context: cameraContext)
+            snapshot: MacPhotoEditState(settings: cameraSettings, filmID: ""), context: cameraContext)
         let cameraTarget = try MacAdjustmentTransfer.prepare(payload: cameraPayload, target: target, context: cameraContext)
         check(cameraTarget.settings.hdr == cameraSettings.hdr && cameraTarget.settings.exposure == -2 &&
               cameraTarget.settings.proRAWDecodeVersion == nil, "Camera RAW transfer lost either edit or invented a ProRAW version")

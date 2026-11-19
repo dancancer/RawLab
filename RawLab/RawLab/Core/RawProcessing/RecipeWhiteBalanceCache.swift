@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreGraphics
 import Foundation
 import ImageIO

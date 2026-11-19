@@ -7,12 +7,7 @@ trap 'rm -rf "$OUT"' EXIT
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$SDK" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" \
     "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/tests/EditMemoryTests.swift" \
     -o "$OUT/edit-memory"
 "$OUT/edit-memory"

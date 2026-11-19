@@ -4,58 +4,19 @@ import ImageIO
 import Foundation
 import UniformTypeIdentifiers
 
-enum ExportFormat: String, CaseIterable, Codable, Identifiable {
-    case jpeg, png
-    case hdrJPEG = "hdr_jpeg"
-    case hdrHEIF = "hdr_heif"
-    case renderedDNG = "dng"
-
-    var id: String { rawValue }
+extension ExportFormat {
     static func available(isHDR: Bool) -> [ExportFormat] {
-        let sdr: [ExportFormat] = [.jpeg,.png,.renderedDNG]
+        let sdr: [ExportFormat] = [.jpeg, .png, .renderedDNG]
         guard isHDR else { return sdr }
-        return (HDRImage.heifExportAvailable ? [.hdrJPEG,.hdrHEIF] : [.hdrJPEG]) + sdr
+        return (HDRImage.heifExportAvailable ? [.hdrJPEG, .hdrHEIF] : [.hdrJPEG]) + sdr
     }
-    var requiresHDR: Bool { self == .hdrJPEG || self == .hdrHEIF }
-    var hdrRequiredMessage: String {
-        self == .hdrHEIF ? L10n.text("HDR HEIF 需要启用 HDR 编辑。") : L10n.text("HDR JPEG 需要启用 HDR 编辑。")
-    }
-    var suffix: String {
-        if self == .hdrHEIF { return "heic" }
-        return self == .jpeg || self == .hdrJPEG ? "jpg" : rawValue
-    }
-    var title: String {
-        switch self {
-        case .hdrJPEG: return L10n.text("HDR JPEG")
-        case .hdrHEIF: return "HDR HEIF"
-        case .jpeg: return "JPEG"
-        case .png: return L10n.text("16-bit PNG")
-        case .renderedDNG: return L10n.text("DNG · 渲染型")
-        }
-    }
-    var contentType: UTType {
-        switch self {
-        case .hdrJPEG: return .jpeg
-        case .hdrHEIF: return .heic
-        case .jpeg: return .jpeg
-        case .png: return .png
-        case .renderedDNG: return UTType(filenameExtension: "dng") ?? .rawImage
-        }
-    }
+
     var nativeFormat: sony2fuji_output_format? {
         switch self {
         case .hdrJPEG, .hdrHEIF: return nil
         case .jpeg: return SONY2FUJI_OUTPUT_JPEG
         case .png: return SONY2FUJI_OUTPUT_PNG
         case .renderedDNG: return SONY2FUJI_OUTPUT_DNG
-        }
-    }
-    static func forOutput(_ url: URL) -> ExportFormat {
-        switch url.pathExtension.lowercased() {
-        case "png": return .png
-        case "dng": return .renderedDNG
-        case "heic", "heif": return .hdrHEIF
-        default: return .jpeg
         }
     }
 }
@@ -273,6 +234,7 @@ final class RenderEngine {
         self.aiBackend = aiBackend
         self.aiCacheDirectory = aiCacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/DualDn", isDirectory: true)
+        MacBatchExportEnvironment.defaultX3fMode = RenderEngine.x3fDefaultMode(for:)
         try resetSession()
     }
 

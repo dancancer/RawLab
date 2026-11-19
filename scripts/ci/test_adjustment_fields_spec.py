@@ -1579,10 +1579,10 @@ def _parse_apple_shared_models() -> dict:
 
 def _parse_mac_model(shared: dict) -> dict[str, dict]:
     """Parse macOS model entries from RawLabMac/ and Shared/."""
-    mac_adj = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/Adjustments.swift"))
-    mac_types = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"))
-    mac_tv = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"))
-    mac_tr = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"))
+    mac_adj = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustments.swift") + "\n" + _read("Shared/RawLabKit/MacEditorAdjustmentRules.swift"))
+    mac_types = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTypes.swift") + "\n" + _read("Shared/RawLabKit/AdjustmentModels.swift") + "\n" + _read("Shared/RawLabKit/LensModels.swift"))
+    mac_tv = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTransfer.swift"))
+    mac_tr = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTransfer.swift"))
 
     _require("context.transferNotices?(.retainedTargetProcessingVersion)", mac_tr, "processing version mac", "MacAdjustmentTransfer.swift")
     _need(
@@ -1607,7 +1607,7 @@ def _parse_mac_model(shared: dict) -> dict[str, dict]:
     mac_contrast_scale, mac_hi_scale, mac_sh_scale = "(p - 1) * 100", "-p * 100", "p * 100"
 
     # look.reference
-    _require('PhotoEditState(settings: defaults, filmID: "")', mac_tr, "looks.reference mac filmID", "MacAdjustmentTransfer.swift")
+    _require('MacPhotoEditState(settings: defaults, filmID: "")', mac_tr, "looks.reference mac filmID", "MacAdjustmentTransfer.swift")
     _require('look = ["kind": .string("neutral"), "id": .null]', mac_tv, "looks.reference mac neutral wire", "MacAdjustmentTransferValues.swift")
     look_ref_def = {"kind": "neutral", "id": None}
 
@@ -1633,15 +1633,10 @@ def _parse_mac_model(shared: dict) -> dict[str, dict]:
     # wavelet
     _require("var waveletNoiseReduction: WaveletDenoiseSettings?", mac_adj, "detail.denoise.wavelet nullable", "Adjustments.swift")
 
-    # photo effects directly from Mac AdjustmentTypes.swift
-    mac_fx_blk = _extract_brace_block(mac_types, r"struct PhotoEffectsSettings\b", "effects.* mac defaults", "AdjustmentTypes.swift")
-    mac_fx_range_blk = _extract_brace_block(mac_types, r"enum PhotoEffectParameter\b", "effects.* mac ranges", "AdjustmentTypes.swift")
-    signed_m = _need(
-        r"self == \.vignetteAmount \|\| self == \.vignetteRoundness \? (-?\d+)\.\.\.(-?\d+) : (-?\d+)\.\.\.(-?\d+)",
-        mac_fx_range_blk, "effects.* mac PhotoEffectParameter.range", "AdjustmentTypes.swift",
-    )
-    signed_range = (float(signed_m.group(1)), float(signed_m.group(2)))
-    unsigned_range = (float(signed_m.group(3)), float(signed_m.group(4)))
+    # photo effects directly from Shared/RawLabKit/AdjustmentModels.swift
+    mac_fx_blk = _extract_brace_block(mac_types, r"struct PhotoEffectsSettings\b", "effects.* mac defaults", "AdjustmentModels.swift")
+    mac_fx_init_blk = _need(r"\binit\((.*?)\)\s*\{", mac_fx_blk, "effects.* mac init", "AdjustmentModels.swift", re.S).group(1)
+    mac_fx_range_blk = _extract_brace_block(mac_types, r"enum PhotoEffectParameter\b", "effects.* mac ranges", "AdjustmentModels.swift")
 
     # lens directly from Mac AdjustmentTypes.swift
     mac_lens_blk = _extract_brace_block(mac_types, r"struct LensCorrectionSettings\b", "geometry.lens.* mac", "AdjustmentTypes.swift")
@@ -1695,19 +1690,20 @@ def _parse_mac_model(shared: dict) -> dict[str, dict]:
         for ch in HSL_CHANNELS:
             m[f"color.hsl.{axis}.{ch}"] = _model_entry("double", min_val=shared["hsl_range"][0], max_val=shared["hsl_range"][1], default=0.0)
 
-    for fid, prop, is_signed in (
-        ("effects.vignette.amount", "vignetteAmount", True),
-        ("effects.vignette.midpoint", "vignetteMidpoint", False),
-        ("effects.vignette.roundness", "vignetteRoundness", True),
-        ("effects.vignette.feather", "vignetteFeather", False),
-        ("effects.vignette.highlights", "vignetteHighlights", False),
-        ("effects.grain.amount", "grainAmount", False),
-        ("effects.grain.size", "grainSize", False),
-        ("effects.grain.roughness", "grainRoughness", False),
+    for fid, prop in (
+        ("effects.vignette.amount", "vignetteAmount"),
+        ("effects.vignette.midpoint", "vignetteMidpoint"),
+        ("effects.vignette.roundness", "vignetteRoundness"),
+        ("effects.vignette.feather", "vignetteFeather"),
+        ("effects.vignette.highlights", "vignetteHighlights"),
+        ("effects.grain.amount", "grainAmount"),
+        ("effects.grain.size", "grainSize"),
+        ("effects.grain.roughness", "grainRoughness"),
     ):
-        dflt = float(_need(rf"var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_fx_blk, f"{fid} mac default", "AdjustmentTypes.swift").group(1))
-        lo, hi = signed_range if is_signed else unsigned_range
-        m[fid] = _model_entry("double", min_val=lo, max_val=hi, default=dflt)
+        _require(f"case .{prop}: return PhotoEffectsSettings.{prop}Range", mac_fx_range_blk, f"{fid} mac range mapping", "AdjustmentModels.swift")
+        r_m = _need(rf"static let {prop}Range:\s*ClosedRange<Double>\s*=\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", mac_fx_blk, f"{fid} mac range", "AdjustmentModels.swift")
+        dflt = float(_need(rf"{prop}:\s*Double\s*=\s*(-?\d+(?:\.\d+)?)", mac_fx_init_blk, f"{fid} mac default", "AdjustmentModels.swift").group(1))
+        m[fid] = _model_entry("double", min_val=float(r_m.group(1)), max_val=float(r_m.group(2)), default=dflt)
 
     m["effects.clarity"] = _model_entry("double", min_val=shared["atmos_range"][0], max_val=shared["atmos_range"][1], hdr_min=shared["hdr_clarity_range"][0], hdr_max=shared["hdr_clarity_range"][1], default=shared["atmos_cl_def"], hdr_default=shared["hdr_clarity_def"], scale_from_protocol="p", hdr_scale_from_protocol="p / 100")
     m["effects.dehaze"] = _model_entry("double", min_val=shared["atmos_range"][0], max_val=shared["atmos_range"][1], hdr_min=shared["hdr_dehaze_range"][0], hdr_max=shared["hdr_dehaze_range"][1], default=shared["atmos_dh_def"], hdr_default=shared["hdr_dehaze_def"], scale_from_protocol="p", hdr_scale_from_protocol="p / 100")
@@ -1743,11 +1739,11 @@ def _parse_mac_model(shared: dict) -> dict[str, dict]:
 
 def _parse_ios_model(shared: dict) -> dict[str, dict]:
     """Parse iOS model entries from RawLab/ and Shared/ (NO Windows/Android borrowing)."""
-    ios_raw = _strip_line_comments(_read("RawLab/RawLab/Core/Models/RawSettings.swift"))
-    ios_rules = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift"))
-    ios_tr = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransfer.swift"))
-    ios_tv = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift"))
-    ios_draft = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorToolDraft.swift"))
+    ios_raw = _strip_line_comments(_read("Shared/RawLabKit/RawSettings.swift") + "\n" + _read("Shared/RawLabKit/AdjustmentModels.swift") + "\n" + _read("Shared/RawLabKit/LensModels.swift"))
+    ios_rules = _strip_line_comments(_read("Shared/RawLabKit/EditorAdjustmentRules.swift"))
+    ios_tr = _strip_line_comments(_read("Shared/RawLabKit/IOSAdjustmentTransfer.swift"))
+    ios_tv = _strip_line_comments(_read("Shared/RawLabKit/IOSAdjustmentTransfer.swift"))
+    ios_draft = _strip_line_comments(_read("Shared/RawLabKit/EditorToolDraft.swift"))
 
     _require("context.transferNotices?(.retainedTargetProcessingVersion)", ios_tr, "processing version ios", "IOSAdjustmentTransfer.swift")
     _require("if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }", ios_tv, "detail.denoise.raw_level ios ignored with notice", "IOSAdjustmentTransferValues.swift")
@@ -2432,10 +2428,10 @@ def _ui_entry(
 
 def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     """Parse macOS UI metadata solely from RawLabMac/ and Shared/."""
-    mac_types = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"))
-    mac_adj = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/Adjustments.swift"))
-    mac_tx = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift"))
-    mac_tv = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/MacAdjustmentTransferValues.swift"))
+    mac_types = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTypes.swift") + "\n" + _read("Shared/RawLabKit/AdjustmentModels.swift") + "\n" + _read("Shared/RawLabKit/LensModels.swift"))
+    mac_adj = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustments.swift") + "\n" + _read("Shared/RawLabKit/MacEditorAdjustmentRules.swift"))
+    mac_tx = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTransfer.swift"))
+    mac_tv = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTransfer.swift"))
     mac_dock = _strip_line_comments(_read("RawLabMac/Sources/Editor/View/AdjustmentDock.swift"))
     mac_curve_ctrl = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacToneCurveControls.swift"))
     mac_hsl_prec = _strip_line_comments(_read("RawLabMac/Sources/Controls/MacHSLPrecision.swift"))
@@ -2467,7 +2463,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
 
     # AdjustmentSpec + AdjustmentParameter.spec + spec(for:)
     mac_spec_struct_blk = _extract_brace_block(mac_types, r"struct AdjustmentSpec\b", "AdjustmentSpec", "AdjustmentTypes.swift")
-    spec_default_mult = float(_need(r"var multiplier\s*=\s*(-?\d+(?:\.\d+)?)", mac_spec_struct_blk, "AdjustmentSpec default multiplier", "AdjustmentTypes.swift").group(1))
+    spec_default_mult = float(_need(r"(?:var\s+multiplier(?:\s*:\s*Double)?|multiplier\s*:\s*Double)\s*=\s*(-?\d+(?:\.\d+)?)", mac_spec_struct_blk, "AdjustmentSpec default multiplier", "MacAdjustmentTypes.swift").group(1))
     mac_param_blk = _extract_brace_block(mac_types, r"enum AdjustmentParameter\b", "AdjustmentParameter", "AdjustmentTypes.swift")
     mac_spec_blk = _extract_brace_block(mac_param_blk, r"var spec:\s*AdjustmentSpec", "AdjustmentParameter.spec", "AdjustmentTypes.swift")
     mac_specs: dict[str, tuple[float, float, float, str, float]] = {}
@@ -2542,7 +2538,7 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     hdr_mon_cam_tint_step = float(_need(r'cameraSlider\("色调".*?step:\s*(\d+(?:\.\d+)?)', hdr_cam_ctrl_blk, "hdr.cam tint step", "Shared/Native/HDRMonitoring.swift").group(1))
     hdr_cam_blk = _extract_brace_block(hdr_swift, r"(?:public\s+)?struct HDRCameraDevelopmentSettings\b", "hdr cam mac ui", "Shared/RawLabKit/HDRSettings.swift")
 
-    _require('PhotoEditState(settings: defaults, filmID: "")', mac_tx, "looks.reference mac", "MacAdjustmentTransfer.swift")
+    _require('MacPhotoEditState(settings: defaults, filmID: "")', mac_tx, "looks.reference mac", "MacAdjustmentTransfer.swift")
     mac_look_neutral = _need(r'look\s*=\s*\["kind":\s*\.string\("(\w+)"\),\s*"id":\s*\.null\]', mac_tv, "looks.reference mac wire", "MacAdjustmentTransferValues.swift").group(1)
     exp_mode_def = _need(r"var exposureMode(?:\s*:\s*ExposureMode)?\s*=\s*(?:ExposureMode)?\.(\w+)", mac_adj, "light.exposure_mode mac", "Adjustments.swift").group(1)
     wb_mode_var = _need(r"var whiteBalanceMode(?:\s*:\s*WhiteBalanceMode)?\s*=\s*(?:WhiteBalanceMode)?\.(\w+)", mac_adj, "wb.mode mac", "Adjustments.swift").group(1)
@@ -2580,12 +2576,10 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
     _require("0...360", mac_grad_rows_blk, "color.grading mac hue range", "MacColorGradingControls.swift")
     _require("0...100", mac_grad_rows_blk, "color.grading mac sat range", "MacColorGradingControls.swift")
 
-    # Photo effects UI (PhotoEffectsControls + AdjustmentTypes)
-    mac_fx_blk = _extract_brace_block(mac_types, r"struct PhotoEffectsSettings\b", "effects mac defaults", "AdjustmentTypes.swift")
-    mac_fx_range_blk = _extract_brace_block(mac_types, r"enum PhotoEffectParameter\b", "effects mac ranges", "AdjustmentTypes.swift")
-    signed_m = _need(r"self == \.vignetteAmount \|\| self == \.vignetteRoundness \? (-?\d+)\.\.\.(-?\d+) : (-?\d+)\.\.\.(-?\d+)", mac_fx_range_blk, "effects mac range", "AdjustmentTypes.swift")
-    signed_range = (float(signed_m.group(1)), float(signed_m.group(2)))
-    unsigned_range = (float(signed_m.group(3)), float(signed_m.group(4)))
+    # Photo effects UI (PhotoEffectsControls + AdjustmentModels)
+    mac_fx_blk = _extract_brace_block(mac_types, r"struct PhotoEffectsSettings\b", "effects mac defaults", "AdjustmentModels.swift")
+    mac_fx_init_blk = _need(r"\binit\((.*?)\)\s*\{", mac_fx_blk, "effects mac init", "AdjustmentModels.swift", re.S).group(1)
+    mac_fx_range_blk = _extract_brace_block(mac_types, r"enum PhotoEffectParameter\b", "effects mac ranges", "AdjustmentModels.swift")
     _need(r"ForEach\(parameters\)\s*\{\s*parameter\s+in\s+ParameterRow\(.*?range:\s*parameter\.range,\s*defaultValue:\s*parameter\.defaultValue", mac_fx_ctrl, "effects mac ParameterRow", "PhotoEffectsControls.swift", re.S)
 
     # Legacy S-curve UI (AdjustmentDock.swift -> MacToneCurveControls.swift, NOT unused AdjustmentParameter.toneCurve.spec)
@@ -2839,19 +2833,20 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
         for ch in HSL_CHANNELS:
             ui[f"color.hsl.{axis}.{ch}"] = _ui_entry(unit=row_default_unit, min_val=mac_hsl_range[0], max_val=mac_hsl_range[1], default=mac_hsl_def, step=mac_hsl_step)
 
-    for fid, prop, is_signed in (
-        ("effects.vignette.amount", "vignetteAmount", True),
-        ("effects.vignette.midpoint", "vignetteMidpoint", False),
-        ("effects.vignette.roundness", "vignetteRoundness", True),
-        ("effects.vignette.feather", "vignetteFeather", False),
-        ("effects.vignette.highlights", "vignetteHighlights", False),
-        ("effects.grain.amount", "grainAmount", False),
-        ("effects.grain.size", "grainSize", False),
-        ("effects.grain.roughness", "grainRoughness", False),
+    for fid, prop in (
+        ("effects.vignette.amount", "vignetteAmount"),
+        ("effects.vignette.midpoint", "vignetteMidpoint"),
+        ("effects.vignette.roundness", "vignetteRoundness"),
+        ("effects.vignette.feather", "vignetteFeather"),
+        ("effects.vignette.highlights", "vignetteHighlights"),
+        ("effects.grain.amount", "grainAmount"),
+        ("effects.grain.size", "grainSize"),
+        ("effects.grain.roughness", "grainRoughness"),
     ):
-        dflt = float(_need(rf"var {prop}(?:\s*:\s*Double)?\s*=\s*(-?\d+(?:\.\d+)?)", mac_fx_blk, f"{fid} mac ui default", "AdjustmentTypes.swift").group(1))
-        lo, hi = signed_range if is_signed else unsigned_range
-        ui[fid] = _ui_entry(unit=row_default_unit, min_val=lo, max_val=hi, default=dflt, step=mac_fine[row_default_prec])
+        _require(f"case .{prop}: return PhotoEffectsSettings.{prop}Range", mac_fx_range_blk, f"{fid} mac ui range mapping", "AdjustmentModels.swift")
+        r_m = _need(rf"static let {prop}Range:\s*ClosedRange<Double>\s*=\s*(-?\d+(?:\.\d+)?)\.\.\.(-?\d+(?:\.\d+)?)", mac_fx_blk, f"{fid} mac ui range", "AdjustmentModels.swift")
+        dflt = float(_need(rf"{prop}:\s*Double\s*=\s*(-?\d+(?:\.\d+)?)", mac_fx_init_blk, f"{fid} mac ui default", "AdjustmentModels.swift").group(1))
+        ui[fid] = _ui_entry(unit=row_default_unit, min_val=float(r_m.group(1)), max_val=float(r_m.group(2)), default=dflt, step=mac_fine[row_default_prec])
 
     sh_lo, sh_hi, sh_def, sh_unit, sh_mult = mac_specs["sharpening"]
     ui["detail.sharpening"] = _ui_entry(
@@ -2921,9 +2916,9 @@ def _parse_mac_ui(mac_fine: dict[str, float]) -> dict[str, dict]:
 
 def _parse_ios_ui() -> dict[str, dict]:
     """Parse iOS UI metadata directly from RawLab/ and Shared/ (NO cross-end borrowing)."""
-    ios_kind = _strip_line_comments(_read("RawLab/RawLab/Core/Models/AdjustmentKind.swift"))
-    ios_raw = _strip_line_comments(_read("RawLab/RawLab/Core/Models/RawSettings.swift"))
-    ios_tv = _strip_line_comments(_read("RawLab/RawLab/Core/Models/IOSAdjustmentTransferValues.swift"))
+    ios_kind = _strip_line_comments(_read("Shared/RawLabKit/AdjustmentKind.swift"))
+    ios_raw = _strip_line_comments(_read("Shared/RawLabKit/RawSettings.swift") + "\n" + _read("Shared/RawLabKit/AdjustmentModels.swift") + "\n" + _read("Shared/RawLabKit/LensModels.swift"))
+    ios_tv = _strip_line_comments(_read("Shared/RawLabKit/IOSAdjustmentTransfer.swift"))
     ios_panels = _strip_line_comments(_read("RawLab/RawLab/UI/Panels/AdjustmentPanels.swift"))
     ios_ctrl = _strip_line_comments(_read("RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift"))
     ios_content = _strip_line_comments(_read("RawLab/RawLab/UI/Editor/ContentView+Panels.swift"))
@@ -4071,7 +4066,7 @@ def _parse_windows_ui() -> dict[str, dict]:
 
 def parse_ui_from_sources() -> dict[str, dict[str, dict]]:
     """Parse UI ranges, units, defaults, and steps independently per end."""
-    mac_prec_src = _strip_line_comments(_read("RawLabMac/Sources/Inputs/ParameterPrecision.swift"))
+    mac_prec_src = _strip_line_comments(_read("Shared/RawLabKit/ParameterPrecision.swift"))
     scale_block = _extract_brace_block(mac_prec_src, r"var scale:\s*Double", "mac ParameterPrecision", "ParameterPrecision.swift")
     mac_fine: dict[str, float] = {}
     for cases_str, val in re.findall(r"case ([^:]+):\s*return (\d+(?:\.\d+)?)", scale_block):
@@ -4296,8 +4291,8 @@ _HDR_RENDITION_TOOL_MAP = (
 
 def parse_editor_groups_from_sources() -> dict[str, dict[str, str]]:
     """Parse platform editor group assignments for fields using editor_group_overrides."""
-    mac_types = _strip_line_comments(_read("RawLabMac/Sources/Adjustments/AdjustmentTypes.swift"))
-    ios_rules = _strip_line_comments(_read("RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift"))
+    mac_types = _strip_line_comments(_read("Shared/RawLabKit/MacAdjustmentTypes.swift"))
+    ios_rules = _strip_line_comments(_read("Shared/RawLabKit/EditorAdjustmentRules.swift"))
     kt_rules = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorAdjustmentRules.kt"))
     kt_scope = _strip_line_comments(_read("RawLabAndroid/app/src/main/java/com/rawlab/android/editor/EditorToolScope.kt"))
     cs_rules = _strip_line_comments(_read("RawLabWindows/Core/EditorAdjustmentRules.cs"))
@@ -4306,8 +4301,8 @@ def parse_editor_groups_from_sources() -> dict[str, dict[str, str]]:
     mac_tools_str = _need(r"case \.hdrRendition:\s*return\s*\[([^\]]+)\]", mac_types, "mac hdrRendition tools", "AdjustmentTypes.swift").group(1)
     mac_tools = set(re.findall(r"\.(\w+)", mac_tools_str))
 
-    ios_group_enum = _extract_brace_block(ios_rules, r"enum EditorAdjustmentGroup\b", "ios EditorAdjustmentGroup", "EditorAdjustmentRules.swift")
-    _need(r"\bhdrRendition\b", ios_group_enum, "ios hdrRendition enum", "EditorAdjustmentRules.swift")
+    ios_group_enum = _extract_brace_block(mac_types, r"enum EditorAdjustmentGroup\b", "ios EditorAdjustmentGroup", "MacAdjustmentTypes.swift")
+    _need(r"\bhdrRendition\b", ios_group_enum, "ios hdrRendition enum", "MacAdjustmentTypes.swift")
     ios_tools_str = _need(r"\(\.hdrRendition,\s*\[([^\]]+)\]\)", ios_rules, "ios hdrRendition tools", "EditorAdjustmentRules.swift").group(1)
     ios_tools = set(re.findall(r"\.(\w+)", ios_tools_str))
 
@@ -4648,23 +4643,23 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         with mock.patch(
             f"{__name__}._read",
             side_effect=_mutated_reader(
-                "RawLab/RawLab/Core/Models/RawSettings.swift",
-                "static let vignetteMidpointRange: ClosedRange<Double> = 0...100",
-                "static let vignetteMidpointRange: ClosedRange<Double> = 1...99",
+                "Shared/RawLabKit/AdjustmentModels.swift",
+                "public static let vignetteMidpointRange: ClosedRange<Double> = 0...100",
+                "public static let vignetteMidpointRange: ClosedRange<Double> = 1...99",
             ),
         ):
             mut_models = parse_models_from_sources()
             mut_ui = parse_ui_from_sources()
-            with self.assertRaisesRegex(AssertionError, r"effects\.vignette\.midpoint\.ios"):
+            with self.assertRaisesRegex(AssertionError, r"effects\.vignette\.midpoint\.(macos|ios)"):
                 validate_layer2_model(self.document, mut_models)
-            with self.assertRaisesRegex(AssertionError, r"effects\.vignette\.midpoint\.ios"):
+            with self.assertRaisesRegex(AssertionError, r"effects\.vignette\.midpoint\.(macos|ios)"):
                 validate_layer3_ui(self.document, mut_ui)
 
         # 7b. AdjustmentKind.swift .highlights range -> Layer 3 fails on iOS
         with mock.patch(
             f"{__name__}._read",
             side_effect=_mutated_reader(
-                "RawLab/RawLab/Core/Models/AdjustmentKind.swift",
+                "Shared/RawLabKit/AdjustmentKind.swift",
                 "case .highlights:\n            return -100...100",
                 "case .highlights:\n            return -50...50",
             ),
@@ -4708,7 +4703,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         # 7e..7j: Real UI-only source mutations (Blocking #321-1 .. #321-6)
         ui_mutations = [
             (
-                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                "Shared/RawLabKit/MacAdjustmentTypes.swift",
                 'case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \\.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)',
                 'case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \\.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)',
                 r"tone\.black_point\.macos",
@@ -4720,7 +4715,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 r"hdr\.peak_limit_ev\.macos",
             ),
             (
-                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                "Shared/RawLabKit/MacAdjustmentTypes.swift",
                 "if settings.isHDREditing && self == .denoiseMode {\n            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...1,",
                 "if settings.isHDREditing && self == .denoiseMode {\n            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...2,",
                 r"detail\.denoise\.post_rgb\.macos",
@@ -4792,7 +4787,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 r"light\.s_curve\.macos",
             ),
             (
-                "RawLabMac/Sources/Adjustments/AdjustmentTypes.swift",
+                "Shared/RawLabKit/MacAdjustmentTypes.swift",
                 "case off = 0, light = 1, full = 2",
                 "case off = 0, light = 1, full = 5",
                 r"Non-contiguous case tags for RawNoiseReductionLevel",
@@ -4804,9 +4799,9 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                 r"detail\.denoise\.raw_level mac picker",
             ),
             (
-                "RawLabMac/Sources/Adjustments/Adjustments.swift",
-                "var rawNoiseReduction = 0.0",
-                "var rawNoiseReduction = 1.0",
+                "Shared/RawLabKit/MacAdjustments.swift",
+                "public var rawNoiseReduction = 0.0",
+                "public var rawNoiseReduction = 1.0",
                 r"detail\.denoise\.raw_level\.macos",
             ),
         ]
@@ -4822,7 +4817,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
                         self.assertEqual(mut_ui["geometry.perspective.horizontal"]["windows"]["min"], -1.0)
                     if rel_path.endswith("GeometryControls.kt"):
                         self.assertEqual(mut_ui["geometry.perspective.horizontal"]["android"]["min"], -100.0)
-                    if rel_path.endswith("Adjustments.swift"):
+                    if rel_path.endswith("MacAdjustments.swift"):
                         self.assertEqual(mut_ui["detail.denoise.chroma_mode"]["macos"]["default"], 3.0)
                     validate_layer3_ui(self.document, mut_ui)
 

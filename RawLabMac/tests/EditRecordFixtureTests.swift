@@ -223,7 +223,7 @@ struct Harness {
         return hdr
     }
 
-    static func buildState(from record: [String: Any]) throws -> (state: PhotoEditState, isRaw: Bool, metadata: [String: Any]) {
+    static func buildState(from record: [String: Any]) throws -> (state: MacPhotoEditState, isRaw: Bool, metadata: [String: Any]) {
         let photo = record["photo"] as? [String: Any] ?? [:]
         let isRaw = photo["is_raw"] as? Bool ?? true
         let metadata = record["metadata"] as? [String: Any] ?? [:]
@@ -363,10 +363,10 @@ struct Harness {
         if let ai = localValues["local.ai_denoise_enabled"] as? Bool { settings.aiDenoiseEnabled = ai }
         if let hai = localValues["local.hdr_camera_ai_enabled"] as? Bool { settings.hdrCameraAIEnabled = hai }
 
-        return (PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: masterRecipeID), isRaw, metadata)
+        return (MacPhotoEditState(settings: settings, filmID: filmID, masterRecipeID: masterRecipeID), isRaw, metadata)
     }
 
-    static func verifyState(_ actual: PhotoEditState, matches record: [String: Any]) throws {
+    static func verifyState(_ actual: MacPhotoEditState, matches record: [String: Any]) throws {
         let id = record["id"] as? String ?? "unknown"
         let photo = record["photo"] as? [String: Any] ?? [:]
         let isRaw = photo["is_raw"] as? Bool ?? true
@@ -607,10 +607,10 @@ struct Harness {
         }
     }
 
-    static func makeStore(tempRoot: URL, name: String) throws -> (store: EditPersistence, dir: URL, file: URL) {
+    static func makeStore(tempRoot: URL, name: String) throws -> (store: MacEditPersistence, dir: URL, file: URL) {
         let dir = tempRoot.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return (try EditPersistence(directory: dir), dir, dir.appendingPathComponent("edits.json"))
+        return (try MacEditPersistence(directory: dir), dir, dir.appendingPathComponent("edits.json"))
     }
 
     static func touchPhoto(_ tempRoot: URL, name: String) throws -> URL {
@@ -791,7 +791,7 @@ struct Harness {
                     _ = try store.commitProcessingMigration(expected: try store.readState(for: photoURL), candidate: nil, quality: quality)
                 }
                 eval(scenarioID) {
-                    let reopened = try EditPersistence(directory: dir)
+                    let reopened = try MacEditPersistence(directory: dir)
                     let reloaded = try reopened.state(for: photoURL)
                     try check(reloaded != nil, "\(id): reloaded state must not be nil")
                     try verifyState(reloaded!, matches: rec)
@@ -832,7 +832,7 @@ struct Harness {
 
                 if expectPolicy == "load_preserving_values" {
                     eval(id, scope: .expectationOrPersistenceRejection) {
-                        let reopened = try EditPersistence(directory: dir)
+                        let reopened = try MacEditPersistence(directory: dir)
                         let readTarget = try reopened.state(for: targetURL)
                         try check(readTarget != nil, "\(id): target record must remain readable")
                         try verifyState(readTarget!, matches: baseRec)
@@ -850,7 +850,7 @@ struct Harness {
                     }
                 } else if expectPolicy == "reject_isolating_record" {
                     eval(id, scope: .expectationOnly) {
-                        let reopened = try EditPersistence(directory: dir)
+                        let reopened = try MacEditPersistence(directory: dir)
                         var threw = false
                         do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
                         try check(threw, "\(id): Tier 2 unknown field in '\(scope)' must throw UnusableEditRecordError (not silently ignore)")
@@ -922,14 +922,14 @@ struct Harness {
                     let wireExpect = macSample["expect_decoded"] as! [String: Any]
 
                     eval(id) {
-                        let reopened = try EditPersistence(directory: dir)
+                        let reopened = try MacEditPersistence(directory: dir)
                         let loaded = try reopened.state(for: url)
                         try check(loaded != nil, "\(id): legacy record must load")
                         try check(loaded!.settings.processing.version == 1, "\(id): omitted processing defaults to v1")
                         try check(loaded!.settings.x3fMode == .legacy, "\(id): omitted x3fMode defaults to legacy")
                         try check(loaded!.settings.hdr == nil, "\(id): omitted hdr defaults to nil")
 
-                        let wireStore = try EditPersistence(directory: wireDir)
+                        let wireStore = try MacEditPersistence(directory: wireDir)
                         let wireLoaded = try wireStore.state(for: legacyURL)
                         try check(wireLoaded != nil, "\(id): frozen macos_json legacy wire sample must decode")
                         if let w = wireLoaded {
@@ -962,26 +962,26 @@ struct Harness {
                     try storeAI.save(urlAI, state: builtAI)
 
                     eval(id) {
-                        let loadedBefore = try EditPersistence(directory: dir).state(for: url)!
-                        let ctx = EditorAdjustmentContext(isRaw: isRaw, defaultExposureMode: .preview, neutralFilmID: "")
-                        guard case .candidate(let resetState) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: loadedBefore, context: ctx) else {
+                        let loadedBefore = try MacEditPersistence(directory: dir).state(for: url)!
+                        let ctx = MacEditorAdjustmentContext(isRaw: isRaw, defaultExposureMode: .preview, neutralFilmID: "")
+                        guard case .candidate(let resetState) = MacEditorAdjustmentRules.prepareReset(scope: .all, snapshot: loadedBefore, context: ctx) else {
                             throw ExpectationMismatch.mismatch("\(id): expected reset candidate")
                         }
-                        try EditPersistence(directory: dir).save(url, state: resetState)
-                        let after = try EditPersistence(directory: dir).state(for: url)!
+                        try MacEditPersistence(directory: dir).save(url, state: resetState)
+                        let after = try MacEditPersistence(directory: dir).state(for: url)!
                         try check(after.settings.processing.version == 2, "\(id): processing v2 preserved")
                         try check(after.settings.x3fMode == .legacy, "\(id): x3fMode legacy preserved")
                         try check(after.settings.proRAWDecodeVersion == 2, "\(id): proRAWDecodeVersion 2 preserved")
                         try check(after.settings.hdr?.mode == .sdr, "\(id): dormant HDR mode stays .sdr")
                         try check(approx(after.settings.hdr?.exposure ?? -99, -0.5), "\(id): dormant HDR exposure preserved")
 
-                        let loadedAIBefore = try EditPersistence(directory: dirAI).state(for: urlAI)!
-                        let aiCtx = EditorAdjustmentContext(isRaw: aiIsRaw, defaultExposureMode: .preview, neutralFilmID: "")
-                        guard case .candidate(let resetAIState) = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: loadedAIBefore, context: aiCtx) else {
+                        let loadedAIBefore = try MacEditPersistence(directory: dirAI).state(for: urlAI)!
+                        let aiCtx = MacEditorAdjustmentContext(isRaw: aiIsRaw, defaultExposureMode: .preview, neutralFilmID: "")
+                        guard case .candidate(let resetAIState) = MacEditorAdjustmentRules.prepareReset(scope: .all, snapshot: loadedAIBefore, context: aiCtx) else {
                             throw ExpectationMismatch.mismatch("\(id): expected reset candidate for camera-AI record")
                         }
-                        try EditPersistence(directory: dirAI).save(urlAI, state: resetAIState)
-                        let afterAI = try EditPersistence(directory: dirAI).state(for: urlAI)!
+                        try MacEditPersistence(directory: dirAI).save(urlAI, state: resetAIState)
+                        let afterAI = try MacEditPersistence(directory: dirAI).state(for: urlAI)!
                         try check(afterAI.settings.hdrCameraAIEnabled, "\(id): dormant hdrCameraAIEnabled preserved across SDR reset")
                     }
                 case "future_processing_version":
@@ -1003,7 +1003,7 @@ struct Harness {
                     try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
                     eval(id) {
-                        let reopened = try EditPersistence(directory: dir)
+                        let reopened = try MacEditPersistence(directory: dir)
                         var threw = false
                         do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
                         try check(threw, "\(id): processing.version=99 must throw UnusableEditRecordError")
@@ -1030,7 +1030,7 @@ struct Harness {
                     try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
                     eval(id) {
-                        let reopened = try EditPersistence(directory: dir)
+                        let reopened = try MacEditPersistence(directory: dir)
                         var threw = false
                         do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
                         try check(threw, "\(id): corrupt entry must throw UnusableEditRecordError")
@@ -1065,7 +1065,7 @@ struct Harness {
                     let assertSignBit = expectObj["assert_sign_bit_positive"] as? Bool ?? false
 
                     eval(id) {
-                        let loaded = try EditPersistence(directory: dir).state(for: url)!
+                        let loaded = try MacEditPersistence(directory: dir).state(for: url)!
                         try check(loaded.settings.exposure == 0.0, "\(id): -0.0 must compare equal to 0.0 (got \(loaded.settings.exposure))")
                         if assertSignBit {
                             try check(loaded.settings.exposure.sign == .plus,
@@ -1145,7 +1145,7 @@ struct Harness {
                 try JSONSerialization.data(withJSONObject: registry).write(to: file)
 
                 eval(id) {
-                    let reopened = try EditPersistence(directory: dir)
+                    let reopened = try MacEditPersistence(directory: dir)
                     var threw = false
                     do { _ = try reopened.state(for: targetURL) } catch is UnusableEditRecordError { threw = true }
                     try check(threw, "\(id): invalid boundary value must throw UnusableEditRecordError on read (not silently accept or clamp)")
@@ -1162,20 +1162,20 @@ struct Harness {
         do {
             let (refreshStore, refreshDir, _) = try makeStore(tempRoot: tempRoot, name: "cache-refresh")
             let refreshURL = try touchPhoto(tempRoot, name: "cache-refresh.DNG")
-            let refreshState = PhotoEditState(settings: Adjustments(), filmID: "")
+            let refreshState = MacPhotoEditState(settings: Adjustments(), filmID: "")
             try refreshStore.save(refreshURL, state: refreshState)
             _ = try refreshStore.state(for: refreshURL)
             // save 对相同 state 跳过写盘：红锚必须用变化的 state 才能触发一次真实写。
             var changedAdjustments = Adjustments()
             changedAdjustments.exposureMode = .sensor
             changedAdjustments.exposure = 0.25
-            let readsBefore = EditPersistence.registryDiskReadCount(forDirectory: refreshDir)
-            try refreshStore.save(refreshURL, state: PhotoEditState(settings: changedAdjustments, filmID: ""))
+            let readsBefore = MacEditPersistence.registryDiskReadCount(forDirectory: refreshDir)
+            try refreshStore.save(refreshURL, state: MacPhotoEditState(settings: changedAdjustments, filmID: ""))
             _ = try refreshStore.state(for: refreshURL)
             eval("cache:write-refreshes-entry") {
                 try check(try refreshStore.state(for: refreshURL)?.settings.exposure == 0.25,
                           "cache-refresh store observes the committed exposure after write")
-                try check(EditPersistence.registryDiskReadCount(forDirectory: refreshDir) == readsBefore + 1,
+                try check(MacEditPersistence.registryDiskReadCount(forDirectory: refreshDir) == readsBefore + 1,
                           "one more write plus the immediate read adds only the mandatory uncached pre-write disk read (post-write read hits the refreshed entry)")
             }
         } catch {
@@ -1186,25 +1186,25 @@ struct Harness {
             var failNextWrite = false
             let failDir = tempRoot.appendingPathComponent("cache-refresh-fail", isDirectory: true)
             try FileManager.default.createDirectory(at: failDir, withIntermediateDirectories: true)
-            let failStore = try EditPersistence(directory: failDir, writeData: { data, url in
+            let failStore = try MacEditPersistence(directory: failDir, writeData: { data, url in
                 if failNextWrite { throw InjectedEditWriteFailure() }
                 try data.write(to: url, options: .atomic)
             })
             let failURL = try touchPhoto(tempRoot, name: "cache-refresh-fail.DNG")
-            try failStore.save(failURL, state: PhotoEditState(settings: Adjustments(), filmID: ""))
+            try failStore.save(failURL, state: MacPhotoEditState(settings: Adjustments(), filmID: ""))
             _ = try failStore.state(for: failURL)
             failNextWrite = true
             eval("cache:write-failure-invalidates") {
                 var threw = false
                 do {
                     try failStore.save(try touchPhoto(tempRoot, name: "cache-refresh-fail-second.DNG"),
-                                       state: PhotoEditState(settings: Adjustments(), filmID: ""))
+                                       state: MacPhotoEditState(settings: Adjustments(), filmID: ""))
                 } catch is InjectedEditWriteFailure { threw = true }
                 try check(threw, "injected write failure surfaces from save")
                 failNextWrite = false
-                let readsBeforeFailedRead = EditPersistence.registryDiskReadCount(forDirectory: failDir)
+                let readsBeforeFailedRead = MacEditPersistence.registryDiskReadCount(forDirectory: failDir)
                 _ = try failStore.state(for: failURL)
-                try check(EditPersistence.registryDiskReadCount(forDirectory: failDir) == readsBeforeFailedRead + 1,
+                try check(MacEditPersistence.registryDiskReadCount(forDirectory: failDir) == readsBeforeFailedRead + 1,
                           "failed write still invalidates: the next read must re-read the ledger from disk")
             }
         } catch {

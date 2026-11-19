@@ -30,7 +30,7 @@ import ImageIO
                 missing.hdr?.lookSettings = HDRLookSettings(sha256: String(repeating: "e", count: 64), name: "Missing look", strength: 1)
             }
             _ = try model.requireAdjustmentSession()
-            try model.editStore!.save(recoveryInput, state: PhotoEditState(settings: missing, filmID: ""))
+            try model.editStore!.save(recoveryInput, state: MacPhotoEditState(settings: missing, filmID: ""))
             model.open(recoveryInput)
             wait("Missing HDR resource blocked opening") { !model.importing && !model.busy }
             check(model.file == recoveryInput && model.result != nil && model.settings.hdr == missing.hdr && !model.canExport,
@@ -70,7 +70,7 @@ import ImageIO
         CGImageDestinationAddImage(destination,model.result!.image,nil)
         check(CGImageDestinationFinalize(destination),"SDR replacement fixture could not be written")
         var invalid=Adjustments(); invalid.hdr=HDRSettings()
-        try model.editStore!.save(sdr,state:PhotoEditState(settings:invalid,filmID:""))
+        try model.editStore!.save(sdr,state:MacPhotoEditState(settings:invalid,filmID:""))
         model.open(sdr)
         check(model.file==input && model.sourceIsHDR,"an HDR record on a non-HDR file replaced the current canvas before decode failed")
         let next=root.appendingPathComponent("next.jpg")

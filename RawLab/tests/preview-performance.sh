@@ -69,7 +69,6 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-libr
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
        "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
     "${PROCESSOR_SOURCES[@]}" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/preview-performance"

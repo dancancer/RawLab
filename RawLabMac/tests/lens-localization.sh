@@ -14,7 +14,7 @@ SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
 rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
-    "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
+ "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
     -o "$APP/Contents/MacOS/LensLocalization"
 "$APP/Contents/MacOS/LensLocalization"

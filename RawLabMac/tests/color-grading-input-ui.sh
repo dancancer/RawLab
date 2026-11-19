@@ -11,7 +11,6 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" \
     -target "$(uname -m)-apple-macosx14.0" -module-cache-path "$OUT/module-cache" \
     "$ROOT/Shared/ColorGradingWheelControl.swift" \
-    "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift" \
     "$ROOT/RawLabMac/Sources/Inputs/ParameterValueField.swift" \
     "$ROOT/RawLabMac/tests/ColorGradingInputUITests.swift" \
     -framework SwiftUI -framework AppKit -framework ApplicationServices -o "$OUT/test"

@@ -168,6 +168,9 @@ extension ContentView {
         let probe = ViewingEditorProbe.shared
         guard !probe.started else { return }
         probe.started = true
+        EditPersistence.willSaveRecord = { identity, state in
+            try MainActor.assumeIsolated { try ViewingEditorProbe.shared.recordSave(state, identity: identity) }
+        }
         probe.sampleHistogramDrawing()
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterAddObserver(center, nil, { _, _, _, _, _ in

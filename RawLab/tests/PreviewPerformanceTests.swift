@@ -1,3 +1,4 @@
+import RawLabKit
 import Darwin
 import Foundation
 import ImageIO

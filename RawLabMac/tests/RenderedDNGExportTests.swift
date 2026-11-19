@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import ImageIO
 
@@ -65,11 +66,11 @@ import ImageIO
                         throw RenderError.failed("DNG Auto fallback did not match CPU")
                     }
                 }
-                var job = BatchExportJob(source: input, settings: modeSettings, look: lut, lookName: label)
+                var job = MacBatchExportJob(source: input, settings: modeSettings, look: lut, lookName: label)
                 job.format = .renderedDNG; job.outputDirectory = output; job.longEdge = longEdge
-                var item = try BatchExportItem(url: input); item.selected = true; job.items = [item]
-                let journal = BatchJournal(directory: output.appendingPathComponent(label + "-journal"))
-                try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished,
+                var item = try MacBatchExportItem(url: input); item.selected = true; job.items = [item]
+                let journal = MacBatchJournal(directory: output.appendingPathComponent(label + "-journal"))
+                try MacBatchExportRunner.run(job: &job, journal: journal, scope: .unfinished,
                                          shouldCancel: { false }) { source, frozen, look, destination in
                     _ = try engine.render(source, settings: frozen, lut: look, edge: nil,
                                           output: destination, exportLongEdge: longEdge)

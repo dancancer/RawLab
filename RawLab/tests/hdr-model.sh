@@ -6,10 +6,7 @@ BUILD="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-hdr-model.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
 rawlabkit_flags link "$BUILD/swiftpm" macos 0
 swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
+ "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
     "$ROOT/RawLab/tests/HDRModelTests.swift" -o "$BUILD/hdr-model"
 "$BUILD/hdr-model"
 RAWLAB_TRANSFER_TEST_SOURCE="$ROOT/RawLab/tests/HDRTransferAdapterTests.swift" \

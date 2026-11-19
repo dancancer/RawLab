@@ -83,6 +83,17 @@ extension ContentView {
         let probe = GeometrySourceProbe.shared
         guard !probe.started else { return }
         probe.started = true
+        EditPersistence.onSaveRecord = { identity, state in
+            MainActor.assumeIsolated {
+                if let state {
+                    GeometrySourceProbe.shared.saveAttempts.append(state)
+                    GeometrySourceProbe.shared.saveReceipts.append([
+                        "identity": identity.key,
+                        "state": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))
+                    ])
+                }
+            }
+        }
         probe.editorState = {
             ["fine": adjustmentFine, "sourceRevision": viewModel.sourceRevision.uuidString, "channel": hslChannel,
              "prepared": preparedReset != nil, "presented": resetConfirmationPresented,

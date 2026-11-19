@@ -54,9 +54,9 @@ struct MacLensPresentation {
     var inputAllowsCorrection: Bool {
         guard previewIsCurrent, let info else { return true }
         switch info.state {
-        case SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA,
-             SONY2FUJI_LENS_MISSING_FOCAL_LENGTH, SONY2FUJI_LENS_EMBEDDED_GEOMETRY,
-             SONY2FUJI_LENS_UNSUPPORTED_INPUT:
+        case .noDatabase, .noCamera,
+             .missingFocalLength, .embeddedGeometry,
+             .unsupportedInput:
             return false
         default: return true
         }

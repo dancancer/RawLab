@@ -18,21 +18,21 @@ private final class BatchCancellation {
 final class MacHDRBatchPreparation {
     private let source: URL
     private let settings: Adjustments
-    private let store: EditPersistence
+    private let store: MacEditPersistence
     private let films: [Film]
     private let probeHDRSource: HDRSourceInfo.Probe
-    init(source: URL,settings: Adjustments,store: EditPersistence,films: [Film],
+    init(source: URL,settings: Adjustments,store: MacEditPersistence,films: [Film],
          probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }) {
         self.source=source; self.settings=settings; self.store=store; self.films=films
         self.probeHDRSource=probeHDRSource
     }
-    func prepare(_ item: BatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> BatchFrozenSettings {
+    func prepare(_ item: MacBatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> MacBatchFrozenSettings {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
         let record=try store.readState(for:item.input)
         let raster=RenderEngine.isRasterInput(item.input)
         var fallback=sdrFallback
         let sourceIsHDR=try sourceIsHDR ?? (probeHDRSource(item.input,{ fallback=true }) != nil)
-        var target=try record.state ?? PhotoEditState(settings:RenderEngine.defaultSettings(for:item.input,sourceIsHDR:sourceIsHDR),filmID:"")
+        var target=try record.state ?? MacPhotoEditState(settings:RenderEngine.defaultSettings(for:item.input,sourceIsHDR:sourceIsHDR),filmID:"")
         if fallback { target.settings.hdr?.mode = .sdr }
         let rawInfo = !raster && target.settings.isHDREditing ? try HDRSourceInfo.probeRAW(item.input) : nil
         if target.settings.isHDREditing {
@@ -60,13 +60,13 @@ final class MacHDRBatchPreparation {
         if !prepared.settings.isHDREditing && prepared.settings.masterRecipeID != nil && look==nil {
             throw BatchExportFailure.missingLook
         }
-        return BatchFrozenSettings(ordinal:ordinal,settings:prepared.settings,look:look,
-            lookSHA256:try look.map(BatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge)
+        return MacBatchFrozenSettings(ordinal:ordinal,settings:prepared.settings,look:look,
+            lookSHA256:try look.map(MacBatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge)
     }
 }
 
 final class BatchExportModel: ObservableObject {
-    @Published private(set) var job: BatchExportJob
+    @Published private(set) var job: MacBatchExportJob
     @Published private(set) var running = false
     @Published private(set) var stopping = false
     @Published var error: String?
@@ -88,7 +88,7 @@ final class BatchExportModel: ObservableObject {
     var onActivity: (Bool) -> Void = { _ in }
     var onDiscard: () -> Void = { }
     var onQuarantineOnDiscard: (String) -> Void = { _ in }
-    private let journal: BatchJournal
+    private let journal: MacBatchJournal
     private let queue = DispatchQueue(label: "rawlab.batch", qos: .userInitiated)
     private let validationQueue = DispatchQueue(label: "rawlab.batch-validation", qos: .userInitiated)
     private var engine: RenderEngine?
@@ -99,12 +99,14 @@ final class BatchExportModel: ObservableObject {
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
     private let probeHDRSource: HDRSourceInfo.Probe
-    private let resolveX3fMode: BatchExportJob.X3fModeResolver
+    private let resolveX3fMode: MacBatchExportJob.X3fModeResolver
     private var cachedNoticeX3fModes: [UUID: X3fMode?] = [:]
 
-    init(job: BatchExportJob, journal: BatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
+    init(job: MacBatchExportJob, journal: MacBatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
          probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
-         resolveX3fMode: @escaping BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode(for:),
+         resolveX3fMode: @escaping MacBatchExportJob.X3fModeResolver = {
+             try MacBatchExportJob.x3fModeResolver(defaultMode: RenderEngine.x3fDefaultMode(for:))($0)
+         },
          prepareAI: @escaping (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void = {
              try $0.prepareAI($1, settings: $2, progress: $3)
          },
@@ -132,7 +134,7 @@ final class BatchExportModel: ObservableObject {
         return L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: job.succeededCount), String(describing: job.failedCount), String(describing: job.remainingCount))
     }
 
-    func notice(for item: BatchExportItem) -> String? {
+    func notice(for item: MacBatchExportItem) -> String? {
         var messages = item.noticeKey.map { [L10n.text($0)] } ?? []
         if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled {
             if RenderEngine.isRasterInput(item.input) {
@@ -145,7 +147,7 @@ final class BatchExportModel: ObservableObject {
         return messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
 
-    private func noticeX3fMode(for item: BatchExportItem) -> X3fMode? {
+    private func noticeX3fMode(for item: MacBatchExportItem) -> X3fMode? {
         if let resolved = item.resolvedX3fMode { return resolved }
         guard !validating else { return nil }
         if let cached = cachedNoticeX3fModes[item.id] { return cached }
@@ -167,13 +169,13 @@ final class BatchExportModel: ObservableObject {
     func add(_ urls: [URL]) {
         guard job.mode == .uniformFrozen, !running, !job.started, !validating else { return }
         var failures: [String] = []
-        var added: [BatchExportItem] = []
+        var added: [MacBatchExportItem] = []
         for url in urls {
             do {
                 guard DirectoryContents.supportedExtensions.contains(url.pathExtension.lowercased()) else {
                     throw RenderError.failed(L10n.text("不是支持的图像文件"))
                 }
-                var item = try BatchExportItem(url: url)
+                var item = try MacBatchExportItem(url: url)
                 item.selected = true
                 if let index = job.items.firstIndex(where: { $0.input == item.input }) {
                     job.items[index].selected = true
@@ -322,7 +324,7 @@ final class BatchExportModel: ObservableObject {
             do {
                 let runSnapshot=try freezeHDRJob(snapshot,shouldCancel:{ cancellation.cancelled },onQuarantine:recordQuarantine)
                 work=runSnapshot
-                try BatchExportRunner.runSnapshots(job: &work, journal: journal, scope: scope,
+                try MacBatchExportRunner.runSnapshots(job: &work, journal: journal, scope: scope,
                                                    resolveX3fMode: resolveX3fMode,
                                                    shouldCancel: { cancellation.cancelled }, didUpdate: { updated in
                     attempted.formUnion(updated.items.filter { $0.status == .running }.map(\.id))
@@ -376,8 +378,8 @@ final class BatchExportModel: ObservableObject {
         return true
     }
 
-    private func freezeHDRJob(_ draft: BatchExportJob,shouldCancel: () -> Bool,
-                              onQuarantine: (Error) -> Void = { _ in }) throws -> BatchExportJob {
+    private func freezeHDRJob(_ draft: MacBatchExportJob,shouldCancel: () -> Bool,
+                              onQuarantine: (Error) -> Void = { _ in }) throws -> MacBatchExportJob {
         guard draft.mode == .uniformFrozen,draft.settings.isHDREditing else { return draft }
         guard let hdrPreparation else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
         var result=draft; result.items=draft.items.filter(\.selected)
@@ -388,7 +390,7 @@ final class BatchExportModel: ObservableObject {
             let prepared=try hdrPreparation.prepare(result.items[index],ordinal:index,format:draft.format,longEdge:draft.longEdge)
             let look=try journal.snapshotLook(prepared.look,jobID:result.id,contentIdentifier:prepared.lookSHA256)
             if let look { owned.append(look) }
-            result.items[index].frozen=BatchFrozenSettings(ordinal:index,settings:prepared.settings,look:look,
+            result.items[index].frozen=MacBatchFrozenSettings(ordinal:index,settings:prepared.settings,look:look,
                 lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge)
         }
         result.settingsMode = .perTargetFrozen; result.version=3
@@ -436,7 +438,7 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    func inspect(_ item: BatchExportItem) {
+    func inspect(_ item: MacBatchExportItem) {
         guard !running else { return }
         closePreview()
         let cancellation = BatchCancellation()
@@ -450,9 +452,9 @@ final class BatchExportModel: ObservableObject {
                 try frozenJob.validate()
                 guard try OriginalFileIdentity(item.input) == item.identity else { throw BatchExportFailure.changedInput }
                 if frozenJob.mode == .perTargetFrozen {
-                    guard try BatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
+                    guard try MacBatchExportItem.resourceKey(item.input) == item.resourceIdentifier else { throw BatchExportFailure.changedInput }
                 }
-                let snapshot: BatchFrozenSettings
+                let snapshot: MacBatchFrozenSettings
                 if frozenJob.mode == .uniformFrozen,let hdrPreparation {
                     snapshot=try hdrPreparation.prepare(item,ordinal:0,format:frozenJob.format,longEdge:frozenJob.longEdge)
                 } else { snapshot=try frozenJob.snapshot(for:item, resolveX3fMode: resolveX3fMode) }

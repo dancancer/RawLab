@@ -56,7 +56,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             var probedOnMain: Bool?
             let deferredTargets = model.adjustmentTransferTargetPreparation([second],
                 payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
-                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    snapshot: MacPhotoEditState(settings: Adjustments(), filmID: ""),
                     context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
                 probeRAW: { _ in probedOnMain = Thread.isMainThread; return nil })
             try check(probedOnMain == nil, "Capturing paste/sync inputs defers RAW probing")
@@ -71,7 +71,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             var cancelled = false, probes = 0
             let cancellableTargets = model.adjustmentTransferTargetPreparation([second, third],
                 payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
-                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    snapshot: MacPhotoEditState(settings: Adjustments(), filmID: ""),
                     context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
                 probeRAW: { _ in probes += 1; cancelled = true; return nil })
             let partial = cancellableTargets({ cancelled })
@@ -108,7 +108,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let clipboard = try model.copyAdjustments(scope: .custom([.contrast]))
         let operation = try model.prepareCollectionSynchronization(scope: .custom([.exposure]))
         try check(operation.targets.count == 2 && !operation.targets.contains { $0.id == first.path }, "synchronization freezes actual targets and excludes selected source")
-        let wrongBinding = AdjustmentTransferTarget(url: second, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""),
+        let wrongBinding = AdjustmentTransferTarget(url: second, defaultState: MacPhotoEditState(settings: Adjustments(), filmID: ""),
             context: model.adjustmentTransferContext(for: second), expectedIdentity: try OriginalFileIdentity(first))
         let rejectedBinding = try model.adjustmentSession!.prepare(payload: operation.payload, targets: [wrongBinding], action: .synchronize)
         try check(rejectedBinding.targets.first?.error != nil, "prepared record must match the exact collection input identity")
@@ -192,7 +192,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         var hdr = HDRSettings(); hdr.mode = .sdr; hdr.exposure = 0.75
         settings.hdr = hdr
         settings.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
-        try model.editStore!.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
         model.open(photo); try rendered(model)
         try check(model.sourceSupportsCameraHDR && !model.settings.isHDREditing, "incompatible ProRAW record still opens in SDR")
         let before = try model.editStore!.readState(for: photo)
@@ -211,7 +211,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             editDirectory: root.appendingPathComponent("edits2"), batchDirectory: root.appendingPathComponent("batch2"),
             presetDirectory: root.appendingPathComponent("presets2"))
         var fail = true
-        model.editStore = try EditPersistence(directory: root.appendingPathComponent("edits2"), writeData: { data, url in
+        model.editStore = try MacEditPersistence(directory: root.appendingPathComponent("edits2"), writeData: { data, url in
             if fail { throw CocoaError(.fileWriteNoPermission) }
             try data.write(to: url, options: .atomic)
         })
@@ -276,15 +276,15 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             try data.write(to: cachedCube)
             MacResourceDigestCache.shared.invalidate(url: cachedCube)
             let beforeCount = MacResourceDigestCache.shared.sha256Count
-            let firstDigest = try BatchFrozenSettings.checksum(cachedCube)
-            let secondDigest = try BatchFrozenSettings.checksum(cachedCube)
-            let thirdDigest = try BatchFrozenSettings.checksum(cachedCube)
+            let firstDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            let secondDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            let thirdDigest = try MacBatchFrozenSettings.checksum(cachedCube)
             try check(firstDigest == secondDigest && secondDigest == thirdDigest &&
                       MacResourceDigestCache.shared.sha256Count == beforeCount + 1,
                 "BatchFrozenSettings.checksum reuses MacResourceDigestCache across repeated calls for unchanged look")
             let updatedData = data + Data("# updated\n".utf8)
             try updatedData.write(to: cachedCube)
-            let updatedDigest = try BatchFrozenSettings.checksum(cachedCube)
+            let updatedDigest = try MacBatchFrozenSettings.checksum(cachedCube)
             try check(updatedDigest != firstDigest &&
                       MacResourceDigestCache.shared.sha256Count == beforeCount + 2,
                 "BatchFrozenSettings.checksum detects replaced look and recomputes digest")

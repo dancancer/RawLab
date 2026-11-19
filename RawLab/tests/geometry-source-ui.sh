@@ -23,7 +23,7 @@ rm -f "$HARNESS/$ORIGINAL_EXECUTABLE"
     -c 'Add UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication array' \
     -c 'Add UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0 dict' \
     -c 'Add UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneConfigurationName string Geometry Source Review' \
-    -c 'Add UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName string GeometrySourceHarness.GeometrySourceSceneDelegate' \
+    -c 'Add UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName string GeometrySourceHarness.GeometrySourceSceneDelegate'
     "$HARNESS/Info.plist"
 python3 - "$ROOT" "$OUT" "$ORIGINAL_XCTESTRUN" <<'PY'
 import difflib, json, pathlib, plistlib, subprocess, sys
@@ -38,10 +38,7 @@ transforms = {
                                 "onPreviewSizeChange: { GeometrySourceProbe.shared.viewportEdges.append($0); viewModel.updatePreviewSize($0, settings: draftPreviewSettings) }"),
     "RawLab/RawLab/Core/ViewModel/RawEditorViewModel+Rendering.swift": (
         "        lastPreviewRequest = request",
-        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request"),
-    "RawLab/RawLab/Core/Persistence/EditPersistence.swift": (
-        "            store.records[identity.editKey] = encodedState",
-        "            MainActor.assumeIsolated { if let state { GeometrySourceProbe.shared.saveAttempts.append(state); GeometrySourceProbe.shared.saveReceipts.append([\"identity\": identity.key, \"state\": try! JSONSerialization.jsonObject(with: JSONEncoder().encode(state))]) } }\n            store.records[identity.editKey] = encodedState")
+        "        MainActor.assumeIsolated { GeometrySourceProbe.shared.recordPreview(settings, request: request, source: self.sourceRevision) }\n        lastPreviewRequest = request")
 }
 diffs = []
 for name, (before, after) in transforms.items():
@@ -91,7 +88,7 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK
 SOURCES=()
 while IFS= read -r file; do
     case "$file" in
-        */ContentView.swift|*/ContentView+Panels.swift|*/RawEditorViewModel+Rendering.swift|*/EditPersistence.swift|*/EditorLayout.swift) ;;
+        */ContentView.swift|*/ContentView+Panels.swift|*/RawEditorViewModel+Rendering.swift|*/EditorLayout.swift) ;;
         *) SOURCES+=("$file") ;;
     esac
 done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' -g '!**/RawLabKit/**' | sort)
@@ -99,9 +96,9 @@ cp "$ROOT/RawLab/tests/GeometrySourceHarness.swift" "$OUT/source/GeometrySourceH
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
 xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -module-name GeometrySourceHarness -O -sdk "$SDK" -target "$TARGET" \
     -module-cache-path "$OUT/module-cache" \
-    -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
-    "${SOURCES[@]}" "$OUT/source/ContentView.swift" "$OUT/source/ContentView+Panels.swift" \
-    "$OUT/source/GeometrySourceHarness.swift" "$OUT/source/RawEditorViewModel+Rendering.swift" \
+    -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include"
+    "${SOURCES[@]}" "$OUT/source/ContentView.swift" "$OUT/source/ContentView+Panels.swift"
+    "$OUT/source/GeometrySourceHarness.swift" "$OUT/source/RawEditorViewModel+Rendering.swift"
     "$OUT/source/EditPersistence.swift" "$OUT/source/EditorLayout.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/geometry-source"

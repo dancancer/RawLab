@@ -223,7 +223,7 @@ struct ThumbnailCacheTests {
         let photo = dir.appendingPathComponent("frame.png")
         try writePNG(to: photo)
 
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let thumbnails = PhotoThumbnails()
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
@@ -238,7 +238,7 @@ struct ThumbnailCacheTests {
         // 2. Commit edit v1 (exposure = +1.0): EditPersistence automatically invalidates without manual calls.
         let revisionBeforeV1 = previews.revision
         var settingsV1 = Adjustments(); settingsV1.exposureMode = .sensor; settingsV1.exposure = 1.0
-        let outcomeV1 = session.commitEdit(expected: initialRecord, state: PhotoEditState(settings: settingsV1, filmID: ""))
+        let outcomeV1 = session.commitEdit(expected: initialRecord, state: MacPhotoEditState(settings: settingsV1, filmID: ""))
         check(outcomeV1.status == .applied, "Edit v1 committed")
         check(previews.revision > revisionBeforeV1, "Edit v1 automatically advances preview revision")
 
@@ -274,7 +274,7 @@ struct ThumbnailCacheTests {
         // 4. Edit again to v2 (exposure = +2.2): v1 must be automatically evicted from NSCache without manual calls.
         let revisionBeforeV2 = previews.revision
         var settingsV2 = settingsV1; settingsV2.exposure = 2.2
-        let outcomeV2 = session.commitEdit(expected: recordV1, state: PhotoEditState(settings: settingsV2, filmID: ""))
+        let outcomeV2 = session.commitEdit(expected: recordV1, state: MacPhotoEditState(settings: settingsV2, filmID: ""))
         check(outcomeV2.status == .applied, "Edit v2 committed")
         check(previews.revision > revisionBeforeV2, "Edit v2 automatically advances preview revision")
 
@@ -360,7 +360,7 @@ struct ThumbnailCacheTests {
                   ] as CFDictionary) else { return nil }
             return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
         }
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
 
@@ -382,7 +382,7 @@ struct ThumbnailCacheTests {
 
         // Commit the very first edit (before beginEditedRender or store has ever run for path1).
         var settings1 = Adjustments(); settings1.exposureMode = .sensor; settings1.exposure = 1.4
-        let state1 = PhotoEditState(settings: settings1, filmID: "")
+        let state1 = MacPhotoEditState(settings: settings1, filmID: "")
         let commit1 = session.commitEdit(expected: initial1, state: state1)
         check(commit1.status == .applied, "First edit committed while unedited decode is in flight")
         check(thumbnails.editGeneration(forPath: path1) == 1,
@@ -392,20 +392,20 @@ struct ThumbnailCacheTests {
 
         // Verify idempotency: duplicate notifications / reconcile calls for the same edit state must not re-advance.
         let editedRecord1 = commit1.saved!
-        let rev1 = EditPersistence.editedRevision(for: state1, atPath: path1)!
+        let rev1 = MacEditPersistence.editedRevision(for: state1, atPath: path1)!
         let editedRev1 = PhotoThumbnails.EditedRevision(
             identity: editedRecord1.identity.thumbnailFileIdentity,
             revision: rev1
         )
         NotificationCenter.default.post(
-            name: EditPersistence.didChangeRecordsNotification,
+            name: MacEditPersistence.didChangeRecordsNotification,
             object: nil,
             userInfo: [
-                EditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
-                EditPersistence.changedRecordsUserInfoKey: [path1: editedRecord1],
-                EditPersistence.invalidatedPathsUserInfoKey: Set([path1]),
-                EditPersistence.editedRevisionsUserInfoKey: [path1: rev1],
-                EditPersistence.fileIdentitiesUserInfoKey: [path1: (
+                MacEditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
+                MacEditPersistence.changedRecordsUserInfoKey: [path1: editedRecord1],
+                MacEditPersistence.invalidatedPathsUserInfoKey: Set([path1]),
+                MacEditPersistence.editedRevisionsUserInfoKey: [path1: rev1],
+                MacEditPersistence.fileIdentitiesUserInfoKey: [path1: (
                     editedRecord1.identity.size,
                     editedRecord1.identity.modified,
                     editedRecord1.identity.fileNumber
@@ -488,7 +488,7 @@ struct ThumbnailCacheTests {
         _ = await iter3.next()
 
         var settings3 = settings1; settings3.exposure = 2.1
-        let commit3 = session.commitEdit(expected: cleared2, state: PhotoEditState(settings: settings3, filmID: ""))
+        let commit3 = session.commitEdit(expected: cleared2, state: MacPhotoEditState(settings: settings3, filmID: ""))
         check(commit3.status == .applied && thumbnails.editGeneration(forPath: path2) == genAfterFileInvalidate + 1,
               "Re-editing after reset immediately advances editGeneration again")
         let editedImg3 = try await previews.image(for: commit3.saved!)
@@ -506,7 +506,7 @@ struct ThumbnailCacheTests {
         check(!MacPhotoPreviewPlan.isEdited(initialA) && thumbnails.editGeneration(forPath: path3) == 0,
               "Photo 3 (idA) starts unedited at editGeneration 0")
 
-        let rev3 = EditPersistence.editedRevision(for: state1, atPath: path3)!
+        let rev3 = MacEditPersistence.editedRevision(for: state1, atPath: path3)!
         let commitA = session.commitEdit(expected: initialA, state: state1)
         check(commitA.status == .applied && thumbnails.editGeneration(forPath: path3) == 1,
               "Editing idA advances editGeneration from 0 to 1")
@@ -537,7 +537,7 @@ struct ThumbnailCacheTests {
         let previewInvBeforeB = previews.editedInvalidationCount
         let commitB = session.commitEdit(expected: unmodifiedB, state: state1)
         let savedB = commitB.saved!
-        check(commitB.status == .applied && EditPersistence.editedRevision(for: savedB.state, atPath: path3) == rev3,
+        check(commitB.status == .applied && MacEditPersistence.editedRevision(for: savedB.state, atPath: path3) == rev3,
               "Committed identical edit parameters (same revision R1) onto replacement file idB")
         check(thumbnails.editGeneration(forPath: path3) == genAfterReplaceInvalidate + 1,
               "Recommitting identical edit parameters onto replaced file idB advances editGeneration")
@@ -547,14 +547,14 @@ struct ThumbnailCacheTests {
         // Duplicate notifications for (idB, R1) remain idempotent.
         let editedRevB = PhotoThumbnails.EditedRevision(identity: idB.thumbnailFileIdentity, revision: rev3)
         NotificationCenter.default.post(
-            name: EditPersistence.didChangeRecordsNotification,
+            name: MacEditPersistence.didChangeRecordsNotification,
             object: nil,
             userInfo: [
-                EditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
-                EditPersistence.changedRecordsUserInfoKey: [path3: savedB],
-                EditPersistence.invalidatedPathsUserInfoKey: Set([path3]),
-                EditPersistence.editedRevisionsUserInfoKey: [path3: rev3],
-                EditPersistence.fileIdentitiesUserInfoKey: [path3: (idB.size, idB.modified, idB.fileNumber)]
+                MacEditPersistence.directoryPathUserInfoKey: store.canonicalDirectoryPath,
+                MacEditPersistence.changedRecordsUserInfoKey: [path3: savedB],
+                MacEditPersistence.invalidatedPathsUserInfoKey: Set([path3]),
+                MacEditPersistence.editedRevisionsUserInfoKey: [path3: rev3],
+                MacEditPersistence.fileIdentitiesUserInfoKey: [path3: (idB.size, idB.modified, idB.fileNumber)]
             ]
         )
         check(!thumbnails.reconcileEditedRevision(editedRevB, atPath: path3),
@@ -629,7 +629,7 @@ struct ThumbnailCacheTests {
             let photo = dir.appendingPathComponent("same-name.png")
             try writePNG(to: photo, width: 360, height: 240, red: 0.25)
             let keyB = PhotoThumbnailCacheKey(uneditedFileAt: photo)!
-            let store = try EditPersistence(directory: editsDir)
+            let store = try MacEditPersistence(directory: editsDir)
             let idB = try store.readState(for: photo).identity
 
             let (entered, onEnter) = AsyncStream<Void>.makeStream()
@@ -661,7 +661,7 @@ struct ThumbnailCacheTests {
             let idC = try store.readState(for: photo).identity
             check(idC != idB, "CASE_E_MN9 \(route): same-name replacement changes file identity")
             var settings = Adjustments(); settings.exposureMode = .sensor; settings.exposure = 1.4
-            try store.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+            try store.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
             let savedC = try store.readState(for: photo)
             // render-seed 在保存之后才创建预览服务，确保它没有收到持久化通知。
             let previews = observingPreviews ?? MacEditedPhotoPreviews(
@@ -704,7 +704,7 @@ struct ThumbnailCacheTests {
         let photo = dir.appendingPathComponent("reset-photo.png")
         try writePNG(to: photo, red: 0.35)
 
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let thumbnails = PhotoThumbnails()
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
@@ -714,7 +714,7 @@ struct ThumbnailCacheTests {
 
         // Commit edited state and render edited tile.
         var editedSettings = Adjustments(); editedSettings.exposureMode = .sensor; editedSettings.exposure = 1.5
-        let editOutcome = session.commitEdit(expected: initial, state: PhotoEditState(settings: editedSettings, filmID: ""))
+        let editOutcome = session.commitEdit(expected: initial, state: MacPhotoEditState(settings: editedSettings, filmID: ""))
         check(editOutcome.status == .applied, "Initial edit committed")
 
         var tile = WorkspacePhotoTileState()
@@ -726,7 +726,7 @@ struct ThumbnailCacheTests {
 
         // Reset by committing neutral Adjustments (same as EditorModel Reset All via commitAdjustment).
         var neutralSettings = Adjustments(); neutralSettings.exposureMode = .sensor
-        let neutralOutcome = session.commitEdit(expected: editOutcome.saved!, state: PhotoEditState(settings: neutralSettings, filmID: ""))
+        let neutralOutcome = session.commitEdit(expected: editOutcome.saved!, state: MacPhotoEditState(settings: neutralSettings, filmID: ""))
         check(neutralOutcome.status == .applied, "Neutral reset state committed")
         check(thumbnails.editedInvalidationCount == thumbInvalidationsBeforeReset + 1,
               "Reset invalidates PhotoThumbnails edited state exactly once")
@@ -773,7 +773,7 @@ struct ThumbnailCacheTests {
         try Data("LUT_3D_SIZE 2\n".utf8).write(to: lut)
         let film = Film(name: "Custom", url: lut, managedID: "managed-custom-look")
 
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let thumbnails = PhotoThumbnails()
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
@@ -784,7 +784,7 @@ struct ThumbnailCacheTests {
 
         // Apply custom look and render mounted tile.
         var lookSettings = Adjustments(); lookSettings.exposureMode = .sensor
-        let lookCommit = session.commitEdit(expected: initial, state: PhotoEditState(settings: lookSettings, filmID: film.id))
+        let lookCommit = session.commitEdit(expected: initial, state: MacPhotoEditState(settings: lookSettings, filmID: film.id))
         check(lookCommit.status == .applied, "Look edit committed")
         let lookPlan = try MacPhotoPreviewPlan(record: lookCommit.saved!, films: [film])
         let lookKey = PhotoThumbnailCacheKey(identity: lookCommit.saved!.identity, previewKey: lookPlan.key)
@@ -819,7 +819,7 @@ struct ThumbnailCacheTests {
 
         // Also verify render failure on an exposure-edited photo clears stale edited thumbnail.
         var expSettings = Adjustments(); expSettings.exposureMode = .sensor; expSettings.exposure = 1.0
-        let expCommit = session.commitEdit(expected: lookCommit.saved!, state: PhotoEditState(settings: expSettings, filmID: ""))
+        let expCommit = session.commitEdit(expected: lookCommit.saved!, state: MacPhotoEditState(settings: expSettings, filmID: ""))
         check(expCommit.status == .applied, "Exposure edit committed")
         await mountedTile.refresh(url: photo, previews: previews)
         let expEditedImg = mountedTile.thumbnail
@@ -827,7 +827,7 @@ struct ThumbnailCacheTests {
               "Mounted tile shows exposure-edited thumbnail")
 
         var expSettings2 = expSettings; expSettings2.exposure = 2.0
-        let expCommit2 = session.commitEdit(expected: expCommit.saved!, state: PhotoEditState(settings: expSettings2, filmID: ""))
+        let expCommit2 = session.commitEdit(expected: expCommit.saved!, state: MacPhotoEditState(settings: expSettings2, filmID: ""))
         check(expCommit2.status == .applied, "Second exposure edit committed")
         RenderEngine.failNextRender = true
         await mountedTile.refresh(url: photo, previews: previews)
@@ -901,7 +901,7 @@ struct ThumbnailCacheTests {
             photos.append(file)
         }
 
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let thumbnails = PhotoThumbnails()
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
@@ -909,7 +909,7 @@ struct ThumbnailCacheTests {
         // Seed edits.json before the measured commit so reads traverse an existing registry file.
         let seedRecord = try await previews.record(for: photos[visibleCount - 1])
         var seedSettings = Adjustments(); seedSettings.exposureMode = .sensor; seedSettings.exposure = 0.25
-        let seedOutcome = session.commitEdit(expected: seedRecord, state: PhotoEditState(settings: seedSettings, filmID: ""))
+        let seedOutcome = session.commitEdit(expected: seedRecord, state: MacPhotoEditState(settings: seedSettings, filmID: ""))
         check(seedOutcome.status == .applied, "Seed edit applied")
 
         var tiles = Array(repeating: WorkspacePhotoTileState(), count: visibleCount)
@@ -919,9 +919,9 @@ struct ThumbnailCacheTests {
 
         // Measure total readRegistry disk parses caused by one commit plus refreshing all N visible tiles.
         let targetBefore = try await previews.record(for: photos[0])
-        let readsBeforeCommit = EditPersistence.registryDiskReadCount(forDirectory: editsDir)
+        let readsBeforeCommit = MacEditPersistence.registryDiskReadCount(forDirectory: editsDir)
         var editSettings = Adjustments(); editSettings.exposureMode = .sensor; editSettings.exposure = 1.1
-        let outcome = session.commitEdit(expected: targetBefore, state: PhotoEditState(settings: editSettings, filmID: ""))
+        let outcome = session.commitEdit(expected: targetBefore, state: MacPhotoEditState(settings: editSettings, filmID: ""))
         check(outcome.status == .applied, "Target commit applied")
 
         for idx in 0..<visibleCount {
@@ -932,26 +932,26 @@ struct ThumbnailCacheTests {
             let hit = await previews.cachedImage(for: updatedRecord)
             check(hit === tiles[0].thumbnail, "Cached thumbnail returned for edited tile")
         }
-        let readsDelta = EditPersistence.registryDiskReadCount(forDirectory: editsDir) - readsBeforeCommit
+        let readsDelta = MacEditPersistence.registryDiskReadCount(forDirectory: editsDir) - readsBeforeCommit
         check(readsDelta <= visibleCount + 1,
               "Single commit plus refreshing \(visibleCount) visible tiles performed \(readsDelta) readRegistry disk parses (limit \(visibleCount + 1))")
 
         // Cross-instance consistency and external edits.json overwrite/corruption invalidation.
-        let reopened = try EditPersistence(directory: editsDir)
+        let reopened = try MacEditPersistence(directory: editsDir)
         let reopenedState = try reopened.state(for: photos[0])
         check(reopenedState?.settings.exposure == 1.1, "Separate EditPersistence instance observes committed state")
 
         let editsFile = editsDir.appendingPathComponent("edits.json")
         var externalSettings = Adjustments(); externalSettings.exposureMode = .sensor; externalSettings.exposure = 1.75
-        try store.save(photos[1], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        try store.save(photos[1], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
         let siblingState = try reopened.state(for: photos[1])
         check(siblingState?.settings.exposure == 1.75,
               "Second EditPersistence instance reflects state written by sibling instance")
 
         let externalDir = dir.appendingPathComponent("external-edits", isDirectory: true)
-        let externalStore = try EditPersistence(directory: externalDir)
+        let externalStore = try MacEditPersistence(directory: externalDir)
         var overwrittenSettings = Adjustments(); overwrittenSettings.exposureMode = .sensor; overwrittenSettings.exposure = 2.5
-        try externalStore.save(photos[0], state: PhotoEditState(settings: overwrittenSettings, filmID: ""))
+        try externalStore.save(photos[0], state: MacPhotoEditState(settings: overwrittenSettings, filmID: ""))
         let externalBytes = try Data(contentsOf: externalDir.appendingPathComponent("edits.json"))
         try externalBytes.write(to: editsFile)
         let overwrittenState = try reopened.state(for: photos[0])
@@ -961,7 +961,7 @@ struct ThumbnailCacheTests {
         try Data("{\"version\":1,\"records\":{".utf8).write(to: editsFile)
         var threwCorrupt = false
         do {
-            _ = try EditPersistence(directory: editsDir)
+            _ = try MacEditPersistence(directory: editsDir)
         } catch is CocoaError {
             threwCorrupt = true
         }
@@ -969,14 +969,14 @@ struct ThumbnailCacheTests {
 
         // External deletion of edits.json on an already-warmed instance must invalidate cache.
         let deleteDir = dir.appendingPathComponent("external-delete", isDirectory: true)
-        let deleteStore = try EditPersistence(directory: deleteDir)
-        try deleteStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let deleteStore = try MacEditPersistence(directory: deleteDir)
+        try deleteStore.save(photos[0], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
         let deleteWarm = try deleteStore.state(for: photos[0])
         check(deleteWarm?.settings.exposure == 1.75,
               "Warmed instance returns saved state before external deletion")
-        let deleteReadsBeforeHit = EditPersistence.registryDiskReadCount(forDirectory: deleteDir)
+        let deleteReadsBeforeHit = MacEditPersistence.registryDiskReadCount(forDirectory: deleteDir)
         _ = try deleteStore.state(for: photos[0])
-        check(EditPersistence.registryDiskReadCount(forDirectory: deleteDir) == deleteReadsBeforeHit,
+        check(MacEditPersistence.registryDiskReadCount(forDirectory: deleteDir) == deleteReadsBeforeHit,
               "Second read before external deletion hits cache")
         try FileManager.default.removeItem(at: deleteDir.appendingPathComponent("edits.json"))
         let afterDelete = try deleteStore.state(for: photos[0])
@@ -985,17 +985,17 @@ struct ThumbnailCacheTests {
 
         // Corrupt edits.json throwing in RegistryCache.load must invalidate & evict rather than promote/occupy an LRU slot.
         let corruptLruRoot = dir.appendingPathComponent("corrupt-lru", isDirectory: true)
-        let capCount = EditPersistence.registryCacheCapacity
+        let capCount = MacEditPersistence.registryCacheCapacity
         let corruptDir = corruptLruRoot.appendingPathComponent("corrupt-slot", isDirectory: true)
-        let corruptStore = try EditPersistence(directory: corruptDir)
-        try corruptStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let corruptStore = try MacEditPersistence(directory: corruptDir)
+        try corruptStore.save(photos[0], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
         _ = try corruptStore.state(for: photos[0])
         var healthyDirs: [URL] = []
-        var healthyStores: [EditPersistence] = []
+        var healthyStores: [MacEditPersistence] = []
         for idx in 0..<(capCount - 1) {
             let hDir = corruptLruRoot.appendingPathComponent("healthy-\(idx)", isDirectory: true)
-            let hStore = try EditPersistence(directory: hDir)
-            try hStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+            let hStore = try MacEditPersistence(directory: hDir)
+            try hStore.save(photos[0], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
             _ = try hStore.state(for: photos[0])
             healthyDirs.append(hDir)
             healthyStores.append(hStore)
@@ -1004,12 +1004,12 @@ struct ThumbnailCacheTests {
         try Data("{\"version\":1,\"records\":{".utf8).write(to: corruptDir.appendingPathComponent("edits.json"))
         _ = try? corruptStore.state(for: photos[0])
         let extraHealthyDir = corruptLruRoot.appendingPathComponent("healthy-extra", isDirectory: true)
-        let extraHealthyStore = try EditPersistence(directory: extraHealthyDir)
-        try extraHealthyStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let extraHealthyStore = try MacEditPersistence(directory: extraHealthyDir)
+        try extraHealthyStore.save(photos[0], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
         _ = try extraHealthyStore.state(for: photos[0])
-        let oldestHealthyReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0])
+        let oldestHealthyReadsBefore = MacEditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0])
         _ = try healthyStores[0].state(for: photos[0])
-        let oldestHealthyReadsDelta = EditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0]) - oldestHealthyReadsBefore
+        let oldestHealthyReadsDelta = MacEditPersistence.registryDiskReadCount(forDirectory: healthyDirs[0]) - oldestHealthyReadsBefore
         check(oldestHealthyReadsDelta == 0,
               "Throwing on corrupt registry must evict corrupt entry instead of occupying/promoting LRU slot (healthy-0 disk reads delta=\(oldestHealthyReadsDelta))")
 
@@ -1018,15 +1018,15 @@ struct ThumbnailCacheTests {
         let symDirA = symRoot.appendingPathComponent("dirA", isDirectory: true)
         let symDirB = symRoot.appendingPathComponent("dirB", isDirectory: true)
         let symLink = symRoot.appendingPathComponent("current-edits", isDirectory: true)
-        let storeA = try EditPersistence(directory: symDirA)
-        let storeB = try EditPersistence(directory: symDirB)
+        let storeA = try MacEditPersistence(directory: symDirA)
+        let storeB = try MacEditPersistence(directory: symDirB)
         var settingsA = Adjustments(); settingsA.exposureMode = .sensor; settingsA.exposure = 1.2
         var settingsB = Adjustments(); settingsB.exposureMode = .sensor; settingsB.exposure = 2.4
-        try storeA.save(photos[0], state: PhotoEditState(settings: settingsA, filmID: ""))
-        try storeB.save(photos[0], state: PhotoEditState(settings: settingsB, filmID: ""))
+        try storeA.save(photos[0], state: MacPhotoEditState(settings: settingsA, filmID: ""))
+        try storeB.save(photos[0], state: MacPhotoEditState(settings: settingsB, filmID: ""))
         try FileManager.default.createSymbolicLink(at: symLink, withDestinationURL: symDirA)
 
-        let symStore = try EditPersistence(directory: symLink)
+        let symStore = try MacEditPersistence(directory: symLink)
         let symInitial = try symStore.state(for: photos[0])
         check(symInitial?.settings.exposure == 1.2,
               "Warmed symlink store initially observes dirA state")
@@ -1045,18 +1045,18 @@ struct ThumbnailCacheTests {
         let atomicTargetDir = symRoot.appendingPathComponent("atomic-target", isDirectory: true)
         let atomicLinkDir = symRoot.appendingPathComponent("atomic-link", isDirectory: true)
         try FileManager.default.createDirectory(at: atomicLinkDir, withIntermediateDirectories: true)
-        let atomicTargetStore = try EditPersistence(directory: atomicTargetDir)
+        let atomicTargetStore = try MacEditPersistence(directory: atomicTargetDir)
         var atomicInitial = Adjustments(); atomicInitial.exposureMode = .sensor; atomicInitial.exposure = 1.3
-        try atomicTargetStore.save(photos[0], state: PhotoEditState(settings: atomicInitial, filmID: ""))
+        try atomicTargetStore.save(photos[0], state: MacPhotoEditState(settings: atomicInitial, filmID: ""))
         let atomicTargetFile = atomicTargetDir.appendingPathComponent("edits.json")
         let atomicLinkFile = atomicLinkDir.appendingPathComponent("edits.json")
         try FileManager.default.createSymbolicLink(at: atomicLinkFile, withDestinationURL: atomicTargetFile)
-        let atomicLinkStore = try EditPersistence(directory: atomicLinkDir)
+        let atomicLinkStore = try MacEditPersistence(directory: atomicLinkDir)
         let atomicWarm = try atomicLinkStore.state(for: photos[0])
         check(atomicWarm?.settings.exposure == 1.3,
               "Warmed symlink edits.json store reads target state")
         var atomicUpdated = Adjustments(); atomicUpdated.exposureMode = .sensor; atomicUpdated.exposure = 2.8
-        try atomicLinkStore.save(photos[0], state: PhotoEditState(settings: atomicUpdated, filmID: ""))
+        try atomicLinkStore.save(photos[0], state: MacPhotoEditState(settings: atomicUpdated, filmID: ""))
         let atomicPostSave = try atomicLinkStore.state(for: photos[0])
         check(atomicPostSave?.settings.exposure == 2.8,
               "Store observes post-atomic-write state after edits.json symlink replacement")
@@ -1065,26 +1065,26 @@ struct ThumbnailCacheTests {
               "Old symlink target retains its own uncorrupted state")
 
         // Bounded LRU eviction for EditPersistence registry cache (capacity == 32).
-        let cap = EditPersistence.registryCacheCapacity
+        let cap = MacEditPersistence.registryCacheCapacity
         check(cap == 32, "EditPersistence registry cache cap is bounded (\(cap))")
         let lruDirsRoot = dir.appendingPathComponent("registry-lru", isDirectory: true)
-        var lruStores: [EditPersistence] = []
+        var lruStores: [MacEditPersistence] = []
         var lruDirs: [URL] = []
         for idx in 0...cap {
             let subDir = lruDirsRoot.appendingPathComponent("store-\(idx)", isDirectory: true)
-            let subStore = try EditPersistence(directory: subDir)
-            try subStore.save(photos[0], state: PhotoEditState(settings: externalSettings, filmID: ""))
+            let subStore = try MacEditPersistence(directory: subDir)
+            try subStore.save(photos[0], state: MacPhotoEditState(settings: externalSettings, filmID: ""))
             _ = try subStore.state(for: photos[0])
             lruDirs.append(subDir)
             lruStores.append(subStore)
         }
-        let latestReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap])
+        let latestReadsBefore = MacEditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap])
         _ = try lruStores[cap].state(for: photos[0])
-        check(EditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap]) == latestReadsBefore,
+        check(MacEditPersistence.registryDiskReadCount(forDirectory: lruDirs[cap]) == latestReadsBefore,
               "Most recently used directory stays cached inside EditPersistence LRU")
-        let oldestReadsBefore = EditPersistence.registryDiskReadCount(forDirectory: lruDirs[0])
+        let oldestReadsBefore = MacEditPersistence.registryDiskReadCount(forDirectory: lruDirs[0])
         _ = try lruStores[0].state(for: photos[0])
-        check(EditPersistence.registryDiskReadCount(forDirectory: lruDirs[0]) == oldestReadsBefore + 1,
+        check(MacEditPersistence.registryDiskReadCount(forDirectory: lruDirs[0]) == oldestReadsBefore + 1,
               "Oldest directory was evicted once EditPersistence registry cache reached capacity \(cap)")
 
         // isEditorBusy coalescing: settled previews trigger 0 refreshes; deferred busy refresh triggers 1.
@@ -1099,8 +1099,8 @@ struct ThumbnailCacheTests {
         let deferredPhoto = deferredDir.appendingPathComponent("busy.png")
         try writePNG(to: deferredPhoto, red: 0.7)
         let deferredEdits = deferredDir.appendingPathComponent("edits", isDirectory: true)
-        let deferredStore = try EditPersistence(directory: deferredEdits)
-        try deferredStore.save(deferredPhoto, state: PhotoEditState(settings: externalSettings, filmID: ""))
+        let deferredStore = try MacEditPersistence(directory: deferredEdits)
+        try deferredStore.save(deferredPhoto, state: MacPhotoEditState(settings: externalSettings, filmID: ""))
         let busyPreviews = MacEditedPhotoPreviews(editDirectory: deferredEdits, cacheDirectory: diskCacheDir, thumbnails: PhotoThumbnails())
         var busyTile = WorkspacePhotoTileState()
         busyPreviews.isEditorBusy = true
@@ -1130,14 +1130,14 @@ struct ThumbnailCacheTests {
         try Data("#LUT v1\n0.0 0.0 0.0\n1.0 1.0 1.0\n".utf8).write(to: lut)
         let film = Film(name: "LookA", url: lut, managedID: "look-a")
 
-        let store = try EditPersistence(directory: editsDir)
+        let store = try MacEditPersistence(directory: editsDir)
         let session = AdjustmentTransferSession(store: store)
         let thumbnails = PhotoThumbnails()
         let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
         previews.films = [film]
 
         let initialRecord = try await previews.record(for: photo)
-        let state = PhotoEditState(settings: Adjustments(), filmID: film.id)
+        let state = MacPhotoEditState(settings: Adjustments(), filmID: film.id)
         let outcome = session.commitEdit(expected: initialRecord, state: state)
         check(outcome.status == .applied, "LUT edit committed")
         let editedRecord = outcome.saved!
@@ -1208,7 +1208,7 @@ struct ThumbnailCacheTests {
         try Data("SYM_CONTENT_B02\n".utf8).write(to: targetB)
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: targetA)
         let symFilm = Film(name: "Sym", url: symlink, managedID: "sym-look")
-        let symRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: Adjustments(), filmID: symFilm.id))
+        let symRecord = MacPhotoEditRecord(identity: editedRecord.identity, state: MacPhotoEditState(settings: Adjustments(), filmID: symFilm.id))
         let symPlanA = try MacPhotoPreviewPlan(record: symRecord, films: [symFilm])
         try FileManager.default.removeItem(at: symlink)
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: targetB)
@@ -1229,7 +1229,7 @@ struct ThumbnailCacheTests {
         hdrSettings.mode = .hdr
         hdrSettings.lookSettings = HDRLookSettings(sha256: hdrHex, name: "HDRTest", strength: 1.0)
         hdrAdjustments.hdr = hdrSettings
-        let hdrRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: hdrAdjustments, filmID: ""))
+        let hdrRecord = MacPhotoEditRecord(identity: editedRecord.identity, state: MacPhotoEditState(settings: hdrAdjustments, filmID: ""))
         let hdrHashBefore = MacPhotoPreviewPlan.resourceHashCount
         let hdrPlan1 = try MacPhotoPreviewPlan(record: hdrRecord, films: [], hdrLookDirectory: hdrLooksDir)
         check(MacPhotoPreviewPlan.resourceHashCount - hdrHashBefore == 1,
@@ -1303,7 +1303,7 @@ struct ThumbnailCacheTests {
             let extraLUT = capDir.appendingPathComponent("extra-\(idx).cube")
             try Data("SHARED_LUT_\(idx)".utf8).write(to: extraLUT)
             let extraFilm = Film(name: "Extra\(idx)", url: extraLUT, managedID: "extra-\(idx)")
-            let extraRecord = PhotoEditRecord(identity: editedRecord.identity, state: PhotoEditState(settings: Adjustments(), filmID: extraFilm.id))
+            let extraRecord = MacPhotoEditRecord(identity: editedRecord.identity, state: MacPhotoEditState(settings: Adjustments(), filmID: extraFilm.id))
             _ = try MacPhotoPreviewPlan(record: extraRecord, films: [extraFilm])
         }
         check(MacResourceDigestCache.shared.entryCount <= sharedCap,

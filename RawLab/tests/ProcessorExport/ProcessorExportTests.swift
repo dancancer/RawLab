@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import ImageIO
 import UIKit
@@ -269,7 +270,7 @@ struct ProcessorExportTests {
         var unselectedLens = RawSettings.default
         unselectedLens.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual)
         let unselected = try cpuProcessor.processRaw(url: raw, settings: unselectedLens, previewLongEdge: 180, lutURL: nil)
-        check(unselected.lensInfo?.state == SONY2FUJI_LENS_NO_LENS && unselected.buffer.data == lensOff.buffer.data,
+        check(unselected.lensInfo?.state == .unmatched && unselected.buffer.data == lensOff.buffer.data,
               "iOS manual mode without selection reports a skipped correction, never auto")
         guard let candidate = lensOff.lensInfo?.candidates.first(where: { $0.isMatch && $0.hasDistortion }) else {
             fatalError("Lens regression requires a RAW with a matching distortion calibration")
@@ -287,7 +288,7 @@ struct ProcessorExportTests {
         let autoLens = try cpuProcessor.processRaw(url: raw, settings: lensAuto, previewLongEdge: 180, lutURL: nil)
         if lensOff.lensInfo!.candidates.filter(\.isMatch).count == 1 {
             check(autoLens.buffer.data == lensOn.buffer.data, "iOS automatic and manual unique matching agree")
-        } else { check(autoLens.lensInfo?.state == SONY2FUJI_LENS_AMBIGUOUS, "iOS automatic matching never guesses") }
+        } else { check(autoLens.lensInfo?.state == .ambiguous, "iOS automatic matching never guesses") }
         check(try cpuProcessor.processRaw(url: raw, settings: .default, previewLongEdge: 180, lutURL: nil).buffer.data == lensOff.buffer.data,
               "iOS lens reset restores exact baseline")
         lensSettings.applyMasterRecipe(MasterRecipe.allRecipes[0]); lensSettings.tint = 20

@@ -281,13 +281,13 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                     let expectedFile = root.appendingPathComponent("\(UUID()).\(extensionName)")
                     _ = try cpu.render(input, settings: expected, lut: lut, edge: nil,
                                        output: expectedFile, exportLongEdge: 128)
-                    let journal = BatchJournal(directory: root.appendingPathComponent(UUID().uuidString))
-                    var job = BatchExportJob(source: input, settings: saved, look: lut, lookName: recipe.name)
+                    let journal = MacBatchJournal(directory: root.appendingPathComponent(UUID().uuidString))
+                    var job = MacBatchExportJob(source: input, settings: saved, look: lut, lookName: recipe.name)
                     job.outputDirectory = root; job.png = png
-                    var item = try BatchExportItem(url: input); item.selected = true
+                    var item = try MacBatchExportItem(url: input); item.selected = true
                     job.items = [item]
                     let batchEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-                    try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
+                    try MacBatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
                         target, settings, look, output in
                         _ = try batchEngine.render(target, settings: settings, lut: look, edge: nil,
                                                    output: output, exportLongEdge: 128)

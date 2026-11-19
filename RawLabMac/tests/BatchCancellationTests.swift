@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import Combine
 
@@ -49,8 +50,8 @@ enum BatchCancellationTests {
     static func validationQueue(_ root: URL, _ inputs: [URL]) throws {
         let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
         let preview = DispatchSemaphore(value: 0)
-        let model = BatchExportModel(job: BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Neutral"),
-            journal: BatchJournal(directory: root.appendingPathComponent("validation-journal")),
+        let model = BatchExportModel(job: MacBatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Neutral"),
+            journal: MacBatchJournal(directory: root.appendingPathComponent("validation-journal")),
             probeHDRSource: { _, _ in entered.signal(); release.wait(); return nil },
             resolveX3fMode: { _ in preview.signal(); throw ProbeError.stopped })
         model.add([inputs[0]])
@@ -71,9 +72,9 @@ enum BatchCancellationTests {
         let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
         let lock = NSLock()
         var calls = [URL]()
-        var job = BatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Neutral")
-        job.items = try inputs.map { try BatchExportItem(url: $0) }
-        let model = BatchExportModel(job: job, journal: BatchJournal(directory: root.appendingPathComponent("journal")),
+        var job = MacBatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Neutral")
+        job.items = try inputs.map { try MacBatchExportItem(url: $0) }
+        let model = BatchExportModel(job: job, journal: MacBatchJournal(directory: root.appendingPathComponent("journal")),
             resolveX3fMode: { url in
                 lock.lock(); calls.append(url); let first = calls.count == 1; lock.unlock()
                 if first { entered.signal(); release.wait() }
@@ -95,12 +96,12 @@ enum BatchCancellationTests {
     static func aiCancellation(_ root: URL, _ inputs: [URL], action: String) throws {
         let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
         var settings = Adjustments(); settings.aiDenoiseEnabled = true
-        var job = BatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Neutral")
-        job.outputDirectory = root; job.items = [try BatchExportItem(url: inputs[0])]
+        var job = MacBatchExportJob(source: inputs[0], settings: settings, look: nil, lookName: "Neutral")
+        job.outputDirectory = root; job.items = [try MacBatchExportItem(url: inputs[0])]
         job.items[0].selected = true
         let lock = NSLock()
         var active: AIPreparation?, events = [String](), reports = [Int32]()
-        let model = BatchExportModel(job: job, journal: BatchJournal(directory: root.appendingPathComponent("ai-\(action)")),
+        let model = BatchExportModel(job: job, journal: MacBatchJournal(directory: root.appendingPathComponent("ai-\(action)")),
             resolveX3fMode: { _ in .legacy },
             prepareAI: { _, _, _, progress in
                 lock.lock(); let first = events.isEmpty; events.append(first ? "preview-enter" : "next-enter")

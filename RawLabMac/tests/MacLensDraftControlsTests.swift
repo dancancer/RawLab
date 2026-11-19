@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main
@@ -15,7 +16,7 @@ struct MacLensDraftControlsTests {
                                                      hasDistortion: false, hasTCA: false, isMatch: false)
     private static let candidates = [matched, partial, noCalibration]
 
-    private static func report(_ state: sony2fuji_lens_state = SONY2FUJI_LENS_OFF,
+    private static func report(_ state: LensMatchState = .off,
                                distortion: Bool = false, tca: Bool = false, crop: Float = 1,
                                candidates: [LensCandidate] = candidates) -> LensInfo {
         LensInfo(state: state, detectedLens: "FE 24–70mm F2.8 GM", selectedLens: "FE 24–70mm F2.8 GM",
@@ -80,12 +81,12 @@ struct MacLensDraftControlsTests {
         settings.distortion = true
         settings.tca = true
         let stale = MacLensPresentation(settings: settings,
-            info: report(SONY2FUJI_LENS_MATCHED, distortion: true, tca: true, crop: 1.1), previewIsCurrent: false)
+            info: report(.matched, distortion: true, tca: true, crop: 1.1), previewIsCurrent: false)
         check(stale.correctionStatusKey == "正在预览镜头校正…" && stale.cropPercent == nil &&
               stale.correctionDetailKey(tca: false) == "正在预览镜头校正…",
               "A stale report never confirms the draft's correction or crop amount")
         let rendered = MacLensPresentation(settings: settings,
-            info: report(SONY2FUJI_LENS_MATCHED, distortion: true, tca: false, crop: 1.1), previewIsCurrent: true)
+            info: report(.matched, distortion: true, tca: false, crop: 1.1), previewIsCurrent: true)
         check(rendered.correctionDetailKey(tca: false) == "已应用" &&
               rendered.correctionDetailKey(tca: true) == "横向色差未应用" && rendered.cropPercent == 9,
               "Current render reports actual applied corrections and measured crop separately")
@@ -111,23 +112,23 @@ struct MacLensDraftControlsTests {
               "Entering manual mode without a profile asks for selection instead of claiming a missing saved profile")
         settings.mode = .automatic
         settings.distortion = true
-        for state in [SONY2FUJI_LENS_NO_DATABASE, SONY2FUJI_LENS_NO_CAMERA,
-                      SONY2FUJI_LENS_MISSING_FOCAL_LENGTH, SONY2FUJI_LENS_EMBEDDED_GEOMETRY,
-                      SONY2FUJI_LENS_UNSUPPORTED_INPUT] {
+        for state in [LensMatchState.noDatabase, .noCamera,
+                      .missingFocalLength, .embeddedGeometry,
+                      .unsupportedInput] {
             let unsupported = MacLensPresentation(settings: settings, info: report(state), previewIsCurrent: true)
             check(!unsupported.inputAllowsCorrection && !unsupported.canChangeCorrection(tca: true) &&
                   unsupported.canChangeCorrection(tca: false),
-                  "Unsupported input state \(state.rawValue) exposes the report and permits disabling retained correction")
+                  "Unsupported input state \(state) exposes the report and permits disabling retained correction")
         }
         let pendingUnsupported = MacLensPresentation(settings: settings,
-            info: report(SONY2FUJI_LENS_UNSUPPORTED_INPUT), previewIsCurrent: false)
+            info: report(.unsupportedInput), previewIsCurrent: false)
         check(pendingUnsupported.inputAllowsCorrection && pendingUnsupported.correctionStatusKey == "正在预览镜头校正…",
               "A stale unsupported report cannot disable a newer draft's available calibration")
         let waiting = MacLensPresentation(settings: settings, info: nil, previewIsCurrent: false)
         check(waiting.identityStatusKey == "镜头信息尚未就绪" && waiting.correctionStatusKey == "正在读取镜头信息…" &&
               !waiting.canChangeCorrection(tca: true), "Missing lens information remains explicit without invented capabilities")
         let invalidCrop = MacLensPresentation(settings: settings,
-            info: report(SONY2FUJI_LENS_MATCHED, distortion: true, crop: .infinity), previewIsCurrent: true)
+            info: report(.matched, distortion: true, crop: .infinity), previewIsCurrent: true)
         check(invalidCrop.cropPercent == nil, "Invalid crop scale never creates a displayed percentage")
     }
 }
