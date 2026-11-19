@@ -100,28 +100,11 @@ public enum AdjustmentCommitError: Error, Sendable {
     case historyOrder
 }
 
-public enum EditPersistenceError: LocalizedError, Sendable {
-    case invalidIdentity
-    case corruptStore
-    case legacyAssetEditNeedsDecision
-
-    public var errorDescription: String? {
-        switch self {
-        case .invalidIdentity:
-            return L10n.text("无法识别原始照片，调整尚未保存。")
-        case .corruptStore:
-            return L10n.text("无法读取已保存的调整，原有记录未被覆盖。")
-        case .legacyAssetEditNeedsDecision:
-            return L10n.text("请先打开这张照片，确认是否恢复旧调整。")
-        }
-    }
-}
-
 public struct UnusableEditRecordError: LocalizedError {
     public let message: String
     public let underlying: Error?
 
-    public init(_ message: String = L10n.text("无法读取已保存的调整，原有记录未被覆盖。"), underlying: Error? = nil) {
+    public init(_ message: String, underlying: Error? = nil) {
         self.message = message
         self.underlying = underlying
     }
