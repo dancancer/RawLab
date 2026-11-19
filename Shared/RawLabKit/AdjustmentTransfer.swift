@@ -81,15 +81,10 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensVignetting = "geometry.lens.vignetting"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
 
-    public var isHDRRelative: Bool { self == .hdrTemperature || self == .hdrTint }
-    public var isHDROnly: Bool { self == .hdrLook || self == .hdrCameraDevelopment || isHDRRelative || Self.hdrRendition.contains(self) }
-    public var group: String {
-        if isHDRRelative { return "color" }
-        if self == .hdrLook { return "looks" }
-        if self == .hdrCameraDevelopment { return "detail" }
-        if Self.hdrRendition.contains(self) { return "light" }
-        return self == .blackPoint || self == .whitePoint ? "light" : String(rawValue.split(separator: ".")[0])
-    }
+    public var spec: AdjustmentFieldDefinition { AdjustmentFieldSpec.forId(rawValue)! }
+    public var isHDRRelative: Bool { spec.protocolSpec.isHDRRelative }
+    public var isHDROnly: Bool { spec.protocolSpec.isHDROnly }
+    public var group: String { spec.group }
     public var gradingZone: ColorGradingZone? {
         switch self {
         case .gradingShadows: return .shadows
@@ -146,24 +141,9 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         return (parts[2], channel)
     }
     public var scalarRange: ClosedRange<Double>? {
-        if hslLocation != nil { return -100...100 }
-        switch self {
-        case .hdrTemperature: return 2000...50000
-        case .hdrTint: return -150...150
-        case .hdrPeakLimit: return 0...6
-        case .hdrSDRExposure: return -4...4
-        case .hdrSDRContrast, .hdrSDRSaturation: return -100...100
-        case .strength, .contrast, .saturation, .sharpening: return 0...2
-        case .exposure: return -20...20
-        case .highlights, .shadows, .sCurve, .perspectiveHorizontal, .perspectiveVertical: return -1...1
-        case .vignetteAmount, .vignetteRoundness, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return -100...100
-        case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights, .grainAmount, .grainSize, .grainRoughness: return 0...100
-        case .quarterTurns: return 0...3
-        case .cropX, .cropY, .cropWidth, .cropHeight: return 0...1
-        case .postRGBDenoise: return 0...1
-        case .straighten: return -45...45
-        default: return nil
-        }
+        let proto = spec.protocolSpec
+        guard !proto.nullable, proto.valueType == .number || self == .quarterTurns else { return nil }
+        return proto.closedRange
     }
 }
 
@@ -180,19 +160,23 @@ public enum AdjustmentTransferValue: Codable, Equatable {
     public var number: Double? { if case .number(let value) = self { return value }; return nil }
     public var hdrLookSettings: HDRLookSettings? {
         if self == .null { return HDRLookSettings() }
-        guard let object, Set(object.keys) == ["sha256", "name", "strength"],
+        let expectedKeys = Set(AdjustmentFieldSpec.Fields.hdrLook.protocolSpec.objectKeys)
+        guard let object, Set(object.keys) == expectedKeys,
               let sha256 = object["sha256"]?.string, let name = object["name"]?.string,
               let strength = object["strength"]?.number else { return nil }
         let value = HDRLookSettings(sha256: sha256, name: name, strength: strength)
         return value.isValid ? value : nil
     }
     public var hdrCameraDevelopment: HDRCameraDevelopmentSettings? {
-        guard let object, Set(object.keys) == ["version", "white_balance_mode", "temperature", "tint", "exposure_reference", "fbdd_level"],
-              object["version"] == .number(1),
+        let expectedKeys = Set(AdjustmentFieldSpec.Fields.hdrCameraDevelopment.protocolSpec.objectKeys)
+        guard let object, Set(object.keys) == expectedKeys,
+              let rawVersion = object["version"]?.number, rawVersion.rounded() == rawVersion,
+              AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.allowedVersions.contains(Int(rawVersion)),
               let mode = object["white_balance_mode"]?.string.flatMap(HDRCameraDevelopmentSettings.WhiteBalance.init(rawValue:)),
               let temperature = object["temperature"]?.number, let tint = object["tint"]?.number,
               let exposure = object["exposure_reference"]?.string.flatMap(HDRCameraDevelopmentSettings.ExposureReference.init(rawValue:)),
-              let level = object["fbdd_level"]?.number, (0...2).contains(level), level == level.rounded() else { return nil }
+              let level = object["fbdd_level"]?.number, level.rounded() == level,
+              AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.allowedFbddLevels.contains(Int(level)) else { return nil }
         var value = HDRCameraDevelopmentSettings()
         value.whiteBalance = mode; value.temperature = temperature; value.tint = tint
         value.exposureReference = exposure; value.fbddLevel = Int(level)
@@ -494,46 +478,69 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
     }
 
     private static func valid(_ value: AdjustmentTransferValue, for field: AdjustmentTransferField) -> Bool {
+        let proto = field.spec.protocolSpec
+        if value == .null { return proto.nullable }
         if field == .curve { return value.curve != nil }
         if field.gradingZone != nil {
-            guard let wheel = value.object, Set(wheel.keys) == ["hue", "saturation"],
+            guard let wheel = value.object, Set(wheel.keys) == Set(proto.objectKeys),
                   let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return false }
             return ColorGradingWheel(hue: hue, saturation: saturation).isValid
-        }
-        if let range = field.scalarRange {
-            guard let number = value.number, number.isFinite, range.contains(number) else { return false }
-            if field == .quarterTurns { return number.rounded() == number }
-            return ![.cropWidth, .cropHeight].contains(field) || number > 0
         }
         switch field {
         case .hdrLook: return value.hdrLookSettings != nil
         case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil
-        case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop: return value.boolean != nil
-        case .exposureMode: return value.string.map { ["scene", "preview", "sensor"].contains($0) } ?? false
-        case .whiteBalanceMode: return value.string.map { ["camera", "temperature", "none"].contains($0) } ?? false
-        case .temperature: return value == .null || value.number.map { $0.isFinite && (2000...50000).contains($0) } == true
-        case .tint: return value == .null || value.number.map { $0.isFinite && (-150...150).contains($0) } == true
         case .look:
-            guard let object = value.object, Set(object.keys) == ["kind", "id"], let kind = object["kind"]?.string else { return false }
-            if kind == "neutral" { return object["id"] == .null }
-            guard ["builtin", "managed", "recipe", "recipe_lut"].contains(kind), let id = object["id"]?.string,
+            guard let object = value.object, Set(object.keys) == Set(proto.objectKeys),
+                  let kind = object["kind"]?.string,
+                  AdjustmentFieldSpec.SubFields.LookReference.allowedKinds.contains(kind) else { return false }
+            if kind == AdjustmentFieldSpec.SubFields.LookReference.idNullableWhenKind { return object["id"] == .null }
+            guard let id = object["id"]?.string,
                   !id.isEmpty, !id.contains("/"), !id.contains("\\"), id != ".", id != ".." else { return false }
             return true
-        case .lensProfile: return value == .null || value.string.map { !$0.isEmpty } == true
-        case .rawDenoise: return value.number.map { [0, 1, 2].contains($0) } == true
-        case .chromaDenoise: return value == .null || value.number.map { [0, 1, 2].contains($0) } == true
         case .waveletDenoise: return validWavelet(value)
-        default: return false
+        default: break
+        }
+        switch proto.valueType {
+        case .boolean:
+            return value.boolean != nil
+        case .string:
+            guard let text = value.string else { return false }
+            if proto.nonEmpty && text.isEmpty { return false }
+            if !proto.allowedStringValues.isEmpty { return proto.allowedStringValues.contains(text) }
+            return true
+        case .integer:
+            guard let number = value.number, number.isFinite, number.rounded() == number else { return false }
+            if let range = proto.closedRange, !range.contains(number) { return false }
+            if !proto.allowedIntValues.isEmpty { return proto.allowedIntValues.contains(Int(number)) }
+            return true
+        case .number:
+            guard let number = value.number, number.isFinite else { return false }
+            if let min = proto.min {
+                if proto.exclusiveMin ? number <= min : number < min { return false }
+            }
+            if let max = proto.max, number > max { return false }
+            return true
+        case .object:
+            return false
         }
     }
 
     private static func validWavelet(_ value: AdjustmentTransferValue) -> Bool {
-        if value == .null { return true }
+        let proto = AdjustmentFieldSpec.Fields.detailDenoiseWavelet.protocolSpec
+        if value == .null { return proto.nullable }
         guard let wavelet = value.object,
-              Set(wavelet.keys) == ["enabled", "luma", "chroma", "coarse", "preset"],
+              Set(wavelet.keys) == Set(proto.objectKeys),
               wavelet["enabled"]?.boolean != nil,
-              ["detail", "clean", "custom"].contains(wavelet["preset"]?.string ?? "") else { return false }
-        return ["luma", "chroma", "coarse"].allSatisfy { wavelet[$0]?.number.map { $0.isFinite && (0...100).contains($0) } == true }
+              AdjustmentFieldSpec.SubFields.WaveletDenoise.allowedPresets.contains(wavelet["preset"]?.string ?? "") else { return false }
+        let sub = AdjustmentFieldSpec.SubFields.WaveletDenoise.self
+        let ranges: [(String, ClosedRange<Double>)] = [
+            ("luma", sub.lumaRange),
+            ("chroma", sub.chromaRange),
+            ("coarse", sub.coarseRange),
+        ]
+        return ranges.allSatisfy { key, range in
+            wavelet[key]?.number.map { $0.isFinite && range.contains($0) } == true
+        }
     }
 }
 

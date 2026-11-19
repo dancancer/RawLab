@@ -150,46 +150,58 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         }
 
         private fun validValue(field: AdjustmentField, value: AdjustmentValue): Boolean {
+            val proto = field.spec.protocol
+            if (value == AdjustmentValue.Null) return proto.nullable
             if (field == AdjustmentField.CURVE) return runCatching { curve(value) }.isSuccess
             if (field == AdjustmentField.HDR_LOOK) return value.hdrLook() != null
             if (field == AdjustmentField.HDR_CAMERA_DEVELOPMENT) return value.hdrCameraDevelopment() != null
             if (field.gradingZone != null) {
                 val wheel = value.objectValue ?: return false
-                if (wheel.keys != setOf("hue", "saturation")) return false
+                if (wheel.keys != proto.objectKeys.toSet()) return false
                 return ColorGradingWheel.valid(wheel["hue"]?.number ?: return false, wheel["saturation"]?.number ?: return false)
             }
-            field.scalarRange?.let { range ->
-                val number = value.number ?: return false
-                return number.isFinite() && number in range &&
-                    (field != AdjustmentField.QUARTER_TURNS || number == number.toInt().toDouble()) &&
-                    (field !in setOf(AdjustmentField.CROP_WIDTH, AdjustmentField.CROP_HEIGHT) || number > 0)
+            if (field == AdjustmentField.LOOK) {
+                val look = value.objectValue ?: return false
+                val sub = AdjustmentFieldSpec.SubFields.LookReference
+                if (look.keys != proto.objectKeys.toSet()) return false
+                val kind = look["kind"]?.text ?: return false
+                if (kind !in sub.allowedKinds) return false
+                if (kind == sub.idNullableWhenKind) return look["id"] == AdjustmentValue.Null
+                val id = look["id"]?.text ?: return false
+                return id.isNotEmpty() && '/' !in id && '\\' !in id && id !in setOf(".", "..")
             }
-            return when (field) {
-                AdjustmentField.FLIP_HORIZONTAL, AdjustmentField.FLIP_VERTICAL, AdjustmentField.LENS_DISTORTION,
-                AdjustmentField.LENS_TCA, AdjustmentField.LENS_VIGNETTING, AdjustmentField.LENS_AUTO_CROP -> value.boolean != null
-                AdjustmentField.EXPOSURE_MODE -> value.text in setOf("scene", "preview", "sensor")
-                AdjustmentField.WHITE_BALANCE_MODE -> value.text in setOf("camera", "temperature", "none")
-                AdjustmentField.TEMPERATURE, AdjustmentField.HDR_TEMPERATURE -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in 2000.0..50000.0 } == true
-                AdjustmentField.TINT, AdjustmentField.HDR_TINT -> value == AdjustmentValue.Null || value.number?.let { it.isFinite() && it in -150.0..150.0 } == true
-                AdjustmentField.LENS_PROFILE -> value == AdjustmentValue.Null || value.text?.isNotEmpty() == true
-                AdjustmentField.RAW_DENOISE -> value.number in setOf(0.0, 1.0, 2.0)
-                AdjustmentField.CHROMA_DENOISE -> value == AdjustmentValue.Null || value.number in setOf(0.0, 1.0, 2.0)
-                AdjustmentField.LOOK -> {
-                    val look = value.objectValue ?: return false
-                    if (look.keys != setOf("kind", "id")) return false
-                    if (look["kind"]?.text == "neutral") return look["id"] == AdjustmentValue.Null
-                    val id = look["id"]?.text ?: return false
-                    look["kind"]?.text in setOf("builtin", "managed", "recipe", "recipe_lut") &&
-                        id.isNotEmpty() && '/' !in id && '\\' !in id && id !in setOf(".", "..")
+            if (field == AdjustmentField.WAVELET_DENOISE) {
+                val wavelet = value.objectValue ?: return false
+                val sub = AdjustmentFieldSpec.SubFields.WaveletDenoise
+                return wavelet.keys == proto.objectKeys.toSet() &&
+                    wavelet["enabled"]?.boolean != null &&
+                    wavelet["preset"]?.text in sub.allowedPresets &&
+                    wavelet["luma"]?.number?.let { it.isFinite() && it in sub.lumaMin..sub.lumaMax } == true &&
+                    wavelet["chroma"]?.number?.let { it.isFinite() && it in sub.chromaMin..sub.chromaMax } == true &&
+                    wavelet["coarse"]?.number?.let { it.isFinite() && it in sub.coarseMin..sub.coarseMax } == true
+            }
+            return when (proto.valueType) {
+                AdjustmentProtocolValueType.BOOLEAN -> value.boolean != null
+                AdjustmentProtocolValueType.STRING -> {
+                    val text = value.text ?: return false
+                    if (proto.nonEmpty && text.isEmpty()) return false
+                    proto.allowedStringValues.isEmpty() || text in proto.allowedStringValues
                 }
-                AdjustmentField.WAVELET_DENOISE -> {
-                    if (value == AdjustmentValue.Null) return true
-                    val wavelet = value.objectValue ?: return false
-                    wavelet.keys == setOf("enabled", "luma", "chroma", "coarse", "preset") &&
-                        wavelet["enabled"]?.boolean != null && wavelet["preset"]?.text in setOf("detail", "clean", "custom") &&
-                        listOf("luma", "chroma", "coarse").all { wavelet[it]?.number?.let { n -> n.isFinite() && n in 0.0..100.0 } == true }
+                AdjustmentProtocolValueType.INTEGER -> {
+                    val number = value.number ?: return false
+                    if (!number.isFinite() || number != number.toInt().toDouble()) return false
+                    val rangeOk = proto.doubleRange?.let { number in it } ?: true
+                    val allowedOk = proto.allowedIntValues.isEmpty() || number.toInt() in proto.allowedIntValues
+                    rangeOk && allowedOk
                 }
-                else -> false
+                AdjustmentProtocolValueType.NUMBER -> {
+                    val number = value.number ?: return false
+                    if (!number.isFinite()) return false
+                    val minOk = proto.min?.let { if (proto.exclusiveMin) number > it else number >= it } ?: true
+                    val maxOk = proto.max?.let { number <= it } ?: true
+                    minOk && maxOk
+                }
+                AdjustmentProtocolValueType.OBJECT -> false
             }
         }
         internal fun curve(value: AdjustmentValue): ToneCurveSettings = ToneCurveSettings.decode(jsonValue(value) as JSONObject)
@@ -199,16 +211,20 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
 
 internal fun AdjustmentValue.hdrCameraDevelopment(): HDRCameraDevelopmentSettings? {
     val camera = objectValue ?: return null
-    if (camera.keys != setOf("version", "white_balance_mode", "temperature", "tint", "exposure_reference", "fbdd_level") ||
-        camera["version"]?.number != 1.0) return null
+    val sub = AdjustmentFieldSpec.SubFields.HDRCameraDevelopment
+    val expectedKeys = AdjustmentFieldSpec.Fields.HDR_CAMERA_DEVELOPMENT.protocol.objectKeys.toSet()
+    val version = camera["version"]?.number
+    if (camera.keys != expectedKeys || version == null || version != version.toInt().toDouble() ||
+        version.toInt() !in sub.allowedVersions) return null
     val mode = camera["white_balance_mode"]?.text
     val exposure = camera["exposure_reference"]?.text
     val temperature = camera["temperature"]?.number ?: return null
     val tint = camera["tint"]?.number ?: return null
     val fbdd = camera["fbdd_level"]?.number ?: return null
-    if (mode !in setOf("as_shot", "temperature") || exposure !in setOf("metadata", "sensor") || fbdd !in setOf(0.0, 1.0, 2.0)) return null
-    if (mode == "as_shot" && (temperature != 0.0 || tint != 0.0) ||
-        mode == "temperature" && (temperature !in 2000.0..50000.0 || tint !in -150.0..150.0)) return null
+    if (mode !in sub.allowedWhiteBalanceModes || exposure !in sub.allowedExposureReferences ||
+        fbdd != fbdd.toInt().toDouble() || fbdd.toInt() !in sub.allowedFbddLevels) return null
+    if (mode == "as_shot" && (temperature != sub.asShotTemperature || tint != sub.asShotTint) ||
+        mode == "temperature" && (temperature !in sub.temperatureMin..sub.temperatureMax || tint !in sub.tintMin..sub.tintMax)) return null
     return HDRCameraDevelopmentSettings(mode == "temperature", temperature.toFloat().canonicalZero(), tint.toFloat().canonicalZero(),
         exposure == "sensor", fbdd.toInt())
 }
@@ -216,9 +232,10 @@ internal fun AdjustmentValue.hdrCameraDevelopment(): HDRCameraDevelopmentSetting
 internal fun AdjustmentValue.hdrLook(): HDRLookSettings? {
     if (this == AdjustmentValue.Null) return HDRLookSettings()
     val look = objectValue ?: return null
-    if (look.keys != setOf("name", "sha256", "strength")) return null
+    val sub = AdjustmentFieldSpec.SubFields.HDRLook
+    if (look.keys != AdjustmentFieldSpec.Fields.HDR_LOOK.protocol.objectKeys.toSet()) return null
     val name = look["name"]?.text ?: return null
     val sha256 = look["sha256"]?.text ?: return null
-    val strength = look["strength"]?.number?.takeIf { it in 0.0..2.0 } ?: return null
+    val strength = look["strength"]?.number?.takeIf { it in sub.strengthMin..sub.strengthMax } ?: return null
     return runCatching { HDRLookSettings(sha256, name, strength.toFloat()) }.getOrNull()
 }

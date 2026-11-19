@@ -27,11 +27,14 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
     public var isDefault: Bool { mode == .legacy && points.isEmpty }
     public var isIdentity: Bool { mode == .legacy || points.allSatisfy { $0.x == $0.y } }
     public var isValid: Bool {
-        if mode == .legacy { return points.isEmpty }
-        guard (2...33).contains(points.count), points.first == ToneCurvePoint(x: 0, y: 0),
-              points.last == ToneCurvePoint(x: 1, y: 1) else { return false }
+        let sub = AdjustmentFieldSpec.SubFields.LightCurve.self
+        if mode == .legacy { return points.count == sub.legacyPointsCount }
+        guard (sub.customMinPoints...sub.customMaxPoints).contains(points.count),
+              points.first == ToneCurvePoint(x: sub.coordRange.lowerBound, y: sub.coordRange.lowerBound),
+              points.last == ToneCurvePoint(x: sub.coordRange.upperBound, y: sub.coordRange.upperBound) else { return false }
         for (index, point) in points.enumerated() {
-            guard point.x.isFinite, point.y.isFinite, (0...1).contains(point.x), (0...1).contains(point.y) else { return false }
+            guard point.x.isFinite, point.y.isFinite,
+                  sub.coordRange.contains(point.x), sub.coordRange.contains(point.y) else { return false }
             if index > 0 && (point.x <= points[index - 1].x || point.y < points[index - 1].y) { return false }
         }
         return true

@@ -48,11 +48,16 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
     public double? Parse(string text) => double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out var value) && double.IsFinite(value) &&
         value>=Min && value<=Max && Math.Abs(value/Step-Math.Round(value/Step))<=1e-8*Math.Max(1,Math.Abs(value/Step)) ? value : null;
     public static readonly ParameterSpec[] All = [
-        new(Parameter.Strength,"强度","胶片",0,200,.1,"%"), new(Parameter.Exposure,"曝光","输入",-5,5,.01,"EV",2),
-        new(Parameter.Temperature,"色温","输入",2000,50000,10,"K"), new(Parameter.Tint,"色调","输入",-150,150,.1,"",1),
-        new(Parameter.Contrast,"对比度","明暗",-100,100,.1,"%",1), new(Parameter.Highlights,"高光","明暗",-100,100,.1,"%",1),
-        new(Parameter.Shadows,"阴影","明暗",-100,100,.1,"%",1), new(Parameter.ToneCurve,"S 曲线","明暗",-100,100,.1,"%",1),
-        new(Parameter.Saturation,"饱和度","色彩",-100,100,.1,"%",1), new(Parameter.Sharpening,"锐化","细节",0,200,.1,"%",1)];
+        new(Parameter.Strength,"强度","胶片",AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Max!.Value,.1,"%"),
+        new(Parameter.Exposure,"曝光","输入",AdjustmentFieldSpec.Fields.LightExposure.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightExposure.WindowsModel.Max!.Value,.01,"EV",2),
+        new(Parameter.Temperature,"色温","输入",AdjustmentFieldSpec.Fields.ColorWhiteBalanceTemperatureKelvin.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorWhiteBalanceTemperatureKelvin.WindowsModel.Max!.Value,10,"K"),
+        new(Parameter.Tint,"色调","输入",AdjustmentFieldSpec.Fields.ColorWhiteBalanceTint.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorWhiteBalanceTint.WindowsModel.Max!.Value,.1,"",1),
+        new(Parameter.Contrast,"对比度","明暗",AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Max!.Value,.1,"%",1),
+        new(Parameter.Highlights,"高光","明暗",AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Max!.Value,.1,"%",1),
+        new(Parameter.Shadows,"阴影","明暗",AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Max!.Value,.1,"%",1),
+        new(Parameter.ToneCurve,"S 曲线","明暗",AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Max!.Value,.1,"%",1),
+        new(Parameter.Saturation,"饱和度","色彩",AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Max!.Value,.1,"%",1),
+        new(Parameter.Sharpening,"锐化","细节",AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Max!.Value,.1,"%",1)];
 }
 
 public sealed class Adjustments

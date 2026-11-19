@@ -18,7 +18,9 @@ public struct ColorGradingWheel: Codable, Equatable, Hashable {
     public var isDefault: Bool { hue == 0 && saturation == 0 }
     public var isIdentity: Bool { saturation == 0 }
     public var isValid: Bool {
-        hue.isFinite && hue >= 0 && hue < 360 && saturation.isFinite && (0...100).contains(saturation)
+        let sub = AdjustmentFieldSpec.SubFields.ColorGradingWheel.self
+        return hue.isFinite && hue >= sub.hueMin && hue < sub.hueMax &&
+            saturation.isFinite && sub.saturationRange.contains(saturation)
     }
     // 用户输入允许端点 360；模型、复制与 native 均使用 [0,360)。
     public static func inputHue(_ value: Double) -> Double? {

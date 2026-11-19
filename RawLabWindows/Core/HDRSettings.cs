@@ -36,10 +36,10 @@ public enum HDRRenditionParameter { PeakLimitEV, SdrExposureEV, SdrContrast, Sdr
 public sealed record HDRRenditionSpec(HDRRenditionParameter Id, string Title, double Min, double Max, double Grid, string Unit)
 {
     public static readonly HDRRenditionSpec[] All = [
-        new(HDRRenditionParameter.PeakLimitEV, "HDR 亮度上限", 0, 6, .1, "EV"),
-        new(HDRRenditionParameter.SdrExposureEV, "SDR 底图曝光", -4, 4, .1, "EV"),
-        new(HDRRenditionParameter.SdrContrast, "SDR 底图对比度", -100, 100, 1, "%"),
-        new(HDRRenditionParameter.SdrSaturation, "SDR 底图饱和度", -100, 100, 1, "%")
+        new(HDRRenditionParameter.PeakLimitEV, "HDR 亮度上限", AdjustmentFieldSpec.Fields.HdrPeakLimitEv.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.HdrPeakLimitEv.WindowsModel.Max!.Value, .1, "EV"),
+        new(HDRRenditionParameter.SdrExposureEV, "SDR 底图曝光", AdjustmentFieldSpec.Fields.HdrSdrExposureEv.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.HdrSdrExposureEv.WindowsModel.Max!.Value, .1, "EV"),
+        new(HDRRenditionParameter.SdrContrast, "SDR 底图对比度", AdjustmentFieldSpec.Fields.HdrSdrContrast.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.HdrSdrContrast.WindowsModel.Max!.Value, 1, "%"),
+        new(HDRRenditionParameter.SdrSaturation, "SDR 底图饱和度", AdjustmentFieldSpec.Fields.HdrSdrSaturation.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.HdrSdrSaturation.WindowsModel.Max!.Value, 1, "%")
     ];
     public static HDRRenditionSpec For(HDRRenditionParameter id) => All[(int)id];
 }

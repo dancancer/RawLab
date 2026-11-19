@@ -33,14 +33,14 @@ public sealed record PhotoEffectSpec(
         ? Math.Clamp(Math.Round(value,1,MidpointRounding.AwayFromZero), Min, Max) : null;
 
     public static readonly PhotoEffectSpec[] All = [
-        new(PhotoEffectParameter.VignetteAmount, Loc.Text("强度"), true, -100, 100, 0),
-        new(PhotoEffectParameter.VignetteMidpoint, Loc.Text("中点"), true, 0, 100, 50),
-        new(PhotoEffectParameter.VignetteRoundness, Loc.Text("圆度"), true, -100, 100, 0),
-        new(PhotoEffectParameter.VignetteFeather, Loc.Text("羽化"), true, 0, 100, 50),
-        new(PhotoEffectParameter.VignetteHighlights, Loc.Text("高光保护"), true, 0, 100, 0),
-        new(PhotoEffectParameter.GrainAmount, Loc.Text("强度"), false, 0, 100, 0),
-        new(PhotoEffectParameter.GrainSize, Loc.Text("大小"), false, 0, 100, 25),
-        new(PhotoEffectParameter.GrainRoughness, Loc.Text("粗糙度"), false, 0, 100, 50)
+        new(PhotoEffectParameter.VignetteAmount, Loc.Text("强度"), true, AdjustmentFieldSpec.Fields.EffectsVignetteAmount.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteAmount.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteAmount.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.VignetteMidpoint, Loc.Text("中点"), true, AdjustmentFieldSpec.Fields.EffectsVignetteMidpoint.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteMidpoint.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteMidpoint.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.VignetteRoundness, Loc.Text("圆度"), true, AdjustmentFieldSpec.Fields.EffectsVignetteRoundness.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteRoundness.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteRoundness.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.VignetteFeather, Loc.Text("羽化"), true, AdjustmentFieldSpec.Fields.EffectsVignetteFeather.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteFeather.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteFeather.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.VignetteHighlights, Loc.Text("高光保护"), true, AdjustmentFieldSpec.Fields.EffectsVignetteHighlights.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteHighlights.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsVignetteHighlights.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.GrainAmount, Loc.Text("强度"), false, AdjustmentFieldSpec.Fields.EffectsGrainAmount.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsGrainAmount.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsGrainAmount.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.GrainSize, Loc.Text("大小"), false, AdjustmentFieldSpec.Fields.EffectsGrainSize.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsGrainSize.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsGrainSize.WindowsModel.DefaultNumber!.Value),
+        new(PhotoEffectParameter.GrainRoughness, Loc.Text("粗糙度"), false, AdjustmentFieldSpec.Fields.EffectsGrainRoughness.WindowsModel.Min!.Value, AdjustmentFieldSpec.Fields.EffectsGrainRoughness.WindowsModel.Max!.Value, AdjustmentFieldSpec.Fields.EffectsGrainRoughness.WindowsModel.DefaultNumber!.Value)
     ];
 
     public static PhotoEffectSpec For(PhotoEffectParameter parameter) => All[(int)parameter];
@@ -74,14 +74,11 @@ public sealed record PhotoEffectsSettings(
 
     internal Native.PhotoEffectsConfig NativeConfig()
     {
-        Validate(VignetteAmount, -100, 100, nameof(VignetteAmount));
-        Validate(VignetteMidpoint, 0, 100, nameof(VignetteMidpoint));
-        Validate(VignetteRoundness, -100, 100, nameof(VignetteRoundness));
-        Validate(VignetteFeather, 0, 100, nameof(VignetteFeather));
-        Validate(VignetteHighlights, 0, 100, nameof(VignetteHighlights));
-        Validate(GrainAmount, 0, 100, nameof(GrainAmount));
-        Validate(GrainSize, 0, 100, nameof(GrainSize));
-        Validate(GrainRoughness, 0, 100, nameof(GrainRoughness));
+        foreach (var param in Enum.GetValues<PhotoEffectParameter>())
+        {
+            var spec = PhotoEffectSpec.For(param);
+            Validate(this[param], spec.Min, spec.Max, param.ToString());
+        }
         return new() {
             Version = 1,
             StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.PhotoEffectsConfig>(),

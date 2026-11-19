@@ -7,7 +7,9 @@ public sealed record DenoiseSettings(bool Enabled=false,double Luma=0,double Chr
     public int Preset => (this with {Enabled=true})==Detail ? 0 : (this with {Enabled=true})==Clean ? 1 : 2;
     internal Native.WaveletConfig NativeConfig()
     {
-        if(new[]{Luma,Chroma,Coarse}.Any(v=>!double.IsFinite(v) || v<0 || v>100))
+        if(!double.IsFinite(Luma) || Luma < AdjustmentFieldSpec.SubFields.WaveletDenoise.LumaMin || Luma > AdjustmentFieldSpec.SubFields.WaveletDenoise.LumaMax ||
+           !double.IsFinite(Chroma) || Chroma < AdjustmentFieldSpec.SubFields.WaveletDenoise.ChromaMin || Chroma > AdjustmentFieldSpec.SubFields.WaveletDenoise.ChromaMax ||
+           !double.IsFinite(Coarse) || Coarse < AdjustmentFieldSpec.SubFields.WaveletDenoise.CoarseMin || Coarse > AdjustmentFieldSpec.SubFields.WaveletDenoise.CoarseMax)
             throw new ArgumentOutOfRangeException(nameof(Luma),"Denoise strengths must be finite and between 0 and 100.");
         return new(){Version=1,StructSize=24,Enabled=Enabled ? 1 : 0,Luma=(float)Luma,Chroma=(float)Chroma,Coarse=(float)Coarse};
     }

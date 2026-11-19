@@ -27,8 +27,12 @@ public sealed record AtmosphereSettings(double Clarity = 0, double Dehaze = 0)
     };
     internal Native.AtmosphereConfig NativeConfig()
     {
-        foreach (var value in new[] { Clarity, Dehaze })
-            if (!double.IsFinite(value) || value is < -100 or > 100)
+        var specs = new[] {
+            (Clarity, AdjustmentFieldSpec.Fields.EffectsClarity.WindowsModel),
+            (Dehaze, AdjustmentFieldSpec.Fields.EffectsDehaze.WindowsModel)
+        };
+        foreach (var (value, model) in specs)
+            if (!double.IsFinite(value) || value < model.Min!.Value || value > model.Max!.Value)
                 throw new ArgumentOutOfRangeException(nameof(value), Loc.Text("无效的清晰度或去朦胧参数"));
         return new() { Version = 1, StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.AtmosphereConfig>(),
             Clarity = (float)(Clarity / 100), Dehaze = (float)(Dehaze / 100) };

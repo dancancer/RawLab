@@ -9,7 +9,12 @@ public struct AtmosphereSettings: Codable, Equatable, Hashable {
         self.dehaze = dehaze
     }
     public var isIdentity: Bool { clarity == 0 && dehaze == 0 }
-    public var isValid: Bool { [clarity, dehaze].allSatisfy { $0.isFinite && (-100...100).contains($0) } }
+    public var isValid: Bool {
+        zip([clarity, dehaze], [
+            AdjustmentFieldSpec.Fields.effectsClarity.macosModel.closedRange!,
+            AdjustmentFieldSpec.Fields.effectsDehaze.macosModel.closedRange!,
+        ]).allSatisfy { $0.0.isFinite && $0.1.contains($0.0) }
+    }
     public func scaled(by strength: Double) -> Self {
         Self(clarity: min(100, max(-100, clarity * strength)),
              dehaze: min(100, max(-100, dehaze * strength)))

@@ -156,14 +156,9 @@ public static class AdjustmentFields
         "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint",
         "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development"
     ];
+    public static AdjustmentFieldDefinition Spec(this AdjustmentField field) => AdjustmentFieldSpec.RequireById(field.ID());
     public static string ID(this AdjustmentField field) => ids[(int)field];
-    public static string Group(this AdjustmentField field) => field switch {
-        AdjustmentField.HdrLook => "looks", AdjustmentField.HdrCameraDevelopment => "detail",
-        AdjustmentField.BlackPoint or AdjustmentField.WhitePoint => "light",
-        _ when field.IsHDRRelative() => "color",
-        _ when field.IsHDRRendition() => "light",
-        _ => field.ID().Split('.')[0]
-    };
+    public static string Group(this AdjustmentField field) => field.Spec().Group;
     public static ColorGradingZone? GradingZone(this AdjustmentField field) => field switch {
         AdjustmentField.GradingShadows => ColorGradingZone.Shadows, AdjustmentField.GradingMidtones => ColorGradingZone.Midtones,
         AdjustmentField.GradingHighlights => ColorGradingZone.Highlights, _ => null
@@ -172,10 +167,9 @@ public static class AdjustmentFields
         ? (int)field - (int)AdjustmentField.HslHueRed : null;
     public static AdjustmentField Parse(string id) => Array.IndexOf(ids, id) is var index && index >= 0
         ? (AdjustmentField)index : throw new AdjustmentTransferException(AdjustmentFailure.InvalidPayload, id);
-    public static bool IsHDRRelative(this AdjustmentField field) => field is AdjustmentField.HdrTemperature or AdjustmentField.HdrTint;
-    public static bool IsHDRRendition(this AdjustmentField field) => field is >= AdjustmentField.HdrPeakLimit and <= AdjustmentField.HdrSDRSaturation;
-    public static bool IsHDROnly(this AdjustmentField field) => field is AdjustmentField.HdrLook or AdjustmentField.HdrCameraDevelopment ||
-        field.IsHDRRelative() || field.IsHDRRendition();
+    public static bool IsHDRRelative(this AdjustmentField field) => field.Spec().Protocol.IsHdrRelative;
+    public static bool IsHDRRendition(this AdjustmentField field) => field.Spec().Protocol.IsHdrRendition;
+    public static bool IsHDROnly(this AdjustmentField field) => field.Spec().Protocol.IsHdrOnly;
     public static readonly IReadOnlySet<AdjustmentField> Common = All.Where(f => f.Group() != "geometry").ToHashSet();
     public static readonly IReadOnlySet<AdjustmentField> HDRCommon = new HashSet<AdjustmentField> {
         AdjustmentField.Exposure, AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows,
@@ -224,19 +218,13 @@ public static class AdjustmentFields
         AdjustmentField.Curve, AdjustmentField.GradingShadows, AdjustmentField.GradingMidtones, AdjustmentField.GradingHighlights };
     public static IReadOnlySet<AdjustmentField> DependenciesForRecipe(int version) => version >= 4
         ? RecipeDependencies.Concat(RefinementScalars).Concat(RefinementObjects).ToHashSet() : RecipeDependencies;
-    public static (double Min, double Max)? Range(this AdjustmentField field) => field.HslIndex() != null ? (-100,100) : field switch {
-        AdjustmentField.Strength or AdjustmentField.Contrast or AdjustmentField.Saturation or AdjustmentField.Sharpening => (0,2),
-        AdjustmentField.Exposure => (-20,20),
-        AdjustmentField.Highlights or AdjustmentField.Shadows or AdjustmentField.SCurve or AdjustmentField.PerspectiveHorizontal or AdjustmentField.PerspectiveVertical => (-1,1),
-        AdjustmentField.HdrTemperature => (2000,50000), AdjustmentField.HdrTint => (-150,150),
-        AdjustmentField.HdrPeakLimit => (0,6), AdjustmentField.HdrSDRExposure => (-4,4),
-        AdjustmentField.HdrSDRContrast or AdjustmentField.HdrSDRSaturation => (-100,100),
-        AdjustmentField.VignetteAmount or AdjustmentField.VignetteRoundness or AdjustmentField.BlackPoint or AdjustmentField.WhitePoint or AdjustmentField.Vibrance or AdjustmentField.Clarity or AdjustmentField.Dehaze => (-100,100),
-        AdjustmentField.VignetteMidpoint or AdjustmentField.VignetteFeather or AdjustmentField.VignetteHighlights or AdjustmentField.GrainAmount or AdjustmentField.GrainSize or AdjustmentField.GrainRoughness => (0,100),
-        AdjustmentField.QuarterTurns => (0,3),
-        AdjustmentField.CropX or AdjustmentField.CropY or AdjustmentField.CropWidth or AdjustmentField.CropHeight or AdjustmentField.PostRGBDenoise => (0,1),
-        AdjustmentField.Straighten => (-45,45), _ => null
-    };
+    public static (double Min, double Max)? Range(this AdjustmentField field)
+    {
+        var proto = field.Spec().Protocol;
+        if (proto.Nullable || (proto.ValueType != AdjustmentProtocolValueType.Number && field != AdjustmentField.QuarterTurns))
+            return null;
+        return proto.Range;
+    }
 }
 
 public enum AdjustmentFailure { InvalidPayload, UnsupportedVersion, EmptyScope, Draft, Incompatible, MissingLook, Unrepresentable }
@@ -279,21 +267,26 @@ public sealed class AdjustmentPayload
     internal static HDRLookSettings? HDRLookValue(JsonElement? value)
     {
         if (Null(value)) return new();
-        if (value is not { } obj || !ObjectKeys(obj, "name", "sha256", "strength") ||
+        if (value is not { } obj || !ObjectKeys(obj, AdjustmentFieldSpec.Fields.HdrLook.Protocol.ObjectKeys.ToArray()) ||
             Text(obj.GetProperty("name")) is not { } name || Text(obj.GetProperty("sha256")) is not { } sha ||
-            Number(obj.GetProperty("strength")) is not { } strength) return null;
+            Number(obj.GetProperty("strength")) is not { } strength ||
+            strength < AdjustmentFieldSpec.SubFields.HDRLook.StrengthMin ||
+            strength > AdjustmentFieldSpec.SubFields.HDRLook.StrengthMax) return null;
         var look = new HDRLookSettings(sha, name, strength);
         return look.IsValid ? look : null;
     }
     internal static HDRCameraDevelopmentSettings? HDRCameraValue(JsonElement? value)
     {
-        if (value is not { } obj || !ObjectKeys(obj,"version","white_balance_mode","temperature","tint","exposure_reference","fbdd_level") ||
-            Number(obj.GetProperty("version")) != 1) return null;
+        if (value is not { } obj || !ObjectKeys(obj, AdjustmentFieldSpec.Fields.HdrCameraDevelopment.Protocol.ObjectKeys.ToArray()) ||
+            Number(obj.GetProperty("version")) is not { } ver || ver != Math.Truncate(ver) ||
+            !AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.AllowedVersions.Contains((int)ver)) return null;
         var mode = Text(obj.GetProperty("white_balance_mode"));
         var exposure = Text(obj.GetProperty("exposure_reference"));
-        if (mode is not ("as_shot" or "temperature") || exposure is not ("metadata" or "sensor") ||
+        if (mode is null || !AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.AllowedWhiteBalanceModes.Contains(mode) ||
+            exposure is null || !AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.AllowedExposureReferences.Contains(exposure) ||
             Number(obj.GetProperty("temperature")) is not { } temperature || Number(obj.GetProperty("tint")) is not { } tint ||
-            Number(obj.GetProperty("fbdd_level")) is not { } fbdd || fbdd is not (0 or 1 or 2)) return null;
+            Number(obj.GetProperty("fbdd_level")) is not { } fbdd || fbdd != Math.Truncate(fbdd) ||
+            !AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.AllowedFbddLevels.Contains((int)fbdd)) return null;
         var camera = new HDRCameraDevelopmentSettings(mode == "temperature",temperature,tint,exposure == "sensor",(int)fbdd);
         return camera.IsValid ? camera : null;
     }
@@ -379,38 +372,50 @@ public sealed class AdjustmentPayload
     }
     private static bool Valid(AdjustmentField field, JsonElement value)
     {
+        var proto = field.Spec().Protocol;
+        if (Null(value)) return proto.Nullable;
         if (field == AdjustmentField.HdrLook) return HDRLookValue(value) != null;
         if (field == AdjustmentField.HdrCameraDevelopment) return HDRCameraValue(value) != null;
         if (field == AdjustmentField.Curve) {
             try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
         }
         if (field.GradingZone() != null) {
-            if (!ObjectKeys(value, "hue", "saturation")) return false;
+            if (!ObjectKeys(value, proto.ObjectKeys.ToArray())) return false;
             return Number(value.GetProperty("hue")) is {} hue && Number(value.GetProperty("saturation")) is {} saturation
                 && new ColorGradingWheel(hue, saturation).IsValid;
         }
-        var number=Number(value);
-        if (field.Range() is {} range) return number is {} n && double.IsFinite(n) && n>=range.Min && n<=range.Max &&
-            (field!=AdjustmentField.QuarterTurns || n==Math.Round(n)) && (field is not (AdjustmentField.CropWidth or AdjustmentField.CropHeight) || n>0);
-        switch(field) {
-            case AdjustmentField.FlipHorizontal: case AdjustmentField.FlipVertical: case AdjustmentField.LensDistortion: case AdjustmentField.LensTCA: case AdjustmentField.LensVignetting: case AdjustmentField.LensAutoCrop: return Boolean(value)!=null;
-            case AdjustmentField.ExposureMode: return Text(value) is "scene" or "preview" or "sensor";
-            case AdjustmentField.WhiteBalanceMode: return Text(value) is "camera" or "temperature" or "none";
-            case AdjustmentField.Temperature: return Null(value) || number is >=2000 and <=50000;
-            case AdjustmentField.Tint: case AdjustmentField.HdrTint: return Null(value) || number is >=-150 and <=150;
-            case AdjustmentField.HdrTemperature: return Null(value) || number is >=2000 and <=50000;
-            case AdjustmentField.LensProfile: return Null(value) || Text(value) is {Length:>0};
-            case AdjustmentField.RawDenoise: return number is 0 or 1 or 2;
-            case AdjustmentField.ChromaDenoise: return Null(value) || number is 0 or 1 or 2;
-            case AdjustmentField.Look:
-                if (!ObjectKeys(value,"kind","id")) return false;
-                var kind=Text(value.GetProperty("kind")); var id=Text(value.GetProperty("id"));
-                return kind=="neutral" ? Null(value.GetProperty("id")) : kind is "builtin" or "managed" or "recipe" or "recipe_lut" &&
-                    id is {Length:>0} && id is not ("." or "..") && !id.Contains('/') && !id.Contains('\\');
-            case AdjustmentField.WaveletDenoise:
-                return Null(value) || ObjectKeys(value,"enabled","luma","chroma","coarse","preset") && Boolean(value.GetProperty("enabled"))!=null &&
-                    Text(value.GetProperty("preset")) is "detail" or "clean" or "custom" && new[]{"luma","chroma","coarse"}.All(k => Number(value.GetProperty(k)) is >=0 and <=100);
-            default: return false;
+        if (field == AdjustmentField.Look) {
+            if (!ObjectKeys(value, proto.ObjectKeys.ToArray())) return false;
+            var kind = Text(value.GetProperty("kind")); var id = Text(value.GetProperty("id"));
+            if (kind is null || !AdjustmentFieldSpec.SubFields.LookReference.AllowedKinds.Contains(kind)) return false;
+            return kind == AdjustmentFieldSpec.SubFields.LookReference.IdNullableWhenKind ? Null(value.GetProperty("id")) :
+                id is {Length:>0} && id is not ("." or "..") && !id.Contains('/') && !id.Contains('\\');
+        }
+        if (field == AdjustmentField.WaveletDenoise) {
+            return ObjectKeys(value, proto.ObjectKeys.ToArray()) && Boolean(value.GetProperty("enabled")) != null &&
+                Text(value.GetProperty("preset")) is {} preset && AdjustmentFieldSpec.SubFields.WaveletDenoise.AllowedPresets.Contains(preset) &&
+                Number(value.GetProperty("luma")) is >= AdjustmentFieldSpec.SubFields.WaveletDenoise.LumaMin and <= AdjustmentFieldSpec.SubFields.WaveletDenoise.LumaMax &&
+                Number(value.GetProperty("chroma")) is >= AdjustmentFieldSpec.SubFields.WaveletDenoise.ChromaMin and <= AdjustmentFieldSpec.SubFields.WaveletDenoise.ChromaMax &&
+                Number(value.GetProperty("coarse")) is >= AdjustmentFieldSpec.SubFields.WaveletDenoise.CoarseMin and <= AdjustmentFieldSpec.SubFields.WaveletDenoise.CoarseMax;
+        }
+        switch (proto.ValueType) {
+            case AdjustmentProtocolValueType.Boolean:
+                return Boolean(value) != null;
+            case AdjustmentProtocolValueType.String:
+                if (Text(value) is not {} text) return false;
+                if (proto.NonEmpty && text.Length == 0) return false;
+                return proto.AllowedStringValues.Count == 0 || proto.AllowedStringValues.Contains(text);
+            case AdjustmentProtocolValueType.Integer:
+                if (Number(value) is not {} iv || !double.IsFinite(iv) || iv != Math.Truncate(iv)) return false;
+                if (proto.Range is {} ir && (iv < ir.Min || iv > ir.Max)) return false;
+                return proto.AllowedIntValues.Count == 0 || proto.AllowedIntValues.Contains((int)iv);
+            case AdjustmentProtocolValueType.Number:
+                if (Number(value) is not {} nv || !double.IsFinite(nv)) return false;
+                if (proto.Min is {} lo && (proto.ExclusiveMin ? nv <= lo : nv < lo)) return false;
+                if (proto.Max is {} hi && nv > hi) return false;
+                return true;
+            default:
+                return false;
         }
     }
     private static bool ObjectKeys(JsonElement value, params string[] keys) => value.ValueKind==JsonValueKind.Object &&

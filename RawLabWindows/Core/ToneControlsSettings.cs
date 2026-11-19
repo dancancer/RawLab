@@ -31,8 +31,13 @@ public sealed record ToneControlsSettings(double BlackPoint = 0, double WhitePoi
     };
     internal Native.ToneControlsConfig NativeConfig()
     {
-        foreach (var value in new[] { BlackPoint, WhitePoint, Vibrance })
-            if (!double.IsFinite(value) || value is < -100 or > 100)
+        var specs = new[] {
+            (BlackPoint, AdjustmentFieldSpec.Fields.ToneBlackPoint.WindowsModel),
+            (WhitePoint, AdjustmentFieldSpec.Fields.ToneWhitePoint.WindowsModel),
+            (Vibrance, AdjustmentFieldSpec.Fields.ColorVibrance.WindowsModel)
+        };
+        foreach (var (value, model) in specs)
+            if (!double.IsFinite(value) || value < model.Min!.Value || value > model.Max!.Value)
                 throw new ArgumentOutOfRangeException(nameof(value), Loc.Text("无效的黑白场或鲜艳度参数"));
         return new() { Version = 1, StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.ToneControlsConfig>(),
             BlackPoint = (float)(BlackPoint / 100), WhitePoint = (float)(WhitePoint / 100), Vibrance = (float)(Vibrance / 100) };
