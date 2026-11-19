@@ -7,6 +7,7 @@
 #include "core/photo_lut_contract.h"
 #include "core/photo_rendering.h"
 #include "core/processing_cancellation.h"
+#include "gpu/photo_tone_shader.h"
 #include "sony2fuji/sony2fuji.h"
 
 #include <algorithm>
@@ -35,10 +36,6 @@ RGB lerpRGB(const RGB& a, const RGB& b, float t) {
         lerpFloat(a.g, b.g, t),
         lerpFloat(a.b, b.b, t)
     );
-}
-
-float luminance(const RGB& pixel) {
-    return 0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b;
 }
 
 struct ToneCurvePoints {
@@ -71,30 +68,6 @@ float applyToneCurve(float x, const ToneCurvePoints& curve) {
         return lerpFloat(curve.p2, curve.p3, (value - 0.5f) / 0.25f);
     }
     return lerpFloat(curve.p3, 1.0f, (value - 0.75f) / 0.25f);
-}
-
-float adjustShadows(float value, float shadows) {
-    if (shadows == 0.0f) {
-        return value;
-    }
-    float t = clampFloat(shadows, -1.0f, 1.0f);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return std::pow(clamp01(value), gamma);
-}
-
-float adjustHighlights(float value, float highlights) {
-    if (highlights == 0.0f) {
-        return value;
-    }
-    float t = clampFloat(highlights, -1.0f, 1.0f);
-    float inv = 1.0f - clamp01(value);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return 1.0f - std::pow(inv, gamma);
-}
-
-float applyHighlightsShadows(float value, float highlights, float shadows) {
-    float shadowed = adjustShadows(value, shadows);
-    return adjustHighlights(shadowed, highlights);
 }
 
 RGB normalizeWhiteBalance(float r, float g, float b) {
@@ -134,27 +107,12 @@ RGB applyTint(const RGB& base, float tint) {
     return normalizeWhiteBalance(base.r, g, base.b);
 }
 
-void applyHighlightsShadowsToPixel(RGB& pixel, float highlights, float shadows) {
-    float l = luminance(pixel);
-    float adjusted = applyHighlightsShadows(l, highlights, shadows);
-    if (l > 0.0f) {
-        float ratio = adjusted / l;
-        pixel.r *= ratio;
-        pixel.g *= ratio;
-        pixel.b *= ratio;
-        return;
-    }
-    pixel.r = adjusted;
-    pixel.g = adjusted;
-    pixel.b = adjusted;
-}
-
 void applyContrastSaturation(RGB& pixel, float contrast, float saturation) {
     pixel.r = (pixel.r - 0.5f) * contrast + 0.5f;
     pixel.g = (pixel.g - 0.5f) * contrast + 0.5f;
     pixel.b = (pixel.b - 0.5f) * contrast + 0.5f;
 
-    float l = luminance(pixel);
+    float l = detail::hsLuminance(pixel);
     pixel.r = l + (pixel.r - l) * saturation;
     pixel.g = l + (pixel.g - l) * saturation;
     pixel.b = l + (pixel.b - l) * saturation;
@@ -335,7 +293,7 @@ void applyToneAdjustments(
             auto& pixel = image.pixels[index];
             applyExposureAndWhiteBalance(pixel, exposureScale, wb);
             if (highlights != 0.0f || shadows != 0.0f) {
-                applyHighlightsShadowsToPixel(pixel, highlights, shadows);
+                pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
             }
             if (customCurve.active()) {
                 pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));

@@ -1,4 +1,5 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/photo_log_shader.h"
 #include "gpu/photo_tone_shader.h"
 #include "gpu/photo_color_grading_shader.h"
 #include "gpu/photo_tone_curve_shader.h"
@@ -130,7 +131,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -244,33 +245,6 @@ inline float neutralDisplay(float linear) {
     return srgbGamma(1.0f / (1.0f + shoulder));
 }
 
-inline float flog2(float linear) {
-    constexpr float a = 5.555556f;
-    constexpr float b = 0.064829f;
-    constexpr float c = 0.245281f;
-    constexpr float d = 0.384316f;
-    constexpr float e = 8.799461f;
-    constexpr float f = 0.092864f;
-    constexpr float cut = 0.00088899597f;
-    if (linear < cut) {
-        return clamp(e * linear + f, 0.0f, 1.0f);
-    }
-    return clamp(log10(linear * a + b) * c + d, 0.0f, 1.0f);
-}
-
-inline float encodeLog(float linear, bool isFLog) {
-    if (!isFLog) return flog2(linear);
-    return clamp(linear < 0.00089f ? 8.735631f * linear + 0.092864f
-        : 0.344676f * log10(0.555556f * linear + 0.009468f) + 0.790453f, 0.0f, 1.0f);
-}
-
-inline float decodeLog(float encoded, bool isFLog) {
-    if (isFLog) return encoded < 0.100537775223865f ? (encoded - 0.092864f) / 8.735631f
-        : (pow(10.0f, (encoded - 0.790453f) / 0.344676f) - 0.009468f) / 0.555556f;
-    return encoded < 0.100686685370811f ? (encoded - 0.092864f) / 8.799461f
-        : (pow(10.0f, (encoded - 0.384316f) / 0.245281f) - 0.064829f) / 5.555556f;
-}
-
 inline float3 readLUT(
     texture3d<float, access::read> lut,
     uint r,
@@ -337,25 +311,6 @@ inline float applyToneCurve(float value, float p1, float p2, float p3) {
         return p2 + (p3 - p2) * ((value - 0.5f) / 0.25f);
     }
     return p3 + (1.0f - p3) * ((value - 0.75f) / 0.25f);
-}
-
-inline float adjustShadows(float value, float shadows) {
-    if (shadows == 0.0f) {
-        return value;
-    }
-    float t = clamp(shadows, -1.0f, 1.0f);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return pow(clamp01(value), gamma);
-}
-
-inline float adjustHighlights(float value, float highlights) {
-    if (highlights == 0.0f) {
-        return value;
-    }
-    float t = clamp(highlights, -1.0f, 1.0f);
-    float inverse = 1.0f - clamp01(value);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return 1.0f - pow(inverse, gamma);
 }
 
 inline float3 blur3x3(
@@ -435,14 +390,14 @@ kernel void baseAndLUT(
     float3 filmInput = base;
     if (params.inputIsSRGB == 0u) {
         float3 gamut = lutMatrixRGB(value, params);
-        filmInput = float3(encodeLog(gamut.r, params.inputIsFLog != 0u),
-            encodeLog(gamut.g, params.inputIsFLog != 0u), encodeLog(gamut.b, params.inputIsFLog != 0u));
+        filmInput = float3(encodePhotoLog(gamut.r, params.inputIsFLog != 0u),
+            encodePhotoLog(gamut.g, params.inputIsFLog != 0u), encodePhotoLog(gamut.b, params.inputIsFLog != 0u));
     }
     float3 film = applyLUT(lut, filmInput, params);
     if (params.outputIsLog != 0u) {
-        film = float3(neutralDisplay(decodeLog(film.r, params.outputIsFLog != 0u)),
-            neutralDisplay(decodeLog(film.g, params.outputIsFLog != 0u)),
-            neutralDisplay(decodeLog(film.b, params.outputIsFLog != 0u)));
+        film = float3(neutralDisplay(decodePhotoLog(film.r, params.outputIsFLog != 0u)),
+            neutralDisplay(decodePhotoLog(film.g, params.outputIsFLog != 0u)),
+            neutralDisplay(decodePhotoLog(film.b, params.outputIsFLog != 0u)));
     }
     destination[gid] = packed_float3(lerp3(base, film, params.lutStrength));
 }
@@ -507,19 +462,7 @@ kernel void toneAdjustments(
         destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
         return;
     }
-    float highlights = clamp(params.highlights, -1.0f, 1.0f);
-    float shadows = clamp(params.shadows, -1.0f, 1.0f);
-    if (highlights != 0.0f || shadows != 0.0f) {
-        float luminance = 0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b;
-        float shadowed = adjustShadows(luminance, shadows);
-        float adjusted = adjustHighlights(shadowed, highlights);
-        if (luminance > 0.0f) {
-            float ratio = adjusted / luminance;
-            pixel *= ratio;
-        } else {
-            pixel = float3(adjusted);
-        }
-    }
+    pixel = hsApplyHighlightsShadows(pixel, params.highlights, params.shadows);
     if (params.customCurveCount != 0u) {
         pixel = float3(customToneCurve(pixel.r, params), customToneCurve(pixel.g, params), customToneCurve(pixel.b, params));
     } else if (params.toneCurve != 0.0f) {
