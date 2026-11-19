@@ -60,10 +60,8 @@ internal class EditorRenderer(
     private val previews = LinkedHashMap<Int, PreviewPair>(3, .75f, true)
     private val heapLimit = Runtime.getRuntime().maxMemory()
 
-    private data class HDRReferenceKey(val source: FileStamp, val photo: ImportedPhoto, val settings: HDRSettings,
-        val edge: Int, val decodeVersion: Int?, val cameraProcessingVersion: Int)
     private data class HDRReference(val frame: HDRPreviewFrame, val bitmap: Bitmap)
-    private var hdrReference: Pair<HDRReferenceKey, HDRReference>? = null
+    private val hdrReference = HDRReferenceCoordinator<FileStamp, HDRReference>()
     private var hdrSource: com.rawlab.android.engine.NativeHDRImage? = null
     private var hdrSourceLease: com.rawlab.android.engine.HDRSourceLease? = null
     private var hdrSourceKey: Triple<String, Long, Long>? = null
@@ -72,7 +70,7 @@ internal class EditorRenderer(
     fun close() { releaseDecodedRaster();com.rawlab.android.engine.HDRSourceCache.clear();processor?.close() }
     private fun releaseHDRSource(clearReference: Boolean = true) {
         hdrSourceLease?.close(); hdrSourceLease=null; hdrSource=null; hdrSourceKey=null; hdrSourceCamera=null
-        if (clearReference) hdrReference=null
+        if (clearReference) hdrReference.clear()
     }
     fun releaseDecodedRaster() {
         previews.clear(); previewScope = null
@@ -318,20 +316,16 @@ internal class EditorRenderer(
         native.setGpuMode(NativeProcessor.CPU)
         val geometry = work.edits.geometry
         val edge = hdrPreviewEdge(work, info)
-        val resultSettings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR)).copy(geometry = geometry)
-        val neutralSettings = resultSettings.neutralGeometrySettings
-        val referenceKey = stamp?.let {
-            HDRReferenceKey(it, work.photo, neutralSettings, edge, work.edits.proRAWDecodeVersion, info.cameraProcessingVersion)
-        }
-        val reference = hdrReference?.takeIf { it.first == referenceKey }?.second ?: run {
-            val source = cachedHDRSource(work.photo, info, generation, neutralSettings.cameraSettings)
+        val plan = buildHDRRenderPlan(stamp, work.photo, work.edits, geometry, edge, info.cameraProcessingVersion)
+        val reference = hdrReference.resolveReference(plan) { neutralCamera, neutralSettings ->
+            val source = cachedHDRSource(work.photo, info, generation, neutralCamera)
             native.renderHDR(source, neutralSettings, edge, generation).use { neutral ->
                 val frame = neutral.snapshot()
-                HDRReference(frame, sdrBitmap(frame)).also { hdrReference = referenceKey?.let { key -> key to it } }
+                HDRReference(frame, sdrBitmap(frame))
             }
         }
-        val source = cachedHDRSource(work.photo, info, generation, resultSettings.cameraSettings)
-        native.renderHDR(source, resultSettings, edge, generation, storage.hdrLookDirectory).use { result ->
+        val source = cachedHDRSource(work.photo, info, generation, plan.resultCameraSettings)
+        native.renderHDR(source, plan.resultSettings, edge, generation, storage.hdrLookDirectory).use { result ->
             val resultFrame = result.snapshot()
             val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
             return PreviewPair(

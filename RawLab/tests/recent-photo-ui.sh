@@ -32,7 +32,7 @@ for t in targets:
 PY
 xcodebuild test-without-building -xctestrun "$OUT/recent.xctestrun" \
  -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
- -parallel-testing-enabled NO -only-testing:RawLabUITests/RecentPhotoUITests \
+ -parallel-testing-enabled NO -only-testing:RawLabUITests/ImportAndDocumentSmokeTests/testRecentPhotoFilterRestartAndResetSmoke \
  -resultBundlePath "$OUT/RecentPhotoUITests.xcresult" > "$OUT/tests.log" 2>&1
 xcrun xcresulttool get test-results summary --path "$OUT/RecentPhotoUITests.xcresult" --format json > "$OUT/summary.json"
 python3 - "$OUT/summary.json" <<'PYRESULT'

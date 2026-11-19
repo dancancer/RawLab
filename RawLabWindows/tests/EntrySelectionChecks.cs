@@ -14,10 +14,5 @@ internal static class EntrySelectionChecks
             check(code == 2 && !Directory.Exists(profile) && Application.Current == null,
                 "Unavailable native desktop reports NOT REACHED before fixtures or WPF initialization");
         }
-        check(EditorReviewChecks.Parts.Values.Distinct().Count() == Enum.GetValues<EditorReviewChecks.Part>().Length,
-            "Editor part map covers every distinct scenario");
-        foreach (var pair in EditorReviewChecks.Parts)
-            check(EditorReviewChecks.ParsePart(" " + pair.Key.ToUpperInvariant() + " ") == pair.Value,
-                "Editor selection normalizes case and whitespace: " + pair.Key);
     }
 }

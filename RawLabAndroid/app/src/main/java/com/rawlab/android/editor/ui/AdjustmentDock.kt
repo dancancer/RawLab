@@ -194,9 +194,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val scrollTools = compactNavigation && !sideDock
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
         if (!toolOpen && !quickPresetsVisible) {
-            val large = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
-            val columns = if (large) 3 else 4
-            Column(Modifier.fillMaxWidth().height(if (large) 148.dp else 116.dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            val columns = com.rawlab.android.editor.controls.editorGridColumns(fontScale)
+            Column(Modifier.fillMaxWidth().height(com.rawlab.android.editor.controls.editorGridHeight(fontScale).dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
                 mobileEditorTools(group).chunked(columns).forEach { row ->

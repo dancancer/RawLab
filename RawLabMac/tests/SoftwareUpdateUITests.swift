@@ -18,34 +18,22 @@ import SwiftUI
         app.run()
     }
     static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
-        guard try condition() else { throw RenderError.failed(message) }; print("PASS: \(message)")
+        try MacUITestRobot.check(condition(), message)
     }
     @MainActor static func settle(_ model: EditorModel) async throws {
-        try await Task.sleep(for: .milliseconds(350))
-        for _ in 0..<600 {
-            if !model.busy, !model.workerActive, model.result != nil { return }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw RenderError.failed("Native editor render timed out")
+        try await MacUITestRobot.settle(model)
     }
     @MainActor static func fields(_ view: NSView) -> [NumericTextField] {
-        (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
+        MacUITestRobot.fields(view)
     }
     @MainActor static func scrollViews(_ view: NSView) -> [NSScrollView] {
-        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews($0) }
+        MacUITestRobot.scrollViews(view)
     }
     @MainActor static func png(_ host: NSView) throws -> Data {
-        host.layoutSubtreeIfNeeded()
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:]) ?? Data()
+        try MacUITestRobot.png(host)
     }
     @MainActor static func window<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> (NSWindow, NSHostingView<V>) {
-        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        host.appearance = NSAppearance(named: .darkAqua)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentView = host; host.layoutSubtreeIfNeeded()
-        return (window, host)
+        MacUITestRobot.window(view, width: width, height: height)
     }
     @MainActor static func run() async throws {
         guard CommandLine.arguments.count == 3 else { throw RenderError.failed("Pass a fixture and output directory") }

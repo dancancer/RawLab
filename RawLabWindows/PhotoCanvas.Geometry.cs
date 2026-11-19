@@ -26,9 +26,8 @@ public sealed partial class PhotoCanvas
         (CropHandle.Bottom,new(r.X+r.Width/2,r.Bottom)),(CropHandle.BottomLeft,r.BottomLeft),(CropHandle.Left,new(r.Left,r.Y+r.Height/2))];
     private CropHandle? HitCrop(Point point)
     {
-        var bounds=CropBounds;if(bounds.IsEmpty)return null;
-        foreach(var (handle,center) in Handles(bounds))if(Math.Abs(point.X-center.X)<=10 && Math.Abs(point.Y-center.Y)<=10)return handle;
-        return bounds.Contains(point) ? CropHandle.Move : null;
+        var bounds=CropBounds;
+        return bounds.IsEmpty ? null : CropInteraction.HitTest(bounds.X,bounds.Y,bounds.Width,bounds.Height,point.X,point.Y);
     }
     private bool HandleCropDown(Point point)
     {

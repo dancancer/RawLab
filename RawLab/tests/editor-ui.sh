@@ -28,7 +28,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 xcodebuild test -project "$ROOT/RawLab/RawLab.xcodeproj" -scheme RawLab \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -derivedDataPath "$OUT/DerivedData" -resultBundlePath "$OUT/EditorUITests.xcresult" \
-    -parallel-testing-enabled NO -only-testing:RawLabUITests/EditorUITests \
+    -parallel-testing-enabled NO -only-testing:RawLabUITests/EditorWorkflowSmokeTests \
     > "$OUT/EditorUITests.log" 2>&1
 # Verify new simulator files from the host; the UI runner needs no Photos access.
 sqlite3 -readonly -json "$DB" \

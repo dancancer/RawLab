@@ -47,14 +47,13 @@ public partial class MainWindow
     }
     private void RefreshComparisonLayout()
     {
-        var sideBySide=file!=null && compare && !swipe;
-        var vertical=sideBySide && PhotoArea.ActualHeight>PhotoArea.ActualWidth;
-        NeutralCanvas.Visibility=sideBySide ? Visibility.Visible : Visibility.Collapsed;
-        NeutralColumn.Width=sideBySide && !vertical ? new(1,GridUnitType.Star) : new(0);
-        NeutralRow.Height=vertical ? new(1,GridUnitType.Star) : new(0);
-        Grid.SetRow(NeutralCanvas,vertical ? 0 : 1);Grid.SetRow(ResultCanvas,1);
-        Grid.SetColumn(NeutralCanvas,vertical ? 1 : 0);
-        ResultCanvas.ComparisonEnabled=file!=null && swipe && ReferenceCurrent;
+        var placement=WorkspaceLayout.ComparisonLayout(file!=null,compare,swipe,PhotoArea.ActualWidth,PhotoArea.ActualHeight);
+        NeutralCanvas.Visibility=placement.ShowsNeutralCanvas ? Visibility.Visible : Visibility.Collapsed;
+        NeutralColumn.Width=placement.ShowsNeutralCanvas && !placement.StackedVertically ? new(1,GridUnitType.Star) : new(0);
+        NeutralRow.Height=placement.StackedVertically ? new(1,GridUnitType.Star) : new(0);
+        Grid.SetRow(NeutralCanvas,placement.NeutralRow);Grid.SetRow(ResultCanvas,placement.ResultRow);
+        Grid.SetColumn(NeutralCanvas,placement.NeutralColumn);
+        ResultCanvas.ComparisonEnabled=placement.ShowWipeOverlay && ReferenceCurrent;
         RefreshPhotoLabels();
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");

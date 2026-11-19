@@ -39,4 +39,3 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
 codesign --force --deep --sign - "$HARNESS" >/dev/null
 xcrun simctl install "$DEVICE" "$HARNESS"
 echo "Harness installed: $HARNESS"
-echo "Use crop-lock-ui.sh to opt in and run CropLockUITests on simulator $DEVICE."

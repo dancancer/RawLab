@@ -6,10 +6,11 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class HDRWorkflowChecks
 {
-    private static void Ready(MainWindow window)=>InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
+    private static void Ready(MainWindow window)=>WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled);
 
     internal static void RunRendition(string repo, string fixture, Action<bool,string> check)
     {
@@ -84,7 +85,7 @@ internal static class HDRWorkflowChecks
             foreach (var format in new[] { ExportFormat.HdrJpeg, ExportFormat.SdrJpeg }) {
                 var output = Path.Combine(root,format+".jpg");
                 var task = window.ExportPhoto(format,output);
-                InteractionChecks.PumpUntil(() => task.IsCompleted);
+                WpfTestHost.PumpUntil(() => task.IsCompleted);
                 task.GetAwaiter().GetResult(); Ready(window);
                 var probe = HDRNative.Probe(output,out _);
                 check(probe == (format == ExportFormat.HdrJpeg ? HDRProbeState.Supported : HDRProbeState.NotHDR),
@@ -117,11 +118,11 @@ internal static class HDRWorkflowChecks
                 var groups = window.GroupButtons;
                 var group = groups[EditorAdjustmentRules.GroupFor(tool)];
                 check(group.IsVisible && group.IsEnabled,"HDR tool group is reachable: "+tool);
-                PhotoFeatureChecks.Click(group);
+                WpfTestHost.Click(group);
                 window.UpdateLayout();
             }
             check(button.IsVisible && button.IsEnabled,"HDR tool button is reachable: "+tool);
-            PhotoFeatureChecks.Click(button);
+            WpfTestHost.Click(button);
             window.UpdateLayout();
         }
         void Commit(ParameterRow row, string value)
@@ -146,7 +147,7 @@ internal static class HDRWorkflowChecks
                     var panel = (StackPanel)dialog.Content;
                     var buttons = panel.Children.OfType<WrapPanel>().SelectMany(row => row.Children.OfType<Button>()).ToArray();
                     edit(dialog, panel, buttons);
-                    PhotoFeatureChecks.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.apply"));
+                    WpfTestHost.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.apply"));
                 } catch (Exception failure) {
                     error = failure;
                     foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
@@ -201,15 +202,15 @@ internal static class HDRWorkflowChecks
                 reopened.Denoise==previous.Denoise,"Reopening restores all HDR detail and preserves the SDR settings");
             var output = Path.Combine(root,"hdr-effects.jpg");
             var task = window.ExportPhoto(ExportFormat.HdrJpeg,output);
-            InteractionChecks.PumpUntil(() => task.IsCompleted);
+            WpfTestHost.PumpUntil(() => task.IsCompleted);
             task.GetAwaiter().GetResult();
             check(HDRNative.Probe(output,out _) == HDRProbeState.Supported,"HDR effects and detail export with a readable gain map");
             var beforeLook = Frame();
             EditLook((dialog, panel, buttons) => {
                 var silver = buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.silver");
                 check(silver.IsVisible && silver.IsEnabled,"Bundled HDR look is reachable");
-                PhotoFeatureChecks.Click(silver);
-                InteractionChecks.PumpUntil(() => silver.IsEnabled);
+                WpfTestHost.Click(silver);
+                WpfTestHost.PumpUntil(() => silver.IsEnabled);
                 var row = panel.Children.OfType<ParameterRow>().Single();
                 check(row.Number.IsEnabled && File.Exists(silverAsset),"Selecting HDR Silver installs the verified LUT");
                 row.Number.Text="65";
@@ -222,21 +223,21 @@ internal static class HDRWorkflowChecks
                 "HDR Silver affects both renditions");
             window.OpenFile(input); Ready(window);
             check(Settings().HDR == look && window.ActiveFilm.Text == lookName,"Reopening restores the HDR look and strength");
-            EditLook((_, _, buttons) => PhotoFeatureChecks.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.clear")));
+            EditLook((_, _, buttons) => WpfTestHost.Click(buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.clear")));
             check(Settings().HDR!.LookSettings.IsDefault && Frame().HDR.RGB.SequenceEqual(beforeLook.HDR.RGB),"Clearing HDR LUT restores the ungraded master");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR == look,"Undo restores the HDR look");
             var graded = Path.Combine(root,"hdr-look.jpg");
             var export = window.ExportPhoto(ExportFormat.HdrJpeg,graded);
-            InteractionChecks.PumpUntil(() => export.IsCompleted);
+            WpfTestHost.PumpUntil(() => export.IsCompleted);
             export.GetAwaiter().GetResult();
             check(HDRNative.Probe(graded,out _) == HDRProbeState.Supported && !File.ReadAllBytes(output).SequenceEqual(File.ReadAllBytes(graded)),
                 "HDR LUT survives gain-map JPEG export");
             EditLook((_, panel, buttons) => {
                 var master = buttons.Single(b => AutomationProperties.GetAutomationId(b) == "hdr.look.silver-master");
                 check(master.IsVisible && master.IsEnabled,"Bundled HDR Master recipe is reachable");
-                PhotoFeatureChecks.Click(master);
-                InteractionChecks.PumpUntil(() => master.IsEnabled);
+                WpfTestHost.Click(master);
+                WpfTestHost.PumpUntil(() => master.IsEnabled);
                 check(panel.Children.OfType<TextBlock>().Select(label => label.Text).SequenceEqual(new[] { "HDR Silver", "" }),
                     "Bundled HDR Master resolves its packaged LUT");
             });
@@ -317,7 +318,7 @@ internal static class HDRWorkflowChecks
         File.Move(pending,parked);
         void Run(BatchExportWindow batch) {
             var run=batch.StartExecution();
-            InteractionChecks.PumpUntil(()=>run.IsCompleted);
+            WpfTestHost.PumpUntil(()=>run.IsCompleted);
             run.GetAwaiter().GetResult();
         }
         BatchExportWindow OpenLegacy() {
@@ -354,7 +355,7 @@ internal static class HDRWorkflowChecks
         try {
             formatWindow.Show();
             var adding=formatWindow.AddInputs([low,high,broken,missingLook]);
-            InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            WpfTestHost.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
             if (formatWindow.Job.Items.Count!=4)
                 throw new InvalidOperationException("Format preflight did not retain all four inputs: "+formatWindow.Job.Error);
             BatchItem Item(string path)=>formatWindow.Job.Items.Single(item=>item.Input==path);
@@ -362,7 +363,7 @@ internal static class HDRWorkflowChecks
                 "HDR JPEG admits the HDR photo and rejects SDR, unreadable inputs and missing looks");
             var sdrId=Item(low).Id; var brokenError=Item(broken).ValidationError; var lookError=Item(missingLook).ValidationError;
             ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
-            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            WpfTestHost.PumpUntil(()=>!formatWindow.Busy);
             check(formatWindow.Job.Format==ExportFormat.SdrJpeg && Item(low).Id==sdrId && Item(low).CanSelect &&
                 Item(high).Selected && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
                 "Switching to SDR JPEG restores the same SDR row and preserves file and decode errors");
@@ -371,7 +372,7 @@ internal static class HDRWorkflowChecks
             sdrRow.Selected=true;
             check(Item(low).Selected,"The restored SDR row can be checked in the batch list");
             ((RadioButton)formatWindow.FindName("HdrJpeg")).IsChecked=true;
-            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            WpfTestHost.PumpUntil(()=>!formatWindow.Busy);
             check(!Item(low).CanSelect && Item(high).Selected && Item(broken).ValidationError==brokenError,
                 "Switching back recomputes HDR compatibility and preserves the decode error");
             var oldDraft=formatWindow.Job.Copy();
@@ -381,7 +382,7 @@ internal static class HDRWorkflowChecks
             formatWindow=new BatchExportWindow(formatJournal.Load()!,formatJournal,_=>new RenderEngine(0,appPaths:paths),hdrPreparation:preparation);
             formatWindow.Show();
             ((RadioButton)formatWindow.FindName("SdrJpeg")).IsChecked=true;
-            InteractionChecks.PumpUntil(()=>!formatWindow.Busy);
+            WpfTestHost.PumpUntil(()=>!formatWindow.Busy);
             check(Item(low).CanSelect && Item(broken).ValidationError==brokenError && Item(missingLook).ValidationError==lookError,
                 "An older draft revalidates missing compatibility data when the format changes");
         } finally {formatWindow.Close();}
@@ -389,9 +390,9 @@ internal static class HDRWorkflowChecks
         var window=new BatchExportWindow(Job(hdr),journal,_=>new RenderEngine(0,appPaths:paths),hdrPreparation:preparation);
         try {
             window.Show();
-            var adding=window.AddInputs([low,high]); InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            var adding=window.AddInputs([low,high]); WpfTestHost.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
             check(window.Job.SelectedCount==2,"Unified ProRAW preflight accepts both saved target modes");
-            var run=window.StartExecution(); InteractionChecks.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
+            var run=window.StartExecution(); WpfTestHost.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
             var saved=journal.Load()!;
             check(saved.Mode==BatchJob.PerTargetFrozen && saved.SucceededCount==2,"Unified ProRAW exports both frozen targets: "+saved.Error);
             var lowSettings=saved.SnapshotFor(saved.Items.Single(item=>item.Input==low)).Settings.Restore();
@@ -407,7 +408,7 @@ internal static class HDRWorkflowChecks
             var collectionWindow=new BatchExportWindow(collection,collectionJournal,_=>new RenderEngine(0,appPaths:paths));
             try {
                 collectionWindow.Show();
-                var export=collectionWindow.StartExecution(); InteractionChecks.PumpUntil(()=>export.IsCompleted); export.GetAwaiter().GetResult();
+                var export=collectionWindow.StartExecution(); WpfTestHost.PumpUntil(()=>export.IsCompleted); export.GetAwaiter().GetResult();
                 var published=collectionJournal.Load()!.Items.Single();
                 check(published.Status==BatchStatus.Succeeded && published.Output!=null &&
                     PhotoInput.ProbeHDR(published.Output,out _)==HDRProbeState.Supported,
@@ -447,7 +448,7 @@ internal static class HDRWorkflowChecks
             check(window!.HDREditMenu.IsEnabled, "Camera RAW offers the HDR edit switch");
             window.HDREditMenu.IsChecked = enabled;
             window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            InteractionChecks.PumpUntil(() => window.ExportPng.IsEnabled && Settings().IsHDREditing == enabled &&
+            WpfTestHost.PumpUntil(() => window.ExportPng.IsEnabled && Settings().IsHDREditing == enabled &&
                 (Frame().HDR != null) == enabled);
             check(window.HDREditMenu.IsChecked == enabled, "HDR menu matches the rendered edit mode");
         }
@@ -472,7 +473,7 @@ internal static class HDRWorkflowChecks
                     check(fbdd.IsVisible && fbdd.IsEnabled,"Camera RAW FBDD control is reachable");
                     fbdd.SelectedIndex=level;
                     if (level == 2) Capture(dialog,Path.Combine(root,"camera-hdr-fbdd.png"));
-                    PhotoFeatureChecks.Click(panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(
+                    WpfTestHost.Click(panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(
                         button => AutomationProperties.GetAutomationId(button) == "hdr.camera.apply"));
                 } catch (Exception failure) {
                     error=failure;
@@ -482,14 +483,14 @@ internal static class HDRWorkflowChecks
             check(window.HDRCameraMenu.IsEnabled,"HDR RAW menu is available for Bayer");
             window.HDRCameraMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             if (error != null) throw error;
-            InteractionChecks.PumpUntil(() => Settings().HDR?.CameraSettings.FbddLevel == level && Frame().HDR != before);
+            WpfTestHost.PumpUntil(() => Settings().HDR?.CameraSettings.FbddLevel == level && Frame().HDR != before);
             Ready(window);
             check(Settings().HDR!.RecordVersion==8 && (level != 2 || !Frame().HDR!.HDR.RGB.SequenceEqual(before.HDR.RGB)),
                 "HDR FBDD changes the decoded result and saves a camera development record");
         }
         void TransferFbdd()
         {
-            T Control<T>(Window dialog,string id) where T:DependencyObject => PhotoFeatureChecks.Descendants<T>(dialog)
+            T Control<T>(Window dialog,string id) where T:DependencyObject => WpfTestHost.Descendants<T>(dialog)
                 .Single(item => AutomationProperties.GetAutomationId(item) == id);
             Exception? failure = null;
             window!.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
@@ -498,11 +499,11 @@ internal static class HDRWorkflowChecks
                     if (dialog == null) throw new InvalidOperationException("Missing camera copy dialog");
                     Control<ComboBox>(dialog,"adjustment.copy.scope").SelectedIndex = 3;
                     dialog.UpdateLayout();
-                    PhotoFeatureChecks.Click(Control<Button>(dialog,"adjustment.copy.clear"));
+                    WpfTestHost.Click(Control<Button>(dialog,"adjustment.copy.clear"));
                     Control<CheckBox>(dialog,"adjustment.field.hdr.camera_development").IsChecked = true;
                     var copy = Control<Button>(dialog,"adjustment.copy.confirm");
                     check(copy.IsEnabled,"Camera HDR scope captures only HDR RAW");
-                    PhotoFeatureChecks.Click(copy);
+                    WpfTestHost.Click(copy);
                 } catch (Exception error) { failure=error; dialog?.Close(); }
             }));
             window.CopyAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -517,15 +518,15 @@ internal static class HDRWorkflowChecks
                 try {
                     var apply = Control<Button>(dialog,"adjustment.results.apply");
                     check(apply.IsEnabled,"Bayer target passes camera paste native preflight");
-                    PhotoFeatureChecks.Click(apply);
-                    PhotoFeatureChecks.Click(Control<Button>(dialog,"adjustment.results.close"));
+                    WpfTestHost.Click(apply);
+                    WpfTestHost.Click(Control<Button>(dialog,"adjustment.results.close"));
                     finished = true;
                 } catch (Exception error) { failure=error; dialog.Close(); }
             };
             try {
                 timer.Start();
                 window.PasteAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                InteractionChecks.PumpUntil(() => finished || failure != null);
+                WpfTestHost.PumpUntil(() => finished || failure != null);
             } finally { timer.Stop(); }
             if (failure != null) throw failure;
             Ready(window);
@@ -535,7 +536,7 @@ internal static class HDRWorkflowChecks
         void Export(ExportFormat format, string output)
         {
             var task = window!.ExportPhoto(format, output);
-            InteractionChecks.PumpUntil(() => task.IsCompleted);
+            WpfTestHost.PumpUntil(() => task.IsCompleted);
             task.GetAwaiter().GetResult();
             check(File.Exists(output) && new FileInfo(output).Length > 100,
                 $"Editor exports {format}: {window.Status.Text}");
@@ -561,7 +562,7 @@ internal static class HDRWorkflowChecks
             var closed = false;
             window!.Closed += (_, _) => closed = true;
             window.Close();
-            InteractionChecks.PumpUntil(() => closed);
+            WpfTestHost.PumpUntil(() => closed);
             Open();
             check(window.HDREditMenu.IsChecked && Settings().IsHDREditing && Frame().HDR != null &&
                 Settings()[Parameter.Exposure] == 1.25, "Reopened editor restores the last mode and HDR exposure");
@@ -574,7 +575,7 @@ internal static class HDRWorkflowChecks
             var menu = window.ExportButton.ContextMenu!;
             menu.PlacementTarget = window.ExportButton;
             menu.IsOpen = true;
-            InteractionChecks.PumpUntil(() => window.ExportHdrJpeg.IsVisible && window.ExportSdrJpeg.IsVisible);
+            WpfTestHost.PumpUntil(() => window.ExportHdrJpeg.IsVisible && window.ExportSdrJpeg.IsVisible);
             check(window.ExportHdrJpeg.IsEnabled && window.ExportSdrJpeg.IsEnabled,
                 "Both JPEG exports are available in the HDR editor");
             menu.IsOpen = false;
@@ -626,9 +627,9 @@ internal static class HDRWorkflowChecks
         var batch = new BatchExportWindow(job,journal,_ => new RenderEngine(0,appPaths:paths),hdrPreparation:preparation);
         try {
             batch.Show();
-            var adding=batch.AddInputs([high,low]); InteractionChecks.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
+            var adding=batch.AddInputs([high,low]); WpfTestHost.PumpUntil(()=>adding.IsCompleted); adding.GetAwaiter().GetResult();
             check(batch.Job.SelectedCount==2,"Camera RAW batch admits saved HDR and fresh SDR targets");
-            var run=batch.StartExecution(); InteractionChecks.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
+            var run=batch.StartExecution(); WpfTestHost.PumpUntil(()=>run.IsCompleted); run.GetAwaiter().GetResult();
             var completed=journal.Load()!;
             check(completed.Mode==BatchJob.PerTargetFrozen && completed.SucceededCount==2 &&
                   completed.Items[0].Frozen!.Settings.HDR?.Mode==HDRMode.Hdr &&
@@ -688,7 +689,7 @@ internal static class HDRWorkflowChecks
             window.Show();window.OpenFile(source);Ready(window);
             var exportMenu=window.ExportButton.ContextMenu!;
             exportMenu.PlacementTarget=window.ExportButton;exportMenu.IsOpen=true;
-            InteractionChecks.PumpUntil(()=>window.ExportSdrJpeg.IsVisible);
+            WpfTestHost.PumpUntil(()=>window.ExportSdrJpeg.IsVisible);
             check(Equals(window.ExportSdrJpeg.Header,"Save SDR JPEG") && ExportFormat.SdrJpeg.Title()=="Save SDR JPEG",
                 "Visible SDR JPEG export action and file filter use the English catalog");
             Capture(exportMenu,Path.Combine(root,"sdr-export-menu.png"));exportMenu.IsOpen=false;
@@ -709,7 +710,7 @@ internal static class HDRWorkflowChecks
             var summaryDialog = new AdjustmentScopeDialog(window, source, _ => null, hdr:true,
                 preview:window.PreviewAdjustmentPayload,lookName:window.AdjustmentSummaryLookName);
             summaryDialog.Show(); summaryDialog.UpdateLayout();
-            T Summary<T>(string id) where T:DependencyObject => UiDetailChecks.Descendants(summaryDialog).OfType<T>()
+            T Summary<T>(string id) where T:DependencyObject => WpfTestHost.Descendants(summaryDialog).OfType<T>()
                 .Single(value=>AutomationProperties.GetAutomationId(value)==id);
             check(Summary<TextBlock>("adjustment.copy.summary.count").Text.Contains("7"),
                 "Native HDR default summary contains seven shared adjustments");
@@ -732,13 +733,13 @@ internal static class HDRWorkflowChecks
                 var expected=hdrMeter.AutoExposure(source,beforeAutoExposure);
                 check(expected!=previousExposure,"HDR workflow fixture produces an exposure correction");
                 window.AutoExposureButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                InteractionChecks.PumpUntil(()=>!window.AutoExposing);Ready(window);
+                WpfTestHost.PumpUntil(()=>!window.AutoExposing);Ready(window);
                 var afterAutoExposure=window.Settings;
                 check(afterAutoExposure[Parameter.Exposure]==expected &&
                     afterAutoExposure.Capture().Values[(int)Parameter.Exposure]==dormantExposure,
                     "Automatic exposure commits the HDR value without changing the dormant SDR value");
                 window.MenuAutoExposure.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                InteractionChecks.PumpUntil(()=>!window.AutoExposing);Ready(window);
+                WpfTestHost.PumpUntil(()=>!window.AutoExposing);Ready(window);
                 window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
                 check(window.Settings[Parameter.Exposure]==previousExposure,
                     "One undo restores the HDR exposure after repeated automatic metering");
@@ -752,7 +753,7 @@ internal static class HDRWorkflowChecks
                     "Reopening preserves HDR automatic exposure and the dormant SDR value");
                 var destination=Path.Combine(root,"hdr-auto-exposure.jpg");
                 var export=window.ExportPhoto(ExportFormat.HdrJpeg,destination);
-                InteractionChecks.PumpUntil(()=>export.IsCompleted);
+                WpfTestHost.PumpUntil(()=>export.IsCompleted);
                 export.GetAwaiter().GetResult();
                 check(File.Exists(destination) && HDRNative.Probe(destination,out _)==HDRProbeState.Supported,
                     "The reopened automatic exposure exports a readable HDR JPEG");
@@ -796,7 +797,7 @@ internal static class HDRWorkflowChecks
             check(rendered.HDR!=null && rendered.HDR.Statistics.Bins.Sum(x=>(long)x)==rendered.Image.PixelWidth*rendered.Image.PixelHeight,
                 "HDR histogram counts floating-point luminance pixels");
             window.HDRFalseColorMenu.IsChecked=true;window.HDRFalseColorMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            InteractionChecks.PumpUntil(()=>window.HdrFalseColorCache.Count>0);
+            WpfTestHost.PumpUntil(()=>window.HdrFalseColorCache.Count>0);
             Capture(window,Path.Combine(root,"hdr-false-color.png"));
             window.HDRFalseColorMenu.IsChecked=false;window.HDRFalseColorMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             window.HDREditMenu.IsChecked=false;window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
@@ -810,7 +811,7 @@ internal static class HDRWorkflowChecks
             check(Math.Max(preview.Width,preview.Height)<=512 && preview.Pixels.Length>0,
                 "HDR source in SDR editing provides a bounded LUT wizard baseline");
             var dialog=new LUTCompatibilityDialog(window,lut,draft,source,[]);dialog.Show();
-            InteractionChecks.PumpUntil(()=>dialog.Thumbnails.Values.Any(value=>value.Button.IsEnabled));
+            WpfTestHost.PumpUntil(()=>dialog.Thumbnails.Values.Any(value=>value.Button.IsEnabled));
             var candidate=dialog.Thumbnails.Values.First(value=>value.Button.IsEnabled);
             candidate.Button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(dialog.ConfirmButton.IsEnabled,"LUT wizard displays candidates and accepts a compatible SDR configuration");

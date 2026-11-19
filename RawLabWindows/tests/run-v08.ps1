@@ -13,7 +13,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default','batch-selection')
+$names=@('build','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','ai-panel','ai-window','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 $savedEnv=@{}
 foreach($key in @('RAWLAB_TEST_REPO','RAWLAB_TEST_RAW','RAWLAB_TEST_DENOISE_RAW','RAWLAB_TEST_CLI','RAWLAB_TEST_RESULTS')) {

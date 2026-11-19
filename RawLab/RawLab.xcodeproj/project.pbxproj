@@ -7,8 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		W34U00000000000000000001 /* LibraryImportRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000011 /* LibraryImportRobot.swift */; };
+		W34U00000000000000000002 /* EditorRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000012 /* EditorRobot.swift */; };
+		W34U00000000000000000003 /* BatchRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000013 /* BatchRobot.swift */; };
+		W34U00000000000000000004 /* ImportAndDocumentSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */; };
+		W34U00000000000000000005 /* EditorWorkflowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */; };
+		W34U00000000000000000006 /* BatchWorkflowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */; };
+		W34U00000000000000000007 /* HdrAndX3fSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */; };
 		AA1100000000000000000003 /* RawLabKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000002 /* RawLabKit */; };
-        E91100000000000000000001 /* RecentPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91100000000000000000011; };
 		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
 		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
@@ -44,7 +50,6 @@
         D12100000000000000000001 /* LookImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12100000000000000000011; };
         D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
         D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
-        D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01000000000000000000011; };
         D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
 		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
 		D00200000000000000000002 /* LensControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000012; };
@@ -80,7 +85,6 @@
 		AB1400000000000000000011 /* provia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000011 /* provia.png */; };
 		AB1400000000000000000012 /* reala-ace.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000012 /* reala-ace.png */; };
 		AB1400000000000000000013 /* velvia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000013 /* velvia.png */; };
-		AB1300000000000000000001 /* EditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1300000000000000000002 /* EditorUITests.swift */; };
 		AB1200000000000000000001 /* EditorComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000011 /* EditorComponents.swift */; };
 		AB1200000000000000000003 /* eterna.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000013 /* eterna.png */; };
 		AB1200000000000000000004 /* eterna-bb.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000014 /* eterna-bb.png */; };
@@ -119,9 +123,6 @@
 		E2C000030000000000000001 /* EditorTestHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000030000000000000011 /* EditorTestHooks.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
 		A7894D11E1234B7FBE0F0CC1 /* GeometryDraftCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */; };
-		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
-		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
-		A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */; };
 		5D16F3E6AA9AE3153F10EA01 = {
 			isa = PBXBuildFile;
 			fileRef = 6408B0D9CC3B88C973EB26A9;
@@ -142,42 +143,6 @@
 			isa = PBXBuildFile;
 			fileRef = CE718EBE66711A945E3F2F52;
 		};
-		8FC75E90CDC70C4708EB37A2 = {
-			isa = PBXBuildFile;
-			fileRef = 33FD6D1FFB7FCA01FF8E9FA8;
-		};
-		5E0132EABC243650B81956BA = {
-			isa = PBXBuildFile;
-			fileRef = 4F82DBD62C72A8DCF70884F1;
-		};
-		CE05C93906EE52BFDBEDD0AD = {
-			isa = PBXBuildFile;
-			fileRef = 60E62AF53FA54F2397437053;
-		};
-		881EC6B68800480C33FA6A33 = {
-			isa = PBXBuildFile;
-			fileRef = D653887C2ACBF01DE4AD60E6;
-		};
-		56190FF87AB7690F650D76EB = {
-			isa = PBXBuildFile;
-			fileRef = 111E539CB5BD4F8DA9C774E4;
-		};
-		4B2CA505E383F8656138A49F = {
-			isa = PBXBuildFile;
-			fileRef = 477C25ABC8A28D46040EB0ED;
-		};
-		25D258CC273B1BA6C8C96D64 = {
-			isa = PBXBuildFile;
-			fileRef = E6783FA2C1DCB791AAE3D175;
-		};
-		59F7471A20043B7473775365 = {
-			isa = PBXBuildFile;
-			fileRef = E72BF8F2A61849225F7BDC85;
-		};
-		D49D2474508D587986BF07B8 = {
-			isa = PBXBuildFile;
-			fileRef = 90808E94AB71C094544966D4;
-		};
         2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD125F07D1C4D65DADBADB20; };
         2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A3E4C709437DACC0D1D46F; };
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
@@ -191,10 +156,6 @@
         D14700000000000000000001 /* HDRPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14700000000000000000011; };
         D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
         D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
-        D15000000000000000000001 /* HDRPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15000000000000000000011; };
-        D16000000000000000000001 /* ProRAWStreamUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16000000000000000000011; };
-        A8F400000000000000000001 /* DocumentImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F400000000000000000011; };
-        A8F300000000000000000001 /* X3fRenderingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F300000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
 		FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9E40BC0C5EEE673454CF3; };
@@ -217,7 +178,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-        E91100000000000000000011 /* RecentPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/RecentPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000011 /* LibraryImportRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/LibraryImportRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000012 /* EditorRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/EditorRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000013 /* BatchRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/BatchRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/ImportAndDocumentSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/EditorWorkflowSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/BatchWorkflowSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HdrAndX3fSmokeTests.swift; sourceTree = SOURCE_ROOT; };
 		B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+RecentPhotos.swift"; sourceTree = SOURCE_ROOT; };
 		BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Library/RecentPhotosView.swift"; sourceTree = SOURCE_ROOT; };
 		DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/IOSPhotoPreviews.swift"; sourceTree = SOURCE_ROOT; };
@@ -253,7 +220,6 @@
         D12100000000000000000011 /* LookImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/LookImportCoordinator.swift"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
-        D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
 		D00300000000000000000012 = {
 			path = "RawLab/UI/Controls/GeometryControls.swift";
 			isa = PBXFileReference;
@@ -319,12 +285,6 @@
 		AB1500000000000000000011 /* provia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "provia.png"; path = "../RawLabMac/Resources/FilmIcons/provia.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000012 /* reala-ace.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "reala-ace.png"; path = "../RawLabMac/Resources/FilmIcons/reala-ace.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000013 /* velvia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "velvia.png"; path = "../RawLabMac/Resources/FilmIcons/velvia.png"; sourceTree = SOURCE_ROOT; };
-		AB1300000000000000000002 = {
-			path = "RawLabUITests/EditorUITests/Support/EditorUITests.swift";
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
 		AB1300000000000000000003 /* RawLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = RawLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB1200000000000000000011 = {
 			path = "RawLab/UI/Controls/EditorComponents.swift";
@@ -420,14 +380,6 @@
 		E2C000030000000000000011 /* EditorTestHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorTestHooks.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
 		A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/GeometryDraftCanvas.swift"; sourceTree = SOURCE_ROOT; };
-		BC236099D6C65BBF9F3BBE58 = {
-			path = "RawLabUITests/EditorV4UITests/EditorV4UITests.swift";
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
-		D00900000000000000000011 /* CropLockUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/CropLockUITests.swift"; sourceTree = SOURCE_ROOT; };
-		A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/ReleaseDetailUITests.swift"; sourceTree = SOURCE_ROOT; };
 		6408B0D9CC3B88C973EB26A9 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -458,60 +410,6 @@
 			path = "RawLab/UI/Export/ContentView+FileExport.swift";
 			sourceTree = SOURCE_ROOT;
 		};
-		33FD6D1FFB7FCA01FF8E9FA8 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/NativeControls.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		4F82DBD62C72A8DCF70884F1 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/ImportAndAccessibility.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		60E62AF53FA54F2397437053 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/EditorV4Support.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		D653887C2ACBF01DE4AD60E6 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/PublicationAndPrivacy.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		111E539CB5BD4F8DA9C774E4 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Support/EditorSupport.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		477C25ABC8A28D46040EB0ED = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/LanguageAndLooks.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		E6783FA2C1DCB791AAE3D175 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Workflows/BatchWorkflow.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		E72BF8F2A61849225F7BDC85 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/PanelControls.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		90808E94AB71C094544966D4 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Workflows/PhotoWorkflow.swift";
-			sourceTree = SOURCE_ROOT;
-		};
         DD125F07D1C4D65DADBADB20 /* ToneCurveNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveNative.swift; path = "../Shared/ToneCurveNative.swift"; sourceTree = SOURCE_ROOT; };
         00A3E4C709437DACC0D1D46F /* ToneCurveSampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSampling.swift; path = "../Shared/ToneCurveSampling.swift"; sourceTree = SOURCE_ROOT; };
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
@@ -525,10 +423,6 @@
         D14700000000000000000011 /* HDRPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRPresentation.swift; path = "../Shared/Native/HDRPresentation.swift"; sourceTree = SOURCE_ROOT; };
         D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
         D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
-        D15000000000000000000011 /* HDRPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HDRPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
-        D16000000000000000000011 /* ProRAWStreamUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/ProRAWStreamUITests.swift; sourceTree = SOURCE_ROOT; };
-        A8F400000000000000000011 /* DocumentImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/DocumentImportUITests.swift; sourceTree = SOURCE_ROOT; };
-        A8F300000000000000000011 /* X3fRenderingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/X3fRenderingUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
 		CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigrationNative.swift"; path = "../Shared/Native/ProcessingMigrationNative.swift"; sourceTree = SOURCE_ROOT; };
@@ -818,21 +712,18 @@
 			isa = PBXGroup;
 			sourceTree = "<group>";
 			children = (
+				W34U00000000000000000011 /* LibraryImportRobot.swift */,
+				W34U00000000000000000012 /* EditorRobot.swift */,
+				W34U00000000000000000013 /* BatchRobot.swift */,
+				W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */,
+				W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */,
+				W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */,
+				W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */,
 				AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */,
 				82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */,
-				D00900000000000000000011,
-				A0D17B5E0000000000000004,
-				E91100000000000000000011,
-                D01000000000000000000011,
-				D15000000000000000000011,
-				D16000000000000000000011,
-                A8F400000000000000000011,
-                A8F300000000000000000011,
 				2F6D48C6086EC660301E288B,
 				0DAA7689F37A5648D3C8F238,
 				2F109479FD08681A1F30E85C,
-				EEC9B8836A6EF167E6349DB4,
-				BFCE5D6FC318755022B5AEA1,
 			);
 		};
 		BFDCFB6A137F996DD48D076B = {
@@ -912,55 +803,6 @@
 				38F6D63A9E8C8B655383DC1A,
 			);
 			name = IO;
-			sourceTree = "<group>";
-		};
-		4F6AD0C446BB498AFEC65B20 = {
-			isa = PBXGroup;
-			children = (
-				D653887C2ACBF01DE4AD60E6,
-				477C25ABC8A28D46040EB0ED,
-				E72BF8F2A61849225F7BDC85,
-			);
-			name = Controls;
-			sourceTree = "<group>";
-		};
-		3655CD4328507D5021477DC2 = {
-			isa = PBXGroup;
-			children = (
-				AB1300000000000000000002,
-				111E539CB5BD4F8DA9C774E4,
-			);
-			name = Support;
-			sourceTree = "<group>";
-		};
-		5D90405F73D0A8E896FE3448 = {
-			isa = PBXGroup;
-			children = (
-				E6783FA2C1DCB791AAE3D175,
-				90808E94AB71C094544966D4,
-			);
-			name = Workflows;
-			sourceTree = "<group>";
-		};
-		EEC9B8836A6EF167E6349DB4 = {
-			isa = PBXGroup;
-			children = (
-				4F6AD0C446BB498AFEC65B20,
-				3655CD4328507D5021477DC2,
-				5D90405F73D0A8E896FE3448,
-			);
-			name = EditorUITests;
-			sourceTree = "<group>";
-		};
-		BFCE5D6FC318755022B5AEA1 = {
-			isa = PBXGroup;
-			children = (
-				BC236099D6C65BBF9F3BBE58,
-				33FD6D1FFB7FCA01FF8E9FA8,
-				4F82DBD62C72A8DCF70884F1,
-				60E62AF53FA54F2397437053,
-			);
-			name = EditorV4UITests;
 			sourceTree = "<group>";
 		};
 		346D48B8686C639559AF6E9B /* Camera */ = {
@@ -1148,25 +990,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB1300000000000000000001,
-				39E615609C9D5AC1B16063C7,
-				D00900000000000000000001,
-				A0D17B5E0000000000000003,
-				E91100000000000000000001,
-                D01000000000000000000001,
-				D15000000000000000000001,
-				D16000000000000000000001,
-                A8F400000000000000000001,
-                A8F300000000000000000001,
-				8FC75E90CDC70C4708EB37A2,
-				5E0132EABC243650B81956BA,
-				CE05C93906EE52BFDBEDD0AD,
-				881EC6B68800480C33FA6A33,
-				56190FF87AB7690F650D76EB,
-				4B2CA505E383F8656138A49F,
-				25D258CC273B1BA6C8C96D64,
-				59F7471A20043B7473775365,
-				D49D2474508D587986BF07B8,
+				W34U00000000000000000001 /* LibraryImportRobot.swift in Sources */,
+				W34U00000000000000000002 /* EditorRobot.swift in Sources */,
+				W34U00000000000000000003 /* BatchRobot.swift in Sources */,
+				W34U00000000000000000004 /* ImportAndDocumentSmokeTests.swift in Sources */,
+				W34U00000000000000000005 /* EditorWorkflowSmokeTests.swift in Sources */,
+				W34U00000000000000000006 /* BatchWorkflowSmokeTests.swift in Sources */,
+				W34U00000000000000000007 /* HdrAndX3fSmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
