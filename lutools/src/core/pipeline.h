@@ -30,6 +30,7 @@
 
 namespace sony2fuji {
 
+struct CanonicalSdrRecipe;
 struct PipelineRuntimeState;
 
 enum class RenderBackend : int32_t {
@@ -111,6 +112,10 @@ public:
 
     // Tone curve sampling (stateless)
     static RenderStatus sampleToneCurve(const ToneCurveConfig& config, const double* x, double* y, uint32_t count);
+
+    // Atomic edit-state application (replaces all edit-state fields transactionally)
+    RenderStatus applyParams(const char* recipeJson);
+    RenderStatus applyParams(const CanonicalSdrRecipe& recipe);
 
     // Configuration setters & diagnostics
     void setCancellation(int32_t (*callback)(void*), void* context);

@@ -118,18 +118,6 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func configureLens(_ session: OpaquePointer, settings: LensCorrectionSettings) throws {
-        var config = sony2fuji_lens_correction_config_v2()
-        config.base.version = SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION
-        config.base.struct_size = UInt32(MemoryLayout<sony2fuji_lens_correction_config_v2>.size)
-        config.base.distortion = settings.distortion ? 1 : 0
-        config.base.tca = settings.tca ? 1 : 0
-        config.base.auto_crop = settings.autoCrop ? 1 : 0
-        config.vignetting = settings.vignetting ? 1 : 0
-        let status = settings.coreProfileID.withCString { config.base.profile_id = $0; return sony2fuji_session_set_lens_correction_v2(session, &config) }
-        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(L10n.text("无效或不可用的镜头校正设置")) }
-    }
-
     func readLens(_ session: OpaquePointer, url: URL, metadata: DisplayLensMetadata? = nil) throws -> LensInfo {
         let candidates = try lensCatalog.candidates(session: session, url: url, metadata: metadata)
         var report = sony2fuji_lens_report_v2()

@@ -270,6 +270,14 @@ sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* handle) {
     return SONY2FUJI_STATUS_OK;
 }
 
+sony2fuji_status sony2fuji_apply_params(sony2fuji_session* handle, const char* recipe_json) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !recipe_json || !*recipe_json) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    return toFfiStatus(lease.raw()->pipeline.applyParams(recipe_json));
+}
+
 sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* handle, int32_t enabled) {
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease) || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;

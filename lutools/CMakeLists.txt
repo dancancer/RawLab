@@ -181,6 +181,7 @@ set(CORE_SOURCES
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
     src/core/render_params.cpp
+    src/core/edit_recipe_core.cpp
     src/core/image_header_probe.cpp
     src/core/photo_pipeline_stages.cpp
     src/core/hsl_probe.cpp
@@ -192,6 +193,7 @@ set(CORE_SOURCES
     src/core/pipeline_geometry.cpp
     src/core/pipeline_io.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/edit_recipe.cpp
     src/ffi/sony2fuji_lens_c.cpp
     src/ffi/sony2fuji_buffer_c.cpp
     src/ffi/sony2fuji_hdr.cpp
@@ -345,11 +347,6 @@ if(BUILD_SHARED_LIB)
 endif()
 
 # 命令行工具
-if(BUILD_CLI OR (BUILD_TESTING AND NOT IOS AND NOT ANDROID))
-    # Opt-in protocol adapter: native C ABI and client builds stay unchanged.
-    add_library(rawlab_edit_protocol STATIC src/cli/edit_recipe.cpp src/core/photo_tone_curve.cpp)
-    target_include_directories(rawlab_edit_protocol PUBLIC include PRIVATE third_party)
-endif()
 if(BUILD_CLI)
     add_executable(rawlab_lut_probe tools/lut_contract_probe.cpp)
     target_include_directories(rawlab_lut_probe PRIVATE third_party)
@@ -359,7 +356,7 @@ if(BUILD_CLI)
         target_compile_definitions(sony2fuji_cli PRIVATE SONY2FUJI_ENABLE_DNGSDK)
     endif()
     target_include_directories(sony2fuji_cli PRIVATE third_party)
-    target_link_libraries(sony2fuji_cli sony2fuji_core rawlab_edit_protocol)
+    target_link_libraries(sony2fuji_cli sony2fuji_core)
     set_target_properties(sony2fuji_cli PROPERTIES OUTPUT_NAME sony2fuji)
 endif()
 
@@ -992,29 +989,35 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     rawlab_add_test(
         NAME edit_recipe
         SOURCES tests/edit_recipe_tests.cpp
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME processing_recipe
         SOURCES tests/processing_recipe_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME edit_recipe_raster
         SOURCES tests/edit_recipe_raster_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME apply_params_api
+        SOURCES tests/apply_params_api_tests.cpp
+        LIBRARIES sony2fuji_core
+        LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME hdr_recipe_roundtrip
         TARGET hdr_recipe_tests
         SOURCES tests/hdr_recipe_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS hdr recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
@@ -1022,19 +1025,19 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         TARGET hdr_recipe_native_tests
         SOURCES tests/hdr_recipe_native_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol sony2fuji_core
+        LIBRARIES sony2fuji_core
         LABELS hdr recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME edit_recipe_geometry
         SOURCES tests/edit_recipe_geometry_tests.cpp
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME edit_recipe_perspective
         SOURCES tests/edit_recipe_perspective_tests.cpp
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
@@ -1042,7 +1045,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/edit_pixel_golden_tests.cpp
         INCLUDES third_party
         DEFINES TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
-        LIBRARIES rawlab_edit_protocol sony2fuji_core
+        LIBRARIES sony2fuji_core
         LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(APPLE AND SONY2FUJI_ENABLE_GPU)
@@ -1532,7 +1535,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         NAME tone_curve_recipe
         SOURCES tests/tone_curve_recipe_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     set(tone_libs)
@@ -1603,7 +1606,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         NAME tone_recipe
         SOURCES tests/tone_recipe_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
@@ -1630,7 +1633,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         NAME color_grading_recipe
         SOURCES tests/color_grading_recipe_tests.cpp
         INCLUDES third_party
-        LIBRARIES rawlab_edit_protocol
+        LIBRARIES sony2fuji_core
         LABELS recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
@@ -1977,8 +1980,6 @@ if(BUILD_CLI)
     install(TARGETS sony2fuji_cli
         RUNTIME DESTINATION bin
     )
-    install(TARGETS rawlab_edit_protocol ARCHIVE DESTINATION lib)
-    install(FILES third_party/nlohmann/LICENSE.MIT DESTINATION share/licenses/rawlab-edit-protocol)
 endif()
 
 install(DIRECTORY include/sony2fuji

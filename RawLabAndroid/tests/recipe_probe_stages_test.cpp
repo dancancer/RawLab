@@ -1,91 +1,82 @@
 #include "../app/src/main/cpp/recipe_probe_stages.h"
-#include "../app/src/main/cpp/recipe_white_balance_cache.h"
 #include <cassert>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
+#include <cstdlib>
 #include <iostream>
-#include <random>
-struct sony2fuji_session { rawlab::RecipeProbeStages active; };
-extern "C" sony2fuji_status sony2fuji_session_set_tone_controls(sony2fuji_session* s,const sony2fuji_tone_controls_config* c) { s->active.tone=*c;return SONY2FUJI_STATUS_OK; }
-extern "C" sony2fuji_status sony2fuji_session_set_atmosphere(sony2fuji_session* s,const sony2fuji_atmosphere_config* c) { s->active.atmosphere=*c;return SONY2FUJI_STATUS_OK; }
-extern "C" sony2fuji_status sony2fuji_session_set_color_grading(sony2fuji_session* s,const sony2fuji_color_grading_config* c) { s->active.grading=*c;return SONY2FUJI_STATUS_OK; }
-extern "C" sony2fuji_status sony2fuji_session_set_tone_curves(sony2fuji_session* s,const sony2fuji_tone_curve_set_config* c) {
-    s->active.curve=c->curves[0];
-    for (int i = 0; i < 3; ++i) s->active.channels[i] = c->curves[i + 1];
+#include <string>
+#include <vector>
+
+#define REQUIRE(cond)                                                                               \
+    do {                                                                                            \
+        if (!(cond)) {                                                                              \
+            std::cerr << "REQUIRE failed at " << __FILE__ << ":" << __LINE__ << ": " #cond "\n"; \
+            std::abort();                                                                           \
+        }                                                                                           \
+    } while (false)
+
+struct sony2fuji_session {
+    std::string activeJson;
+    std::vector<std::string> history;
+    int failOnCall = -1;
+    int callCount = 0;
+};
+
+extern "C" sony2fuji_status sony2fuji_apply_params(sony2fuji_session* s, const char* recipe_json) {
+    if (!s || !recipe_json) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    const int idx = s->callCount++;
+    if (s->failOnCall == idx) return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    s->activeJson = recipe_json;
+    s->history.emplace_back(recipe_json);
     return SONY2FUJI_STATUS_OK;
 }
 
-static void testWhiteBalanceCache() {
-    namespace fs = std::filesystem;
-    const auto directory = fs::temp_directory_path() / ("rawlab-wb-probe-" + std::to_string(std::random_device{}()));
-    if (!fs::create_directory(directory)) throw std::runtime_error("Cannot create a fresh probe fixture directory");
-    const auto source = directory / "source.dng";
-    const auto replacement = directory / "replacement.dng";
-    std::ofstream(source).put('a');
-
-    rawlab::RecipeWhiteBalanceCache cache;
-    int probes = 0;
-    auto read = [&]() -> std::optional<rawlab::RecipeWhiteBalance> {
-        ++probes;
-        return rawlab::RecipeWhiteBalance{5000, static_cast<float>(probes)};
-    };
-    assert(cache.resolve(source.c_str(), 2, 0, 0, read)->tint == 1);
-    assert(cache.resolve(source.c_str(), 2, 0, 0, read)->tint == 1 && probes == 1);
-    assert(cache.resolve(source.c_str(), 1, 0, 0, read)->tint == 2);
-    assert(cache.resolve(source.c_str(), 1, 1, 0, read)->tint == 3);
-    assert(cache.resolve(source.c_str(), 1, 1, 1, read)->tint == 4);
-
-    const auto modified = fs::last_write_time(source);
-    std::ofstream(replacement).put('b');
-    fs::last_write_time(replacement, modified);
-    fs::rename(replacement, source);
-    assert(fs::last_write_time(source) == modified && fs::file_size(source) == 1);
-    try {
-        cache.resolve(source.c_str(), 1, 1, 1, []() -> std::optional<rawlab::RecipeWhiteBalance> {
-            throw std::runtime_error("cancelled probe");
-        });
-        assert(false);
-    } catch (const std::runtime_error&) {}
-    assert(cache.resolve(source.c_str(), 1, 1, 1, read)->tint == 5);
-
-    assert(!cache.resolve(source.c_str(), 1, 1, 0, [&]() -> std::optional<rawlab::RecipeWhiteBalance> {
-        ++probes;
-        return std::nullopt;
-    }));
-    assert(!cache.resolve(source.c_str(), 1, 1, 0, read) && probes == 6);
-    fs::remove_all(directory);
-    std::cout << "PASS: camera white balance probes are reused and invalidated by RAW identity or decode settings\n";
-}
-
 int main() {
-    sony2fuji_session session;
-    auto& active=session.active;
-    active.tone.black_point=.2f;active.tone.white_point=-.3f;active.tone.vibrance=.4f;
-    active.atmosphere.clarity=.6f;active.atmosphere.dehaze=.8f;
-    active.grading.shadows_hue=120;active.grading.shadows_saturation=30;
-    active.curve.mode=SONY2FUJI_CURVE_CUSTOM;active.curve.count=3;
-    active.curve.points[0]={0,0};active.curve.points[1]={.5,.7};active.curve.points[2]={1,1};
-    active.channels[0].mode=SONY2FUJI_CURVE_CUSTOM;active.channels[0].count=2;
-    active.channels[0].points[0]={0,0};active.channels[0].points[1]={1,1};
-    const auto saved=active;
-    for(bool fail : {false,true}) {
-        try {
-            rawlab::RecipeProbeStageScope scope(&session,saved);
-            assert(active.tone.black_point==0 && active.tone.white_point==0 && active.tone.vibrance==0);
-            assert(active.atmosphere.clarity==0 && active.atmosphere.dehaze==0);
-            assert(active.grading.shadows_saturation==0 && active.curve.mode==0 && active.curve.count==0);
-            assert(active.channels[0].mode==0 && active.channels[0].count==0);
-            if(fail)throw std::runtime_error("injected probe failure");
-        } catch(const std::runtime_error&) {}
-        static_assert(sizeof(rawlab::RecipeProbeStages) == 2248,
-            "Update per-stage memcmp assertions when RecipeProbeStages changes");
-        assert(std::memcmp(&active.tone,&saved.tone,sizeof(saved.tone))==0);
-        assert(std::memcmp(&active.atmosphere,&saved.atmosphere,sizeof(saved.atmosphere))==0);
-        assert(std::memcmp(&active.grading,&saved.grading,sizeof(saved.grading))==0);
-        assert(std::memcmp(&active.curve,&saved.curve,sizeof(saved.curve))==0);
-        assert(std::memcmp(active.channels,saved.channels,sizeof(saved.channels))==0);
+    {
+        sony2fuji_session session;
+        const std::string saved = R"({"schema_version":7,"custom":"user-edits"})";
+        session.activeJson = saved;
+        {
+            rawlab::RecipeProbeStageScope scope(&session, saved);
+            REQUIRE(session.activeJson == rawlab::kNeutralRecipeProbeParamsJson);
+            REQUIRE(session.history.size() == 1);
+        }
+        REQUIRE(session.activeJson == saved);
+        REQUIRE(session.history.size() == 2);
     }
-    std::cout<<"PASS: recipe probe uses identity stages and restores them after success or failure\n";
-    testWhiteBalanceCache();
+    {
+        // Empty saved params means no prior apply_params; destructor skips restore cleanly.
+        sony2fuji_session session;
+        {
+            rawlab::RecipeProbeStageScope scope(&session, "");
+            REQUIRE(session.activeJson == rawlab::kNeutralRecipeProbeParamsJson);
+        }
+        REQUIRE(session.history.size() == 1);
+    }
+    {
+        // Failure entering scope throws and does not attempt restore.
+        sony2fuji_session session;
+        session.failOnCall = 0;
+        const std::string saved = R"({"schema_version":7,"custom":"user-edits"})";
+        session.activeJson = saved;
+        bool threw = false;
+        try {
+            rawlab::RecipeProbeStageScope scope(&session, saved);
+        } catch (const std::runtime_error&) {
+            threw = true;
+        }
+        REQUIRE(threw);
+        REQUIRE(session.activeJson == saved);
+        REQUIRE(session.history.empty());
+    }
+    {
+        // Failure during destructor restore is swallowed (noexcept).
+        sony2fuji_session session;
+        session.failOnCall = 1;
+        {
+            rawlab::RecipeProbeStageScope scope(&session, R"({"schema_version":7})");
+            REQUIRE(session.activeJson == rawlab::kNeutralRecipeProbeParamsJson);
+        }
+        REQUIRE(session.history.size() == 1);
+    }
+    std::cout << "recipe_probe_stages_test passed\n";
+    return 0;
 }

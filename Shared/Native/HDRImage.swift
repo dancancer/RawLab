@@ -228,7 +228,8 @@ final class HDRImage {
                         field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
                 }
             }
-            let status = sony2fuji_session_set_processing_version(decodeSession, info.cameraProcessingVersion)
+            let status = CanonicalEditRecipe.processingOnlyJSON(processingVersion: Int(info.cameraProcessingVersion.rawValue))
+                .withCString { sony2fuji_apply_params(decodeSession, $0) }
             guard status == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
         }
         var options=sony2fuji_hdr_decode_options_v1()

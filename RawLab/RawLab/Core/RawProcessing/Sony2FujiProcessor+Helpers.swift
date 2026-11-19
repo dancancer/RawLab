@@ -55,18 +55,6 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
-    func configureProcessing(_ session: OpaquePointer, identity: ProcessingIdentity) throws {
-        let processingStatus = sony2fuji_session_set_processing_version(session, identity.core)
-        guard processingStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(processingStatus))
-        }
-    }
-
-    func configureX3f(_ session: OpaquePointer, mode: X3fMode) throws {
-        let status = sony2fuji_session_set_x3f_mode(session, sony2fuji_x3f_mode(rawValue: mode.nativeValue))
-        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
-    }
-
     func isNormalX3f(_ url: URL, settings: RawSettings) -> Bool {
         url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
     }
@@ -83,57 +71,35 @@ extension Sony2FujiProcessor {
         return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
     }
 
-    func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
-        var config = settings.nativeSetConfig
-        guard sony2fuji_session_set_tone_curves(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的曲线参数"))
+    private func validationMessage(for error: CanonicalEditRecipeError) -> String {
+        switch error {
+        case .invalidToneCurve: return L10n.text("无效的曲线参数")
+        case .invalidColorGrading: return L10n.text("无效的颜色分级参数")
+        case .invalidToneControls: return L10n.text("无效的黑白场或鲜艳度参数")
+        case .invalidAtmosphere: return L10n.text("无效的清晰度或去朦胧参数")
+        case .invalidHSL: return L10n.text("无效的 HSL 参数")
+        case .invalidGeometry: return L10n.text("无效的几何参数")
+        case .invalidPhotoEffects: return L10n.text("无效的暗角或颗粒参数")
+        case .invalidWaveletDenoise, .invalidChromaDenoise, .invalidRawNoiseReduction:
+            return L10n.text("无效或不可用的降噪参数")
         }
     }
 
-    func configureGrading(_ session: OpaquePointer, settings: ColorGradingSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数"))
+    func applySessionParams(_ session: OpaquePointer, settings: RawSettings,
+                            isRaster: Bool = false) throws {
+        let recipeJSON: String
+        do {
+            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster)
+        } catch let error as CanonicalEditRecipeError {
+            throw ProcessorError.processFailed(validationMessage(for: error))
         }
-    }
-
-    func configureTone(_ session: OpaquePointer, settings: ToneControlsSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数"))
-        }
-    }
-
-    func configureAtmosphere(_ session: OpaquePointer, settings: AtmosphereSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数"))
-        }
+        let status = recipeJSON.withCString { sony2fuji_apply_params(session, $0) }
+        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
     }
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
-        try configureProcessing(session, identity: settings.processing)
-        try configureX3f(session, mode: settings.x3fMode)
-        try configureTone(session, settings: settings.toneSettings)
-        try configureAtmosphere(session, settings: settings.atmosphereSettings)
-        try configureCurve(session, settings: settings.curveSettings)
-        try configureGrading(session, settings: settings.gradingSettings)
-        try configureGeometry(session, settings: settings.geometry)
-        try configureLens(session, settings: settings.lensSettings)
-        let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
-        }
-        guard settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数")) }
-        var hsl = settings.hsl.nativeConfig
-        guard sony2fuji_session_set_hsl(session, &hsl) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数"))
-        }
+        try applySessionParams(session, settings: settings, isRaster: false)
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
@@ -142,37 +108,6 @@ extension Sony2FujiProcessor {
         guard gpuStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
         }
-        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("无效的暗角或颗粒参数")) }
-        var effects = sony2fuji_photo_effects_config()
-        effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
-        effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
-        effects.vignette_amount = Float(settings.photoEffects.vignetteAmount)
-        effects.vignette_midpoint = Float(settings.photoEffects.vignetteMidpoint)
-        effects.vignette_roundness = Float(settings.photoEffects.vignetteRoundness)
-        effects.vignette_feather = Float(settings.photoEffects.vignetteFeather)
-        effects.vignette_highlights = Float(settings.photoEffects.vignetteHighlights)
-        effects.grain_amount = Float(settings.photoEffects.grainAmount)
-        effects.grain_size = Float(settings.photoEffects.grainSize)
-        effects.grain_roughness = Float(settings.photoEffects.grainRoughness)
-        let effectsStatus = sony2fuji_session_set_photo_effects(session, &effects)
-        guard effectsStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.format("Invalid photo effects: %@", statusMessage(effectsStatus)))
-        }
-        let chromaMode = Int32(settings.displayChromaDenoise)
-        let chromaStatus = sony2fuji_session_set_chroma_denoise(session, chromaMode)
-        guard chromaStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.format("Invalid display chroma denoise mode: %@", statusMessage(chromaStatus)))
-        }
-        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("无效或不可用的降噪参数")) }
-        var denoise = sony2fuji_wavelet_denoise_config()
-        denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
-        denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
-        denoise.enabled = settings.denoise.enabled ? 1 : 0
-        denoise.luma = Float(settings.denoise.luma)
-        denoise.chroma = Float(settings.denoise.chroma)
-        denoise.coarse = Float(settings.denoise.coarse)
-        let status = sony2fuji_session_set_wavelet_denoise(session, &denoise)
-        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
         let previewStatus = sony2fuji_session_set_interactive_preview(session, interactive ? 1 : 0)
         guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
         let viewportStatus = sony2fuji_session_set_viewport_preview(session, viewportPreview ? 1 : 0)
@@ -184,32 +119,6 @@ extension Sony2FujiProcessor {
         guard sony2fuji_session_get_geometry_size(session, &width, &height) == SONY2FUJI_STATUS_OK,
               width > 0, height > 0 else { return nil }
         return CGSize(width: Int(width), height: Int(height))
-    }
-
-    func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的几何参数")) }
-        var config = sony2fuji_geometry_config()
-        config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
-        config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)
-        config.crop_x = Float(settings.cropX)
-        config.crop_y = Float(settings.cropY)
-        config.crop_width = Float(settings.cropWidth)
-        config.crop_height = Float(settings.cropHeight)
-        config.quarter_turns = Int32(settings.quarterTurns)
-        config.flip_horizontal = settings.flipHorizontal ? 1 : 0
-        config.flip_vertical = settings.flipVertical ? 1 : 0
-        config.straighten_degrees = Float(settings.straightenDegrees)
-        let status = sony2fuji_session_set_geometry(session, &config)
-        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
-        var perspective = sony2fuji_perspective_config()
-        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
-        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
-        perspective.horizontal = Float(settings.perspectiveHorizontal)
-        perspective.vertical = Float(settings.perspectiveVertical)
-        let perspectiveStatus = sony2fuji_session_set_perspective(session, &perspective)
-        guard perspectiveStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(perspectiveStatus))
-        }
     }
 
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {

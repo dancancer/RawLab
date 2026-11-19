@@ -77,8 +77,7 @@ internal sealed class LUTPreviewWorker : IDisposable
         try {
             var gpu = new Native.GpuConfig { Version = 1, StructSize = 12, Mode = 0 };
             Native.Check(Native.sony2fuji_session_set_gpu_config(session, ref gpu), session);
-            Native.Check(Native.sony2fuji_session_set_processing_version(session, 2), session);
-            Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session, 0), session);
+            Native.Check(Native.sony2fuji_apply_params(session, CanonicalEditRecipe.ProcessingOnlyJson(2, "scene")), session);
             return session;
         } catch { session.Dispose(); throw; }
     }

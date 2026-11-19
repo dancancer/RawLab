@@ -508,6 +508,7 @@ sony2fuji_request gCapturedRequest{};
 std::string gCapturedInputPath;
 std::string gCapturedLutPath;
 std::string gCapturedOutputPath;
+std::string gCapturedParamsJson;
 sony2fuji_hsl_config gCapturedHsl{};
 sony2fuji_wavelet_denoise_config gCapturedDenoise{};
 sony2fuji_photo_effects_config gCapturedEffects{};
@@ -586,6 +587,7 @@ void resetMocks() {
     gCapturedInputPath.clear();
     gCapturedLutPath.clear();
     gCapturedOutputPath.clear();
+    gCapturedParamsJson.clear();
     gCapturedHsl = {};
     gCapturedDenoise = {};
     gCapturedEffects = {};
@@ -737,6 +739,15 @@ sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* s
 sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* s, sony2fuji_lens_report_v2* r) {
     SessionCallScope scope(s);
     std::memset(r, 0, sizeof(*r));
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_apply_params(sony2fuji_session* s, const char* recipe_json) {
+    SessionCallScope scope(s);
+    if (!recipe_json || !*recipe_json) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedParamsJson = recipe_json;
+    }
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_session_set_processing_version(sony2fuji_session* s, sony2fuji_processing_version v) {
@@ -1994,6 +2005,12 @@ void testStructuredProcessMarshalling() {
     setIntField(req, "x3fMode", SONY2FUJI_X3F_NORMAL);
     setObjField(req, "backendOut", backendOut);
 
+    const char* kParamsJson = R"({"schema_version":7,"processing":{"family":"rawlab","version":3,"quality":"standard"}})";
+    Java_com_rawlab_android_engine_NativeProcessor_nativeApplyParams(env.ptr(), nullptr, s, makeJString(kParamsJson));
+    auto applyEx = consumeException();
+    require(!applyEx.active, "nativeApplyParams must succeed: " + applyEx.message);
+    require(gCapturedParamsJson == kParamsJson, "nativeApplyParams payload mismatch");
+
     jobject res = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
     auto ex = consumeException();
     require(res == nullptr && !ex.active, "Export nativeProcess must succeed returning null: " + ex.message);
@@ -2010,16 +2027,14 @@ void testStructuredProcessMarshalling() {
     require(gCapturedRequest.output_target == SONY2FUJI_TARGET_FILE &&
             gCapturedRequest.output_format == SONY2FUJI_OUTPUT_PNG &&
             gCapturedRequest.long_edge == 2048 && gCapturedRequest.preview_long_edge == 0, "Output mismatch");
-    require(gCapturedDenoise.enabled == 1 && gCapturedDenoise.luma == 18.f &&
-            gCapturedDenoise.chroma == 64.f && gCapturedDenoise.coarse == 75.f &&
-            gCapturedChromaDenoise == 2, "Denoise mismatch");
-    require(gCapturedEffects.vignette_amount == -22.f && gCapturedEffects.grain_roughness == 60.f, "Effects mismatch");
-    require(gCapturedHsl.hue[0] == -10.f && gCapturedHsl.saturation[0] == -2.f && gCapturedHsl.lightness[7] == 13.f,
-        "HSL mismatch");
-    require(gCapturedProcessingVersion == SONY2FUJI_PROCESSING_BASIC_V3 &&
-            gCapturedX3fMode == SONY2FUJI_X3F_NORMAL &&
-            gCapturedExposureMode == SONY2FUJI_EXPOSURE_PREVIEW, "Session config mismatch");
+    require(gCapturedInteractive == 0 && gCapturedViewport == 0, "Preview flags mismatch");
     require(asFake(backendOut)->ints[0] == SONY2FUJI_BACKEND_CPU, "backendOut must be populated");
+
+    // Empty recipe JSON must throw IllegalArgumentException without mutating captured state.
+    Java_com_rawlab_android_engine_NativeProcessor_nativeApplyParams(env.ptr(), nullptr, s, makeJString(""));
+    ex = consumeException();
+    require(ex.active && ex.className == "java/lang/IllegalArgumentException", "Empty recipe JSON must throw");
+    require(gCapturedParamsJson == kParamsJson, "Failed nativeApplyParams must not overwrite captured state");
 
     // Null request must throw IllegalArgumentException
     Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, nullptr);

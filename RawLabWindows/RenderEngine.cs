@@ -147,11 +147,8 @@ internal sealed partial class RenderEngine : IDisposable
             return AutoExposureHDRSource(path, settings,info!);
         settings = PrepareRecipe(path, settings);
         EnsureInput(path);
-        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        ApplyParams(path, settings, includeDenoise: false, validateAiX3f: true);
         ConfigureAI(settings.AIDenoiseEnabled);
-        SetLens(settings.Lens);
-        SetGeometry(settings.Geometry);
-        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode), session);
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
         aiNativeOperationStarted=true;
@@ -423,20 +420,10 @@ internal sealed partial class RenderEngine : IDisposable
     {
         settings = PrepareRecipe(path, settings);
         if (inputOverride == null) EnsureInput(path);
-        SetProcessing(settings.Processing);SetX3f(path,settings);SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);SetGrading(settings.RenderGrading);SetCurve(settings.RenderCurve);
+        ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path));
         ConfigureAI(settings.AIDenoiseEnabled);
-        SetLens(settings.Lens);
-        SetGeometry(settings.Geometry);
-        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode), session);
-        var hsl=settings.RenderHsl.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_hsl(session,ref hsl), session);
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
         Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
-        var denoise=settings.Denoise.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise), session);
-        var effects=settings.Effects.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects), session);
-        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise), session);
         var request = settings.Request(path,lut,edge,output,longEdge);
         if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
         return (settings,request);
@@ -502,51 +489,21 @@ internal sealed partial class RenderEngine : IDisposable
     }
     internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
         (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
-    private void SetGrading(ColorGradingSettings value)
+    private void ApplyParams(string path, Adjustments settings, bool includeDenoise, bool validateAiX3f, bool? isRaster = null)
     {
-        var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_color_grading(session, ref config), session);
+        if (validateAiX3f && PhotoInput.IsNormalX3f(path, settings) && settings.AIDenoiseEnabled)
+            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+        var raster = isRaster ?? PhotoInput.IsRaster(path);
+        var recipeJson = CanonicalEditRecipe.Encode(settings, raster, includeDenoise);
+        Native.Check(Native.sony2fuji_apply_params(session, recipeJson), session);
     }
-    private void SetCurve(ToneCurveSettings value)
-    {
-        var config = value.NativeSetConfig();
-        Native.Check(Native.sony2fuji_session_set_tone_curves(session, ref config), session);
-    }
-    private void SetAtmosphere(AtmosphereSettings value)
-    {
-        var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_atmosphere(session, ref config), session);
-    }
-    private void SetTone(ToneControlsSettings value)
-    {
-        var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config), session);
-    }
+    private void ApplyProcessingOnly(ProcessingIdentity value) =>
+        Native.Check(Native.sony2fuji_apply_params(session,
+            CanonicalEditRecipe.ProcessingOnlyJson(ProcessingIdentity.Require(value).Version)), session);
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
     internal static X3fMode X3fDefaultMode(string path)
     {
         return PhotoInput.X3fDefaultMode(path);
-    }
-    private void SetX3f(string path, Adjustments settings)
-    {
-        if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)
-            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
-        Native.Check(Native.sony2fuji_session_set_x3f_mode(session,settings.X3fMode), session);
-    }
-    private void SetProcessing(ProcessingIdentity value) =>
-        Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version), session);
-    private void SetLens(LensSettings value)
-    {
-        var config = new Native.LensConfigV2 { Base = new Native.LensConfig { Version=2,StructSize=(uint)Marshal.SizeOf<Native.LensConfigV2>(),
-            Distortion=value.Distortion ? 1 : 0,Tca=value.Tca ? 1 : 0,AutoCrop=value.AutoCrop ? 1 : 0,ProfileId=value.CoreProfileId }, Vignetting=value.Vignetting ? 1 : 0 };
-        Native.Check(Native.sony2fuji_session_set_lens_correction_v2(session,ref config), session);
-    }
-    private void SetGeometry(GeometrySettings value)
-    {
-        var config=value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_geometry(session,ref config), session);
-        var perspective=value.NativePerspectiveConfig();
-        Native.Check(Native.sony2fuji_session_set_perspective(session,ref perspective), session);
     }
     private LensInfo ReadLens(string path) {
         var file = new FileInfo(path);

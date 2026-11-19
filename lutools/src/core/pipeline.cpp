@@ -1,4 +1,5 @@
 #include "core/pipeline.h"
+#include "core/edit_recipe_params.h"
 #include "core/pipeline_runtime.h"
 
 #include "sony2fuji/sony2fuji.h"
@@ -254,6 +255,114 @@ RenderStatus Pipeline::setToneCurves(const ToneCurveConfig& masterConfig, const 
         };
         toneCurve_ = std::move(master);
         channelCurves_ = std::move(channels);
+        return RenderStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::applyParams(const char* recipeJson) {
+    if (!recipeJson || !*recipeJson) return RenderStatus::InvalidArgument;
+    try {
+        CanonicalSdrRecipe parsed;
+        std::string error;
+        if (!parseCanonicalSdrRecipe(recipeJson, parsed, error, /*allowRasterLensCorrection=*/true)) {
+            return RenderStatus::InvalidArgument;
+        }
+        return applyParams(parsed);
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
+    try {
+        if (!validProcessingVersion(recipe.processingVersion)) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (recipe.x3fMode != X3fMode::Legacy && recipe.x3fMode != X3fMode::Normal) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (recipe.exposureMode < RawExposureMode::Scene || recipe.exposureMode > RawExposureMode::Sensor) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (recipe.rawNoiseReduction < 0 || recipe.rawNoiseReduction > 2) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (recipe.chromaDenoise < 0 || recipe.chromaDenoise > 2) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (recipe.chromaDenoise != 0 && !chromaDenoiseAvailable()) {
+            return RenderStatus::Unsupported;
+        }
+        WaveletDenoiseOptions wavelet = recipe.wavelet;
+        wavelet.processingVersion = recipe.processingVersion;
+        if (!validWaveletDenoiseOptions(wavelet)) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (wavelet.active() && !waveletDenoiseAvailable()) {
+            return RenderStatus::Unsupported;
+        }
+        if (!recipe.effects.valid() || !recipe.hsl.valid() || !recipe.toneControls.valid() ||
+            !recipe.atmosphere.valid() || !recipe.colorGrading.valid()) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (!validToneCurve(recipe.toneCurve) ||
+            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validToneCurve)) {
+            return RenderStatus::InvalidArgument;
+        }
+        ToneCurve masterCurve(recipe.toneCurve);
+        if (masterCurve.custom() && recipe.sCurve != 0.0f) {
+            return RenderStatus::InvalidArgument;
+        }
+        std::array<ToneCurve, 3> channelCurves = {
+            ToneCurve(recipe.channelCurves[0]),
+            ToneCurve(recipe.channelCurves[1]),
+            ToneCurve(recipe.channelCurves[2])
+        };
+        GeometryOptions geometry = recipe.geometry;
+        if (!geometry.valid()) {
+            return RenderStatus::InvalidArgument;
+        }
+        geometry.crop_width = std::min(geometry.crop_width, 1.0f - geometry.crop_x);
+        geometry.crop_height = std::min(geometry.crop_height, 1.0f - geometry.crop_y);
+
+        if (!validProfileId(recipe.lensProfileId)) {
+            return RenderStatus::InvalidArgument;
+        }
+        LensCorrectionOptions lens{
+            recipe.lensDistortion, recipe.lensTca, recipe.lensAutoCrop, recipe.lensProfileId, recipe.lensVignetting
+        };
+        if (lens.active() && !LensCorrectionDatabase::available()) {
+            return RenderStatus::Unsupported;
+        }
+
+        // All validations passed; commit atomically without touching runtime/hardware/metadata config.
+        if (processingVersion_ != recipe.processingVersion) {
+            dehazeAnalysis_ = {};
+        }
+        processingVersion_ = recipe.processingVersion;
+        x3fMode_ = recipe.x3fMode;
+        x3fError_.clear();
+        unsupportedReason_ = UnsupportedReason::None;
+        rawExposureMode_ = recipe.exposureMode;
+        rawNoiseReduction_ = recipe.rawNoiseReduction;
+        chromaDenoise_ = recipe.chromaDenoise;
+        waveletDenoise_ = wavelet;
+        photoEffects_ = recipe.effects;
+        hsl_ = recipe.hsl;
+        toneControls_ = recipe.toneControls;
+        atmosphere_ = recipe.atmosphere;
+        colorGrading_ = recipe.colorGrading;
+        toneCurve_ = std::move(masterCurve);
+        channelCurves_ = std::move(channelCurves);
+        geometry_ = geometry;
+        geometryWidth_ = geometryHeight_ = 0;
+        lensCorrection_ = std::move(lens);
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
