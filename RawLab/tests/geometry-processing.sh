@@ -39,7 +39,6 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
  "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
     "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
      "$ROOT/RawLab/tests/GeometryProcessingTests.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \

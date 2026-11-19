@@ -65,7 +65,7 @@ RenderStatus Pipeline::loadRawImage(
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
     if (useAI) aiKey = ":ai:" + runtime_->ai->renderKey(params.inputPath.c_str(), wbOptions, aiSourceIdentity);
 #endif
-    const bool normalX3f = x3fMode_ == X3fMode::Normal && hasX3fSignature(params.inputPath);
+    const bool normalX3f = isNormalX3f(params.inputPath.c_str(), x3fMode_);
     if (normalX3f && useAI) {
         x3fError_ = "AI RAW replacement is not supported for normal X3F rendering";
         return RenderStatus::Unsupported;
@@ -182,6 +182,19 @@ RenderStatus Pipeline::loadRawImage(
         baselineEv_ = anchoredPreview ? previewCameraEv_ : processor.getBaselineExposureEV();
         metadataEv_ = processor.getMetadataExposureEV();
         calibratedWb_ = processor.getAsShotWhiteBalance(asShotTemperature_, asShotTint_);
+        if (!normalX3f) {
+            std::string wbFileKey;
+            if (buildFileIdentityKey(params.inputPath.c_str(), wbFileKey)) {
+                recipeWbCache_.valid = true;
+                recipeWbCache_.fileKey = std::move(wbFileKey);
+                recipeWbCache_.processingVersion = processingVersion_;
+                recipeWbCache_.x3fMode = x3fMode_;
+                recipeWbCache_.exposureMode = rawExposureMode_;
+                recipeWbCache_.calibrated = calibratedWb_;
+                recipeWbCache_.temperature = calibratedWb_ ? std::round(asShotTemperature_) : 0.0f;
+                recipeWbCache_.tint = calibratedWb_ ? std::round(asShotTint_) : 0.0f;
+            }
+        }
         if (rawExposureMode_ == RawExposureMode::Preview && params.wbMode == RenderWhiteBalanceMode::Camera) {
             previewExposureKey_ = previewExposureKey;
             previewCameraEv_ = baselineEv_;

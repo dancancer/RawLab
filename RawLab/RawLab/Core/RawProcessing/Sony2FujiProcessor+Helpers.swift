@@ -15,6 +15,22 @@ extension ProcessingIdentity {
     }
 }
 
+extension X3fMode {
+    var core: sony2fuji_x3f_mode {
+        self == .normal ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY
+    }
+}
+
+extension RawExposureMode {
+    var core: sony2fuji_raw_exposure_mode {
+        switch self {
+        case .scene: return SONY2FUJI_EXPOSURE_SCENE
+        case .preview: return SONY2FUJI_EXPOSURE_PREVIEW
+        case .sensor: return SONY2FUJI_EXPOSURE_SENSOR
+        }
+    }
+}
+
 extension Sony2FujiProcessor {
     func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
         buffer.semantic == .display ? SONY2FUJI_INPUT_DISPLAY_BUFFER : SONY2FUJI_INPUT_BUFFER
@@ -56,7 +72,7 @@ extension Sony2FujiProcessor {
     }
 
     func isNormalX3f(_ url: URL, settings: RawSettings) -> Bool {
-        url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
+        url.path.withCString { sony2fuji_is_normal_x3f($0, settings.x3fMode.core) != 0 }
     }
 
     func defaultSettings(for url: URL, isRaw: Bool, x3fModeOverride: X3fMode? = nil) throws -> RawSettings {
@@ -124,17 +140,36 @@ extension Sony2FujiProcessor {
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {
         guard settings.masterRecipeID != nil else { return settings }
         guard let url else { return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0) }
-        if isNormalX3f(url, settings: settings) {
-            return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
+        var req = sony2fuji_recipe_wb_request()
+        req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION
+        req.struct_size = UInt32(MemoryLayout<sony2fuji_recipe_wb_request>.size)
+        req.processing_version = settings.processing.core
+        req.x3f_mode = settings.x3fMode.core
+        req.exposure_mode = settings.exposureMode.core
+        req.recipe_active = 1
+        req.recipe_strength = Float(settings.recipeScale)
+        req.custom_wb = settings.whiteBalanceMode == .camera ? 0 : 1
+        req.temperature = Float(settings.temperature)
+        req.tint = Float(settings.tint)
+        var res = sony2fuji_recipe_wb_result()
+        let status = url.path.withCString { pathPtr -> sony2fuji_status in
+            req.input_path = pathPtr
+            return sony2fuji_session_resolve_recipe_wb(session, &req, &res)
         }
-        if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
-            return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
+        if status == SONY2FUJI_STATUS_UNSUPPORTED {
+            throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
         }
-        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing, x3fMode: settings.x3fMode) {
-            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode,
-                                       processing: settings.processing, x3fMode: settings.x3fMode)
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw processingFailure(status, session: session)
         }
-        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+        var result = settings.renderedRecipe(
+            cameraTemperature: Double(res.camera_temperature),
+            cameraTint: Double(res.camera_tint)
+        )
+        result.whiteBalanceMode = res.wb_mode == SONY2FUJI_WB_TEMPERATURE ? .custom : .camera
+        result.temperature = Double(res.temperature)
+        result.tint = Double(res.tint)
+        return result
     }
 
     func effectiveSettings(_ settings: RawSettings, session: OpaquePointer, url: URL?,
@@ -147,25 +182,6 @@ extension Sony2FujiProcessor {
         result.tint = 0
         result.noiseReduction = 0
         return result
-    }
-
-    func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
-                               exposureMode: RawExposureMode, processing: ProcessingIdentity, x3fMode: X3fMode) throws -> RawWhiteBalance {
-        // Read the target RAW once; saved recipe values are not its as-shot WB.
-        var neutral = RawSettings.default
-        neutral.processing = processing
-        neutral.x3fMode = x3fMode
-        neutral.exposureMode = exposureMode
-        try configureSession(session, settings: neutral, interactive: false)
-        var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)
-        request.preview_long_edge = 32
-        var buffer = sony2fuji_buffer()
-        defer { sony2fuji_release_buffer(&buffer) }
-        let status = processRaw(session: session, request: &request, inputPath: url.path, lutPath: nil, outBuffer: &buffer)
-        guard status == SONY2FUJI_STATUS_OK, let camera = readRawWhiteBalance(from: session), camera.isCalibrated else {
-            throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
-        }
-        return camera
     }
 
     func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {
@@ -400,12 +416,12 @@ extension Sony2FujiProcessor {
     }
 
     func readRawWhiteBalance(from session: OpaquePointer) -> Sony2FujiProcessor.RawWhiteBalance? {
-        var temperature: Float = 6500
+        var temperature: Float = 0
         var tint: Float = 0
-        let status = sony2fuji_session_get_raw_white_balance(session, &temperature, &tint)
+        let status = sony2fuji_session_get_effective_raw_white_balance(session, &temperature, &tint)
         guard status == SONY2FUJI_STATUS_OK else { return nil }
         return Sony2FujiProcessor.RawWhiteBalance(
-            temperature: Double(temperature).rounded(), tint: Double(tint).rounded(), isCalibrated: true
+            temperature: Double(temperature), tint: Double(tint), isCalibrated: true
         )
     }
 }

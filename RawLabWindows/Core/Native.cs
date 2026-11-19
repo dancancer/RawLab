@@ -211,6 +211,24 @@ internal static partial class Native
         public float RgbRmse, P99Error, WorstTileRmse, DetailRmse;
     }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct RecipeWbRequest
+    {
+        public uint Version, StructSize;
+        [MarshalAs(UnmanagedType.LPUTF8Str)] public string? InputPath;
+        public int ProcessingVersion, X3fMode, ExposureMode, RecipeActive;
+        public float RecipeStrength;
+        public int CustomWb;
+        public float Temperature, Tint;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RecipeWbResult
+    {
+        public uint Version, StructSize;
+        public int WbMode;
+        public float Temperature, Tint, CameraTemperature, CameraTint;
+        public int CameraCalibrated;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct ToneCurveConfig {
         public uint Version, StructSize; public int Mode; public uint Count;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
@@ -371,6 +389,8 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_x3f_available();
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_x3f_default_mode(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string input, out X3fMode mode);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_is_normal_x3f(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? input, X3fMode mode);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_x3f_error(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_lens_database(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string path);
     [StructLayout(LayoutKind.Sequential)]
@@ -393,6 +413,8 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_effective_raw_white_balance(Session session,out float temperature,out float tint);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_resolve_recipe_wb(Session session,ref RecipeWbRequest request,out RecipeWbResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_process(Session session,ref Request request,out Buffer buffer);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_migrate_processing(Session session,ref Request request,ref ProcessingMigrationResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_release_buffer(ref Buffer buffer);

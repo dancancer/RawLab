@@ -33,13 +33,7 @@ PROCESSOR_ROOT="${RAWLAB_PROCESSOR_SOURCE_ROOT:-$ROOT/RawLab/RawLab/Core/RawProc
 PROCESSOR_ROOT="$(cd "$PROCESSOR_ROOT" && pwd)"
 PROCESSOR_SOURCES=("$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Errors/ProcessorError.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift"
                    "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift")
-if [[ -f "$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift" ]]; then
-    PROCESSOR_SOURCES+=("$PROCESSOR_ROOT/RecipeWhiteBalanceCache.swift")
-fi
 DEFINES=()
-if [[ -z "${RAWLAB_PROCESSOR_SOURCE_ROOT:-}" ]]; then
-    DEFINES+=(-D RAWLAB_RECIPE_CACHE_TESTS)
-fi
 TEMP="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-preview-performance.XXXXXX")"
 trap 'rm -rf "$TEMP"' EXIT
 HARNESS="$TEMP/PreviewPerformanceTests.app"

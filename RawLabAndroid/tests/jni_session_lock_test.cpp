@@ -248,6 +248,12 @@ jobject JNICALL mockNewObjectV(JNIEnv*, jclass clazz, jmethodID method, va_list 
         obj->intArg = va_arg(args, jint);
         auto msg = va_arg(args, jstring);
         obj->strArg = msg ? asFake(msg)->text : "";
+    } else if (mid && mid->className == "com/rawlab/android/engine/NativeFrame") {
+        (void)va_arg(args, jint); // width
+        (void)va_arg(args, jint); // height
+        (void)va_arg(args, jobject); // pixels
+        obj->fields["rawTemperature"].f = static_cast<jfloat>(va_arg(args, double));
+        obj->fields["rawTint"].f = static_cast<jfloat>(va_arg(args, double));
     }
     return reinterpret_cast<jobject>(obj);
 }
@@ -521,6 +527,14 @@ int gCapturedExposureMode = 0;
 sony2fuji_hdr_request_v8 gCapturedHdrRequest{};
 std::string gCapturedHdrLookPath;
 sony2fuji_hdr_request_v1 gCapturedHdrGeometryRequest{};
+sony2fuji_recipe_wb_request gCapturedRecipeWbRequest{};
+std::string gCapturedRecipeWbInputPath;
+std::string gCapturedMpfPath;
+int32_t gMockMpfResult = 0;
+sony2fuji_status gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_OK;
+sony2fuji_status gMockEffectiveWbStatus = SONY2FUJI_STATUS_OK;
+float gMockEffectiveWbTemp = 5500.0f;
+float gMockEffectiveWbTint = 0.0f;
 
 void unblockAllWaitersForCleanup() {
     std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -600,6 +614,14 @@ void resetMocks() {
     gCapturedHdrRequest = {};
     gCapturedHdrLookPath.clear();
     gCapturedHdrGeometryRequest = {};
+    gCapturedRecipeWbRequest = {};
+    gCapturedRecipeWbInputPath.clear();
+    gCapturedMpfPath.clear();
+    gMockMpfResult = 0;
+    gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_OK;
+    gMockEffectiveWbStatus = SONY2FUJI_STATUS_OK;
+    gMockEffectiveWbTemp = 5500.0f;
+    gMockEffectiveWbTint = 0.0f;
 }
 
 class SessionCallScope {
@@ -914,6 +936,43 @@ sony2fuji_status sony2fuji_session_get_raw_white_balance(const sony2fuji_session
     *t = 5500.f; *tint = 0.f;
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_session_get_effective_raw_white_balance(const sony2fuji_session* s, float* t, float* tint) {
+    SessionCallScope scope(const_cast<sony2fuji_session*>(s));
+    if (gMockEffectiveWbStatus != SONY2FUJI_STATUS_OK) return gMockEffectiveWbStatus;
+    *t = gMockEffectiveWbTemp;
+    *tint = gMockEffectiveWbTint;
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_session_resolve_recipe_wb(sony2fuji_session* s, const sony2fuji_recipe_wb_request* req,
+    sony2fuji_recipe_wb_result* res) {
+    SessionCallScope scope(s);
+    if (res) {
+        *res = {};
+        res->version = SONY2FUJI_RECIPE_WB_RESULT_VERSION;
+        res->struct_size = sizeof(*res);
+    }
+    if (!req || !res) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (gCapturePayloads) {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        gCapturedRecipeWbRequest = *req;
+        gCapturedRecipeWbInputPath = req->input_path ? req->input_path : "";
+    }
+    if (gMockResolveRecipeWbStatus != SONY2FUJI_STATUS_OK) return gMockResolveRecipeWbStatus;
+    res->wb_mode = (req->recipe_active && (req->custom_wb || req->tint * req->recipe_strength != 0.0f))
+        ? SONY2FUJI_WB_TEMPERATURE
+        : (req->custom_wb ? SONY2FUJI_WB_TEMPERATURE : SONY2FUJI_WB_CAMERA);
+    res->camera_temperature = 5200.0f;
+    res->camera_tint = 4.0f;
+    res->camera_calibrated = 1;
+    res->temperature = req->custom_wb ? req->temperature : res->camera_temperature;
+    res->tint = req->recipe_active ? (res->camera_tint + req->tint * req->recipe_strength) : req->tint;
+    return SONY2FUJI_STATUS_OK;
+}
+int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path) {
+    gCapturedMpfPath = path ? path : "";
+    return gMockMpfResult;
+}
+int32_t sony2fuji_is_normal_x3f(const char*, sony2fuji_x3f_mode) { return 0; }
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session*) {
     return SONY2FUJI_BACKEND_CPU;
 }
@@ -2179,6 +2238,91 @@ void testStructuredHdrMarshalling() {
     std::cout << "PASS: testStructuredHdrMarshalling" << std::endl;
 }
 
+void testAbiDelegationRecipeWbAndMpf() {
+    resetMocks();
+    LocalEnv env;
+    gMockMpfResult = 2;
+    const jint mpf = Java_com_rawlab_android_raster_NativeMpf_nativeInspectSdrJpegMpf(
+        env.ptr(), nullptr, makeJString("/tmp/mpf_photo.jpg"));
+    require(mpf == 2 && gCapturedMpfPath == "/tmp/mpf_photo.jpg",
+        "nativeInspectSdrJpegMpf must delegate directly to sony2fuji_inspect_sdr_jpeg_mpf");
+
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    gCapturePayloads = true;
+    gMockEffectiveWbTemp = 5200.f;
+    gMockEffectiveWbTint = 4.f;
+
+    jobject req = makeStruct("com/rawlab/android/engine/NativeProcessRequest");
+    jobject inObj = makeStruct("com/rawlab/android/engine/NativeProcessInput");
+    setObjField(inObj, "path", makeJString("sample/recipe.arw"));
+    setObjField(inObj, "pixels", nullptr);
+    jobject outObj = makeStruct("com/rawlab/android/engine/NativeProcessOutput");
+    setObjField(outObj, "path", makeJString("/tmp/recipe_out.png"));
+    setIntField(outObj, "format", SONY2FUJI_OUTPUT_PNG);
+    setIntField(outObj, "edge", 0);
+    setIntField(outObj, "longEdge", 1024);
+    jobject wbObj = makeStruct("com/rawlab/android/engine/NativeProcessWhiteBalance");
+    setBoolField(wbObj, "custom", JNI_FALSE);
+    setFloatField(wbObj, "temperature", 6500.f);
+    setFloatField(wbObj, "tint", 12.f);
+    setBoolField(wbObj, "recipeActive", JNI_TRUE);
+    setFloatField(wbObj, "recipeStrength", 0.5f);
+    jobject toneObj = makeStruct("com/rawlab/android/engine/NativeProcessTone");
+    setFloatField(toneObj, "contrast", 1.f);
+    setFloatField(toneObj, "saturation", 1.f);
+    jobject denoiseObj = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
+    jobject effectsObj = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
+    setObjField(req, "input", inObj);
+    setObjField(req, "output", outObj);
+    setObjField(req, "whiteBalance", wbObj);
+    setObjField(req, "tone", toneObj);
+    setObjField(req, "denoise", denoiseObj);
+    setObjField(req, "effects", effectsObj);
+    setIntField(req, "exposureMode", SONY2FUJI_EXPOSURE_PREVIEW);
+    setIntField(req, "processingVersion", SONY2FUJI_PROCESSING_BASIC_V3);
+    setIntField(req, "x3fMode", SONY2FUJI_X3F_NORMAL);
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    auto ex = consumeException();
+    require(!ex.active, "Calibrated recipe process must succeed: " + ex.message);
+    require(gCapturedRecipeWbInputPath == "sample/recipe.arw" &&
+            gCapturedRecipeWbRequest.processing_version == SONY2FUJI_PROCESSING_BASIC_V3 &&
+            gCapturedRecipeWbRequest.x3f_mode == SONY2FUJI_X3F_NORMAL &&
+            gCapturedRecipeWbRequest.exposure_mode == SONY2FUJI_EXPOSURE_PREVIEW &&
+            gCapturedRecipeWbRequest.recipe_active == 1 &&
+            gCapturedRecipeWbRequest.recipe_strength == 0.5f,
+        "JNI must forward recipe WB params into sony2fuji_session_resolve_recipe_wb");
+    require(gCapturedRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+            gCapturedRequest.temperature == 5200.f && gCapturedRequest.tint == 10.f,
+        "JNI must use C ABI resolved recipe temperature/tint");
+
+    // UNSUPPORTED from C ABI falls back to CAMERA WB instead of throwing.
+    gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_UNSUPPORTED;
+    setBoolField(wbObj, "custom", JNI_TRUE);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    ex = consumeException();
+    require(!ex.active && gCapturedRequest.wb_mode == SONY2FUJI_WB_CAMERA,
+        "UNSUPPORTED recipe WB calibration must fall back to CAMERA WB");
+
+    // Preview render reads effective RAW WB via sony2fuji_session_get_effective_raw_white_balance.
+    gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_OK;
+    setBoolField(wbObj, "recipeActive", JNI_FALSE);
+    setBoolField(wbObj, "custom", JNI_FALSE);
+    setObjField(outObj, "path", nullptr);
+    setIntField(outObj, "edge", 64);
+    gMockEffectiveWbTemp = 6500.f;
+    gMockEffectiveWbTint = 0.f;
+    jobject previewFrame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    ex = consumeException();
+    require(previewFrame != nullptr && !ex.active, "Preview nativeProcess must succeed");
+    const auto& frameFields = asFake(previewFrame)->fields;
+    require(frameFields.at("rawTemperature").f == 6500.f && frameFields.at("rawTint").f == 0.f,
+        "NativeFrame WB must come from sony2fuji_session_get_effective_raw_white_balance");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testAbiDelegationRecipeWbAndMpf" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2198,6 +2342,7 @@ int main() {
         {"testCachedJniFieldAndClassLookups", testCachedJniFieldAndClassLookups},
         {"testStructuredProcessMarshalling", testStructuredProcessMarshalling},
         {"testStructuredHdrMarshalling", testStructuredHdrMarshalling},
+        {"testAbiDelegationRecipeWbAndMpf", testAbiDelegationRecipeWbAndMpf},
     };
     int failures = 0;
     for (const auto& c : cases) {

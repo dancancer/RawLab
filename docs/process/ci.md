@@ -252,7 +252,7 @@ gate's honest skip pair otherwise.
   and `--filter Category=Model`; no WPF window, native rendering DLL, RAW fixture
   or self-contained app build is required.
 - Android models: `./gradlew :app:testDebugUnitTest` plus
-  `RawLabAndroid/tests/jni-session-lock.sh`, `recipe-probe-stages.sh` and
+  `RawLabAndroid/tests/jni-session-lock.sh` and
   `ndk-compile.sh` (arm64 NDK CMake compile check for GLES/test targets without
   building full native dependencies or running on device); the task graph
   excludes full native compilation and APK assembly. Instrumentation remains a

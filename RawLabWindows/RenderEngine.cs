@@ -21,8 +21,6 @@ internal sealed partial class RenderEngine : IDisposable
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
         int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,OriginalIdentity Raw,OriginalIdentity? Lut,HDRSettings? HDR,int? ProRAWDecodeVersion,string? SourceFingerprint);
-    private sealed record CameraWhiteBalanceKey(OriginalIdentity Source, ProcessingIdentity Processing, X3fMode X3fMode, int ExposureMode);
-    private (CameraWhiteBalanceKey Key, (double Temperature, double Tint) Value)? recipeWhiteBalance;
     private readonly string lensDatabase;
     private readonly AppPaths appPaths;
     private Stamp? lensStamp;
@@ -323,15 +321,15 @@ internal sealed partial class RenderEngine : IDisposable
                 statisticsAvailable=analysis==0 && Enumerable.Range(0,3).All(c=>bins.Skip(c*256).Take(256).Sum(v=>(long)v)==(long)buffer.Width*buffer.Height);
                 if(!statisticsAvailable){bins=Array.Empty<uint>();shadows=highlights=0;}
             }
-            float baseline=0,temperature=6500,tint=0;
+            float baseline=0,temperature=0,tint=0;
             var raster=LibraryEntry.IsRaster(path);
             if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _), session);
-            var normalX3f=PhotoInput.IsNormalX3f(path,settings);
-            var calibrated = normalX3f || !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
+            var calibrated = !raster && Native.sony2fuji_session_get_effective_raw_white_balance(session,out temperature,out tint) == 0;
+            var normalX3f = !raster && Native.sony2fuji_is_normal_x3f(path,settings.X3fMode) != 0;
             var count = (double)buffer.Width * buffer.Height;
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? RoundCameraWhiteBalance(temperature,tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? ((double)temperature,(double)tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
@@ -487,11 +485,9 @@ internal sealed partial class RenderEngine : IDisposable
         mask=default;
         return Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero);
     }
-    internal static (double Temperature,double Tint) RoundCameraWhiteBalance(float temperature,float tint) =>
-        (Math.Round(temperature,MidpointRounding.AwayFromZero),Math.Round(tint,MidpointRounding.AwayFromZero));
     private void ApplyParams(string path, Adjustments settings, bool includeDenoise, bool validateAiX3f, bool? isRaster = null)
     {
-        if (validateAiX3f && PhotoInput.IsNormalX3f(path, settings) && settings.AIDenoiseEnabled)
+        if (validateAiX3f && settings.AIDenoiseEnabled && Native.sony2fuji_is_normal_x3f(path, settings.X3fMode) != 0)
             throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         var raster = isRaster ?? PhotoInput.IsRaster(path);
         var recipeJson = CanonicalEditRecipe.Encode(settings, raster, includeDenoise);
@@ -524,31 +520,26 @@ internal sealed partial class RenderEngine : IDisposable
     internal Adjustments PrepareRecipe(string path, Adjustments settings)
     {
         if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
-        if (settings.MasterRecipeID == null || (settings.CameraWhiteBalance && settings[Parameter.Tint] * settings[Parameter.Strength] == 0)) return settings;
-        if (PhotoInput.IsNormalX3f(path,settings)) {
-            var relative = settings.Clone(); relative.ResolveWhiteBalance((6500,0)); return relative;
-        }
-        // 配方色调属于目标 RAW 的拍摄白平衡，不沿用冻结来源的相机值。
-        var source = OriginalIdentity.Read(path);
-        var key = new CameraWhiteBalanceKey(source, settings.Processing, settings.X3fMode, settings.ExposureMode);
-        (double Temperature, double Tint) camera;
-        if (recipeWhiteBalance is { } cached && cached.Key == key) camera = cached.Value;
-        else
+        if (settings.MasterRecipeID == null) return settings;
+        var req = new Native.RecipeWbRequest
         {
-            if (recipeWhiteBalance is { } previous && sourceStamp?.Raw != source &&
-                StringComparer.OrdinalIgnoreCase.Equals(previous.Key.Source.Path, source.Path) && previous.Key.Source.FileID != source.FileID)
-            {
-                // 直接渲染也可能遇到同名替换。原生 RAW 缓存只比较路径、大小和修改时间。
-                RecreateSession();
-                lensStamp = null;
-            }
-            var neutral = new Adjustments { ExposureMode = settings.ExposureMode, Processing = settings.Processing, X3fMode = settings.X3fMode };
-            camera = Render(path, neutral, null, 32, statistics: false, clipping: false)?.WhiteBalance
-                ?? throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
-            recipeWhiteBalance = (key, camera);
-        }
+            Version = 1,
+            StructSize = (uint)Marshal.SizeOf<Native.RecipeWbRequest>(),
+            InputPath = path,
+            ProcessingVersion = ProcessingIdentity.Require(settings.Processing).Version,
+            X3fMode = (int)settings.X3fMode,
+            ExposureMode = settings.ExposureMode,
+            RecipeActive = 1,
+            RecipeStrength = (float)(settings[Parameter.Strength] / 100.0),
+            CustomWb = settings.CameraWhiteBalance ? 0 : 1,
+            Temperature = (float)settings[Parameter.Temperature],
+            Tint = (float)settings[Parameter.Tint],
+        };
+        var status = Native.sony2fuji_session_resolve_recipe_wb(session, ref req, out var res);
+        if (status == 2) throw new InvalidOperationException(Loc.Text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"));
+        Native.Check(status, session);
         var prepared = settings.Clone();
-        prepared.ResolveWhiteBalance(camera);
+        if (res.CameraCalibrated != 0) prepared.ResolveWhiteBalance((res.CameraTemperature, res.CameraTint));
         return prepared;
     }
     private static unsafe BitmapSource Bitmap(Native.Buffer buffer,bool opaque=true)

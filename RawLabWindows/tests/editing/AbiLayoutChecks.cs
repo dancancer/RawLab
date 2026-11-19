@@ -48,6 +48,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_export_tiled",
         "sony2fuji_hdr_heif_export_available",
         "sony2fuji_hdr_probe_camera_raw",
+        "sony2fuji_inspect_sdr_jpeg_mpf",
         "sony2fuji_session_get_raw_decode_count",
         "sony2fuji_session_get_raw_noise_reduction_support",
         "sony2fuji_session_inspect_lens_metadata",
@@ -158,6 +159,35 @@ internal static class AbiLayoutChecks
                 ["version"] = nameof(Native.GpuConfig.Version),
                 ["struct_size"] = nameof(Native.GpuConfig.StructSize),
                 ["mode"] = nameof(Native.GpuConfig.Mode),
+            }),
+        ["sony2fuji_recipe_wb_request"] = new(
+            typeof(Native.RecipeWbRequest),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.RecipeWbRequest.Version),
+                ["struct_size"] = nameof(Native.RecipeWbRequest.StructSize),
+                ["input_path"] = nameof(Native.RecipeWbRequest.InputPath),
+                ["processing_version"] = nameof(Native.RecipeWbRequest.ProcessingVersion),
+                ["x3f_mode"] = nameof(Native.RecipeWbRequest.X3fMode),
+                ["exposure_mode"] = nameof(Native.RecipeWbRequest.ExposureMode),
+                ["recipe_active"] = nameof(Native.RecipeWbRequest.RecipeActive),
+                ["recipe_strength"] = nameof(Native.RecipeWbRequest.RecipeStrength),
+                ["custom_wb"] = nameof(Native.RecipeWbRequest.CustomWb),
+                ["temperature"] = nameof(Native.RecipeWbRequest.Temperature),
+                ["tint"] = nameof(Native.RecipeWbRequest.Tint),
+            }),
+        ["sony2fuji_recipe_wb_result"] = new(
+            typeof(Native.RecipeWbResult),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.RecipeWbResult.Version),
+                ["struct_size"] = nameof(Native.RecipeWbResult.StructSize),
+                ["wb_mode"] = nameof(Native.RecipeWbResult.WbMode),
+                ["temperature"] = nameof(Native.RecipeWbResult.Temperature),
+                ["tint"] = nameof(Native.RecipeWbResult.Tint),
+                ["camera_temperature"] = nameof(Native.RecipeWbResult.CameraTemperature),
+                ["camera_tint"] = nameof(Native.RecipeWbResult.CameraTint),
+                ["camera_calibrated"] = nameof(Native.RecipeWbResult.CameraCalibrated),
             }),
         ["sony2fuji_wavelet_denoise_config"] = new(
             typeof(Native.WaveletConfig),

@@ -165,9 +165,11 @@ final class RenderEngine {
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
     private let gpuMode: sony2fuji_gpu_mode
     private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
-    private var whiteBalanceCache: (key: RawWhiteBalanceCacheKey, processing: ProcessingIdentity, x3fMode: X3fMode, value: WhiteBalance?)?
     static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
     static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
+    static func isNormalX3f(_ url: URL, settings: Adjustments) -> Bool {
+        url.path.withCString { sony2fuji_is_normal_x3f($0, settings.x3fMode.core) != 0 }
+    }
 
     /// 覆盖保护复核：真实输出与原片或外观是同一文件（标准化同路径、符号链接或硬链接别名）时，
     /// 抛出与核心层拒绝覆盖一致的 INVALID_ARGUMENT 保护错误，绝不静默覆盖损毁原片。
@@ -241,7 +243,6 @@ final class RenderEngine {
     private func resetSession() throws {
         sony2fuji_session_destroy(session)
         session = nil
-        whiteBalanceCache = nil
         lensCatalogKey = nil
         lensCandidates = []
         guard sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK else {
@@ -308,7 +309,7 @@ final class RenderEngine {
             return
         }
         guard !isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
-        guard !isX3fInput(url) || settings.x3fMode != .normal else {
+        guard !isNormalX3f(url, settings: settings) else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
@@ -388,7 +389,7 @@ final class RenderEngine {
             return
         }
         guard !Self.isRasterInput(url) else { throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。")) }
-        guard !Self.isX3fInput(url) || settings.x3fMode != .normal else {
+        guard !Self.isNormalX3f(url, settings: settings) else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         let settings = try resolvedSettings(url, settings: settings)
@@ -455,27 +456,34 @@ final class RenderEngine {
             // 批量可混合两类输入；相机专属状态不解释成普通图像的 RGB 白平衡或镜头参数。
             return settings.resolvedForRaster
         }
-        let key = try? RawWhiteBalanceCacheKey(url)
-        if let key, let cached = whiteBalanceCache, cached.key.file == key.file,
-           cached.key.fileNumber != key.fileNumber {
-            // 原生 RAW 缓存只按路径、大小、时间识别文件，inode 更换时需同时重建会话。
-            try resetSession()
-        }
+        guard settings.masterRecipe != nil else { return settings }
         var settings = settings
-        if settings.masterRecipe != nil,
-           settings.tint * settings.strength != 0 || !settings.usesAsShotWhiteBalance {
-            let camera: WhiteBalance?
-            if let key, let cache = whiteBalanceCache, cache.key == key, cache.processing == settings.processing,
-               cache.x3fMode == settings.x3fMode {
-                camera = cache.value
-            } else {
-                // 拍摄白平衡属于当前 RAW，不能沿用批量任务或恢复记录里的源照片元数据。
-                camera = try render(url, settings: settings.neutralSettings, lut: nil, edge: 32)?.asShotWhiteBalance
-            }
-            guard let camera else {
-                throw RenderError.failed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
-            }
-            settings.resolveWhiteBalance(camera)
+        var req = sony2fuji_recipe_wb_request()
+        req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION
+        req.struct_size = UInt32(MemoryLayout<sony2fuji_recipe_wb_request>.size)
+        req.processing_version = settings.processing.core
+        req.x3f_mode = settings.x3fMode.core
+        req.exposure_mode = settings.exposureMode.core
+        req.recipe_active = 1
+        req.recipe_strength = Float(settings.strength)
+        req.custom_wb = settings.usesAsShotWhiteBalance ? 0 : 1
+        req.temperature = Float(settings.temperature)
+        req.tint = Float(settings.tint)
+        var res = sony2fuji_recipe_wb_result()
+        let status = url.path.withCString { pathPtr -> sony2fuji_status in
+            req.input_path = pathPtr
+            return sony2fuji_session_resolve_recipe_wb(session, &req, &res)
+        }
+        if status == SONY2FUJI_STATUS_UNSUPPORTED {
+            throw RenderError.failed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw RenderError.processing(status, input: url, look: nil, output: nil)
+        }
+        if res.camera_calibrated != 0 {
+            settings.resolveWhiteBalance(
+                WhiteBalance(temperature: Double(res.camera_temperature), tint: Double(res.camera_tint))
+            )
         }
         return settings
     }
@@ -490,7 +498,7 @@ final class RenderEngine {
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }
-        if settings.aiDenoiseEnabled && Self.isX3fInput(url) && settings.x3fMode == .normal {
+        if settings.aiDenoiseEnabled && Self.isNormalX3f(url, settings: settings) {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: true)
@@ -620,7 +628,6 @@ final class RenderEngine {
             interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview,
             referenceLongEdge: referenceLongEdge)
         var request = prepared
-        let key = try? RawWhiteBalanceCacheKey(url)
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
         var stagingURL: URL?
@@ -684,14 +691,10 @@ final class RenderEngine {
         }
         guard let pointer = buffer.data else { throw RenderError.failed(L10n.text("处理结果为空")) }
         var temperature: Float = 0, tint: Float = 0
-        let calibrated = !raster && sony2fuji_session_get_raw_white_balance(session, &temperature, &tint) == SONY2FUJI_STATUS_OK
+        let calibrated = !raster && sony2fuji_session_get_effective_raw_white_balance(session, &temperature, &tint) == SONY2FUJI_STATUS_OK
         var noiseReductionSupported: Int32 = 0
         if !raster { _ = sony2fuji_session_get_raw_noise_reduction_support(session, &noiseReductionSupported) }
-        let normalX3f = Self.isX3fInput(url) && settings.x3fMode == .normal
-        // 正常 X3F 使用保存显影作为基准；6500/0 是相对调整的中性点，不是 EXIF 色温。
-        let cameraWhiteBalance = normalX3f ? WhiteBalance(temperature: 6500, tint: 0) :
-            (calibrated ? WhiteBalance(temperature: Double(temperature).rounded(), tint: Double(tint).rounded()) : nil)
-        if !raster { whiteBalanceCache = key.map { ($0, settings.processing, settings.x3fMode, cameraWhiteBalance) } }
+        let cameraWhiteBalance = calibrated ? WhiteBalance(temperature: Double(temperature), tint: Double(tint)) : nil
         let width = Int(buffer.width), height = Int(buffer.height)
         var nativeWidth: UInt32 = 0, nativeHeight: UInt32 = 0
         guard sony2fuji_session_get_geometry_size(session, &nativeWidth, &nativeHeight) == SONY2FUJI_STATUS_OK else {

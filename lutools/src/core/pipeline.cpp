@@ -197,6 +197,197 @@ RenderStatus Pipeline::getRawWhiteBalance(float& temperature, float& tint) const
     return RenderStatus::Ok;
 }
 
+RenderStatus Pipeline::getEffectiveRawWhiteBalance(float& temperature, float& tint) const {
+    if (!lastRenderRendered_) return RenderStatus::InvalidArgument;
+    if (!lastRenderWasRaw_) return RenderStatus::Unsupported;
+    if (lastRenderWasNormalX3f_) {
+        temperature = 6500.0f;
+        tint = 0.0f;
+        return RenderStatus::Ok;
+    }
+    float rawTemp = 0.0f;
+    float rawTint = 0.0f;
+    const auto status = getRawWhiteBalance(rawTemp, rawTint);
+    if (status != RenderStatus::Ok) return status;
+    if (!std::isfinite(rawTemp) || !std::isfinite(rawTint)) return RenderStatus::Unsupported;
+    temperature = std::round(rawTemp);
+    tint = std::round(rawTint);
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request, RecipeWbResult& result) {
+    result = {};
+    if (request.inputPath.empty() ||
+        !validProcessingVersion(request.processingVersion) ||
+        (request.x3fMode != X3fMode::Legacy && request.x3fMode != X3fMode::Normal) ||
+        (request.exposureMode < RawExposureMode::Scene || request.exposureMode > RawExposureMode::Sensor) ||
+        !std::isfinite(request.recipeStrength) ||
+        !std::isfinite(request.temperature) ||
+        !std::isfinite(request.tint)) {
+        return RenderStatus::InvalidArgument;
+    }
+    result.wbMode = request.customWb
+        ? RenderWhiteBalanceMode::Temperature
+        : RenderWhiteBalanceMode::Camera;
+    result.temperature = request.temperature;
+    result.tint = request.tint;
+
+    if (!request.recipeActive || (!request.customWb && request.recipeStrength * request.tint == 0.0f)) {
+        return RenderStatus::Ok;
+    }
+
+    float cameraTemp = 0.0f;
+    float cameraTint = 0.0f;
+    bool cameraCalibrated = false;
+
+    if (isNormalX3f(request.inputPath.c_str(), request.x3fMode)) {
+        cameraTemp = 6500.0f;
+        cameraTint = 0.0f;
+        cameraCalibrated = true;
+    } else {
+        std::string fileKey;
+        if (!buildFileIdentityKey(request.inputPath.c_str(), fileKey)) {
+            return RenderStatus::IoError;
+        }
+        if (recipeWbCache_.valid &&
+            recipeWbCache_.fileKey == fileKey &&
+            recipeWbCache_.processingVersion == request.processingVersion &&
+            recipeWbCache_.x3fMode == request.x3fMode &&
+            recipeWbCache_.exposureMode == request.exposureMode) {
+            if (!recipeWbCache_.calibrated) {
+                return RenderStatus::Unsupported;
+            }
+            cameraTemp = recipeWbCache_.temperature;
+            cameraTint = recipeWbCache_.tint;
+            cameraCalibrated = true;
+        } else {
+            struct ProbeGuard {
+                Pipeline& self;
+                ProcessingVersion processingVersion;
+                X3fMode x3fMode;
+                RawExposureMode rawExposureMode;
+                LensCorrectionOptions lensCorrection;
+                int32_t rawNoiseReduction;
+                int32_t chromaDenoise;
+                bool interactivePreview;
+                bool viewportPreview;
+                LensCorrectionReport lensReport;
+                LensCorrectionReport rawLensReport;
+                std::string x3fError;
+                UnsupportedReason unsupportedReason;
+                explicit ProbeGuard(Pipeline& pipeline)
+                    : self(pipeline),
+                      processingVersion(pipeline.processingVersion_),
+                      x3fMode(pipeline.x3fMode_),
+                      rawExposureMode(pipeline.rawExposureMode_),
+                      lensCorrection(pipeline.lensCorrection_),
+                      rawNoiseReduction(pipeline.rawNoiseReduction_),
+                      chromaDenoise(pipeline.chromaDenoise_),
+                      interactivePreview(pipeline.interactivePreview_),
+                      viewportPreview(pipeline.viewportPreview_),
+                      lensReport(pipeline.lensReport_),
+                      rawLensReport(pipeline.rawLensReport_),
+                      x3fError(pipeline.x3fError_),
+                      unsupportedReason(pipeline.unsupportedReason_) {}
+                ~ProbeGuard() {
+                    self.processingVersion_ = processingVersion;
+                    self.x3fMode_ = x3fMode;
+                    self.rawExposureMode_ = rawExposureMode;
+                    self.lensCorrection_ = lensCorrection;
+                    self.rawNoiseReduction_ = rawNoiseReduction;
+                    self.chromaDenoise_ = chromaDenoise;
+                    self.interactivePreview_ = interactivePreview;
+                    self.viewportPreview_ = viewportPreview;
+                    self.lensReport_ = lensReport;
+                    self.rawLensReport_ = rawLensReport;
+                    self.x3fError_ = std::move(x3fError);
+                    self.unsupportedReason_ = unsupportedReason;
+                }
+            } guard(*this);
+
+            try {
+                ProcessingCancellationScope cancelScope(cancellation_);
+                checkProcessingCancellation();
+                processingVersion_ = request.processingVersion;
+                x3fMode_ = request.x3fMode;
+                rawExposureMode_ = request.exposureMode;
+                lensCorrection_ = {};
+                rawNoiseReduction_ = 0;
+                chromaDenoise_ = 0;
+                interactivePreview_ = false;
+                viewportPreview_ = false;
+
+                RenderParams probeParams;
+                probeParams.inputType = RenderInputType::Raw;
+                probeParams.inputPath = request.inputPath;
+                probeParams.intent = RenderIntent::Preview;
+                probeParams.previewLongEdge = 32;
+                probeParams.wbMode = RenderWhiteBalanceMode::Camera;
+                probeParams.exposureEV = 0.0f;
+                probeParams.brightness = 1.0f;
+
+                ImageData scratch;
+                ColorSpace space = ColorSpace::AdobeRGB;
+                bool isLinear = true;
+                const auto status = loadRawImage(probeParams, scratch, &space, &isLinear, false, false);
+                checkProcessingCancellation();
+                if (status != RenderStatus::Ok) {
+                    return status;
+                }
+                float rawTemp = 0.0f;
+                float rawTint = 0.0f;
+                const auto wbStatus = getRawWhiteBalance(rawTemp, rawTint);
+                if (wbStatus == RenderStatus::Unsupported ||
+                    (wbStatus == RenderStatus::Ok && (!std::isfinite(rawTemp) || !std::isfinite(rawTint)))) {
+                    recipeWbCache_ = {
+                        true,
+                        std::move(fileKey),
+                        request.processingVersion,
+                        request.x3fMode,
+                        request.exposureMode,
+                        false,
+                        0.0f,
+                        0.0f
+                    };
+                    return RenderStatus::Unsupported;
+                }
+                if (wbStatus != RenderStatus::Ok) {
+                    return wbStatus;
+                }
+                cameraTemp = std::round(rawTemp);
+                cameraTint = std::round(rawTint);
+                cameraCalibrated = true;
+                recipeWbCache_ = {
+                    true,
+                    std::move(fileKey),
+                    request.processingVersion,
+                    request.x3fMode,
+                    request.exposureMode,
+                    true,
+                    cameraTemp,
+                    cameraTint
+                };
+            } catch (const ProcessingCancelled&) {
+                return RenderStatus::Cancelled;
+            } catch (const std::bad_alloc&) {
+                return RenderStatus::OutOfMemory;
+            } catch (...) {
+                return RenderStatus::ProcessingError;
+            }
+        }
+    }
+
+    result.cameraTemperature = cameraTemp;
+    result.cameraTint = cameraTint;
+    result.cameraCalibrated = cameraCalibrated;
+    if (!request.customWb) {
+        result.temperature = cameraTemp;
+    }
+    result.tint = std::clamp(cameraTint + request.tint * request.recipeStrength, -150.0f, 150.0f);
+    result.wbMode = RenderWhiteBalanceMode::Temperature;
+    return RenderStatus::Ok;
+}
+
 RenderStatus Pipeline::setPhotoEffects(const PhotoEffectsOptions& options) {
     if (!options.valid()) return RenderStatus::InvalidArgument;
     photoEffects_ = options;
@@ -694,8 +885,8 @@ RenderStatus Pipeline::processImpl(
     if (toneCurve_.custom() && local.toneCurve != 0.0f) return RenderStatus::InvalidArgument;
     const bool cpuAnalysis = preHsl != nullptr;
     const auto effectiveGpuMode = cpuAnalysis ? GpuMode::Off : gpuConfig_.mode;
-    const bool normalX3f = local.inputType == RenderInputType::Raw && x3fMode_ == X3fMode::Normal &&
-        hasX3fSignature(local.inputPath);
+    const bool normalX3f = local.inputType == RenderInputType::Raw &&
+        isNormalX3f(local.inputPath.c_str(), x3fMode_);
     const bool displayInput = local.inputType == RenderInputType::DisplayBuffer || normalX3f;
     const bool useAI = aiEnabled();
     if (useAI && local.inputType != RenderInputType::Raw) return RenderStatus::Unsupported;
@@ -879,6 +1070,9 @@ RenderStatus Pipeline::processImpl(
         status = loadBufferImage(local, image, &colorSpace, &isLinear);
     }
     if (status != RenderStatus::Ok) return status;
+    lastRenderRendered_ = true;
+    lastRenderWasRaw_ = local.inputType == RenderInputType::Raw;
+    lastRenderWasNormalX3f_ = normalX3f;
     status = ensureLinear(image, colorSpace, &isLinear);
     if (status != RenderStatus::Ok) return status;
     if (local.inputType == RenderInputType::DisplayBuffer && hasDisplayLensMetadata_) {
