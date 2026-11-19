@@ -13,17 +13,17 @@ enum class ShaderDialect {
 };
 
 #define RAWLAB_LOG_FUNCTIONS_BODY \
-RAWLAB_FN float flog2(float linear) { \
-    if (linear < 0.00088899597f) { \
-        return RAWLAB_CLAMP01(8.799461f * linear + 0.092864f); \
+RAWLAB_FN float flog2(float linearValue) { \
+    if (linearValue < 0.00088899597f) { \
+        return RAWLAB_CLAMP01(8.799461f * linearValue + 0.092864f); \
     } \
-    return RAWLAB_CLAMP01(RAWLAB_LOG10(linear * 5.555556f + 0.064829f) * 0.245281f + 0.384316f); \
+    return RAWLAB_CLAMP01(RAWLAB_LOG10(linearValue * 5.555556f + 0.064829f) * 0.245281f + 0.384316f); \
 } \
-RAWLAB_FN float flog(float linear) { \
-    if (linear < 0.00089f) { \
-        return RAWLAB_CLAMP01(8.735631f * linear + 0.092864f); \
+RAWLAB_FN float flog(float linearValue) { \
+    if (linearValue < 0.00089f) { \
+        return RAWLAB_CLAMP01(8.735631f * linearValue + 0.092864f); \
     } \
-    return RAWLAB_CLAMP01(0.344676f * RAWLAB_LOG10(0.555556f * linear + 0.009468f) + 0.790453f); \
+    return RAWLAB_CLAMP01(0.344676f * RAWLAB_LOG10(0.555556f * linearValue + 0.009468f) + 0.790453f); \
 } \
 RAWLAB_FN float decodeFLog(float encoded) { \
     return encoded < 0.100537775223865f \
@@ -35,8 +35,8 @@ RAWLAB_FN float decodeFLog2(float encoded) { \
         ? (encoded - 0.092864f) / 8.799461f \
         : (RAWLAB_POW(10.0f, (encoded - 0.384316f) / 0.245281f) - 0.064829f) / 5.555556f; \
 } \
-RAWLAB_FN float encodePhotoLog(float linear, bool isFLog) { \
-    return isFLog ? flog(linear) : flog2(linear); \
+RAWLAB_FN float encodePhotoLog(float linearValue, bool isFLog) { \
+    return isFLog ? flog(linearValue) : flog2(linearValue); \
 } \
 RAWLAB_FN float decodePhotoLog(float encoded, bool isFLog) { \
     return isFLog ? decodeFLog(encoded) : decodeFLog2(encoded); \
