@@ -159,7 +159,7 @@ struct PresentationTests {
         check(viewport.magnification == 16, "Zoom has a stable upper bound")
         viewport.zoom(by: 0.00001)
         check(viewport.magnification == 0.1, "Zoom has a stable lower bound")
-        var session = PhotoEditSession()
+        var session = MacPhotoEditSession()
         let first = URL(fileURLWithPath: "/tmp/one.ARW"), second = URL(fileURLWithPath: "/tmp/two.ARW")
         var edited = Adjustments(); edited.exposure = 1.25
         session.save(first, settings: edited, filmID: "ASTIA")

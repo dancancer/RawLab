@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 func assertMacFailureSemantics(_ context: RasterContext, raster: URL, engine: RenderEngine) throws {
