@@ -56,7 +56,7 @@ int main() {
                 expected.tone.whitePoint=50;
                 if (variant==4) expected.tone.curveStrength=25;
                 else {
-                    expected.tone.curve.mode=SONY2FUJI_CURVE_CUSTOM;
+                    expected.tone.curve.mode=ToneCurveMode::Custom;
                     expected.tone.curve.count=3;
                     expected.tone.curve.points[1]={.5,.625};
                     expected.tone.curve.points[2]={1,1};

@@ -109,7 +109,7 @@ std::vector<uint8_t> amplifiedExif(size_t whole) {
 }
 
 void pngExport(const std::filesystem::path& root, const sony2fuji::HDRImagePair& image) {
-    auto config=init<sony2fuji_hdr_sdr_export_config_v1>(); config.output_format=SONY2FUJI_OUTPUT_PNG;
+    sony2fuji::HDRSdrExportConfig config; config.outputFormat=sony2fuji::kHdrSdrOutputPng;
     const auto target=root/"metadata-16bit.png";
 #ifndef _WIN32
     // Newly staged outputs can be write-only under the caller's umask. Encoding
@@ -149,7 +149,7 @@ void pngExport(const std::filesystem::path& root, const sony2fuji::HDRImagePair&
     write(blocked/"keep",{'k','e','e','p'});
     try { sony2fuji::hdr::exportSDR(image,config,blocked.u8string().c_str()); require(false,"directory PNG output admitted"); }
     catch (const sony2fuji::hdr::Error& error) {
-        require(error.status==SONY2FUJI_STATUS_OUTPUT_IO_ERROR && error.reason==SONY2FUJI_HDR_REASON_OUTPUT_IO,
+        require(error.status==sony2fuji::RenderStatus::OutputIoError && error.reason==SONY2FUJI_HDR_REASON_OUTPUT_IO,
             "PNG output failure lost its diagnostic");
     }
     require(read(blocked/"keep")==std::vector<uint8_t>({'k','e','e','p'}),"failed PNG export damaged destination");

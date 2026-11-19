@@ -12,10 +12,9 @@ using namespace sony2fuji;
 static void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
-static sony2fuji_tone_curve_config config(std::initializer_list<sony2fuji_curve_point> points) {
-    sony2fuji_tone_curve_config result{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(result),
-        SONY2FUJI_CURVE_CUSTOM, static_cast<uint32_t>(points.size()), {}};
-    std::copy(points.begin(), points.end(), result.points);
+static ToneCurveConfig config(std::initializer_list<ToneCurvePoint> points) {
+    ToneCurveConfig result{ToneCurveMode::Custom, static_cast<uint32_t>(points.size()), {}};
+    std::copy(points.begin(), points.end(), result.points.data());
     return result;
 }
 int main() {
@@ -52,20 +51,17 @@ int main() {
             const double right=(curve.evaluate(x+e)-curve.evaluate(x))/e;
             require(std::abs(left-right)<3e-5, "first derivative continuous");
         }
-        for (int invalid=0;invalid<12;++invalid) {
+        for (int invalid=0;invalid<9;++invalid) {
             auto bad=source;
-            if (invalid==0) ++bad.version;
-            if (invalid==1) --bad.struct_size;
-            if (invalid==2) ++bad.struct_size;
-            if (invalid==3) bad.mode=static_cast<sony2fuji_curve_mode>(9);
-            if (invalid==4) bad.count=1;
-            if (invalid==5) bad.count=34;
-            if (invalid==6) bad.points[0].y=.01;
-            if (invalid==7) bad.points[3].x=.99;
-            if (invalid==8) bad.points[2].x=.25;
-            if (invalid==9) bad.points[2].y=.1;
-            if (invalid==10) bad.points[1].x=std::numeric_limits<double>::quiet_NaN();
-            if (invalid==11) bad.points[1].y=std::numeric_limits<double>::infinity();
+            if (invalid==0) bad.mode=static_cast<ToneCurveMode>(9);
+            if (invalid==1) bad.count=1;
+            if (invalid==2) bad.count=34;
+            if (invalid==3) bad.points[0].y=.01;
+            if (invalid==4) bad.points[3].x=.99;
+            if (invalid==5) bad.points[2].x=.25;
+            if (invalid==6) bad.points[2].y=.1;
+            if (invalid==7) bad.points[1].x=std::numeric_limits<double>::quiet_NaN();
+            if (invalid==8) bad.points[1].y=std::numeric_limits<double>::infinity();
             require(!validToneCurve(bad), "invalid curve rejected");
         }
         std::mt19937 random(1909);

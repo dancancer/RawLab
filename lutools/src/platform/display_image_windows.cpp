@@ -1,4 +1,4 @@
-#include "sony2fuji/ffi/sony2fuji_c.h"
+#include "platform/display_image.h"
 #include "platform/hdr_heif.h"
 #include "core/jpeg_mpf.h"
 
@@ -45,41 +45,34 @@ constexpr size_t kAlphaTileBytes = 4u * 1024u * 1024u;
 
 class StatusError final : public std::exception {
 public:
-    explicit StatusError(sony2fuji_status status) noexcept : status_(status) {}
+    explicit StatusError(sony2fuji::RenderStatus status) noexcept : status_(status) {}
 
-    sony2fuji_status status() const noexcept { return status_; }
+    sony2fuji::RenderStatus status() const noexcept { return status_; }
 
 private:
-    sony2fuji_status status_;
+    sony2fuji::RenderStatus status_;
 };
 
-[[noreturn]] void fail(sony2fuji_status status) {
+[[noreturn]] void fail(sony2fuji::RenderStatus status) {
     throw StatusError(status);
 }
 
-void clearBuffer(sony2fuji_buffer* buffer) {
-    if (!buffer) return;
-    sony2fuji_release_buffer(buffer);
-    *buffer = {};
-    buffer->pixel_format = SONY2FUJI_PIXEL_RGB8;
-}
-
-void checkHr(HRESULT result, sony2fuji_status status = SONY2FUJI_STATUS_PROCESSING_ERROR) {
+void checkHr(HRESULT result, sony2fuji::RenderStatus status = sony2fuji::RenderStatus::ProcessingError) {
     if (FAILED(result)) {
         if (result == E_OUTOFMEMORY || result == WINCODEC_ERR_OUTOFMEMORY)
-            fail(SONY2FUJI_STATUS_OUT_OF_MEMORY);
+            fail(sony2fuji::RenderStatus::OutOfMemory);
         fail(status);
     }
 }
 
 std::wstring utf8ToWide(const char* path) {
-    if (!path || path[0] == '\0') fail(SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    if (!path || path[0] == '\0') fail(sony2fuji::RenderStatus::InvalidArgument);
     const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, nullptr, 0);
-    if (required <= 0) fail(SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    if (required <= 0) fail(sony2fuji::RenderStatus::InvalidArgument);
     std::wstring result(static_cast<size_t>(required), L'\0');
     if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
             result.data(), required) <= 0) {
-        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT);
+        fail(sony2fuji::RenderStatus::InvalidArgument);
     }
     result.pop_back();
     return result;
@@ -105,7 +98,7 @@ bool knownUnsupportedExtension(const std::string& extension) {
 void requireRegularFile(const std::wstring& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
-        fail(SONY2FUJI_STATUS_IO_ERROR);
+        fail(sony2fuji::RenderStatus::IoError);
 }
 
 class ComApartment final {
@@ -114,8 +107,8 @@ public:
         const HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (result == RPC_E_CHANGED_MODE) return;
         if (FAILED(result)) {
-            checkHr(result, result == E_OUTOFMEMORY ? SONY2FUJI_STATUS_OUT_OF_MEMORY :
-                SONY2FUJI_STATUS_PROCESSING_ERROR);
+            checkHr(result, result == E_OUTOFMEMORY ? sony2fuji::RenderStatus::OutOfMemory :
+                sony2fuji::RenderStatus::ProcessingError);
         }
         initialized_ = true;
     }
@@ -134,15 +127,15 @@ private:
 class BinaryReader final {
 public:
     explicit BinaryReader(const std::wstring& path) : file_(path, std::ios::binary) {
-        if (!file_) fail(SONY2FUJI_STATUS_IO_ERROR);
+        if (!file_) fail(sony2fuji::RenderStatus::IoError);
     }
 
     void readExact(void* destination, size_t size) {
         if (size > static_cast<size_t>(std::numeric_limits<std::streamsize>::max()))
-            fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            fail(sony2fuji::RenderStatus::ProcessingError);
         file_.read(static_cast<char*>(destination), static_cast<std::streamsize>(size));
         if (!file_ || file_.gcount() != static_cast<std::streamsize>(size))
-            fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            fail(sony2fuji::RenderStatus::ProcessingError);
     }
 
     uint8_t readByte() {
@@ -169,7 +162,7 @@ public:
         while (size != 0) {
             const auto count = static_cast<std::streamsize>(std::min<uint64_t>(size, bytes.size()));
             file_.read(bytes.data(), count);
-            if (!file_ || file_.gcount() != count) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (!file_ || file_.gcount() != count) fail(sony2fuji::RenderStatus::ProcessingError);
             size -= static_cast<uint64_t>(count);
         }
     }
@@ -220,16 +213,16 @@ uint32_t readEndian32(const uint8_t* data, bool littleEndian) {
 }
 
 std::optional<uint32_t> parseExifOrientation(const uint8_t* data, size_t size) {
-    if (size < 8) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (size < 8) fail(sony2fuji::RenderStatus::Unsupported);
     const bool littleEndian = data[0] == 'I' && data[1] == 'I';
     const bool bigEndian = data[0] == 'M' && data[1] == 'M';
-    if (!littleEndian && !bigEndian) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-    if (readEndian16(data + 2, littleEndian) != 42) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (!littleEndian && !bigEndian) fail(sony2fuji::RenderStatus::Unsupported);
+    if (readEndian16(data + 2, littleEndian) != 42) fail(sony2fuji::RenderStatus::Unsupported);
     const auto ifdOffset = static_cast<uint64_t>(readEndian32(data + 4, littleEndian));
-    if (ifdOffset > size - 2) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (ifdOffset > size - 2) fail(sony2fuji::RenderStatus::Unsupported);
     const auto count = readEndian16(data + ifdOffset, littleEndian);
     const auto entriesBytes = static_cast<uint64_t>(count) * 12u;
-    if (entriesBytes > size - ifdOffset - 2u) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (entriesBytes > size - ifdOffset - 2u) fail(sony2fuji::RenderStatus::Unsupported);
     for (uint16_t index = 0; index < count; ++index) {
         const auto* entry = data + ifdOffset + 2u + static_cast<uint64_t>(index) * 12u;
         const auto tag = readEndian16(entry, littleEndian);
@@ -237,14 +230,14 @@ std::optional<uint32_t> parseExifOrientation(const uint8_t* data, size_t size) {
         const auto type = readEndian16(entry + 2, littleEndian);
         const auto valueCount = readEndian32(entry + 4, littleEndian);
         if (valueCount != 1 || (type != 3 && type != 4))
-            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            fail(sony2fuji::RenderStatus::Unsupported);
         uint32_t value = 0;
         if (type == 3) {
             value = readEndian16(entry + 8, littleEndian);
         } else {
             value = readEndian32(entry + 8, littleEndian);
         }
-        if (value < 1 || value > 8) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (value < 1 || value > 8) fail(sony2fuji::RenderStatus::Unsupported);
         return value;
     }
     return std::nullopt;
@@ -262,7 +255,7 @@ struct MetadataInfo {
 void mergeOrientation(MetadataInfo& info, const std::optional<uint32_t>& value) {
     if (!value) return;
     if (info.orientationSpecified && info.orientation != *value)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     info.orientation = *value;
     info.orientationSpecified = true;
 }
@@ -273,7 +266,7 @@ void scanPng(const std::wstring& path, MetadataInfo& info) {
     uint8_t actualSignature[sizeof(signature)]{};
     reader.readExact(actualSignature, sizeof(actualSignature));
     if (std::memcmp(actualSignature, signature, sizeof(signature)) != 0)
-        fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        fail(sony2fuji::RenderStatus::ProcessingError);
 
     bool seenHeader = false;
     bool seenEnd = false;
@@ -289,81 +282,81 @@ void scanPng(const std::wstring& path, MetadataInfo& info) {
         };
         if (!is("IDAT") && !is("fdAT")) {
             if (length > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += length;
         }
         if (is("IHDR")) {
-            if (seenHeader || length != 13) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (seenHeader || length != 13) fail(sony2fuji::RenderStatus::ProcessingError);
             std::array<uint8_t, 13> header{};
             reader.readExact(header.data(), header.size());
             const auto width = readEndian32(header.data(), false);
             const auto height = readEndian32(header.data() + 4, false);
-            if (width == 0 || height == 0) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (width == 0 || height == 0) fail(sony2fuji::RenderStatus::ProcessingError);
             if (static_cast<uint64_t>(width) > kMaxDisplayPixels / height)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             seenHeader = true;
         } else if (is("cICP")) {
-            if (length != 4) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (length != 4) fail(sony2fuji::RenderStatus::Unsupported);
             std::array<uint8_t, 4> cicp{};
             reader.readExact(cicp.data(), cicp.size());
             // PNG cICP's only accepted SDR form is BT.709/sRGB. In
             // particular, 9/16/0/1 is a valid BT.2020/PQ marker and is HDR.
             if (cicp[0] != 1 || cicp[1] != 13 || cicp[2] != 0 || cicp[3] != 1)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             info.explicitSrgb = true;
         } else if (is("acTL") || is("fcTL") || is("mDCv") || is("cLLi")) {
-            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            fail(sony2fuji::RenderStatus::Unsupported);
         } else if (is("iCCP")) {
             info.colorProfileMarker = true;
             reader.skip(length);
         } else if (is("sRGB")) {
-            if (length != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (length != 1) fail(sony2fuji::RenderStatus::Unsupported);
             const auto renderingIntent = reader.readByte();
-            if (renderingIntent > 3) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (renderingIntent > 3) fail(sony2fuji::RenderStatus::Unsupported);
             info.explicitSrgb = true;
         } else if (is("gAMA") || is("cHRM")) {
             if (is("gAMA")) {
-                if (length != 4) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                if (length != 4) fail(sony2fuji::RenderStatus::Unsupported);
                 hasGamma = true;
             } else {
-                if (length != 32) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                if (length != 32) fail(sony2fuji::RenderStatus::Unsupported);
                 hasChromaticities = true;
             }
             reader.skip(length);
         } else if (is("eXIf")) {
-            if (length > kMetadataChunkLimit) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (length > kMetadataChunkLimit) fail(sony2fuji::RenderStatus::Unsupported);
             std::vector<uint8_t> exif(length);
             reader.readExact(exif.data(), exif.size());
             mergeOrientation(info, parseExifOrientation(exif.data(), exif.size()));
         } else if (is("iTXt")) {
-            if (length > kMetadataChunkLimit) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (length > kMetadataChunkLimit) fail(sony2fuji::RenderStatus::Unsupported);
             std::vector<uint8_t> text(length);
             reader.readExact(text.data(), text.size());
             if (containsInsensitive(text.data(), text.size(), "gainmap") ||
                 containsInsensitive(text.data(), text.size(), "hdrgm") ||
                 containsInsensitive(text.data(), text.size(), "hdrgainmap")) {
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             }
         } else {
             reader.skip(length);
         }
         reader.skip(4);
         if (is("IEND")) {
-            if (length != 0) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (length != 0) fail(sony2fuji::RenderStatus::ProcessingError);
             seenEnd = true;
         }
     }
-    if (!seenHeader || !seenEnd) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+    if (!seenHeader || !seenEnd) fail(sony2fuji::RenderStatus::ProcessingError);
     if (info.explicitSrgb && info.colorProfileMarker)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     if ((hasGamma || hasChromaticities) && !info.colorProfileMarker && !info.explicitSrgb)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
 }
 
 void scanJpeg(const std::wstring& path, MetadataInfo& info) {
     BinaryReader reader(path);
     if (reader.readByte() != 0xff || reader.readByte() != 0xd8)
-        fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        fail(sony2fuji::RenderStatus::ProcessingError);
     size_t metadataBytes = 0;
     bool seenFrame = false;
     while (true) {
@@ -372,34 +365,34 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
         uint8_t marker = reader.readByte();
         while (marker == 0xff) marker = reader.readByte();
         if (marker == 0xda || marker == 0xd9) {
-            if (!seenFrame) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (!seenFrame) fail(sony2fuji::RenderStatus::ProcessingError);
             return;
         }
         if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
-        if (marker == 0x00 || marker < 0xc0) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        if (marker == 0x00 || marker < 0xc0) fail(sony2fuji::RenderStatus::ProcessingError);
         const auto length = reader.readU16BE();
-        if (length < 2) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        if (length < 2) fail(sony2fuji::RenderStatus::ProcessingError);
         const auto payloadLength = static_cast<size_t>(length - 2);
         const bool frameMarker = marker >= 0xc0 && marker <= 0xcf &&
             marker != 0xc4 && marker != 0xc8 && marker != 0xcc;
         if (frameMarker) {
-            if (seenFrame || payloadLength < 6) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            if (seenFrame || payloadLength < 6) fail(sony2fuji::RenderStatus::ProcessingError);
             if (marker != 0xc0 && marker != 0xc1 && marker != 0xc2)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             const auto precision = reader.readByte();
             const auto height = reader.readU16BE();
             const auto width = reader.readU16BE();
             const auto components = reader.readByte();
-            if (precision != 8 || components != 3) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (precision != 8 || components != 3) fail(sony2fuji::RenderStatus::Unsupported);
             if (width == 0 || height == 0 || payloadLength != 6u + components * 3u)
-                fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+                fail(sony2fuji::RenderStatus::ProcessingError);
             if (static_cast<uint64_t>(width) > kMaxDisplayPixels / height)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             reader.skip(payloadLength - 6);
             seenFrame = true;
         } else if (marker >= 0xe0 && marker <= 0xef) {
             if (payloadLength > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += payloadLength;
             std::vector<uint8_t> payload(payloadLength);
             reader.readExact(payload.data(), payload.size());
@@ -412,7 +405,7 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
                 (containsInsensitive(payload.data(), payload.size(), "gainmap") ||
                  containsInsensitive(payload.data(), payload.size(), "hdrgm") ||
                  containsInsensitive(payload.data(), payload.size(), "hdrgainmap"))) {
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             }
         } else {
             reader.skip(payloadLength);
@@ -423,10 +416,10 @@ void scanJpeg(const std::wstring& path, MetadataInfo& info) {
 class TiffReader final {
 public:
     explicit TiffReader(const std::wstring& path) : file_(path, std::ios::binary) {
-        if (!file_) fail(SONY2FUJI_STATUS_IO_ERROR);
+        if (!file_) fail(sony2fuji::RenderStatus::IoError);
         file_.seekg(0, std::ios::end);
         const auto end = file_.tellg();
-        if (end < 0) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        if (end < 0) fail(sony2fuji::RenderStatus::ProcessingError);
         size_ = static_cast<uint64_t>(end);
         file_.seekg(0, std::ios::beg);
     }
@@ -435,17 +428,17 @@ public:
 
     void ensure(uint64_t offset, uint64_t length) const {
         if (offset > size_ || length > size_ - offset)
-            fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            fail(sony2fuji::RenderStatus::ProcessingError);
     }
 
     void readAt(uint64_t offset, void* destination, size_t length) {
         ensure(offset, length);
         if (length > static_cast<size_t>(std::numeric_limits<std::streamsize>::max()))
-            fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            fail(sony2fuji::RenderStatus::ProcessingError);
         file_.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
         file_.read(static_cast<char*>(destination), static_cast<std::streamsize>(length));
         if (!file_ || file_.gcount() != static_cast<std::streamsize>(length))
-            fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+            fail(sony2fuji::RenderStatus::ProcessingError);
     }
 
     uint16_t read16(uint64_t offset, bool littleEndian) {
@@ -479,7 +472,7 @@ uint32_t tiffTypeSize(uint16_t type) {
         case 3: case 8: return 2;
         case 4: case 9: case 11: return 4;
         case 5: case 10: case 12: return 8;
-        default: fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        default: fail(sony2fuji::RenderStatus::Unsupported);
     }
 }
 
@@ -492,7 +485,7 @@ TiffEntry readTiffEntry(TiffReader& reader, uint64_t offset, bool littleEndian) 
     result.count = readEndian32(bytes.data() + 4, littleEndian);
     const auto typeSize = static_cast<uint64_t>(tiffTypeSize(result.type));
     if (result.count > std::numeric_limits<uint64_t>::max() / typeSize)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     result.dataBytes = static_cast<uint64_t>(result.count) * typeSize;
     result.dataOffset = result.dataBytes <= 4
         ? offset + 8u : readEndian32(bytes.data() + 8, littleEndian);
@@ -502,7 +495,7 @@ TiffEntry readTiffEntry(TiffReader& reader, uint64_t offset, bool littleEndian) 
 
 std::vector<uint8_t> readTiffData(TiffReader& reader, const TiffEntry& entry, size_t limit) {
     if (entry.dataBytes > limit || entry.dataBytes > std::numeric_limits<size_t>::max())
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     std::vector<uint8_t> result(static_cast<size_t>(entry.dataBytes));
     if (!result.empty()) reader.readAt(entry.dataOffset, result.data(), result.size());
     return result;
@@ -511,7 +504,7 @@ std::vector<uint8_t> readTiffData(TiffReader& reader, const TiffEntry& entry, si
 std::vector<uint32_t> readTiffUnsignedValues(TiffReader& reader, const TiffEntry& entry,
                                              bool littleEndian, size_t limit = 4096) {
     if (entry.type != 3 && entry.type != 4)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     const auto bytes = readTiffData(reader, entry, limit);
     std::vector<uint32_t> result;
     result.reserve(entry.count);
@@ -564,20 +557,20 @@ bool hasSigmaTIFFPreview(TiffReader& reader, uint64_t offset, bool littleEndian,
 
 void scanTiff(const std::wstring& path, MetadataInfo& info) {
     TiffReader reader(path);
-    if (reader.size() < 8) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+    if (reader.size() < 8) fail(sony2fuji::RenderStatus::ProcessingError);
     std::array<uint8_t, 8> header{};
     reader.readAt(0, header.data(), header.size());
     const bool littleEndian = header[0] == 'I' && header[1] == 'I';
     const bool bigEndian = header[0] == 'M' && header[1] == 'M';
-    if (!littleEndian && !bigEndian) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+    if (!littleEndian && !bigEndian) fail(sony2fuji::RenderStatus::ProcessingError);
     const auto magic = readEndian16(header.data() + 2, littleEndian);
-    if (magic == 43) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-    if (magic != 42) fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+    if (magic == 43) fail(sony2fuji::RenderStatus::Unsupported);
+    if (magic != 42) fail(sony2fuji::RenderStatus::ProcessingError);
     const auto ifdOffset = static_cast<uint64_t>(readEndian32(header.data() + 4, littleEndian));
     reader.ensure(ifdOffset, 2);
     const auto count = reader.read16(ifdOffset, littleEndian);
     if (count > 4096 || static_cast<uint64_t>(count) * 12u > reader.size() - ifdOffset - 2u)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
 
     bool hasWidth = false;
     bool hasHeight = false;
@@ -599,7 +592,7 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
                 continue;
             }
             if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             const auto software = readTiffData(reader, entry, kMetadataChunkLimit);
             sigmaWriter = equalBytes(software.data(), software.size(), "SIGMA Photo Pro ", 16);
@@ -607,37 +600,37 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         }
         if (entry.tag == 34675) {
             if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             info.colorProfileMarker = true;
             continue;
         }
         if (entry.tag == 700) {
             if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             const auto xmp = readTiffData(reader, entry, kMetadataChunkLimit);
             if (containsInsensitive(xmp.data(), xmp.size(), "gainmap") ||
                 containsInsensitive(xmp.data(), xmp.size(), "hdrgm") ||
                 containsInsensitive(xmp.data(), xmp.size(), "hdrgainmap"))
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             continue;
         }
         if (entry.tag == 270) {
             if (entry.dataBytes > kMetadataChunkLimit - metadataBytes)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             metadataBytes += static_cast<size_t>(entry.dataBytes);
             const auto description = readTiffData(reader, entry, kMetadataChunkLimit);
             if (containsInsensitive(description.data(), description.size(), "gainmap") ||
                 containsInsensitive(description.data(), description.size(), "hdrgm") ||
                 containsInsensitive(description.data(), description.size(), "hdrgainmap"))
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             continue;
         }
         if (entry.tag == 256 || entry.tag == 257) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
             if (values.size() != 1 || values[0] == 0)
-                fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+                fail(sony2fuji::RenderStatus::ProcessingError);
             if (entry.tag == 256) {
                 hasWidth = true;
                 width = values[0];
@@ -649,31 +642,31 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         }
         if (entry.tag == 258) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
-            if (values.empty() || (values[0] != 8 && values[0] != 16)) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (values.empty() || (values[0] != 8 && values[0] != 16)) fail(sony2fuji::RenderStatus::Unsupported);
             for (const auto value : values)
-                if (value != values[0]) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                if (value != values[0]) fail(sony2fuji::RenderStatus::Unsupported);
             depth = values[0];
             continue;
         }
         if (entry.tag == 262) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
             if (values.size() != 1 || values[0] != 2)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             hasPhotometric = true;
             continue;
         }
         if (entry.tag == 274) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
             if (values.size() != 1 || values[0] < 1 || values[0] > 8)
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             mergeOrientation(info, values[0]);
             continue;
         }
         if (entry.tag == 339) {
             const auto values = readTiffUnsignedValues(reader, entry, littleEndian);
-            if (values.empty()) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (values.empty()) fail(sony2fuji::RenderStatus::Unsupported);
             for (const auto value : values)
-                if (value != 1) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                if (value != 1) fail(sony2fuji::RenderStatus::Unsupported);
             continue;
         }
         if (entry.tag == 301 || entry.tag == 318 || entry.tag == 319 ||
@@ -682,11 +675,11 @@ void scanTiff(const std::wstring& path, MetadataInfo& info) {
         }
     }
     if (!hasWidth || !hasHeight || !hasPhotometric)
-        fail(SONY2FUJI_STATUS_PROCESSING_ERROR);
+        fail(sony2fuji::RenderStatus::ProcessingError);
     if (width > kMaxDisplayPixels / height)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     if (nonIccColorMetadata && !info.colorProfileMarker)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     const auto next = reader.read32(ifdOffset + 2u + static_cast<uint64_t>(count) * 12u, littleEndian);
     // 其他后续 IFD 仍交给 WIC 帧数判断：WIC 不把缩略图 IFD 计为一帧，这类 TIFF 改动前就能打开。
     if (next != 0 && depth == 16 && sigmaWriter && noPageMarker && next != ifdOffset &&
@@ -713,14 +706,14 @@ ContainerKind containerKind(const std::wstring& path) {
             std::memcmp(brand, "mif1", 4) == 0 || std::memcmp(brand, "msf1", 4) == 0)
             return ContainerKind::Heif;
     }
-    fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    fail(sony2fuji::RenderStatus::Unsupported);
 }
 
 ContainerKind containerKind(const GUID& container) {
     if (IsEqualGUID(container, GUID_ContainerFormatJpeg)) return ContainerKind::Jpeg;
     if (IsEqualGUID(container, GUID_ContainerFormatPng)) return ContainerKind::Png;
     if (IsEqualGUID(container, GUID_ContainerFormatTiff)) return ContainerKind::Tiff;
-    fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    fail(sony2fuji::RenderStatus::Unsupported);
 }
 
 bool missingMetadataProperty(HRESULT result) {
@@ -762,11 +755,11 @@ std::optional<uint32_t> metadataOrientation(IWICBitmapFrameDecode* frame, Contai
                 case VT_I4: orientation = static_cast<uint32_t>(value.lVal); break;
                 default:
                     PropVariantClear(&value);
-                    fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                    fail(sony2fuji::RenderStatus::Unsupported);
             }
             PropVariantClear(&value);
-            if (orientation < 1 || orientation > 8) fail(SONY2FUJI_STATUS_UNSUPPORTED);
-            if (result && *result != orientation) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (orientation < 1 || orientation > 8) fail(sony2fuji::RenderStatus::Unsupported);
+            if (result && *result != orientation) fail(sony2fuji::RenderStatus::Unsupported);
             result = orientation;
         } else if (!missingMetadataProperty(metadataResult)) {
             PropVariantClear(&value);
@@ -891,55 +884,55 @@ ColorSource getColorSource(IWICImagingFactory* factory, IWICBitmapFrameDecode* f
     const auto countResult = frame->GetColorContexts(0, nullptr, &count);
     if (FAILED(countResult) && countResult != WINCODEC_ERR_INSUFFICIENTBUFFER) {
         if (countResult == WINCODEC_ERR_UNSUPPORTEDOPERATION && !profileMarker) return {};
-        checkHr(countResult, SONY2FUJI_STATUS_UNSUPPORTED);
+        checkHr(countResult, sony2fuji::RenderStatus::Unsupported);
     }
     if (count == 0) {
-        if (profileMarker) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (profileMarker) fail(sony2fuji::RenderStatus::Unsupported);
         return {};
     }
-    if (count > 16) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (count > 16) fail(sony2fuji::RenderStatus::Unsupported);
     ColorSource result;
     std::vector<ComPtr<IWICColorContext>> contexts(count);
     std::vector<IWICColorContext*> rawContexts(count, nullptr);
     for (UINT index = 0; index < count; ++index)
-        checkHr(factory->CreateColorContext(&contexts[index]), SONY2FUJI_STATUS_UNSUPPORTED);
+        checkHr(factory->CreateColorContext(&contexts[index]), sony2fuji::RenderStatus::Unsupported);
     for (UINT index = 0; index < count; ++index)
         rawContexts[index] = contexts[index].Get();
     UINT actualCount = 0;
     checkHr(frame->GetColorContexts(count, rawContexts.data(), &actualCount),
-        SONY2FUJI_STATUS_UNSUPPORTED);
-    if (actualCount != count) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        sony2fuji::RenderStatus::Unsupported);
+    if (actualCount != count) fail(sony2fuji::RenderStatus::Unsupported);
     bool exifSrgb = false;
     bool unsupportedExif = false;
     for (const auto& context : contexts) {
         WICColorContextType type = WICColorContextUninitialized;
-        checkHr(context->GetType(&type), SONY2FUJI_STATUS_UNSUPPORTED);
+        checkHr(context->GetType(&type), sony2fuji::RenderStatus::Unsupported);
         if (type == WICColorContextProfile) {
-            if (result.context) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            if (result.context) fail(sony2fuji::RenderStatus::Unsupported);
             result.context = context;
         } else if (type == WICColorContextExifColorSpace) {
             UINT exifColorSpace = 0;
-            checkHr(context->GetExifColorSpace(&exifColorSpace), SONY2FUJI_STATUS_UNSUPPORTED);
+            checkHr(context->GetExifColorSpace(&exifColorSpace), sony2fuji::RenderStatus::Unsupported);
             exifSrgb |= exifColorSpace == 1;
             unsupportedExif |= exifColorSpace != 1;
         } else {
-            fail(SONY2FUJI_STATUS_UNSUPPORTED);
+            fail(sony2fuji::RenderStatus::Unsupported);
         }
     }
     // WIC 会同时返回 ICC 和 EXIF 色彩标记；有效 ICC 是实际色彩转换的依据。
     if (!result.context) {
-        if (profileMarker || !exifSrgb || unsupportedExif) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (profileMarker || !exifSrgb || unsupportedExif) fail(sony2fuji::RenderStatus::Unsupported);
         return {};
     }
     UINT profileSize = 0;
     const auto profileSizeResult = result.context->GetProfileBytes(0, nullptr, &profileSize);
     if (FAILED(profileSizeResult) && profileSizeResult != WINCODEC_ERR_INSUFFICIENTBUFFER)
-        checkHr(profileSizeResult, SONY2FUJI_STATUS_UNSUPPORTED);
-    if (profileSize == 0 || profileSize > kMetadataChunkLimit) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        checkHr(profileSizeResult, sony2fuji::RenderStatus::Unsupported);
+    if (profileSize == 0 || profileSize > kMetadataChunkLimit) fail(sony2fuji::RenderStatus::Unsupported);
     std::vector<uint8_t> profile(profileSize);
     checkHr(result.context->GetProfileBytes(profileSize, profile.data(), &profileSize),
-        SONY2FUJI_STATUS_UNSUPPORTED);
-    if (!isSdrIccProfile(profile)) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        sony2fuji::RenderStatus::Unsupported);
+    if (!isSdrIccProfile(profile)) fail(sony2fuji::RenderStatus::Unsupported);
     result.transformToSrgb = true;
     return result;
 }
@@ -978,13 +971,13 @@ SourceDescription describeSource(IWICBitmapFrameDecode* frame) {
         result.format = SourceFormat::Rgba64;
         result.sixteenBit = true;
     } else {
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     }
     checkHr(frame->GetSize(&result.width, &result.height));
     if (result.width == 0 || result.height == 0 ||
         static_cast<uint64_t>(result.width) > kMaxDisplayPixels / result.height ||
         result.width > UINT32_MAX / (result.sixteenBit ? 8u : 4u)) {
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     }
     return result;
 }
@@ -1012,7 +1005,7 @@ void validateAlpha(IWICBitmapFrameDecode* frame, const SourceDescription& descri
                 for (UINT column = 0; column < columns; ++column) {
                     const auto* alpha = line + (column + 1) * bytesPerPixel - (description.sixteenBit ? 2 : 1);
                     if (alpha[0] != 255 || (description.sixteenBit && alpha[1] != 255))
-                        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                        fail(sony2fuji::RenderStatus::Unsupported);
                 }
             }
         }
@@ -1031,7 +1024,7 @@ WICBitmapTransformOptions transformForOrientation(uint32_t orientation) {
         case 7: return static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate90 |
             WICBitmapTransformFlipHorizontal);
         case 8: return WICBitmapTransformRotate270;
-        default: fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        default: fail(sony2fuji::RenderStatus::Unsupported);
     }
 }
 
@@ -1047,12 +1040,12 @@ PreparedImage prepareHeifImage(IWICImagingFactory* factory, const char* original
     if (!decoded.width || !decoded.height ||
         decoded.width > UINT32_MAX / 4u ||
         static_cast<uint64_t>(decoded.width) > kMaxDisplayPixels / decoded.height)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     const auto stride = static_cast<size_t>(decoded.width) * 4u;
     const auto total = stride * static_cast<size_t>(decoded.height);
     if (total / stride != decoded.height || decoded.pixels.size() != total ||
         total > std::numeric_limits<UINT>::max())
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     ComPtr<IWICBitmap> bitmap;
     checkHr(factory->CreateBitmapFromMemory(decoded.width, decoded.height,
         GUID_WICPixelFormat32bppRGBA, static_cast<UINT>(stride), static_cast<UINT>(total),
@@ -1071,7 +1064,7 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     requireRegularFile(path);
     const auto extension = lowerExtension(originalPath);
     if (knownUnsupportedExtension(extension))
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
 
     const auto kind = containerKind(path);
     if (kind == ContainerKind::Heif)
@@ -1081,7 +1074,7 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     if (kind == ContainerKind::Jpeg) {
         scanJpeg(path, metadata);
         const int mpfCount = sony2fuji::inspectSdrJpegMpf(path);
-        if (mpfCount < 0) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        if (mpfCount < 0) fail(sony2fuji::RenderStatus::Unsupported);
         if (mpfCount) metadata.jpegImageCount = static_cast<uint32_t>(mpfCount);
     }
     if (kind == ContainerKind::Tiff) scanTiff(path, metadata);
@@ -1091,18 +1084,18 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
         WICDecodeMetadataCacheOnDemand, &decoder));
     GUID container{};
     checkHr(decoder->GetContainerFormat(&container));
-    if (containerKind(container) != kind) fail(SONY2FUJI_STATUS_UNSUPPORTED);
+    if (containerKind(container) != kind) fail(sony2fuji::RenderStatus::Unsupported);
     UINT frameCount = 0;
     checkHr(decoder->GetFrameCount(&frameCount));
     if (frameCount != 1 && frameCount != metadata.jpegImageCount &&
         !(kind == ContainerKind::Tiff && frameCount == 2 && metadata.sigmaTIFFPreview))
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
 
     ComPtr<IWICBitmapFrameDecode> frame;
     checkHr(decoder->GetFrame(0, &frame));
     const auto description = describeSource(frame.Get());
     if (description.sixteenBit && kind != ContainerKind::Png && kind != ContainerKind::Tiff)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     if (kind != ContainerKind::Png)
         mergeOrientation(metadata, metadataOrientation(frame.Get(), kind));
     const auto colors = getColorSource(factory, frame.Get(), metadata.colorProfileMarker);
@@ -1139,14 +1132,14 @@ PreparedImage prepareImage(IWICImagingFactory* factory, const std::wstring& path
     if (result.orientedWidth == 0 || result.orientedHeight == 0 ||
         static_cast<uint64_t>(result.orientedWidth) > kMaxDisplayPixels / result.orientedHeight ||
         result.orientedWidth > UINT32_MAX / (result.sixteenBit ? 8u : 4u)) {
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     }
     checkHr(rotator.As(&result.oriented));
     return result;
 }
 
 void targetSize(const PreparedImage& image, uint32_t edge, UINT* width, UINT* height) {
-    if (!width || !height) fail(SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    if (!width || !height) fail(sony2fuji::RenderStatus::InvalidArgument);
     if (edge == 0 || edge >= std::max(image.orientedWidth, image.orientedHeight)) {
         *width = image.orientedWidth;
         *height = image.orientedHeight;
@@ -1166,7 +1159,7 @@ void targetSize(const PreparedImage& image, uint32_t edge, UINT* width, UINT* he
 }
 
 void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_t edge,
-                bool preserveDepth, sony2fuji_buffer* output) {
+                bool preserveDepth, sony2fuji::OwnedPixelBuffer& output) {
     UINT width = 0, height = 0;
     targetSize(image, edge, &width, &height);
     const bool sixteenBit = preserveDepth && image.sixteenBit;
@@ -1190,37 +1183,37 @@ void copyOutput(IWICImagingFactory* factory, const PreparedImage& image, uint32_
     }
     if (width == 0 || height == 0 || width > UINT32_MAX / pixelBytes ||
         static_cast<uint64_t>(width) > kMaxDisplayPixels / height)
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     const auto stride = static_cast<size_t>(width) * pixelBytes;
     const auto total = stride * static_cast<size_t>(height);
     if (total / stride != height || total > std::numeric_limits<UINT>::max())
-        fail(SONY2FUJI_STATUS_UNSUPPORTED);
+        fail(sony2fuji::RenderStatus::Unsupported);
     auto* pixels = static_cast<uint8_t*>(std::malloc(total));
-    if (!pixels) fail(SONY2FUJI_STATUS_OUT_OF_MEMORY);
+    if (!pixels) fail(sony2fuji::RenderStatus::OutOfMemory);
     try {
         checkHr(source->CopyPixels(nullptr, static_cast<UINT>(stride),
             static_cast<UINT>(total), pixels));
         for (size_t offset = pixelBytes - 1; offset < total; offset += pixelBytes) {
             if (pixels[offset] != 255 || (sixteenBit && pixels[offset - 1] != 255)) {
-                fail(SONY2FUJI_STATUS_UNSUPPORTED);
+                fail(sony2fuji::RenderStatus::Unsupported);
             }
         }
     } catch (...) {
         std::free(pixels);
         throw;
     }
-    output->data = pixels;
-    output->size_bytes = total;
-    output->width = width;
-    output->height = height;
-    output->stride_bytes = static_cast<uint32_t>(stride);
-    output->pixel_format = sixteenBit ? SONY2FUJI_PIXEL_RGBA16 : SONY2FUJI_PIXEL_RGBA8;
+    output.reset();
+    output.data = pixels;
+    output.sizeBytes = total;
+    output.width = width;
+    output.height = height;
+    output.strideBytes = static_cast<uint32_t>(stride);
+    output.format = sixteenBit ? sony2fuji::PixelBufferFormat::RGBA16 : sony2fuji::PixelBufferFormat::RGBA8;
 }
 
-sony2fuji_status loadDisplayImageWindows(const char* path, sony2fuji_buffer* output) {
-    if (!output) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    clearBuffer(output);
-    if (!path || path[0] == '\0') return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+sony2fuji::RenderStatus loadDisplayImageWindows(const char* path, sony2fuji::OwnedPixelBuffer& output) {
+    output.reset();
+    if (!path || path[0] == '\0') return sony2fuji::RenderStatus::InvalidArgument;
     try {
         ComApartment apartment;
         const auto widePath = utf8ToWide(path);
@@ -1229,32 +1222,31 @@ sony2fuji_status loadDisplayImageWindows(const char* path, sony2fuji_buffer* out
             IID_PPV_ARGS(&factory)));
         const auto image = prepareImage(factory.Get(), widePath, path);
         copyOutput(factory.Get(), image, 0, true, output);
-        return SONY2FUJI_STATUS_OK;
+        return sony2fuji::RenderStatus::Ok;
     } catch (const StatusError& error) {
-        clearBuffer(output);
+        output.reset();
         return error.status();
     } catch (const sony2fuji::hdr::Error& error) {
-        clearBuffer(output);
+        output.reset();
         return error.status;
     } catch (const std::bad_alloc&) {
-        clearBuffer(output);
-        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        output.reset();
+        return sony2fuji::RenderStatus::OutOfMemory;
     } catch (...) {
-        clearBuffer(output);
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        output.reset();
+        return sony2fuji::RenderStatus::ProcessingError;
     }
 }
 
-sony2fuji_status displayPreviewWindows(const char* path, uint32_t edge,
-                                       sony2fuji_buffer* output,
-                                       uint32_t* orientedSourceWidth,
-                                       uint32_t* orientedSourceHeight) {
+sony2fuji::RenderStatus displayPreviewWindows(const char* path, uint32_t edge,
+                                              sony2fuji::OwnedPixelBuffer& output,
+                                              uint32_t* orientedSourceWidth,
+                                              uint32_t* orientedSourceHeight) {
     if (orientedSourceWidth) *orientedSourceWidth = 0;
     if (orientedSourceHeight) *orientedSourceHeight = 0;
-    if (!output) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    clearBuffer(output);
-    if (!path || path[0] == '\0') return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-    if (edge == 0) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    output.reset();
+    if (!path || path[0] == '\0') return sony2fuji::RenderStatus::InvalidArgument;
+    if (edge == 0) return sony2fuji::RenderStatus::InvalidArgument;
     try {
         ComApartment apartment;
         const auto widePath = utf8ToWide(path);
@@ -1262,38 +1254,42 @@ sony2fuji_status displayPreviewWindows(const char* path, uint32_t edge,
         checkHr(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&factory)));
         const auto image = prepareImage(factory.Get(), widePath, path);
-        sony2fuji_buffer local{};
+        sony2fuji::OwnedPixelBuffer local;
         // 托管缩略图按四字节读取像素，即使不缩放也必须保持 RGBA8。
-        copyOutput(factory.Get(), image, edge, false, &local);
+        copyOutput(factory.Get(), image, edge, false, local);
         if (orientedSourceWidth) *orientedSourceWidth = image.orientedWidth;
         if (orientedSourceHeight) *orientedSourceHeight = image.orientedHeight;
-        *output = local;
-        return SONY2FUJI_STATUS_OK;
+        output = std::move(local);
+        return sony2fuji::RenderStatus::Ok;
     } catch (const StatusError& error) {
-        clearBuffer(output);
+        output.reset();
         return error.status();
     } catch (const sony2fuji::hdr::Error& error) {
-        clearBuffer(output);
+        output.reset();
         return error.status;
     } catch (const std::bad_alloc&) {
-        clearBuffer(output);
-        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        output.reset();
+        return sony2fuji::RenderStatus::OutOfMemory;
     } catch (...) {
-        clearBuffer(output);
-        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        output.reset();
+        return sony2fuji::RenderStatus::ProcessingError;
     }
 }
 
 } // namespace
 
-extern "C" sony2fuji_status sony2fuji_load_display_image(
-    const char* path, sony2fuji_buffer* out_buffer) {
-    return loadDisplayImageWindows(path, out_buffer);
+namespace sony2fuji {
+
+RenderStatus loadDisplayImage(const char* path, OwnedPixelBuffer& output) {
+    return loadDisplayImageWindows(path, output);
 }
 
-extern "C" sony2fuji_status rawlab_display_preview(
-    const char* path, uint32_t edge, sony2fuji_buffer* out_buffer,
-    uint32_t* oriented_source_width, uint32_t* oriented_source_height) {
-    return displayPreviewWindows(path, edge, out_buffer,
-        oriented_source_width, oriented_source_height);
+RenderStatus loadDisplayPreview(const char* path,
+                                uint32_t edge,
+                                OwnedPixelBuffer& output,
+                                uint32_t* orientedSourceWidth,
+                                uint32_t* orientedSourceHeight) {
+    return displayPreviewWindows(path, edge, output, orientedSourceWidth, orientedSourceHeight);
 }
+
+} // namespace sony2fuji

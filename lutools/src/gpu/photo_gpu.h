@@ -4,12 +4,7 @@
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/lut_parser.h"
 #include "sony2fuji/dcp_look.h"
-#include "sony2fuji/ffi/sony2fuji_c.h"
-#include "core/photo_effects.h"
-#include "core/photo_color.h"
-#include "core/photo_tone_controls.h"
-#include "core/photo_color_grading.h"
-#include "core/photo_tone_curve.h"
+#include "core/render_params.h"
 
 #include <cstdint>
 #include <memory>
@@ -19,20 +14,10 @@ namespace sony2fuji {
 bool renderPhotoMetal(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const RenderParams& params,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp = {},
-    const PhotoEffectsOptions& effects = {},
-    int chromaDenoise = 0,
-    bool preserveSourceResolution = false,
-    const HslOptions& hsl = {},
-    const ToneControlsOptions& toneControls = {},
-    const ColorGradingOptions& colorGrading = {},
-    const ToneCurve& customCurve = {}
+    ImageData& output
 );
 
 } // namespace sony2fuji

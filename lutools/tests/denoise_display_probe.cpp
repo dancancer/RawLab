@@ -38,39 +38,36 @@ Json renderScenario(const ImageData& input, const Json& scenario, const std::fil
         "contrast", "saturation", "highlights", "shadows", "tone_curve"};
     for (auto it = scenario.begin(); it != scenario.end(); ++it)
         if (!fields.count(it.key())) throw std::runtime_error("unknown display setting: " + it.key());
-    sony2fuji_request request{};
-    request.version = SONY2FUJI_REQUEST_VERSION;
-    request.struct_size = sizeof(request);
-    request.intent = SONY2FUJI_INTENT_FINAL;
-    request.input_type = SONY2FUJI_INPUT_BUFFER;
-    request.input_color_space = SONY2FUJI_COLOR_SRGB;
-    request.input_is_linear = 1;
-    request.wb_mode = SONY2FUJI_WB_CAMERA;
-    request.temperature = 6500;
-    request.exposure_ev = setting(scenario, "exposure_ev", 0, -10, 10);
-    request.brightness = setting(scenario, "brightness", 1, 0, 2);
-    request.contrast = setting(scenario, "contrast", 1, 0, 2);
-    request.saturation = setting(scenario, "saturation", 1, 0, 2);
-    request.highlights = setting(scenario, "highlights", 0, -1, 1);
-    request.shadows = setting(scenario, "shadows", 0, -1, 1);
-    request.tone_curve = setting(scenario, "tone_curve", 0, -1, 1);
-    request.lut_strength = setting(scenario, "lut_strength", 1, 0, 2);
-    request.size_mode = SONY2FUJI_SIZE_EXACT;
-    request.target_width = input.width;
-    request.target_height = input.height;
-    request.output_target = SONY2FUJI_TARGET_BUFFER;
-    request.output_format = SONY2FUJI_OUTPUT_RGB8;
-    std::shared_ptr<LUT3D> lut;
-    if (scenario.contains("lut") && request.lut_strength > 0) {
-        lut = LUTParser::loadLUTCached(scenario.at("lut").get<std::string>());
-        if (!lut || !lut->isPhotoLUT()) throw std::runtime_error("incompatible display LUT");
+    RenderParams params;
+    params.intent = RenderIntent::Final;
+    params.inputType = RenderInputType::Buffer;
+    params.inputColorSpace = ColorSpace::sRGB;
+    params.inputIsLinear = true;
+    params.wbMode = RenderWhiteBalanceMode::Camera;
+    params.temperature = 6500;
+    params.exposureEV = setting(scenario, "exposure_ev", 0, -10, 10);
+    params.brightness = setting(scenario, "brightness", 1, 0, 2);
+    params.contrast = setting(scenario, "contrast", 1, 0, 2);
+    params.saturation = setting(scenario, "saturation", 1, 0, 2);
+    params.highlights = setting(scenario, "highlights", 0, -1, 1);
+    params.shadows = setting(scenario, "shadows", 0, -1, 1);
+    params.toneCurve = setting(scenario, "tone_curve", 0, -1, 1);
+    params.lutStrength = setting(scenario, "lut_strength", 1, 0, 2);
+    params.sizeMode = RenderSizeMode::Exact;
+    params.targetWidth = input.width;
+    params.targetHeight = input.height;
+    params.outputTarget = RenderOutputTarget::Buffer;
+    params.outputFormat = RenderOutputFormat::RGB8;
+    if (scenario.contains("lut") && params.lutStrength > 0) {
+        params.lut = LUTParser::loadLUTCached(scenario.at("lut").get<std::string>());
+        if (!params.lut || !params.lut->isPhotoLUT()) throw std::runtime_error("incompatible display LUT");
     }
     Json result = {{"settings", scenario}, {"buffers", Json::object()}};
     for (const auto& item : std::vector<std::pair<std::string, float>>{
              {"off", 0}, {"ordinary_0.5", .5f}, {"ordinary_1", 1}, {"ordinary_2", 2}}) {
-        request.sharpening = item.second;
+        params.sharpening = item.second;
         ImageData output;
-        if (!renderPhotoMetal(input, ColorSpace::sRGB, request, lut, RGB(1, 1, 1),
+        if (!renderPhotoMetal(input, ColorSpace::sRGB, params,
                               input.width, input.height, output))
             throw std::runtime_error("actual Metal display render failed; no CPU substitution");
         result["buffers"][item.first] = denoise_experiment::writeImage(

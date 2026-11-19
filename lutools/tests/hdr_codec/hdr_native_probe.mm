@@ -10,10 +10,9 @@
 namespace {
 using rawlab::test::require;
 void verify(const char* path,bool final) {
-    auto options=sony2fuji_hdr_decode_options_v1{};
-    options.version=1; options.struct_size=sizeof(options);
-    options.intent=final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW;
-    options.long_edge=final ? 0 : 1024;
+    sony2fuji::HDRDecodeOptions options;
+    options.intent=final ? sony2fuji::kHdrIntentFinal : sony2fuji::kHdrIntentPreview;
+    options.longEdge=final ? 0 : 1024;
     auto source=sony2fuji::hdr::decodeFile(path,options);
     sony2fuji::HDRRenderOptions settings;
     settings.intent=final ? sony2fuji::HDRQuality::Final : sony2fuji::HDRQuality::Preview;

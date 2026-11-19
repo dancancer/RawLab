@@ -808,14 +808,10 @@ PhotoParams makeParams(
     uint32_t dstHeight,
     ColorConverter::Matrix3x3 matrix,
     ColorConverter::Matrix3x3 lutMatrix,
-    const sony2fuji_request& request,
-    const RGB& relativeWB,
+    const sony2fuji::RenderParams& renderParams,
     const CachedLUT* cachedLUT,
     float lutStrength,
-    const sony2fuji::HslOptions& hsl = {},
-    const sony2fuji::ToneControlsOptions& toneControls = {},
-    const sony2fuji::ColorGradingOptions& colorGrading = {},
-    const sony2fuji::ToneCurve& customCurve = {}
+    bool includeOptionalCurves = true
 ) {
     PhotoParams params{};
     params.srcWidth = srcWidth;
@@ -825,13 +821,7 @@ PhotoParams makeParams(
     params.srcRows = srcHeight; params.dstRows = dstHeight;
     params.lutSize = cachedLUT ? static_cast<uint32_t>(cachedLUT->size) : 0;
     params.useLut = cachedLUT ? 1u : 0u;
-    params.toneEnabled =
-        request.exposure_ev != 0.0f || request.brightness != 1.0f ||
-        request.contrast != 1.0f || request.saturation != 1.0f ||
-        request.temperature != 6500.0f || request.tint != 0.0f ||
-        request.wb_mode == SONY2FUJI_WB_CUSTOM ||
-        request.highlights != 0.0f || request.shadows != 0.0f ||
-        request.tone_curve != 0.0f || customCurve.active();
+    params.toneEnabled = renderParams.needsToneAdjustments();
     size_t matrixOffset = 0;
     for (const auto& row : matrix) {
         for (float value : row) {
@@ -844,32 +834,48 @@ PhotoParams makeParams(
             params.lutMatrix[matrixOffset++] = value;
         }
     }
-    params.exposureScale = std::exp2(request.exposure_ev) * request.brightness;
-    params.wbR = relativeWB.r;
-    params.wbG = relativeWB.g;
-    params.wbB = relativeWB.b;
+    params.exposureScale = std::exp2(renderParams.exposureEV) * renderParams.brightness;
+    params.wbR = renderParams.relativeWB.r;
+    params.wbG = renderParams.relativeWB.g;
+    params.wbB = renderParams.relativeWB.b;
     params.lutStrength = lutStrength;
-    params.contrast = request.contrast;
-    params.saturation = request.saturation;
-    params.highlights = request.highlights;
-    params.shadows = request.shadows;
-    params.toneCurve = request.tone_curve;
-    const auto custom = sony2fuji::toneCurveGpuParameters(customCurve);
-    params.customCurveCount = custom.count;
-    std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
-    std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
-    params.noiseReduction = request.noise_reduction;
-    params.sharpening = request.sharpening;
-    params.hslEnabled = hsl.active();
-    params.blackPoint = toneControls.blackPoint; params.whitePoint = toneControls.whitePoint;
-    params.vibrance = toneControls.vibrance;
-    const auto grading=sony2fuji::colorGradingCoefficients(colorGrading);
-    for (size_t zone=0;zone<3;++zone) {
-        params.colorGrading[zone*3]=grading[zone].r;params.colorGrading[zone*3+1]=grading[zone].g;params.colorGrading[zone*3+2]=grading[zone].b;
+    params.contrast = renderParams.contrast;
+    params.saturation = renderParams.saturation;
+    params.highlights = renderParams.highlights;
+    params.shadows = renderParams.shadows;
+    params.toneCurve = renderParams.toneCurve;
+    if (includeOptionalCurves) {
+        const auto custom = sony2fuji::toneCurveGpuParameters(renderParams.customCurve);
+        params.customCurveCount = custom.count;
+        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
+        params.hslEnabled = renderParams.hsl.active();
+        params.blackPoint = renderParams.toneControls.blackPoint;
+        params.whitePoint = renderParams.toneControls.whitePoint;
+        params.vibrance = renderParams.toneControls.vibrance;
+        const auto grading = sony2fuji::colorGradingCoefficients(renderParams.colorGrading);
+        for (size_t zone = 0; zone < 3; ++zone) {
+            params.colorGrading[zone * 3] = grading[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        }
+        std::copy(renderParams.hsl.hue.begin(), renderParams.hsl.hue.end(), params.hslHue);
+        std::copy(renderParams.hsl.saturation.begin(), renderParams.hsl.saturation.end(), params.hslSaturation);
+        std::copy(renderParams.hsl.lightness.begin(), renderParams.hsl.lightness.end(), params.hslLightness);
+    } else {
+        const auto custom = sony2fuji::toneCurveGpuParameters(sony2fuji::ToneCurve{});
+        params.customCurveCount = custom.count;
+        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
+        const auto grading = sony2fuji::colorGradingCoefficients(sony2fuji::ColorGradingOptions{});
+        for (size_t zone = 0; zone < 3; ++zone) {
+            params.colorGrading[zone * 3] = grading[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        }
     }
-    std::copy(hsl.hue.begin(), hsl.hue.end(), params.hslHue);
-    std::copy(hsl.saturation.begin(), hsl.saturation.end(), params.hslSaturation);
-    std::copy(hsl.lightness.begin(), hsl.lightness.end(), params.hslLightness);
+    params.noiseReduction = renderParams.noiseReduction;
+    params.sharpening = renderParams.sharpening;
     if (cachedLUT) {
         params.inputIsSRGB = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
         params.inputIsFLog = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::FLog;
@@ -948,31 +954,14 @@ bool encodeKernel(
 bool renderPhotoMetalImpl(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const sony2fuji::RenderParams& renderParams,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp,
-    const sony2fuji::PhotoEffectsOptions& effects,
-    int chromaDenoise,
-    bool preserveSourceResolution,
-    const sony2fuji::HslOptions& hsl,
-    const sony2fuji::ToneControlsOptions& toneControls,
-    const sony2fuji::ColorGradingOptions& colorGrading,
-    const sony2fuji::ToneCurve& customCurve
+    ImageData& output
 ) {
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
-        !std::isfinite(request.exposure_ev) || !std::isfinite(request.brightness) ||
-        !std::isfinite(request.contrast) || !std::isfinite(request.saturation) ||
-        !std::isfinite(request.temperature) || !std::isfinite(request.tint) ||
-        !std::isfinite(request.highlights) || !std::isfinite(request.shadows) ||
-        !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
-        !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
-        !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) {
+        !renderParams.validForGpu()) {
         return false;
     }
     size_t inputCount = 0;
@@ -983,25 +972,25 @@ bool renderPhotoMetalImpl(
     }
 
     MetalContext& context = metalContext();
-    if (!context.ready || (effects.active() && !context.effectsPipeline)) {
+    if (!context.ready || (renderParams.effects.active() && !context.effectsPipeline)) {
         return false;
     }
 
-    const float lutStrength = std::max(0.0f, std::min(2.0f, request.lut_strength));
-    const bool useLUT = lut && lutStrength > 0.0f;
-    if (useLUT && lut->requiresCPU()) return false;
-    const bool useDcp = dcp && lutStrength > 0.0f;
+    const float lutStrength = std::max(0.0f, std::min(2.0f, renderParams.lutStrength));
+    const bool useLUT = renderParams.lut && lutStrength > 0.0f;
+    if (useLUT && renderParams.lut->requiresCPU()) return false;
+    const bool useDcp = renderParams.dcp && lutStrength > 0.0f;
     if (useDcp && (useLUT || !context.baseDcpPipeline)) return false;
     CachedDcp cachedDcp;
     id<MTLBuffer> invalid = nil;
     if (useDcp) {
-        if (!getCachedDcp(context, dcp, cachedDcp)) return false;
+        if (!getCachedDcp(context, renderParams.dcp, cachedDcp)) return false;
         invalid = makeBuffer(context.device, sizeof(uint32_t));
         if (!invalid) return false;
         *static_cast<uint32_t*>(invalid.contents) = 0;
     }
     CachedLUT cachedLUT;
-    if (useLUT && !getCachedLUT(context, lut, &cachedLUT)) {
+    if (useLUT && !getCachedLUT(context, renderParams.lut, &cachedLUT)) {
         return false;
     }
 
@@ -1017,10 +1006,10 @@ bool renderPhotoMetalImpl(
         } else {
             toSRGB = ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB);
         }
-        if (useLUT && lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
+        if (useLUT && renderParams.lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
             toFGamut = ColorConverter::Matrix3x3{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
         } else {
-            toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
+            toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? renderParams.lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
         }
     } catch (...) {
         return false;
@@ -1028,8 +1017,10 @@ bool renderPhotoMetalImpl(
 
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
-    const bool earlyResize = request.intent == SONY2FUJI_INTENT_PREVIEW &&
-        request.sharpening <= 0.0f && request.noise_reduction <= 0.0f && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution &&
+    const bool earlyResize = renderParams.intent == sony2fuji::RenderIntent::Preview &&
+        renderParams.sharpening <= 0.0f && renderParams.noiseReduction <= 0.0f &&
+        !renderParams.effects.active() && renderParams.chromaDenoise == 0 &&
+        !renderParams.preserveSourceResolution &&
         (targetWidth != inputWidth || targetHeight != inputHeight);
     const uint32_t processingWidth = earlyResize ? targetWidth : inputWidth;
     const uint32_t processingHeight = earlyResize ? targetHeight : inputHeight;
@@ -1048,7 +1039,7 @@ bool renderPhotoMetalImpl(
         const uint32_t dstHeight = resultHeight ? resultHeight : destination.height;
         const uint32_t workWidth = resizeFirst ? dstWidth : srcWidth;
         const uint32_t workHeight = resizeFirst ? dstHeight : srcHeight;
-        const uint32_t halo = afterChroma ? uint32_t(request.noise_reduction > 0) + uint32_t(request.sharpening > 0) : 0;
+        const uint32_t halo = afterChroma ? uint32_t(renderParams.noiseReduction > 0) + uint32_t(renderParams.sharpening > 0) : 0;
         const size_t srcRowBytes = size_t(srcWidth) * sizeof(RGB);
         const size_t workRowBytes = size_t(workWidth) * sizeof(RGB);
         const size_t dstRowBytes = size_t(dstWidth) * sizeof(RGB);
@@ -1114,7 +1105,7 @@ bool renderPhotoMetalImpl(
                 id<MTLBuffer> current = uploaded, next = a;
                 if (resizeFirst) {
                     auto params = makeParams(srcWidth, srcHeight, workWidth, workHeight,
-                        toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                        toSRGB, toFGamut, renderParams, nullptr, lutStrength, false);
                     params.srcRowOffset = upload.first; params.dstRowOffset = work.first;
                     params.srcRows = upload.second - upload.first; params.dstRows = work.second - work.first;
                     auto constants = makeParamsBuffer(context.device, params);
@@ -1123,7 +1114,7 @@ bool renderPhotoMetalImpl(
                     current = a; next = b;
                 }
                 const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls, colorGrading, customCurve);
+                    toSRGB, toFGamut, renderParams, useLUT ? &cachedLUT : nullptr, lutStrength, true);
                 auto constants = makeParamsBuffer(context.device, params);
                 if (!constants) return false;
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
@@ -1138,10 +1129,10 @@ bool renderPhotoMetalImpl(
                         useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
                     !run(context.tonePipeline, nil))) return false;
                 if (afterChroma) {
-                    if (request.noise_reduction > 0 && !run(context.noisePipeline, nil)) return false;
-                    if (request.sharpening > 0 && !run(context.sharpenPipeline, nil)) return false;
-                    if (effects.active()) {
-                        const PhotoEffectsParams values{workWidth, workHeight, effects, work.first, work.second - work.first};
+                    if (renderParams.noiseReduction > 0 && !run(context.noisePipeline, nil)) return false;
+                    if (renderParams.sharpening > 0 && !run(context.sharpenPipeline, nil)) return false;
+                    if (renderParams.effects.active()) {
+                        const PhotoEffectsParams values{workWidth, workHeight, renderParams.effects, work.first, work.second - work.first};
                         id<MTLBuffer> effectConstants = [context.device newBufferWithBytes:&values
                             length:sizeof(values) options:MTLResourceStorageModeShared];
                         if (!effectConstants || !encodeKernel(command, context.effectsPipeline, effectConstants,
@@ -1150,7 +1141,7 @@ bool renderPhotoMetalImpl(
                     }
                 }
                 auto resize = makeParams(workWidth, workHeight, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                    toSRGB, toFGamut, renderParams, nullptr, lutStrength, false);
                 resize.srcRowOffset = work.first; resize.dstRowOffset = row;
                 resize.srcRows = work.second - work.first; resize.dstRows = rows;
                 auto resizeConstants = makeParamsBuffer(context.device, resize);
@@ -1169,11 +1160,11 @@ bool renderPhotoMetalImpl(
         return true;
     };
     ImageData result;
-    if (chromaDenoise != 0) {
+    if (renderParams.chromaDenoise != 0) {
         ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
         if (!runBands(input, display, earlyResize, true, false)) return false;
         // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
-        if (sony2fuji::applyChromaDenoiseWorking(display, chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
+        if (sony2fuji::applyChromaDenoiseWorking(display, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
             sony2fuji::ErrorCode::Success) return false;
         if (processingWidth >= targetWidth && processingHeight >= targetHeight) {
             if (!runBands(display, display, false, false, true, targetWidth, targetHeight)) return false;
@@ -1197,28 +1188,17 @@ namespace sony2fuji {
 bool renderPhotoMetal(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const RenderParams& params,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp,
-    const PhotoEffectsOptions& effects,
-    int chromaDenoise,
-    bool preserveSourceResolution,
-    const HslOptions& hsl,
-    const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading,
-    const ToneCurve& customCurve
+    ImageData& output
 ) {
     bool result = false;
     @try {
         @autoreleasepool {
             try {
                 result = renderPhotoMetalImpl(
-                    input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls, colorGrading, customCurve
+                    input, inputSpace, params, targetWidth, targetHeight, output
                 );
             } catch (const ProcessingCancelled&) {
                 // 取消不是渲染失败：在 catch(...) 之前原样重抛（对齐 gles_photo 的先例），
@@ -1243,20 +1223,10 @@ namespace sony2fuji {
 bool renderPhotoMetal(
     const ImageData&,
     ColorSpace,
-    const sony2fuji_request&,
-    const std::shared_ptr<LUT3D>&,
-    const RGB&,
+    const RenderParams&,
     uint32_t,
     uint32_t,
-    ImageData&,
-    const std::shared_ptr<const DcpLook>&,
-    const PhotoEffectsOptions&,
-    int,
-    bool,
-    const HslOptions&,
-    const ToneControlsOptions&,
-    const ColorGradingOptions&,
-    const ToneCurve&
+    ImageData&
 ) {
     return false;
 }

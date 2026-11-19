@@ -5,6 +5,7 @@
 #include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -148,18 +149,17 @@ int main(int argc, char* argv[]) {
                 options.rendition.peakLimitEV = 1.5f;
             }
             if (transform >= 4) {
-                options.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
+                options.processingVersion = kHdrProcessingDetailVersion;
                 options.detail = {1.3f, .65f, -.4f, .72f};
             }
             if (transform >= 5) {
-                options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+                options.processingVersion = kHdrProcessingLookVersion;
                 options.look = look;
                 options.lookStrength = 1.1f;
             }
             if (transform == 6) {
-                options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
-                options.tone.channels[0] = {SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(sony2fuji_tone_curve_config),
-                    SONY2FUJI_CURVE_CUSTOM, 3, {{0,0},{.5,.6},{1,1}}};
+                options.processingVersion = kHdrProcessingChannelCurvesVersion;
+                options.tone.channels[0] = {ToneCurveMode::Custom, 3, {{{0,0},{.5,.6},{1,1}}}};
             }
             for (uint32_t edge : {0u, 151u}) {
                 options.longEdge = edge;

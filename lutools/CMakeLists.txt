@@ -180,7 +180,20 @@ set(CORE_SOURCES
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
+    src/core/render_params.cpp
+    src/core/image_header_probe.cpp
+    src/core/photo_pipeline_stages.cpp
+    src/core/hsl_probe.cpp
+    src/core/pipeline.cpp
+    src/core/pipeline_raw.cpp
+    src/core/pipeline_lens.cpp
+    src/core/pipeline_ai.cpp
+    src/core/pipeline_x3f.cpp
+    src/core/pipeline_geometry.cpp
+    src/core/pipeline_io.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/sony2fuji_lens_c.cpp
+    src/ffi/sony2fuji_buffer_c.cpp
     src/ffi/sony2fuji_hdr.cpp
     src/ffi/dcp_compiler_c.cpp
     src/ffi/lut_compatibility_c.cpp

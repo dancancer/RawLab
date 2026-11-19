@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #include "gpu/image_stats.h"
 #include "gpu/photo_gpu.h"
+#include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
 #include <algorithm>
 #include <cmath>
@@ -71,11 +72,10 @@ bool sameImage(const sony2fuji::ImageData& actual, const sony2fuji::ImageData& e
 int main() {
     @autoreleasepool {
         using namespace sony2fuji;
-        sony2fuji_request request{};
-        request.brightness = request.contrast = request.saturation = 1;
-        request.temperature = 6500; request.intent = SONY2FUJI_INTENT_FINAL;
+        RenderParams params;
+        params.intent = RenderIntent::Final;
         ImageData warm;
-        if (!renderPhotoMetal(image(1,1), ColorSpace::sRGB, request, {}, RGB(1,1,1), 1, 1, warm)) return 1;
+        if (!renderPhotoMetal(image(1,1), ColorSpace::sRGB, params, 1, 1, warm)) return 1;
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         Method bufferMethod = class_getInstanceMethod(object_getClass(device), @selector(newBufferWithLength:options:));
         Method limitMethod = class_getInstanceMethod(object_getClass(device), @selector(maxBufferLength));
@@ -89,18 +89,18 @@ int main() {
             auto input = image(scenario == 4 ? 1 : scenario == 5 ? 17 : 2053, scenario == 5 ? 1 : scenario == 4 ? 33 : 1027);
             const uint32_t width = scenario == 2 || scenario == 3 ? 641 : input.width;
             const uint32_t height = scenario == 2 || scenario == 3 ? 317 : input.height;
-            request.intent = scenario == 2 ? SONY2FUJI_INTENT_PREVIEW : SONY2FUJI_INTENT_FINAL;
-            request.noise_reduction = scenario == 1 || scenario == 3 ? .4f : 0;
-            request.sharpening = scenario == 1 || scenario == 3 ? .7f : 0;
-            PhotoEffectsOptions effects;
-            if (scenario == 1 || scenario == 3) { effects.vignetteAmount = -30; effects.grainAmount = 25; }
-            HslOptions hsl; hsl.hue[4] = 12; hsl.saturation[0] = -20; hsl.lightness[5] = 10;
+            params.intent = scenario == 2 ? RenderIntent::Preview : RenderIntent::Final;
+            params.noiseReduction = scenario == 1 || scenario == 3 ? .4f : 0;
+            params.sharpening = scenario == 1 || scenario == 3 ? .7f : 0;
+            params.effects = PhotoEffectsOptions{};
+            if (scenario == 1 || scenario == 3) { params.effects.vignetteAmount = -30; params.effects.grainAmount = 25; }
+            params.hsl = HslOptions{}; params.hsl.hue[4] = 12; params.hsl.saturation[0] = -20; params.hsl.lightness[5] = 10;
             ImageData expected, actual;
             budget = std::numeric_limits<size_t>::max();
-            bool ok = renderPhotoMetal(input, ColorSpace::sRGB, request, {}, RGB(1,1,1), width, height, expected, {}, effects, 0, false, hsl);
+            bool ok = renderPhotoMetal(input, ColorSpace::sRGB, params, width, height, expected);
             // 驱动限制比默认块小，强制跨行块及最后一个不足整块的边界。
             budget = 512 * 1024; largest = 0; completions = 0; imageAllocations = 0;
-            ok = ok && renderPhotoMetal(input, ColorSpace::sRGB, request, {}, RGB(1,1,1), width, height, actual, {}, effects, 0, false, hsl);
+            ok = ok && renderPhotoMetal(input, ColorSpace::sRGB, params, width, height, actual);
             ok = ok && largest <= budget && imageAllocations <= 4 && sameImage(actual, expected);
             std::cout << (ok ? "PASS" : "FAIL") << " bounded Metal scenario=" << scenario
                 << " largest=" << largest << " budget=" << budget << " allocations=" << imageAllocations << " commands=" << completions << '\n';
@@ -108,9 +108,10 @@ int main() {
         }
         auto input = image(2053, 1027);
         ImageData output(1,1); output.pixels[0] = RGB(-7,-8,-9);
-        request.intent = SONY2FUJI_INTENT_FINAL; request.noise_reduction = request.sharpening = 0;
+        params.intent = RenderIntent::Final; params.noiseReduction = params.sharpening = 0;
+        params.effects = PhotoEffectsOptions{}; params.hsl = HslOptions{};
         completions = 0; failCompletion = 2;
-        const bool rendered = renderPhotoMetal(input, ColorSpace::sRGB, request, {}, RGB(1,1,1), input.width, input.height, output);
+        const bool rendered = renderPhotoMetal(input, ColorSpace::sRGB, params, input.width, input.height, output);
         const bool atomic = !rendered && completions == 2 && output.width == 1 && output.height == 1 &&
             output.pixels[0].r == -7 && output.pixels[0].g == -8 && output.pixels[0].b == -9;
         std::cout << (atomic ? "PASS" : "FAIL") << " mid-band failure preserves output\n";
@@ -246,6 +247,7 @@ int main() {
         {
             uint8_t statsPixels[16] = {};
             const sony2fuji_buffer statsInput{statsPixels, sizeof(statsPixels), 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+            const PixelBufferView statsView{statsPixels, sizeof(statsPixels), 2, 2, 8, PixelBufferFormat::RGBA8};
             ImageStats directStats{};
             directStats.shadows = 77;
             directStats.highlights = 88;
@@ -253,7 +255,7 @@ int main() {
             bool statsReturned = true;
             bytesBufferThrows = 0;
             @try {
-                statsReturned = computeImageStatsMetal(statsInput, directStats);
+                statsReturned = computeImageStatsMetal(statsView, directStats);
             } @catch (NSException*) {
                 statsEscaped = true;
             }

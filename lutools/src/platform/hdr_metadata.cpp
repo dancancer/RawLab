@@ -19,8 +19,8 @@
 namespace sony2fuji::hdr {
 namespace {
 [[noreturn]] void invalid() {
-    throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-        SONY2FUJI_HDR_FIELD_SOURCE,"Malformed image capture metadata");
+    throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux,
+        kHdrFieldSource, "Malformed image capture metadata");
 }
 struct Segment { uint8_t marker; const uint8_t* data; size_t size; };
 std::vector<Segment> segments(const void* data,size_t size) {
@@ -278,7 +278,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
     };
     if (handler.hasVersion) {
         if (numeric(handler.version)!=65536)
-            throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple gain-map version");
+            throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedVersion, kHdrFieldSource, "Unsupported Apple gain-map version");
         if (handler.hasHeadroom) result.headroom=ratio(numeric(handler.headroom));
         if (result.headroom && result.headroom<1) invalid();
         return result;
@@ -287,7 +287,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
     if (handler.auxiliary!="urn:com:apple:photo:2020:aux:hdrgainmap") invalid();
     auto value=[&](const char* name) {const auto at=handler.tone.find(name);if(at==handler.tone.end())invalid();return numeric(at->second);};
     if (value("Version")!=1)
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple tone-map version");
+        throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedVersion, kHdrFieldSource, "Unsupported Apple tone-map version");
     if (value("BaseRenditionIsHDR")!=0 || value("BaseHeadroom")!=0) invalid();
     result.logarithmic=true;
     result.headroom=ratio(value("AlternateHeadroom"));result.minBoost=ratio(value("GainMapMin"));result.maxBoost=ratio(value("GainMapMax"));
@@ -299,7 +299,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
 float appleXMPHeadroom(const void* bytes,size_t size) {
     const auto description=appleGainMapMetadata(bytes,size);
     if (description.logarithmic)
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,SONY2FUJI_HDR_FIELD_SOURCE,"Apple HEIF tone-map variant is unsupported");
+        throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, kHdrFieldSource, "Apple HEIF tone-map variant is unsupported");
     return description.headroom;
 }
 
@@ -345,12 +345,12 @@ uint32_t jpegColorDescription(const void* jpeg,size_t size,bool allowExifSRGB) {
         total=s.data[13]; parts.emplace(s.data[12],std::vector<uint8_t>(s.data+14,s.data+s.size));
     }
     if (!total) {
-        if (!allowExifSRGB) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+        if (!allowExifSRGB) return kHdrColorUnknown;
         const auto bytes=jpegExif(jpeg,size);TIFF parsed(bytes.data(),bytes.size());
         const auto color=parsed.exif.find(0xa001);
         if (color!=parsed.exif.end() && color->second.type==3 && color->second.count==1 &&
-            color->second.bytes==std::vector<uint8_t>{1,0}) return SONY2FUJI_HDR_COLOR_SRGB;
-        return SONY2FUJI_HDR_COLOR_UNKNOWN;
+            color->second.bytes==std::vector<uint8_t>{1,0}) return kHdrColorSrgb;
+        return kHdrColorUnknown;
     }
     if (parts.size()!=total) invalid();
     std::vector<uint8_t> icc;
@@ -367,28 +367,28 @@ uint32_t iccColorDescription(const void* icc,size_t size,bool requireSRGBTransfe
         // JPEG 的 Ultra HDR 路径固定使用 sRGB inverse transfer，不能只比较原色。
         for (auto tag : {cmsSigRedTRCTag,cmsSigGreenTRCTag,cmsSigBlueTRCTag}) {
             const auto* curve=static_cast<const cmsToneCurve*>(cmsReadTag(profile,tag));
-            if (!curve) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+            if (!curve) return kHdrColorUnknown;
             for (unsigned i=0;i<=1024;++i) {
                 const float x=float(i)/1024;
                 const float expected=x<=.04045f ? x/12.92f : std::pow((x+.055f)/1.055f,2.4f);
                 const float actual=cmsEvalToneCurveFloat(curve,x);
                 if (!std::isfinite(actual) || std::abs(actual-expected)>.0025f)
-                    return SONY2FUJI_HDR_COLOR_UNKNOWN;
+                    return kHdrColorUnknown;
             }
         }
     }
     const auto* r=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigRedColorantTag));
     const auto* g=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigGreenColorantTag));
     const auto* b=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigBlueColorantTag));
-    if (!r || !g || !b) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    if (!r || !g || !b) return kHdrColorUnknown;
     const std::array<double,9> values={r->X,r->Y,r->Z,g->X,g->Y,g->Z,b->X,b->Y,b->Z};
     const std::array<std::array<double,9>,3> known={{{.436066,.222488,.013916,.385147,.716873,.097076,.143066,.060608,.714096},
         {.515102,.241182,-.001049,.291965,.692237,.041882,.157153,.066582,.784378},
         {.673459,.279033,-.001931,.165661,.675338,.029979,.125100,.045629,.797162}}};
     for (size_t gamut=0;gamut<known.size();++gamut) {
         bool same=true; for (size_t i=0;i<9;++i) same&=std::isfinite(values[i]) && std::abs(values[i]-known[gamut][i])<.003;
-        if (same) return uint32_t(gamut)+SONY2FUJI_HDR_COLOR_SRGB;
+        if (same) return uint32_t(gamut)+kHdrColorSrgb;
     }
-    return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    return kHdrColorUnknown;
 }
 } // namespace sony2fuji::hdr

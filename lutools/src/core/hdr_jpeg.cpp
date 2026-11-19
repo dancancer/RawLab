@@ -25,9 +25,9 @@ using Decoder=std::unique_ptr<uhdr_codec_private_t,decltype(&uhdr_release_decode
 using Encoder=std::unique_ptr<uhdr_codec_private_t,decltype(&uhdr_release_encoder)>;
 void checked(uhdr_error_info_t result) {
     if (result.error_code!=UHDR_CODEC_OK)
-        throw Error(result.error_code==UHDR_CODEC_MEM_ERROR ? SONY2FUJI_STATUS_OUT_OF_MEMORY : SONY2FUJI_STATUS_PROCESSING_ERROR,
-            result.error_code==UHDR_CODEC_MEM_ERROR ? SONY2FUJI_HDR_REASON_OUT_OF_MEMORY : SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-            SONY2FUJI_HDR_FIELD_SOURCE,result.has_detail ? result.detail : "Ultra HDR codec rejected the image");
+        throw Error(result.error_code==UHDR_CODEC_MEM_ERROR ? RenderStatus::OutOfMemory : RenderStatus::ProcessingError,
+            result.error_code==UHDR_CODEC_MEM_ERROR ? kHdrReasonOutOfMemory : kHdrReasonMalformedAux,
+            kHdrFieldSource, result.has_detail ? result.detail : "Ultra HDR codec rejected the image");
 }
 uhdr_compressed_image_t compressed(const void* bytes,size_t size) {
     uhdr_compressed_image_t image{};
@@ -64,11 +64,11 @@ RGB toSRGB(RGB p,uhdr_color_gamut_t gamut) {
         1.6604910f*p.r-.5876411f*p.g-.0728499f*p.b,
         -.1245505f*p.r+1.1328999f*p.g-.0083494f*p.b,
         -.0181508f*p.r-.1005789f*p.g+1.1187297f*p.b};
-    throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,SONY2FUJI_HDR_FIELD_SOURCE,
+    throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedColor, kHdrFieldSource,
         "Unknown Ultra HDR output gamut");
 }
 RGB outputRGB(RGB p,uint32_t color) {
-    if (color==SONY2FUJI_HDR_COLOR_DISPLAY_P3) return {
+    if (color==kHdrColorDisplayP3) return {
         .8225929f*p.r+.1775339f*p.g,
         .0331995f*p.r+.9667835f*p.g,
         .0170854f*p.r+.0723957f*p.g+.9103015f*p.b};
@@ -103,8 +103,8 @@ void validateDualMetadata(const void* bytes,size_t size,const uhdr_gainmap_metad
     for (int c=0;xmp && c<3;++c)
         consistent &= same(xmp->min_content_boost[c],iso.min_content_boost[c]) && same(xmp->max_content_boost[c],iso.max_content_boost[c]) &&
             same(xmp->gamma[c],iso.gamma[c]) && same(xmp->offset_sdr[c],iso.offset_sdr[c]) && same(xmp->offset_hdr[c],iso.offset_hdr[c]);
-    if (!consistent) throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-        SONY2FUJI_HDR_FIELD_SOURCE,"Conflicting ISO and XMP gain-map descriptions");
+    if (!consistent) throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux,
+        kHdrFieldSource, "Conflicting ISO and XMP gain-map descriptions");
 }
 struct JPEGError { jpeg_error_mgr manager{}; std::jmp_buf jump; };
 struct ScaledJPEG {
@@ -199,7 +199,7 @@ ImageData expandJPEGPlanes(JPEGView base,JPEGView map,
     ultrahdr::JpegDecoderHelper parser; checked(parser.parseImage(map.data,map.data_sz));
     gain.image.cg=!description.use_base_cg && parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(const_cast<void*>(static_cast<const void*>(parser.getICCPtr())),parser.getICCSize()) : sdr.image.cg;
     if (sdr.image.cg==UHDR_CG_UNSPECIFIED || gain.image.cg==UHDR_CG_UNSPECIFIED || (!description.use_base_cg && !parser.getICCSize()))
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,SONY2FUJI_HDR_FIELD_SOURCE,"Missing gain-map application gamut");
+        throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedColor, kHdrFieldSource, "Missing gain-map application gamut");
     ultrahdr::uhdr_gainmap_metadata_ext_t metadata(description,"1.0");
     ultrahdr::uhdr_raw_image_ext_t output(UHDR_IMG_FMT_64bppRGBAHalfFloat,UHDR_CG_UNSPECIFIED,
         UHDR_CT_LINEAR,UHDR_CR_FULL_RANGE,sdr.image.w,sdr.image.h,64);
@@ -223,7 +223,7 @@ JPEGInfo probeJPEG(const void* data,size_t size) {
     if (width<=0 || height<=0 || uint64_t(width)*height>128000000 ||
         mapWidth<=0 || mapHeight<=0 || uint64_t(mapWidth)*mapHeight>128000000 || !metadata ||
         !std::isfinite(metadata->hdr_capacity_max) || metadata->hdr_capacity_max<1)
-        throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,SONY2FUJI_HDR_FIELD_SOURCE,
+        throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux, kHdrFieldSource,
             "Invalid Ultra HDR dimensions or headroom");
     validateDualMetadata(data,size,*metadata);
     return {uint32_t(width),uint32_t(height),0,std::max({1.0f,metadata->max_content_boost[0],metadata->max_content_boost[1],metadata->max_content_boost[2]})};
@@ -231,8 +231,8 @@ JPEGInfo probeJPEG(const void* data,size_t size) {
 
 JPEGInfo probeAppleJPEG(const void* data,size_t size) {
     const auto parts=jpegParts(data,size);
-    if(parts.gainComponents!=1)throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-        SONY2FUJI_HDR_FIELD_SOURCE,"Apple JPEG gain map must be monochrome");
+    if(parts.gainComponents!=1)throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux,
+        kHdrFieldSource, "Apple JPEG gain map must be monochrome");
     ultrahdr::JpegDecoderHelper base,map;
     checked(base.parseImage(parts.base.data(),parts.base.size()));checked(map.parseImage(parts.gain.data(),parts.gain.size()));
     const auto width=base.getDecompressedImageWidth(),height=base.getDecompressedImageHeight();
@@ -262,7 +262,7 @@ ImageData decodeAppleJPEG(const void* data,size_t size,float headroom,uint32_t l
         }
         return expandJPEGPlanes({parts.base.data(),parts.base.size()},{parts.gain.data(),parts.gain.size()},base.getICCPtr(),base.getICCSize(),metadata,
             base.getDecompressedImageWidth(),base.getDecompressedImageHeight(),longEdge,
-            declaredColor==SONY2FUJI_HDR_COLOR_SRGB ? UHDR_CG_BT_709 : UHDR_CG_UNSPECIFIED);
+            declaredColor==kHdrColorSrgb ? UHDR_CG_BT_709 : UHDR_CG_UNSPECIFIED);
     }
     auto encoded=scaledJPEG(parts.gain.data(),parts.gain.size(),longEdge,false);
     if(encoded.image.fmt!=UHDR_IMG_FMT_8bppYCbCr400)throw std::runtime_error("Apple JPEG gain map must be monochrome");
@@ -323,7 +323,7 @@ ImageData decodeSDRJPEG(const void* data,size_t size,uint32_t longEdge,uint32_t 
     ultrahdr::JpegDecoderHelper parser;checked(parser.parseImage(parts.base.data(),parts.base.size()));
     const auto w=parser.getDecompressedImageWidth(),h=parser.getDecompressedImageHeight();
     if (!w || !h || uint64_t(w)*h>128000000) throw std::invalid_argument("Ultra HDR dimensions exceed source budget");
-    if (!parser.getICCSize() && declaredColor!=SONY2FUJI_HDR_COLOR_SRGB) throw std::runtime_error("Missing HDR JPEG RGB profile");
+    if (!parser.getICCSize() && declaredColor!=kHdrColorSrgb) throw std::runtime_error("Missing HDR JPEG RGB profile");
     auto scaled=scaledJPEG(parts.base.data(),parts.base.size(),longEdge,false);const auto* image=&scaled.image;
     const auto gamut=parser.getICCSize() ? ultrahdr::IccHelper::readIccColorGamut(parser.getICCPtr(),parser.getICCSize()) : UHDR_CG_BT_709;
     if (image->fmt!=UHDR_IMG_FMT_24bppRGB888) throw std::runtime_error("HDR JPEG base must be RGB");
@@ -443,7 +443,7 @@ std::vector<uint8_t> replaceJPEGBase(const void* data,size_t size,const void* ba
 }
 
 std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint32_t baseColor) {
-    if (quality<1 || quality>100 || (baseColor!=SONY2FUJI_HDR_COLOR_SRGB && baseColor!=SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+    if (quality<1 || quality>100 || (baseColor!=kHdrColorSrgb && baseColor!=kHdrColorDisplayP3))
         throw std::invalid_argument("Invalid HDR JPEG quality or gamut");
     const unsigned width=image.hdr.width,height=image.hdr.height;
     if (width>65500 || height>65500) throw std::invalid_argument("HDR JPEG exceeds codec dimension ceiling");
@@ -482,7 +482,7 @@ std::vector<uint8_t> encodeJPEGInputs(uint32_t width, uint32_t height, uint32_t 
     uint32_t baseColor, float headroom, const JPEGInputBorrower& borrow) {
     if (!width || !height || width > 65500 || height > 65500 || uint64_t(width) * height > 128000000 ||
         quality < 1 || quality > 100 || !borrow || !std::isfinite(headroom) || headroom < 1 ||
-        (baseColor != SONY2FUJI_HDR_COLOR_SRGB && baseColor != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+        (baseColor != kHdrColorSrgb && baseColor != kHdrColorDisplayP3))
         throw std::invalid_argument("Invalid compact HDR JPEG input");
     Encoder enc(uhdr_create_encoder(),uhdr_release_encoder); if (!enc) throw std::bad_alloc();
     for (bool hdr : {true, false}) {
@@ -491,7 +491,7 @@ std::vector<uint8_t> encodeJPEGInputs(uint32_t width, uint32_t height, uint32_t 
             if (!data) throw std::invalid_argument("Missing compact JPEG input");
             uhdr_raw_image_t image{};
             image.fmt = hdr ? UHDR_IMG_FMT_64bppRGBAHalfFloat : UHDR_IMG_FMT_32bppRGBA8888;
-            image.cg = baseColor == SONY2FUJI_HDR_COLOR_DISPLAY_P3 ? UHDR_CG_DISPLAY_P3 : UHDR_CG_BT_709;
+            image.cg = baseColor == kHdrColorDisplayP3 ? UHDR_CG_DISPLAY_P3 : UHDR_CG_BT_709;
             image.ct = hdr ? UHDR_CT_LINEAR : UHDR_CT_SRGB; image.range = UHDR_CR_FULL_RANGE;
             image.w = width; image.h = height; image.stride[0] = width; image.planes[0] = const_cast<void*>(data);
             checked(uhdr_enc_set_raw_image(enc.get(), &image, hdr ? UHDR_HDR_IMG : UHDR_SDR_IMG));

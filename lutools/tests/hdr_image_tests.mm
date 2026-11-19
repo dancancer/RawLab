@@ -125,9 +125,10 @@ void tiledExports(NSURL* directory) API_AVAILABLE(macos(15.0), ios(18.0)) {
         auto outputInfo = hdr::probeFile(output.c_str());
         require(result.width == rendered.hdr.width && result.height == rendered.hdr.height &&
             outputInfo.width == rendered.hdr.width && outputInfo.height == rendered.hdr.height && outputInfo.orientation == 1 &&
-            outputInfo.protocol == SONY2FUJI_HDR_PROTOCOL_ISO && outputInfo.color_description == uint32_t(color),
+            outputInfo.protocol == SONY2FUJI_HDR_PROTOCOL_ISO && outputInfo.colorDescription == uint32_t(color),
             "Tiled HEIF lost its canvas, ISO gain map, direction or color");
-        const auto actual = hdr::decodeFile(output.c_str(), decode), expected = hdr::decodeFile(reference.c_str(), decode);
+        const auto actual = hdr::decodeFile(output.c_str(), sony2fuji::HDRDecodeOptions{decode.intent, decode.long_edge}),
+                   expected = hdr::decodeFile(reference.c_str(), sony2fuji::HDRDecodeOptions{decode.intent, decode.long_edge});
         std::vector<double> luminanceError;
         double sdrError = 0;
         for (size_t i = 0; i < expected.pixels.hdr.pixels.size(); ++i) {
@@ -225,7 +226,7 @@ int main(int argc, const char* argv[]) {
                         sony2fuji::hdr::admitMemory(UINT64_MAX);
                         require(false,"unbounded HDR allocation admitted");
                     } catch (const sony2fuji::hdr::Error& error) {
-                        require(error.status==SONY2FUJI_STATUS_OUT_OF_MEMORY && error.reason==SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,
+                        require(error.status==sony2fuji::RenderStatus::OutOfMemory && error.reason==SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,
                             "memory budget has no recoverable resource diagnostic");
                     }
                     const std::string legacyPath=std::string(TEST_FIXTURE_DIR)+"/hdr/apple-legacy-macos26.jpg";

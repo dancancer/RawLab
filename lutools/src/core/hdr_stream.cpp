@@ -217,7 +217,7 @@ uint64_t streamScratchBytes(uint32_t width, uint32_t height, const HDRRenderOpti
 HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions& options,
     bool highDynamicRange, uint32_t quality, uint32_t baseColor, const fs::path& temporaryRoot) {
     if (quality < 1 || quality > 100 ||
-        (baseColor != SONY2FUJI_HDR_COLOR_SRGB && baseColor != SONY2FUJI_HDR_COLOR_DISPLAY_P3))
+        (baseColor != kHdrColorSrgb && baseColor != kHdrColorDisplayP3))
         throw std::invalid_argument("Invalid complete HDR stream source or output settings");
     HDRStreamResult result = streamShape(source, options);
     if (result.width > 65500 || result.height > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");

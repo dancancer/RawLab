@@ -307,11 +307,12 @@ void photoTests(const fs::path& root) {
 #ifdef SONY2FUJI_ENABLE_METAL
 bool metal(const std::shared_ptr<const DcpLook>& look, const sony2fuji::ImageData& input, sony2fuji::ImageData& output,
            const sony2fuji::PhotoEffectsOptions& effects = {}, const sony2fuji::HslOptions& hsl = {}) {
-    sony2fuji_request request{};
-    request.brightness = request.contrast = request.saturation = request.lut_strength = 1;
-    request.temperature = 6500;
-    return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, nullptr, RGB(1, 1, 1),
-                                     input.width, input.height, output, look, effects, 0, false, hsl);
+    sony2fuji::RenderParams params;
+    params.dcp = look;
+    params.effects = effects;
+    params.hsl = hsl;
+    return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+                                     input.width, input.height, output);
 }
 
 void metalTests(const fs::path& root) {

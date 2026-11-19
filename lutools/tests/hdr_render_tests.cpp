@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "core/hdr_rendering.h"
 #include "core/hdr_look.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include <algorithm>
 #include <cmath>
@@ -167,11 +168,10 @@ void tone() {
     const auto edge = renderHDRPair(source, options);
     require(edge.hdr.pixels[1].r > edge.hdr.pixels[0].r && edge.hdr.pixels[1].r - edge.hdr.pixels[0].r < .001f,
         "HDR reference-white boundary has a plateau or jump");
-    options = {}; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    options = {}; options.processingVersion = kHdrProcessingChannelCurvesVersion;
     source = fixture();
     const auto original = renderHDRPair(source, options);
-    options.tone.channels[0] = {SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(sony2fuji_tone_curve_config),
-        SONY2FUJI_CURVE_CUSTOM, 3, {{0,0},{.5,.6},{1,1}}};
+    options.tone.channels[0] = {ToneCurveMode::Custom, 3, {{{0,0},{.5,.6},{1,1}}}};
     const auto red = renderHDRPair(source, options);
     require(red.hdr.pixels[2].r > original.hdr.pixels[2].r, "HDR red curve must affect red");
     for (size_t i = 0; i < source.hdr.pixels.size(); ++i) {

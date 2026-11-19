@@ -33,12 +33,12 @@ namespace sony2fuji::hdr {
 namespace fs = std::filesystem;
 namespace {
 [[noreturn]] void unsupported() {
-    throw Error(SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
-        SONY2FUJI_HDR_FIELD_SOURCE, "Unsupported ProRAW source or decoder configuration");
+    throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw,
+        kHdrFieldSource, "Unsupported ProRAW source or decoder configuration");
 }
 [[noreturn]] void changed() {
-    throw Error(SONY2FUJI_STATUS_INVALID_ARGUMENT, SONY2FUJI_HDR_REASON_SOURCE_CHANGED,
-        SONY2FUJI_HDR_FIELD_SOURCE, "ProRAW source changed during development");
+    throw Error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged,
+        kHdrFieldSource, "ProRAW source changed during development");
 }
 #ifdef SONY2FUJI_ENABLE_DNGSDK
 struct Storage {
@@ -229,10 +229,10 @@ struct Source {
         if (negative->BaseOrientation().FlipD()) std::swap(width, height);
         if (width < 2 || height < 2 || width > 65535 || height > 65535 || uint64_t(width) * height > 128000000) unsupported();
     }
-    sony2fuji_hdr_source_info_v1 description() const {
-        sony2fuji_hdr_source_info_v1 result{}; result.version = 1; result.struct_size = sizeof(result);
+    HDRSourceInfo description() const {
+        HDRSourceInfo result{};
         result.width = width; result.height = height; result.orientation = 1;
-        result.container = SONY2FUJI_HDR_CONTAINER_PRORAW; result.color_description = SONY2FUJI_HDR_COLOR_SRGB;
+        result.container = kHdrContainerProRaw; result.colorDescription = kHdrColorSrgb;
         return result;
     }
     void develop(const fs::path& root, const uint8_t* expectedSHA256 = nullptr) {
@@ -308,31 +308,31 @@ template<class F> auto sdkBoundary(F body) -> decltype(body()) {
 }
 #endif
 }
-sony2fuji_hdr_source_info_v1 probeProRAW(const char* path) {
+HDRSourceInfo probeProRAW(const char* path) {
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     return sdkBoundary([&] { Source source(path); return source.description(); });
 #else
     (void)path; unsupported();
 #endif
 }
-DecodedImage decodeProRAW(const char* path, const sony2fuji_hdr_decode_options_v1& options, const fs::path& root) {
+DecodedImage decodeProRAW(const char* path, const HDRDecodeOptions& options, const fs::path& root) {
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     return sdkBoundary([&] {
         Source source(path);
-        const bool preview = options.intent == SONY2FUJI_INTENT_PREVIEW;
-        if (options.intent > 1 || (preview ? !options.long_edge || options.long_edge > 2048 : options.long_edge != 0))
+        const bool preview = options.intent == kHdrIntentPreview;
+        if (options.intent > 1 || (preview ? !options.longEdge || options.longEdge > 2048 : options.longEdge != 0))
             throw std::invalid_argument("Invalid ProRAW decode size");
         DecodedImage result; result.info = source.description();
         auto& pair = result.pixels;
         pair.nativeWidth = source.width; pair.nativeHeight = source.height;
         pair.sourceQuality = pair.renderQuality = static_cast<HDRQuality>(options.intent);
         pair.isProxy = preview; pair.decodeRevision = portableProRAWRevision;
-        const auto edge = preview ? options.long_edge : std::max(source.width, source.height);
+        const auto edge = preview ? options.longEdge : std::max(source.width, source.height);
         const double scale = std::min(1.0, double(edge) / std::max(source.width, source.height));
         admitMemory(uint64_t(std::ceil(source.width * scale)) * uint64_t(std::ceil(source.height * scale)) * 24 + (128ull << 20));
         source.develop(root);
         for (bool hdr : {true, false}) {
-            source.render(hdr, preview ? options.long_edge : 0);
+            source.render(hdr, preview ? options.longEdge : 0);
             auto& image = hdr ? pair.hdr : pair.sdr;
             image = ImageData(source.rendered->Width(), source.rendered->Height());
             for (uint32_t row = 0; row < uint32_t(image.height); row += 128)
@@ -342,9 +342,9 @@ DecodedImage decodeProRAW(const char* path, const sony2fuji_hdr_decode_options_v
         if (!preview) {
             pair.sourceHeadroom = 1;
             for (const auto& p : pair.hdr.pixels) pair.sourceHeadroom = std::max(pair.sourceHeadroom, .2126f*p.r + .7152f*p.g + .0722f*p.b);
-            result.info.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED; result.info.content_headroom = pair.sourceHeadroom;
+            result.info.headroomKind = kHdrHeadroomMeasured; result.info.contentHeadroom = pair.sourceHeadroom;
         }
-        std::copy(source.digest.begin(), source.digest.end(), result.info.source_sha256);
+        std::copy(source.digest.begin(), source.digest.end(), result.info.sourceSha256);
         return result;
     });
 #else

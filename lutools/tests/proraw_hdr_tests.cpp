@@ -3,6 +3,7 @@
 #include "core/processing_cancellation.h"
 #include "core/hdr_jpeg.h"
 #include "core/sha256.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <algorithm>
 #include <cmath>
 #include <chrono>
@@ -164,10 +165,10 @@ int main(int argc, char** argv) {
             std::cout << "PASS combined ProRAW disk admission before decode; destination preserved\n";
             return 0;
         }
-        sony2fuji_hdr_decode_options_v1 options{};
-        options.version = 1; options.struct_size = sizeof(options); options.long_edge = 512;
+        HDRDecodeOptions options{};
+        options.longEdge = 512;
         const bool final = std::getenv("RAWLAB_TEST_PRORAW_FINAL") != nullptr;
-        if (final) { options.intent = SONY2FUJI_INTENT_FINAL; options.long_edge = 0; }
+        if (final) { options.intent = kHdrIntentFinal; options.longEdge = 0; }
         auto decoded = hdr::decodeProRAW(input, options, temporary);
         const auto& pair = decoded.pixels;
         require(std::max(pair.hdr.width, pair.hdr.height) == int(final ? std::max(info.width,info.height) : 512) && pair.hdr.width == pair.sdr.width &&
@@ -187,13 +188,13 @@ int main(int argc, char** argv) {
             require(std::isfinite(pixel.r) && pixel.r >= 0 && pixel.r <= 1 &&
                 std::isfinite(pixel.g) && pixel.g >= 0 && pixel.g <= 1 &&
                 std::isfinite(pixel.b) && pixel.b >= 0 && pixel.b <= 1, "ProRAW SDR base exceeded its gamut");
-        require(decoded.info.headroom_kind == (final ? SONY2FUJI_HDR_HEADROOM_MEASURED : SONY2FUJI_HDR_HEADROOM_UNKNOWN) &&
-            std::any_of(std::begin(decoded.info.source_sha256), std::end(decoded.info.source_sha256), [](auto x) { return x != 0; }),
+        require(decoded.info.headroomKind == (final ? kHdrHeadroomMeasured : kHdrHeadroomUnknown) &&
+            std::any_of(std::begin(decoded.info.sourceSha256), std::end(decoded.info.sourceSha256), [](auto x) { return x != 0; }),
             "ProRAW preview lost source hash or claimed full-source headroom");
         require(std::filesystem::is_empty(temporary), "ProRAW decode leaked scratch files");
 #ifdef SONY2FUJI_TEST_DNGSDK
         if (!std::getenv("RAWLAB_TEST_PRORAW_SKIP_REFERENCE")) {
-        const auto expected = reference(input, options.long_edge);
+        const auto expected = reference(input, options.longEdge);
         for (bool hdr : {true, false}) {
             const auto& actual = hdr ? pair.hdr : pair.sdr;
             const auto& reference = hdr ? expected.hdr : expected.sdr;
@@ -263,12 +264,15 @@ int main(int argc, char** argv) {
         const auto temporaryPath = temporary.u8string();
         auto gpu = initialized<sony2fuji_gpu_config>(); gpu.mode = SONY2FUJI_GPU_FORCE;
         sony2fuji_session_set_gpu_config(session, &gpu);
-        require(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
+        auto cOptions = initialized<sony2fuji_hdr_decode_options_v1>();
+        cOptions.intent = options.intent;
+        cOptions.long_edge = options.longEdge;
+        require(sony2fuji_hdr_decode_proraw(session, input, &cOptions, temporaryPath.c_str(), &result, &diagnostic) ==
             SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU,
             "ProRAW silently used CPU under GPU Force");
         gpu.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &gpu);
         sony2fuji_session_set_cancellation_callback(session, [](void*) -> int32_t { return 1; }, nullptr);
-        require(sony2fuji_hdr_decode_proraw(session, input, &options, temporaryPath.c_str(), &result, &diagnostic) ==
+        require(sony2fuji_hdr_decode_proraw(session, input, &cOptions, temporaryPath.c_str(), &result, &diagnostic) ==
             SONY2FUJI_STATUS_CANCELLED && !result.owner_token, "Cancelled C ABI decode published an owner");
         sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
         if (final && std::getenv("RAWLAB_TEST_PRORAW_STREAM")) {
@@ -276,7 +280,7 @@ int main(int argc, char** argv) {
             edit.geometry.quarter_turns = 1; edit.geometry.flip_horizontal = true;
             const auto reference = renderHDRPair(pair, edit);
             for (bool hdr : {true, false}) {
-                auto rows = hdr::openProRAW(input, temporary, decoded.info.source_sha256);
+                auto rows = hdr::openProRAW(input, temporary, decoded.info.sourceSha256);
                 const auto streamed = hdr::encodeStream(rows, edit, hdr, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3, temporary);
                 const auto expected = hdr ? hdr::encodeJPEG(reference, 93, SONY2FUJI_HDR_COLOR_DISPLAY_P3) : hdr::encodeSDRJPEG(reference.sdr, 93);
                 require(streamed.jpeg == expected, "Real ProRAW stream differs from full-frame JPEG");
@@ -290,7 +294,7 @@ int main(int argc, char** argv) {
             auto config = initialized<sony2fuji_hdr_export_config_v1>();
             config.jpeg_quality = 93; config.base_color = SONY2FUJI_HDR_COLOR_DISPLAY_P3;
             config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path = input;
-            std::copy_n(decoded.info.source_sha256, 32, config.source_sha256);
+            std::copy_n(decoded.info.sourceSha256, 32, config.source_sha256);
             auto exported = initialized<sony2fuji_hdr_stream_result_v1>();
             const auto output = (temporary / std::filesystem::u8path(u8"\u6210\u7247.jpg")).u8string();
             for (bool hdr : {true, false}) {
@@ -335,7 +339,7 @@ int main(int argc, char** argv) {
             auto config = initialized<sony2fuji_hdr_export_config_v1>();
             config.jpeg_quality = 93; config.base_color = SONY2FUJI_HDR_COLOR_DISPLAY_P3;
             config.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP; config.metadata_source_path = input;
-            std::copy_n(decoded.info.source_sha256, 32, config.source_sha256);
+            std::copy_n(decoded.info.sourceSha256, 32, config.source_sha256);
             const auto output = (temporary / std::filesystem::u8path(u8"\u539f\u5c3a\u5bf8.jpg")).u8string();
             for (bool hdr : {true, false}) {
                 auto exported = initialized<sony2fuji_hdr_stream_result_v1>();

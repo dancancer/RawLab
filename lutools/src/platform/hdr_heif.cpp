@@ -23,15 +23,15 @@ namespace sony2fuji::hdr {
 namespace {
 void checked(heif_error error) {
     if (error.code!=heif_error_Ok)
-        throw Error(error.code==heif_error_Memory_allocation_error ? SONY2FUJI_STATUS_OUT_OF_MEMORY : SONY2FUJI_STATUS_PROCESSING_ERROR,
-            error.code==heif_error_Memory_allocation_error ? SONY2FUJI_HDR_REASON_OUT_OF_MEMORY : SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-            SONY2FUJI_HDR_FIELD_SOURCE,error.message ? error.message : "HEIF decoding failed");
+        throw Error(error.code==heif_error_Memory_allocation_error ? RenderStatus::OutOfMemory : RenderStatus::ProcessingError,
+            error.code==heif_error_Memory_allocation_error ? kHdrReasonOutOfMemory : kHdrReasonMalformedAux,
+            kHdrFieldSource, error.message ? error.message : "HEIF decoding failed");
 }
 [[noreturn]] void invalid(const char* message) {
-    throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,SONY2FUJI_HDR_FIELD_SOURCE,message);
+    throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux, kHdrFieldSource, message);
 }
 [[noreturn]] void unsupported(uint32_t reason,const char* message) {
-    throw Error(SONY2FUJI_STATUS_UNSUPPORTED,reason,SONY2FUJI_HDR_FIELD_SOURCE,message);
+    throw Error(RenderStatus::Unsupported, reason, kHdrFieldSource, message);
 }
 using Context=std::unique_ptr<heif_context,decltype(&heif_context_free)>;
 using Handle=std::unique_ptr<heif_image_handle,decltype(&heif_image_handle_release)>;
@@ -42,7 +42,7 @@ struct File {
     std::unique_ptr<ultrahdr::uhdr_gainmap_metadata_ext_t> iso;
     uint32_t gainColor=0;
     uint32_t toneMapItem=0;
-    sony2fuji_hdr_source_info_v1 info{};
+    HDRSourceInfo info{};
 };
 Context contextFromMemory(const void* data,size_t size) {
     Context context(heif_context_alloc(),heif_context_free);
@@ -97,7 +97,7 @@ bool findISO(File& file) {
         if (size<2 || size>4096) invalid("Invalid ISO gain-map description size");
         uint8_t* bytes=nullptr; checked(heif_item_get_item_data(context,id,nullptr,&bytes,&size));
         std::vector<uint8_t> payload(bytes,bytes+size); heif_release_item_data(context,&bytes);
-        if (payload[0]!=0) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,"Unsupported HEIF tone-map version");
+        if (payload[0]!=0) unsupported(kHdrReasonUnsupportedVersion,"Unsupported HEIF tone-map version");
         payload.erase(payload.begin()); ultrahdr::uhdr_gainmap_metadata_frac fractions;
         auto result=ultrahdr::uhdr_gainmap_metadata_frac::decodeGainmapMetadata(payload,&fractions);
         if (result.error_code!=UHDR_CODEC_OK) invalid("Invalid ISO gain-map description");
@@ -113,8 +113,8 @@ bool findISO(File& file) {
             invalid("Invalid ISO gain-map channel parameters");
         heif_image_handle* gain=nullptr; checked(heif_context_get_image_handle(file.context.get(),gainID,&gain)); file.gain.reset(gain);
         file.toneMapItem=id;
-        file.info.protocol=SONY2FUJI_HDR_PROTOCOL_ISO;
-        file.info.content_headroom=std::max({1.0f,m.max_content_boost[0],m.max_content_boost[1],m.max_content_boost[2]});
+        file.info.protocol=kHdrProtocolIso;
+        file.info.contentHeadroom=std::max({1.0f,m.max_content_boost[0],m.max_content_boost[1],m.max_content_boost[2]});
         found=true;
     }
     return found;
@@ -163,13 +163,13 @@ uint32_t orientation(const heif_context* context,const heif_image_handle* handle
 }
 File open(const void* data,size_t size) {
     File file; file.context=contextFromMemory(data,size);
-    if (heif_context_get_number_of_top_level_images(file.context.get())!=1) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"HEIF requires one primary image");
+    if (heif_context_get_number_of_top_level_images(file.context.get())!=1) unsupported(kHdrReasonUnsupportedProtocol,"HEIF requires one primary image");
     heif_image_handle* primary=nullptr; checked(heif_context_get_primary_image_handle(file.context.get(),&primary)); file.primary.reset(primary);
     const int width=heif_image_handle_get_ispe_width(primary),height=heif_image_handle_get_ispe_height(primary);
     if (width<=0 || height<=0 || uint64_t(width)*height>128000000) invalid("HEIF exceeds source pixel budget");
-    if (heif_image_handle_has_alpha_channel(primary)) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"HDR source must be opaque");
-    file.info.version=1; file.info.struct_size=sizeof(file.info); file.info.width=width; file.info.height=height;
-    file.info.container=SONY2FUJI_HDR_CONTAINER_HEIF; file.info.orientation=orientation(file.context.get(),primary);
+    if (heif_image_handle_has_alpha_channel(primary)) unsupported(kHdrReasonUnsupportedColor,"HDR source must be opaque");
+    file.info.width=width; file.info.height=height;
+    file.info.container=kHdrContainerHeif; file.info.orientation=orientation(file.context.get(),primary);
     const bool iso=findISO(file);
     const int count=heif_image_handle_get_number_of_auxiliary_images(primary,LIBHEIF_AUX_IMAGE_FILTER_OMIT_ALPHA|LIBHEIF_AUX_IMAGE_FILTER_OMIT_DEPTH);
     if (count<0 || count>32) invalid("Invalid HEIF auxiliary image count");
@@ -186,25 +186,25 @@ File open(const void* data,size_t size) {
         const auto* begin=static_cast<const uint8_t*>(data);
         for (const auto* marker:{"urn:iso:std:iso:ts:21496:-1","urn:com:apple:photo:2020:aux:hdrgainmap","tmap"})
             if (std::search(begin,begin+size,marker,marker+std::strlen(marker))!=begin+size)
-                unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported HEIF gain-map association");
-        unsupported(SONY2FUJI_HDR_REASON_NOT_HDR,"HEIF contains no HDR gain map");
+                unsupported(kHdrReasonUnsupportedProtocol,"Unsupported HEIF gain-map association");
+        unsupported(kHdrReasonNotHdr,"HEIF contains no HDR gain map");
     }
     const int mapWidth=heif_image_handle_get_ispe_width(file.gain.get()),mapHeight=heif_image_handle_get_ispe_height(file.gain.get());
     if (mapWidth<=0 || mapHeight<=0 || uint64_t(mapWidth)*mapHeight>128000000) invalid("Invalid Apple gain-map dimensions");
     file.exif=exif(primary);
     if (!iso) {
         const float xmpHeadroom=appleMetadata(file.gain.get());
-        file.info.content_headroom=xmpHeadroom ? xmpHeadroom : appleHeadroom(file.exif.data(),file.exif.size());
-        file.info.protocol=SONY2FUJI_HDR_PROTOCOL_APPLE;
+        file.info.contentHeadroom=xmpHeadroom ? xmpHeadroom : appleHeadroom(file.exif.data(),file.exif.size());
+        file.info.protocol=kHdrProtocolApple;
     }
-    file.info.headroom_kind=SONY2FUJI_HDR_HEADROOM_DECLARED;
+    file.info.headroomKind=kHdrHeadroomDeclared;
     file.icc=heifRGBProfile(primary);
-    file.info.color_description=iccColorDescription(file.icc.data(),file.icc.size());
-    if (!file.info.color_description) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Unsupported HEIF RGB profile");
+    file.info.colorDescription=iccColorDescription(file.icc.data(),file.icc.size());
+    if (!file.info.colorDescription) unsupported(kHdrReasonUnsupportedColor,"Unsupported HEIF RGB profile");
     if (iso) {
-        if(file.iso->use_base_cg)file.gainColor=file.info.color_description;
+        if(file.iso->use_base_cg)file.gainColor=file.info.colorDescription;
         else {const auto alternate=heifItemRGBProfile(data,size,file.toneMapItem);file.gainColor=iccColorDescription(alternate.data(),alternate.size());}
-        if (!file.gainColor) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"ISO gain map has no supported alternate gamut");
+        if (!file.gainColor) unsupported(kHdrReasonUnsupportedColor,"ISO gain map has no supported alternate gamut");
     }
     return file;
 }
@@ -250,7 +250,7 @@ DecodedSDRImage decodeSDR(const void* data,size_t size) {
         const bool gainMap=type && std::strcmp(type,"urn:com:apple:photo:2020:aux:hdrgainmap")==0;
         heif_image_handle_release_auxiliary_type(auxiliary,&type);
         if (gainMap)
-            unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"HDR HEIF requires HDR import");
+            unsupported(kHdrReasonUnsupportedProtocol,"HDR HEIF requires HDR import");
     }
     const int itemCount=heif_context_get_number_of_items(context.get());
     if (itemCount<0 || itemCount>65536)
@@ -259,11 +259,11 @@ DecodedSDRImage decodeSDR(const void* data,size_t size) {
     heif_context_get_list_of_item_IDs(context.get(),itemIds.data(),itemCount);
     for (const auto item : itemIds)
         if (heif_item_get_item_type(context.get(),item)==heif_fourcc('t','m','a','p'))
-            unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"HDR HEIF requires HDR import");
+            unsupported(kHdrReasonUnsupportedProtocol,"HDR HEIF requires HDR import");
     if (heif_image_handle_has_alpha_channel(primary))
-        unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"SDR HEIF must be opaque");
+        unsupported(kHdrReasonUnsupportedColor,"SDR HEIF must be opaque");
     if (heif_image_handle_get_luma_bits_per_pixel(primary)!=8)
-        unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"SDR HEIF requires 8-bit samples");
+        unsupported(kHdrReasonUnsupportedColor,"SDR HEIF requires 8-bit samples");
     const int width=heif_image_handle_get_ispe_width(primary);
     const int height=heif_image_handle_get_ispe_height(primary);
     const uint64_t nativePixels=uint64_t(std::max(width,0))*std::max(height,0);
@@ -291,7 +291,7 @@ DecodedSDRImage decodeSDR(const void* data,size_t size) {
     if (sourceProfile) cmsCloseProfile(sourceProfile);
     if (destinationProfile) cmsCloseProfile(destinationProfile);
     if (!profile.empty() && !transform)
-        unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Cannot convert HEIF ICC profile to sRGB");
+        unsupported(kHdrReasonUnsupportedColor,"Cannot convert HEIF ICC profile to sRGB");
     const auto cleanup=std::unique_ptr<std::remove_pointer_t<cmsHTRANSFORM>,decltype(&cmsDeleteTransform)>(transform,cmsDeleteTransform);
     DecodedSDRImage result;
     result.width=static_cast<uint32_t>(decodedWidth);
@@ -316,27 +316,27 @@ DecodedSDRImage decodeSDR(const void* data,size_t size) {
 }
 }
 
-sony2fuji_hdr_source_info_v1 probeHEIF(const void* data,size_t size) { return open(data,size).info; }
+HDRSourceInfo probeHEIF(const void* data,size_t size) { return open(data,size).info; }
 std::vector<uint8_t> heifExif(const void* data,size_t size) { return open(data,size).exif; }
 DecodedSDRImage decodeSDRHEIFFile(const char* path) {
     if (!path || !*path)
-        throw Error(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_INPUT_IO,
-            SONY2FUJI_HDR_FIELD_PATH,"HEIF input path is empty");
+        throw Error(RenderStatus::InvalidArgument,kHdrReasonInputIo,
+            kHdrFieldPath,"HEIF input path is empty");
     const auto filePath=std::filesystem::u8path(path);
     std::error_code error;
     if (!std::filesystem::is_regular_file(filePath,error) || error)
-        throw Error(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,
-            SONY2FUJI_HDR_FIELD_PATH,"HEIF input is not a readable regular file");
+        throw Error(RenderStatus::IoError,kHdrReasonInputIo,
+            kHdrFieldPath,"HEIF input is not a readable regular file");
     const auto size=std::filesystem::file_size(filePath,error);
     if (error || !size || size>512ull*1024*1024)
-        throw Error(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,
-            SONY2FUJI_HDR_FIELD_PATH,"HEIF compressed input exceeds the file budget");
+        throw Error(RenderStatus::IoError,kHdrReasonInputIo,
+            kHdrFieldPath,"HEIF compressed input exceeds the file budget");
     admitMemory(size*3);
     std::vector<uint8_t> bytes(static_cast<size_t>(size));
     std::ifstream input(filePath,std::ios::binary);
     if (!input.read(reinterpret_cast<char*>(bytes.data()),static_cast<std::streamsize>(size)))
-        throw Error(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,
-            SONY2FUJI_HDR_FIELD_PATH,"Cannot read HEIF source");
+        throw Error(RenderStatus::IoError,kHdrReasonInputIo,
+            kHdrFieldPath,"Cannot read HEIF source");
     return decodeSDR(bytes.data(),bytes.size());
 }
 DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
@@ -367,7 +367,7 @@ DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
     auto linear=curve ? cmsCreateRGBProfile(&white,&primaries,curves) : nullptr;
     auto transform=profile && linear ? cmsCreateTransform(profile,TYPE_RGB_FLT,linear,TYPE_RGB_FLT,INTENT_RELATIVE_COLORIMETRIC,cmsFLAGS_NOOPTIMIZE|cmsFLAGS_NOCACHE) : nullptr;
     if (curve) cmsFreeToneCurve(curve); if (profile) cmsCloseProfile(profile); if (linear) cmsCloseProfile(linear);
-    if (!transform) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Cannot convert HEIF ICC profile");
+    if (!transform) unsupported(kHdrReasonUnsupportedColor,"Cannot convert HEIF ICC profile");
     const auto cleanup=std::unique_ptr<std::remove_pointer_t<cmsHTRANSFORM>,decltype(&cmsDeleteTransform)>(transform,cmsDeleteTransform);
     const float maximum=float((1u<<bits)-1);
     parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
@@ -387,10 +387,10 @@ DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
     ultrahdr::ColorTransformFn toApplication=nullptr,toCanonical=nullptr;
     if (file.iso) {
         lookup=std::make_unique<ultrahdr::GainLUT>(file.iso.get());
-        const auto gamut=static_cast<uhdr_color_gamut_t>((file.iso->use_base_cg ? file.info.color_description : file.gainColor)-1);
+        const auto gamut=static_cast<uhdr_color_gamut_t>((file.iso->use_base_cg ? file.info.colorDescription : file.gainColor)-1);
         toApplication=ultrahdr::getGamutConversionFn(gamut,UHDR_CG_BT_709);
         toCanonical=ultrahdr::getGamutConversionFn(UHDR_CG_BT_709,gamut);
-        if (!toApplication || !toCanonical) unsupported(SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"Unsupported ISO application gamut");
+        if (!toApplication || !toCanonical) unsupported(kHdrReasonUnsupportedColor,"Unsupported ISO application gamut");
     }
     std::array<float,256> inverse709{};
     for(size_t i=0;i<inverse709.size();++i) {const float v=float(i)/255;inverse709[i]=v<.081f ? v/4.5f : std::pow((v+.099f)/1.099f,1/.45f);}
@@ -424,7 +424,7 @@ DecodedImage decodeHEIF(const void* data,size_t size,uint32_t edge) {
                     output.pixels.hdr.at(x, y) = {result.r, result.g, result.b};
                     continue;
                 }
-                const float boost = 1 + (file.info.content_headroom - 1) * interpolate(0);
+                const float boost = 1 + (file.info.contentHeadroom - 1) * interpolate(0);
                 if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b) || !std::isfinite(boost))
                     invalidPixels.store(true, std::memory_order_relaxed);
                 output.pixels.hdr.at(x, y) = {p.r * boost, p.g * boost, p.b * boost};

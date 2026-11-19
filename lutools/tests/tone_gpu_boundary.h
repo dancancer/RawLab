@@ -22,16 +22,16 @@ bool toneGpuBoundary(Render render) {
             RGB(.2f,.5f,.9f),RGB(.2f,.4f,.2f),RGB(.6f,.3f,.18f),RGB(.2f,.200001f,.2f),RGB(.8f,.7f,.5f)})
         input.pixels.push_back(p);
     input.width=static_cast<int>(input.pixels.size());input.height=1;
-    sony2fuji_request request{};
-    request.brightness=request.saturation=1;request.temperature=6500;request.intent=SONY2FUJI_INTENT_FINAL;
+    RenderParams params;
+    params.brightness = params.saturation = 1; params.temperature = 6500; params.intent = RenderIntent::Final;
     float maximum=0;
     for (float contrast : {1.f,1.8f}) {
-        request.contrast=contrast;
+        params.contrast=contrast;
         for (const ToneControlsOptions options : {ToneControlsOptions{},ToneControlsOptions{1,-1,1},
                 ToneControlsOptions{-1,1,-1},ToneControlsOptions{.3f,-.4f,.65f},
                 ToneControlsOptions{0,0,-1e-6f},ToneControlsOptions{0,0,1e-6f}}) {
             ImageData actual;
-            if (!render(input,request,options,actual) || actual.pixels.size()!=input.pixels.size()) return false;
+            if (!render(input,params,options,actual) || actual.pixels.size()!=input.pixels.size()) return false;
             for (size_t i=0;i<actual.pixels.size();++i) {
                 const auto p=input.pixels[i];
                 auto expected=applyBlackWhite(RGB(neutralDisplay(p.r),neutralDisplay(p.g),neutralDisplay(p.b)),options);
