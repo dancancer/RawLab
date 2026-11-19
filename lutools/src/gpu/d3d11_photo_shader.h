@@ -1,9 +1,10 @@
 #pragma once
+#include "photo_log_shader.h"
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
 namespace sony2fuji {
-inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + kToneCurveShader + R"hlsl(
+inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + kToneCurveShader + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
     uint4 control; // stage, HSL active, use LUT, LUT size
@@ -29,19 +30,6 @@ float neutral(float x) {
     float gray=0.1845;
     float scene=1/(1+(1-gray)/gray*pow(gray/x,1.5));
     return scene<=0.0031308 ? scene*12.92 : 1.055*pow(scene,1/2.4)-0.055;
-}
-float flog2(float x) {
-    return saturate(x<0.00088899597 ? 8.799461*x+0.092864 : log10(x*5.555556+0.064829)*0.245281+0.384316);
-}
-float encodeLog(float x) {
-    if(logTransfer.x==0)return flog2(x);
-    return saturate(x<0.00089 ? 8.735631*x+0.092864 : 0.344676*log10(0.555556*x+0.009468)+0.790453);
-}
-float decodeLog(float x) {
-    if(logTransfer.z!=0)return x<0.100537775223865 ? (x-0.092864)/8.735631
-        : (pow(10.0,(x-0.790453)/0.344676)-0.009468)/0.555556;
-    return x<0.100686685370811 ? (x-0.092864)/8.799461
-        : (pow(10.0,(x-0.384316)/0.245281)-0.064829)/5.555556;
 }
 float3 sampleLut(uint3 p) { return film[(p.z*control.w+p.y)*control.w+p.x]; }
 float3 lookup(float3 x) {
@@ -116,19 +104,14 @@ float3 evaluate(float3 inputColor) {
         float3 lutInput=pixel;
         if(logTransfer.w==0) {
             float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
-            lutInput=float3(encodeLog(fg.r),encodeLog(fg.g),encodeLog(fg.b));
+            lutInput=float3(encodePhotoLog(fg.r,logTransfer.x!=0),encodePhotoLog(fg.g,logTransfer.x!=0),encodePhotoLog(fg.b,logTransfer.x!=0));
         }
         float3 look=lookup(lutInput);
-        if(logTransfer.y!=0)look=float3(neutral(decodeLog(look.r)),neutral(decodeLog(look.g)),neutral(decodeLog(look.b)));
+        if(logTransfer.y!=0)look=float3(neutral(decodePhotoLog(look.r,logTransfer.z!=0)),neutral(decodePhotoLog(look.g,logTransfer.z!=0)),neutral(decodePhotoLog(look.b,logTransfer.z!=0)));
         pixel=lerp(pixel,look,exposureStrength.w);
     }
     pixel=tcBlackWhite(pixel,toneControls.x,toneControls.y);
-    if(tone.z!=0 || tone.w!=0) {
-        float light=dot(pixel,float3(.2126,.7152,.0722)),adjusted=light;
-        if(tone.w!=0)adjusted=pow(saturate(adjusted),1-tone.w*.5);
-        if(tone.z!=0)adjusted=1-pow(1-saturate(adjusted),1-tone.z*.5);
-        pixel=light>0 ? pixel*(adjusted/light) : adjusted.xxx;
-    }
+    pixel=hsApplyHighlightsShadows(pixel,tone.z,tone.w);
     if(detail.w!=0)pixel=float3(customToneCurve(pixel.r),customToneCurve(pixel.g),customToneCurve(pixel.b));
     else if(detail.x!=0)pixel=float3(curve(pixel.r),curve(pixel.g),curve(pixel.b));
     if(tone.x!=1 || tone.y!=1) {

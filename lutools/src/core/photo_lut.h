@@ -2,6 +2,7 @@
 
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/lut_parser.h"
+#include "gpu/photo_log_shader.h"
 #include "parallel_pixels.h"
 #include "photo_rendering.h"
 #include <algorithm>
@@ -10,19 +11,11 @@
 namespace sony2fuji {
 
 inline float encodePhotoLog(float linear, LUTTransfer transfer) {
-    if (transfer != LUTTransfer::FLog) return GammaConverter::applyFLog2(linear);
-    const float encoded = linear < 0.00089f ? 8.735631f * linear + 0.092864f
-        : 0.344676f * std::log10(0.555556f * linear + 0.009468f) + 0.790453f;
-    return std::clamp(encoded, 0.0f, 1.0f);
+    return detail::encodePhotoLog(linear, transfer == LUTTransfer::FLog);
 }
 
 inline float decodePhotoLog(float encoded, LUTTransfer transfer) {
-    if (transfer == LUTTransfer::FLog) {
-        return encoded < 0.100537775223865f ? (encoded - 0.092864f) / 8.735631f
-            : (std::pow(10.0f, (encoded - 0.790453f) / 0.344676f) - 0.009468f) / 0.555556f;
-    }
-    return encoded < 0.100686685370811f ? (encoded - 0.092864f) / 8.799461f
-        : (std::pow(10.0f, (encoded - 0.384316f) / 0.245281f) - 0.064829f) / 5.555556f;
+    return detail::decodePhotoLog(encoded, transfer == LUTTransfer::FLog);
 }
 
 inline ColorConverter::Matrix3x3 photoLUTInputMatrix(LUTTransfer transfer) {
