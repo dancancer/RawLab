@@ -81,6 +81,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
       - name: Check verification policy and shared contracts
         shell: bash
         run: |
@@ -115,6 +125,12 @@ jobs:
           out="$out_dir/abi-layout-v1.json"
           CXX=clang++ ABI_LAYOUT_OUT="$out" bash Shared/fixtures/generate-abi-layout.sh
           diff -u Shared/fixtures/abi-layout-v1.json "$out"
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -145,6 +161,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group all
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -266,6 +292,12 @@ jobs:
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -317,9 +349,20 @@ jobs:
             "CL_MPCount=$compilerProcesses"
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: needs.changes.outputs.build == 'true'
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: pwsh
+        run: |
+          python scripts/assets/prepare.py --group all
+          if ($LASTEXITCODE -ne 0) { throw "Asset preparation failed: $LASTEXITCODE" }
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
@@ -493,6 +536,12 @@ jobs:
         with:
           key: ${{ steps.dep-archives-key.outputs.key }}
           path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -533,6 +582,18 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: pwsh
+        run: |
+          python scripts/assets/prepare.py --group all
+          if ($LASTEXITCODE -ne 0) { throw "Asset preparation failed: $LASTEXITCODE" }
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
@@ -612,6 +673,12 @@ jobs:
         with:
           key: ${{ steps.dep-archives-key.outputs.key }}
           path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -638,6 +705,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
       - name: Prepare X3F Rust renderer toolchain
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -700,6 +777,12 @@ jobs:
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -728,6 +811,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
       - name: Check iOS SDK for iPhone Duo
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -797,6 +890,12 @@ jobs:
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:

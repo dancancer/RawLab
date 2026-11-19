@@ -119,6 +119,7 @@ foreach ($line in $environment) {
     if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
 }
 if (!$Python) { $Python = & "$PSScriptRoot/build-host-python.ps1" -Directory "$repo/build/tools/python-lens" }
+Invoke-Checked $Python @((Join-Path $repo 'scripts/assets/prepare.py'), '--group', 'luts')
 $fixture = ''
 if ($Test) {
     & "$PSScriptRoot/tests/BuildScriptChecks.ps1"

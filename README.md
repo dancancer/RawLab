@@ -5,7 +5,7 @@
 Cross-brand RAW development and film looks, built around a shared C++ processing
 core with native Windows, macOS, Android and iOS editors.
 
-![RawLab Mac: neutral rendering and Velvia side by side](docs/images/rawlab-mac-velvia.png)
+![RawLab Mac: neutral rendering and Velvia side by side](docs/images/rawlab-mac-velvia.webp)
 
 ## Overview
 
