@@ -273,15 +273,12 @@ GlesPhotoRenderer::GlesPhotoRenderer() = default;
 GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
-    const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
-    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && lut->requiresCPU()) return false;
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    if (params.lut && params.lut->requiresCPU()) return false;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) return false;
+        !params.validForGpu()) return false;
     if (!impl_ && !retry_.ready(glesRetryNow())) return false;
     bool initializing = !impl_;
     try {
@@ -292,34 +289,37 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         if (!binding.bound) throw EglFailure(binding.error);
         glUseProgram(context.program);
         context.matrixUniform("toSrgb", ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
-        context.matrixUniform("toFGamut", photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2));
-        const float exposure = std::exp2(request.exposure_ev) * request.brightness;
-        glUniform3f(context.uniform("exposureWB"), exposure * relativeWB.r, exposure * relativeWB.g, exposure * relativeWB.b);
-        glUniform1f(context.uniform("strength"), request.lut_strength);
-        glUniform4f(context.uniform("tone"), std::clamp(request.contrast, 0.f, 2.f), std::clamp(request.saturation, 0.f, 2.f),
-            std::clamp(request.highlights, -1.f, 1.f), std::clamp(request.shadows, -1.f, 1.f));
-        glUniform1f(context.uniform("curve"), request.tone_curve);
-        const auto custom = toneCurveGpuParameters(customCurve);
+        context.matrixUniform("toFGamut", photoLUTInputMatrix(params.lut ? params.lut->inputTransfer() : LUTTransfer::FLog2));
+        const float exposure = std::exp2(params.exposureEV) * params.brightness;
+        glUniform3f(context.uniform("exposureWB"),
+            exposure * params.relativeWB.r, exposure * params.relativeWB.g, exposure * params.relativeWB.b);
+        glUniform1f(context.uniform("strength"), params.lutStrength);
+        glUniform4f(context.uniform("tone"), std::clamp(params.contrast, 0.f, 2.f), std::clamp(params.saturation, 0.f, 2.f),
+            std::clamp(params.highlights, -1.f, 1.f), std::clamp(params.shadows, -1.f, 1.f));
+        glUniform1f(context.uniform("curve"), params.toneCurve);
+        const auto custom = toneCurveGpuParameters(params.customCurve);
         glUniform1i(context.uniform("customCurveCount"), custom.count);
         glUniform4fv(context.uniform("curveRanges[0]"), 32, &custom.ranges[0][0]);
         glUniform4fv(context.uniform("curveTangents[0]"), 32, &custom.tangents[0][0]);
-        glUniform1i(context.uniform("hslActive"), hsl.active());
-        glUniform3f(context.uniform("toneControls"), toneControls.blackPoint, toneControls.whitePoint, toneControls.vibrance);
-        const auto grading=colorGradingCoefficients(colorGrading);
+        glUniform1i(context.uniform("hslActive"), params.hsl.active());
+        glUniform3f(context.uniform("toneControls"),
+            params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);
+        const auto grading=colorGradingCoefficients(params.colorGrading);
         const float coefficients[]={grading[0].r,grading[0].g,grading[0].b,grading[1].r,grading[1].g,grading[1].b,grading[2].r,grading[2].g,grading[2].b};
         glUniform3fv(context.uniform("colorGrading[0]"),3,coefficients);
-        glUniform4fv(context.uniform("hslHue[0]"), 2, hsl.hue.data());
-        glUniform4fv(context.uniform("hslSaturation[0]"), 2, hsl.saturation.data());
-        glUniform4fv(context.uniform("hslLightness[0]"), 2, hsl.lightness.data());
-        context.setLut(request.lut_strength > 0 ? lut : nullptr);
-        if (effects.active() || chromaDenoise != 0 || request.noise_reduction > 0 || request.sharpening > 0 || preserveSourceResolution) {
+        glUniform4fv(context.uniform("hslHue[0]"), 2, params.hsl.hue.data());
+        glUniform4fv(context.uniform("hslSaturation[0]"), 2, params.hsl.saturation.data());
+        glUniform4fv(context.uniform("hslLightness[0]"), 2, params.hsl.lightness.data());
+        context.setLut(params.lutStrength > 0 ? params.lut : nullptr);
+        if (params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
+            params.sharpening > 0 || params.preserveSourceResolution) {
             context.cachedRevision = 0;
             ImageData native(input.width, input.height);
             context.bands(input, input.width, input.height, 2, &native);
-            if (applyChromaDenoiseWorking(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
-                ((request.noise_reduction > 0 || request.sharpening > 0) &&
-                 !gpuDetailFilter(native, request.noise_reduction, request.sharpening)) ||
-                (effects.active() && !gpuPhotoEffects(native, effects))) return false;
+            if (applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
+                ((params.noiseReduction > 0 || params.sharpening > 0) &&
+                 !gpuDetailFilter(native, params.noiseReduction, params.sharpening)) ||
+                (params.effects.active() && !gpuPhotoEffects(native, params.effects))) return false;
             if (width != static_cast<uint32_t>(native.width) || height != static_cast<uint32_t>(native.height)) {
                 ImageData resized(static_cast<int>(width), static_cast<int>(height));
                 context.bands(native, width, height, 4, &resized);
@@ -330,7 +330,7 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         }
         ImageData result(static_cast<int>(width), static_cast<int>(height));
         const size_t bytes = result.pixels.size() * sizeof(RGB);
-        const bool preview = request.intent == SONY2FUJI_INTENT_PREVIEW;
+        const bool preview = params.intent == RenderIntent::Preview;
         const bool cache = preview && revision != 0 && bytes <= std::min(kCacheBytes, context.blockLimit) && result.pixels.size() <= context.dispatchLimit;
         if (cache) {
             if (context.cachedRevision != revision || context.cachedWidth != width || context.cachedHeight != height) {

@@ -53,7 +53,9 @@ int main(int argc, char** argv) {
         r.tone_curve=0;
         const auto changed=render(s,r);
         require(changed!=pixels,"custom curve reaches rendering");
-        sony2fuji::ToneCurve reference(custom);
+        sony2fuji::ToneCurveConfig coreCustom{sony2fuji::ToneCurveMode::Custom, 4,
+            {{{0,0},{.25,.12},{.75,.88},{1,1}}}};
+        sony2fuji::ToneCurve reference(coreCustom);
         double positions[]{0,.125,.25,.5,.75,.875,1}, samples[7]{};
         require(sony2fuji_sample_tone_curve(&custom,positions,samples,7)==SONY2FUJI_STATUS_OK,"shared curve canvas samples");
         for (int i=0;i<7;++i) require(samples[i]==reference.evaluate(positions[i]),"canvas matches rendered curve");

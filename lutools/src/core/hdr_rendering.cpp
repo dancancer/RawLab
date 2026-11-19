@@ -87,11 +87,11 @@ RGB toneSDR(RGB p, const HDRRenderOptions& o) {
 }
 
 ToneCurve hdrCurve(const HDRToneOptions& tone) {
-    if (tone.curve.mode == SONY2FUJI_CURVE_CUSTOM) return ToneCurve(tone.curve);
+    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve);
     if (tone.curveStrength == 0) return {};
     auto config = tone.curve;
     const double offset = tone.curveStrength / 1600.0;
-    config.mode = SONY2FUJI_CURVE_CUSTOM;
+    config.mode = ToneCurveMode::Custom;
     config.count = 5;
     config.points[0] = {0, 0};
     config.points[1] = {.25, .25 - offset};
@@ -186,20 +186,20 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const float exposure = std::exp2(o.exposureEV);
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
     const bool toneActive = o.contrast != 0 || o.highlights != 0 || o.shadows != 0 || o.saturation != 0;
-    const bool useToneV2 = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
+    const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
     const auto curve = useToneV2 ? hdrCurve(o.tone) : ToneCurve();
     std::array<ToneCurve, 3> channels;
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION)
+    if (o.processingVersion >= kHdrProcessingChannelCurvesVersion)
         for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i]);
     const bool channelsActive = std::any_of(channels.begin(), channels.end(), [](const auto& value) { return value.active(); });
     const bool advancedToneActive = useToneV2 && (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active());
-    const bool useColor = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_COLOR_VERSION;
+    const bool useColor = o.processingVersion >= kHdrProcessingColorVersion;
     const bool vibranceActive = useColor && o.color.vibrance != 0;
     const bool hslActive = useColor && o.color.hsl.active();
     const bool gradingActive = useColor && o.color.grading.active();
     const auto grading = gradingActive ? colorGradingCoefficients(o.color.grading) : std::array<RGB, 3>{};
-    const bool lookActive = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION && o.look && o.lookStrength != 0;
-    const bool useRendition = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+    const bool lookActive = o.processingVersion >= kHdrProcessingLookVersion && o.look && o.lookStrength != 0;
+    const bool useRendition = o.processingVersion >= kHdrProcessingRenditionVersion;
     const auto& rendition = o.rendition;
     const bool limitHDR = hdr && useRendition && rendition.peakLimitEV != 0;
     const double peak = limitHDR ? std::exp2(double(rendition.peakLimitEV)) : 1;
@@ -415,8 +415,8 @@ RGB hdrRelativeWhiteBalance(float temperature, float tint) {
 }
 
 void validateHDRRenderOptions(const HDRRenderOptions& o) {
-    const bool useToneV2 = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
-    if (o.processingVersion < SONY2FUJI_HDR_PROCESSING_VERSION || o.processingVersion > SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION ||
+    const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
+    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingChannelCurvesVersion ||
         !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
         !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
         !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
@@ -426,22 +426,22 @@ void validateHDRRenderOptions(const HDRRenderOptions& o) {
     if (useToneV2 && (!inRange(o.tone.blackPoint, -100, 100) || !inRange(o.tone.whitePoint, -100, 100) ||
         !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve)))
         throw std::invalid_argument("Invalid HDR tone settings");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION &&
+    if (o.processingVersion >= kHdrProcessingChannelCurvesVersion &&
         !std::all_of(o.tone.channels.begin(), o.tone.channels.end(), validToneCurve))
         throw std::invalid_argument("Invalid HDR channel curves");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_COLOR_VERSION &&
+    if (o.processingVersion >= kHdrProcessingColorVersion &&
         (!inRange(o.color.vibrance, -100, 100) || !o.color.hsl.valid() || !o.color.grading.valid()))
         throw std::invalid_argument("Invalid HDR color settings");
     const auto& rendition = o.rendition;
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION &&
+    if (o.processingVersion >= kHdrProcessingRenditionVersion &&
         (!inRange(rendition.peakLimitEV, 0, 6) || !inRange(rendition.sdrExposureEV, -4, 4) ||
          !inRange(rendition.sdrContrast, -100, 100) || !inRange(rendition.sdrSaturation, -100, 100)))
         throw std::invalid_argument("Invalid HDR rendition settings");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION && !o.effects.valid())
+    if (o.processingVersion >= kHdrProcessingEffectsVersion && !o.effects.valid())
         throw std::invalid_argument("Invalid HDR photo effects");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION && !o.detail.valid())
+    if (o.processingVersion >= kHdrProcessingDetailVersion && !o.detail.valid())
         throw std::invalid_argument("Invalid HDR detail");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION &&
+    if (o.processingVersion >= kHdrProcessingLookVersion &&
         (!inRange(o.lookStrength, 0, 2) || (!o.look && o.lookStrength != 0)))
         throw std::invalid_argument("Invalid HDR look strength or resource");
 }

@@ -23,24 +23,23 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
-sony2fuji_request makeRequest() {
-    sony2fuji_request r{};
-    r.version = SONY2FUJI_REQUEST_VERSION;
-    r.struct_size = sizeof(r);
-    r.input_type = SONY2FUJI_INPUT_BUFFER;
-    r.brightness = 1.f;
-    r.contrast = 1.f;
-    r.saturation = 1.f;
-    return r;
+RenderParams makeParams() {
+    RenderParams p{};
+    p.inputType = RenderInputType::Buffer;
+    p.brightness = 1.f;
+    p.contrast = 1.f;
+    p.saturation = 1.f;
+    return p;
 }
 
 bool renderPhotoSize(GlesPhotoRenderer& renderer, int w, int h, ImageData& output,
                      const std::shared_ptr<LUT3D>& lut = {}) {
     ImageData input(w, h);
     for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
-    auto req = makeRequest();
-    req.lut_strength = lut ? 1.0f : 0.0f;
-    return renderer.render(input, ColorSpace::sRGB, req, lut, RGB(1, 1, 1),
+    auto params = makeParams();
+    params.lut = lut;
+    params.lutStrength = lut ? 1.0f : 0.0f;
+    return renderer.render(input, ColorSpace::sRGB, params,
                            static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0, output);
 }
 

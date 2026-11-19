@@ -73,11 +73,11 @@ int main(int argc, char* argv[]) {
             uint64_t revision = 7;
             const uint8_t digest[32]{};
             const hdr::HDRStreamFiles files;
-            const auto config = initialized<sony2fuji_hdr_export_config_v1>();
+            const sony2fuji::HDRExportConfig config{};
             auto unsupported = [&](auto operation, uint32_t field) {
                 try { operation(); }
                 catch (const hdr::Error& error) {
-                    require(error.status == SONY2FUJI_STATUS_UNSUPPORTED &&
+                    require(error.status == sony2fuji::RenderStatus::Unsupported &&
                         error.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM && error.field == field,
                         "Portable tiled adapter returned the wrong diagnostic");
                     return;
@@ -109,7 +109,7 @@ int main(int argc, char* argv[]) {
         source.native_width = 48; source.native_height = 32; source.orientation_applied = 1;
         source.source_intent = SONY2FUJI_INTENT_FINAL; source.decode_revision = 7;
         source.decoder_identifier = "test-complete-source";
-        std::copy_n(info.source_sha256, 32, source.source_sha256);
+        std::copy_n(info.sourceSha256, 32, source.source_sha256);
         source.context = &context;
         source.read_rows = [](void* opaque, uint32_t high, uint32_t row, uint32_t count, float* data) {
             auto& state = *static_cast<Context*>(opaque); ++state.reads;
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
         const auto originalPath = original.u8string();
         auto scratch = (directory / "scratch").u8string();
         config.metadata_source_path = originalPath.c_str();
-        std::copy_n(info.source_sha256, 32, config.source_sha256);
+        std::copy_n(info.sourceSha256, 32, config.source_sha256);
         auto result = initialized<sony2fuji_hdr_stream_result_v1>();
         auto diagnostic = initialized<sony2fuji_hdr_diagnostic_v1>();
         require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "Cannot create test session");

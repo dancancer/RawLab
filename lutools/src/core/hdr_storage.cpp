@@ -21,8 +21,8 @@ namespace sony2fuji::hdr::storage {
 namespace fs = std::filesystem;
 namespace {
 [[noreturn]] void ioError(const char* message) {
-    throw Error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO,
-        SONY2FUJI_HDR_FIELD_EXPORT, message);
+    throw Error(RenderStatus::OutputIoError, kHdrReasonOutputIo,
+        kHdrFieldExport, message);
 }
 constexpr const char* marker = ".rawlab-stream.lock";
 #ifdef _WIN32

@@ -1,13 +1,15 @@
 #pragma once
 
+#include "core/hdr_types.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
 #include "core/photo_effects.h"
+#include "core/photo_tone_curve.h"
 #include "core/hdr_detail.h"
 
 #include "sony2fuji/common.h"
-#include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include "core/photo_geometry.h"
+#include <array>
 #include <cstdint>
 #include <memory>
 
@@ -34,9 +36,8 @@ struct HDRImagePair {
 
 struct HDRToneOptions {
     float blackPoint = 0, whitePoint = 0, curveStrength = 0;
-    sony2fuji_tone_curve_config curve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
-        sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
-    std::array<sony2fuji_tone_curve_config, 3> channels{{curve, curve, curve}};
+    ToneCurveConfig curve{};
+    std::array<ToneCurveConfig, 3> channels{};
 };
 
 struct HDRColorOptions {
@@ -72,8 +73,8 @@ struct HDRRenderOptions {
     std::shared_ptr<const HDRLook> look;
     float lookStrength = 0;
 
-    bool hasPhotoEffects() const { return processingVersion >= SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION && effects.active(); }
-    bool hasDetail() const { return processingVersion >= SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION && detail.active(); }
+    bool hasPhotoEffects() const { return processingVersion >= kHdrProcessingEffectsVersion && effects.active(); }
+    bool hasDetail() const { return processingVersion >= kHdrProcessingDetailVersion && detail.active(); }
 };
 
 // 来源为已定向、显示参考的扩展线性 sRGB。非法输入抛 invalid_argument，

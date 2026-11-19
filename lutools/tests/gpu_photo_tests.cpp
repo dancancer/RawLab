@@ -139,6 +139,31 @@ std::filesystem::path makePhotoLUT(const std::string& input = "FLog2", const std
     return path;
 }
 
+sony2fuji::RenderParams toRenderParams(
+    const sony2fuji_request& request,
+    const std::shared_ptr<sony2fuji::LUT3D>& lut
+) {
+    sony2fuji::RenderParams params;
+    params.exposureEV = request.exposure_ev;
+    params.brightness = request.brightness;
+    params.contrast = request.contrast;
+    params.saturation = request.saturation;
+    params.temperature = request.temperature;
+    params.tint = request.tint;
+    params.highlights = request.highlights;
+    params.shadows = request.shadows;
+    params.toneCurve = request.tone_curve;
+    params.noiseReduction = request.noise_reduction;
+    params.sharpening = request.sharpening;
+    params.lutStrength = request.lut_strength;
+    params.lut = lut;
+    params.intent = request.intent == SONY2FUJI_INTENT_PREVIEW
+        ? sony2fuji::RenderIntent::Preview
+        : sony2fuji::RenderIntent::Final;
+    params.wbMode = static_cast<sony2fuji::RenderWhiteBalanceMode>(request.wb_mode);
+    return params;
+}
+
 bool compareCase(
     sony2fuji_session* session,
     const std::vector<unsigned char>& pixels,
@@ -160,18 +185,17 @@ bool compareCase(
     const auto cpuStatus = sony2fuji_process(session, &request, &cpu);
 
     const auto input = toLinearImage(pixels, width, height);
+    const auto params = toRenderParams(request, lut);
     sony2fuji::ImageData gpu;
 #ifdef SONY2FUJI_ENABLE_D3D11
     static sony2fuji::D3D11PhotoRenderer renderer;
     const bool gpuStatus = renderer.render(input, sony2fuji::ColorSpace::sRGB,
-        request, lut, sony2fuji::RGB(1,1,1), targetWidth, targetHeight, 0, gpu);
+        params, targetWidth, targetHeight, 0, gpu);
 #else
     const bool gpuStatus = sony2fuji::renderPhotoMetal(
         input,
         sony2fuji::ColorSpace::sRGB,
-        request,
-        lut,
-        sony2fuji::RGB(1.0f, 1.0f, 1.0f),
+        params,
         targetWidth,
         targetHeight,
         gpu
@@ -225,50 +249,54 @@ int main() {
         return 77;
     }
 
-    checkPass(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    checkPass(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::HslOptions& hsl, sony2fuji::ImageData& output) {
+        params.hsl = hsl;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
-            input.width, input.height, 0, output, {}, 0, false, hsl);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
-            input.width, input.height, output, {}, {}, 0, false, hsl);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }), "HSL out-of-range boundary and active adjustment");
 
-    checkPass(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    checkPass(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::ToneControlsOptions& controls, sony2fuji::ImageData& output) {
+        params.toneControls = controls;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{},controls);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{},controls);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }), "Tone controls preserve CPU float reference including gamut/zero boundaries");
-    checkPass(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ColorGradingOptions& grading,sony2fuji::ImageData& output) {
+    checkPass(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ColorGradingOptions& grading, sony2fuji::ImageData& output) {
+        params.colorGrading = grading;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},grading);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{}, {},grading);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }),"Color grading matches CPU float reference across regions and gamut boundaries");
 
-    checkPass(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ToneCurve& curve,sony2fuji::ImageData& output) {
+    checkPass(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ToneCurve& curve, sony2fuji::ImageData& output) {
+        params.customCurve = curve;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},{},curve);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{}, {},{},curve);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }),"PCHIP curve matches CPU float reference including 33 points and plateaus");
 
@@ -300,13 +328,14 @@ int main() {
 
         auto renderOnce = [](const sony2fuji::ImageData& image, const sony2fuji_request& request,
                              sony2fuji::ImageData& output) {
+            const auto params = toRenderParams(request, nullptr);
 #ifdef SONY2FUJI_ENABLE_D3D11
             static sony2fuji::D3D11PhotoRenderer renderer;
-            return renderer.render(image, sony2fuji::ColorSpace::sRGB, request, nullptr,
-                sony2fuji::RGB(1.0f, 1.0f, 1.0f), request.target_width, request.target_height, 0, output);
+            return renderer.render(image, sony2fuji::ColorSpace::sRGB, params,
+                request.target_width, request.target_height, 0, output);
 #else
-            return sony2fuji::renderPhotoMetal(image, sony2fuji::ColorSpace::sRGB, request, nullptr,
-                sony2fuji::RGB(1.0f, 1.0f, 1.0f), request.target_width, request.target_height, output);
+            return sony2fuji::renderPhotoMetal(image, sony2fuji::ColorSpace::sRGB, params,
+                request.target_width, request.target_height, output);
 #endif
         };
         auto countDown = [](std::atomic<int>& remaining) {

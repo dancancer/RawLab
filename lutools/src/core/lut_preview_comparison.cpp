@@ -6,15 +6,15 @@
 #include <stdexcept>
 namespace sony2fuji {
 namespace {
-uint32_t channels(const sony2fuji_buffer& image) {
-    const uint32_t count=image.pixel_format==SONY2FUJI_PIXEL_RGB8?3:image.pixel_format==SONY2FUJI_PIXEL_RGBA8?4:0;
+uint32_t channels(const PixelBufferView& image) {
+    const uint32_t count=image.format==PixelBufferFormat::RGB8?3:image.format==PixelBufferFormat::RGBA8?4:0;
     if(!count || !image.data || !image.width || !image.height || image.width>1024 || image.height>1024 ||
-        image.stride_bytes<image.width*count || image.size_bytes<uint64_t(image.height-1)*image.stride_bytes+image.width*count)
+        image.strideBytes<image.width*count || image.sizeBytes<uint64_t(image.height-1)*image.strideBytes+image.width*count)
         throw std::invalid_argument("Invalid preview pixels, dimensions or stride");
     return count;
 }
 }
-std::string compareLUTPreviews(const sony2fuji_buffer& candidate,const sony2fuji_buffer& reference,const std::string& text) {
+std::string compareLUTPreviews(const PixelBufferView& candidate,const PixelBufferView& reference,const std::string& text) {
     if(text.size()>8192) throw std::invalid_argument("Reference conditions exceed limit");
     const auto conditions=parseLUTJSON(text);
     if(!conditions.is_object() || conditions.size()!=5) throw std::invalid_argument("Explicit comparison conditions are required");
@@ -30,8 +30,8 @@ std::string compareLUTPreviews(const sony2fuji_buffer& candidate,const sony2fuji
     uint64_t total=0,boundaryA=0,boundaryB=0;
     std::array<uint64_t,256> histogram{};
     for(uint32_t y=0;y<candidate.height;++y) {
-        const auto* a=static_cast<const uint8_t*>(candidate.data)+size_t(y)*candidate.stride_bytes;
-        const auto* b=static_cast<const uint8_t*>(reference.data)+size_t(y)*reference.stride_bytes;
+        const auto* a=static_cast<const uint8_t*>(candidate.data)+size_t(y)*candidate.strideBytes;
+        const auto* b=static_cast<const uint8_t*>(reference.data)+size_t(y)*reference.strideBytes;
         for(uint32_t x=0;x<candidate.width;++x) {
             if((ac==4 && a[3]!=255) || (bc==4 && b[3]!=255)) throw std::invalid_argument("Transparent pixels are unsupported");
             bool edgeA=false,edgeB=false;

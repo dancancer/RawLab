@@ -101,7 +101,7 @@ int main() {
         crop.geometry.crop_width = crop.geometry.crop_height = .000001f;
         compare(source, crop); compare(source, {});
         HDRRenderOptions tone;
-        tone.processingVersion = SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
+        tone.processingVersion = kHdrProcessingToneVersion;
         tone.tone.blackPoint = -50;
         tone.tone.whitePoint = 40;
         tone.tone.curveStrength = 60;
@@ -109,21 +109,21 @@ int main() {
         tone.longEdge = 127;
         compare(source, tone);
         auto& curve = tone.tone.curve;
-        curve.mode = SONY2FUJI_CURVE_CUSTOM; curve.count = 3;
+        curve.mode = ToneCurveMode::Custom; curve.count = 3;
         curve.points[0] = {0, 0}; curve.points[1] = {.5, .4375}; curve.points[2] = {1, 1};
         compare(source, tone);
-        tone.processingVersion = SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+        tone.processingVersion = kHdrProcessingRenditionVersion;
         tone.color.vibrance = 40;
         tone.color.hsl.hue[2] = 15;
         tone.color.grading.wheels[2] = {225, 25};
         tone.rendition = {1.5f, -.5f, 20, -30};
         compare(source, tone);
-        tone.processingVersion = SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION;
+        tone.processingVersion = kHdrProcessingEffectsVersion;
         tone.geometry.crop_x = .05f; tone.geometry.crop_width = .89f;
         tone.geometry.straighten_degrees = -7;
         tone.effects = {-63, 34, 30, 55, 60, 72, 18, 64};
         for (uint32_t edge : {0u, 171u, 1u}) { tone.longEdge = edge; compare(source, tone); }
-        tone.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
+        tone.processingVersion = kHdrProcessingDetailVersion;
         tone.detail = {1.4f, -.8f, .6f, .8f};
         for (uint32_t edge : {0u, 171u, 1u}) { tone.longEdge = edge; compare(source, tone); }
         std::cout << "PASS " << cases + 11 << " stream color/geometry/resize combinations, exact float equality\n";

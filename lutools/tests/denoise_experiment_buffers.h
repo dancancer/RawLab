@@ -156,29 +156,25 @@ inline Json exportBuffers(const std::filesystem::path& directory, const ImageDat
         return result;
     }
 #ifdef SONY2FUJI_ENABLE_METAL
-    sony2fuji_request request{};
-    request.version = SONY2FUJI_REQUEST_VERSION;
-    request.struct_size = sizeof(request);
-    request.input_type = SONY2FUJI_INPUT_BUFFER;
-    request.input_color_space = SONY2FUJI_COLOR_SRGB;
-    request.input_is_linear = 1;
-    request.wb_mode = SONY2FUJI_WB_CAMERA;
-    request.brightness = request.contrast = request.saturation = 1;
-    request.temperature = 6500;
-    request.size_mode = SONY2FUJI_SIZE_EXACT;
-    request.target_width = swt.width;
-    request.target_height = swt.height;
-    request.output_target = SONY2FUJI_TARGET_BUFFER;
-    request.output_format = SONY2FUJI_OUTPUT_RGB8;
+    sony2fuji::RenderParams params;
+    params.inputType = sony2fuji::RenderInputType::Buffer;
+    params.inputColorSpace = sony2fuji::ColorSpace::sRGB;
+    params.inputIsLinear = true;
+    params.wbMode = sony2fuji::RenderWhiteBalanceMode::Camera;
+    params.sizeMode = sony2fuji::RenderSizeMode::Exact;
+    params.targetWidth = swt.width;
+    params.targetHeight = swt.height;
+    params.outputTarget = sony2fuji::RenderOutputTarget::Buffer;
+    params.outputFormat = sony2fuji::RenderOutputFormat::RGB8;
     result["display"] = {{"backend", "Metal"}, {"lut", nullptr}, {"exposure_ev", 0},
                           {"noise_reduction", 0}, {"chroma_denoise", 0}, {"timings_ms", Json::object()}};
     for (const auto& item : std::vector<std::pair<std::string, float>>{
              {"display", 0}, {"display_sharp_05", .5f}, {"display_sharp_1", 1}, {"display_sharp_2", 2}}) {
-        request.sharpening = item.second;
+        params.sharpening = item.second;
         ImageData display;
         const auto start = std::chrono::steady_clock::now();
-        if (!sony2fuji::renderPhotoMetal(swt, sony2fuji::ColorSpace::sRGB, request, nullptr,
-                                       RGB(1, 1, 1), swt.width, swt.height, display))
+        if (!sony2fuji::renderPhotoMetal(swt, sony2fuji::ColorSpace::sRGB, params,
+                                       swt.width, swt.height, display))
             throw std::runtime_error("actual Metal display export failed; no CPU substitution");
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         buffers[item.first] = writeImage(directory, item.first, display, "display_RGB",

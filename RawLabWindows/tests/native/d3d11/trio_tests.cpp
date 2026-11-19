@@ -13,16 +13,15 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
-sony2fuji_request request() {
-    sony2fuji_request r{};
-    r.intent = SONY2FUJI_INTENT_PREVIEW;
-    r.brightness = r.contrast = r.saturation = 1;
-    return r;
+RenderParams makeParams() {
+    RenderParams p{};
+    p.intent = RenderIntent::Preview;
+    return p;
 }
 bool render(D3D11PhotoRenderer& renderer, ImageData& output) {
     ImageData input(17, 19);
     for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
-    return renderer.render(input, ColorSpace::sRGB, request(), {}, RGB(1, 1, 1), 17, 19, 0, output);
+    return renderer.render(input, ColorSpace::sRGB, makeParams(), 17, 19, 0, output);
 }
 void recovery() {
     D3D11PhotoRenderer renderer;
@@ -57,7 +56,7 @@ void recovery() {
     require(render(renderer, output), "cancellation incorrectly entered cooldown");
     require(d3d11_test::photoInitializations == before, "cancellation discarded the healthy device");
     ImageData input(17, 19);
-    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+    require(!renderer.render(input, ColorSpace::SonyNative, makeParams(), 17, 19, 0, output),
         "unsupported color conversion must fail");
     require(render(renderer, output), "non-device failure entered cooldown");
     require(d3d11_test::photoInitializations == before, "non-device failure discarded a healthy device");
@@ -92,7 +91,7 @@ void filterRecovery() {
 void firstRenderError() {
     D3D11PhotoRenderer renderer;
     ImageData input(17, 19), output;
-    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+    require(!renderer.render(input, ColorSpace::SonyNative, makeParams(), 17, 19, 0, output),
         "first render must reject implicit camera-native conversion");
     require(d3d11_test::photoInitializations == 1, "test did not initialize a device");
     require(render(renderer, output), "C7: first non-device render error entered cooldown");

@@ -3,8 +3,10 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
 #include "core/preview_exposure.h"
+#include "core/pipeline.h"
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
+#include "core/render_params.h"
 // WR-01 后核心不再编译 stb_image_write 实现；测试保留 stb 作旧实现参考编码器。
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #ifdef _WIN32
@@ -2492,6 +2494,61 @@ int main(int argc, char** argv) {
     checkPass(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "Export sizing rejects an empty pixel limit");
     sony2fuji_session_destroy(session);
+
+    // Direct Core Pipeline + RenderParams verification (without C ABI).
+    {
+        RenderParams defaultParams;
+        checkPass(defaultParams.validForGpu() && !defaultParams.needsToneAdjustments(),
+            "Default RenderParams are GPU-valid and need no tone pass");
+        RenderParams nanParams = defaultParams;
+        nanParams.exposureEV = std::numeric_limits<float>::quiet_NaN();
+        checkPass(!nanParams.validForGpu(), "RenderParams::validForGpu rejects non-finite exposureEV");
+
+        Pipeline pipeline;
+        pipeline.setGpuConfig(GpuMode::Off);
+        std::vector<uint8_t> srcRgb(8 * 8 * 3, 96);
+        RenderParams bufParams;
+        bufParams.inputType = RenderInputType::Buffer;
+        bufParams.inputPixels = srcRgb.data();
+        bufParams.inputWidth = 8;
+        bufParams.inputHeight = 8;
+        bufParams.inputPixelFormat = PixelBufferFormat::RGB8;
+        bufParams.inputColorSpace = ColorSpace::sRGB;
+        bufParams.inputIsLinear = false;
+        bufParams.outputTarget = RenderOutputTarget::Buffer;
+        bufParams.outputFormat = RenderOutputFormat::RGB8;
+        bufParams.sizeMode = RenderSizeMode::Native;
+        bufParams.intent = RenderIntent::Final;
+
+        OwnedPixelBuffer neutralOut;
+        checkPass(pipeline.process(bufParams, &neutralOut) == RenderStatus::Ok &&
+            neutralOut.data != nullptr && neutralOut.width == 8 && neutralOut.height == 8,
+            "Core Pipeline::process renders RGB8 buffer directly");
+
+        RenderParams brightParams = bufParams;
+        brightParams.exposureEV = 1.0f;
+        OwnedPixelBuffer brightOut;
+        checkPass(pipeline.process(brightParams, &brightOut) == RenderStatus::Ok &&
+            brightOut.sizeBytes == neutralOut.sizeBytes &&
+            static_cast<const uint8_t*>(brightOut.data)[0] >
+                static_cast<const uint8_t*>(neutralOut.data)[0],
+            "Core Pipeline::process exposureEV changes rendered pixels");
+
+        checkPass(pipeline.setPerspective(0.25f, -0.15f) == RenderStatus::Ok,
+            "Core Pipeline::setPerspective accepts valid perspective");
+        GeometryOptions geom;
+        geom.crop_x = 0.1f;
+        geom.crop_y = 0.1f;
+        geom.crop_width = 0.8f;
+        geom.crop_height = 0.8f;
+        checkPass(pipeline.setGeometry(geom) == RenderStatus::Ok,
+            "Core Pipeline::setGeometry succeeds after perspective");
+        OwnedPixelBuffer geomOut;
+        checkPass(pipeline.process(bufParams, &geomOut) == RenderStatus::Ok &&
+            geomOut.width < 8 && geomOut.height < 8,
+            "Core Pipeline::setGeometry preserves perspective and crops output");
+    }
+
     std::filesystem::remove_all(dir);
     return rawlab::test::exitCode();
 }

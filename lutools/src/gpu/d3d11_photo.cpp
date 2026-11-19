@@ -204,14 +204,10 @@ struct D3D11PhotoRenderer::Impl {
 D3D11PhotoRenderer::D3D11PhotoRenderer() = default;
 D3D11PhotoRenderer::~D3D11PhotoRenderer() = default;
 bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
-    const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
-    const RGB& wb, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
-    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && lut->requiresCPU()) return false;
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    if (params.lut && params.lut->requiresCPU()) return false;
     if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
-        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) ||
-        chromaDenoise < 0 || chromaDenoise > 2) return false;
+        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !params.validForGpu()) return false;
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
     if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
     if (!impl_ && !retry_.ready(d3d11RetryNow())) return false;
@@ -222,55 +218,57 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         auto& c=*impl_;
         Parameters p{};
         const auto toSrgb=ColorConverter::getConversionMatrix(inputSpace,ColorSpace::sRGB);
-        const auto toFilm=photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2);
+        const auto toFilm=photoLUTInputMatrix(params.lut ? params.lut->inputTransfer() : LUTTransfer::FLog2);
         for (int row=0;row<3;++row) for (int col=0;col<3;++col) {
             p.toSrgb[row][col]=toSrgb[row][col];p.toFilm[row][col]=toFilm[row][col];
         }
-        const float exposure=std::exp2(request.exposure_ev)*request.brightness;
-        p.exposureStrength[0]=wb.r*exposure;p.exposureStrength[1]=wb.g*exposure;p.exposureStrength[2]=wb.b*exposure;
-        p.exposureStrength[3]=std::clamp(request.lut_strength,0.f,2.f);
-        p.tone[0]=std::clamp(request.contrast,0.f,2.f);p.tone[1]=std::clamp(request.saturation,0.f,2.f);
-        p.tone[2]=std::clamp(request.highlights,-1.f,1.f);p.tone[3]=std::clamp(request.shadows,-1.f,1.f);
-        p.detail[0]=request.tone_curve;p.detail[1]=request.noise_reduction;p.detail[2]=request.sharpening;
-        const auto custom = toneCurveGpuParameters(customCurve);
+        const float exposure=std::exp2(params.exposureEV)*params.brightness;
+        p.exposureStrength[0]=params.relativeWB.r*exposure;
+        p.exposureStrength[1]=params.relativeWB.g*exposure;
+        p.exposureStrength[2]=params.relativeWB.b*exposure;
+        p.exposureStrength[3]=std::clamp(params.lutStrength,0.f,2.f);
+        p.tone[0]=std::clamp(params.contrast,0.f,2.f);p.tone[1]=std::clamp(params.saturation,0.f,2.f);
+        p.tone[2]=std::clamp(params.highlights,-1.f,1.f);p.tone[3]=std::clamp(params.shadows,-1.f,1.f);
+        p.detail[0]=params.toneCurve;p.detail[1]=params.noiseReduction;p.detail[2]=params.sharpening;
+        const auto custom = toneCurveGpuParameters(params.customCurve);
         p.detail[3] = static_cast<float>(custom.count);
         std::memcpy(p.curveRanges, custom.ranges, sizeof(custom.ranges));
         std::memcpy(p.curveTangents, custom.tangents, sizeof(custom.tangents));
-        p.control[1]=hsl.active();
-        p.toneControls[0]=toneControls.blackPoint; p.toneControls[1]=toneControls.whitePoint;
-        p.toneControls[2]=toneControls.vibrance;
-        const auto grading=colorGradingCoefficients(colorGrading);
+        p.control[1]=params.hsl.active();
+        p.toneControls[0]=params.toneControls.blackPoint; p.toneControls[1]=params.toneControls.whitePoint;
+        p.toneControls[2]=params.toneControls.vibrance;
+        const auto grading=colorGradingCoefficients(params.colorGrading);
         for (size_t zone=0;zone<3;++zone) {
             p.colorGrading[zone][0]=grading[zone].r;p.colorGrading[zone][1]=grading[zone].g;p.colorGrading[zone][2]=grading[zone].b;
         }
         for (size_t index=0;index<8;++index) {
-            p.hslHue[index/4][index%4]=hsl.hue[index];
-            p.hslSaturation[index/4][index%4]=hsl.saturation[index];
-            p.hslLightness[index/4][index%4]=hsl.lightness[index];
+            p.hslHue[index/4][index%4]=params.hsl.hue[index];
+            p.hslSaturation[index/4][index%4]=params.hsl.saturation[index];
+            p.hslLightness[index/4][index%4]=params.hsl.lightness[index];
         }
-        if (lut && request.lut_strength>0) {
-            c.setLut(lut);p.control[2]=1;p.control[3]=lut->getSize();
-            p.logTransfer[0]=lut->inputTransfer()==LUTTransfer::FLog;
-            p.logTransfer[1]=lut->outputTransfer()!=LUTTransfer::Display;
-            p.logTransfer[2]=lut->outputTransfer()==LUTTransfer::FLog;
-            p.logTransfer[3]=lut->inputTransfer()==LUTTransfer::SRGB;
-            auto low=lut->domainMin(),high=lut->domainMax();
+        if (params.lut && params.lutStrength>0) {
+            c.setLut(params.lut);p.control[2]=1;p.control[3]=params.lut->getSize();
+            p.logTransfer[0]=params.lut->inputTransfer()==LUTTransfer::FLog;
+            p.logTransfer[1]=params.lut->outputTransfer()!=LUTTransfer::Display;
+            p.logTransfer[2]=params.lut->outputTransfer()==LUTTransfer::FLog;
+            p.logTransfer[3]=params.lut->inputTransfer()==LUTTransfer::SRGB;
+            auto low=params.lut->domainMin(),high=params.lut->domainMax();
             p.domainLow[0]=low.r;p.domainLow[1]=low.g;p.domainLow[2]=low.b;
             p.domainHigh[0]=high.r;p.domainHigh[1]=high.g;p.domainHigh[2]=high.b;
         }
-        const bool nativeFilters = effects.active() || chromaDenoise != 0 || request.noise_reduction > 0 ||
-            request.sharpening > 0 || preserveSourceResolution;
+        const bool nativeFilters = params.effects.active() || params.chromaDenoise != 0 ||
+            params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
         if (nativeFilters || input.pixels.size() > kPhotoTileBytes / sizeof(RGB) ||
             uint64_t(width) * height > kPhotoTileBytes / sizeof(RGB)) {
             // 分带上传会覆盖 source，不能继续沿用上一张整图的 revision。
             c.revision = 0;
             const uint32_t pw = nativeFilters ? input.width : width, ph = nativeFilters ? input.height : height;
             ImageData native(static_cast<int>(pw), static_cast<int>(ph));
-            c.bands(input, pw, ph, p, request.intent == SONY2FUJI_INTENT_PREVIEW ? 0 : 4, native);
-            if (applyChromaDenoiseWorking(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
-                ((request.noise_reduction > 0 || request.sharpening > 0) &&
-                 !gpuDetailFilter(native, request.noise_reduction, request.sharpening)) ||
-                (effects.active() && !gpuPhotoEffects(native, effects))) return false;
+            c.bands(input, pw, ph, p, params.intent == RenderIntent::Preview ? 0 : 4, native);
+            if (applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
+                ((params.noiseReduction > 0 || params.sharpening > 0) &&
+                 !gpuDetailFilter(native, params.noiseReduction, params.sharpening)) ||
+                (params.effects.active() && !gpuPhotoEffects(native, params.effects))) return false;
             if (pw != width || ph != height) {
                 ImageData resized(static_cast<int>(width), static_cast<int>(height));
                 c.bands(native, width, height, p, 1, resized);
@@ -284,7 +282,7 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             c.write(c.source, input.pixels.data(), input.pixels.size());
             c.revision=revision;c.sourceWidth=input.width;c.sourceHeight=input.height;
         }
-        const bool early=request.intent==SONY2FUJI_INTENT_PREVIEW;
+        const bool early=params.intent==RenderIntent::Preview;
         const uint32_t pw=early ? width : input.width,ph=early ? height : input.height;
         c.dispatch(c.source,c.processing[0],p,0,input.width,input.height,pw,ph);
         auto* final=&c.processing[0];

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
-#include "sony2fuji/ffi/sony2fuji_c.h"
+#include "core/pixel_buffer.h"
 
 #include <array>
 #include <cstdint>
@@ -16,7 +16,7 @@ struct ImageStats {
     std::vector<uint8_t> clipping;
 };
 
-bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bool includeClipping = true);
-bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output);
+bool computeImageStatsCPU(const PixelBufferView& buffer, ImageStats& output, bool includeClipping = true);
+bool computeImageStatsMetal(const PixelBufferView& buffer, ImageStats& output);
 
 } // namespace sony2fuji

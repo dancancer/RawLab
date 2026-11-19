@@ -18,11 +18,11 @@ bool curveGpuBoundary(Render render) {
         input.pixels.emplace_back(scene,scene,scene);
     }
     input.width=static_cast<int>(input.pixels.size());input.height=1;
-    sony2fuji_request request{};
-    request.brightness=request.contrast=request.saturation=1;request.temperature=6500;request.intent=SONY2FUJI_INTENT_FINAL;
+    RenderParams params;
+    params.brightness=params.contrast=params.saturation=1;params.temperature=6500;params.intent=RenderIntent::Final;
     double maximum=0;
     for (int shape=0;shape<5;++shape) {
-        sony2fuji_tone_curve_config config{1,sizeof(config),SONY2FUJI_CURVE_CUSTOM,4,{{0,0},{.25,.12},{.75,.88},{1,1}}};
+        ToneCurveConfig config{ToneCurveMode::Custom,4,{{{0,0},{.25,.12},{.75,.88},{1,1}}}};
         if (shape==0) { config.count=2;config.points[1]={1,1}; }
         if (shape==2) { config.points[1].y=0;config.points[2].y=1; }
         if (shape==3) { config.points[1]={.4,0};config.points[2]={.6,1}; }
@@ -30,7 +30,7 @@ bool curveGpuBoundary(Render render) {
         const ToneCurve curve(config);
         if (!curve.gpuSupported()) return false;
         ImageData actual;
-        if (!render(input,request,curve,actual) || actual.pixels.size()!=input.pixels.size()) return false;
+        if (!render(input,params,curve,actual) || actual.pixels.size()!=input.pixels.size()) return false;
         for (size_t i=0;i<actual.pixels.size();++i) {
             const double expected=curve.evaluate(neutralDisplay(input.pixels[i].r));
             const auto p=actual.pixels[i];

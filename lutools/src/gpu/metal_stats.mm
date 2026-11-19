@@ -39,14 +39,14 @@ bool checkedAdd(size_t left, size_t right, size_t& result) {
     return true;
 }
 
-bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
+bool validateBuffer(const sony2fuji::PixelBufferView& buffer, ImageLayout& layout) {
     if (!buffer.data || buffer.width == 0 || buffer.height == 0) {
         return false;
     }
 
-    if (buffer.pixel_format == SONY2FUJI_PIXEL_RGB8) {
+    if (buffer.format == sony2fuji::PixelBufferFormat::RGB8) {
         layout.channels = 3;
-    } else if (buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8) {
+    } else if (buffer.format == sony2fuji::PixelBufferFormat::RGBA8) {
         layout.channels = 4;
     } else {
         return false;
@@ -54,15 +54,15 @@ bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
 
     size_t rowBytes = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.width), layout.channels, rowBytes) ||
-        buffer.stride_bytes < rowBytes) {
+        buffer.strideBytes < rowBytes) {
         return false;
     }
 
     size_t lastRowOffset = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.height - 1),
-                         static_cast<size_t>(buffer.stride_bytes), lastRowOffset) ||
+                         static_cast<size_t>(buffer.strideBytes), lastRowOffset) ||
         !checkedAdd(lastRowOffset, rowBytes, layout.requiredBytes) ||
-        layout.requiredBytes > buffer.size_bytes) {
+        layout.requiredBytes > buffer.sizeBytes) {
         return false;
     }
 
@@ -172,7 +172,7 @@ struct StatsParams {
 };
 
 bool runKernel(MetalContext& context, const ImageLayout& layout,
-               const sony2fuji_buffer& buffer, sony2fuji::ImageStats& result) {
+               const sony2fuji::PixelBufferView& buffer, sony2fuji::ImageStats& result) {
     id<MTLBuffer> pixels = [context.device newBufferWithBytes:layout.data
                                                          length:layout.requiredBytes
                                                         options:MTLResourceStorageModeShared];
@@ -189,7 +189,7 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
     const StatsParams params{
         buffer.width,
         buffer.height,
-        buffer.stride_bytes,
+        buffer.strideBytes,
         layout.channels,
         static_cast<uint32_t>(layout.pixelCount)
     };
@@ -262,7 +262,7 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
 
 namespace sony2fuji {
 
-bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output) {
+bool computeImageStatsMetal(const PixelBufferView& buffer, ImageStats& output) {
     ImageLayout layout;
     if (!validateBuffer(buffer, layout)) {
         return false;
