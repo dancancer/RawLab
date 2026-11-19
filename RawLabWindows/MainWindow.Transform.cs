@@ -28,9 +28,8 @@ public partial class MainWindow
         savedTransformCompare=compare;
         transform.Begin(settings.Geometry,settings.Lens,tool);++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();
         view.SetEnabled(false);NeutralCanvas.Visibility=Visibility.Collapsed;NeutralColumn.Width=new(0);ResultCanvas.ComparisonEnabled=false;
-        choosingRecipes=choosingHsl=choosingGrading=choosingFilm=choosingDenoise=choosingPhotoEffects=choosingWhiteBalance=false;
-        choosingGeometry=tool==TransformTool.Geometry;choosingLens=tool==TransformTool.Lens;
-        if(choosingGeometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
+        toolMode=EditorToolModeRules.ModeFor(tool);
+        if(toolMode==EditorToolMode.Geometry){GeometryEditor.Begin(transform.Geometry);ResultCanvas.GeometryEditing=true;}
         viewport.Fit();interacting=false;RefreshControls();Schedule();ResultCanvas.Focus();
     }
     private void UpdateGeometryDraft(GeometrySettings value,bool dragging)
@@ -84,7 +83,8 @@ public partial class MainWindow
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
         transformSource=null;transformSaveFailed=false;
-        choosingLens=choosingGeometry=choosingGrading=false;selectedParameter=Parameter.Exposure;selectedToneParameter=null;selectedAtmosphereParameter=null;selectedHdrRenditionParameter=null;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
+        var ended=EditorToolModeRules.EndTransform(new(toolMode,selectedParameter,selectedToneParameter,selectedAtmosphereParameter,selectedHdrRenditionParameter,selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain));
+        toolMode=ended.Mode;selectedParameter=ended.SelectedParameter;selectedToneParameter=ended.SelectedToneParameter;selectedAtmosphereParameter=ended.SelectedAtmosphereParameter;selectedHdrRenditionParameter=ended.SelectedHdrRenditionParameter;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
         RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();

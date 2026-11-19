@@ -114,23 +114,21 @@ public partial class MainWindow
     private void HslCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Hsl);
     private void WhiteBalanceCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.WhiteBalance);
     private void LensCategoryClicked(object sender,RoutedEventArgs e) => SelectTool(EditorAdjustmentTool.Lens);
-    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(choosingGeometry){GeometryEditor.ShowPerspective=false;RefreshControls();}}
-    private void PerspectiveCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(choosingGeometry){GeometryEditor.ShowPerspective=true;RefreshControls();}}
+    private void GeometryCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(toolMode==EditorToolMode.Geometry){GeometryEditor.ShowPerspective=false;RefreshControls();}}
+    private void PerspectiveCategoryClicked(object sender,RoutedEventArgs e) {SelectTool(EditorAdjustmentTool.Geometry);if(toolMode==EditorToolMode.Geometry){GeometryEditor.ShowPerspective=true;RefreshControls();}}
     private void ProcessingSettingsClicked(object sender,RoutedEventArgs e)=>ProcessingPopup.IsOpen=!ProcessingPopup.IsOpen;
 
     private EditorAdjustmentGroup? expandedGroup = EditorAdjustmentGroup.Light;
     private readonly Dictionary<EditorAdjustmentGroup,Button> groupButtons = [];
     private readonly Dictionary<EditorAdjustmentTool,(Button Button,AdjustmentRing Ring)> workspaceTools = [];
-    private EditorAdjustmentTool CurrentTool => choosingFilm ? EditorAdjustmentTool.Film : choosingRecipes ? EditorAdjustmentTool.MasterRecipe :
-        choosingGrading ? EditorAdjustmentTool.ColorGrading : choosingHsl ? EditorAdjustmentTool.Hsl : choosingWhiteBalance ? EditorAdjustmentTool.WhiteBalance : choosingDenoise ? EditorAdjustmentTool.Denoise :
-        choosingGeometry ? EditorAdjustmentTool.Geometry : choosingLens ? EditorAdjustmentTool.Lens :
-        choosingPhotoEffects ? selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain : selectedHdrRenditionParameter is {} hdrRendition ? EditorAdjustmentRules.ToolFor(hdrRendition) : selectedAtmosphereParameter is {} atmosphere ? EditorAdjustmentRules.ToolFor(atmosphere) : selectedToneParameter is {} tone ? EditorAdjustmentRules.ToolFor(tone) : ToolFor(selectedParameter);
-    private static EditorAdjustmentTool ToolFor(Parameter parameter) => parameter switch {
-        Parameter.Temperature or Parameter.Tint => EditorAdjustmentTool.WhiteBalance,
-        _ => Enum.GetValues<EditorAdjustmentTool>().First(tool => (tool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.Exposure or
-            EditorAdjustmentTool.Highlights or EditorAdjustmentTool.Shadows or EditorAdjustmentTool.Contrast or EditorAdjustmentTool.ToneCurve or
-            EditorAdjustmentTool.Saturation or EditorAdjustmentTool.Sharpening) && EditorAdjustmentRules.ParameterFor(tool)==parameter)
-    };
+    private EditorAdjustmentTool CurrentTool => EditorToolModeRules.ResolveTool(
+        toolMode,
+        selectedParameter,
+        selectedToneParameter,
+        selectedAtmosphereParameter,
+        selectedHdrRenditionParameter,
+        selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain);
+    private static EditorAdjustmentTool ToolFor(Parameter parameter) => EditorToolModeRules.ToolFor(parameter);
     private void BuildWorkspaceNavigation()
     {
         Groups.Children.Clear();groupButtons.Clear();workspaceTools.Clear();
@@ -215,16 +213,15 @@ public partial class MainWindow
             if(!transform.Active || (transform.Tool==TransformTool.Geometry)!=(tool==EditorAdjustmentTool.Geometry))return;
         } else {
             if(!ResolveTransformDraft())return;
-            choosingFilm=tool==EditorAdjustmentTool.Film;choosingRecipes=tool==EditorAdjustmentTool.MasterRecipe;
-            choosingGrading=tool==EditorAdjustmentTool.ColorGrading;
-            choosingHsl=tool==EditorAdjustmentTool.Hsl;choosingWhiteBalance=tool==EditorAdjustmentTool.WhiteBalance;
-            choosingDenoise=tool==EditorAdjustmentTool.Denoise;choosingPhotoEffects=tool is EditorAdjustmentTool.Vignette or EditorAdjustmentTool.Grain;
-            choosingGeometry=choosingLens=false;
-            selectedHdrRenditionParameter=EditorAdjustmentRules.HdrRenditionParameterFor(tool);
-            selectedToneParameter=EditorAdjustmentRules.ToneParameterFor(tool);
-            selectedAtmosphereParameter=EditorAdjustmentRules.AtmosphereParameterFor(tool);
-            if(choosingPhotoEffects)selectedEffect=tool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
-            else if(selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && !choosingFilm && !choosingRecipes && !choosingHsl && !choosingGrading && !choosingWhiteBalance && !choosingDenoise)selectedParameter=EditorAdjustmentRules.ParameterFor(tool);
+            var next=EditorToolModeRules.SelectTool(
+                new(toolMode,selectedParameter,selectedToneParameter,selectedAtmosphereParameter,selectedHdrRenditionParameter,selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain),
+                tool);
+            toolMode=next.Mode;
+            selectedParameter=next.SelectedParameter;
+            selectedToneParameter=next.SelectedToneParameter;
+            selectedAtmosphereParameter=next.SelectedAtmosphereParameter;
+            selectedHdrRenditionParameter=next.SelectedHdrRenditionParameter;
+            if(toolMode==EditorToolMode.PhotoEffects)selectedEffect=next.SelectedEffectTool==EditorAdjustmentTool.Vignette ? PhotoEffectTool.Vignette : PhotoEffectTool.Grain;
         }
         expandedGroup=EditorAdjustmentRules.GroupFor(tool);
         suspendedTransform = null;
@@ -467,7 +464,7 @@ public partial class MainWindow
     private void UpdateParameterToolRing(Parameter id, (Button Button, AdjustmentRing Ring) controls, bool hdrEditing)
     {
         controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || HDRSettings.Supports(id));
-        var selected=!choosingRecipes && !choosingHsl && !choosingGrading && !choosingFilm && !choosingDenoise && !choosingPhotoEffects && !choosingWhiteBalance && !choosingLens && !choosingGeometry && selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
+        var selected=toolMode==EditorToolMode.Parameter && selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
         controls.Button.Tag=selected ? "selected" : null;
         controls.Ring.Selected=selected;
         var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
@@ -554,55 +551,55 @@ public partial class MainWindow
                 AutomationProperties.SetName(ValueSlider,Loc.Text(title));
                 AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(title),unit));
             }
-            var canAdjust=file!=null && !exporting && !choosingFilm && !choosingPhotoEffects && (!hdrEditing || hdrParameter) &&
+            var canAdjust=file!=null && !exporting && toolMode is not (EditorToolMode.Film or EditorToolMode.PhotoEffects) && (!hdrEditing || hdrParameter) &&
                 (hdrRenditionSpec!=null || extensionControl || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
             if (!dragFastPath)
             {
-                FilmPanel.Visibility=choosingFilm ? Visibility.Visible : Visibility.Collapsed;
-                MasterRecipePanel.Visibility=choosingRecipes ? Visibility.Visible : Visibility.Collapsed;
-                MasterRecipeCategory.Tag=choosingRecipes ? "selected" : null;MasterRecipeCategoryRing.Selected=choosingRecipes;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
+                FilmPanel.Visibility=toolMode==EditorToolMode.Film ? Visibility.Visible : Visibility.Collapsed;
+                MasterRecipePanel.Visibility=toolMode==EditorToolMode.MasterRecipe ? Visibility.Visible : Visibility.Collapsed;
+                MasterRecipeCategory.Tag=toolMode==EditorToolMode.MasterRecipe ? "selected" : null;MasterRecipeCategoryRing.Selected=toolMode==EditorToolMode.MasterRecipe;MasterRecipeCategoryRing.Progress=settings.MasterRecipeID==null ? 0 : 1;MasterRecipeCategoryRing.InvalidateVisual();
                 foreach(var pair in recipeButtons) {
                     var selected=pair.Key==(settings.MasterRecipeID ?? "");pair.Value.Tag=selected ? "selected" : null;
                     AutomationProperties.SetItemStatus(pair.Value,selected ? Loc.Text("已应用") : "");
                 }
-                ParameterPanel.Visibility=CurrentTool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.ToneCurve || choosingRecipes || choosingFilm || choosingDenoise || choosingPhotoEffects || choosingHsl || choosingGrading || choosingWhiteBalance || choosingLens || choosingGeometry ? Visibility.Collapsed : Visibility.Visible;
-                LensEditor.Visibility=choosingLens ? Visibility.Visible : Visibility.Collapsed;
+                ParameterPanel.Visibility=CurrentTool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.ToneCurve || toolMode!=EditorToolMode.Parameter ? Visibility.Collapsed : Visibility.Visible;
+                LensEditor.Visibility=toolMode==EditorToolMode.Lens ? Visibility.Visible : Visibility.Collapsed;
                 LensSurface.Visibility=LensEditor.Visibility;
                 LensEditor.IsEnabled=file!=null && !raster && !hdrEditing && !exporting && !PhotoInput.IsNormalX3f(file,settings);
                 LensCategory.IsEnabled=LensEditor.IsEnabled;
-                LensCategory.Tag=choosingLens ? "selected" : null;
-                LensCategoryRing.Selected=choosingLens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
-                GeometrySurface.Visibility=choosingGeometry ? Visibility.Visible : Visibility.Collapsed;
+                LensCategory.Tag=toolMode==EditorToolMode.Lens ? "selected" : null;
+                LensCategoryRing.Selected=toolMode==EditorToolMode.Lens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
+                GeometrySurface.Visibility=toolMode==EditorToolMode.Geometry ? Visibility.Visible : Visibility.Collapsed;
                 GeometryEditor.IsEnabled=file!=null && !exporting;
                 GeometryCategory.IsEnabled=PerspectiveCategory.IsEnabled=file!=null && !exporting;
-                GeometryCategory.Tag=choosingGeometry && !GeometryEditor.ShowPerspective ? "selected" : null;
-                PerspectiveCategory.Tag=choosingGeometry && GeometryEditor.ShowPerspective ? "selected" : null;
-                GradingSurface.Visibility=choosingGrading ? Visibility.Visible : Visibility.Collapsed;
+                GeometryCategory.Tag=toolMode==EditorToolMode.Geometry && !GeometryEditor.ShowPerspective ? "selected" : null;
+                PerspectiveCategory.Tag=toolMode==EditorToolMode.Geometry && GeometryEditor.ShowPerspective ? "selected" : null;
+                GradingSurface.Visibility=toolMode==EditorToolMode.ColorGrading ? Visibility.Visible : Visibility.Collapsed;
                 CurveSurface.Visibility=CurrentTool==EditorAdjustmentTool.ToneCurve ? Visibility.Visible : Visibility.Collapsed;
                 CurveEditor.IsEnabled=file!=null && !exporting;
                 GradingEditor.IsEnabled=file!=null && !exporting;
                 GradingCategory.IsEnabled=HslCategory.IsEnabled=file!=null && !exporting;
                 DenoiseCategory.IsEnabled=file!=null && !exporting;
-                GradingCategory.Tag=choosingGrading ? "selected" : null;
-                HslSurface.Visibility=choosingHsl ? Visibility.Visible : Visibility.Collapsed;
+                GradingCategory.Tag=toolMode==EditorToolMode.ColorGrading ? "selected" : null;
+                HslSurface.Visibility=toolMode==EditorToolMode.Hsl ? Visibility.Visible : Visibility.Collapsed;
                 HslEditor.IsEnabled=file!=null && !exporting;
-                HslCategory.Tag=choosingHsl ? "selected" : null;
-                WhiteBalanceSurface.Visibility=choosingWhiteBalance ? Visibility.Visible : Visibility.Collapsed;
+                HslCategory.Tag=toolMode==EditorToolMode.Hsl ? "selected" : null;
+                WhiteBalanceSurface.Visibility=toolMode==EditorToolMode.WhiteBalance ? Visibility.Visible : Visibility.Collapsed;
                 WhiteBalanceEditor.IsEnabled=file!=null && (!raster || hdrEditing) && !exporting;
                 WhiteBalanceCategory.IsEnabled=file!=null && (!raster || hdrEditing) && !exporting;
-                WhiteBalanceCategory.Tag=choosingWhiteBalance ? "selected" : null;
+                WhiteBalanceCategory.Tag=toolMode==EditorToolMode.WhiteBalance ? "selected" : null;
                 AutoExposureButton.Visibility=selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
                 AutoExposureButton.IsEnabled=CanAutoExpose;
-                DenoiseEditor.Visibility=choosingDenoise ? Visibility.Visible : Visibility.Collapsed;
+                DenoiseEditor.Visibility=toolMode==EditorToolMode.Denoise ? Visibility.Visible : Visibility.Collapsed;
                 DenoiseSurface.Visibility=DenoiseEditor.Visibility;
                 DenoiseEditor.IsEnabled=file!=null && !exporting;
-                PhotoEffectsSurface.Visibility=choosingPhotoEffects ? Visibility.Visible : Visibility.Collapsed;
+                PhotoEffectsSurface.Visibility=toolMode==EditorToolMode.PhotoEffects ? Visibility.Visible : Visibility.Collapsed;
                 PhotoEffectsEditor.IsEnabled=file!=null && !exporting;
-                DenoiseCategory.Tag=choosingDenoise ? "selected" : null;
-                FilmCategory.Tag=choosingFilm ? "selected" : null;
+                DenoiseCategory.Tag=toolMode==EditorToolMode.Denoise ? "selected" : null;
+                FilmCategory.Tag=toolMode==EditorToolMode.Film ? "selected" : null;
                 FilmCategory.IsEnabled=!hdrEditing && !exporting;
-                FilmCategoryRing.Selected=choosingFilm;FilmCategoryRing.InvalidateVisual();
+                FilmCategoryRing.Selected=toolMode==EditorToolMode.Film;FilmCategoryRing.InvalidateVisual();
                 if(importLookButton!=null)importLookButton.IsEnabled=!exporting;
                 UnreadableLooksPanel.IsEnabled=!exporting && !transform.Active;
                 if(presetLibraryButton!=null)presetLibraryButton.IsEnabled=!exporting && !transferPreparing;
@@ -622,27 +619,27 @@ public partial class MainWindow
             }
             void UpdateCategoryRings()
             {
-                if (choosingGeometry || !dragFastPath)
+                if (toolMode==EditorToolMode.Geometry || !dragFastPath)
                 {
-                    GeometryCategoryRing.Selected=choosingGeometry && !GeometryEditor.ShowPerspective;
+                    GeometryCategoryRing.Selected=toolMode==EditorToolMode.Geometry && !GeometryEditor.ShowPerspective;
                     GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;
                     GeometryCategoryRing.InvalidateVisual();
                 }
-                if (choosingGrading || !dragFastPath)
+                if (toolMode==EditorToolMode.ColorGrading || !dragFastPath)
                 {
-                    GradingCategoryRing.Selected=choosingGrading;
+                    GradingCategoryRing.Selected=toolMode==EditorToolMode.ColorGrading;
                     GradingCategoryRing.Progress=settings.EditingGrading.IsDefault ? 0 : 1;
                     GradingCategoryRing.InvalidateVisual();
                 }
-                if (choosingHsl || !dragFastPath)
+                if (toolMode==EditorToolMode.Hsl || !dragFastPath)
                 {
-                    HslCategoryRing.Selected=choosingHsl;
+                    HslCategoryRing.Selected=toolMode==EditorToolMode.Hsl;
                     HslCategoryRing.Progress=settings.EditingHsl.IsIdentity ? 0 : 1;
                     HslCategoryRing.InvalidateVisual();
                 }
-                if (choosingWhiteBalance || !dragFastPath)
+                if (toolMode==EditorToolMode.WhiteBalance || !dragFastPath)
                 {
-                    WhiteBalanceCategoryRing.Selected=choosingWhiteBalance;
+                    WhiteBalanceCategoryRing.Selected=toolMode==EditorToolMode.WhiteBalance;
                     var temperatureSpec=ParameterSpec.All[(int)Parameter.Temperature];
                     var temperatureOrigin=temperatureSpec.Position(settings.Default(Parameter.Temperature));
                     var temperatureOffset=temperatureSpec.Position(settings[Parameter.Temperature])-temperatureOrigin;
@@ -654,41 +651,41 @@ public partial class MainWindow
                     WhiteBalanceCategoryRing.Progress=Math.Abs(temperatureProgress)>=Math.Abs(tintProgress) ? temperatureProgress : tintProgress;
                     WhiteBalanceCategoryRing.InvalidateVisual();
                 }
-                if (choosingDenoise || !dragFastPath)
+                if (toolMode==EditorToolMode.Denoise || !dragFastPath)
                 {
-                    DenoiseCategoryRing.Selected=choosingDenoise;
+                    DenoiseCategoryRing.Selected=toolMode==EditorToolMode.Denoise;
                     DenoiseCategoryRing.Progress=hdrEditing ? settings.HDR!.DetailSettings.Denoise : settings.Denoise.Enabled ? 1 : 0;
                     DenoiseCategoryRing.InvalidateVisual();
                 }
             }
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingLens))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Lens))
                 LensEditor.Refresh(PreviewLens,result?.Lens);
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingGeometry))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Geometry))
                 GeometryEditor.Refresh(transform.Active ? transform.Geometry : settings.Geometry);
             if (InspectorModificationCache.ShouldRefreshSubEditor(CurrentTool==EditorAdjustmentTool.ToneCurve))
                 CurveEditor.Refresh(settings.EditingCurve,settings[Parameter.ToneCurve],(file,openRevision,hdrEditing),hdrEditing);
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingGrading))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.ColorGrading))
                 GradingEditor.Refresh(settings.EditingGrading,(file,openRevision,hdrEditing));
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingHsl))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Hsl))
             {
                 HslEditor.Refresh(settings.EditingHsl);
                 RefreshHslTarget();
             }
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingWhiteBalance))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.WhiteBalance))
                 WhiteBalanceEditor.Refresh(settings,WhiteBalanceEditor.IsEnabled && (hdrEditing || settings.AsShot!=null));
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingDenoise))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Denoise))
             {
                 DenoiseEditor.Refresh(settings.Denoise,hdrEditing ? settings.HDR!.DetailSettings.Denoise : null);
                 RefreshAIControls();
             }
-            if (InspectorModificationCache.ShouldRefreshSubEditor(choosingPhotoEffects))
+            if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.PhotoEffects))
                 PhotoEffectsEditor.Refresh(settings.EditingEffects,selectedEffect);
             UpdateCategoryRings();
             if (!dragFastPath)
             {
                 foreach(var (tool,controls) in effectToolButtons)
                 {
-                    var selected=choosingPhotoEffects && selectedEffect==tool;
+                    var selected=toolMode==EditorToolMode.PhotoEffects && selectedEffect==tool;
                     controls.Button.Tag=selected ? "selected" : null;
                     controls.Ring.Selected=selected;
                     controls.Ring.Progress=settings.IsEffectDefault(tool==PhotoEffectTool.Vignette) ? 0 : 1;
@@ -710,7 +707,7 @@ public partial class MainWindow
             }
             else
             {
-                if (choosingPhotoEffects && effectToolButtons.TryGetValue(selectedEffect, out var effectControls))
+                if (toolMode==EditorToolMode.PhotoEffects && effectToolButtons.TryGetValue(selectedEffect, out var effectControls))
                 {
                     effectControls.Button.Tag="selected";
                     effectControls.Ring.Selected=true;

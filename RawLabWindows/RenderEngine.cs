@@ -55,8 +55,8 @@ internal sealed partial class RenderEngine : IDisposable
         try { InitializeSession(); SetGpuMode(gpuMode); }
         catch { session.Dispose(); throw; }
     }
-    private void InitializeSession() => Native.Check(Native.sony2fuji_session_set_lens_database(session,lensDatabase));
-    public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config));gpuMode=mode; }
+    private void InitializeSession() => Native.Check(Native.sony2fuji_session_set_lens_database(session,lensDatabase), session);
+    public void SetGpuMode(int mode) { var config=new Native.GpuConfig{Version=1,StructSize=12,Mode=mode};Native.Check(Native.sony2fuji_session_set_gpu_config(session,ref config), session);gpuMode=mode; }
     private void RecreateSession()
     {
         session.Dispose();
@@ -67,7 +67,7 @@ internal sealed partial class RenderEngine : IDisposable
             SetGpuMode(gpuMode);
             if (cancellationCallback != null && cancellationHandle.IsAllocated)
                 Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, cancellationCallback,
-                    GCHandle.ToIntPtr(cancellationHandle)));
+                    GCHandle.ToIntPtr(cancellationHandle)), session);
         }
         catch
         {
@@ -83,12 +83,12 @@ internal sealed partial class RenderEngine : IDisposable
         cancellationHandle = GCHandle.Alloc(state);
         cancellationCallback = static context => ((CancellationState)GCHandle.FromIntPtr(context).Target!).Token.IsCancellationRequested ? 1 : 0;
         Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, cancellationCallback,
-            GCHandle.ToIntPtr(cancellationHandle)));
+            GCHandle.ToIntPtr(cancellationHandle)), session);
     }
     private void ClearCancellation()
     {
         if (!session.IsInvalid && !session.IsClosed)
-            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, null, IntPtr.Zero));
+            Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, null, IntPtr.Zero), session);
         cancellationCallback = null;
         if (cancellationHandle.IsAllocated) cancellationHandle.Free();
     }
@@ -151,7 +151,7 @@ internal sealed partial class RenderEngine : IDisposable
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
-        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
+        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode), session);
         var request=settings.Request(path,null,0,null);
         SetInput(ref request,path);
         aiNativeOperationStarted=true;
@@ -315,7 +315,7 @@ internal sealed partial class RenderEngine : IDisposable
                 }
                 return null;
             }
-            Native.Check(Native.sony2fuji_session_get_geometry_size(session,out var nativeWidth,out var nativeHeight));
+            Native.Check(Native.sony2fuji_session_get_geometry_size(session,out var nativeWidth,out var nativeHeight), session);
             var bins = statistics || clipping ? new uint[768] : Array.Empty<uint>();
             uint shadows=0,highlights=0;
             var statisticsAvailable=false;
@@ -328,7 +328,7 @@ internal sealed partial class RenderEngine : IDisposable
             }
             float baseline=0,temperature=6500,tint=0;
             var raster=LibraryEntry.IsRaster(path);
-            if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _));
+            if(!raster)Native.Check(Native.sony2fuji_session_get_raw_exposure(session,out baseline,out _), session);
             var normalX3f=PhotoInput.IsNormalX3f(path,settings);
             var calibrated = normalX3f || !raster && Native.sony2fuji_session_get_raw_white_balance(session,out temperature,out tint) == 0;
             var count = (double)buffer.Width * buffer.Height;
@@ -427,16 +427,16 @@ internal sealed partial class RenderEngine : IDisposable
         ConfigureAI(settings.AIDenoiseEnabled);
         SetLens(settings.Lens);
         SetGeometry(settings.Geometry);
-        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode));
+        Native.Check(Native.sony2fuji_session_set_raw_exposure_mode(session,settings.ExposureMode), session);
         var hsl=settings.RenderHsl.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_hsl(session,ref hsl));
-        Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0));
-        Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0));
+        Native.Check(Native.sony2fuji_session_set_hsl(session,ref hsl), session);
+        Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
+        Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
         var denoise=settings.Denoise.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise));
+        Native.Check(Native.sony2fuji_session_set_wavelet_denoise(session,ref denoise), session);
         var effects=settings.Effects.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects));
-        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise));
+        Native.Check(Native.sony2fuji_session_set_photo_effects(session,ref effects), session);
+        Native.Check(Native.sony2fuji_session_set_chroma_denoise(session,settings.DisplayChromaDenoise), session);
         var request = settings.Request(path,lut,edge,output,longEdge);
         if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
         return (settings,request);
@@ -488,7 +488,7 @@ internal sealed partial class RenderEngine : IDisposable
     {
         var query = new Native.HslProbeQuery { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HslProbeQuery>(),
             SourceRevision = revision.Source, RequestRevision = revision.Request, X = (float)x, Y = (float)y };
-        Native.Check(Native.sony2fuji_hsl_probe_sample(probe, ref query, out var sample));
+        Native.CheckWithoutSession(Native.sony2fuji_hsl_probe_sample(probe, ref query, out var sample));
         if (sample.SourceRevision != revision.Source || sample.RequestRevision != revision.Request)
             return HslTargetSample.Unavailable(revision, HslTargetAvailability.Stale);
         return new(revision, (HslTargetAvailability)sample.Availability,
@@ -505,22 +505,22 @@ internal sealed partial class RenderEngine : IDisposable
     private void SetGrading(ColorGradingSettings value)
     {
         var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_color_grading(session, ref config));
+        Native.Check(Native.sony2fuji_session_set_color_grading(session, ref config), session);
     }
     private void SetCurve(ToneCurveSettings value)
     {
         var config = value.NativeSetConfig();
-        Native.Check(Native.sony2fuji_session_set_tone_curves(session, ref config));
+        Native.Check(Native.sony2fuji_session_set_tone_curves(session, ref config), session);
     }
     private void SetAtmosphere(AtmosphereSettings value)
     {
         var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_atmosphere(session, ref config));
+        Native.Check(Native.sony2fuji_session_set_atmosphere(session, ref config), session);
     }
     private void SetTone(ToneControlsSettings value)
     {
         var config = value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config));
+        Native.Check(Native.sony2fuji_session_set_tone_controls(session, ref config), session);
     }
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
     internal static X3fMode X3fDefaultMode(string path)
@@ -531,34 +531,34 @@ internal sealed partial class RenderEngine : IDisposable
     {
         if (PhotoInput.IsNormalX3f(path,settings) && settings.AIDenoiseEnabled)
             throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
-        Native.Check(Native.sony2fuji_session_set_x3f_mode(session,settings.X3fMode));
+        Native.Check(Native.sony2fuji_session_set_x3f_mode(session,settings.X3fMode), session);
     }
     private void SetProcessing(ProcessingIdentity value) =>
-        Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version));
+        Native.Check(Native.sony2fuji_session_set_processing_version(session,ProcessingIdentity.Require(value).Version), session);
     private void SetLens(LensSettings value)
     {
         var config = new Native.LensConfigV2 { Base = new Native.LensConfig { Version=2,StructSize=(uint)Marshal.SizeOf<Native.LensConfigV2>(),
             Distortion=value.Distortion ? 1 : 0,Tca=value.Tca ? 1 : 0,AutoCrop=value.AutoCrop ? 1 : 0,ProfileId=value.CoreProfileId }, Vignetting=value.Vignetting ? 1 : 0 };
-        Native.Check(Native.sony2fuji_session_set_lens_correction_v2(session,ref config));
+        Native.Check(Native.sony2fuji_session_set_lens_correction_v2(session,ref config), session);
     }
     private void SetGeometry(GeometrySettings value)
     {
         var config=value.NativeConfig();
-        Native.Check(Native.sony2fuji_session_set_geometry(session,ref config));
+        Native.Check(Native.sony2fuji_session_set_geometry(session,ref config), session);
         var perspective=value.NativePerspectiveConfig();
-        Native.Check(Native.sony2fuji_session_set_perspective(session,ref perspective));
+        Native.Check(Native.sony2fuji_session_set_perspective(session,ref perspective), session);
     }
     private LensInfo ReadLens(string path) {
         var file = new FileInfo(path);
         var stamp = new Stamp(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks);
         if (stamp != lensStamp) {
-            Native.Check(Native.sony2fuji_session_inspect_lens(session, path, out _, null, 0, out var count));
+            Native.Check(Native.sony2fuji_session_inspect_lens(session, path, out _, null, 0, out var count), session);
             var profiles = new Native.LensProfile[checked((int)count)];
-            Native.Check(Native.sony2fuji_session_inspect_lens(session, path, out _, profiles, count, out _));
+            Native.Check(Native.sony2fuji_session_inspect_lens(session, path, out _, profiles, count, out _), session);
             lensCandidates = profiles.Select(p => new LensCandidate(Native.Text(p.Id), Native.Text(p.Maker), Native.Text(p.Model), p.HasDistortion != 0, p.HasTca != 0, p.IsMatch != 0)).ToArray();
             lensStamp = stamp;
         }
-        Native.Check(Native.sony2fuji_session_get_lens_report_v2(session, out var extended));
+        Native.Check(Native.sony2fuji_session_get_lens_report_v2(session, out var extended), session);
         var report = extended.Base;
         return new(report.State, Native.Text(report.LensModel), Native.Text(report.Profile.Model), report.AppliedDistortion != 0,
             report.AppliedTca != 0, report.CropScale, lensCandidates, extended.AppliedVignetting != 0);

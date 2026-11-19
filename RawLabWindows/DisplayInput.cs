@@ -22,7 +22,7 @@ internal sealed partial class RenderEngine
             (previous.Path.Equals(stamp.Path,StringComparison.OrdinalIgnoreCase) && previous!=stamp)))
         {RecreateSession();lensStamp=null;}
         inputStamp=null;
-        if(LibraryEntry.IsRaster(path))Native.Check(Native.sony2fuji_load_display_image(path,ref displayInput));
+        if(LibraryEntry.IsRaster(path))Native.CheckWithoutSession(Native.sony2fuji_load_display_image(path,ref displayInput));
         inputStamp=stamp;
     }
     private void SetInput(ref Native.Request request,string path)

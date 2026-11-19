@@ -35,7 +35,7 @@ public partial class MainWindow
     }
     private void RefreshHslTarget()
     {
-        ResultCanvas.HslTargetEnabled=hslTargetEnabled && choosingHsl && expandedGroup!=null && !transform.Active;
+        ResultCanvas.HslTargetEnabled=hslTargetEnabled && toolMode==EditorToolMode.Hsl && expandedGroup!=null && !transform.Active;
         HslTargetBanner.Visibility=ResultCanvas.HslTargetEnabled && AdjustmentPanel.Visibility!=Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         HslTargetBannerTitle.Text=Loc.Format("目标调整：{0}",Loc.Text(hslTargetAxis switch {1=>"饱和度",2=>"明度",_=>"色相"}));
         ResultCanvas.HslTargetPoint=hslTargetPoint;

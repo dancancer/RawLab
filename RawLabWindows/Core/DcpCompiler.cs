@@ -5,7 +5,7 @@ namespace RawLab.Windows;
 
 internal sealed class DcpCompileException : Exception
 {
-    internal DcpCompileException(DcpErrorReason reason, int status = PInvokeNative.StatusUnsupported, Exception? inner = null)
+    internal DcpCompileException(DcpErrorReason reason, int status = Native.StatusUnsupported, Exception? inner = null)
         : base(MessageFor(reason, status), inner)
     {
         Reason = reason;
@@ -26,7 +26,7 @@ internal sealed class DcpCompileException : Exception
         DcpErrorReason.InvalidTable => Loc.Text("DCP 的 HueSatMap/LookTable 数据、维度或编码不受支持。"),
         DcpErrorReason.InvalidTone => Loc.Text("DCP 曲线无效；需要 2 至 8192 个有限、范围为 0 至 1 且横坐标递增的点。"),
         DcpErrorReason.InvalidExposure => Loc.Text("DCP 曝光偏移无效；需要 -16 至 +16 EV 的有限数值。"),
-        _ when status == PInvokeNative.StatusOutOfMemory => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"),
+        _ when status == Native.StatusOutOfMemory => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"),
         _ => Loc.Text("DCP 文件损坏，或使用了不支持的 TIFF 结构。")
     };
 }
@@ -40,26 +40,12 @@ internal static class DcpCompiler
     internal const long MaxOutputBytes = 64L * 1024 * 1024;
     internal const long MaxToneCurveJsonBytes = 1024L * 1024;
 
-    private const string Dll = "sony2fuji.dll";
-
-    [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp_with_options", ExactSpelling = true,
-        CallingConvention = CallingConvention.Cdecl)]
-    private static extern int CompileDcpWithOptions(
-        IntPtr source,
-        nuint sourceSizeBytes,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceName,
-        IntPtr toneCurveJson,
-        nuint toneCurveSizeBytes,
-        uint omitAutomaticBlack,
-        ref PInvokeNative.DcpBlob output,
-        ref DcpErrorReason reason);
-
     internal static byte[] Compile(string source) => Compile(source, null);
 
     internal static byte[] Compile(string source, DcpImportOptions? options)
     {
         if (string.IsNullOrWhiteSpace(source))
-            throw new DcpCompileException(DcpErrorReason.Malformed, PInvokeNative.StatusInvalidArgument);
+            throw new DcpCompileException(DcpErrorReason.Malformed, Native.StatusInvalidArgument);
 
         var sourceInfo = new FileInfo(source);
         if (!sourceInfo.Exists) throw new FileNotFoundException(Loc.Text("无法读取或写入文件，请检查路径和访问权限。"), source);
@@ -75,7 +61,7 @@ internal static class DcpCompiler
         if (toneCurve is { LongLength: > MaxToneCurveJsonBytes })
             throw new DcpCompileException(DcpErrorReason.TooLarge);
 
-        PInvokeNative.DcpBlob blob = default;
+        Native.DcpBlob blob = default;
         var reason = DcpErrorReason.None;
         GCHandle sourceHandle = default;
         GCHandle toneCurveHandle = default;
@@ -87,10 +73,10 @@ internal static class DcpCompiler
                 if (toneCurve is { Length: > 0 }) toneCurveHandle = GCHandle.Alloc(toneCurve, GCHandleType.Pinned);
                 var pointer = data.Length == 0 ? IntPtr.Zero : sourceHandle.AddrOfPinnedObject();
                 var toneCurvePointer = toneCurve is { Length: > 0 } ? toneCurveHandle.AddrOfPinnedObject() : IntPtr.Zero;
-                var status = CompileDcpWithOptions(pointer, checked((nuint)data.LongLength),
+                var status = Native.CompileDcpWithOptions(pointer, checked((nuint)data.LongLength),
                     sourceInfo.Name, toneCurvePointer, checked((nuint)(toneCurve?.LongLength ?? 0)),
                     options?.OmitAutomaticBlack == true ? 1u : 0u, ref blob, ref reason);
-                if (status != PInvokeNative.StatusOk)
+                if (status != Native.StatusOk)
                     throw new DcpCompileException(reason == DcpErrorReason.None ? DcpErrorReason.Malformed : reason, status);
                 if (blob.Data == IntPtr.Zero || blob.SizeBytes == 0)
                     throw new DcpCompileException(DcpErrorReason.Malformed, status);
@@ -110,14 +96,14 @@ internal static class DcpCompiler
         finally
         {
             // The native side owns the output allocation on every return path.
-            PInvokeNative.ReleaseBlob(ref blob);
+            Native.ReleaseBlob(ref blob);
         }
     }
 
     internal static byte[] ReadToneCurveJson(string source)
     {
         if (string.IsNullOrWhiteSpace(source))
-            throw new DcpCompileException(DcpErrorReason.Malformed, PInvokeNative.StatusInvalidArgument);
+            throw new DcpCompileException(DcpErrorReason.Malformed, Native.StatusInvalidArgument);
 
         var sourceInfo = new FileInfo(source);
         if (!sourceInfo.Exists) throw new FileNotFoundException(Loc.Text("无法读取或写入文件，请检查路径和访问权限。"), source);

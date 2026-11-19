@@ -49,9 +49,9 @@ internal sealed class LookLibraryException : Exception
     };
 
     internal static LookLibraryException FromNativeStatus(int status) =>
-        status == PInvokeNative.StatusIoError
+        status == Native.StatusIoError
             ? new(LookLibraryError.UnreadableSource)
-            : status == PInvokeNative.StatusOutOfMemory
+            : status == Native.StatusOutOfMemory
                 ? new(LookLibraryError.OutOfMemory, new OutOfMemoryException())
                 : new(LookLibraryError.InvalidLook);
 }
@@ -526,11 +526,11 @@ internal sealed class LookLibrary
 
     private static LookValidation ValidateNative(string path)
     {
-        var status = PInvokeNative.ValidateLook(path, out var format, out var version);
-        var color = PInvokeNative.InspectLutColor(path);
-        if (status != PInvokeNative.StatusOk)
+        var status = Native.ValidateLook(path, out var format, out var version);
+        var color = Native.InspectLutColor(path);
+        if (status != Native.StatusOk)
         {
-            if (status == PInvokeNative.StatusUnsupported && color is >= 0 and <= 3)
+            if (status == Native.StatusUnsupported && color is >= 0 and <= 3)
                 throw new LookLibraryException(color switch {
                     0 => LookLibraryError.MissingColor, 1 => LookLibraryError.MissingReference,
                     2 => LookLibraryError.UnsupportedColor, _ => LookLibraryError.ConflictingColor });

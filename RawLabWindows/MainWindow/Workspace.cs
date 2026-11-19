@@ -171,7 +171,7 @@ public partial class MainWindow
         if (!ShowsInspector || suspendedTransform is not { } suspended) return;
         suspendedTransform = null;
         SelectTool(suspended.Tool);
-        if (choosingGeometry) GeometryEditor.ShowPerspective = suspended.Perspective;
+        if (toolMode == EditorToolMode.Geometry) GeometryEditor.ShowPerspective = suspended.Perspective;
     }
 
     private void LibraryToggle(object sender, RoutedEventArgs e)

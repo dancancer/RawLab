@@ -65,23 +65,23 @@ internal sealed class LUTCompatibility
     }
     internal static LUTCompatibility? Inspect(string path)
     {
-        var blob = new PInvokeNative.DcpBlob();
+        var blob = new Native.DcpBlob();
         try {
-            var status = PInvokeNative.InspectLutCompatibility(path, ref blob);
-            if (status != PInvokeNative.StatusOk) return null;
+            var status = Native.InspectLutCompatibility(path, ref blob);
+            if (status != Native.StatusOk) return null;
             return Parse(Encoding.UTF8.GetString(Read(blob)));
-        } finally { PInvokeNative.ReleaseBlob(ref blob); }
+        } finally { Native.ReleaseBlob(ref blob); }
     }
     internal byte[] Prepare(string path)
     {
-        var blob = new PInvokeNative.DcpBlob();
+        var blob = new Native.DcpBlob();
         try {
-            if (PInvokeNative.PrepareLutCompatibility(path, Request(), ref blob) != PInvokeNative.StatusOk)
+            if (Native.PrepareLutCompatibility(path, Request(), ref blob) != Native.StatusOk)
                 throw new LookLibraryException(LookLibraryError.CompatibilityChanged);
             return Read(blob);
-        } finally { PInvokeNative.ReleaseBlob(ref blob); }
+        } finally { Native.ReleaseBlob(ref blob); }
     }
-    private static byte[] Read(PInvokeNative.DcpBlob blob)
+    private static byte[] Read(Native.DcpBlob blob)
     {
         if (blob.Data == IntPtr.Zero || blob.SizeBytes > 256u * 1024u * 1024u)
             throw new LookLibraryException(LookLibraryError.InvalidLook);

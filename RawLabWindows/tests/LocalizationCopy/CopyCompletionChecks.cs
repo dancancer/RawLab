@@ -18,7 +18,7 @@ internal static class CopyCompletionChecks
         foreach(var (status,expected) in new[] {
             (1,"参数或输出路径无效。"),(2,"不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。") })
         {
-            try { Native.Check(status);check(false,"Native error is rejected"); }
+            try { Native.CheckWithoutSession(status);check(false,"Native error is rejected"); }
             catch(InvalidOperationException error) { check(error.Message==Loc.Text(expected),"Accurate native status message: "+language); }
         }
         check(Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu) ==

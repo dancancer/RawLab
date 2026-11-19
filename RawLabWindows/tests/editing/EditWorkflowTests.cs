@@ -893,16 +893,20 @@ public sealed class EditWorkflowTests
         Check(x3f == Loc.Format("无法正常显影 X3F：{0}", "Normal X3F error"),
             "X3F session detail takes precedence over generic status mapping");
 
-        foreach (var rel in new[] { "RawLabWindows/RenderEngine.cs", "RawLabWindows/RenderEngine.AIDenoise.cs" })
-        {
-            var path = ResolveRepoPath(rel);
-            var source = File.ReadAllText(path);
-            Check(!Regex.IsMatch(source, @"\bNative\.Check\(\s*status\s*\)"),
-                $"{rel}: every Native.Check(status, ...) consuming a session result must pass session");
-        }
-        var renderEngineSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/RenderEngine.cs"));
-        Check(Regex.Matches(renderEngineSource, @"\bNative\.Check\(\s*status\s*,\s*session\s*\)").Count >= 6,
-            "RenderEngine.cs must pass session to all session-result Native.Check(status, session) calls");
+        var checkMethod = typeof(Native)
+            .GetMethods(System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+            .Single(m => m.Name == nameof(Native.Check));
+        var checkParams = checkMethod.GetParameters();
+        Check(checkParams.Length == 2 && checkParams[1].ParameterType == typeof(Native.Session) && !checkParams[1].HasDefaultValue,
+            "Native.Check enforces a non-default Session parameter");
+        var nullSessionRejected = false;
+        try { Native.Check(1, null!); }
+        catch (ArgumentNullException) { nullSessionRejected = true; }
+        Check(nullSessionRejected, "Native.Check rejects null session at runtime");
+        var sessionlessError = Assert.Throws<InvalidOperationException>(() => Native.CheckWithoutSession(1));
+        Check(sessionlessError.Message == Loc.Text("参数或输出路径无效。"),
+            "Native.CheckWithoutSession surfaces localized error without a session");
+
         var renderedDngSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/tests/RenderedDngChecks.cs"));
         Check(!Regex.IsMatch(renderedDngSource, @"\bStatusMessage\(\s*2\s*\)"),
             "Rendered DNG Force rejection must not filter on the sessionless unsupported message");
