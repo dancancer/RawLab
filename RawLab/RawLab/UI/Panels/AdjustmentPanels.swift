@@ -8,18 +8,18 @@ extension ContentView {
             HStack(spacing: 0) {
                 ForEach(0..<3) { tab in
                     Button {
-                        cancelSliderInteraction(); geometryPerspective = tab == 2; geometryRotation = tab == 1
+                        cancelSliderInteraction(); coordinator.geometryPerspective = tab == 2; coordinator.geometryRotation = tab == 1
                     } label: {
                         Text(L10n.text(["裁切", "旋转", "透视"][tab])).font(.subheadline)
-                            .foregroundStyle((geometryPerspective ? 2 : geometryRotation ? 1 : 0) == tab ? Color.yellow : Color.secondary)
+                            .foregroundStyle((coordinator.geometryPerspective ? 2 : coordinator.geometryRotation ? 1 : 0) == tab ? Color.yellow : Color.secondary)
                             .frame(maxWidth: .infinity, minHeight: 48)
                     }.buttonStyle(.plain).accessibilityIdentifier("geometry.tab.\(tab)")
                 }
             }.padding(.horizontal, 16)
             IOSGeometryControls(settings: geometryDraftBinding, onEditingChanged: setSliderEditing,
-                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $geometryAspectPreset,
-                                    lockedRatio: $geometryLockedRatio, aspectSwapped: $geometryAspectSwapped,
-                                    showsGrid: $geometryGrid, perspective: geometryPerspective, rotation: geometryRotation)
+                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $coordinator.geometryAspectPreset,
+                                    lockedRatio: $coordinator.geometryLockedRatio, aspectSwapped: $coordinator.geometryAspectSwapped,
+                                    showsGrid: $coordinator.geometryGrid, perspective: coordinator.geometryPerspective, rotation: coordinator.geometryRotation)
             .padding(.horizontal, 16)
             .disabled(geometryEditingCanvasSize == .zero || editingLocked)
         } else if lensSelected {
@@ -36,18 +36,18 @@ extension ContentView {
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
             IOSColorGradingControls(settings: Binding(get: { workingSettings.editingGradingSettings }, set: { workingSettings.editingGradingSettings = $0 }),
-                zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                zone: $coordinator.gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .hsl {
             VStack(spacing: 8) {
-                if hslTargetEnabled { HSLTargetControls(enabled: $hslTargetEnabled, axis: $hslTargetAxis,
-                    sample: hslTargetInteraction.selection, waiting: hslTargetInteraction.isWaiting,
-                    notice: hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16) }
+                if coordinator.hslTargetEnabled { HSLTargetControls(enabled: $coordinator.hslTargetEnabled, axis: $coordinator.hslTargetAxis,
+                    sample: coordinator.hslTargetInteraction.selection, waiting: coordinator.hslTargetInteraction.isWaiting,
+                    notice: coordinator.hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16) }
                 IOSHSLMixer(settings: Binding(get: { workingSettings.editingHSLSettings }, set: { workingSettings.editingHSLSettings = $0 }),
                     onEditingChanged: { editing in
                         if editing { cancelHSLTarget() }
                         setSliderEditing(editing)
-                    }, channel: $hslChannel)
+                    }, channel: $coordinator.hslChannel)
             }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, value: { parameter in
@@ -89,8 +89,8 @@ extension ContentView {
     }
 
     var geometryDraftAspectRatio: Double? {
-        if let geometryLockedRatio { return geometryAspectSwapped ? 1 / geometryLockedRatio : geometryLockedRatio }
-        return geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: geometryAspectSwapped)
+        if let locked = coordinator.geometryLockedRatio { return coordinator.geometryAspectSwapped ? 1 / locked : locked }
+        return coordinator.geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: coordinator.geometryAspectSwapped)
     }
 
     var editorDraftActions: some View {
@@ -195,7 +195,7 @@ extension ContentView {
                     .fixedSize()
             }
             .buttonStyle(EditorCompactActionStyle())
-            .disabled(autoExposing || viewModel.isBusy)
+            .disabled(coordinator.autoExposing || viewModel.isBusy)
             .accessibilityIdentifier("exposure.auto")
         }
     }

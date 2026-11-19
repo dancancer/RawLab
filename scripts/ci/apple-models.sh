@@ -61,7 +61,7 @@ case "${1:-}" in
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/color-grading-interaction.sh
             RawLab/tests/hdr-model.sh RawLab/tests/hdr-resource-notice.sh
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
-            RawLab/tests/ios-reset-entry-ui.sh
+            RawLab/tests/editor-coordinator.sh RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh RawLab/tests/adjustment-persistence.sh
             RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh

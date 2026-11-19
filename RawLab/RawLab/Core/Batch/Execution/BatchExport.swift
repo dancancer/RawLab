@@ -38,6 +38,7 @@ final class BatchExportModel: ObservableObject {
     @Published var validationMessage: String?
     var onDiscard: () -> Void = { }
     var onUsage: (UsageEvent) -> Void = { _ in }
+    var onStart: ((UUID) -> Void)?
 
     private let journalStore: BatchJournalStore?
     private let jpegWriter: JPEGWriter?
@@ -223,7 +224,10 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    @discardableResult func start() -> Bool { run(failuresOnly: false) }
+    @discardableResult func start() -> Bool {
+        onStart?(job.id)
+        return run(failuresOnly: false)
+    }
     @discardableResult func retryFailed() -> Bool { run(failuresOnly: true) }
 
     private func freezeHDRJob(_ draft: BatchExportJob,journal: BatchJournalStore) throws -> BatchExportJob {

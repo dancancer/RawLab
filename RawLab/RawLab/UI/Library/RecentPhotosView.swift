@@ -74,15 +74,6 @@ struct RecentPhotosView: View {
     }
 }
 
-enum PhotoEditFilter: String, CaseIterable, Identifiable {
-    case all, edited, unedited
-    var id: String { rawValue }
-    var title: String { switch self { case .all: "全部"; case .edited: "已编辑"; case .unedited: "未编辑" } }
-    func includes(_ edited: Bool?) -> Bool {
-        switch self { case .all: true; case .edited: edited == true; case .unedited: edited == false }
-    }
-}
-
 enum IOSPhotoThumbnailInput {
     case recent(RecentPhoto)
     case source(IOSPhotoPreviewSource)

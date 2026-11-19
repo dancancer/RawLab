@@ -106,7 +106,7 @@ extension ContentView {
                         ScrollView {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: accessibility ? 3 : 4), spacing: 4) {
                                 ForEach(mobileEditorTools, id: \.self) { tool in
-                                    Button { geometryPerspective = false; geometryRotation = false; selectEditorTool(tool) } label: {
+                                    Button { coordinator.geometryPerspective = false; coordinator.geometryRotation = false; selectEditorTool(tool) } label: {
                                         VStack(spacing: 4) {
                                             Image(systemName: tool.symbol).font(.system(size: 21)).frame(height: 24)
                                             Text(tool.title).font(.caption).multilineTextAlignment(.center)
@@ -126,12 +126,25 @@ extension ContentView {
                             .accessibilityIdentifier("editor.tools")
                         groupNavigation(side: false, singleLine: true, availableWidth: side ? panelWidth : size.width)
                     } else {
+                        let metrics = EditorPanelLayoutMetrics(
+                            width: size.width,
+                            height: size.height,
+                            accessibility: accessibility,
+                            buttonWidth: groupNavigationButtonWidth,
+                            buttonHeight: groupNavigationButtonHeight,
+                            scrollTools: scrollsToolsWithParameters(size: size, accessibility: accessibility),
+                            sideWidth: panelWidth,
+                            side: side
+                        )
                         ScrollView(.vertical) {
                             adjustmentPanel
                                 .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterContentHeight = $0 }
                         }
-                        .id("\(currentEditorTool.stableID).\(geometryPerspective).\(geometryRotation).\(viewModel.quickPresetsVisible)")
+                        .id("\(currentEditorTool.stableID).\(coordinator.geometryPerspective).\(coordinator.geometryRotation).\(viewModel.quickPresetsVisible)")
                         .frame(height: side ? nil : parameterHeight)
+                        .modifier(OptionalGeometryObserver(action: testHooks.onPanelLayout.map { hook in
+                            { frame in hook(frame, metrics) }
+                        }))
                         .accessibilityIdentifier("editor.panel")
                         if toolWorkspaceOpen {
                             Divider()
@@ -164,15 +177,16 @@ extension ContentView {
                 .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
             if toolWorkspaceOpen {
             Menu {
-                Toggle(L10n.text("精细"), isOn: $adjustmentFine).accessibilityIdentifier("editor.fine")
-                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $hslTargetEnabled) }
+                Toggle(L10n.text("精细"), isOn: $coordinator.adjustmentFine).accessibilityIdentifier("editor.fine")
+                    .modifier(OptionalGeometryObserver(action: testHooks.onFineToggleFrame))
+                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $coordinator.hslTargetEnabled) }
                 Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
                     .accessibilityIdentifier("editor.compare.mode")
-                Toggle(L10n.text("直方图"), isOn: $histogramExpanded)
-                Button(L10n.text("照片信息")) { photoInfoMode = photoInfoMode.next }
-                    .accessibilityIdentifier("editor.photoInfo").accessibilityValue(photoInfoMode.title)
-                Button(L10n.text("纯预览")) { photoViewing.togglePreview(isDraft: geometrySelected) }
-                Button(L10n.text("照片处理设置")) { showingProcessingContext = true }
+                Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
+                Button(L10n.text("照片信息")) { coordinator.photoInfoMode = coordinator.photoInfoMode.next }
+                    .accessibilityIdentifier("editor.photoInfo").accessibilityValue(coordinator.photoInfoMode.title)
+                Button(L10n.text("纯预览")) { coordinator.photoViewing.togglePreview(isDraft: geometrySelected) }
+                Button(L10n.text("照片处理设置")) { coordinator.presentProcessingContext() }
             } label: { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 44, height: 44) }
                 .accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("editor.tool.more")
             }
@@ -188,7 +202,7 @@ extension ContentView {
             selectedGroup: selectedGroup,
             currentTool: currentEditorTool,
             hslChannel: hslChannel,
-            gradingZone: gradingZone,
+            gradingZone: coordinator.gradingZone,
             isAvailable: available,
             isModified: resetModified
         )

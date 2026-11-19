@@ -74,6 +74,8 @@ extension RawEditorViewModel {
             self.previewResizeWorkItem = nil
             guard !self.isBusy else { return }
             self.previewLongEdge = self.requestedPreviewLongEdge
+            self.onViewportResize?(true)
+            defer { self.onViewportResize?(false) }
             self.updatePreview(settings: self.currentPreviewSettings)
         }
         previewResizeWorkItem = commit
@@ -133,6 +135,7 @@ extension RawEditorViewModel {
             return
         }
 
+        onPreviewRequest?(request, sourceRevision)
         lastPreviewRequest = request
         previewRendering = true
         previewFailed = false
