@@ -12,6 +12,7 @@ public:
     std::vector<float> run(const std::vector<std::vector<float>>& inputs);
     static bool available();
     static bool gpuPlanAvailable();
+    static void verifyGPUPlacement(const std::string& compiledPath, GraphKind kind);
     static void verifyRawGPUPlacement(const std::string& compiledPath);
     static std::string runtimeVersion();
 private:

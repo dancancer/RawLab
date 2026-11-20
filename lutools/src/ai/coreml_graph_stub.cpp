@@ -6,6 +6,7 @@ CoreMLGraph::CoreMLGraph(const std::string&, GraphKind, int) { throw std::runtim
 CoreMLGraph::~CoreMLGraph() = default;
 bool CoreMLGraph::available() { return false; }
 bool CoreMLGraph::gpuPlanAvailable() { return false; }
+void CoreMLGraph::verifyGPUPlacement(const std::string&, GraphKind) { throw std::runtime_error("Native Core ML is unavailable on this platform"); }
 void CoreMLGraph::verifyRawGPUPlacement(const std::string&) { throw std::runtime_error("Native Core ML is unavailable on this platform"); }
 std::string CoreMLGraph::runtimeVersion() { return "coreml-unavailable"; }
 std::vector<float> CoreMLGraph::run(const std::vector<std::vector<float>>&) { throw std::runtime_error("Native Core ML is unavailable"); }

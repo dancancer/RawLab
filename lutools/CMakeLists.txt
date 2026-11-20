@@ -948,6 +948,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             LABELS core hdr ci_macos_arm64 ci_macos_x86_64
         )
         rawlab_add_test(
+            NAME display_image_decode_count
+            SOURCES tests/display_image_decode_count_tests.cpp
+            INCLUDES src
+            LIBRARIES sony2fuji_core
+            LABELS core hdr ci_macos_arm64 ci_macos_x86_64
+        )
+        rawlab_add_test(
             NAME hdr_image_decode
             TARGET hdr_image_tests
             SOURCES tests/hdr_image_tests.mm

@@ -133,11 +133,11 @@ RenderStatus Pipeline::loadRawImage(
         options.applyBaselineExposure = rawExposureMode_ != RawExposureMode::Sensor && !anchoredPreview;
         if (anchoredPreview) options.exposure = previewCameraEv_;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-        const ai::PreparedDenoise* prepared = nullptr;
+        std::optional<ai::PreparedDenoise> prepared;
         if (useAI) {
             RAWBayerSource metadata;
             const bool bayer = processor.getBayerMetadata(metadata);
-            prepared = &runtime_->ai->result(params.inputPath.c_str(), wbOptions, bayer ? &metadata : nullptr, aiSourceIdentity);
+            prepared = runtime_->ai->takeResult(params.inputPath.c_str(), wbOptions, bayer ? &metadata : nullptr, aiSourceIdentity);
             if (!prepared->isSceneRGB()) options.bayerOverride = &prepared->bayer;
         }
 #endif
@@ -151,6 +151,12 @@ RenderStatus Pipeline::loadRawImage(
             processorKey_.clear();
             throw;
         }
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+        if (prepared && !prepared->isSceneRGB()) {
+            options.bayerOverride = nullptr;
+            prepared.reset();
+        }
+#endif
         if (result != ErrorCode::Success) {
             x3fError_ = processor.getLastError();
             rawProcessor_.reset();
@@ -161,6 +167,7 @@ RenderStatus Pipeline::loadRawImage(
         if (prepared && prepared->isSceneRGB()) {
             ai::applySceneRGBCorrection(decoded, prepared->scene, ColorSpace::AdobeRGB,
                 std::exp2(processor.getBaselineExposureEV() + options.exposure) * options.brightness);
+            prepared.reset();
         }
 #endif
         rawNativeSize_ = halfSize ? processor.getNativeOutputSize() : std::pair{decoded.width, decoded.height};
