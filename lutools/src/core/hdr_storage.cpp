@@ -72,6 +72,7 @@ void Directory::recover(const fs::path& root) {
         std::error_code ignored;
         fs::remove_all(candidate, ignored);
         close(lock);
+        fs::remove_all(candidate, ignored);
     }
 }
 void requireSpace(const fs::path& root, uint64_t required) {
@@ -105,7 +106,7 @@ Directory::Directory(const fs::path& root, uint64_t required) : state_(std::make
         ioError("Cannot lock private HDR export directory");
     }
 }
-Directory::~Directory() { std::error_code error; fs::remove_all(path, error); }
+Directory::~Directory() { state_.reset(); std::error_code error; fs::remove_all(path, error); }
 
 struct File::State {
     Handle handle = invalid;

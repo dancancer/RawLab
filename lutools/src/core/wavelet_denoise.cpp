@@ -93,10 +93,9 @@ std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstim
                               sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2,
                               sony2fuji::ColorSpace sourceSpace = sony2fuji::ColorSpace::sRGB) {
     std::vector<Sample> samples;
-    cv::Matx33f toSRGB;
+    sony2fuji::ColorConverter::Matrix3x3 toSRGB{};
     if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
-        const auto matrix=sony2fuji::ColorConverter::getConversionMatrix(sourceSpace,sony2fuji::ColorSpace::sRGB);
-        for (int y=0;y<3;++y) for (int x=0;x<3;++x) toSRGB(y,x)=matrix[y][x];
+        toSRGB = sony2fuji::ColorConverter::getConversionMatrix(sourceSpace, sony2fuji::ColorSpace::sRGB);
     }
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
         sony2fuji::checkProcessingCancellation();
@@ -104,7 +103,16 @@ std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstim
         cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
         // Calibration uses full 64-pixel tiles, keeping SWT's size contract explicit.
         if (patch.rows<64 || patch.cols<64) { ++diagnostics.rejectedSmall; continue; }
-        if (sourceSpace != sony2fuji::ColorSpace::sRGB) cv::transform(patch,patch,toSRGB);
+        if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+            for (int py = 0; py < patch.rows; ++py) {
+                auto* row = patch.ptr<cv::Vec3f>(py);
+                for (int px = 0; px < patch.cols; ++px) {
+                    const auto converted = sony2fuji::ColorConverter::applyMatrix(
+                        sony2fuji::RGB(row[px][0], row[px][1], row[px][2]), toSRGB);
+                    row[px] = cv::Vec3f(converted.r, converted.g, converted.b);
+                }
+            }
+        }
         cv::Mat smooth;
         cv::GaussianBlur(patch,smooth,{},3);
         const cv::Mat residual=patch-smooth;
