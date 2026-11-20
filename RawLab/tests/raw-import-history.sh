@@ -1,28 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 APP="${1:?Pass the current built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass the task-owned simulator UUID}"
 RAW="${3:?Pass a private real RAW fixture path}"
-BASE="${4:-/tmp/rawlab-ios-raw-history}"
-mkdir -p "$BASE"
-OUT="$(mktemp -d "$BASE/run.XXXXXX")"
+if [ "$#" -ge 4 ]; then
+    rawlab_ios_make_temp_dir OUT run "$4" keep
+else
+    rawlab_ios_make_temp_dir OUT rawlab-ios-raw-history
+fi
 HARNESS="$OUT/RawImportHistoryTests.app"
-mkdir -p "$HARNESS/Frameworks"
-cp "$APP/Info.plist" "$HARNESS/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set CFBundleIdentifier com.rawlab.tests.raw-import-history' \
-    -c 'Set CFBundleExecutable raw-import-history' "$HARNESS/Info.plist"
-cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET=arm64-apple-ios18.0-simulator
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
-    -fmodules-cache-path="$OUT/module-cache" \
-    -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
-SOURCES=()
-while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' -g '!**/RawLabKit/**')
+rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.raw-import-history raw-import-history "$APP"
+rawlab_ios_compile_metadata_bridge "$OUT/bridge.o" "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" "$OUT/module-cache"
+rawlab_ios_core_shared_sources SOURCES
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/tests/RawImportHistoryTests.swift" "$OUT/bridge.o" \
@@ -30,4 +24,6 @@ xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/raw-import-history"
 codesign --force --deep --sign - "$HARNESS" >/dev/null
 xcrun simctl spawn "$DEVICE" "$HARNESS/raw-import-history" "$RAW" "$OUT"
-echo "Artifacts: $OUT"
+if [ "$#" -ge 4 ]; then
+    echo "Artifacts: $OUT"
+fi

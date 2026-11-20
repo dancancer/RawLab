@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 APP=""
 DEVICE=""
 OWNED_DEVICE=0
@@ -15,13 +16,13 @@ elif [ "$#" -eq 1 ]; then
         DEVICE="$1"
     fi
 fi
-OUT="$(mktemp -d /tmp/rawlab-ios-look-import.XXXXXX)"
+rawlab_ios_make_temp_dir OUT rawlab-ios-look-import
 cleanup() {
     if [ "$OWNED_DEVICE" -eq 1 ] && [ -n "$DEVICE" ]; then
         xcrun simctl shutdown "$DEVICE" >/dev/null 2>&1 || true
         xcrun simctl delete "$DEVICE" >/dev/null 2>&1 || true
     fi
-    rm -rf "$OUT"
+    rawlab_ios_cleanup_temp_dirs
 }
 trap cleanup EXIT
 
@@ -48,31 +49,17 @@ fi
 xcrun simctl boot "$DEVICE" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$DEVICE" -b >/dev/null
 HARNESS="$OUT/LookImportTests.app"
-mkdir -p "$HARNESS/Frameworks"
 if [ -n "$APP" ]; then
-    cp "$APP/Info.plist" "$HARNESS/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set CFBundleIdentifier com.rawlab.tests.look-import' \
-        -c 'Set CFBundleExecutable look-import' "$HARNESS/Info.plist"
-    cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
+    rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.look-import look-import "$APP"
 else
-    /usr/libexec/PlistBuddy \
-        -c 'Add CFBundleIdentifier string com.rawlab.tests.look-import' \
-        -c 'Add CFBundleExecutable string look-import' \
-        -c 'Add CFBundlePackageType string APPL' \
-        -c 'Add CFBundleVersion string 1' \
-        -c 'Add CFBundleShortVersionString string 1.0' \
-        -c 'Add MinimumOSVersion string 18.0' \
-        "$HARNESS/Info.plist"
     XCFRAMEWORK="${RAWLAB_IOS_XCFRAMEWORK:-$ROOT/lutools/build-ios/sony2fuji.xcframework}"
     SIMULATOR_FRAMEWORK="$(find "$XCFRAMEWORK" -path '*simulator*/sony2fuji.framework' -type d -print -quit)"
     [ -n "$SIMULATOR_FRAMEWORK" ] || {
         echo "No simulator sony2fuji.framework under $XCFRAMEWORK" >&2
         exit 1
     }
-    cp -R "$SIMULATOR_FRAMEWORK" "$HARNESS/Frameworks/"
+    rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.look-import look-import "$SIMULATOR_FRAMEWORK"
 fi
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET="$(uname -m)-apple-ios18.0-simulator"
 SOURCES=(
     "$ROOT/Shared/DCPCompiler.swift"
     "$ROOT/Shared/LookLibrary.swift"
@@ -81,7 +68,7 @@ SOURCES=(
     "$ROOT/RawLab/tests/LookImportTests.swift"
 )
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" \

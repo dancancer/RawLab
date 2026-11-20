@@ -94,6 +94,10 @@ if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
     X3F_LINK_FLAGS=("$BUILD/x3f-rust/$X3F_TARGET/release/librawlab_x3f.a" -liconv)
 fi
 "$BUILD/dng_jxl_tests"
+if [ "${RAWLAB_RELEASE:-0}" != 1 ]; then
+    test -n "$APP" && test "$APP" != "/"
+    rm -rf "$APP"
+fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
 if [ "${#X3F_LINK_FLAGS[@]}" -gt 0 ]; then

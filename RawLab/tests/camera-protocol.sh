@@ -1,9 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT="$(mktemp -d /tmp/rawlab-camera-protocol.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-swiftc -swift-version 5 -whole-module-optimization -module-cache-path "$OUT/modules" \
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_host_init
+rawlab_ios_make_temp_dir OUT rawlab-camera-protocol
+rawlab_ios_host_swiftc -whole-module-optimization -module-cache-path "$OUT/modules" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \

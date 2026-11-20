@@ -6,10 +6,12 @@
 # ============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 source "$ROOT/RawLabMac/tests/ax-gate.sh"
 rawlab_ax_gate
 SOURCE_APP="${1:?Pass the built RawLab Mac.app}"
-OUT="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/rawlab-menu-language.XXXXXX")" && pwd -P)"
+rawlab_mac_make_temp_dir _OUT_RAW rawlab-menu-language
+OUT="$(cd "$_OUT_RAW" && pwd -P)"
 ID="dev.rawlab.agent.menu-language.$$"
 APP="$OUT/MenuLanguage.app"
 PROCESS="MenuLanguage.app/Contents/MacOS/RawLabMac"
@@ -17,7 +19,7 @@ cleanup() {
     pkill -f "$PROCESS" 2>/dev/null || true
     defaults delete "$ID" 2>/dev/null || true
     rm -f "$HOME/Library/Preferences/$ID.plist"
-    rm -rf "$OUT"
+    rawlab_mac_cleanup_temp_dirs
 }
 trap cleanup EXIT
 ditto "$SOURCE_APP" "$APP"
@@ -37,7 +39,7 @@ for item in (items as? [AXUIElement] ?? []).dropFirst() {
     print(title as? String ?? "")
 }
 SWIFT
-swiftc -O "$OUT/menus.swift" -o "$OUT/menus" 2>/dev/null
+rawlab_mac_swiftc -O "$OUT/menus.swift" -o "$OUT/menus" 2>/dev/null
 
 check() {
     local language=$1 edit=$2 window=$3 pid titles

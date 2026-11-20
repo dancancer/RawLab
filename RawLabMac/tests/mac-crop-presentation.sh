@@ -1,15 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-OUT="$(mktemp -d /tmp/rawlab-mac-crop-presentation.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
-    SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
-fi
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-mac-crop-presentation
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -module-cache-path "$OUT/ModuleCache" \
     "$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift" "$ROOT/RawLabMac/Sources/Geometry/MacCropOverlay.swift" \
     "$ROOT/RawLabMac/tests/MacCropPresentationTests.swift" -framework AppKit -framework SwiftUI -o "$OUT/tests"

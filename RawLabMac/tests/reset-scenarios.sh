@@ -3,17 +3,14 @@
 # 文件集与 adjustment-transfer.sh 相同（重置规则就在 Adjustments.swift / AdjustmentTypes.swift 内）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-OUT="$(mktemp -d /tmp/rawlab-reset-scenarios.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-reset-scenarios
+rawlab_mac_adjustment_native_sources SOURCES
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-    -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-          "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization \
+    -import-objc-header "$RAWLAB_MAC_BRIDGING_HEADER" \
+    "${SOURCES[@]}" \
     "${RAWLAB_RESET_TEST_SOURCE:-$ROOT/RawLabMac/tests/ResetScenarioTests.swift}" \
     -framework Foundation -framework ImageIO -o "$OUT/test"
 cd "$ROOT"

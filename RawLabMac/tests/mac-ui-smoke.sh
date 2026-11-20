@@ -1,37 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/Shared/tests/mac-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
 OUT="${1:?Pass an isolated task output directory}"
 SCENARIO="${2:-all}"
 mkdir -p "$OUT"
-STAGE="$(mktemp -d "$OUT/smoke-app.XXXXXX")"
-trap 'rm -rf "$STAGE"' EXIT
+rawlab_mac_make_temp_dir STAGE smoke-app "$OUT"
 APP="$STAGE/MacUISmoke.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OUT/module-cache"
-SOURCES=()
-while IFS= read -r -d '' source; do
-    case "$source" in */RawLabMacApp.swift) continue ;; esac
-    SOURCES+=("$source")
-done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 RPATHS=()
 for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -whole-module-optimization -num-threads "${JOBS:-4}" -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+rawlab_mac_compile_native full-app "$OUT/swiftpm" "$APP/Contents/MacOS/MacUISmoke" -- \
+    -O -whole-module-optimization -num-threads "${JOBS:-4}" \
     -module-cache-path "$OUT/module-cache" \
-    -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
-    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" \
     "$ROOT/RawLabMac/tests/MacUITestRobot.swift" "$ROOT/RawLabMac/tests/MacUISmokeRunner.swift" \
-    "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-    -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal "${RPATHS[@]}" \
-    -o "$APP/Contents/MacOS/MacUISmoke"
+    "${RPATHS[@]}"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

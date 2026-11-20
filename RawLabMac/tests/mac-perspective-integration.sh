@@ -1,28 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/Shared/tests/mac-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
-OUT="${RAWLAB_PERSPECTIVE_OUTPUT_DIR:-$(mktemp -d /tmp/rawlab-mac-perspective.XXXXXX)}"
+if [ -n "${RAWLAB_PERSPECTIVE_OUTPUT_DIR:-}" ]; then
+    OUT="$RAWLAB_PERSPECTIVE_OUTPUT_DIR"
+    mkdir -p "$OUT"
+else
+    rawlab_mac_make_temp_dir OUT rawlab-mac-perspective
+fi
 RAW="${1:-${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DNG}}"
 test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2; exit 1; }
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
-mkdir -p "$OUT"
-SOURCES=()
-while IFS= read -r -d '' source; do
-    case "$source" in */RawLabMacApp.swift) continue ;; esac
-    SOURCES+=("$source")
-done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
-    -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
-    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/MacPerspectiveIntegrationTests.swift" \
-    "${CORE_LINK[@]}" $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
-    -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
-    -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
+rawlab_mac_compile_native full-app "$OUT/swiftpm" "$OUT/test" -- \
+    -parse-as-library -O -module-cache-path "$OUT/ModuleCache" \
+    "$ROOT/RawLabMac/tests/MacPerspectiveIntegrationTests.swift" \
+    -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)"
 "$OUT/test" "$RAW" "$OUT"
-echo "Artifacts: $OUT"
+if [ -n "${RAWLAB_PERSPECTIVE_OUTPUT_DIR:-}" ]; then
+    echo "Artifacts: $OUT"
+fi

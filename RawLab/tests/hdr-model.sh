@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-BUILD="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-hdr-model.XXXXXX")"
-trap 'rm -rf "$BUILD"' EXIT
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_host_init
+rawlab_ios_make_temp_dir BUILD rawlab-ios-hdr-model
 rawlabkit_flags link "$BUILD/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
- "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
+rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization \
+    "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
     "$ROOT/RawLab/tests/HDRModelTests.swift" -o "$BUILD/hdr-model"
 "$BUILD/hdr-model"
 RAWLAB_TRANSFER_TEST_SOURCE="$ROOT/RawLab/tests/HDRTransferAdapterTests.swift" \

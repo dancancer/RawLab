@@ -9,9 +9,10 @@
 # 探针本身失败时不下结论（返回），交给脚本自身的编译/断言报错。
 rawlab_ax_gate() {
     local out verdict
-    out="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ax-gate.XXXXXX")" || return 0
+    rawlab_mac_test_init
+    rawlab_mac_make_temp_dir out rawlab-ax-gate || return 0
     printf 'import ApplicationServices\nprint(AXIsProcessTrusted())\n' > "$out/probe.swift"
-    if swiftc "$out/probe.swift" -o "$out/probe" 2>/dev/null; then
+    if rawlab_mac_swiftc "$out/probe.swift" -o "$out/probe" 2>/dev/null; then
         verdict="$("$out/probe" 2>/dev/null || echo unknown)"
     else
         verdict=unknown

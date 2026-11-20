@@ -1,18 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/Shared/tests/hdr-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
-if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
-    SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
-fi
-mkdir -p "$ROOT/build/mac-tests"
-rawlabkit_flags link "${TMPDIR:-/tmp}/rawlabkit-swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" \
-     "$ROOT/RawLabMac/tests/LensSettingsTests.swift" \
-    "${CORE_LINK[@]}" $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) \
-    -lc++ -lz -framework AppKit -framework ImageIO -framework Metal -o "$ROOT/build/mac-tests/lens-settings"
-"$ROOT/build/mac-tests/lens-settings"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_make_temp_dir OUT rawlab-lens-settings
+rawlab_mac_compile_native render-engine "$OUT/swiftpm" "$OUT/lens-settings" -- \
+    "$ROOT/RawLabMac/tests/LensSettingsTests.swift"
+"$OUT/lens-settings"

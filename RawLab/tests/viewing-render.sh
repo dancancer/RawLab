@@ -1,18 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 DEVICE="${1:?Pass dedicated task simulator UUID}"
 OUT="${2:?Pass new output directory}"
 FRAMEWORK="${3:-$ROOT/lutools/build-ios/sony2fuji.xcframework/ios-arm64-simulator/sony2fuji.framework}"
 mkdir -p "$OUT/ViewingRenderTests.app/Frameworks" "$OUT/source"
 OUT="$(cd "$OUT" && pwd)"
 APP="$OUT/ViewingRenderTests.app"
-cp -R "$FRAMEWORK" "$APP/Frameworks/"
-python3 - "$APP" <<'PY'
-import pathlib,plistlib,sys
-p=pathlib.Path(sys.argv[1]);plistlib.dump({'CFBundleIdentifier':'com.rawlab.tests.viewing-render','CFBundleExecutable':'viewing-render','CFBundlePackageType':'APPL','CFBundleVersion':'1','MinimumOSVersion':'18.0','CFBundleSupportedPlatforms':['iPhoneSimulator'],'UIDeviceFamily':[1,2]},(p/'Info.plist').open('wb'))
-PY
+rawlab_ios_prepare_sim_app "$APP" com.rawlab.tests.viewing-render viewing-render "$FRAMEWORK"
 python3 - "$ROOT" "$OUT" <<'PY_SOURCES'
 import pathlib,shutil,sys,subprocess,json,hashlib
 root,out=map(pathlib.Path,sys.argv[1:]);files=[]
@@ -23,13 +20,10 @@ for p in files:
  dest=out/'source'/p.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dest)
 (out/'source-receipt.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'sourceSHA256':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files},'scope':'preview view, view model and native processor; no touch input'},indent=2)+'\n')
 PY_SOURCES
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET=arm64-apple-ios18.0-simulator
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" -I "$ROOT/lutools/include" -c "$OUT/source/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
-SOURCES=()
-while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI/Preview" "$OUT/source/Shared" -g '*.swift' -g '!**/tests/**' | sort)
+rawlab_ios_compile_metadata_bridge "$OUT/bridge.o" "$OUT/source/RawLab/RawLab/Support/RawMetadataBridge.mm"
+rawlab_ios_core_shared_sources SOURCES "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI/Preview" "$OUT/source/Shared"
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
 codesign --force --deep --sign - "$APP" >/dev/null
 STATUS=0
 xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" "${RAWLAB_TEST_HDR:-}" || STATUS=$?
