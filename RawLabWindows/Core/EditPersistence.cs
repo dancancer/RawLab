@@ -178,7 +178,7 @@ public sealed class UnusableEditRecordException(string message, Exception? inner
 
 public sealed class EditStore
 {
-    private sealed class UnsupportedFutureRegistryException(string message) : InvalidDataException(message);
+    private sealed class UnsupportedFutureRegistryException(string message) : Exception(message);
     private sealed record Registry(int Version, Dictionary<string, JsonElement> Records,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         Dictionary<string, JsonElement>? MigrationReceipts = null);
@@ -310,10 +310,10 @@ public sealed class EditStore
         {
             parsed = ReadRegistryFromDisk();
         }
-        catch (UnsupportedFutureRegistryException)
+        catch (UnsupportedFutureRegistryException ex)
         {
             InvalidateCache();
-            throw;
+            throw new InvalidDataException(ex.Message, ex);
         }
         catch (Exception error) when (error is JsonException or InvalidDataException)
         {
