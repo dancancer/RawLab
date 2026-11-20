@@ -99,9 +99,29 @@ def _cache_truthy(cache: dict[str, str], key: str) -> bool:
     return cache.get(key, "").upper() in {"ON", "TRUE", "1", "YES"}
 
 
-def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest") -> dict:
+def resolve_ctest_config(cache: dict[str, str], explicit_config: str | None = None) -> str | None:
+    if explicit_config:
+        return explicit_config
+    if cache.get("CMAKE_BUILD_TYPE", "").strip():
+        return None
+    config_types = cache.get("CMAKE_CONFIGURATION_TYPES", "").strip()
+    if not config_types:
+        return None
+    configs = [item.strip() for item in config_types.split(";") if item.strip()]
+    if "Release" in configs:
+        return "Release"
+    return configs[0] if configs else None
+
+
+def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest", config: str | None = None) -> dict:
+    if config is None:
+        config = resolve_ctest_config(parse_cmake_cache(build_dir))
+    cmd = [ctest_bin, "--test-dir", str(build_dir)]
+    if config:
+        cmd.extend(["-C", config])
+    cmd.append("--show-only=json-v1")
     output = subprocess.check_output(
-        [ctest_bin, "--test-dir", str(build_dir), "--show-only=json-v1"],
+        cmd,
         text=True,
         encoding="utf-8",
     )
@@ -211,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ai-enabled", action="store_true", help="Expect SONY2FUJI_ENABLE_AI_DENOISE=ON test targets")
     parser.add_argument("--skip-orphan-check", action="store_true", help="Skip lutools/tests/*.{cpp,mm} source check")
     parser.add_argument("--ctest-bin", default="ctest", help="Path to ctest executable")
+    parser.add_argument("--config", help="CMake configuration for multi-config generators (auto-detected if omitted)")
     args = parser.parse_args(argv)
 
     if bool(args.build_dir) == bool(args.json):
@@ -220,8 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         data = json.loads(args.json.read_text(encoding="utf-8"))
     else:
-        data = load_ctest_json(args.build_dir, args.ctest_bin)
         cache = parse_cmake_cache(args.build_dir)
+        config = resolve_ctest_config(cache, args.config)
+        data = load_ctest_json(args.build_dir, args.ctest_bin, config=config)
 
     ai_enabled = args.ai_enabled or _cache_truthy(cache, "SONY2FUJI_ENABLE_AI_DENOISE")
     portable_hdr = _cache_truthy(cache, "SONY2FUJI_TEST_PORTABLE_HDR") if "SONY2FUJI_TEST_PORTABLE_HDR" in cache else None

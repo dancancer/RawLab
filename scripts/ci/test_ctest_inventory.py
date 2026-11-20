@@ -9,6 +9,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -111,6 +112,52 @@ class CTestInventoryTests(unittest.TestCase):
         self.assertRegex(win_run, r"ctest\b[^\n]*'-L',\s*'\^ci_windows\$'")
         self.assertNotRegex(win_run, r"(?m)^\s*\$tests\s*=")
         self.assertIn("check_ctest_inventory.py", win_run)
+
+    def test_resolve_ctest_config_for_multi_config_and_single_config_caches(self) -> None:
+        multi_cache = {
+            "CMAKE_CONFIGURATION_TYPES": "Debug;Release;MinSizeRel;RelWithDebInfo",
+        }
+        self.assertEqual(cci.resolve_ctest_config(multi_cache), "Release")
+        self.assertEqual(cci.resolve_ctest_config(multi_cache, "Debug"), "Debug")
+        self.assertEqual(
+            cci.resolve_ctest_config({"CMAKE_CONFIGURATION_TYPES": "Debug;RelWithDebInfo"}),
+            "Debug",
+        )
+        single_cache = {
+            "CMAKE_BUILD_TYPE": "Release",
+            "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        }
+        self.assertIsNone(cci.resolve_ctest_config(single_cache))
+        self.assertEqual(cci.resolve_ctest_config(single_cache, "RelWithDebInfo"), "RelWithDebInfo")
+
+    def test_load_ctest_json_selects_release_for_multi_config_cmake_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            build_dir = Path(tmp)
+            (build_dir / "CMakeCache.txt").write_text(
+                "CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release;MinSizeRel;RelWithDebInfo\n",
+                encoding="utf-8",
+            )
+            payload = json.dumps({"tests": [_make_entry("tiff_ifd", ["core", "ci_windows"], "tiff_ifd_tests")]})
+            with mock.patch("check_ctest_inventory.subprocess.check_output", return_value=payload) as mocked:
+                loaded = cci.load_ctest_json(build_dir)
+            self.assertEqual(len(loaded["tests"]), 1)
+            mocked.assert_called_once_with(
+                ["ctest", "--test-dir", str(build_dir), "-C", "Release", "--show-only=json-v1"],
+                text=True,
+                encoding="utf-8",
+            )
+
+            (build_dir / "CMakeCache.txt").write_text(
+                "CMAKE_BUILD_TYPE:STRING=Release\n",
+                encoding="utf-8",
+            )
+            with mock.patch("check_ctest_inventory.subprocess.check_output", return_value=payload) as mocked_single:
+                cci.load_ctest_json(build_dir)
+            mocked_single.assert_called_once_with(
+                ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+                text=True,
+                encoding="utf-8",
+            )
 
     def test_optional_live_build_dir_reconciliation(self) -> None:
         build_dir = os.environ.get("RAWLAB_CTEST_BUILD_DIR")
