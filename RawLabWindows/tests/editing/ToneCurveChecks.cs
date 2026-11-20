@@ -85,7 +85,10 @@ internal static class ToneCurveChecks
         var batch = BatchJob.Create("curve.jpg", snapshot, null, "neutral");
         state.Curve = ToneCurveSettings.Identity;
         Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(batch))!.Settings.Restore().Curve == curve, "Batch snapshot freezes curve independently of later editing");
-        state.ResetAll(); Check(state.Curve.IsDefault, "Full reset returns to legacy identity");
+        var fullReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(state));
+        Check(fullReset.Status == EditorResetStatus.Ready, "Full reset returns a candidate");
+        state = fullReset.Candidate!.Settings.Restore();
+        Check(state.Curve.IsDefault, "Full reset returns to legacy identity");
         Console.WriteLine("PASS: curve precision, persistence, immutable snapshots, native adapter, selective transfer, reset and batch");
     }
 }

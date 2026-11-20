@@ -51,7 +51,9 @@ public sealed class ModelRegressionTests
         Check(mapped.WbMode == 3 && mapped.Temperature == 8000 && Math.Abs(mapped.Highlights + .3) < 1e-6 && Math.Abs(mapped.Contrast - .8) < 1e-6,
             "Mac adjustment mapping including highlight sign");
         var clone = settings.Clone();
-        settings.ResetAll();
+        var resetCandidate = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("test.arw", 1, 2, 3), settings.Capture(), null));
+        Check(resetCandidate.Status == EditorResetStatus.Ready, "Production full reset prepares candidate");
+        settings = resetCandidate.Candidate!.Settings.Restore();
         Check(settings.CameraWhiteBalance && settings[Parameter.Temperature] == 4870 && settings[Parameter.Tint] == 17 && clone[Parameter.Temperature] == 8000,
             "As-shot reset and independent photo snapshots");
         foreach (var spec in ParameterSpec.All)
@@ -350,7 +352,7 @@ public sealed class WpfSuiteTests
                 var exact = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
                 Check(Math.Max(proxy.Image.PixelWidth, proxy.Image.PixelHeight) == 1000 && !Pixels(exact.Image).SequenceEqual(Pixels(rendered.Image)),
                     "Interactive WB followed by exact WB");
-                settings.ResetAll();
+                settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(OriginalIdentity.Read(unicodeRaw), settings.Capture(), null)).Candidate!.Settings.Restore();
                 var reset = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
                 Check(Pixels(reset.Image).SequenceEqual(Pixels(rendered.Image)), "Reset returns exactly to as-shot rendering");
                 settings.ExposureMode = 2; Check(engine.Render(unicodeRaw, settings, null, 800)!.Baseline == 0, "Sensor exposure baseline");

@@ -73,7 +73,8 @@ internal static class ColorGradingChecks
         }
         var batch = BatchJob.Create("grading.jpg", snapshot, null, "neutral");
         Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(batch))!.Settings.Restore().ColorGrading == grading, "Frozen batch preserves grading");
-        state.ResetAll(); Check(state.ColorGrading.IsDefault, "Direct full reset clears grading");
+        state = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(state)).Candidate!.Settings.Restore();
+        Check(state.ColorGrading.IsDefault, "Direct full reset clears grading");
         Console.WriteLine("PASS: grading persistence, pending hue, bounds, transfer, recipe independence, reset and batch");
     }
 }

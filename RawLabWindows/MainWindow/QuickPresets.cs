@@ -59,11 +59,20 @@ public partial class MainWindow
         return PrepareAdjustmentCommand();
     }
 
+    private Task<bool> PrepareQuickPresetCommandAsync()
+    {
+        foreach (var row in ParameterRows(AdjustmentPanel).Where(row => row.HasPendingInput)) {
+            if (row.Commit()) continue;
+            CloseQuickPresets(); row.Number.Focus(); return Task.FromResult(false);
+        }
+        return PrepareAdjustmentCommandAsync();
+    }
+
     internal async Task ApplyPresetToCurrentPhoto(AdjustmentPreset preset)
     {
         if (!quickPresetsVisible || transferPreparing || quickPreset.Phase == QuickPresetPhase.Preparing || file == null) return;
         var source = file; var opened = openRevision;
-        if (!PrepareQuickPresetCommand() || !quickPresetsVisible || file != source || openRevision != opened) return;
+        if (!await PrepareQuickPresetCommandAsync() || !quickPresetsVisible || file != source || openRevision != opened) return;
         BeginTransferPrepare();
         var generation = ++quickPresetGeneration; var revision = editRevision;
         try {
@@ -127,7 +136,7 @@ public partial class MainWindow
 
     private async Task ApplyPresetToPhotos(AdjustmentPreset preset)
     {
-        if (!PrepareQuickPresetCommand()) return;
+        if (!await PrepareQuickPresetCommandAsync()) return;
         CancelQuickPreset();
         var picker = new OpenFileDialog { Title = Loc.Text("选择目标照片"), Filter = Loc.Text("照片|") + LibraryEntry.ImageFilter, Multiselect = true };
         if (picker.ShowDialog(this) == true) await ShowAdjustmentPreflight(preset.Payload, picker.FileNames, AdjustmentHistoryAction.Preset, preset.Name);

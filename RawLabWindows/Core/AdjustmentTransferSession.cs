@@ -160,14 +160,26 @@ public sealed class AdjustmentTransferSession(EditStore store)
         var id=before.Identity.Path;
         if(isCurrent?.Invoke()==false)return new(id,AdjustmentStatus.Blocked,Error:Draft());
         try {
-            if(!edit.Identity.SameFile(before.Identity))throw new PhotoChangedException();
-            if(knownRecords.TryGetValue(id,out var committed) && committed.Identity.SameFile(before.Identity))before=committed;
-            var desired=before.Edit==null && edit.SameAs(defaultEdit) ? null : edit;
-            var saved=store.SaveState(before.Identity,desired,clearMigrationReceipt);
-            if(SavedEdit.Same(before.Edit,saved.Edit)){Remember(saved);return new(id,AdjustmentStatus.Unchanged,saved);}
-            Record(Guid.NewGuid(),AdjustmentHistoryAction.Edit,new HashSet<AdjustmentField>(),Path.GetFileName(id),before,saved);
-            return new(id,AdjustmentStatus.Applied,saved);
+            var (baseline,desired)=PrepareEditCommit(before,edit,defaultEdit);
+            var saved=store.SaveState(baseline.Identity,desired,clearMigrationReceipt);
+            return CompleteEditCommit(baseline,saved);
         }catch(Exception error){return new(id,AdjustmentStatus.Failed,Error:error);}
+    }
+    internal (PhotoEditState Baseline,SavedEdit? Desired) PrepareEditCommit(PhotoEditState before,SavedEdit edit,SavedEdit? defaultEdit=null)
+    {
+        var id=before.Identity.Path;
+        if(!edit.Identity.SameFile(before.Identity))throw new PhotoChangedException();
+        if(knownRecords.TryGetValue(id,out var committed) && committed.Identity.SameFile(before.Identity))before=committed;
+        var desired=before.Edit==null && edit.SameAs(defaultEdit) ? null : edit;
+        return (before,desired);
+    }
+    internal AdjustmentOutcome CompleteEditCommit(PhotoEditState before,PhotoEditState saved)
+    {
+        var id=before.Identity.Path;
+        if(knownRecords.TryGetValue(id,out var committed) && committed.Identity.SameFile(before.Identity))before=committed;
+        if(SavedEdit.Same(before.Edit,saved.Edit)){Remember(saved);return new(id,AdjustmentStatus.Unchanged,saved);}
+        Record(Guid.NewGuid(),AdjustmentHistoryAction.Edit,new HashSet<AdjustmentField>(),Path.GetFileName(id),before,saved);
+        return new(id,AdjustmentStatus.Applied,saved);
     }
     public Guid? PhotoHistoryID(string path,bool undo)
     {

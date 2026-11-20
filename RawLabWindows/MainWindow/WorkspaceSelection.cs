@@ -41,7 +41,7 @@ public partial class MainWindow
         WorkspaceSelectionCount.Text = Loc.Format("已选 {0} 张", count);
     }
 
-    private void PhotoSelected(object sender, RoutedEventArgs e)
+    private async void PhotoSelected(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: LibraryEntry entry } || exporting || closing || UpdateInstallationActive) return;
         if (workspaceLayout.Mode == WorkspaceMode.Selection)
@@ -49,22 +49,37 @@ public partial class MainWindow
             workspaceSelection.Toggle(entry.Path, folderPhotoOrder, (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
             RefreshPhotoMarks();
         }
-        else OpenFile(entry.Path, entry.Thumbnail);
+        else
+        {
+            CancelParameterInputs(); CancelViewingInput();
+            if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) return;
+            if (exporting || closing || UpdateInstallationActive) return;
+            OpenFile(entry.Path, entry.Thumbnail);
+        }
     }
 
-    private void PhotoTilePressed(object sender, MouseButtonEventArgs e)
+    private async void PhotoTilePressed(object sender, MouseButtonEventArgs e)
     {
         if (workspaceLayout.Mode != WorkspaceMode.Selection || e.ClickCount != 2 ||
             sender is not Button { DataContext: LibraryEntry entry } || exporting || closing || UpdateInstallationActive) return;
         e.Handled = true;
         workspaceSelection.BeforeOpening(entry.Path);
         RefreshPhotoMarks();
+        CancelParameterInputs(); CancelViewingInput();
+        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) return;
+        if (exporting || closing || UpdateInstallationActive) return;
         OpenFile(entry.Path, entry.Thumbnail);
     }
 
-    private void OpenLibraryPhotoClicked(object sender, RoutedEventArgs e)
+    private async void OpenLibraryPhotoClicked(object sender, RoutedEventArgs e)
     {
-        if (ResolveContextEntry(sender) is { IsFolder: false } photo) OpenFile(photo.Path, photo.Thumbnail);
+        if (ResolveContextEntry(sender) is { IsFolder: false } photo)
+        {
+            CancelParameterInputs(); CancelViewingInput();
+            if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) return;
+            if (exporting || closing || UpdateInstallationActive) return;
+            OpenFile(photo.Path, photo.Thumbnail);
+        }
     }
 
     private void ClearWorkspaceSelectionClicked(object sender, RoutedEventArgs e)

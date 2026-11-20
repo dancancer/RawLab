@@ -142,7 +142,8 @@ internal static class RasterChecks
         var job=BatchJob.Create(raw,master.Capture(),recipe.LutPath,"Mixed");job.Format=ExportFormat.Png;job.LongEdge=64;
         job.OutputDirectory=Path.Combine(output,"batch-output");Directory.CreateDirectory(job.OutputDirectory);
         job.Items=[BatchItem.Create(raw) with{Selected=true},BatchItem.Create(png) with{Selected=true},BatchItem.Create(jpeg) with{Selected=true},BatchItem.Create(tiff) with{Selected=true}];
-        journal.FreezeLook(job);journal.Save(job);master.ResetAll();
+        journal.FreezeLook(job);journal.Save(job);
+        master=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(raw),master.Capture(),null)).Candidate!.Settings.Restore();
         BatchRunner.Run(job,journal,false,CancellationToken.None,(_,_)=>{},(input,settings,look,target,edge)=>engine.Render(input,settings,look,0,output:target,longEdge:edge));
         foreach(var item in job.Items)
         {

@@ -193,8 +193,9 @@ public partial class App : Application
             Path.GetTempPath(), analyticsCache, exportStaging, DateTime.UtcNow, TempCleanup.DefaultRetention));
         var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current, appPaths));
         var fileVersion=System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(App).Assembly.Location);
-        var updates = new DesktopUpdateController(adapter, new(), new(appPaths.UpdatesDirectory), current,
-            fileVersion.FilePrivatePart.ToString(), automaticCheck: automaticUpdateCheck);
+        var privateBuild = fileVersion.FilePrivatePart.ToString();
+        var updates = await Task.Run(() => new DesktopUpdateController(adapter, new(), new(appPaths.UpdatesDirectory), current,
+            privateBuild, automaticCheck: automaticUpdateCheck));
         MainWindow? editor = null;
         if (!updates.RequiresRecovery)
         {

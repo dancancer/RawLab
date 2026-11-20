@@ -52,11 +52,16 @@ public partial class MainWindow
         var aiChanged=aiEnabled!=gesture.Before.Settings.ActiveAIDenoise;
         settings=gesture.Before.Settings.Restore();settings.ActiveAIDenoise=aiEnabled;lut=ResolveLook(gesture.Before);
         editDirty=gesture.WasDirty || aiChanged;++editRevision;ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
-        if(aiChanged && !closing)SaveEdits();
+        if(aiChanged && !closing)EnqueueSaveEdits();
     }
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)
     {
         if(file==null)throw new InvalidOperationException("No photo is open.");
+        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
+        {
+            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
+            _ = ApplyPendingEditSaves();
+        }
         var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
         var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
         SavedEdit? defaultEdit=null;
@@ -112,6 +117,17 @@ public partial class MainWindow
         }
         if(editGesture!=null)return false;
         return ResolveTransformDraft() && SaveEdits();
+    }
+    private async Task<bool> PrepareAdjustmentCommandAsync()
+    {
+        CancelHslTarget();
+        if(file==null || exporting || closing || aiJob.State.IsRunning)return false;
+        foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
+            if(row.Commit())continue;
+            row.Number.Focus();return false;
+        }
+        if(editGesture!=null)return false;
+        return ResolveTransformDraft() && await FlushSaveEditsAsync();
     }
     private bool HistoryTargetIsCurrent(string path)=>!StringComparer.OrdinalIgnoreCase.Equals(path,file) ||
         !editDirty && !transform.Active && editGesture==null && !exporting && !closing && !aiJob.State.IsRunning;

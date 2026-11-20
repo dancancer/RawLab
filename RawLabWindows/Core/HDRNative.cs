@@ -7,14 +7,19 @@ namespace RawLab.Windows;
 internal sealed class HDRPairOwner : IDisposable
 {
     private Native.HDRImagePair pair;
-    private bool released;
+    private readonly Action<Native.HDRImagePair>? release;
+    private int released;
     internal ref Native.HDRImagePair Pair => ref pair;
-    internal HDRPairOwner(Native.HDRImagePair pair) => this.pair = pair;
+    internal HDRPairOwner(Native.HDRImagePair pair, Action<Native.HDRImagePair>? release = null)
+    {
+        this.pair = pair;
+        this.release = release;
+    }
     public void Dispose()
     {
-        if (released) return;
-        released = true;
-        Native.sony2fuji_hdr_release_pair(ref pair);
+        if (Interlocked.Exchange(ref released, 1) != 0) return;
+        if (release != null) release(pair);
+        else Native.sony2fuji_hdr_release_pair(ref pair);
     }
 }
 

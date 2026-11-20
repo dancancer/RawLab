@@ -96,7 +96,10 @@ public partial class MainWindow
     {
         if(updateQuitPending)return;
         updateQuitPending=true;
-        try { if(await desktopUpdates.PrepareForQuitAsync()){updateQuitApproved=true;Close();} }
+        try {
+            if(!await FlushSaveEditsAsync())return;
+            if(await desktopUpdates.PrepareForQuitAsync()){updateQuitApproved=true;Close();}
+        }
         finally { updateQuitPending=false; }
     }
 }

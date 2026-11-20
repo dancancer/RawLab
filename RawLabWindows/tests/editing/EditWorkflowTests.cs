@@ -117,9 +117,9 @@ public sealed class EditWorkflowTests
         frozen.AIBackend = 3;
         Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(frozen.Copy()))!.AIBackend == 3,
             "Frozen batch preserves requested AI backend through copy and JSON");
-        restored.ResetAll();
+        restored = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("photo.arw", 1, 2, 3), restored.Capture(), null)).Candidate!.Settings.Restore();
         Check(JsonSerializer.SerializeToNode(restored.Capture())!["AIDenoiseEnabled"]?.GetValue<bool>() == false,
-            "Direct full reset clears AI");
+            "Production full reset clears AI");
 
         var source = new Adjustments { AIDenoiseEnabled = true };
         source.Set(Parameter.Exposure, .7);
@@ -690,7 +690,8 @@ public sealed class EditWorkflowTests
             state.Geometry = geometrySnapshot.Geometry!;
             state.ResetGroup("镜头"); Check(state.Lens == new LensSettings(), "lens group reset");
             state.Lens = new LensSettings(true);
-            state.ResetAll(); Check(state.Geometry.IsIdentity, "reset all clears geometry"); Check(state.Lens == new LensSettings(), "reset all clears lens");
+            state = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(OriginalIdentity.Read(a), state.Capture(), null)).Candidate!.Settings.Restore();
+            Check(state.Geometry.IsIdentity, "reset all clears geometry"); Check(state.Lens == new LensSettings(), "reset all clears lens");
             reopened.Save(a, state.Capture(), null);
             Check(new EditStore(storePath).Find(a)!.Settings.Restore()[Parameter.Exposure] == 0, "reset persists");
             File.AppendAllText(a, "replacement");
@@ -1015,7 +1016,7 @@ public sealed class EditWorkflowTests
         restored.Set(Parameter.Exposure, .7);
         restored.Denoise = DenoiseSettings.Clean;
         restored.ApplyMasterRecipe(MasterRecipe.All[0]);
-        restored.ResetAll();
+        restored = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("legacy.arw", 1, 2, 3), restored.Capture(), null)).Candidate!.Settings.Restore();
         Check(Processing(restored)?["version"]?.GetValue<int>() == 1 &&
               Processing(restored.Clone())?["version"]?.GetValue<int>() == 1,
             "Ordinary edits, recipes, reset and clone preserve legacy identity");
@@ -1034,7 +1035,7 @@ public sealed class EditWorkflowTests
         {
             var settings = new Adjustments { Processing = identity };
             settings.Set(Parameter.Exposure, .5);
-            settings.ResetAll();
+            settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("processing.arw", 1, 2, 3), settings.Capture(), null)).Candidate!.Settings.Restore();
             var saved = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(settings.Capture()))!.Restore();
             Check(saved.Processing == identity, "Every supported version survives reset and serialization");
         }

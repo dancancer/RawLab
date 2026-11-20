@@ -30,7 +30,7 @@ public partial class MainWindow
     internal bool ExactReady => exactReady;
     internal bool EditDirty => editDirty;
     internal long EditRevision => editRevision;
-    internal long OpenRevision => openRevision;
+    internal long OpenRevision => Volatile.Read(ref openRevision);
     internal int? ExportLongEdge { get => exportLongEdge; set => exportLongEdge = value; }
     internal string? LastExportedPath => lastExportedPath;
     internal int PreviewLongEdge { get => previewLongEdge; set => previewLongEdge = value; }
@@ -38,7 +38,7 @@ public partial class MainWindow
     internal bool PreviewDeferred => previewDeferred;
     internal bool Interacting { get => interacting; set => interacting = value; }
     internal bool ForegroundBusy { get => foregroundBusy; set => foregroundBusy = value; }
-    internal bool ClosingFlag { get => closing; set => closing = value; }
+    internal bool ClosingFlag { get => Volatile.Read(ref closing); set => Volatile.Write(ref closing, value); }
     internal bool CloseFinished => closeFinished;
     internal bool UpdateQuitApproved { get => updateQuitApproved; set => updateQuitApproved = value; }
     internal bool AutoExposing { get => autoExposing; set => autoExposing = value; }
@@ -108,6 +108,8 @@ public partial class MainWindow
     internal void SelectGroupForTests(EditorAdjustmentGroup group) => SelectGroup(group);
     internal void MarkEditedForTests() => MarkEdited();
     internal bool SaveEditsForTests() => SaveEdits();
+    internal Task<bool> FlushSaveEditsForTestsAsync() => FlushSaveEditsAsync();
+    internal bool HasPendingBackgroundSave => editSaveQueue.HasPendingWork;
     internal void ScheduleForTests(bool initialPreview = false, bool viewportOnly = false) => Schedule(initialPreview, viewportOnly);
     internal void RefreshControlsForTests() => RefreshControls();
     internal void RefreshWorkspaceForTests() => RefreshWorkspace();
