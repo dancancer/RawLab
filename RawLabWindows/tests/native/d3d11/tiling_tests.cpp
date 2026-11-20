@@ -112,9 +112,9 @@ void cacheTransitions() {
         }
     };
     run(65, 49, 41); verify(1);
-    request.exposure_ev = 1;
+    params.exposureEV = 1;
     run(65, 49, 41); verify(2);
-    request.exposure_ev = 0;
+    params.exposureEV = 0;
     run(1024, 1367, 41); // 超过分带阈值，最后两行只上传原图末尾的少数行。
     run(65, 49, 41); verify(1);
     for (auto& p : input.pixels) p = {.13f, .27f, .41f};

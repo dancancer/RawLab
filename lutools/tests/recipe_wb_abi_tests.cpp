@@ -426,14 +426,19 @@ void testResolveRecipeWb(const TempDir& dir, const fs::path& dngPath) {
 } // namespace
 
 int main(int argc, char** argv) {
-    require(argc >= 2, "usage: recipe_wb_abi_tests <dng_fixture>");
-    const fs::path dngPath(argv[1]);
-    require(fs::exists(dngPath), "DNG fixture missing");
-    TempDir dir;
-    testInspectSdrJpegMpf(dir);
-    testIsNormalX3f(dir, dngPath);
-    testEffectiveRawWhiteBalance(dngPath);
-    testResolveRecipeWb(dir, dngPath);
-    std::cout << "recipe_wb_abi_tests passed\n";
-    return 0;
+    try {
+        require(argc >= 2, "usage: recipe_wb_abi_tests <dng_fixture>");
+        const fs::path dngPath(argv[1]);
+        require(fs::exists(dngPath), "DNG fixture missing");
+        TempDir dir;
+        testInspectSdrJpegMpf(dir);
+        testIsNormalX3f(dir, dngPath);
+        testEffectiveRawWhiteBalance(dngPath);
+        testResolveRecipeWb(dir, dngPath);
+        std::cout << "recipe_wb_abi_tests passed\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "FAIL: " << error.what() << '\n';
+        return 1;
+    }
 }

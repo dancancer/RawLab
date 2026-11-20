@@ -302,6 +302,8 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
                     self.rawLensReport_ = rawLensReport;
                     self.x3fError_ = std::move(x3fError);
                     self.unsupportedReason_ = unsupportedReason;
+                    self.rawProcessor_.reset();
+                    self.processorKey_.clear();
                 }
             } guard(*this);
 

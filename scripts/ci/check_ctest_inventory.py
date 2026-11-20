@@ -77,6 +77,10 @@ AI_DENOISE_ONLY_TEST_SOURCES = {
     "dualdn_onnx_tests.cpp",
     "dualdn_session_tests.cpp",
 }
+GLSLANG_ONLY_TEST_SOURCES = {
+    "gles_photo_pixel_tests.cpp",
+    "gles_renderer_retry_tests.cpp",
+}
 
 
 def parse_cmake_cache(build_dir: Path) -> dict[str, str]:
@@ -99,9 +103,33 @@ def _cache_truthy(cache: dict[str, str], key: str) -> bool:
     return cache.get(key, "").upper() in {"ON", "TRUE", "1", "YES"}
 
 
-def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest") -> dict:
+def resolve_ctest_config(cache: dict[str, str], explicit_config: str | None = None) -> str | None:
+    if explicit_config:
+        return explicit_config
+    config_types = cache.get("CMAKE_CONFIGURATION_TYPES", "").strip()
+    generator = cache.get("CMAKE_GENERATOR", "").strip()
+    is_multi_config = (
+        bool(config_types)
+        or generator.startswith("Visual Studio")
+        or generator in {"Xcode", "Ninja Multi-Config"}
+    )
+    if not is_multi_config:
+        return None
+    configs = [item.strip() for item in config_types.split(";") if item.strip()]
+    if "Release" in configs or not configs:
+        return "Release"
+    return configs[0]
+
+
+def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest", config: str | None = None) -> dict:
+    if config is None:
+        config = resolve_ctest_config(parse_cmake_cache(build_dir))
+    cmd = [ctest_bin, "--test-dir", str(build_dir)]
+    if config:
+        cmd.extend(["-C", config])
+    cmd.append("--show-only=json-v1")
     output = subprocess.check_output(
-        [ctest_bin, "--test-dir", str(build_dir), "--show-only=json-v1"],
+        cmd,
         text=True,
         encoding="utf-8",
     )
@@ -130,6 +158,7 @@ def validate_ctest_inventory(
     ai_enabled: bool = False,
     portable_hdr_enabled: bool | None = None,
     libraw_source_present: bool | None = None,
+    glslang_available: bool | None = None,
 ) -> list[str]:
     errors: list[str] = []
     tests = data.get("tests")
@@ -174,6 +203,8 @@ def validate_ctest_inventory(
             portable_hdr_enabled = platform != "macos"
         if libraw_source_present is None:
             libraw_source_present = platform == "windows"
+        if glslang_available is None:
+            glslang_available = platform != "windows"
         on_disk = sorted(
             p.name
             for suffix in (".cpp", ".mm")
@@ -191,6 +222,8 @@ def validate_ctest_inventory(
             if not libraw_source_present and fname in LIBRAW_SOURCE_ONLY_TEST_SOURCES:
                 continue
             if not ai_enabled and fname in AI_DENOISE_ONLY_TEST_SOURCES:
+                continue
+            if not glslang_available and fname in GLSLANG_ONLY_TEST_SOURCES:
                 continue
             expected_stem = SOURCE_TO_EXECUTABLE_STEM.get(fname, Path(fname).stem)
             if expected_stem not in observed_stems:
@@ -211,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ai-enabled", action="store_true", help="Expect SONY2FUJI_ENABLE_AI_DENOISE=ON test targets")
     parser.add_argument("--skip-orphan-check", action="store_true", help="Skip lutools/tests/*.{cpp,mm} source check")
     parser.add_argument("--ctest-bin", default="ctest", help="Path to ctest executable")
+    parser.add_argument("--config", help="CMake configuration for multi-config generators (auto-detected if omitted)")
     args = parser.parse_args(argv)
 
     if bool(args.build_dir) == bool(args.json):
@@ -220,13 +254,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         data = json.loads(args.json.read_text(encoding="utf-8"))
     else:
-        data = load_ctest_json(args.build_dir, args.ctest_bin)
         cache = parse_cmake_cache(args.build_dir)
+        config = resolve_ctest_config(cache, args.config)
+        data = load_ctest_json(args.build_dir, args.ctest_bin, config=config)
 
     ai_enabled = args.ai_enabled or _cache_truthy(cache, "SONY2FUJI_ENABLE_AI_DENOISE")
     portable_hdr = _cache_truthy(cache, "SONY2FUJI_TEST_PORTABLE_HDR") if "SONY2FUJI_TEST_PORTABLE_HDR" in cache else None
     libraw_src = cache.get("SONY2FUJI_TEST_LIBRAW_SOURCE", "")
     libraw_source_present = (Path(libraw_src) / "src/decoders/sony_arw6.cpp").is_file() if libraw_src else (False if cache else None)
+    raw_glslang = cache.get("RAWLAB_GLSLANG", "").strip()
+    glslang_available = (
+        bool(raw_glslang and not raw_glslang.endswith("-NOTFOUND"))
+        if "RAWLAB_GLSLANG" in cache
+        else None
+    )
 
     tests_dir = None if args.skip_orphan_check else LUTOOLS_TESTS_DIR
     errors = validate_ctest_inventory(
@@ -237,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         ai_enabled=ai_enabled,
         portable_hdr_enabled=portable_hdr,
         libraw_source_present=libraw_source_present,
+        glslang_available=glslang_available,
     )
     if errors:
         for err in errors:

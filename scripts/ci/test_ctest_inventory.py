@@ -9,6 +9,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -111,6 +112,93 @@ class CTestInventoryTests(unittest.TestCase):
         self.assertRegex(win_run, r"ctest\b[^\n]*'-L',\s*'\^ci_windows\$'")
         self.assertNotRegex(win_run, r"(?m)^\s*\$tests\s*=")
         self.assertIn("check_ctest_inventory.py", win_run)
+
+    def test_resolve_ctest_config_for_multi_config_and_single_config_caches(self) -> None:
+        multi_cache = {
+            "CMAKE_GENERATOR": "Visual Studio 17 2022",
+            "CMAKE_CONFIGURATION_TYPES": "Debug;Release;MinSizeRel;RelWithDebInfo",
+        }
+        self.assertEqual(cci.resolve_ctest_config(multi_cache), "Release")
+        self.assertEqual(cci.resolve_ctest_config(multi_cache, "Debug"), "Debug")
+        # Subprojects like libultrahdr force CMAKE_BUILD_TYPE=Release into CMakeCache.txt even on VS.
+        polluted_multi_cache = {
+            **multi_cache,
+            "CMAKE_BUILD_TYPE": "Release",
+        }
+        self.assertEqual(cci.resolve_ctest_config(polluted_multi_cache), "Release")
+        self.assertEqual(
+            cci.resolve_ctest_config({"CMAKE_CONFIGURATION_TYPES": "Debug;RelWithDebInfo"}),
+            "Debug",
+        )
+        single_cache = {
+            "CMAKE_GENERATOR": "Ninja",
+            "CMAKE_BUILD_TYPE": "Release",
+        }
+        self.assertIsNone(cci.resolve_ctest_config(single_cache))
+        self.assertEqual(cci.resolve_ctest_config(single_cache, "RelWithDebInfo"), "RelWithDebInfo")
+
+    def test_load_ctest_json_selects_release_for_multi_config_cmake_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            build_dir = Path(tmp)
+            (build_dir / "CMakeCache.txt").write_text(
+                "CMAKE_GENERATOR:INTERNAL=Visual Studio 17 2022\n"
+                "CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release;MinSizeRel;RelWithDebInfo\n"
+                "CMAKE_BUILD_TYPE:STRING=Release\n",
+                encoding="utf-8",
+            )
+            payload = json.dumps({"tests": [_make_entry("tiff_ifd", ["core", "ci_windows"], "tiff_ifd_tests")]})
+            with mock.patch("check_ctest_inventory.subprocess.check_output", return_value=payload) as mocked:
+                loaded = cci.load_ctest_json(build_dir)
+            self.assertEqual(len(loaded["tests"]), 1)
+            mocked.assert_called_once_with(
+                ["ctest", "--test-dir", str(build_dir), "-C", "Release", "--show-only=json-v1"],
+                text=True,
+                encoding="utf-8",
+            )
+
+            (build_dir / "CMakeCache.txt").write_text(
+                "CMAKE_BUILD_TYPE:STRING=Release\n",
+                encoding="utf-8",
+            )
+            with mock.patch("check_ctest_inventory.subprocess.check_output", return_value=payload) as mocked_single:
+                cci.load_ctest_json(build_dir)
+            mocked_single.assert_called_once_with(
+                ["ctest", "--test-dir", str(build_dir), "--show-only=json-v1"],
+                text=True,
+                encoding="utf-8",
+            )
+
+    def test_glslang_gated_sources_require_glslang_only_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            (tdir / "tiff_ifd_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (tdir / "gles_photo_pixel_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (tdir / "gles_renderer_retry_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            data = {
+                "tests": [
+                    _make_entry("tiff_ifd", ["core", "ci_macos_arm64", "ci_windows"], "tiff_ifd_tests"),
+                ]
+            }
+            self.assertEqual(
+                cci.validate_ctest_inventory(
+                    data,
+                    ci_label="ci_windows",
+                    platform="windows",
+                    tests_dir=tdir,
+                    glslang_available=False,
+                ),
+                [],
+            )
+            errors = cci.validate_ctest_inventory(
+                data,
+                ci_label="ci_macos_arm64",
+                platform="macos",
+                tests_dir=tdir,
+                glslang_available=True,
+            )
+            self.assertEqual(len(errors), 2)
+            self.assertTrue(any("gles_photo_pixel_tests.cpp" in e for e in errors), errors)
+            self.assertTrue(any("gles_renderer_retry_tests.cpp" in e for e in errors), errors)
 
     def test_optional_live_build_dir_reconciliation(self) -> None:
         build_dir = os.environ.get("RAWLAB_CTEST_BUILD_DIR")

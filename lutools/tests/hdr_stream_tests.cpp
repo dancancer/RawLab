@@ -206,7 +206,17 @@ int main(int argc, char* argv[]) {
         bool rejected = false;
         try { (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root); }
         catch (const std::runtime_error&) { rejected = true; }
-        require(rejected && fs::is_empty(root), "Decoder failure left partial files");
+        const bool emptyAfterFailure = fs::is_empty(root);
+        std::string failureDetail = "Decoder failure left partial files";
+        if (!(rejected && emptyAfterFailure)) {
+            failureDetail += " (rejected=" + std::to_string(rejected) + ", empty=" + std::to_string(emptyAfterFailure) + ", entries=[";
+            std::error_code ec;
+            for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec))
+                failureDetail += it->path().filename().u8string() + ",";
+            if (ec) failureDetail += "iter_err=" + std::to_string(ec.value());
+            failureDetail += "])";
+        }
+        require(rejected && emptyAfterFailure, failureDetail);
         failAfter = -1;
         const auto reader = source.read;
         source.read = [&](bool hdr, uint32_t row, uint32_t count, RGB* result) {
