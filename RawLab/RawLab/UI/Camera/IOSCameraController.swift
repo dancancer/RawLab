@@ -449,7 +449,7 @@ struct IOSCameraImportPreferences: Codable {
     func showPreview(_ original: CameraStoredOriginal) {
         let owner = callbackOwner
         preview = thumbnails[original.id.uuidString]; previewLoading = true
-        backend.original(original.id) { [weak self] result in
+        backend.originalThumbnailURL(original.id) { [weak self] result in
             let image = (try? result.get()).flatMap { Self.decodeURL($0, edge: 2048) }
             Task { @MainActor in
                 guard let self, self.callbackOwner == owner else { return }
@@ -463,7 +463,7 @@ struct IOSCameraImportPreferences: Codable {
         let owner = callbackOwner
         let key = original.id.uuidString
         guard thumbnails[key] == nil, !unavailableThumbnails.contains(key), pendingThumbnails.insert(key).inserted else { return }
-        backend.original(original.id) { [weak self] result in
+        backend.originalThumbnailURL(original.id) { [weak self] result in
             let image: UIImage? = (try? result.get()).flatMap { Self.decodeURL($0, edge: 512) }
             Task { @MainActor in
                 guard let self, self.callbackOwner == owner else { return }

@@ -12,6 +12,13 @@ public protocol HDRDisplayImage: AnyObject {
     func rgba16F(_ parameters: HDRDisplayParameters) throws -> Data
 }
 
+public protocol HDRLinearDisplayImage: HDRDisplayImage {
+    func withLinearPlanes<T>(
+        _ body: (_ hdr: UnsafeBufferPointer<Float>, _ hdrStrideFloats: Int,
+                 _ sdr: UnsafeBufferPointer<Float>, _ sdrStrideFloats: Int) throws -> T
+    ) throws -> T
+}
+
 public enum HDRPreviewMode: String, CaseIterable { case automatic, sdr }
 public enum HDRDisplayFailure: Error { case invalidBuffer, nonfinite, unrepresentable }
 

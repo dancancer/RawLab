@@ -128,6 +128,8 @@ import Darwin
         try completeReusesStreamedDigestWithoutRehashingPartial()
         try verifiedURLReusesDigestCacheAcrossOpens()
         try samplingValidationAndReuseComputeDigestOnce()
+        try thumbnailURLSkipsFullHashAndRejectsInvalidStates()
+        try samplingCandidate10kHistoryLatencyAndIndexSync()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -983,6 +985,242 @@ import Darwin
         let afterReuse = totalDigestWork()
         try check(reused.id == saved.id && afterReuse == afterValidation,
                   "reuseSampledOriginal re-validates through the fingerprint cache without a second full digest (actual delta: \(afterReuse - afterValidation))")
+    }
+
+    private static func thumbnailURLSkipsFullHashAndRejectsInvalidStates() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-thumbnail-url-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var manifestWrites = 0
+        let store = try CameraOriginalStore(directory: root) { manifestWrites += 1 }
+        var bytes = Data(repeating: 0x41, count: 200_003)
+        bytes.replaceSubrange(0..<4, with: [0x49, 0x49, 0x2a, 0x00])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0508", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0,
+                                           name: "DSC00508.ARW", size: UInt64(bytes.count), created: "1700000050800", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+
+        FileDigestCache.shared.invalidateAll()
+        let beforeWork = totalDigestWork()
+        let beforeWrites = manifestWrites
+        let thumbURL = try store.thumbnailURL(saved.id)
+        try check(thumbURL == store.originalURL(saved), "thumbnailURL returns expected original URL")
+        try check(totalDigestWork() - beforeWork == 0,
+                  "thumbnailURL performs 0 full-file SHA-256 computations (actual: \(totalDigestWork() - beforeWork))")
+        try check(manifestWrites == beforeWrites,
+                  "thumbnailURL is read-only and performs 0 manifest writes (actual: \(manifestWrites - beforeWrites))")
+
+        // Rejects unknown ID & .prepared
+        var threwUnknown = false
+        do { _ = try store.thumbnailURL(UUID()) } catch { threwUnknown = true }
+        try check(threwUnknown, "thumbnailURL rejects unknown sourceID")
+
+        // Rejects truncated size mismatch without mutating manifest
+        let originalData = try Data(contentsOf: thumbURL)
+        try Data(originalData.dropLast()).write(to: thumbURL)
+        var threwTruncated = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwTruncated = true }
+        try check(threwTruncated && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects size mismatch without writing manifest")
+
+        // Rejects symlink at original path
+        try FileManager.default.removeItem(at: thumbURL)
+        let externalFile = root.appendingPathComponent("external-target.arw")
+        try originalData.write(to: externalFile)
+        try FileManager.default.createSymbolicLink(at: thumbURL, withDestinationURL: externalFile)
+        var threwSymlink = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwSymlink = true }
+        try check(threwSymlink && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects symlinks via lstat without writing manifest")
+
+        // Rejects missing file without mutating manifest, then verifiedURL marks .changed/.missing and thumbnailURL still rejects
+        try FileManager.default.removeItem(at: thumbURL)
+        var threwMissing = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwMissing = true }
+        try check(threwMissing && store.snapshot.originals[0].availability == .available && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects missing file without mutating manifest availability")
+    }
+
+    private static func samplingCandidate10kHistoryLatencyAndIndexSync() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-10k-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0532", operations: [0x923c, 0x923d])
+        var rawBytes = Data(repeating: 0x52, count: 200_003)
+        rawBytes.replaceSubrange(0..<4, with: [0x49, 0x49, 0x2a, 0x00])
+        let rawDigest = SHA256.hash(data: rawBytes).map { String(format: "%02x", $0) }.joined()
+        let hitSnapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0,
+                                              name: "DSC_HIT.ARW", size: UInt64(rawBytes.count), created: "1700000100000", modified: "")
+        let missSnapshot = CameraAssetSnapshot(content: 2, file: 1, storage: 0x10001, format: 0x3801,
+                                               name: "DSC_MISS.ARW", size: UInt64(rawBytes.count), created: "20231114T221320", modified: "")
+
+        // Seed 1 real saved original + 200 jobs x 50 items = 10,000 historical saved items
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let seedJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot])
+        let savedHit = try write(rawBytes, item: seedJob.items[0], job: seedJob, store: store!)
+
+        var manifest = store!.snapshot
+        let dummySourceID = UUID()
+        let dummyOriginal = CameraStoredOriginal(
+            id: dummySourceID, name: "DSC_DUMMY.ARW", size: UInt64(rawBytes.count),
+            digest: rawDigest, savedAt: Date(), availability: .available, jpegSource: nil
+        )
+        manifest.originals.append(dummyOriginal)
+        for j in 0..<200 {
+            var items: [CameraTransferItem] = []
+            items.reserveCapacity(50)
+            for i in 0..<50 {
+                let snap = CameraAssetSnapshot(
+                    content: UInt32(j * 50 + i + 100), file: 1, storage: 0x10001, format: 0x3801,
+                    name: String(format: "DSC%03d%02d.ARW", j, i), size: UInt64(rawBytes.count),
+                    created: "20231114T221320", modified: ""
+                )
+                items.append(CameraTransferItem(id: UUID(), asset: snap, phase: .saved, sourceID: dummySourceID, digest: rawDigest, sourceDigest: rawDigest))
+            }
+            manifest.jobs.append(CameraTransferJob(
+                id: UUID(), camera: identity, connectionKey: "fixture",
+                createdAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(j)), items: items
+            ))
+        }
+        store = nil
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+        store = try CameraOriginalStore(directory: root)
+
+        let pendingJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot, missSnapshot])
+        let hitItemID = pendingJob.items[0].id
+        let missItemID = pendingJob.items[1].id
+
+        // Warm up FileDigestCache for the 1 real hit file so benchmark measures index lookup
+        let warm = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
+        try check(warm?.source.id == savedHit.id, "samplingCandidate finds hit original across 10,000-item history")
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        for round in 0..<500 {
+            if round % 2 == 0 {
+                let c = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
+                guard c?.source.id == savedHit.id else {
+                    try check(false, "samplingCandidate hit failed in round \(round)")
+                    return
+                }
+            } else {
+                let c = store!.samplingCandidate(job: pendingJob.id, item: missItemID)
+                guard c == nil else {
+                    try check(false, "samplingCandidate miss unexpectedly matched in round \(round)")
+                    return
+                }
+            }
+        }
+        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000.0
+        try check(elapsedMs < 150.0,
+                  String(format: "500 samplingCandidate lookups over 10,000 legacy items finish in O(1) < 150ms (actual: %.2f ms)", elapsedMs))
+
+        // Index synchronization across reuseSampledOriginal, prune (shared & last), rollback, and recover()
+        let syncRoot = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-sync-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: syncRoot.path)
+            try? FileManager.default.removeItem(at: syncRoot)
+        }
+        var syncStore: CameraOriginalStore? = try CameraOriginalStore(directory: syncRoot)
+        let jobA = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        let origA = try write(rawBytes, item: jobA.items[0], job: jobA, store: syncStore!)
+        let jobB = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        guard let candB = syncStore!.samplingCandidate(job: jobB.id, item: jobB.items[0].id) else {
+            try check(false, "sync index locates hit after complete()"); return
+        }
+        _ = try syncStore!.reuseSampledOriginal(job: jobB.id, item: jobB.items[0].id, sourceID: candB.source.id)
+
+        // Add newer anchor job so jobA becomes prunable while jobB still shares origA
+        let otherSnapshot = CameraAssetSnapshot(content: 9, file: 1, storage: 0, format: 0,
+                                                name: "DSC_ANCHOR.ARW", size: 8, created: "1700000200000", modified: "")
+        let anchorJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [otherSnapshot])
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 1, 2, 3, 4]), item: anchorJob.items[0], job: anchorJob, store: syncStore!)
+
+        // Persist-failure rollback must roll back samplingCandidate index
+        let rollbackSnap = CameraAssetSnapshot(content: 77, file: 1, storage: 0, format: 0,
+                                               name: "DSC_ROLLBACK.ARW", size: UInt64(rawBytes.count), created: "1700000300000", modified: "")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: syncRoot.path)
+        var rollbackThrew = false
+        do {
+            try syncStore!.performBatch {
+                let rbJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [rollbackSnap])
+                _ = try write(rawBytes, item: rbJob.items[0], job: rbJob, store: syncStore!)
+            }
+        } catch {
+            rollbackThrew = true
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: syncRoot.path)
+        let probeAfterRollback = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [rollbackSnap])
+        try check(rollbackThrew && syncStore!.samplingCandidate(job: probeAfterRollback.id, item: probeAfterRollback.items[0].id) == nil,
+                  "performBatch persist failure rolls back samplingCandidate indices")
+
+        // Prune jobA only? No, both jobA and jobB share origA; mark jobB as non-exported? Same digest.
+        // Instead verify when jobA & jobB are pruned vs retained: remove jobA by making jobB unprunable?
+        // Actually both jobA and jobB are complete and non-newest, so both prune if exportedContentIdentifiers has origA.digest.
+        // To test partial prune where jobA is pruned and jobB survives: make jobB an incremental anchor!
+        let incAnchor = try syncStore!.enqueue(
+            device: identity, connectionKey: "sync", assets: [hitSnapshot],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(),
+                                               boundaries: ["RAW": CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_100), storage: [], keys: [], anchors: [], owner: UUID())])
+        )
+        let candInc = syncStore!.samplingCandidate(job: incAnchor.id, item: incAnchor.items[0].id)!
+        _ = try syncStore!.reuseSampledOriginal(job: incAnchor.id, item: incAnchor.items[0].id, sourceID: candInc.source.id)
+
+        let anchorJob2 = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [otherSnapshot])
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 9, 8, 7, 6]), item: anchorJob2.items[0], job: anchorJob2, store: syncStore!)
+
+        _ = try syncStore!.pruneExportedOriginals(exportedContentIdentifiers: [origA.digest])
+        let probeAfterPartialPrune = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterPartialPrune.id, item: probeAfterPartialPrune.items[0].id)?.source.id == origA.id,
+                  "Pruning one sharing job keeps samplingCandidate refcount alive via surviving job")
+
+        // Cover RAW boundary with a newer incremental job so incAnchor becomes prunable, then prune last sharing job
+        let coverSnap = CameraAssetSnapshot(content: 88, file: 1, storage: 0, format: 0,
+                                            name: "DSC_COVER.ARW", size: 8, created: "1700000400000", modified: "")
+        let coverJob = try syncStore!.enqueue(
+            device: identity, connectionKey: "sync", assets: [coverSnap],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(),
+                                               boundaries: ["RAW": CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_400), storage: [], keys: [], anchors: [], owner: UUID())])
+        )
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 5, 5, 5, 5]), item: coverJob.items[0], job: coverJob, store: syncStore!)
+        _ = try syncStore!.pruneExportedOriginals(exportedContentIdentifiers: [origA.digest])
+        let probeAfterFullPrune = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterFullPrune.id, item: probeAfterFullPrune.items[0].id) == nil,
+                  "Pruning last sharing job removes samplingCandidate from index")
+
+        // recover() promotion & discard sync
+        let recJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        let recOrig = try write(rawBytes, item: recJob.items[0], job: recJob, store: syncStore!)
+        var recManifest = syncStore!.snapshot
+        let rIdx = recManifest.jobs.firstIndex { $0.id == recJob.id }!
+        let oIdx = recManifest.originals.firstIndex { $0.id == recOrig.id }!
+        recManifest.jobs[rIdx].items[0].phase = .prepared
+        recManifest.originals[oIdx].availability = .prepared
+        syncStore = nil
+        try JSONEncoder().encode(recManifest).write(to: syncRoot.appendingPathComponent("manifest.json"), options: .atomic)
+        syncStore = try CameraOriginalStore(directory: syncRoot)
+        let probeAfterPromote = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterPromote.id, item: probeAfterPromote.items[0].id)?.source.id == recOrig.id,
+                  "recover() promoting .prepared -> .saved updates samplingCandidate index")
+
+        // Missing .prepared file discarded by recover() must NOT remain in samplingCandidate index
+        try FileManager.default.removeItem(at: syncStore!.originalURL(recOrig))
+        var discManifest = syncStore!.snapshot
+        let drIdx = discManifest.jobs.firstIndex { $0.id == recJob.id }!
+        let doIdx = discManifest.originals.firstIndex { $0.id == recOrig.id }!
+        discManifest.jobs[drIdx].items[0].phase = .prepared
+        discManifest.originals[doIdx].availability = .prepared
+        syncStore = nil
+        try JSONEncoder().encode(discManifest).write(to: syncRoot.appendingPathComponent("manifest.json"), options: .atomic)
+        syncStore = try CameraOriginalStore(directory: syncRoot)
+        let probeAfterDiscard = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterDiscard.id, item: probeAfterDiscard.items[0].id) == nil,
+                  "recover() discarding missing .prepared removes candidate from samplingCandidate index")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {

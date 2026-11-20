@@ -127,4 +127,133 @@ extension Sony2FujiProcessor {
         return LensInfo(state: report.base.state, detectedLens: lensText(report.base.lens_model), selectedLens: lensText(report.base.profile.model),
             appliedDistortion: report.base.applied_distortion != 0, appliedTCA: report.base.applied_tca != 0, cropScale: report.base.crop_scale, candidates: candidates, appliedVignetting: report.applied_vignetting != 0, sourceMetadata: metadata)
     }
+
+    func validateRawFileForTransfer(url: URL, x3fMode: X3fMode) throws {
+        if isNormalX3f(url, settings: {
+            var s = RawSettings.default
+            s.x3fMode = x3fMode
+            return s
+        }()) {
+            _ = try x3fDefaultMode(for: url)
+            return
+        }
+        try withRawSession(reuse: true, inputType: SONY2FUJI_INPUT_RAW) { session in
+            var report = sony2fuji_lens_report_v2()
+            var count: UInt32 = 0
+            let status = url.path.withCString {
+                sony2fuji_session_inspect_lens_v2(session, $0, &report, nil, 0, &count)
+            }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, input: url, session: session)
+            }
+        }
+    }
+
+    func resolveRawWhiteBalanceForTransfer(url: URL, settings: RawSettings) throws -> RawWhiteBalance? {
+        try withRawSession(reuse: true, inputType: SONY2FUJI_INPUT_RAW) { session in
+            var req = sony2fuji_recipe_wb_request()
+            req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION
+            req.struct_size = UInt32(MemoryLayout<sony2fuji_recipe_wb_request>.size)
+            req.processing_version = settings.processing.core
+            req.x3f_mode = settings.x3fMode.core
+            req.exposure_mode = settings.exposureMode.core
+            req.recipe_active = 1
+            req.recipe_strength = 1
+            req.custom_wb = 1
+            req.temperature = 6500
+            req.tint = 0
+            var res = sony2fuji_recipe_wb_result()
+            let status = url.path.withCString { pathPtr -> sony2fuji_status in
+                req.input_path = pathPtr
+                return sony2fuji_session_resolve_recipe_wb(session, &req, &res)
+            }
+            if status == SONY2FUJI_STATUS_UNSUPPORTED {
+                return nil
+            }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, input: url, session: session)
+            }
+            guard res.camera_calibrated != 0 else { return nil }
+            return RawWhiteBalance(
+                temperature: Double(res.camera_temperature),
+                tint: Double(res.camera_tint),
+                isCalibrated: true
+            )
+        }
+    }
+
+    func validateLensForTransfer(url: URL, isRaw: Bool, x3fMode: X3fMode, lens: LensCorrectionSettings) throws {
+        guard lens.isEnabled else { return }
+        if isRaw {
+            var x3fSettings = RawSettings.default
+            x3fSettings.x3fMode = x3fMode
+            if isNormalX3f(url, settings: x3fSettings) {
+                throw AdjustmentTransferError.incompatible(L10n.text("此输入不支持镜头校正"))
+            }
+            try withRawSession(reuse: true, inputType: SONY2FUJI_INPUT_RAW) { session in
+                try configureLensCorrectionForTransfer(session, settings: lens)
+                var report = sony2fuji_lens_report_v2()
+                var count: UInt32 = 0
+                let status = url.path.withCString {
+                    sony2fuji_session_inspect_lens_v2(session, $0, &report, nil, 0, &count)
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, input: url, session: session)
+                }
+                try ensureLensMatchedForTransfer(report, lens: lens)
+            }
+        } else {
+            let metadata = try DisplayLensMetadata.read(url).overriding(lens)
+            try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
+                try configureLensCorrectionForTransfer(session, settings: lens)
+                var report = sony2fuji_lens_report_v2()
+                var count: UInt32 = 0
+                let status = metadata.withNative { native in
+                    sony2fuji_session_inspect_lens_metadata_v2(session, &native, &report, nil, 0, &count)
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, input: url, session: session)
+                }
+                try ensureLensMatchedForTransfer(report, lens: lens)
+            }
+        }
+    }
+
+    private func configureLensCorrectionForTransfer(_ session: OpaquePointer, settings: LensCorrectionSettings) throws {
+        var config = sony2fuji_lens_correction_config_v2()
+        config.base.version = SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION
+        config.base.struct_size = UInt32(MemoryLayout<sony2fuji_lens_correction_config_v2>.size)
+        config.base.distortion = settings.distortion ? 1 : 0
+        config.base.tca = settings.tca ? 1 : 0
+        config.base.auto_crop = settings.autoCrop ? 1 : 0
+        config.vignetting = settings.vignetting ? 1 : 0
+        let status = settings.coreProfileID.withCString { profilePtr in
+            config.base.profile_id = profilePtr
+            return sony2fuji_session_set_lens_correction_v2(session, &config)
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.text("无效或不可用的镜头校正设置"))
+        }
+    }
+
+    private func ensureLensMatchedForTransfer(_ report: sony2fuji_lens_report_v2, lens: LensCorrectionSettings) throws {
+        let info = LensInfo(
+            state: report.base.state,
+            detectedLens: lensText(report.base.lens_model),
+            selectedLens: lensText(report.base.profile.model),
+            appliedDistortion: report.base.profile.has_distortion != 0,
+            appliedTCA: report.base.profile.has_tca != 0,
+            cropScale: report.base.crop_scale,
+            candidates: [],
+            appliedVignetting: report.has_vignetting != 0
+        )
+        guard report.base.state == SONY2FUJI_LENS_MATCHED else {
+            throw AdjustmentTransferError.incompatible(info.message)
+        }
+        guard (!lens.distortion || report.base.profile.has_distortion != 0),
+              (!lens.tca || report.base.profile.has_tca != 0),
+              (!lens.vignetting || report.has_vignetting != 0) else {
+            throw AdjustmentTransferError.incompatible(L10n.text("此镜头没有所选校正的标定数据"))
+        }
+    }
 }

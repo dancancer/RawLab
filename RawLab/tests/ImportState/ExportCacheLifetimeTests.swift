@@ -84,8 +84,15 @@ enum ExportCacheLifetimeTests {
         var settings = RawSettings.default
         settings.exposure = 0.75
         settings.geometry.quarterTurns = 1
+        f.model.committedPreviewSettings = settings
         f.model.updatePreview(settings: settings, includeHistogram: false)
         f.model.sourceFile = nil
+        f.model.editRecordMetadata = nil
+        f.model.persistedEditorSettings = nil
+        f.model.adjustmentSession = nil
+        f.model.adjustmentSourceValidator = nil
+        f.model.comparisonReferenceKey = nil
+        f.model.completedPreviewCache.removeAll()
         try check(FileManager.default.fileExists(atPath: oldURL.path), "Queued RAW preview captures its source before editor release")
         f.model.renderQueue.resume()
         suspended = false
@@ -95,6 +102,8 @@ enum ExportCacheLifetimeTests {
         try check(f.model.statusMessage == nil && f.model.previewImage != nil &&
                   f.model.basePreviewGeometry == settings.geometry,
                   "Queued RAW preview and comparison read successfully after editor release")
+        f.model.comparisonReferenceKey = nil
+        f.model.completedPreviewCache.removeAll()
         try check(!FileManager.default.fileExists(atPath: oldURL.path), "Preview releases the old file after its final read")
     }
 

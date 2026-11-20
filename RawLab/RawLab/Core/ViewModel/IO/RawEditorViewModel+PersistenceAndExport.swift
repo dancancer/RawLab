@@ -200,7 +200,13 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
+        let source = (
+            file: sourceFile,
+            kind: sourceKind,
+            hasBuffer: draftBuffer != nil,
+            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            orientation: sourceOrientation
+        )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -245,21 +251,23 @@ extension RawEditorViewModel {
                         )
                         data = output
                     } else {
-                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
-                        let outputBuffer = try self.processor.processBuffer(
-                            buffer: sourceBuffer,
-                            settings: settings,
-                            previewLongEdge: nil,
-                            lutURL: lutURL,
-                            exportLongEdge: longEdge
-                        )
-                        let output = try self.processor.makeJPEGData(
-                            from: outputBuffer,
-                            sourceURL: sourceURL,
-                            orientation: source.orientation,
-                            quality: 0.92
-                        )
-                        data = output
+                        guard source.hasBuffer else { throw EditorError.noImageLoaded }
+                        data = try autoreleasepool {
+                            let sourceBuffer = try source.fullBuffer ?? self.processor.loadRasterBuffer(url: sourceURL).buffer
+                            let outputBuffer = try self.processor.processBuffer(
+                                buffer: sourceBuffer,
+                                settings: settings,
+                                previewLongEdge: nil,
+                                lutURL: lutURL,
+                                exportLongEdge: longEdge
+                            )
+                            return try self.processor.makeJPEGData(
+                                from: outputBuffer,
+                                sourceURL: sourceURL,
+                                orientation: source.orientation,
+                                quality: 0.92
+                            )
+                        }
                     }
 
                     DispatchQueue.main.async {
@@ -285,7 +293,13 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
+        let source = (
+            file: sourceFile,
+            kind: sourceKind,
+            hasBuffer: draftBuffer != nil,
+            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            orientation: sourceOrientation
+        )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -311,9 +325,12 @@ extension RawEditorViewModel {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
                     } else {
-                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
-                        try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
-                                                     outputURL: outputURL, exportLongEdge: longEdge)
+                        guard source.hasBuffer else { throw EditorError.noImageLoaded }
+                        try autoreleasepool {
+                            let sourceBuffer = try source.fullBuffer ?? self.processor.loadRasterBuffer(url: sourceURL).buffer
+                            try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
+                                                         outputURL: outputURL, exportLongEdge: longEdge)
+                        }
                     }
                     self.resultDelivery {
                         self.isBusy = false
@@ -326,105 +343,6 @@ extension RawEditorViewModel {
                         self.isBusy = false
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
-                    }
-                }
-            }
-        }
-    }
-
-    func runBundledSampleSmokeTest(settings: RawSettings) {
-        guard let url = Bundle.main.url(forResource: sampleResourceName, withExtension: sampleResourceExtension) else {
-            statusMessage = "Sample RAW not found in app bundle."
-            return
-        }
-
-        statusMessage = nil
-        isBusy = true
-        sourceRevision = UUID()
-        let lutURL = lutURL(for: settings)
-        let sourceFile = PhotoSourceFile.externallyManaged(url)
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            sourceFile.withReadAccess { url in
-                do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, x3fMode: settings.x3fMode, lens: settings.lensSettings)
-                    let previewResult = try self.processor.processRaw(
-                        url: url,
-                        settings: settings,
-                        previewLongEdge: self.previewMaxDimension,
-                        lutURL: lutURL
-                    )
-                    let previewImage = self.processor.makeUIImage(
-                        from: previewResult.buffer,
-                        orientation: previewResult.orientation ?? rawPreview.orientation
-                    )
-                    let previewHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
-
-                    let fullResult = try self.processor.processRaw(
-                        url: url,
-                        settings: settings,
-                        previewLongEdge: nil,
-                        lutURL: lutURL
-                    )
-                    let data = try self.processor.makeJPEGData(
-                        from: fullResult.buffer,
-                        sourceURL: url,
-                        orientation: fullResult.orientation,
-                        quality: 0.92,
-                        sourceIsRaw: true
-                    )
-
-                    DispatchQueue.main.async {
-                        self.sourceFile = sourceFile
-                        self.sourceKind = .raw
-                        self.sourceIsHDR = false
-                        self.rawHDRSource = nil
-                        self.sourceDisplayName = url.lastPathComponent
-                        self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
-                        self.draftBuffer = rawPreview.buffer
-                        self.draftPreviewBuffer = rawPreview.previewBuffer
-                        self.basePreviewImage = rawPreview.basePreviewImage
-                        self.baseHistogram = rawPreview.baseHistogram
-                        self.basePreviewGeometry = settings.geometry
-                        self.basePreviewProcessing = settings.processing
-                        self.lensInfo = previewResult.lensInfo
-                        self.rawLUTID = settings.lutID
-                        self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
-                        self.previewImage = previewImage
-                        self.nativeImageSize = previewResult.buffer.nativeSize
-                        self.histogram = previewHistogram
-                        self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
-                        self.isBusy = false
-                        self.sourceRevision = UUID()
-                        self.recordImportedComparison(settings: settings)
-                        let sizeKB = Double(data.count) / 1024.0
-                        let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
-                        self.statusMessage = message
-                        self.writeSmokeTestResult("OK: \(message)")
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        self.statusMessage = error.localizedDescription
-                        self.isBusy = false
-                        self.previewImage = nil
-                        self.basePreviewImage = nil
-                        self.nativeImageSize = nil
-                        self.draftPreviewBuffer = nil
-                        self.draftBuffer = nil
-                        self.sourceFile = nil
-                        self.sourceKind = nil
-                        self.sourceIsHDR = false
-                        self.rawHDRSource = nil
-                        self.sourceDisplayName = nil
-                        self.sourceOrientation = nil
-                        self.rawLUTID = nil
-                        self.rawLUTApplied = false
-                        self.hasImage = false
-                        self.lensInfo = nil
-                        self.histogram = nil
-                        self.baseHistogram = nil
-                        self.sourceRevision = UUID()
-                        self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
                     }
                 }
             }

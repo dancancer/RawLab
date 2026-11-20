@@ -45,9 +45,7 @@ struct RawLabApp: App {
 #if RAWLAB_RUM
                     if RawLabRUM.start() { return }
 #endif
-                    if ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] != "1" {
-                        UsageAnalytics.shared.beginSession()
-                    }
+                    UsageAnalytics.shared.beginSession()
                 }
         }
     }

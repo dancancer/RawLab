@@ -186,10 +186,6 @@
 			isa = PBXBuildFile;
 			fileRef = 6408B0D9CC3B88C973EB26A9;
 		};
-		8B29EC7278F7B9FF41EB8BF0 = {
-			isa = PBXBuildFile;
-			fileRef = 38F6D63A9E8C8B655383DC1A;
-		};
 		22C5A9E739A2E127D0BA221C = {
 			isa = PBXBuildFile;
 			fileRef = 9D3527EB23A8B1C5D02BC890;
@@ -502,12 +498,6 @@
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+PersistenceAndExport.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		38F6D63A9E8C8B655383DC1A = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+IOHelpers.swift";
 			sourceTree = SOURCE_ROOT;
 		};
 		9D3527EB23A8B1C5D02BC890 = {
@@ -1008,7 +998,6 @@
 			children = (
 				AE4383A5710944379318C704,
 				6408B0D9CC3B88C973EB26A9,
-				38F6D63A9E8C8B655383DC1A,
 			);
 			name = IO;
 			sourceTree = "<group>";
@@ -1407,7 +1396,6 @@
 				D00200000000000000000001,
 				D00200000000000000000002,
 				5D16F3E6AA9AE3153F10EA01,
-				8B29EC7278F7B9FF41EB8BF0,
 				22C5A9E739A2E127D0BA221C,
 				794E01A20D65C985C5B77449,
 				0E6B7E1E203B3E3190BDC7E0,

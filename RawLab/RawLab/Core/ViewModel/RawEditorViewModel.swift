@@ -45,6 +45,13 @@ final class RawEditorViewModel: ObservableObject {
     }
     var hdrExportCancellation: ExportCancellation?
     func cancelHDRExport() { hdrExportCancellation?.cancel() }
+    final class ImportCancellation {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
+    var activeImportCancellation: ImportCancellation?
     @Published var previewRendering = false
     @Published var previewResizePending = false
     @Published var previewFailed = false
@@ -232,15 +239,11 @@ final class RawEditorViewModel: ObservableObject {
     var currentPreviewSettings = RawSettings.default {
         didSet { if oldValue != currentPreviewSettings { cancelProcessingMigration() } }
     }
-    let sampleResourceName = "sample"
-    let sampleResourceExtension = "ARW"
     let previewMaxDimension: CGFloat = 1280
     let interactivePreviewMaxDimension: CGFloat = 720
     let histogramDelay: TimeInterval = 0.25
     var lutMap: [String: LUTReference] = [:]
     var didStartLUTLoad = false
-    var rawLUTID: String?
-    var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
     var openEditPersistence: () throws -> EditPersistence = EditPersistence.appStore

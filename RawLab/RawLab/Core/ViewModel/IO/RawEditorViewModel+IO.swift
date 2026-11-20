@@ -35,6 +35,7 @@ extension RawEditorViewModel {
         let lutApplied: Bool
         let orientation: CGImagePropertyOrientation?
         let rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
+        let lensInfo: LensInfo?
     }
 
     struct RasterPreviewBase {
@@ -47,38 +48,35 @@ extension RawEditorViewModel {
 
     func buildRawPreviewBase(url: URL, geometry: GeometrySettings = GeometrySettings(),
                              processing: ProcessingIdentity = .current, x3fMode: X3fMode = .normal,
-                             lens: LensCorrectionSettings = LensCorrectionSettings()) throws -> RawPreviewBase {
+                             lens: LensCorrectionSettings = LensCorrectionSettings(),
+                             cancelled: () -> Bool = { false }) throws -> RawPreviewBase {
         var neutral = RawSettings.default
         neutral.processing = processing
         neutral.x3fMode = x3fMode
-        let rawBase = try processor.processRaw(
+        neutral.geometry = geometry
+        neutral.lensCorrection = lens
+        let comparison = try processor.processRaw(
             url: url,
             settings: neutral,
             previewLongEdge: previewMaxDimension,
-            lutURL: nil
+            lutURL: nil,
+            viewportPreview: true,
+            cancelled: cancelled
         )
-        let previewBuffer = try processor.processBuffer(
-            buffer: rawBase.buffer,
-            settings: neutral,
-            previewLongEdge: interactivePreviewMaxDimension,
-            lutURL: nil
-        )
-        neutral.geometry = geometry
-        neutral.lensCorrection = lens
-        let comparison = geometry.isIdentity && !lens.isEnabled ? rawBase : try processor.processRaw(
-            url: url, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
+        if cancelled() { throw CancellationError() }
         let basePreviewImage = processor.makeUIImage(from: comparison.buffer, orientation: .up)
         let baseHistogram = processor.computeRGBHistogram(from: comparison.buffer)
 
         return RawPreviewBase(
-            buffer: rawBase.buffer,
-            previewBuffer: previewBuffer,
+            buffer: comparison.buffer,
+            previewBuffer: comparison.buffer,
             basePreviewImage: basePreviewImage,
             baseHistogram: baseHistogram,
             lutID: nil,
             lutApplied: false,
-            orientation: rawBase.orientation,
-            rawWhiteBalance: rawBase.rawWhiteBalance
+            orientation: comparison.orientation,
+            rawWhiteBalance: comparison.rawWhiteBalance,
+            lensInfo: comparison.lensInfo
         )
     }
 
@@ -140,6 +138,9 @@ extension RawEditorViewModel {
         isBusy = true
         let importRevision = UUID()
         if activeImportRevision==nil { importPreviousRevision=sourceRevision }
+        activeImportCancellation?.cancel()
+        let cancellation = ImportCancellation()
+        activeImportCancellation = cancellation
         activeImportRevision = importRevision
         sourceRevision = importRevision
         invalidatePreviewRequests()
@@ -167,12 +168,14 @@ extension RawEditorViewModel {
                 var context = diagnosticContext
                 context["sourceKind"] = source.isRaw ? "raw" : "raster"
                 do {
+                    if cancellation.isCancelled { throw CancellationError() }
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
                     let record = try resolvedIdentity.flatMap { try self.editPersistence?.readState(for: $0) }
                     if record?.state == nil, let resolvedIdentity {
                         _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
                     }
+                    if cancellation.isCancelled { throw CancellationError() }
                     let state = record?.state
                     var restoredSettings = try state?.settings ?? self.processor.defaultSettings(
                         for: inputURL, isRaw: source.isRaw, x3fModeOverride: x3fModeOverride)
@@ -181,14 +184,17 @@ extension RawEditorViewModel {
                     context["restoredEdits"] = String(state != nil)
                     context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
                     if inputURL.pathExtension.lowercased() == "x3f" { context["x3fMode"] = attemptedX3fMode.rawValue }
+                    if cancellation.isCancelled { throw CancellationError() }
                     stage = "cacheSource"
                     let sourceFile = try PhotoSourceFile.copy(inputURL)
                     failedSource = sourceFile
+                    if cancellation.isCancelled { throw CancellationError() }
                     try sourceFile.withReadAccess { localURL in
                         stage = "probeHDR"
                         let hdrInfo = sourceKind == .raster
                             ? try HDRSourceInfo.probe(localURL)
                             : try HDRSourceInfo.probeRAW(localURL, processing: restoredSettings.processing.core)
+                        if cancellation.isCancelled { throw CancellationError() }
                         let proRAW = hdrInfo?.proRAW
                         if state != nil, restoredSettings.isHDREditing, let hdrInfo {
                             try hdrInfo.validateEditDecodeVersion(restoredSettings.proRAWDecodeVersion)
@@ -205,14 +211,19 @@ extension RawEditorViewModel {
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
                             let edited=try self.processor.processHDR(url:localURL,settings:hdr.previewSettings(),
-                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing)
+                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing,
+                                cancelled:{ cancellation.isCancelled })
+                            if cancellation.isCancelled { throw CancellationError() }
                             let neutral = hdr.neutralGeometrySettings
                             let original=try self.processor.processHDR(url:localURL,settings:neutral,
-                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing)
+                                previewLongEdge:Int(self.previewMaxDimension), processing:restoredSettings.processing,
+                                cancelled:{ cancellation.isCancelled })
+                            if cancellation.isCancelled { throw CancellationError() }
                             let presentation=try HDRPresentation(edited), reference=try HDRPresentation(original)
                             self.resultDelivery {
                                 guard self.activeImportRevision==importRevision else { return }
                                 self.invalidatePreviewRequests(); self.activeImportRevision=nil; self.importPreviousRevision=nil
+                                if self.activeImportCancellation === cancellation { self.activeImportCancellation = nil }
                                 self.sourceFile=sourceFile; self.sourceKind=sourceKind; self.sourceIdentity=resolvedIdentity
                                 self.sourceDisplayName=source.displayName; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
@@ -222,7 +233,7 @@ extension RawEditorViewModel {
                                 self.previewImage=UIImage(cgImage:presentation.sdrImage); self.basePreviewImage=UIImage(cgImage:reference.sdrImage)
                                 self.histogram=nil; self.baseHistogram=nil
                                 self.basePreviewGeometry=hdr.geometry; self.basePreviewProcessing=restoredSettings.processing
-                                self.rawLUTID=nil; self.rawLUTApplied=false; self.rawWhiteBalance=nil; self.lensInfo=nil
+                                self.rawWhiteBalance=nil; self.lensInfo=nil
                                 self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
                                 self.hasImage=true; self.isBusy=false; self.sourceRevision=UUID()
                                 self.statusMessage = hdr.missingResourceMessage
@@ -235,15 +246,33 @@ extension RawEditorViewModel {
                                 onSettingsRestored?(restoredSettings); self.importedPhotoRevision = UUID(); onImported?()
                             }
                         } else if sourceKind == .raw {
-                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, x3fMode: restoredSettings.x3fMode, lens: restoredSettings.lensSettings)
+                            let rawBase = try self.buildRawPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, x3fMode: restoredSettings.x3fMode, lens: restoredSettings.lensSettings, cancelled: { cancellation.isCancelled })
+                            if cancellation.isCancelled { throw CancellationError() }
                             let lutURL = self.lutURL(for: restoredSettings)
-                            let previewResult = try self.processor.processRaw(
-                                url: localURL,
-                                settings: restoredSettings,
-                                previewLongEdge: self.previewMaxDimension,
-                                lutURL: lutURL,
-                                viewportPreview: true
-                            )
+                            var comparisonNeutral = RawSettings.default
+                            comparisonNeutral.processing = restoredSettings.processing
+                            comparisonNeutral.x3fMode = restoredSettings.x3fMode
+                            comparisonNeutral.setGeometrySettings(restoredSettings.geometrySettings)
+                            comparisonNeutral.lensCorrection = restoredSettings.lensCorrection
+                            let previewResult: Sony2FujiProcessor.ProcessResult
+                            if restoredSettings == comparisonNeutral && lutURL == nil {
+                                previewResult = Sony2FujiProcessor.ProcessResult(
+                                    buffer: rawBase.buffer,
+                                    orientation: rawBase.orientation,
+                                    rawWhiteBalance: rawBase.rawWhiteBalance,
+                                    lensInfo: rawBase.lensInfo
+                                )
+                            } else {
+                                previewResult = try self.processor.processRaw(
+                                    url: localURL,
+                                    settings: restoredSettings,
+                                    previewLongEdge: self.previewMaxDimension,
+                                    lutURL: lutURL,
+                                    viewportPreview: true,
+                                    cancelled: { cancellation.isCancelled }
+                                )
+                            }
+                            if cancellation.isCancelled { throw CancellationError() }
                             let adjustedImage = self.processor.makeUIImage(
                                 from: previewResult.buffer,
                                 orientation: previewResult.orientation ?? rawBase.orientation
@@ -255,6 +284,7 @@ extension RawEditorViewModel {
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
+                                if self.activeImportCancellation === cancellation { self.activeImportCancellation = nil }
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
                                 self.hdrResourceNotice = .delivered(isHDREditing: false, missingMessage: nil)
@@ -274,8 +304,6 @@ extension RawEditorViewModel {
                                 self.basePreviewProcessing = restoredSettings.processing
                                 self.rawWhiteBalance = previewResult.rawWhiteBalance ?? rawBase.rawWhiteBalance
                                 self.lensInfo = previewResult.lensInfo
-                                self.rawLUTID = restoredSettings.lutID
-                                self.rawLUTApplied = restoredSettings.lutID != nil && restoredSettings.lutStrength > 0
                                 self.previewImage = adjustedImage
                                 self.nativeImageSize = previewResult.buffer.nativeSize
                                 self.histogram = adjustedHistogram
@@ -303,12 +331,14 @@ extension RawEditorViewModel {
                             }
                         } else {
                             let rasterBase = try self.buildRasterPreviewBase(url: localURL, geometry: restoredSettings.geometrySettings, processing: restoredSettings.processing, lens: restoredSettings.lensSettings)
+                            if cancellation.isCancelled { throw CancellationError() }
                             let adjustedBuffer = try self.processor.processBuffer(
                                 buffer: rasterBase.buffer,
                                 settings: restoredSettings,
                                 previewLongEdge: self.previewMaxDimension,
                                 lutURL: self.lutURL(for: restoredSettings)
                             )
+                            if cancellation.isCancelled { throw CancellationError() }
                             let adjustedImage = self.processor.makeUIImage(
                                 from: adjustedBuffer,
                                 orientation: rasterBase.orientation
@@ -320,6 +350,7 @@ extension RawEditorViewModel {
                                 self.invalidatePreviewRequests()
                                 self.activeImportRevision = nil
                                 self.importPreviousRevision=nil
+                                if self.activeImportCancellation === cancellation { self.activeImportCancellation = nil }
                                 self.hdrPresentation=nil; self.hdrReference=nil; self.sourceIsHDR=rasterHDR
                                 self.rawHDRSource = cameraHDR ? hdrInfo : nil
                                 self.hdrResourceNotice = .delivered(isHDREditing: false, missingMessage: nil)
@@ -337,8 +368,6 @@ extension RawEditorViewModel {
                                 self.baseHistogram = rasterBase.baseHistogram
                                 self.basePreviewGeometry = restoredSettings.geometrySettings
                                 self.basePreviewProcessing = restoredSettings.processing
-                                self.rawLUTID = nil
-                                self.rawLUTApplied = false
                                 self.rawWhiteBalance = nil
                                 self.lensInfo = adjustedBuffer.lensInfo
                                 self.previewImage = adjustedImage
@@ -368,6 +397,18 @@ extension RawEditorViewModel {
                         }
                     }
                 } catch {
+                    if error is CancellationError || cancellation.isCancelled {
+                        self.resultDelivery {
+                            guard self.activeImportRevision == importRevision else { return }
+                            self.invalidatePreviewRequests()
+                            self.activeImportRevision = nil
+                            if self.activeImportCancellation === cancellation { self.activeImportCancellation = nil }
+                            self.isBusy = false
+                            if let previous = self.importPreviousRevision { self.sourceRevision = previous }
+                            self.importPreviousRevision = nil
+                        }
+                        return
+                    }
                     let isUnusableRecord: Bool
                     if error is UnusableEditRecordError {
                         isUnusableRecord = true
@@ -442,6 +483,8 @@ extension RawEditorViewModel {
         guard let activeImportRevision,
               requestID == nil || requestID == activeImportRevision else { return }
         self.activeImportRevision = nil
+        activeImportCancellation?.cancel()
+        activeImportCancellation = nil
         invalidatePreviewRequests()
         sourceRevision = importPreviousRevision ?? UUID()
         importPreviousRevision=nil

@@ -43,6 +43,11 @@ final class CameraImportFaultToleranceXCTests: XCTestCase {
     }
 
     @MainActor
+    func testP3_508_ThumbnailsDoNotBlockCommandQueueOrHashFullFile() async throws {
+        try await CameraSkipAndLimitTests.test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile()
+    }
+
+    @MainActor
     func testExistingCameraSkipLimitAndSamplingSuite() async throws {
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
         defer { UserDefaults.standard.removeObject(forKey: CameraSkipAndLimitTests.fakeCameraPrefsKey) }
