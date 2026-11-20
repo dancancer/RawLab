@@ -357,7 +357,7 @@ int main(int argc, const char* argv[]) {
         require(sony2fuji_hdr_probe(plain.u8string().c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_UNSUPPORTED &&
             diagnostic.reason==SONY2FUJI_HDR_REASON_NOT_HDR,"ordinary SDR must have an explicit NOT_HDR result");
         try { sony2fuji::hdr::admitMemory(UINT64_MAX); require(false,"unbounded allocation admitted"); }
-        catch (const sony2fuji::hdr::Error& error) { require(error.status==SONY2FUJI_STATUS_OUT_OF_MEMORY,"memory rejection has wrong status"); }
+        catch (const sony2fuji::hdr::Error& error) { require(error.status==sony2fuji::RenderStatus::OutOfMemory,"memory rejection has wrong status"); }
         if (argc==2) {
             options.intent=SONY2FUJI_INTENT_PREVIEW; options.long_edge=512;
             pair=init<sony2fuji_hdr_image_pair_v1>();
