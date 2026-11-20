@@ -188,6 +188,7 @@ public sealed class EditSaveQueueTests
                 }
             });
 
+            _ = store.SaveState(idA, legacyEdit);
             _ = store.CommitProcessingMigration(idA, legacyEdit, migratedEdit, ProcessingMigrationReceipt.Migrated);
             Assert.NotNull(store.ReadProcessingMigration(photoA));
             gateWrites = true;
