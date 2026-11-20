@@ -5,7 +5,7 @@
 Tested development source: `3f252a1006d349c2a3655129a9cf665385dccaca`.
 Its parents are `2c46edc5f0d8a26933f853afbb068e5def06e2bf` and
 `de3b79376d40657856285f5dfc41ca8bf4ecc1e9` (the final #25 source).
-The isolated worktree is `/Users/xupeng/mycode/rawtools/build/iteration-v070-integration`,
+The isolated worktree is `build/iteration-v070-integration`,
 on `feature/v070-integration`. It was clean before verification.
 
 Both the tested source and #25 have the identical complete Git tree
@@ -163,7 +163,7 @@ The unchanged color contract is
 | Own SDK `librawlab_dng_sdk.1.dylib` | `d55fafdb5e433d1a8a644e59a1d1f9c88ae1670c30e501b7ab71b903406ab0c3` |
 
 Existing final #25 artifacts remain in
-`/Users/xupeng/.codex/worktrees/multilingual-development/rawtools` (`I18N` below).
+`<worktree>/multilingual-development/rawtools` (`I18N` below).
 Its current HEAD/tree was independently checked clean and identical to the
 tested source. The following iOS/Android SHA-256 values were measured from
 existing files now; there was no unified build-time SHA manifest for all #25
@@ -201,7 +201,7 @@ GPU_OFF export validation. They record these binary identities at validation:
 
 The earlier #27 native/managed workspace remains separate at
 `C:/RawLabBuild/viewport-lens-dng-d810/workspace`, with the exact runner
-`/Users/xupeng/.codex/worktrees/viewport-denoise-development/rawtools/build/viewport-lens-dng-d810/windows/validate_increment.py`
+`<worktree>/viewport-denoise-development/rawtools/build/viewport-lens-dng-d810/windows/validate_increment.py`
 and `run-20261013-192359/{remote,resume}.log`. Its source manifest and actual
 D3D11/native export checks retain the preceding increment's binding; do not
 confuse that native DLL (`8c5a3184...`) with #25's GPU_OFF-validated DLL above.

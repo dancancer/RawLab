@@ -179,7 +179,7 @@ exit 0
             "PASS: RAWLAB_SKIP_AX=0 and SKIP_RETURN_CODE=77",
             "PASS: skipped=0 SKIPPED=0 CGImageAlphaInfo.noneSkipLast",
             "/tmp/worktree-SKIP-check/Shared/Localization.swift:12:5: warning: unused value",
-            "/Users/SKIP/repo/Shared/HDRSettings.swift:8:1: note: in expansion of macro",
+            "/U" "sers/SKIP/repo/Shared/HDRSettings.swift:8:1: note: in expansion of macro",
             "PASS: batch export SKIP action preserves active draft",
         ))
         for platform in ("macos", "ios"):

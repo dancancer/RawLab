@@ -48,7 +48,66 @@
         D12000000000000000000003 /* LUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000013; };
         D12000000000000000000004 /* LUTCompatibilityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000014; };
         D12100000000000000000001 /* LookImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12100000000000000000011; };
-        D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
+		D01200000000000000000201 /* catalog.json in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000101 /* catalog.json */; };
+		D01200000000000000000202 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */; };
+		D01200000000000000000203 /* RawLab_camera_contax_nd_std_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */; };
+		D01200000000000000000204 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */; };
+		D01200000000000000000205 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */; };
+		D01200000000000000000206 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */; };
+		D01200000000000000000207 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */; };
+		D01200000000000000000208 /* RawLab_look_2383_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */; };
+		D01200000000000000000209 /* RawLab_look_2393_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */; };
+		D0120000000000000000020A /* RawLab_look_bw_400_cn_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */; };
+		D0120000000000000000020B /* RawLab_look_e100_gx_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */; };
+		D0120000000000000000020C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */; };
+		D0120000000000000000020D /* RawLab_look_ektar_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */; };
+		D0120000000000000000020E /* RawLab_look_elite_100_xpro_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */; };
+		D0120000000000000000020F /* RawLab_look_elite_chrome_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */; };
+		D01200000000000000000210 /* RawLab_look_elite_chrome_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */; };
+		D01200000000000000000211 /* RawLab_look_elite_color_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */; };
+		D01200000000000000000212 /* RawLab_look_elite_color_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */; };
+		D01200000000000000000213 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */; };
+		D01200000000000000000214 /* RawLab_look_hie_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */; };
+		D01200000000000000000215 /* RawLab_look_kodachrome_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */; };
+		D01200000000000000000216 /* RawLab_look_kodachrome_25_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */; };
+		D01200000000000000000217 /* RawLab_look_kodachrome_64_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */; };
+		D01200000000000000000218 /* RawLab_look_portra_160_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */; };
+		D01200000000000000000219 /* RawLab_look_portra_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */; };
+		D0120000000000000000021A /* RawLab_look_portra_800_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */; };
+		D0120000000000000000021B /* RawLab_look_tmax_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */; };
+		D0120000000000000000021C /* RawLab_look_tmax_3200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */; };
+		D0120000000000000000021D /* RawLab_look_tmax_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */; };
+		D0120000000000000000021E /* RawLab_look_trix_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */; };
+		D0120000000000000000021F /* camera-contax-nd-std.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011F /* camera-contax-nd-std.png */; };
+		D01200000000000000000220 /* camera-lumix-s1r-vivid.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000120 /* camera-lumix-s1r-vivid.png */; };
+		D01200000000000000000221 /* camera-pentax-k5-reversal.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000121 /* camera-pentax-k5-reversal.png */; };
+		D01200000000000000000222 /* camera-ricoh-gr2-hibw.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */; };
+		D01200000000000000000223 /* camera-ricoh-gr2-vivid.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */; };
+		D01200000000000000000224 /* look-2383.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000124 /* look-2383.png */; };
+		D01200000000000000000225 /* look-2393.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000125 /* look-2393.png */; };
+		D01200000000000000000226 /* look-bw-400-cn.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000126 /* look-bw-400-cn.png */; };
+		D01200000000000000000227 /* look-e100-gx.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000127 /* look-e100-gx.png */; };
+		D01200000000000000000228 /* look-ektachrome-100-vs.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000128 /* look-ektachrome-100-vs.png */; };
+		D01200000000000000000229 /* look-ektar-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000129 /* look-ektar-100.png */; };
+		D0120000000000000000022A /* look-elite-100-xpro.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012A /* look-elite-100-xpro.png */; };
+		D0120000000000000000022B /* look-elite-chrome-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012B /* look-elite-chrome-200.png */; };
+		D0120000000000000000022C /* look-elite-chrome-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012C /* look-elite-chrome-400.png */; };
+		D0120000000000000000022D /* look-elite-color-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012D /* look-elite-color-200.png */; };
+		D0120000000000000000022E /* look-elite-color-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012E /* look-elite-color-400.png */; };
+		D0120000000000000000022F /* look-elite-extracolor-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012F /* look-elite-extracolor-100.png */; };
+		D01200000000000000000230 /* look-hie.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000130 /* look-hie.png */; };
+		D01200000000000000000231 /* look-kodachrome-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000131 /* look-kodachrome-200.png */; };
+		D01200000000000000000232 /* look-kodachrome-25.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000132 /* look-kodachrome-25.png */; };
+		D01200000000000000000233 /* look-kodachrome-64.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000133 /* look-kodachrome-64.png */; };
+		D01200000000000000000234 /* look-portra-160.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000134 /* look-portra-160.png */; };
+		D01200000000000000000235 /* look-portra-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000135 /* look-portra-400.png */; };
+		D01200000000000000000236 /* look-portra-800.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000136 /* look-portra-800.png */; };
+		D01200000000000000000237 /* look-tmax-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000137 /* look-tmax-100.png */; };
+		D01200000000000000000238 /* look-tmax-3200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000138 /* look-tmax-3200.png */; };
+		D01200000000000000000239 /* look-tmax-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000139 /* look-tmax-400.png */; };
+		D0120000000000000000023A /* look-trix-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013A /* look-trix-400.png */; };
+		D0120000000000000000023B /* HDR Silver Master.json in Copy BundledLooks HDR */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013B /* HDR Silver Master.json */; };
+		D0120000000000000000023C /* HDR Silver.cube in Copy BundledLooks HDR */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013C /* HDR Silver.cube */; };
         D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
         D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
 		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
@@ -218,7 +277,66 @@
         D12000000000000000000013 /* LUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityView.swift; path = "../Shared/LUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
         D12000000000000000000014 /* LUTCompatibilityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityPreview.swift; path = "../Shared/LUTCompatibilityPreview.swift"; sourceTree = SOURCE_ROOT; };
         D12100000000000000000011 /* LookImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/LookImportCoordinator.swift"; sourceTree = SOURCE_ROOT; };
-        D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000101 /* catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "catalog.json"; path = "../Shared/BundledLooks/catalog.json"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube"; path = "../Shared/BundledLooks/EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_contax_nd_std_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_contax_nd_std_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_pentax_k5_reversal_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_pentax_k5_reversal_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_2383_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_2393_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_2393_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_bw_400_cn_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_bw_400_cn_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_e100_gx_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_e100_gx_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_ektachrome_100_vs_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_ektachrome_100_vs_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_ektar_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_ektar_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_100_xpro_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_100_xpro_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_chrome_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_chrome_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_chrome_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_chrome_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_color_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_color_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_color_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_color_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_extracolor_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_extracolor_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_hie_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_hie_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_25_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_25_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_64_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_64_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_160_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_160_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_800_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_800_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_3200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_3200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_trix_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_trix_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011F /* camera-contax-nd-std.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-contax-nd-std.png"; path = "../Shared/BundledLooks/Artwork/camera-contax-nd-std.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000120 /* camera-lumix-s1r-vivid.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-lumix-s1r-vivid.png"; path = "../Shared/BundledLooks/Artwork/camera-lumix-s1r-vivid.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000121 /* camera-pentax-k5-reversal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-pentax-k5-reversal.png"; path = "../Shared/BundledLooks/Artwork/camera-pentax-k5-reversal.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-ricoh-gr2-hibw.png"; path = "../Shared/BundledLooks/Artwork/camera-ricoh-gr2-hibw.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-ricoh-gr2-vivid.png"; path = "../Shared/BundledLooks/Artwork/camera-ricoh-gr2-vivid.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000124 /* look-2383.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-2383.png"; path = "../Shared/BundledLooks/Artwork/look-2383.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000125 /* look-2393.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-2393.png"; path = "../Shared/BundledLooks/Artwork/look-2393.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000126 /* look-bw-400-cn.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-bw-400-cn.png"; path = "../Shared/BundledLooks/Artwork/look-bw-400-cn.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000127 /* look-e100-gx.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-e100-gx.png"; path = "../Shared/BundledLooks/Artwork/look-e100-gx.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000128 /* look-ektachrome-100-vs.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-ektachrome-100-vs.png"; path = "../Shared/BundledLooks/Artwork/look-ektachrome-100-vs.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000129 /* look-ektar-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-ektar-100.png"; path = "../Shared/BundledLooks/Artwork/look-ektar-100.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012A /* look-elite-100-xpro.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-100-xpro.png"; path = "../Shared/BundledLooks/Artwork/look-elite-100-xpro.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012B /* look-elite-chrome-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-chrome-200.png"; path = "../Shared/BundledLooks/Artwork/look-elite-chrome-200.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012C /* look-elite-chrome-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-chrome-400.png"; path = "../Shared/BundledLooks/Artwork/look-elite-chrome-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012D /* look-elite-color-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-color-200.png"; path = "../Shared/BundledLooks/Artwork/look-elite-color-200.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012E /* look-elite-color-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-color-400.png"; path = "../Shared/BundledLooks/Artwork/look-elite-color-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012F /* look-elite-extracolor-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-extracolor-100.png"; path = "../Shared/BundledLooks/Artwork/look-elite-extracolor-100.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000130 /* look-hie.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-hie.png"; path = "../Shared/BundledLooks/Artwork/look-hie.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000131 /* look-kodachrome-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-200.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-200.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000132 /* look-kodachrome-25.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-25.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-25.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000133 /* look-kodachrome-64.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-64.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-64.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000134 /* look-portra-160.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-160.png"; path = "../Shared/BundledLooks/Artwork/look-portra-160.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000135 /* look-portra-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-400.png"; path = "../Shared/BundledLooks/Artwork/look-portra-400.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000136 /* look-portra-800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-800.png"; path = "../Shared/BundledLooks/Artwork/look-portra-800.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000137 /* look-tmax-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-100.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-100.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000138 /* look-tmax-3200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-3200.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-3200.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000139 /* look-tmax-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-400.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013A /* look-trix-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-trix-400.png"; path = "../Shared/BundledLooks/Artwork/look-trix-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013B /* HDR Silver Master.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "HDR Silver Master.json"; path = "../Shared/BundledLooks/HDR/HDR Silver Master.json"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013C /* HDR Silver.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "HDR Silver.cube"; path = "../Shared/BundledLooks/HDR/HDR Silver.cube"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
 		D00300000000000000000012 = {
 			path = "RawLab/UI/Controls/GeometryControls.swift";
@@ -469,6 +587,96 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D01200000000000000000001 /* Copy BundledLooks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = BundledLooks;
+			dstSubfolderSpec = 7;
+			files = (
+				D01200000000000000000201 /* catalog.json in Copy BundledLooks */,
+				D01200000000000000000202 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube in Copy BundledLooks */,
+				D01200000000000000000203 /* RawLab_camera_contax_nd_std_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000204 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000205 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000206 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000207 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000208 /* RawLab_look_2383_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000209 /* RawLab_look_2393_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020A /* RawLab_look_bw_400_cn_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020B /* RawLab_look_e100_gx_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020D /* RawLab_look_ektar_100_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020E /* RawLab_look_elite_100_xpro_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020F /* RawLab_look_elite_chrome_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000210 /* RawLab_look_elite_chrome_400_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000211 /* RawLab_look_elite_color_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000212 /* RawLab_look_elite_color_400_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000213 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000214 /* RawLab_look_hie_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000215 /* RawLab_look_kodachrome_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000216 /* RawLab_look_kodachrome_25_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000217 /* RawLab_look_kodachrome_64_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000218 /* RawLab_look_portra_160_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000219 /* RawLab_look_portra_400_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021A /* RawLab_look_portra_800_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021B /* RawLab_look_tmax_100_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021C /* RawLab_look_tmax_3200_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021D /* RawLab_look_tmax_400_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021E /* RawLab_look_trix_400_sRGB_v1.cube in Copy BundledLooks */,
+			);
+			name = "Copy BundledLooks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D01200000000000000000002 /* Copy BundledLooks Artwork */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "BundledLooks/Artwork";
+			dstSubfolderSpec = 7;
+			files = (
+				D0120000000000000000021F /* camera-contax-nd-std.png in Copy BundledLooks Artwork */,
+				D01200000000000000000220 /* camera-lumix-s1r-vivid.png in Copy BundledLooks Artwork */,
+				D01200000000000000000221 /* camera-pentax-k5-reversal.png in Copy BundledLooks Artwork */,
+				D01200000000000000000222 /* camera-ricoh-gr2-hibw.png in Copy BundledLooks Artwork */,
+				D01200000000000000000223 /* camera-ricoh-gr2-vivid.png in Copy BundledLooks Artwork */,
+				D01200000000000000000224 /* look-2383.png in Copy BundledLooks Artwork */,
+				D01200000000000000000225 /* look-2393.png in Copy BundledLooks Artwork */,
+				D01200000000000000000226 /* look-bw-400-cn.png in Copy BundledLooks Artwork */,
+				D01200000000000000000227 /* look-e100-gx.png in Copy BundledLooks Artwork */,
+				D01200000000000000000228 /* look-ektachrome-100-vs.png in Copy BundledLooks Artwork */,
+				D01200000000000000000229 /* look-ektar-100.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022A /* look-elite-100-xpro.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022B /* look-elite-chrome-200.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022C /* look-elite-chrome-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022D /* look-elite-color-200.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022E /* look-elite-color-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022F /* look-elite-extracolor-100.png in Copy BundledLooks Artwork */,
+				D01200000000000000000230 /* look-hie.png in Copy BundledLooks Artwork */,
+				D01200000000000000000231 /* look-kodachrome-200.png in Copy BundledLooks Artwork */,
+				D01200000000000000000232 /* look-kodachrome-25.png in Copy BundledLooks Artwork */,
+				D01200000000000000000233 /* look-kodachrome-64.png in Copy BundledLooks Artwork */,
+				D01200000000000000000234 /* look-portra-160.png in Copy BundledLooks Artwork */,
+				D01200000000000000000235 /* look-portra-400.png in Copy BundledLooks Artwork */,
+				D01200000000000000000236 /* look-portra-800.png in Copy BundledLooks Artwork */,
+				D01200000000000000000237 /* look-tmax-100.png in Copy BundledLooks Artwork */,
+				D01200000000000000000238 /* look-tmax-3200.png in Copy BundledLooks Artwork */,
+				D01200000000000000000239 /* look-tmax-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000023A /* look-trix-400.png in Copy BundledLooks Artwork */,
+			);
+			name = "Copy BundledLooks Artwork";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D01200000000000000000003 /* Copy BundledLooks HDR */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "BundledLooks/HDR";
+			dstSubfolderSpec = 7;
+			files = (
+				D0120000000000000000023B /* HDR Silver Master.json in Copy BundledLooks HDR */,
+				D0120000000000000000023C /* HDR Silver.cube in Copy BundledLooks HDR */,
+			);
+			name = "Copy BundledLooks HDR";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -659,7 +867,7 @@
 		55B1D2570BE3466BB45F7CD5 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-                D01100000000000000000011,
+                D01200000000000000000010 /* BundledLooks */,
                 D01100000000000000000012,
                 AB2000000000000000000011,
                 AB2000000000000000000012,
@@ -833,6 +1041,89 @@
 			path = Camera;
 			sourceTree = "<group>";
 		};
+		D01200000000000000000010 /* BundledLooks */ = {
+			isa = PBXGroup;
+			children = (
+				D01200000000000000000101 /* catalog.json */,
+				D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */,
+				D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */,
+				D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */,
+				D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */,
+				D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */,
+				D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */,
+				D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */,
+				D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */,
+				D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */,
+				D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */,
+				D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */,
+				D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */,
+				D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */,
+				D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */,
+				D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */,
+				D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */,
+				D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */,
+				D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */,
+				D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */,
+				D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */,
+				D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */,
+				D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */,
+				D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */,
+				D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */,
+				D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */,
+				D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */,
+				D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */,
+				D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */,
+				D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */,
+				D01200000000000000000011 /* Artwork */,
+				D01200000000000000000012 /* HDR */,
+			);
+			name = BundledLooks;
+			sourceTree = "<group>";
+		};
+		D01200000000000000000011 /* Artwork */ = {
+			isa = PBXGroup;
+			children = (
+				D0120000000000000000011F /* camera-contax-nd-std.png */,
+				D01200000000000000000120 /* camera-lumix-s1r-vivid.png */,
+				D01200000000000000000121 /* camera-pentax-k5-reversal.png */,
+				D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */,
+				D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */,
+				D01200000000000000000124 /* look-2383.png */,
+				D01200000000000000000125 /* look-2393.png */,
+				D01200000000000000000126 /* look-bw-400-cn.png */,
+				D01200000000000000000127 /* look-e100-gx.png */,
+				D01200000000000000000128 /* look-ektachrome-100-vs.png */,
+				D01200000000000000000129 /* look-ektar-100.png */,
+				D0120000000000000000012A /* look-elite-100-xpro.png */,
+				D0120000000000000000012B /* look-elite-chrome-200.png */,
+				D0120000000000000000012C /* look-elite-chrome-400.png */,
+				D0120000000000000000012D /* look-elite-color-200.png */,
+				D0120000000000000000012E /* look-elite-color-400.png */,
+				D0120000000000000000012F /* look-elite-extracolor-100.png */,
+				D01200000000000000000130 /* look-hie.png */,
+				D01200000000000000000131 /* look-kodachrome-200.png */,
+				D01200000000000000000132 /* look-kodachrome-25.png */,
+				D01200000000000000000133 /* look-kodachrome-64.png */,
+				D01200000000000000000134 /* look-portra-160.png */,
+				D01200000000000000000135 /* look-portra-400.png */,
+				D01200000000000000000136 /* look-portra-800.png */,
+				D01200000000000000000137 /* look-tmax-100.png */,
+				D01200000000000000000138 /* look-tmax-3200.png */,
+				D01200000000000000000139 /* look-tmax-400.png */,
+				D0120000000000000000013A /* look-trix-400.png */,
+			);
+			name = Artwork;
+			sourceTree = "<group>";
+		};
+		D01200000000000000000012 /* HDR */ = {
+			isa = PBXGroup;
+			children = (
+				D0120000000000000000013B /* HDR Silver Master.json */,
+				D0120000000000000000013C /* HDR Silver.cube */,
+			);
+			name = HDR;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -857,6 +1148,9 @@
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
 				DBB0E1C42A7E409E830998F8 /* Resources */,
+				D01200000000000000000001 /* Copy BundledLooks */,
+				D01200000000000000000002 /* Copy BundledLooks Artwork */,
+				D01200000000000000000003 /* Copy BundledLooks HDR */,
 			);
 			buildRules = (
 			);
@@ -916,7 +1210,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-                D01100000000000000000001,
                 D01100000000000000000002,
                 AB2000000000000000000001,
                 AB2000000000000000000002,

@@ -75,9 +75,9 @@ Evidence is retained outside Git in `/tmp/rawlab-android-v08-56c3/gpu-preference
 
 ```sh
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
-export ANDROID_HOME=/Users/xupeng/Library/Android/sdk
+export ANDROID_HOME="$HOME/Library/Android/sdk"
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest \
-  -PrawlabTestRaw=/Users/xupeng/mycode/rawtools/lutools/test-assets/DSC00316.ARW --console=plain
+  -PrawlabTestRaw=lutools/test-assets/DSC00316.ARW --console=plain
 bash scripts/check-native.sh
 ```
 

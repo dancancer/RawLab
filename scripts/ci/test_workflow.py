@@ -52,6 +52,178 @@ def _strip_expr(value):
     return text
 
 
+def _gha_truthy(value):
+    if value is None or value is False:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value != ""
+    return bool(value)
+
+
+def _gha_tokenize(expr):
+    tokens = []
+    i = 0
+    n = len(expr)
+    while i < n:
+        ch = expr[i]
+        if ch.isspace():
+            i += 1
+            continue
+        if expr.startswith("&&", i) or expr.startswith("||", i) or expr.startswith("==", i) or expr.startswith("!=", i):
+            tokens.append(("OP", expr[i:i + 2]))
+            i += 2
+            continue
+        if ch in "(),!":
+            tokens.append((ch, ch))
+            i += 1
+            continue
+        if ch == "'":
+            j = i + 1
+            buf = []
+            while j < n:
+                if expr[j] == "'":
+                    if j + 1 < n and expr[j + 1] == "'":
+                        buf.append("'")
+                        j += 2
+                        continue
+                    break
+                buf.append(expr[j])
+                j += 1
+            else:
+                raise ValueError(f"Unterminated string in expression: {expr}")
+            tokens.append(("STR", "".join(buf)))
+            i = j + 1
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (expr[j].isalnum() or expr[j] in "._-"):
+                j += 1
+            ident = expr[i:j]
+            tokens.append(("IDENT", ident))
+            i = j
+            continue
+        if ch.isdigit():
+            j = i
+            while j < n and (expr[j].isdigit() or expr[j] == "."):
+                j += 1
+            tokens.append(("NUM", float(expr[i:j]) if "." in expr[i:j] else int(expr[i:j])))
+            i = j
+            continue
+        raise ValueError(f"Unsupported token at {i} in expression: {expr}")
+    return tokens
+
+
+def _eval_gha_expr(expr, context):
+    tokens = _gha_tokenize(expr)
+    pos = 0
+
+    def peek():
+        return tokens[pos] if pos < len(tokens) else (None, None)
+
+    def consume(expected_kind=None, expected_val=None):
+        nonlocal pos
+        tok = peek()
+        if expected_kind is not None and tok[0] != expected_kind:
+            raise ValueError(f"Expected {expected_kind}, got {tok} in {expr}")
+        if expected_val is not None and tok[1] != expected_val:
+            raise ValueError(f"Expected {expected_val}, got {tok} in {expr}")
+        pos += 1
+        return tok
+
+    def resolve(path):
+        cur = context
+        for part in path.split("."):
+            if isinstance(cur, dict) and part in cur:
+                cur = cur[part]
+            else:
+                return None
+        return cur
+
+    def parse_or():
+        val = parse_and()
+        while peek() == ("OP", "||"):
+            consume()
+            rhs = parse_and()
+            val = val if _gha_truthy(val) else rhs
+        return val
+
+    def parse_and():
+        val = parse_eq()
+        while peek() == ("OP", "&&"):
+            consume()
+            rhs = parse_eq()
+            val = rhs if _gha_truthy(val) else val
+        return val
+
+    def parse_eq():
+        val = parse_unary()
+        while peek()[0] == "OP" and peek()[1] in ("==", "!="):
+            op = consume()[1]
+            rhs = parse_unary()
+            eq = val == rhs
+            val = eq if op == "==" else not eq
+        return val
+
+    def parse_unary():
+        if peek()[0] == "!":
+            consume()
+            return not _gha_truthy(parse_unary())
+        return parse_primary()
+
+    def parse_primary():
+        kind, val = peek()
+        if kind == "(":
+            consume("(")
+            inner = parse_or()
+            consume(")")
+            return inner
+        if kind in ("STR", "NUM"):
+            consume()
+            return val
+        if kind == "IDENT":
+            consume()
+            if peek()[0] == "(":
+                consume("(")
+                args = []
+                if peek()[0] != ")":
+                    args.append(parse_or())
+                    while peek()[0] == ",":
+                        consume(",")
+                        args.append(parse_or())
+                consume(")")
+                if val == "success":
+                    return bool(context.get("_success", True))
+                if val == "cancelled":
+                    return bool(context.get("_cancelled", False))
+                if val == "format":
+                    fmt = str(args[0])
+                    return fmt.format(*["" if a is None else a for a in args[1:]])
+                raise ValueError(f"Unsupported function {val} in {expr}")
+            if val == "true":
+                return True
+            if val == "false":
+                return False
+            if val == "null":
+                return None
+            return resolve(val)
+        raise ValueError(f"Unexpected token {kind, val} in {expr}")
+
+    result = parse_or()
+    if pos != len(tokens):
+        raise ValueError(f"Trailing tokens {tokens[pos:]} in {expr}")
+    return result
+
+
+def _eval_gha_template(template, context):
+    def repl(match):
+        val = _eval_gha_expr(match.group(1), context)
+        return "" if val is None else str(val)
+
+    return re.sub(r"\$\{\{(.*?)\}\}", repl, str(template))
+
+
 def _needs_set(job):
     needs = job.get("needs", [])
     if isinstance(needs, str):
@@ -100,6 +272,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("github.event_name", group)
         self.assertIn("github.event.pull_request.number", group)
         self.assertIn("github.ref", group)
+        self.assertIn("inputs.platform", group)
+        self.assertIn("inputs.checks", group)
 
         for job in self.workflow["jobs"].values():
             self.assertNotIn("environment", job)
@@ -356,6 +530,186 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("if", suite)
         self.assertNotIn("continue-on-error", suite)
         self.assertRegex(suite["run"], r"-Only\s+['\"]batch-selection['\"]")
+
+    def test_manual_concurrency_groups_isolate_platform_and_checks(self):
+        group_tmpl = self.workflow["concurrency"]["group"]
+        seen = {}
+        for platform in ("all", *PLATFORMS):
+            for checks in ("contracts", "models", "build", "native", "full"):
+                ctx = {
+                    "github": {
+                        "workflow": "Hosted CI",
+                        "event_name": "workflow_dispatch",
+                        "ref": "refs/heads/development",
+                        "event": {},
+                    },
+                    "inputs": {"platform": platform, "checks": checks},
+                }
+                group = _eval_gha_template(group_tmpl, ctx)
+                self.assertNotIn(group, seen, f"Duplicate concurrency group for {(platform, checks)} and {seen.get(group)}")
+                seen[group] = (platform, checks)
+                self.assertEqual(group, _eval_gha_template(group_tmpl, ctx))
+
+        push_group = _eval_gha_template(group_tmpl, {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "push",
+                "ref": "refs/heads/development",
+                "event": {},
+            },
+            "inputs": {},
+        })
+        self.assertNotIn(push_group, seen)
+
+    def test_fork_pull_requests_never_save_caches(self):
+        save_steps = []
+        for job_name, job in self.workflow["jobs"].items():
+            for step in job["steps"]:
+                uses = step.get("uses", "")
+                if uses.startswith("actions/cache@"):
+                    self.fail(f"{job_name}: bare actions/cache@ is forbidden; split restore and fork-gated save")
+                if uses.startswith("actions/setup-") and "cache" in step.get("with", {}):
+                    self.fail(f"{job_name}: {uses} must not configure built-in cache")
+                if uses.startswith("actions/cache/save@"):
+                    save_steps.append((job_name, step))
+
+        self.assertGreaterEqual(len(save_steps), 12)
+        base_steps = {
+            "assets-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "native-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "dep-archives-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+        }
+        base_matrix = {"suite": "all"}
+        for job_name, step in save_steps:
+            with self.subTest(job=job_name, step=step.get("name")):
+                expr = _strip_expr(step["if"])
+                fork_ctx = {
+                    "_success": True,
+                    "github": {
+                        "repository": "dancancer/RawLab",
+                        "event_name": "pull_request",
+                        "event": {"pull_request": {"head": {"repo": {"full_name": "contributor/RawLab"}}}},
+                    },
+                    "steps": base_steps,
+                    "matrix": base_matrix,
+                }
+                deleted_fork_ctx = {
+                    **fork_ctx,
+                    "github": {
+                        "repository": "dancancer/RawLab",
+                        "event_name": "pull_request",
+                        "event": {"pull_request": {"head": {"repo": None}}},
+                    },
+                }
+                internal_pr_ctx = {
+                    **fork_ctx,
+                    "github": {
+                        "repository": "dancancer/RawLab",
+                        "event_name": "pull_request",
+                        "event": {"pull_request": {"head": {"repo": {"full_name": "dancancer/RawLab"}}}},
+                    },
+                }
+                push_ctx = {
+                    **fork_ctx,
+                    "github": {"repository": "dancancer/RawLab", "event_name": "push", "event": {}},
+                }
+                dispatch_ctx = {
+                    **fork_ctx,
+                    "github": {"repository": "dancancer/RawLab", "event_name": "workflow_dispatch", "event": {}},
+                }
+                self.assertFalse(_gha_truthy(_eval_gha_expr(expr, fork_ctx)))
+                self.assertFalse(_gha_truthy(_eval_gha_expr(expr, deleted_fork_ctx)))
+                self.assertTrue(_gha_truthy(_eval_gha_expr(expr, internal_pr_ctx)))
+                self.assertTrue(_gha_truthy(_eval_gha_expr(expr, push_ctx)))
+                self.assertTrue(_gha_truthy(_eval_gha_expr(expr, dispatch_ctx)))
+
+    def test_edited_pull_requests_only_rerun_on_base_change(self):
+        pr_cfg = self.workflow["on"]["pull_request"]
+        self.assertIn("edited", pr_cfg["types"])
+
+        changes_if = _strip_expr(self.workflow["jobs"]["changes"]["if"])
+        result_if = _strip_expr(self.workflow["jobs"]["result"]["if"])
+        group_tmpl = self.workflow["concurrency"]["group"]
+
+        title_edit_ctx = {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "pull_request",
+                "ref": "refs/pull/42/merge",
+                "event": {"action": "edited", "pull_request": {"number": 42}, "changes": {"title": {"from": "old"}}},
+            },
+        }
+        base_edit_ctx = {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "pull_request",
+                "ref": "refs/pull/42/merge",
+                "event": {
+                    "action": "edited",
+                    "pull_request": {"number": 42},
+                    "changes": {"base": {"ref": {"from": "development"}}},
+                },
+            },
+        }
+        sync_ctx = {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "pull_request",
+                "ref": "refs/pull/42/merge",
+                "event": {"action": "synchronize", "pull_request": {"number": 42}},
+            },
+        }
+        push_ctx = {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "push",
+                "ref": "refs/heads/development",
+                "event": {},
+            },
+        }
+        dispatch_ctx = {
+            "github": {
+                "workflow": "Hosted CI",
+                "event_name": "workflow_dispatch",
+                "ref": "refs/heads/development",
+                "event": {},
+            },
+            "inputs": {"platform": "all", "checks": "models"},
+        }
+
+        self.assertFalse(_gha_truthy(_eval_gha_expr(changes_if, title_edit_ctx)))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, base_edit_ctx)))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, sync_ctx)))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, push_ctx)))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, dispatch_ctx)))
+
+        self.assertNotEqual(
+            _eval_gha_template(group_tmpl, title_edit_ctx),
+            _eval_gha_template(group_tmpl, sync_ctx),
+            "PR title/body edit must not cancel an active PR check run",
+        )
+        self.assertEqual(
+            _eval_gha_template(group_tmpl, base_edit_ctx),
+            _eval_gha_template(group_tmpl, sync_ctx),
+            "PR base edit should supersede stale runs on the old base branch",
+        )
+
+        self.assertFalse(_gha_truthy(_eval_gha_expr(result_if, {
+            "_cancelled": False,
+            "needs": {"changes": {"result": "skipped", "outputs": {"draft": ""}}},
+        })))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(result_if, {
+            "_cancelled": False,
+            "needs": {"changes": {"result": "failure", "outputs": {"draft": ""}}},
+        })))
+        self.assertFalse(_gha_truthy(_eval_gha_expr(result_if, {
+            "_cancelled": False,
+            "needs": {"changes": {"result": "success", "outputs": {"draft": "true"}}},
+        })))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(result_if, {
+            "_cancelled": False,
+            "needs": {"changes": {"result": "success", "outputs": {"draft": "false"}}},
+        })))
 
 
 if __name__ == "__main__":

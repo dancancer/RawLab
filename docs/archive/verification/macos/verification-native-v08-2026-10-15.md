@@ -6,8 +6,8 @@
 - Session: `01a13d7e-530a-77d0-b2b4-ff08a2865ffa`.
 - Implementation baseline: `0856eadf165129eeed276f473ce7f38588c56866` (historical source, not the final PR HEAD).
 - Branch: `feature/macos-v08-native-acceptance`.
-- Worktree: `/Users/xupeng/.codex/worktrees/macos-v08-native-acceptance/rawtools`.
-- Preserved old worktree: `/Users/xupeng/mycode/rawtools/build/macos-v08-editor`.
+- Worktree: `<worktree>/macos-v08-native-acceptance/rawtools`.
+- Preserved old worktree: `build/macos-v08-editor`.
 - The old worktree was clean at audit; its actual HEAD matched the source above.
 - The old session confirmed that it had stopped all desktop/CUA, build and edit activity, with no running child agents or acceptance application.
 - `origin/development` was refreshed without rebasing or merging. This continuation intentionally starts from the verified macOS implementation, not the integration branch.
@@ -127,7 +127,7 @@ Final crop replay evidence: `Replay all nine native crop drags and inspect Apply
 ## Human-assisted native RAW drop
 
 - On 2026-10-15 the user confirmed `已拖入` after being asked to drag `acceptance-b.DNG` from the task-created private fixtures Finder window into the empty `RawLab Mac Acceptance` editor.
-- `Verify the human-performed private RAW drop in the final app` captured live AX state and a window screenshot. The status line was `acceptance-b.DNG 预览 1024 × 1024 · sRGB`, with Help pointing to `/Users/xupeng/.codex/worktrees/macos-v08-native-acceptance/rawtools/build/native-acceptance/fixtures/acceptance-b.DNG`. The image was visibly rendered, the RGB histogram was populated, and geometry/comparison/export controls were enabled. No error or busy state was present.
+- `Verify the human-performed private RAW drop in the final app` captured live AX state and a window screenshot. The status line was `acceptance-b.DNG 预览 1024 × 1024 · sRGB`, with Help pointing to `<worktree>/macos-v08-native-acceptance/rawtools/build/native-acceptance/fixtures/acceptance-b.DNG`. The image was visibly rendered, the RGB histogram was populated, and geometry/comparison/export controls were enabled. No error or busy state was present.
 - This is a real human-performed Finder drag followed by CUA result verification, not an automated CUA drag, model function call or offscreen snapshot. The app was the non-instrumented final build from the preceding phase; no source or build change was needed.
 - Independent read-only post-drop audit confirmed all three RAW hashes are still `0ecdc8087d566c5ba39f9bd40eef4dfc5f3884ccb016f311a606508751c79eaf`, each 19,545,856 bytes. User registry remains `1bc106526236f30b335af381446385ea4b0a8fc3131abad4bc2fceda55ad6e52`; private registry remains `a0cdaa46e6ea8354adab553249a211d30085cd41a5ee54ffcbbf21e2284ba63e`, containing only the saved A record. The old implementation worktree remains clean at its original HEAD.
 
