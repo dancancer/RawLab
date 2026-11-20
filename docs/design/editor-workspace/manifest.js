@@ -82,7 +82,7 @@ window.RawLabDesignManifest = {
   media: {
     photo: {
       source:
-        "../2026-10-09-edit-memory-batch-export/images/ios-white-balance.webp",
+        "../2026-10-09-edit-memory-batch-export/images/ios-white-balance.png",
       sourceKind: "existing_design_illustration",
       sourceSize: [841, 1870],
       viewBox: [0, 220, 841, 650],

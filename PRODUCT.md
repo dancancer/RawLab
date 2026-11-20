@@ -107,7 +107,8 @@ components retain the attribution and usage limits recorded in
 
 - [Product overview](README.md), [release records](docs/releases/) and the
   [documentation index](docs/README.md) describe capabilities and their evidence.
-- Externalized asset packs ([`Shared/assets-manifest.json`](Shared/assets-manifest.json), materialized into the shared `.cache/shared/assets/` cache via `python3 scripts/assets/prepare.py --group all`) provide the [DJI DNG](lutools/examples/DJI_20250602164503_0444_D.DNG) fixture and bundled `.cube` LUTs alongside [synthetic regression fixtures](lutools/tests/fixtures/), including JPEG XL
+- The repository includes a [DJI DNG](lutools/examples/DJI_20250602164503_0444_D.DNG)
+  and [synthetic regression fixtures](lutools/tests/fixtures/), including JPEG XL
   DNG inputs. Other camera RAWs are external test inputs; these fixtures do not
   establish camera-wide calibration or image-quality claims.
 - [Bundled looks](Shared/BundledLooks/), [master recipes](Shared/master-recipes.json)

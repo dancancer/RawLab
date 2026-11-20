@@ -18,10 +18,6 @@ class BundledLooksTests(unittest.TestCase):
         self.assertEqual(look["name"], "EKTAR 100 RawLab edition")
         self.assertEqual(look["artworkName"], "ektar-100-phuket")
         cube = folder / look["fileName"]
-        self.assertTrue(
-            cube.is_file(),
-            f"Missing externalized LUT {cube}; run 'python3 scripts/assets/prepare.py --group luts'",
-        )
         self.assertEqual(hashlib.sha256(cube.read_bytes()).hexdigest(), look["sha256"])
         text = cube.read_text()
         self.assertIn("#Gamma:F-Log2 to EKTAR 100 Phuket", text)
@@ -41,8 +37,7 @@ class BundledLooksTests(unittest.TestCase):
         catalog = json.loads((folder / "catalog.json").read_text())
         self.assertEqual(len({entry["id"] for entry in catalog}), 29)
         self.assertEqual(len({entry["fileName"] for entry in catalog}), 29)
-        self.assertEqual(len(list(folder.glob("*.cube"))), 29,
-                         "Missing externalized LUTs; run 'python3 scripts/assets/prepare.py --group luts'")
+        self.assertEqual(len(list(folder.glob("*.cube"))), 29)
         for entry in catalog:
             with self.subTest(look=entry["id"]):
                 self.assertEqual(Path(entry["fileName"]).stem, entry["id"])
