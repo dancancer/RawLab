@@ -531,6 +531,7 @@
 "无法解码普通图片：%@" = "Impossible de décoder l’image : %@";
 "无法计算直方图" = "Impossible de calculer l'histogramme";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "Le profil de caméra HDR est illisible ou ne correspond pas à cet appareil.";
+"无法读取 X3F 显影模式：%@" = "Impossible de lire le mode de développement X3F : %@";
 "无法读取上次批量任务：%@" = "Impossible de lire la dernière exportation par lots : %@";
 "无法读取基础曝光" = "Impossible de lire l'exposition de base";
 "无法读取外观文件。" = "Impossible de lire le fichier de look.";

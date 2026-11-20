@@ -102,6 +102,155 @@ import Combine
 
         try await verifyEditorModelIntegration(in: root, sampleImage: image)
         print("PASS: EditorModel automatic invalidation, single-pass reset/undo idempotency, and look-removal tile cleanup")
+
+        try await verifyAIThumbnailPreparationProgress(in: root, sampleImage: image)
+        print("PASS: AI thumbnail preparation progress indicator updates, clears on exit/cancel, and enforces single-actor memory cap")
+    }
+
+    @MainActor static func verifyAIThumbnailPreparationProgress(in root: URL, sampleImage: CGImage) async throws {
+        let dir = root.appendingPathComponent("ai-progress-test", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let cacheDir = dir.appendingPathComponent("cache", isDirectory: true)
+        let aiModelDir = dir.appendingPathComponent("DualDn", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: aiModelDir, withIntermediateDirectories: true)
+        try Data("{\"version\":1}".utf8).write(to: aiModelDir.appendingPathComponent("manifest.json"))
+
+        let firstPhoto = dir.appendingPathComponent("ai-one.DNG")
+        let secondPhoto = dir.appendingPathComponent("ai-two.DNG")
+        let cancelPhoto = dir.appendingPathComponent("ai-cancel.DNG")
+        for url in [firstPhoto, secondPhoto, cancelPhoto] {
+            try Data("raw-fixture-\(url.lastPathComponent)".utf8).write(to: url)
+        }
+
+        let store = try MacEditPersistence(directory: editsDir)
+        var aiSettings = Adjustments()
+        aiSettings.aiDenoiseEnabled = true
+        aiSettings.exposure = 0.4
+        for url in [firstPhoto, secondPhoto, cancelPhoto] {
+            try store.save(url, state: MacPhotoEditState(settings: aiSettings, filmID: ""))
+        }
+
+        final class ConcurrencyProbe: @unchecked Sendable {
+            private let lock = NSLock()
+            private var active = 0
+            private var maxActive = 0
+            private var calls = 0
+            private var enteredFirst = false
+            private var enteredCancel = false
+            let releaseFirst = DispatchSemaphore(value: 0)
+            let releaseCancel = DispatchSemaphore(value: 0)
+
+            func enter(_ url: URL) -> Int {
+                lock.lock()
+                calls += 1
+                let count = calls
+                active += 1
+                maxActive = max(maxActive, active)
+                if url.lastPathComponent == "ai-one.DNG" { enteredFirst = true }
+                if url.lastPathComponent == "ai-cancel.DNG" { enteredCancel = true }
+                lock.unlock()
+                if url.lastPathComponent == "ai-one.DNG" {
+                    releaseFirst.wait()
+                } else if url.lastPathComponent == "ai-cancel.DNG" {
+                    releaseCancel.wait()
+                }
+                return count
+            }
+
+            func leave() {
+                lock.lock()
+                active -= 1
+                lock.unlock()
+            }
+
+            var hasEnteredFirst: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return enteredFirst
+            }
+
+            var hasEnteredCancel: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return enteredCancel
+            }
+
+            var maxConcurrent: Int {
+                lock.lock(); defer { lock.unlock() }
+                return maxActive
+            }
+        }
+
+        let probe = ConcurrencyProbe()
+        let previews = MacEditedPhotoPreviews(
+            editDirectory: editsDir,
+            cacheDirectory: cacheDir,
+            thumbnails: PhotoThumbnails(),
+            aiModelDirectory: aiModelDir,
+            prepareAI: { url, _, progress in
+                _ = probe.enter(url)
+                defer { probe.leave() }
+                _ = progress.report(phase: 2, completed: 1, total: 4)
+                if progress.isCancelled {
+                    throw CancellationError()
+                }
+                _ = progress.report(phase: 3, completed: 3, total: 4)
+                _ = progress.report(phase: 4, completed: 4, total: 4)
+            },
+            renderThumbnail: { _, _, _ in sampleImage }
+        )
+
+        var observedProgress: [AIPreparationProgress?] = []
+        let sub = previews.$aiPreparationProgress.sink { observedProgress.append($0) }
+        defer { sub.cancel() }
+
+        let rec1 = try await previews.record(for: firstPhoto)
+        let rec2 = try await previews.record(for: secondPhoto)
+        let task1 = Task { try await previews.image(for: rec1) }
+        for _ in 0..<200 where !probe.hasEnteredFirst {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(probe.hasEnteredFirst, "First AI thumbnail entered prepareAI")
+        let task2 = Task { try await previews.image(for: rec2) }
+
+        // Wait briefly for initial MainActor progress emission while task1 is paused in prepareAI and task2 is queued.
+        for _ in 0..<50 where previews.aiPreparationProgress?.path != rec1.identity.path {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(previews.aiPreparationProgress?.path == rec1.identity.path,
+              "Active AI preparation exposes progress for the running tile")
+        check(probe.maxConcurrent == 1,
+              "Second AI tile stays queued behind single-actor memory cap while first runs")
+
+        probe.releaseFirst.signal()
+        _ = try await task1.value
+        _ = try await task2.value
+        for _ in 0..<50 where previews.aiPreparationProgress != nil {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(probe.maxConcurrent == 1, "MacPhotoPreviewWorker preserves maxConcurrent == 1 across sequential AI tasks")
+        check(previews.aiPreparationProgress == nil, "aiPreparationProgress clears to nil on completion")
+        check(observedProgress.compactMap { $0 }.contains { $0.path == rec1.identity.path && $0.phase == 4 && $0.done == 4 && $0.total == 4 },
+              "Multi-phase AI progress updates were observed for first tile")
+        check(observedProgress.compactMap { $0 }.contains { $0.path == rec2.identity.path },
+              "Second queued AI tile also emitted progress once active")
+
+        // Verify cancellation clears aiPreparationProgress via defer.
+        let recCancel = try await previews.record(for: cancelPhoto)
+        let cancelTask = Task { try await previews.image(for: recCancel) }
+        for _ in 0..<200 where !probe.hasEnteredCancel {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(probe.hasEnteredCancel, "Cancel test tile entered prepareAI")
+        for _ in 0..<50 where previews.aiPreparationProgress?.path != recCancel.identity.path {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        cancelTask.cancel()
+        probe.releaseCancel.signal()
+        _ = try? await cancelTask.value
+        for _ in 0..<50 where previews.aiPreparationProgress != nil {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(previews.aiPreparationProgress == nil, "aiPreparationProgress clears to nil on cancellation")
     }
 
     @MainActor static func verifyEditorModelIntegration(in root: URL, sampleImage: CGImage) async throws {

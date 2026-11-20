@@ -35,6 +35,7 @@ extension EditorModel {
             if sourceUsesSDRFallback { persisted.settings.hdr = committedEdit?.state?.settings.hdr }
             let outcome = session.commitEdit(expected: committedEdit!, state: persisted,
                                              clearsProcessingMigration: clearsProcessingMigration)
+            unsettledAsyncCommitTokens.removeAll()
             guard let saved = outcome.saved else {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
@@ -43,8 +44,102 @@ extension EditorModel {
             if clearsProcessingMigration {
                 pendingAllResetRevision = nil
                 processingMigrationReceipt = nil
+                pendingMigrationClearToken = nil
             }
             if let state = saved.state { recordSavedLookChange(from: previous, to: state) }
+            adjustmentHistoryRevision &+= 1
+            saveError = nil; saveStatusKey = "调整已保存"
+            clearSaveStatusLater()
+            return true
+        } catch {
+            saveError = L10n.format("调整未保存：%@", adjustmentErrorMessage(error))
+            return false
+        }
+    }
+
+    @discardableResult func commitAdjustmentAsync(_ candidate: MacPhotoEditState,
+                                                  clearsProcessingMigration: Bool = false) -> Bool {
+        guard let file else { return false }
+        let activePath = file.resolvingSymlinksInPath().standardizedFileURL.path
+        do {
+            let session = try requireAdjustmentSession()
+            _ = editStore?.deliverReadyCompletedCommits()
+            if committedEdit?.identity.path != activePath {
+                committedEdit = try editStore!.readState(for: file)
+            }
+            var persisted = candidate
+            if sourceUsesSDRFallback { persisted.settings.hdr = committedEdit?.state?.settings.hdr }
+            let previous = committedEdit?.state
+            let savedPendingAllResetRevision = pendingAllResetRevision
+            let savedMigrationReceipt = processingMigrationReceipt
+            let clearToken = clearsProcessingMigration ? UUID() : nil
+            if let clearToken {
+                pendingMigrationClearToken = clearToken
+            }
+            let commitToken = UUID()
+            unsettledAsyncCommitTokens.append(commitToken)
+            let outcome = session.commitEditAsync(
+                expected: committedEdit!,
+                state: persisted,
+                clearsProcessingMigration: clearsProcessingMigration,
+                completion: { [weak self] finalOutcome, rolledBackRecord in
+                    guard let self else { return }
+                    switch finalOutcome.status {
+                    case .applied:
+                        self.unsettledAsyncCommitTokens.removeAll { $0 == commitToken }
+                        if let clearToken, self.pendingMigrationClearToken == clearToken {
+                            self.pendingMigrationClearToken = nil
+                        }
+                        if let state = finalOutcome.saved?.state {
+                            self.recordSavedLookChange(from: previous, to: state)
+                        }
+                        if !self.hasPendingEditCommits {
+                            self.objectWillChange.send()
+                        }
+                    case .unchanged:
+                        self.unsettledAsyncCommitTokens.removeAll { $0 == commitToken }
+                        if let clearToken, self.pendingMigrationClearToken == clearToken {
+                            self.pendingMigrationClearToken = nil
+                        }
+                        if !self.hasPendingEditCommits {
+                            self.objectWillChange.send()
+                        }
+                    case .failed, .blocked, .conflict, .skipped:
+                        guard let idx = self.unsettledAsyncCommitTokens.firstIndex(of: commitToken) else { return }
+                        self.unsettledAsyncCommitTokens.removeSubrange(idx...)
+                        if self.file?.resolvingSymlinksInPath().standardizedFileURL.path == activePath {
+                            self.committedEdit = rolledBackRecord
+                            if self.editState(settings: self.settings) != rolledBackRecord?.state {
+                                self.dirty = true
+                            }
+                            if let clearToken, self.pendingMigrationClearToken == clearToken {
+                                self.pendingMigrationClearToken = nil
+                                if self.pendingAllResetRevision == nil {
+                                    self.pendingAllResetRevision = savedPendingAllResetRevision
+                                }
+                                if self.processingMigrationReceipt == nil {
+                                    self.processingMigrationReceipt = savedMigrationReceipt
+                                }
+                            }
+                            self.saveError = L10n.format("调整未保存：%@", self.adjustmentErrorMessage(finalOutcome.error))
+                            self.saveStatusKey = ""
+                            self.adjustmentHistoryRevision &+= 1
+                        }
+                    }
+                }
+            )
+            guard let saved = outcome.saved else {
+                unsettledAsyncCommitTokens.removeAll { $0 == commitToken }
+                if let clearToken, pendingMigrationClearToken == clearToken {
+                    pendingMigrationClearToken = nil
+                }
+                throw outcome.error ?? AdjustmentTransferError.incompatible("save")
+            }
+            committedEdit = saved
+            if clearsProcessingMigration {
+                pendingAllResetRevision = nil
+                processingMigrationReceipt = nil
+            }
             adjustmentHistoryRevision &+= 1
             saveError = nil; saveStatusKey = "调整已保存"
             clearSaveStatusLater()
@@ -65,7 +160,7 @@ extension EditorModel {
 
     func finishAdjustmentInteraction() {
         interactionEntry = nil
-        if geometryDraft == nil { _ = saveEdits() }
+        if geometryDraft == nil { _ = saveEditsAsync() }
     }
 
     func cancelAdjustmentInteraction() {

@@ -177,8 +177,188 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.adjustmentOutcomes.first { $0.targetID == second.path }?.status == .blocked,
             "write guard refuses a target replaced with the frozen source identity")
         try draftAndLookChecks(root: root, fixture: first)
+        try asyncCommitCollectionExportChecks(root: root, fixture: first)
         if let fixture = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
             try incompatibleProRAWModeSwitch(root: root, fixture: URL(fileURLWithPath: fixture))
+        }
+    }
+
+    static func asyncCommitCollectionExportChecks(root: URL, fixture: URL) throws {
+        // Probe 1A: Pre-drain async save failure on ioQueue must not leak optimistic edit into prepare/freeze.
+        do {
+            let dir = root.appendingPathComponent("probe-1a-predrain")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photo = dir.appendingPathComponent("photo.png")
+            try FileManager.default.copyItem(at: fixture, to: photo)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let failLock = NSLock()
+            var shouldFail = false
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                failLock.lock()
+                let fail = shouldFail
+                failLock.unlock()
+                if fail { throw CocoaError(.fileWriteOutOfSpace) }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photo])
+            let id = model.batchSelection.ordered[0]
+            model.open(photo); try rendered(model)
+            let priorReadyReview = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir)
+            try check(priorReadyReview.ready, "Probe 1A setup: initial clean review is ready")
+
+            failLock.lock(); shouldFail = true; failLock.unlock()
+            model.settings.exposure = 1.25
+            try check(model.saveEditsAsync() && !model.dirty,
+                "Probe 1A setup: saveEditsAsync enqueues optimistically and clears dirty")
+            model.editStore?.waitForPendingIO()
+
+            try check(model.collectionHasDraft(id),
+                "Probe 1A: collectionHasDraft reports true for undrained failed async commit without blocking")
+
+            let prepared = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir)
+            try check(!prepared.ready && prepared.rows.first?.hasDraft == true &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1A: prepareCollectionExport flushes pre-drain async failure, rolls back committedEdit, and reports draft")
+
+            try check(model.resolveCollectionDraft(id, apply: false) && !model.dirty && model.settings.exposure == 0,
+                "Probe 1A: discarding rolled-back draft restores clean disk state")
+
+            // Verify freezeCollectionExport also flushes pre-drain failure even against an existing ready review.
+            model.settings.exposure = 1.35
+            try check(model.saveEditsAsync(), "Probe 1A setup: second saveEditsAsync enqueues optimistically")
+            model.editStore?.waitForPendingIO()
+            do {
+                _ = try model.freezeCollectionExport(priorReadyReview)
+                throw NSError(domain: "Probe 1A: freezeCollectionExport accepted undrained failed async edit", code: 1)
+            } catch AdjustmentCommitError.expired {
+                print("PASS: Probe 1A: freezeCollectionExport flushes pre-drain async failure and rejects stale review")
+            }
+            try check(model.batch == nil && (try model.batchJournal.load()) == nil &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1A: rejected freeze writes no batch journal and preserves rollback state")
+        }
+
+        // Probe 1B: In-flight async save failure racing startCollectionExport must flush and refuse to freeze/export.
+        do {
+            let dir = root.appendingPathComponent("probe-1b-inflight")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photo = dir.appendingPathComponent("photo.png")
+            try FileManager.default.copyItem(at: fixture, to: photo)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let enteredWrite = DispatchSemaphore(value: 0)
+            let releaseWrite = DispatchSemaphore(value: 0)
+            let failLock = NSLock()
+            var shouldFail = false
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                failLock.lock()
+                let fail = shouldFail
+                failLock.unlock()
+                if fail {
+                    enteredWrite.signal()
+                    _ = releaseWrite.wait(timeout: .now() + 5)
+                    throw CocoaError(.fileWriteOutOfSpace)
+                }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photo])
+            model.open(photo); try rendered(model)
+
+            failLock.lock(); shouldFail = true; failLock.unlock()
+            model.settings.exposure = 1.5
+            try check(model.saveEditsAsync() && !model.dirty,
+                "Probe 1B setup: saveEditsAsync enqueues optimistically")
+            try check(enteredWrite.wait(timeout: .now() + 5) == .success,
+                "Probe 1B setup: ioQueue write is in-flight")
+
+            // Release ioQueue failure from background thread shortly after startCollectionExport is invoked.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05) {
+                releaseWrite.signal()
+            }
+            var startedJobID: UUID?
+            model.startCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir, completed: { jobID in
+                startedJobID = jobID
+            })
+
+            let deadline = Date().addingTimeInterval(10)
+            while (model.collectionExportPreparing || model.hasPendingEditCommits || model.batch?.running == true) && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            model.collectionExportQueue.sync {}
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+
+            try check(startedJobID == nil && model.batch == nil && (try model.batchJournal.load()) == nil &&
+                (try FileManager.default.contentsOfDirectory(atPath: outputDir.path)).isEmpty &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1B: startCollectionExport flushes in-flight async failure and never freezes/exports optimistic edit")
+        }
+
+        // Probe 1C: Healthy in-flight async commit settles cleanly before startCollectionExport, and skipping a dirty photo still works.
+        do {
+            let dir = root.appendingPathComponent("probe-1c-healthy-and-skip")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photoA = dir.appendingPathComponent("a.png")
+            let photoB = dir.appendingPathComponent("b.png")
+            try FileManager.default.copyItem(at: fixture, to: photoA)
+            try FileManager.default.copyItem(at: fixture, to: photoB)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let enteredWrite = DispatchSemaphore(value: 0)
+            let releaseWrite = DispatchSemaphore(value: 0)
+            var pauseNextWrite = false
+            let lock = NSLock()
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                lock.lock()
+                let pause = pauseNextWrite
+                pauseNextWrite = false
+                lock.unlock()
+                if pause {
+                    enteredWrite.signal()
+                    _ = releaseWrite.wait(timeout: .now() + 5)
+                }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photoA, photoB])
+            let ids = model.batchSelection.ordered
+            model.open(photoA); try rendered(model)
+            lock.lock(); pauseNextWrite = true; lock.unlock()
+            model.settings.exposure = 0.8
+            try check(model.saveEditsAsync(), "Probe 1C setup: healthy async save enqueues")
+            try check(enteredWrite.wait(timeout: .now() + 5) == .success, "Probe 1C setup: healthy write in-flight")
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05) {
+                releaseWrite.signal()
+            }
+            model.open(photoB); try rendered(model)
+            model.setInteracting(true); model.settings.exposure = 1.9
+
+            var startedID: UUID?
+            model.startCollectionExport(skipping: [ids[1]], format: .png, longEdge: nil, directory: outputDir, completed: { jobID in
+                startedID = jobID
+            })
+            let deadline = Date().addingTimeInterval(15)
+            while (startedID == nil || model.batch?.running == true) && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            try check(startedID != nil && model.batch?.job.succeededCount == 1 &&
+                model.batch?.job.items.count == 1 && model.batch?.job.items[0].frozen?.settings.exposure == 0.8 &&
+                model.dirty && model.settings.exposure == 1.9,
+                "Probe 1C: skipping dirty active photo exports healthy persisted photo without interference")
         }
     }
 

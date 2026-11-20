@@ -114,7 +114,8 @@ struct BatchExportView: View {
                                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             }
                             if let notice = model.notice(for: item) {
-                                Text(notice).font(.caption).foregroundStyle(.secondary)
+                                Text(notice).font(.caption)
+                                    .foregroundStyle(model.hasX3fProbeFailure(for: item) ? Color.orange : Color.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).help(item.input.path)

@@ -531,6 +531,7 @@
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "The HDR camera profile could not be read or does not match this camera.";
+"无法读取 X3F 显影模式：%@" = "Unable to read X3F rendering mode: %@";
 "无法读取上次批量任务：%@" = "Unable to read last batch task: %@";
 "无法读取基础曝光" = "Unable to read base exposure";
 "无法读取外观文件。" = "Unable to read the look file.";

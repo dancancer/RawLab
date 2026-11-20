@@ -4471,6 +4471,12 @@
     "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
       "formats": [],
       "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+    },
+    "无法读取 X3F 显影模式：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法读取 X3F 显影模式：{0}"
     }
   },
   "overrides": {},
@@ -5810,6 +5816,14 @@
       "es": "Editar esta foto en HDR requiere macOS 15. Se exportará en SDR.",
       "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で書き出します。",
       "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
+    },
+    "无法读取 X3F 显影模式：{0}": {
+      "de": "X3F-Entwicklungsmodus konnte nicht gelesen werden: {0}",
+      "en": "Unable to read X3F rendering mode: {0}",
+      "es": "No se pudo leer el modo de revelado X3F: {0}",
+      "fr": "Impossible de lire le mode de développement X3F : {0}",
+      "ja": "X3F 現像モードを読み取れません：{0}",
+      "zh-Hans": "无法读取 X3F 显影模式：{0}"
     }
   }
 }

@@ -48,6 +48,200 @@ struct AdjustmentTransferSessionTests {
         try replacedPreflight(root: root, a: a, b: b)
         try latePreflight(root: root, a: a)
         try releasedPreflight()
+        try asyncCommitOrderingAndLIFORollback(root: root, a: a)
+    }
+
+    static func asyncCommitOrderingAndLIFORollback(root: URL, a: URL) throws {
+        let dir = root.appendingPathComponent("async-lifo-rollback")
+        let lock = NSLock()
+        var failFromWrite = Int.max
+        var writeCount = 0
+        var writeOnMain = false
+        let enteredFirst = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        var blockFirst = true
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            let isMain = Thread.isMainThread
+            lock.lock()
+            writeCount += 1
+            let current = writeCount
+            if isMain { writeOnMain = true }
+            let shouldBlock = blockFirst && current == 1
+            let shouldFail = current >= failFromWrite
+            lock.unlock()
+            if shouldBlock {
+                enteredFirst.signal()
+                releaseFirst.wait()
+            }
+            if shouldFail {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+        let initial = try store.readState(for: a)
+
+        let out1 = session.commitEditAsync(expected: initial, state: state(1))
+        let out2 = session.commitEditAsync(expected: out1.saved!, state: state(2))
+        check(out1.status == .applied && out2.status == .applied,
+              "Async edit commits return optimistic applied outcomes immediately")
+        check(session.hasPendingCommits && session.transactions.count == 2,
+              "Optimistic history transactions and pending commit state update immediately")
+        check(enteredFirst.wait(timeout: .now() + 5) == .success, "First async write started on ioQueue")
+        releaseFirst.signal()
+        check(session.flushPendingCommits() && !session.hasPendingCommits, "Flush settles queued commits")
+        lock.lock()
+        let ranOnMain = writeOnMain
+        blockFirst = false
+        failFromWrite = 3 // fail E3 (and chained E4)
+        lock.unlock()
+        check(!ranOnMain, "Async edit commits write off the main thread")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(2), "Ordered writes persist latest revision")
+
+        // Enqueue E3 and E4 where E3 fails -> LIFO rollback removes both E4 and E3 back to state(2).
+        var callbacks: [(AdjustmentTransferStatus, Double?)] = []
+        let out3 = session.commitEditAsync(expected: out2.saved!, state: state(3), completion: { outcome, rolledBack in
+            callbacks.append((outcome.status, rolledBack?.state?.settings.exposure))
+        })
+        let out4 = session.commitEditAsync(expected: out3.saved!, state: state(4), completion: { outcome, rolledBack in
+            callbacks.append((outcome.status, rolledBack?.state?.settings.exposure))
+        })
+        check(out3.status == .applied && out4.status == .applied && session.transactions.count == 4,
+              "In-flight E3/E4 stack optimistically before failure")
+        check(!session.flushPendingCommits(), "Flush reports failure when queued commits fail")
+        check(session.transactions.count == 2 &&
+              session.knownRecord(forPath: initial.identity.path)?.state == state(2) &&
+              !session.hasPendingCommits,
+              "LIFO rollback restores transactions and knownRecords to state(2)")
+        check(callbacks.count == 2 && callbacks.allSatisfy { $0.0 == .failed },
+              "Both failed commits invoke failure callbacks")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(2),
+              "Disk retains last committed state(2) after LIFO rollback")
+
+        // E3 succeeds, E4 fails -> LIFO rollback pops only E4 back to state(3).
+        lock.lock()
+        failFromWrite = writeCount + 2 // allow next write (E3), fail following write (E4)
+        lock.unlock()
+        let out5 = session.commitEditAsync(expected: session.knownRecord(forPath: initial.identity.path)!, state: state(3))
+        _ = session.commitEditAsync(expected: out5.saved!, state: state(4))
+        check(!session.flushPendingCommits(), "Flush reports failure when trailing E4 fails")
+        check(session.transactions.count == 3 &&
+              session.knownRecord(forPath: initial.identity.path)?.state == state(3),
+              "Partial stack failure rolls back only E4 in LIFO order to state(3)")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(3),
+              "Disk preserves confirmed E3 state(3) after E4 rollback")
+
+        // First async commit failure on a photo with pre-existing persisted state & dormant HDR
+        // (knownRecords[path] == nil at start of session) must restore pre-existing state, not nil.
+        let preexistingPhoto = root.appendingPathComponent("preexisting-hdr.raw")
+        try Data("preexisting".utf8).write(to: preexistingPhoto)
+        let preexistingDir = root.appendingPathComponent("preexisting-first-async-fail")
+        let setupStore = try MacEditPersistence(directory: preexistingDir)
+        var dormantHDR = HDRSettings()
+        dormantHDR.mode = .sdr
+        dormantHDR.exposure = 0.42
+        var preexistingSettings = Adjustments()
+        preexistingSettings.exposure = 1.25
+        preexistingSettings.hdr = dormantHDR
+        let preexistingState = MacPhotoEditState(settings: preexistingSettings, filmID: "")
+        try setupStore.save(preexistingPhoto, state: preexistingState)
+
+        let failLock = NSLock()
+        var failWrite = true
+        let reopenStore = try MacEditPersistence(directory: preexistingDir, writeData: { data, url in
+            failLock.lock()
+            let shouldFail = failWrite
+            failLock.unlock()
+            if shouldFail { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        let reopenSession = AdjustmentTransferSession(store: reopenStore)
+        let expectedExisting = try reopenStore.readState(for: preexistingPhoto)
+        check(reopenSession.knownRecord(forPath: expectedExisting.identity.path) == nil,
+              "Fresh session starts with nil knownRecords for reopened photo")
+        var failedCallbackRecord: MacPhotoEditRecord?
+        let firstFailOut = reopenSession.commitEditAsync(
+            expected: expectedExisting,
+            state: state(2.5),
+            completion: { _, rolledBack in
+                failedCallbackRecord = rolledBack
+            }
+        )
+        check(firstFailOut.status == .applied, "First edit on reopened photo enqueues optimistically")
+        check(!reopenSession.flushPendingCommits(), "Flush reports failure when first write on reopened photo fails")
+        check(failedCallbackRecord?.state == preexistingState &&
+              failedCallbackRecord?.state?.settings.exposure == 1.25 &&
+              failedCallbackRecord?.state?.settings.hdr == dormantHDR,
+              "First-edit failure rollback preserves pre-existing persisted exposure and dormant HDR state")
+        check(reopenSession.knownRecord(forPath: expectedExisting.identity.path)?.state == preexistingState,
+              "knownRecords restores pre-existing state instead of nil after first-edit failure")
+        check(reopenSession.transactions.isEmpty, "Failed first edit leaves history transactions empty")
+
+        failLock.lock(); failWrite = false; failLock.unlock()
+        let nextOut = reopenSession.commitEditAsync(
+            expected: failedCallbackRecord!,
+            state: state(3.0)
+        )
+        check(nextOut.status == .applied && reopenSession.flushPendingCommits(),
+              "Subsequent edit succeeds after storage recovers")
+        let undoneAfterFail = reopenSession.undoPhoto(preexistingPhoto)
+        let diskAfterUndo = try reopenStore.state(for: preexistingPhoto)
+        check(undoneAfterFail.first?.status == .applied &&
+              undoneAfterFail.first?.saved?.state == preexistingState &&
+              diskAfterUndo == preexistingState,
+              "Undoing subsequent edit after first-commit failure restores pre-existing 1.25 state, not nil")
+
+        // 1B-i: A1 fails on ioQueue before RunLoop.main drains -> A2 enqueued on main -> no split-brain.
+        let dir1Bi = root.appendingPathComponent("session-1bi")
+        var attempts1Bi = 0
+        let store1Bi = try MacEditPersistence(directory: dir1Bi, writeData: { data, url in
+            lock.lock(); attempts1Bi += 1; let idx = attempts1Bi; lock.unlock()
+            if idx == 1 { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        let session1Bi = AdjustmentTransferSession(store: store1Bi)
+        let init1Bi = try store1Bi.readState(for: a)
+        let a1Out = session1Bi.commitEditAsync(expected: init1Bi, state: state(1))
+        store1Bi.waitForPendingIO()
+        _ = session1Bi.commitEditAsync(expected: a1Out.saved!, state: state(2))
+        _ = session1Bi.flushPendingCommits()
+        let mem1Bi = session1Bi.knownRecord(forPath: init1Bi.identity.path)?.state?.settings.exposure
+        let disk1Bi = try MacEditPersistence(directory: dir1Bi).state(for: a)?.settings.exposure
+        check(mem1Bi == 2 && disk1Bi == 2 && session1Bi.transactions.count == 1,
+              "1B-i pre-drain async failure followed by new commit keeps memory, disk, and history consistent")
+
+        // 1B-ii: A1 fails + A2 chain-fails while B1 pauses ioQueue -> A3 enqueued before RunLoop.main drains -> no split-brain.
+        let dir1Bii = root.appendingPathComponent("session-1bii")
+        var attempts1Bii = 0
+        let a1Entered1Bii = DispatchSemaphore(value: 0)
+        let a1Release1Bii = DispatchSemaphore(value: 0)
+        let b1Entered1Bii = DispatchSemaphore(value: 0)
+        let b1Release1Bii = DispatchSemaphore(value: 0)
+        let store1Bii = try MacEditPersistence(directory: dir1Bii, writeData: { data, url in
+            lock.lock(); attempts1Bii += 1; let idx = attempts1Bii; lock.unlock()
+            if idx == 1 { a1Entered1Bii.signal(); a1Release1Bii.wait(); throw CocoaError(.fileWriteOutOfSpace) }
+            if idx == 2 { b1Entered1Bii.signal(); b1Release1Bii.wait() }
+            try data.write(to: url, options: .atomic)
+        })
+        let session1Bii = AdjustmentTransferSession(store: store1Bii)
+        let b1Bii = root.appendingPathComponent("1bii-b.raw")
+        try Data("original-B-1bii".utf8).write(to: b1Bii)
+        let initA1Bii = try store1Bii.readState(for: a)
+        let initB1Bii = try store1Bii.readState(for: b1Bii)
+        let b1Out1 = session1Bii.commitEditAsync(expected: initA1Bii, state: state(1))
+        check(a1Entered1Bii.wait(timeout: .now() + 5) == .success, "1B-ii A1 entered ioQueue")
+        let b1Out2 = session1Bii.commitEditAsync(expected: b1Out1.saved!, state: state(2))
+        _ = session1Bii.commitEditAsync(expected: initB1Bii, state: state(1.5))
+        a1Release1Bii.signal()
+        check(b1Entered1Bii.wait(timeout: .now() + 5) == .success, "1B-ii B1 paused ioQueue")
+        _ = session1Bii.commitEditAsync(expected: b1Out2.saved!, state: state(3))
+        b1Release1Bii.signal()
+        _ = session1Bii.flushPendingCommits()
+        let mem1Bii = session1Bii.knownRecord(forPath: initA1Bii.identity.path)?.state?.settings.exposure
+        let disk1Bii = try MacEditPersistence(directory: dir1Bii).state(for: a)?.settings.exposure
+        check(mem1Bii == 3 && disk1Bii == 3 && session1Bii.transactions.count == 2,
+              "1B-ii blocked-queue failure expiry before main drain keeps memory, disk, and history consistent")
     }
 
     static func cancelledPreflight(root: URL, a: URL, b: URL) throws {

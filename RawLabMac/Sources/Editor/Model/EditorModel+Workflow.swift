@@ -106,8 +106,28 @@ extension EditorModel {
 
     func invalidateEditedThumbnails(forLookIDs lookIDs: Set<String>) {
         guard !lookIDs.isEmpty else { return }
-        var paths = editStore?.pathsReferencingFilms(lookIDs) ?? []
         if let file, lookIDs.contains(selectedFilmID) {
+            invalidateEditedThumbnail(for: file)
+        }
+        guard let editStore else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self, weak editStore] in
+            guard let editStore else { return }
+            let scan = editStore.scanPathsReferencingFilms(lookIDs)
+            DispatchQueue.main.async {
+                self?.applyFilmInvalidationScan(scan, forLookIDs: lookIDs, includeCurrentFile: false)
+            }
+        }
+    }
+
+    func applyFilmInvalidationScan(_ scan: MacEditPersistence.FilmReferenceScanResult,
+                                   forLookIDs lookIDs: Set<String>,
+                                   includeCurrentFile: Bool = true) {
+        recordLookInvalidationDiagnostics(scan.diagnostics)
+        var paths = scan.pathsToInvalidate
+        if includeCurrentFile, let file, lookIDs.contains(selectedFilmID) {
+            paths.insert(PhotoThumbnailCacheKey.canonicalPath(for: file))
+        }
+        if scan.registryUnreadable, let file, isRecordModified(committedEdit ?? MacPhotoEditRecord(identity: (try? OriginalFileIdentity(file)) ?? OriginalFileIdentity(path: file.path, size: 0, modified: .distantPast, fileNumber: 0), state: nil)) {
             paths.insert(PhotoThumbnailCacheKey.canonicalPath(for: file))
         }
         guard !paths.isEmpty else { return }
@@ -303,16 +323,29 @@ extension EditorModel {
         saveWork?.cancel()
         if !scheduler.interacting {
             // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
-            let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
+            let work = DispatchWorkItem { [weak self] in _ = self?.saveEditsAsync() }
             saveWork = work
             DispatchQueue.main.async(execute: work)
         }
         schedule()
     }
 
-    @discardableResult func saveEdits() -> Bool {
+    @discardableResult func saveEditsAsync() -> Bool {
         saveWork?.cancel()
         guard file != nil, dirty else { return true }
+        let clearsMigration = pendingAllResetRevision == editRevision
+        guard !scheduler.interacting,
+              commitAdjustmentAsync(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
+        dirty = false
+        return true
+    }
+
+    @discardableResult func saveEdits() -> Bool {
+        saveWork?.cancel()
+        let flushedOK = editStore?.flushPendingCommits() ?? true
+        guard flushedOK else { return false }
+        guard file != nil else { return true }
+        guard dirty else { return true }
         let clearsMigration = pendingAllResetRevision == editRevision
         guard !scheduler.interacting,
               commitAdjustment(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
@@ -787,10 +820,13 @@ extension EditorModel {
                 })
                 let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
                 let unreadable = library.unreadableLooks
+                let filmScan = invalidatedLookIDs.isEmpty ? nil : self?.editStore?.scanPathsReferencingFilms(invalidatedLookIDs)
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.unreadableLooks = unreadable
-                    if !invalidatedLookIDs.isEmpty {
+                    if let filmScan {
+                        self.applyFilmInvalidationScan(filmScan, forLookIDs: invalidatedLookIDs)
+                    } else if !invalidatedLookIDs.isEmpty {
                         self.invalidateEditedThumbnails(forLookIDs: invalidatedLookIDs)
                     }
                     self.films = self.films.filter { $0.managedID == nil } + updated

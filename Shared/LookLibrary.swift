@@ -1,4 +1,5 @@
 import RawLabKit
+import Darwin
 import Foundation
 
 struct UserLook: Codable, Equatable, Identifiable {
@@ -233,26 +234,84 @@ final class LookLibrary {
             .appendingPathComponent("RawLab/Looks", isDirectory: true)
     }
 
+    private enum ReadabilityProbe: Equatable {
+        case missing
+        case present(FileStatFingerprint)
+    }
+
     private let directory: URL
     private let manager = FileManager.default
     private var registryURL: URL { directory.appendingPathComponent("registry.json") }
+    private let readabilityLock = NSLock()
+    private var cachedReadability: (probe: ReadabilityProbe, readable: Bool)?
+    private(set) var diskReadCount = 0
     private(set) var looks: [UserLook] = []
     private(set) var unreadableLooks: [UnreadableLook] = []
 
     init(directory: URL = LookLibrary.defaultDirectory) throws {
         self.directory = directory
-        guard manager.fileExists(atPath: registryURL.path) else { return }
+        let resolvedPath = registryURL.resolvingSymlinksInPath().standardizedFileURL.path
+        guard manager.fileExists(atPath: registryURL.path) else {
+            if Self.probeReadability(for: resolvedPath) == .missing {
+                cachedReadability = (.missing, true)
+            }
+            return
+        }
+        let probeBefore = Self.probeReadability(for: resolvedPath)
         do {
+            diskReadCount += 1
             let state = try Self.readRegistry(at: registryURL)
             looks = state.looks
             unreadableLooks = state.unreadable
+            let probeAfter = Self.probeReadability(for: resolvedPath)
+            if let probeBefore, let probeAfter, probeBefore == probeAfter {
+                cachedReadability = (probeBefore, true)
+            }
         } catch { throw LookLibraryError.invalidRegistry }
         do { try recoverRemovals() } catch { throw LookLibraryError.invalidRegistry }
     }
 
     var isReadable: Bool {
-        guard manager.fileExists(atPath: registryURL.path) else { return true }
-        return (try? Self.readRegistry(at: registryURL)) != nil
+        let resolvedPath = registryURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let probe = Self.probeReadability(for: resolvedPath)
+        readabilityLock.lock()
+        if let probe, let cached = cachedReadability, cached.probe == probe {
+            readabilityLock.unlock()
+            return cached.readable
+        }
+        readabilityLock.unlock()
+
+        let readable: Bool
+        if !manager.fileExists(atPath: registryURL.path) {
+            readable = probe == .missing
+        } else {
+            readabilityLock.lock()
+            diskReadCount += 1
+            readabilityLock.unlock()
+            readable = (try? Self.readRegistry(at: registryURL)) != nil
+        }
+
+        let probeAfter = Self.probeReadability(for: resolvedPath)
+        readabilityLock.lock()
+        if let probe, let probeAfter, probe == probeAfter {
+            if case .present(let fp) = probe, !fp.isRegularFile {
+                cachedReadability = nil
+            } else {
+                cachedReadability = (probe, readable)
+            }
+        } else {
+            cachedReadability = nil
+        }
+        readabilityLock.unlock()
+        return readable
+    }
+
+    private static func probeReadability(for resolvedPath: String) -> ReadabilityProbe? {
+        var st = POSIXStat()
+        if stat(resolvedPath, &st) == 0 {
+            return .present(FileStatFingerprint(statBuffer: st))
+        }
+        return errno == ENOENT ? .missing : nil
     }
 
     private static func readRegistry(at url: URL) throws -> (looks: [UserLook], unreadable: [UnreadableLook]) {
@@ -448,6 +507,9 @@ final class LookLibrary {
     }
 
     private func persist(_ values: [UserLook], unreadable: [UnreadableLook]? = nil) throws {
+        readabilityLock.lock()
+        cachedReadability = nil
+        readabilityLock.unlock()
         let bad = unreadable ?? unreadableLooks
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

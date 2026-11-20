@@ -181,6 +181,7 @@ final class EditorModel: ObservableObject {
         cancelProcessingMigration()
         processingMigrationReceipt = nil
         pendingAllResetRevision = nil
+        pendingMigrationClearToken = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -290,16 +291,27 @@ final class EditorModel: ObservableObject {
             if editStore !== oldValue {
                 adjustmentSession = editStore.map(AdjustmentTransferSession.init)
                 committedEdit = nil
+                unsettledAsyncCommitTokens.removeAll()
             }
         }
     }
     var adjustmentSession: AdjustmentTransferSession?
     var committedEdit: MacPhotoEditRecord?
+    var unsettledAsyncCommitTokens: [UUID] = []
+    var hasPendingEditCommits: Bool {
+        editStore?.hasPendingCommits == true || adjustmentSession?.hasPendingCommits == true
+    }
+    private(set) var lookInvalidationDiagnostics: [String] = []
+    func recordLookInvalidationDiagnostics(_ messages: [String]) {
+        guard !messages.isEmpty else { return }
+        lookInvalidationDiagnostics = messages
+    }
     @Published var processingMigrationReceipt: ProcessingMigrationReceipt<MacPhotoEditState>?
     @Published var matchingProcessing = false
     var processingMigrationCancellation: ProcessingMigrationCancellation?
     var processingMigrationAttemptSource: UUID?
     var pendingAllResetRevision: UUID?
+    var pendingMigrationClearToken: UUID?
     static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
     var interactionEntry: MacPhotoEditState?
     var interactionWasDirty = false
