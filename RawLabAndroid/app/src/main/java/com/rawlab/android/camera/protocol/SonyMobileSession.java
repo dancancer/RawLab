@@ -125,12 +125,12 @@ public final class SonyMobileSession implements CameraMediaSession {
 
     private boolean hasAsset(Device device, Asset target) throws IOException {
         if (!device.operations.contains(0x923c)) throw new IOException("Mobile contents operation 0x923C not advertised");
-        long after = 0;
+        long after = target.created > 0 ? target.created - 1 : 0;
         for (int page = 0; page < MAX_SCAN_PAGES; page++) {
             byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, 1, 0}, true, LIMIT);
             Page parsed = parseContents(data, this);
             for (Asset candidate : parsed.assets) if (target.same(candidate)) return true;
-            if (parsed.count < 100) return false;
+            if (parsed.count < 100 || parsed.cursor > target.created) return false;
             if (parsed.cursor <= after) throw new IOException("Photo list cursor did not advance");
             after = parsed.cursor;
         }

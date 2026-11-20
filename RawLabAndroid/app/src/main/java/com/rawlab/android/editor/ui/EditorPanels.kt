@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import com.rawlab.android.editor.controls.HslTargetActions
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
@@ -166,7 +168,7 @@ internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modi
 internal fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean, onCamera: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = onAlbum, enabled = enabled) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
+        Button(onClick = onAlbum, enabled = enabled) { Icon(AppIcons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
         TextButton(onClick = onFile, enabled = enabled) { Text(stringResource(R.string.open_file)) }
         TextButton(onClick = onCamera, enabled = enabled, modifier = Modifier.testTag("camera-entry")) { Text(stringResource(R.string.camera_import)) }
         Text(stringResource(R.string.empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)

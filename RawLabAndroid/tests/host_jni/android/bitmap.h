@@ -35,9 +35,31 @@ typedef struct AndroidBitmapInfo {
 extern "C" {
 #endif
 
-inline int AndroidBitmap_getInfo(JNIEnv*, jobject, AndroidBitmapInfo*) { return -1; }
-inline int AndroidBitmap_lockPixels(JNIEnv*, jobject, void**) { return -1; }
-inline int AndroidBitmap_unlockPixels(JNIEnv*, jobject) { return -1; }
+typedef struct RawLabHostBitmapHooks {
+    int (*getInfo)(JNIEnv* env, jobject bitmap, AndroidBitmapInfo* info);
+    int (*lockPixels)(JNIEnv* env, jobject bitmap, void** addrPtr);
+    int (*unlockPixels)(JNIEnv* env, jobject bitmap);
+} RawLabHostBitmapHooks;
+
+inline RawLabHostBitmapHooks** rawlabHostBitmapHooksSlot() {
+    static RawLabHostBitmapHooks* hooks = nullptr;
+    return &hooks;
+}
+
+inline int AndroidBitmap_getInfo(JNIEnv* env, jobject bitmap, AndroidBitmapInfo* info) {
+    RawLabHostBitmapHooks* hooks = *rawlabHostBitmapHooksSlot();
+    return (hooks && hooks->getInfo) ? hooks->getInfo(env, bitmap, info) : ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+}
+
+inline int AndroidBitmap_lockPixels(JNIEnv* env, jobject bitmap, void** addrPtr) {
+    RawLabHostBitmapHooks* hooks = *rawlabHostBitmapHooksSlot();
+    return (hooks && hooks->lockPixels) ? hooks->lockPixels(env, bitmap, addrPtr) : ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+}
+
+inline int AndroidBitmap_unlockPixels(JNIEnv* env, jobject bitmap) {
+    RawLabHostBitmapHooks* hooks = *rawlabHostBitmapHooksSlot();
+    return (hooks && hooks->unlockPixels) ? hooks->unlockPixels(env, bitmap) : ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+}
 
 #ifdef __cplusplus
 }

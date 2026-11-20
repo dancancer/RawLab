@@ -1,5 +1,7 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.ui.AppIcons
+
 import android.graphics.Bitmap
 import android.net.Uri
 import android.text.format.Formatter
@@ -13,17 +15,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.NavigateBefore
-import androidx.compose.material.icons.automirrored.outlined.NavigateNext
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Grid3x3
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -132,7 +126,7 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
             val landscape = maxWidth > maxHeight
             @Composable fun parameterButton() {
                 IconButton(onClick = { shootingParameters = true }, modifier = Modifier.size(48.dp).testTag("tether-shooting-parameters")) {
-                    Icon(Icons.Outlined.Tune, stringResource(R.string.camera_shooting_parameters))
+                    Icon(AppIcons.Outlined.Tune, stringResource(R.string.camera_shooting_parameters))
                 }
             }
             @Composable fun viewfinder(modifier: Modifier) {
@@ -374,7 +368,7 @@ private fun RecentButton(photo: CameraTetherSaved?, count: Int, thumbnail: suspe
     Box(Modifier.size(48.dp).clickable(enabled = photo != null, role = Role.Button, onClick = onReview)
         .semantics { contentDescription = label }.testTag("tether-recent"), contentAlignment = Alignment.Center) {
         if (photo != null) SavedThumbnail(photo, thumbnail, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
-        else Icon(Icons.Outlined.PhotoLibrary, null, Modifier.size(48.dp).padding(10.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        else Icon(AppIcons.Outlined.PhotoLibrary, null, Modifier.size(48.dp).padding(10.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -388,7 +382,7 @@ private fun SavedThumbnail(photo: CameraTetherSaved, loader: suspend (Uri, Int) 
         if (bitmap != null) Image(bitmap!!.asImageBitmap(), photo.photo.name, Modifier.fillMaxSize(), contentScale = if (large) ContentScale.Fit else ContentScale.Crop)
         else if (large && !preview.second) CircularProgressIndicator(Modifier.size(28.dp))
         else if (large) Text(stringResource(R.string.tether_preview_missing), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
-        else Icon(Icons.Outlined.PhotoLibrary, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        else Icon(AppIcons.Outlined.PhotoLibrary, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -424,11 +418,11 @@ private fun TetherReview(photo: CameraTetherSaved, saved: List<CameraTetherSaved
                 }
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { onSelect(saved[index - 1]) }, enabled = index > 0, modifier = Modifier.testTag("tether-review-previous")) {
-                        Icon(Icons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous))
+                        Icon(AppIcons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous))
                     }
                     Button(onClick = onEdit, modifier = Modifier.weight(1f).testTag("tether-review-edit")) { Text(stringResource(R.string.camera_open)) }
                     IconButton(onClick = { onSelect(saved[index + 1]) }, enabled = index + 1 < saved.size, modifier = Modifier.testTag("tether-review-next")) {
-                        Icon(Icons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next))
+                        Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next))
                     }
                 }
             }

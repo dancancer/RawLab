@@ -1,5 +1,7 @@
 package com.rawlab.android.batch.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import android.net.Uri
 import android.os.Build
 import com.rawlab.android.editor.controls.formatAdjustment
@@ -16,8 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -189,8 +189,8 @@ private fun BatchConfirmContent(
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onAlbum, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_from_album)) }
-                OutlinedButton(onClick = onFiles, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_files)) }
+                OutlinedButton(onClick = onAlbum, modifier = Modifier.weight(1f)) { Icon(AppIcons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_from_album)) }
+                OutlinedButton(onClick = onFiles, modifier = Modifier.weight(1f)) { Icon(AppIcons.Outlined.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_files)) }
             }
         }
         item {
@@ -225,7 +225,7 @@ private fun BatchConfirmContent(
                 if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
                     FilterChip(selected = destination == null, onClick = onAlbumOutput, label = { Text(AppStrings.text(R.string.message_photo_gallery)) })
                 }
-                OutlinedButton(onClick = onDirectory) { Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(4.dp)); Text(AppStrings.text(R.string.message_choose_directory)) }
+                OutlinedButton(onClick = onDirectory) { Icon(AppIcons.Outlined.FolderOpen, null); Spacer(Modifier.width(4.dp)); Text(AppStrings.text(R.string.message_choose_directory)) }
             }
             ExportSizeControls(
                 selected = sizeChoice,
@@ -287,7 +287,7 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
                 }
             }
         } }
-        if (state.unfinishedCount > 0 && state.job.settingsMode == BatchSettingsMode.UNIFORM_FROZEN) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
+        if (state.unfinishedCount > 0 && state.job.settingsMode == BatchSettingsMode.UNIFORM_FROZEN) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(AppIcons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
         if (state.failedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
             Text(AppStrings.text(R.string.message_retry_failed_items))
         }
@@ -427,7 +427,7 @@ internal fun BatchThumbnail(storage: PhotoStorage, uri: String?, file: java.io.F
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         thumbnail?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-            ?: Icon(Icons.Outlined.PhotoLibrary, null)
+            ?: Icon(AppIcons.Outlined.PhotoLibrary, null)
     }
 }
 

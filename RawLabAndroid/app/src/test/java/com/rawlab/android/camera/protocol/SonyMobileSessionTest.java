@@ -282,7 +282,7 @@ public final class SonyMobileSessionTest {
 
             Request list = readRequest(command);
             assertEquals(0x923c, list.operation);
-            assertArrayEquals(new int[]{0, 0, 100, 1, 0}, list.parameters);
+            assertArrayEquals(new int[]{122, 0, 100, 1, 0}, list.parameters);
             byte[] contents = contentsPage(CONTENT, FILE, "DSC00001.ARW", photo.length, 123);
             sendData(command, list.transaction, contents, 47, contents.length - 47);
         })) {
@@ -356,6 +356,169 @@ public final class SonyMobileSessionTest {
     }
 
     @Test
+    public void downloadAndTailReadRangeSeekDirectlyWithoutFullCardRelist() throws Exception {
+        byte[] photo = new byte[128];
+        photo[0] = 0x49;
+        photo[1] = 0x49;
+        photo[2] = 0x2a;
+        photo[3] = 0x00;
+        final int totalPhotos = 500;
+        final int targetIndex = 450;
+        final long targetCreated = 1_000_000L + targetIndex * 1000L;
+        final List<Long> listAfterCursors = new CopyOnWriteArrayList<>();
+
+        try (FakeServer server = new FakeServer(command -> {
+            // 1) download() chunk + post-flush hasAsset()
+            Request download = readRequest(command);
+            assertEquals(0x923d, download.operation);
+            sendData(command, download.transaction, photo, photo.length);
+
+            Request listAfterDownload = readRequest(command);
+            assertEquals(0x923c, listAfterDownload.operation);
+            long cursor1 = Integer.toUnsignedLong(listAfterDownload.parameters[0])
+                    | (Integer.toUnsignedLong(listAfterDownload.parameters[1]) << 32);
+            listAfterCursors.add(cursor1);
+            byte[] page = buildContentsRange(cursor1, totalPhotos, 100, photo.length, false);
+            sendData(command, listAfterDownload.transaction, page, page.length);
+
+            // 2) tail readRange() + post-tail hasAsset()
+            Request tailRead = readRequest(command);
+            assertEquals(0x923d, tailRead.operation);
+            sendData(command, tailRead.transaction, Arrays.copyOfRange(photo, 64, 128), 64);
+
+            Request listAfterTail = readRequest(command);
+            assertEquals(0x923c, listAfterTail.operation);
+            long cursor2 = Integer.toUnsignedLong(listAfterTail.parameters[0])
+                    | (Integer.toUnsignedLong(listAfterTail.parameters[1]) << 32);
+            listAfterCursors.add(cursor2);
+            byte[] tailPage = buildContentsRange(cursor2, totalPhotos, 100, photo.length, false);
+            sendData(command, listAfterTail.transaction, tailPage, tailPage.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2",
+                        "2.00", new java.util.HashSet<>(Arrays.asList(0x923c, 0x923d)));
+                SonyMobileSession.Asset asset = new SonyMobileSession.Asset(
+                        session, 1, targetIndex + 1,
+                        String.format(java.util.Locale.ROOT, "DSC%05d.ARW", targetIndex + 1),
+                        photo.length, targetCreated);
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                session.download(device, asset, output);
+                assertArrayEquals(photo, output.toByteArray());
+                assertArrayEquals(Arrays.copyOfRange(photo, 64, 128), session.readRange(device, asset, 64, 64));
+            }
+            server.finish();
+        }
+        assertEquals(Arrays.asList(targetCreated - 1, targetCreated - 1), listAfterCursors);
+    }
+
+    @Test
+    public void duplicateTimestampsResolveInSingleContentsPage() throws Exception {
+        byte[] photo = new byte[]{0x49, 0x49, 0x2a, 0x00, 1, 2};
+        long sharedCreated = 1_700_000_000L;
+        List<Long> cursors = new CopyOnWriteArrayList<>();
+        try (FakeServer server = new FakeServer(command -> {
+            Request download = readRequest(command);
+            assertEquals(0x923d, download.operation);
+            sendData(command, download.transaction, photo, photo.length);
+
+            Request list = readRequest(command);
+            assertEquals(0x923c, list.operation);
+            long after = Integer.toUnsignedLong(list.parameters[0])
+                    | (Integer.toUnsignedLong(list.parameters[1]) << 32);
+            cursors.add(after);
+            byte[] page = buildDualFormatPage(sharedCreated, photo.length);
+            sendData(command, list.transaction, page, page.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2",
+                        "2.00", new java.util.HashSet<>(Arrays.asList(0x923c, 0x923d)));
+                SonyMobileSession.Asset arw = new SonyMobileSession.Asset(
+                        session, 1, 2, "DSC00001.ARW", photo.length, sharedCreated);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                session.download(device, arw, out);
+                assertArrayEquals(photo, out.toByteArray());
+            }
+            server.finish();
+        }
+        assertEquals(Arrays.asList(sharedCreated - 1), cursors);
+    }
+
+    @Test
+    public void deletedPhotoStopsAfterSinglePageWhenCursorPassesTargetCreated() throws Exception {
+        byte[] photo = new byte[]{0x49, 0x49, 0x2a, 0x00, 1, 2};
+        long deletedCreated = 1_000_500L;
+        List<Long> cursors = new CopyOnWriteArrayList<>();
+        try (FakeServer server = new FakeServer(command -> {
+            Request download = readRequest(command);
+            assertEquals(0x923d, download.operation);
+            sendData(command, download.transaction, photo, photo.length);
+
+            // Exactly 100 newer items (all with created > deletedCreated), so count == 100.
+            // Without `parsed.cursor > target.created`, hasAsset() would scan subsequent pages!
+            Request list = readRequest(command);
+            assertEquals(0x923c, list.operation);
+            long after = Integer.toUnsignedLong(list.parameters[0])
+                    | (Integer.toUnsignedLong(list.parameters[1]) << 32);
+            cursors.add(after);
+            byte[] page = buildContentsRange(deletedCreated + 1000L, 600, 100, photo.length, false);
+            sendData(command, list.transaction, page, page.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2",
+                        "2.00", new java.util.HashSet<>(Arrays.asList(0x923c, 0x923d)));
+                SonyMobileSession.Asset missing = new SonyMobileSession.Asset(
+                        session, 1, 999, "DSC00999.ARW", photo.length, deletedCreated);
+                try {
+                    session.download(device, missing, new ByteArrayOutputStream());
+                    fail("expected SOURCE_CHANGED for deleted photo");
+                } catch (CameraMediaSession.PhotoTransferException expected) {
+                    assertEquals(CameraMediaSession.FailureKind.SOURCE_CHANGED, expected.getKind());
+                }
+            }
+            server.finish();
+        }
+        assertEquals(Arrays.asList(deletedCreated - 1), cursors);
+    }
+
+    @Test
+    public void emptyCardAndZeroCreatedFallbackStopCleanly() throws Exception {
+        byte[] photo = new byte[]{0x49, 0x49, 0x2a, 0x00, 1, 2};
+        List<Long> cursors = new CopyOnWriteArrayList<>();
+        try (FakeServer server = new FakeServer(command -> {
+            Request download = readRequest(command);
+            assertEquals(0x923d, download.operation);
+            sendData(command, download.transaction, photo, photo.length);
+
+            Request list = readRequest(command);
+            assertEquals(0x923c, list.operation);
+            long after = Integer.toUnsignedLong(list.parameters[0])
+                    | (Integer.toUnsignedLong(list.parameters[1]) << 32);
+            cursors.add(after);
+            byte[] emptyPage = concat(new byte[144], SonyMobileSession.u32(0));
+            sendData(command, list.transaction, emptyPage, emptyPage.length);
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7CM2",
+                        "2.00", new java.util.HashSet<>(Arrays.asList(0x923c, 0x923d)));
+                SonyMobileSession.Asset zeroCreated = new SonyMobileSession.Asset(
+                        session, 1, 1, "DSC00001.ARW", photo.length, 0);
+                try {
+                    session.download(device, zeroCreated, new ByteArrayOutputStream());
+                    fail("expected SOURCE_CHANGED on empty card");
+                } catch (CameraMediaSession.PhotoTransferException expected) {
+                    assertEquals(CameraMediaSession.FailureKind.SOURCE_CHANGED, expected.getKind());
+                }
+            }
+            server.finish();
+        }
+        assertEquals(Arrays.asList(0L), cursors);
+    }
+
+    @Test
     public void assetKeyIncludesNameToDistinguishRenamedLocator() throws Exception {
         SonyMobileSession.Asset first = new SonyMobileSession.Asset(null, CONTENT, FILE,
                 "DSC00001.ARW", 100, 123);
@@ -408,6 +571,50 @@ public final class SonyMobileSessionTest {
                 SonyMobileSession.u32((int) (created >>> 32)), new byte[36], SonyMobileSession.u32(0),
                 SonyMobileSession.u32(1), SonyMobileSession.u32(file), SonyMobileSession.u32(path.length),
                 path, SonyMobileSession.u32(0), SonyMobileSession.u32((int) size),
+                SonyMobileSession.u32((int) (size >>> 32)), new byte[32], new byte[12]);
+    }
+
+    private static byte[] buildContentsRange(long after, int totalItems, int maxPerPage, long size, boolean zeroBased) throws IOException {
+        int start = 0;
+        while (start < totalItems && (1_000_000L + start * 1000L) <= after) start++;
+        int count = Math.min(maxPerPage, totalItems - start);
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(new byte[144]);
+        body.write(SonyMobileSession.u32(count));
+        for (int i = 0; i < count; i++) {
+            int idx = start + i;
+            int id = zeroBased ? idx : idx + 1;
+            long created = 1_000_000L + idx * 1000L;
+            byte[] path = String.format(java.util.Locale.ROOT, "/DCIM/100MSDCF/DSC%05d.ARW\0", id).getBytes("UTF-8");
+            body.write(concat(
+                    SonyMobileSession.u32(1), SonyMobileSession.u32(1), new byte[20],
+                    SonyMobileSession.u32((int) created), SonyMobileSession.u32((int) (created >>> 32)),
+                    new byte[36], SonyMobileSession.u32(0), SonyMobileSession.u32(1),
+                    SonyMobileSession.u32(id), SonyMobileSession.u32(path.length), path,
+                    SonyMobileSession.u32(0), SonyMobileSession.u32((int) size),
+                    SonyMobileSession.u32((int) (size >>> 32)), new byte[32], new byte[12]));
+        }
+        return body.toByteArray();
+    }
+
+    private static byte[] buildDualFormatPage(long created, long size) throws IOException {
+        byte[] jpgPath = "/DCIM/100MSDCF/DSC00001.JPG\0".getBytes("UTF-8");
+        byte[] arwPath = "/DCIM/100MSDCF/DSC00001.ARW\0".getBytes("UTF-8");
+        return concat(
+                new byte[144], SonyMobileSession.u32(2),
+                // entry 0: JPG
+                SonyMobileSession.u32(1), SonyMobileSession.u32(1), new byte[20],
+                SonyMobileSession.u32((int) created), SonyMobileSession.u32((int) (created >>> 32)),
+                new byte[36], SonyMobileSession.u32(0), SonyMobileSession.u32(1),
+                SonyMobileSession.u32(1), SonyMobileSession.u32(jpgPath.length), jpgPath,
+                SonyMobileSession.u32(0), SonyMobileSession.u32((int) size),
+                SonyMobileSession.u32((int) (size >>> 32)), new byte[32], new byte[12],
+                // entry 1: ARW (same created timestamp)
+                SonyMobileSession.u32(2), SonyMobileSession.u32(1), new byte[20],
+                SonyMobileSession.u32((int) created), SonyMobileSession.u32((int) (created >>> 32)),
+                new byte[36], SonyMobileSession.u32(0), SonyMobileSession.u32(1),
+                SonyMobileSession.u32(2), SonyMobileSession.u32(arwPath.length), arwPath,
+                SonyMobileSession.u32(0), SonyMobileSession.u32((int) size),
                 SonyMobileSession.u32((int) (size >>> 32)), new byte[32], new byte[12]);
     }
 

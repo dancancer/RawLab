@@ -1,5 +1,7 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.ui.AppIcons
+
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -9,11 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.NavigateNext
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.PhotoCamera
-import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -69,7 +67,7 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
                         Box {
                             IconButton(onClick = { menu = true }, modifier = Modifier.testTag("camera-menu")) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more)) }
                             DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.camera_history)) }, leadingIcon = { Icon(Icons.Outlined.History, null) },
+                                DropdownMenuItem(text = { Text(stringResource(R.string.camera_history)) }, leadingIcon = { Icon(AppIcons.Outlined.History, null) },
                                     modifier = Modifier.testTag("camera-history"), onClick = { menu = false; model.setMode(CameraMode.IMPORT); history = true; route = CameraRoute.IMPORT })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.camera_save_location)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) },
                                     modifier = Modifier.testTag("camera-destination-settings"), onClick = { menu = false; settings = true })
@@ -84,12 +82,12 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
                         Text(stringResource(if (previousCamera == null) R.string.camera_choose_connection else R.string.camera_previous_disconnected),
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    CameraTaskEntry(R.string.camera_import, R.string.camera_import_hint, Icons.Outlined.PhotoLibrary,
+                    CameraTaskEntry(R.string.camera_import, R.string.camera_import_hint, AppIcons.Outlined.PhotoLibrary,
                         "camera-mode-IMPORT", !connection.closing && !connection.preparing) {
                         if (connection.connected && connection.mode == CameraMode.IMPORT) route = CameraRoute.IMPORT else connect(CameraMode.IMPORT)
                     }
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CameraTaskEntry(R.string.tether_title, R.string.camera_tether_hint, Icons.Outlined.PhotoCamera,
+                    CameraTaskEntry(R.string.tether_title, R.string.camera_tether_hint, AppIcons.Outlined.PhotoCamera,
                         "camera-mode-TETHER", !connection.closing && !connection.preparing) { connect(CameraMode.TETHER) }
                     val previous = tether.run
                     if (previous != null && tether.canResume) {
@@ -126,7 +124,7 @@ private fun CameraTaskEntry(title: Int, detail: Int, icon: ImageVector, tag: Str
     ListItem(headlineContent = { Text(stringResource(title), style = MaterialTheme.typography.titleMedium) },
         supportingContent = { Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium) },
         leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
-        trailingContent = { Icon(Icons.AutoMirrored.Outlined.NavigateNext, null) },
+        trailingContent = { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null) },
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 8.dp).testTag(tag))
 }
 

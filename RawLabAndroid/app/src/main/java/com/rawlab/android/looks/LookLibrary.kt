@@ -49,8 +49,23 @@ class LookLibrary(
     private val dcpCompiler: DcpCompiler = NativeDcpCompiler,
     private val compatibilityCompiler: (File, LUTCompatibility) -> ByteArray = { file, draft -> NativeProcessor.prepareLutCompatibility(file, draft.request()) },
 ) {
+    private data class ValidationStamp(
+        val size: Long,
+        val modified: Long,
+        val format: LookFormat,
+        val version: Int,
+        val available: Boolean,
+    )
+
+    private data class RegistryEntry(
+        val look: ManagedLook,
+        val validatedSize: Long? = null,
+        val validatedModified: Long? = null,
+    )
+
     private val registry = File(root, REGISTRY_NAME)
     private val monitor = monitors.computeIfAbsent(root.canonicalPath) { Any() }
+    private val validationCache = ConcurrentHashMap<String, ValidationStamp>()
 
     init {
         if (root.exists() && !root.isDirectory) throw IOException("Look storage is not a directory")
@@ -58,11 +73,33 @@ class LookLibrary(
     }
 
     fun list(): List<ManagedLook> = locked {
-        readRegistry().looks.map { look ->
+        readRegistry().entries.map { entry ->
+            val look = entry.look
             val file = look.file(root)
-            val available = file.isFile && runCatching {
-                validator.validate(file).let { it.format == look.format && it.version == look.version }
-            }.getOrDefault(false)
+            val available = if (!file.isFile) {
+                validationCache.remove(look.id)
+                false
+            } else {
+                val size = file.length()
+                val modified = file.lastModified()
+                val cached = validationCache[look.id]
+                when {
+                    cached != null && cached.size == size && cached.modified == modified &&
+                        cached.format == look.format && cached.version == look.version -> cached.available
+                    entry.validatedSize != null && entry.validatedModified != null &&
+                        entry.validatedSize == size && entry.validatedModified == modified -> {
+                        validationCache[look.id] = ValidationStamp(size, modified, look.format, look.version, available = true)
+                        true
+                    }
+                    else -> {
+                        val valid = runCatching {
+                            validator.validate(file).let { it.format == look.format && it.version == look.version }
+                        }.getOrDefault(false)
+                        validationCache[look.id] = ValidationStamp(size, modified, look.format, look.version, available = valid)
+                        valid
+                    }
+                }
+            }
             look.copy(available = available)
         }
     }
@@ -109,11 +146,14 @@ class LookLibrary(
             if (validation.format != format) throw InvalidLookException("Look format does not match its extension")
             if (!validVersion(format, validation.version)) throw InvalidLookException("Invalid look version")
             replaceFileAtomically(staged, destination)
+            val validatedSize = destination.length()
+            val validatedModified = destination.lastModified()
             val imported = ManagedLook(id, name, originalName, format, validation.version, relativePath,
                 appearanceUnverified = validation.colorState in listOf(4, 7, 8),
                 compatibilityMode = validation.colorState.takeIf { it == 7 || it == 8 } ?: 0)
             val state = readRegistry()
-            writeRegistry(state.looks + imported, state.unreadable)
+            writeRegistry(state.entries + RegistryEntry(imported, validatedSize, validatedModified), state.unreadable)
+            validationCache[id] = ValidationStamp(validatedSize, validatedModified, format, validation.version, available = true)
             transaction.delete()
             imported
         } catch (error: Throwable) {
@@ -128,19 +168,22 @@ class LookLibrary(
         require(trimmed.isNotEmpty() && trimmed.none(Char::isISOControl)) { "Look name cannot be empty or contain control characters" }
         val renamed = existing.copy(name = trimmed)
         val state = readRegistry()
-        writeRegistry(state.looks.map { if (it.id == id) renamed else it }, state.unreadable)
+        writeRegistry(state.entries.map { if (it.look.id == id) it.copy(look = renamed) else it }, state.unreadable)
         renamed
     }
 
-    fun remove(id: String) = locked {
-        val existing = requireLook(id)
+    fun remove(id: String): Unit = locked {
         val state = readRegistry()
-        val remaining = state.looks.filterNot { it.id == id }
+        val existingEntry = state.entries.firstOrNull { it.look.id == id }
+            ?: throw NoSuchElementException("Unknown managed look: ${id}")
+        val existing = existingEntry.look
+        val remaining = state.entries.filterNot { it.look.id == id }
         writeRegistry(remaining, state.unreadable)
         if (!existing.file(root).delete() && existing.file(root).exists()) {
-            runCatching { writeRegistry(remaining + existing, state.unreadable) }
+            runCatching { writeRegistry(remaining + existingEntry, state.unreadable) }
             throw IOException("Cannot remove managed look")
         }
+        validationCache.remove(id)
     }
 
     fun listUnreadable(): List<UnreadableLook> = locked { readRegistry().unreadable }
@@ -158,22 +201,22 @@ class LookLibrary(
             !candidate.contains('/') && !candidate.contains('\\') && !candidate.contains("..") &&
                 candidate.substringAfterLast('.', "").lowercase() in setOf("cube", "vlt", "rlook") &&
                 isSafeId(candidate.substringBeforeLast('.')) &&
-                state.looks.none { it.relativePath.equals(candidate, ignoreCase = true) } &&
+                state.entries.none { it.look.relativePath.equals(candidate, ignoreCase = true) } &&
                 remaining.none { it.path?.equals(candidate, ignoreCase = true) == true }
         }
         val file = name?.let { File(root, it) }
-        writeRegistry(state.looks, remaining)
+        writeRegistry(state.entries, remaining)
         if (file != null && file.isFile && !file.delete() && file.exists()) {
-            runCatching { writeRegistry(state.looks, state.unreadable) }
+            runCatching { writeRegistry(state.entries, state.unreadable) }
             throw IOException("Cannot remove unreadable look file")
         }
     }
 
     fun fileFor(id: String): File? = locked {
-        readRegistry().looks.firstOrNull { it.id == id }?.file(root)?.takeIf(File::isFile)
+        readRegistry().entries.firstOrNull { it.look.id == id }?.look?.file(root)?.takeIf(File::isFile)
     }
 
-    private fun requireLook(id: String): ManagedLook = readRegistry().looks.firstOrNull { it.id == id }
+    private fun requireLook(id: String): ManagedLook = readRegistry().entries.firstOrNull { it.look.id == id }?.look
         ?: throw NoSuchElementException("Unknown managed look: ${id}")
 
     private fun <T> locked(block: () -> T): T = synchronized(monitor) {
@@ -189,7 +232,7 @@ class LookLibrary(
     private fun recoverInterruptedImports() {
         // 损坏索引时先报错并保留全部事务，不把未知归属当成未提交。
         val state = readRegistry()
-        val committed = state.looks.mapTo(mutableSetOf()) { it.id }
+        val committed = state.entries.mapTo(mutableSetOf()) { it.look.id }
         for (unreadable in state.unreadable) {
             unreadable.id?.let { committed.add(it) }
             unreadable.path?.let { committed.add(it.substringBeforeLast('.')) }
@@ -215,7 +258,7 @@ class LookLibrary(
         }
     }
 
-    private class RegistryState(val looks: List<ManagedLook>, val unreadable: List<UnreadableLook>)
+    private class RegistryState(val entries: List<RegistryEntry>, val unreadable: List<UnreadableLook>)
 
     private fun readRegistry(): RegistryState {
         if (!registry.exists()) return RegistryState(emptyList(), emptyList())
@@ -229,17 +272,17 @@ class LookLibrary(
                 ?: throw IOException("Missing look registry count")
             require(count >= 0) { "Invalid look registry count" }
             // P2-16：条目级损坏只降级这一条；文件级失败（版本、count、有效条目重名 ID）仍让整库不可用。
-            val looks = mutableListOf<ManagedLook>()
+            val entries = mutableListOf<RegistryEntry>()
             val unreadable = mutableListOf<UnreadableLook>()
             for (index in 0 until count) {
                 val prefix = "item.${index}."
                 val keys = properties.keys.asSequence().map { it.toString() }.filter { it.startsWith(prefix) }
                     .sorted().associate { it.removePrefix(prefix) to properties.getProperty(it).orEmpty() }
-                val look = decodeItem(keys)
-                if (look == null) unreadable += UnreadableLook(keys) else looks += look
+                val entry = decodeItem(keys)
+                if (entry == null) unreadable += UnreadableLook(keys) else entries += entry
             }
-            require(looks.map { it.id }.toSet().size == looks.size) { "Invalid or duplicate managed look metadata" }
-            return RegistryState(looks, unreadable)
+            require(entries.map { it.look.id }.toSet().size == entries.size) { "Invalid or duplicate managed look metadata" }
+            return RegistryState(entries, unreadable)
         } catch (error: IOException) {
             throw error
         } catch (error: Exception) {
@@ -247,7 +290,7 @@ class LookLibrary(
         }
     }
 
-    private fun decodeItem(keys: Map<String, String>): ManagedLook? {
+    private fun decodeItem(keys: Map<String, String>): RegistryEntry? {
         val id = keys["id"] ?: return null
         val name = keys["name"] ?: return null
         val originalName = keys["originalName"] ?: return null
@@ -255,9 +298,12 @@ class LookLibrary(
         val version = keys["version"]?.toIntOrNull() ?: return null
         val path = keys["path"] ?: return null
         if (!isSafeId(id) || !validVersion(format, version) || !isSafePath(path, id, format)) return null
-        return ManagedLook(id, name, originalName, format, version, path,
+        val look = ManagedLook(id, name, originalName, format, version, path,
             appearanceUnverified = keys["appearanceUnverified"] == "true",
             compatibilityMode = keys["compatibilityMode"]?.toIntOrNull()?.takeIf { it == 7 || it == 8 } ?: 0)
+        val validatedSize = keys["validatedSize"]?.toLongOrNull()?.takeIf { it >= 0L }
+        val validatedModified = keys["validatedModified"]?.toLongOrNull()
+        return RegistryEntry(look, validatedSize, validatedModified)
     }
 
     private fun detectContainer(file: File): LookFormat {
@@ -276,13 +322,14 @@ class LookLibrary(
     private fun sourceName(originalName: String): String =
         originalName.substringAfterLast('/').ifEmpty { "look.dcp" }
 
-    private fun writeRegistry(looks: List<ManagedLook>, unreadable: List<UnreadableLook> = emptyList()) {
+    private fun writeRegistry(entries: List<RegistryEntry>, unreadable: List<UnreadableLook> = emptyList()) {
         val temporary = File(root, ".${REGISTRY_NAME}.${UUID.randomUUID()}.tmp")
         try {
             val properties = Properties().apply {
                 setProperty("version", REGISTRY_VERSION.toString())
-                setProperty("count", (looks.size + unreadable.size).toString())
-                looks.forEachIndexed { index, look ->
+                setProperty("count", (entries.size + unreadable.size).toString())
+                entries.forEachIndexed { index, entry ->
+                    val look = entry.look
                     val prefix = "item.${index}."
                     setProperty(prefix + "id", look.id)
                     setProperty(prefix + "name", look.name)
@@ -292,10 +339,12 @@ class LookLibrary(
                     setProperty(prefix + "path", look.relativePath)
                     setProperty(prefix + "appearanceUnverified", look.appearanceUnverified.toString())
                     setProperty(prefix + "compatibilityMode", look.compatibilityMode.toString())
+                    entry.validatedSize?.let { setProperty(prefix + "validatedSize", it.toString()) }
+                    entry.validatedModified?.let { setProperty(prefix + "validatedModified", it.toString()) }
                 }
                 // 坏条目原文 key 组排在有效条目之后，序号顺延，删除前逐字保留。
                 unreadable.forEachIndexed { offset, look ->
-                    val prefix = "item.${looks.size + offset}."
+                    val prefix = "item.${entries.size + offset}."
                     look.keys.forEach { (suffix, value) -> setProperty(prefix + suffix, value) }
                 }
             }

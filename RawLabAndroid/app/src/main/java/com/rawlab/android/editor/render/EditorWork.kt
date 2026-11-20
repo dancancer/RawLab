@@ -79,7 +79,8 @@ internal sealed interface Work {
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
-        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : Work
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
+        val includeNeutral: Boolean = true) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,

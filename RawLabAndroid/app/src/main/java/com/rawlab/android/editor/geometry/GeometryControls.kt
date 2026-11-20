@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.geometry
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -70,7 +72,7 @@ internal fun GeometryControls(value: GeometrySettings, enabled: Boolean,
                         modifier = Modifier.heightIn(min = 48.dp).testTag("geometry.ratios")) {
                         Text(if (lockedRatio != null) stringResource(R.string.geometry_lock_current_aspect)
                             else ratioTitle(ratio)?.let { stringResource(it) } ?: ratioNumber(ratio), Modifier.weight(1f))
-                        Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+                        Icon(AppIcons.Outlined.ExpandMore, null, Modifier.size(18.dp))
                     }
                     DropdownMenu(ratioMenu, { ratioMenu = false }) {
                         GeometryRatio.entries.forEach { choice ->
@@ -90,13 +92,13 @@ internal fun GeometryControls(value: GeometrySettings, enabled: Boolean,
                     }
                 }
                 if (rotation) IconButton(onClick = { onChange(value.rotated(false), false) }, enabled = enabled,
-                    modifier = Modifier.testTag("geometry.rotate-left")) { Icon(Icons.Outlined.RotateLeft, stringResource(R.string.geometry_rotate_left)) }
+                    modifier = Modifier.testTag("geometry.rotate-left")) { Icon(AppIcons.Outlined.RotateLeft, stringResource(R.string.geometry_rotate_left)) }
                 IconToggleButton(checked = value.flipHorizontal, onCheckedChange = { onChange(value.copy(flipHorizontal = it), false) }, enabled = enabled,
-                    modifier = Modifier.testTag("geometry.flip-horizontal")) { Icon(Icons.Outlined.Flip, stringResource(R.string.geometry_flip_horizontal)) }
+                    modifier = Modifier.testTag("geometry.flip-horizontal")) { Icon(AppIcons.Outlined.Flip, stringResource(R.string.geometry_flip_horizontal)) }
                 if (rotation) IconToggleButton(checked = value.flipVertical, onCheckedChange = { onChange(value.copy(flipVertical = it), false) }, enabled = enabled,
-                    modifier = Modifier.testTag("geometry.flip-vertical")) { Icon(Icons.Outlined.FlipCameraAndroid, stringResource(R.string.geometry_flip_vertical)) }
+                    modifier = Modifier.testTag("geometry.flip-vertical")) { Icon(AppIcons.Outlined.FlipCameraAndroid, stringResource(R.string.geometry_flip_vertical)) }
                 IconButton(onClick = { onChange(value.rotated(true), false) }, enabled = enabled,
-                    modifier = Modifier.testTag("geometry.rotate-right")) { Icon(Icons.Outlined.RotateRight, stringResource(R.string.geometry_rotate_right)) }
+                    modifier = Modifier.testTag("geometry.rotate-right")) { Icon(AppIcons.Outlined.RotateRight, stringResource(R.string.geometry_rotate_right)) }
             }
         }
     }

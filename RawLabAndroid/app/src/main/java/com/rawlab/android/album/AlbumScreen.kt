@@ -1,5 +1,7 @@
 package com.rawlab.android.album
 
+import com.rawlab.android.ui.AppIcons
+
 import android.content.Intent
 import android.database.ContentObserver
 import android.os.Handler
@@ -144,13 +146,13 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
                 Text(doneLabel ?: AppStrings.format(R.string.message_confirm_photos, (selectedPhotos?.size ?: 0).toString()))
             }
             Box {
-                ToolIcon(Icons.Outlined.GridView, R.string.album_view_options) { viewMenu = true }
+                ToolIcon(AppIcons.Outlined.GridView, R.string.album_view_options) { viewMenu = true }
                 DropdownMenu(expanded = viewMenu, onDismissRequest = { viewMenu = false }) {
                     for (square in listOf(true, false)) {
                         DropdownMenuItem(
                             text = { Text(stringResource(if (square) R.string.album_square else R.string.album_original_ratio)) },
                             modifier = Modifier.semantics { selected = squareThumbnails == square },
-                            leadingIcon = { Icon(if (square) Icons.Outlined.CropSquare else Icons.Outlined.AspectRatio, null) },
+                            leadingIcon = { Icon(if (square) AppIcons.Outlined.CropSquare else AppIcons.Outlined.AspectRatio, null) },
                             trailingIcon = { if (squareThumbnails == square) Icon(Icons.Outlined.Check, null) },
                             onClick = {
                                 if (squareThumbnails != square) anchorVisiblePhoto(square)
@@ -176,7 +178,7 @@ fun AlbumScreen(storage: PhotoStorage, onBack: () -> Unit, onFile: (() -> Unit)?
                     }
                 }
             }
-            if (onFile != null) ToolIcon(Icons.Outlined.FolderOpen, R.string.open_file, onClick = onFile)
+            if (onFile != null) ToolIcon(AppIcons.Outlined.FolderOpen, R.string.open_file, onClick = onFile)
             ToolIcon(Icons.Outlined.Refresh, R.string.refresh, onClick = { loading = true; refresh++ })
         })
     }) { padding ->
@@ -320,7 +322,7 @@ internal fun AlbumThumbnail(storage: PhotoStorage, photo: AlbumPhoto, square: Bo
         Box(Modifier.fillMaxWidth().aspectRatio(ratio), contentAlignment = Alignment.Center) {
             if (bitmap != null) Image(bitmap.asImageBitmap(), photo.name, Modifier.fillMaxSize(),
                 contentScale = if (square) ContentScale.Crop else ContentScale.Fit)
-            else Icon(Icons.Outlined.Image, photo.name, Modifier.size(40.dp))
+            else Icon(AppIcons.Outlined.Image, photo.name, Modifier.size(40.dp))
             if (edited == true) Surface(color = androidx.compose.ui.graphics.Color.Black.copy(alpha = .72f),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp), modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
                     .testTag("album-edited-${photo.uri}")) {

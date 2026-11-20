@@ -105,6 +105,11 @@ struct LocalRef {
         if (ref) env->DeleteLocalRef(ref);
         ref = next;
     }
+    jobject release() {
+        jobject released = ref;
+        ref = nullptr;
+        return released;
+    }
     jobject get() const { return ref; }
     jclass asClass() const { return static_cast<jclass>(ref); }
     jstring asString() const { return static_cast<jstring>(ref); }
@@ -123,6 +128,7 @@ struct JniCache {
     struct {
         jclass clazz = nullptr;
         jmethodID ctor = nullptr;
+        jmethodID allocateBitmap = nullptr;
     } nativeFrame;
 
     struct {
@@ -162,6 +168,7 @@ struct JniCache {
         jfieldID longEdge = nullptr;
         jfieldID interactive = nullptr;
         jfieldID viewportPreview = nullptr;
+        jfieldID reusableBitmap = nullptr;
     } processOutput;
 
     struct {
@@ -352,6 +359,12 @@ jmethodID cacheMethod(JNIEnv* env, jclass clazz, const char* name, const char* s
     return method;
 }
 
+jmethodID cacheStaticMethod(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
+    jmethodID method = env->GetStaticMethodID(clazz, name, sig);
+    if (!method) throw std::runtime_error(std::string("Missing JNI static method: ") + name + " " + sig);
+    return method;
+}
+
 void releaseJniCache(JNIEnv* env) {
     if (!gJniCacheReady.exchange(false, std::memory_order_acq_rel)) return;
     jclass* classes[] = {
@@ -391,7 +404,9 @@ void initJniCache(JNIEnv* env) {
     JniCache c{};
     try {
         c.nativeFrame.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeFrame");
-        c.nativeFrame.ctor = cacheMethod(env, c.nativeFrame.clazz, "<init>", "(II[BFFI[I)V");
+        c.nativeFrame.ctor = cacheMethod(env, c.nativeFrame.clazz, "<init>", "(IILandroid/graphics/Bitmap;FFI[I)V");
+        c.nativeFrame.allocateBitmap = cacheStaticMethod(env, c.nativeFrame.clazz, "allocateBitmap",
+            "(IILandroid/graphics/Bitmap;)Landroid/graphics/Bitmap;");
 
         c.nativeProcessingException.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessingException");
         c.nativeProcessingException.ctor = cacheMethod(env, c.nativeProcessingException.clazz, "<init>", "(ILjava/lang/String;I)V");
@@ -419,6 +434,7 @@ void initJniCache(JNIEnv* env) {
         c.processOutput.longEdge = cacheField(env, c.processOutput.clazz, "longEdge", "I");
         c.processOutput.interactive = cacheField(env, c.processOutput.clazz, "interactive", "Z");
         c.processOutput.viewportPreview = cacheField(env, c.processOutput.clazz, "viewportPreview", "Z");
+        c.processOutput.reusableBitmap = cacheField(env, c.processOutput.clazz, "reusableBitmap", "Landroid/graphics/Bitmap;");
 
         c.processWhiteBalance.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessWhiteBalance");
         c.processWhiteBalance.custom = cacheField(env, c.processWhiteBalance.clazz, "custom", "Z");
@@ -948,6 +964,85 @@ struct BitmapPixels {
     }
     ~BitmapPixels() { if (locked) AndroidBitmap_unlockPixels(env, value); }
 };
+
+struct OutputBitmapLock {
+    JNIEnv* env;
+    jobject bitmap;
+    void* locked = nullptr;
+    OutputBitmapLock(JNIEnv* e, jobject bmp, AndroidBitmapInfo& info, uint32_t expectedWidth, uint32_t expectedHeight)
+        : env(e), bitmap(bmp) {
+        if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 ||
+            info.width != expectedWidth ||
+            info.height != expectedHeight ||
+            info.stride < static_cast<uint64_t>(expectedWidth) * 4) {
+            throw std::runtime_error("Invalid output bitmap");
+        }
+        const auto lockResult = AndroidBitmap_lockPixels(env, bitmap, &locked);
+        if (lockResult == ANDROID_BITMAP_RESULT_ALLOCATION_FAILED) throw std::bad_alloc();
+        if (lockResult != ANDROID_BITMAP_RESULT_SUCCESS) throw std::runtime_error("Unable to lock output bitmap");
+        if (!locked) {
+            AndroidBitmap_unlockPixels(env, bitmap);
+            locked = nullptr;
+            throw std::runtime_error("Output bitmap has no pixels");
+        }
+    }
+    ~OutputBitmapLock() {
+        if (locked) AndroidBitmap_unlockPixels(env, bitmap);
+    }
+};
+
+jobject writeRgba8Bitmap(JNIEnv* env, const sony2fuji_buffer& b, jobject reusableBitmap, const CancellationScope* cancellation) {
+    if (!b.data || b.width == 0 || b.height == 0 || b.pixel_format != SONY2FUJI_PIXEL_RGBA8 ||
+        b.width > static_cast<uint32_t>(std::numeric_limits<jint>::max()) ||
+        b.height > static_cast<uint32_t>(std::numeric_limits<jint>::max()) ||
+        b.stride_bytes < static_cast<uint64_t>(b.width) * 4) {
+        throw std::runtime_error("Invalid preview buffer");
+    }
+    const size_t row = static_cast<size_t>(b.width) * 4;
+    const size_t bytes = rawlab::previewByteCount(b);
+    if (bytes > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
+        throw std::runtime_error("Invalid preview buffer");
+    }
+    const auto& cache = jniCache(env);
+    LocalRef bitmap(env, env->CallStaticObjectMethod(
+        cache.nativeFrame.clazz, cache.nativeFrame.allocateBitmap,
+        static_cast<jint>(b.width), static_cast<jint>(b.height), reusableBitmap));
+    if (env->ExceptionCheck()) return nullptr;
+    if (!bitmap) throw std::bad_alloc();
+    {
+        AndroidBitmapInfo info{};
+        OutputBitmapLock lock(env, bitmap.get(), info, b.width, b.height);
+        if (b.stride_bytes == row && info.stride == row && !cancellation) {
+            std::memcpy(lock.locked, b.data, bytes);
+        } else {
+            const auto* src = static_cast<const uint8_t*>(b.data);
+            auto* dst = static_cast<uint8_t*>(lock.locked);
+            for (uint32_t y = 0; y < b.height; ++y) {
+                if (cancellation && cancellation->isCancelled()) {
+                    throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+                }
+                std::memcpy(dst + static_cast<size_t>(y) * info.stride,
+                    src + static_cast<size_t>(y) * b.stride_bytes, row);
+            }
+        }
+    }
+    return bitmap.release();
+}
+
+const std::array<float, 4097>& srgbEncodeLut() {
+    static const std::array<float, 4097> table = [] {
+        std::array<float, 4097> t{};
+        for (size_t i = 0; i <= 4096; ++i) {
+            const float v = static_cast<float>(i) / 4096.0f;
+            t[i] = v <= 0.0031308f
+                ? 12.92f * v
+                : 1.055f * static_cast<float>(std::pow(static_cast<double>(v), 1.0 / 2.4)) - 0.055f;
+        }
+        return t;
+    }();
+    return table;
+}
 struct ByteArrayElements {
     JNIEnv* env;
     jbyteArray value;
@@ -1206,6 +1301,71 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeLensReport(JNIEnv* env, job
         return strings(env, {std::to_string(report.base.state), report.base.lens_model, report.base.profile.model,
             report.base.applied_distortion ? "1" : "0", report.base.applied_tca ? "1" : "0", std::to_string(report.base.crop_scale), report.applied_vignetting ? "1" : "0"});
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jbooleanArray JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeInspectLens(JNIEnv* env, jobject, jlong id, jstring input) {
+    try {
+        SessionGuard guard(id);
+        auto* session = guard.get();
+        UtfChars path(env, input);
+        sony2fuji_lens_report_v2 report{};
+        uint32_t count = 0;
+        const auto& display = guard.session().displayLens;
+        const auto metadata = display.value();
+        if (!input && !display.present) throw std::invalid_argument("Display lens metadata not configured");
+        const auto status = input
+            ? sony2fuji_session_inspect_lens_v2(session, path.chars, &report, nullptr, 0, &count)
+            : sony2fuji_session_inspect_lens_metadata_v2(session, &metadata, &report, nullptr, 0, &count);
+        check(status, session);
+        auto result = env->NewBooleanArray(3);
+        if (!result) return nullptr;
+        const jboolean values[3] = {
+            static_cast<jboolean>(report.base.applied_distortion ? JNI_TRUE : JNI_FALSE),
+            static_cast<jboolean>(report.base.applied_tca ? JNI_TRUE : JNI_FALSE),
+            static_cast<jboolean>(report.applied_vignetting ? JNI_TRUE : JNI_FALSE),
+        };
+        env->SetBooleanArrayRegion(result, 0, 3, values);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+      catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeResolveCameraWhiteBalance(JNIEnv* env, jobject, jlong id,
+    jstring input, jint processingVersion, jint x3fMode, jint exposureMode) {
+    try {
+        SessionGuard guard(id);
+        auto* session = guard.get();
+        UtfChars path(env, input);
+        if (!path.chars || !*path.chars) throw std::invalid_argument("Missing input path");
+        sony2fuji_recipe_wb_request req{};
+        req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION;
+        req.struct_size = sizeof(req);
+        req.input_path = path.chars;
+        req.processing_version = static_cast<sony2fuji_processing_version>(processingVersion);
+        req.x3f_mode = static_cast<sony2fuji_x3f_mode>(x3fMode);
+        req.exposure_mode = static_cast<sony2fuji_raw_exposure_mode>(exposureMode);
+        req.recipe_active = 1;
+        req.recipe_strength = 1.0f;
+        req.custom_wb = 0;
+        req.temperature = 6500.0f;
+        req.tint = 1.0f;
+        sony2fuji_recipe_wb_result res{};
+        const auto status = sony2fuji_session_resolve_recipe_wb(session, &req, &res);
+        if (status == SONY2FUJI_STATUS_UNSUPPORTED || !res.camera_calibrated) return nullptr;
+        check(status, session);
+        auto result = env->NewFloatArray(2);
+        if (!result) return nullptr;
+        const jfloat values[2] = {res.camera_temperature, res.camera_tint};
+        env->SetFloatArrayRegion(result, 0, 2, values);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+      catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to inspect white balance"); }
+      catch (const std::invalid_argument& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+      catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     return nullptr;
 }
 
@@ -1808,12 +1968,18 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(JNIEnv* env, jclass, 
         if (count > static_cast<uint64_t>(std::numeric_limits<jsize>::max())) throw std::runtime_error("HDR plane is too large");
         auto result = env->NewFloatArray(static_cast<jsize>(count));
         if (!result) return nullptr;
-        std::vector<float> compact(static_cast<size_t>(count));
-        for (uint32_t y = 0; y < buffer.height; ++y)
-            std::memcpy(compact.data() + static_cast<size_t>(y) * buffer.width * 3,
-                static_cast<const uint8_t*>(buffer.data) + static_cast<size_t>(y) * buffer.stride_bytes,
-                static_cast<size_t>(buffer.width) * 3 * sizeof(float));
-        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(count), compact.data());
+        const size_t rowFloats = static_cast<size_t>(buffer.width) * 3;
+        const size_t rowBytes = rowFloats * sizeof(float);
+        if (buffer.stride_bytes == rowBytes) {
+            env->SetFloatArrayRegion(result, 0, static_cast<jsize>(count), static_cast<const jfloat*>(buffer.data));
+        } else {
+            for (uint32_t y = 0; y < buffer.height && !env->ExceptionCheck(); ++y) {
+                const auto* row = reinterpret_cast<const jfloat*>(
+                    static_cast<const uint8_t*>(buffer.data) + static_cast<size_t>(y) * buffer.stride_bytes);
+                env->SetFloatArrayRegion(result, static_cast<jsize>(static_cast<size_t>(y) * rowFloats),
+                    static_cast<jsize>(rowFloats), row);
+            }
+        }
         return env->ExceptionCheck() ? nullptr : result;
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR plane");
@@ -1832,12 +1998,15 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeSdrBitmap(JNIEnv* env, jcla
             buffer.stride_bytes < static_cast<uint64_t>(buffer.width) * 3 * sizeof(float))
             throw std::runtime_error("Invalid SDR float plane");
         BitmapPixels output(env, bitmap, buffer.width, buffer.height, SONY2FUJI_PIXEL_RGBA8, false);
-        const auto encode = [](float value) -> uint8_t {
+        const auto& lut = srgbEncodeLut();
+        const auto encode = [&lut](float value) -> uint8_t {
             if (!std::isfinite(value)) throw std::runtime_error("Nonfinite SDR rendition");
             const float v = std::clamp(value, 0.0f, 1.0f);
-            const float encoded = v <= .0031308f ? 12.92f * v :
-                1.055f * static_cast<float>(std::pow(static_cast<double>(v), 1.0 / 2.4)) - .055f;
-            return static_cast<uint8_t>(std::clamp(std::lround(encoded * 255.0f), 0L, 255L));
+            const float scaled = v * 4096.0f;
+            const size_t idx = std::min<size_t>(static_cast<size_t>(scaled), 4095);
+            const float frac = scaled - static_cast<float>(idx);
+            const float encoded = lut[idx] + (lut[idx + 1] - lut[idx]) * frac;
+            return static_cast<uint8_t>(std::clamp(static_cast<int>(encoded * 255.0f + 0.5f), 0, 255));
         };
         // 直接写位图，避免完整尺寸 SDR 导出在 Java 堆同时持有 RGB32F 和 ARGB 数组。
         for (uint32_t y = 0; y < buffer.height; ++y) {
@@ -1922,16 +2091,11 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(JNIEnv
         const auto& b=result.value;
         const auto count=rawlab::previewByteCount(b);
         if(b.width>1024 || b.height>1024 || count>std::numeric_limits<jsize>::max()) throw std::runtime_error("Invalid preview output");
-        auto bytes=env->NewByteArray(static_cast<jsize>(count));if(!bytes)return nullptr;
-        for(uint32_t row=0;row<b.height;++row) {
-            env->SetByteArrayRegion(bytes,static_cast<jsize>(row*b.width*4),static_cast<jsize>(b.width*4),
-                reinterpret_cast<const jbyte*>(static_cast<const uint8_t*>(b.data)+size_t(row)*b.stride_bytes));
-            if(env->ExceptionCheck())return nullptr;
-        }
-        if(env->ExceptionCheck())return nullptr;
+        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, nullptr, nullptr));
+        if(!bitmapOut)return nullptr;
         const auto& cache = jniCache(env);
         return env->NewObject(cache.nativeFrame.clazz, cache.nativeFrame.ctor,
-            static_cast<jint>(b.width), static_cast<jint>(b.height), bytes, 6500.f, 0.f, 0, nullptr);
+            static_cast<jint>(b.width), static_cast<jint>(b.height), bitmapOut.get(), 6500.f, 0.f, 0, nullptr);
     } catch(const std::bad_alloc&) {throwJava(env,"java/lang/OutOfMemoryError","Not enough memory for LUT preview");
     } catch(const std::exception& error) {throwJava(env,"java/io/IOException",error.what());}
     return nullptr;
@@ -2027,6 +2191,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         const jint longEdge = env->GetIntField(outputObj.get(), cache.processOutput.longEdge);
         const jboolean interactive = env->GetBooleanField(outputObj.get(), cache.processOutput.interactive);
         const jboolean viewportPreview = env->GetBooleanField(outputObj.get(), cache.processOutput.viewportPreview);
+        LocalRef reusableBitmapRef(env, env->GetObjectField(outputObj.get(), cache.processOutput.reusableBitmap));
 
         const jboolean customWb = env->GetBooleanField(wbObj.get(), cache.processWhiteBalance.custom);
         jfloat temperature = env->GetFloatField(wbObj.get(), cache.processWhiteBalance.temperature);
@@ -2128,18 +2293,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         }
         if (outputPathRef) return nullptr;
         const auto& b = buffer.value;
-        const size_t row = static_cast<size_t>(b.width) * 4;
-        const size_t bytes = rawlab::previewByteCount(b);
-        if (bytes > static_cast<size_t>(std::numeric_limits<jsize>::max()))
-            throw std::runtime_error("Invalid preview buffer");
-        LocalRef pixels(env, env->NewByteArray(static_cast<jsize>(bytes)));
-        if (!pixels) return nullptr;
-        for (uint32_t y = 0; y < b.height && !env->ExceptionCheck(); ++y) {
-            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
-            env->SetByteArrayRegion(reinterpret_cast<jbyteArray>(pixels.get()), static_cast<jsize>(y * row), static_cast<jsize>(row),
-                reinterpret_cast<const jbyte*>(b.data) + y * b.stride_bytes);
-        }
-        if (env->ExceptionCheck()) return nullptr;
+        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, reusableBitmapRef.get(), &cancellation));
+        if (!bitmapOut) return nullptr;
         LocalRef histogram(env, nullptr);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (!interactive) {
@@ -2162,7 +2317,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             kelvin = NAN; wbTint = NAN;
         }
         return env->NewObject(cache.nativeFrame.clazz, cache.nativeFrame.ctor, static_cast<jint>(b.width),
-            static_cast<jint>(b.height), pixels.get(), kelvin, wbTint,
+            static_cast<jint>(b.height), bitmapOut.get(), kelvin, wbTint,
             static_cast<jint>(sony2fuji_session_get_last_backend(session)), histogram.get());
     } catch (const NativeStatusError& error) {
         throwNativeStatus(env, error);

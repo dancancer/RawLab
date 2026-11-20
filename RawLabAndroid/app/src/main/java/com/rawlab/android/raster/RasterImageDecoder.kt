@@ -33,6 +33,36 @@ internal class DecodedRaster private constructor(private val data: Any, val widt
 }
 
 internal object RasterImageDecoder {
+    fun validateMetadata(file: File) {
+        val heif = file.inputStream().use { input ->
+            val header = ByteArray(12)
+            input.read(header) == header.size && header.copyOfRange(4, 8).contentEquals("ftyp".toByteArray(Charsets.US_ASCII))
+        }
+        if (heif) {
+            if (com.rawlab.android.engine.NativeHDRBridge.probe(file) != null)
+                throw IOException("HDR sources require the HDR decoder")
+            if (Build.VERSION.SDK_INT < 28) throw IOException("SDR HEIF requires Android 9 or later")
+            return
+        }
+        val validation = RasterContainerValidator.inspect(file)
+        val info = validation.info ?: throw IOException(
+            if (validation.error == RasterContainerValidator.PNG16_TOO_LARGE)
+                AppStrings.text(R.string.message_png16_decode_limit)
+            else validation.error ?: "Unsupported raster image")
+        if (info.bitDepth == 16) return
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0)
+            throw IOException("Unable to decode image")
+        if (bounds.outWidth != info.width || bounds.outHeight != info.height)
+            throw IOException("Image dimensions changed during decode")
+        if (bounds.outWidth.toLong() * bounds.outHeight > RasterContainerValidator.MAX_PIXELS) throw IOException("Image is too large")
+        if (info.hasColorProfile && bounds.outColorSpace == null)
+            throw IOException("Image color space is not supported")
+        if (Build.VERSION.SDK_INT >= 26 && !isSupportedSdrColorSpace(bounds.outColorSpace))
+            throw IOException("Image color space is not supported")
+    }
+
     fun decode(file: File): DecodedRaster {
         val heif=file.inputStream().use { input ->
             val header=ByteArray(12);input.read(header)==header.size && header.copyOfRange(4,8).contentEquals("ftyp".toByteArray(Charsets.US_ASCII))

@@ -1,8 +1,9 @@
 package com.rawlab.android.editor.controls
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,7 +40,7 @@ internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean, onReset: 
                     }
                 }
             }
-            ToolIcon(Icons.Outlined.RestartAlt, R.string.reset_denoise, enabled) { onReset?.invoke() ?: onChange(DenoiseSettings(), false) }
+            ToolIcon(AppIcons.Outlined.RestartAlt, R.string.reset_denoise, enabled) { onReset?.invoke() ?: onChange(DenoiseSettings(), false) }
         }
         val active = enabled && value.enabled
         NumericControl(R.string.denoise_luma, value.luma, 0f..100f, "", active,

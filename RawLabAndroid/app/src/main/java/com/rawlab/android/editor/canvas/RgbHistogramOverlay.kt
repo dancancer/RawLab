@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.canvas
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -7,7 +9,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,7 +54,7 @@ internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visi
             .semantics {
                 contentDescription = title
                 stateDescription = "$source · $action" + if (histogram == null) " · $unavailable" else ""
-            }) { Icon(Icons.Outlined.BarChart, null, tint = Color.White) }
+            }) { Icon(AppIcons.Outlined.BarChart, null, tint = Color.White) }
         if (expanded) Popup(popupPositionProvider = position,
             properties = PopupProperties(focusable = false, dismissOnClickOutside = false)) {
             Surface(Modifier.width(minOf(320.dp, (configuration.screenWidthDp - 24).coerceAtLeast(1).dp))

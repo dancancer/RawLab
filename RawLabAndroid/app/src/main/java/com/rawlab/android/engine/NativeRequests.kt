@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import android.graphics.Bitmap
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.raster.DecodedRaster
@@ -82,6 +83,7 @@ internal data class NativeProcessOutput(
     val longEdge: Int = 0,
     val interactive: Boolean = false,
     val viewportPreview: Boolean = false,
+    val reusableBitmap: Bitmap? = null,
 )
 
 internal data class NativeProcessWhiteBalance(
@@ -304,6 +306,7 @@ internal fun EditSettings.toNativeProcessRequest(
     probe: FloatArray? = null,
     cancellationGeneration: Long = -1L,
     migrationOut: FloatArray? = null,
+    reusableBitmap: Bitmap? = null,
 ): NativeProcessRequest {
     val isExport = outputPath != null
     val scale = recipeScale
@@ -333,6 +336,7 @@ internal fun EditSettings.toNativeProcessRequest(
             longEdge = if (isExport) longEdge else 0,
             interactive = interactive && !isExport && migrationOut == null,
             viewportPreview = !isExport && migrationOut == null && edge > 0,
+            reusableBitmap = if (!isExport && migrationOut == null) reusableBitmap else null,
         ),
         lutPath = lutPath,
         lutStrength = if (!lutPath.isNullOrEmpty()) strength else 0f,
