@@ -96,7 +96,6 @@ val prepareAssets by tasks.registering(Sync::class) {
     from(repo.resolve("Shared/BundledLooks/HDR")) { into("BundledLooks/HDR") }
     from(repo.resolve("Shared/BundledLooks/catalog.json")) { rename { "bundled-looks.json" } }
     from(repo.resolve("Shared/BundledLooks/Artwork")) { into("artwork"); include("*.png") }
-    from(repo.resolve("Shared/BundledLooks/NOTICE.md")) { into("licenses"); rename { "Bundled-Looks.md" } }
     from(repo.resolve("Shared/master-recipes.json"))
     from(repo.resolve("RawLabMac/Resources/MasterRecipes")) { into("MasterRecipes"); include("*.cube") }
     from(repo.resolve("RawLabMac/Resources/MasterRecipeIcons")) { into("MasterRecipeIcons"); include("*.png") }

@@ -1,4 +1,4 @@
-"""Prepare explicitly interpreted LUTs; redistribution permission remains unconfirmed."""
+"""Prepare explicitly interpreted bundled LUTs."""
 
 import argparse
 import hashlib
@@ -98,14 +98,14 @@ def prepare(source_root, output, force=False):
                 raise ValueError(f"Unknown adaptation: {look['adaptation']}")
             metadata = {"source": look["source"], "sourceSha256": digest,
                         "adaptation": look["adaptation"], "interpretation": plan["notes"][look["adaptation"]],
-                        "redistribution": "unconfirmed", "ocioVersion": ocio.__version__, **report}
+                        "ocioVersion": ocio.__version__, **report}
             with target.open("a", encoding="utf-8") as stream:
                 stream.write("\n#RawLab:" + json.dumps(metadata, separators=(",", ":")) + "\n")
             catalog.append({"id": look["id"], "name": look["name"], "fileName": name,
                             "artworkName": look["artworkName"], "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
                             "input": "neutral display-sRGB / BT.709 / D65 / full range",
                             "output": "display-sRGB / BT.709 / D65 / full range",
-                            "license": "UNCONFIRMED - redistribution permission not verified", "source": look["source"]})
+                            "source": look["source"]})
             reports.append({"id": look["id"], **metadata})
         for look in catalog[1:]:
             os.replace(temporary / look["fileName"], output / look["fileName"])

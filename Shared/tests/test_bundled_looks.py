@@ -42,6 +42,10 @@ class BundledLooksTests(unittest.TestCase):
             with self.subTest(look=entry["id"]):
                 self.assertEqual(Path(entry["fileName"]).stem, entry["id"])
                 self.assertEqual(hashlib.sha256((folder / entry["fileName"]).read_bytes()).hexdigest(), entry["sha256"])
+                if entry["id"] == "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65":
+                    self.assertEqual(entry.get("license"), "GPL-3.0-only")
+                else:
+                    self.assertNotIn("license", entry)
                 art = folder / "Artwork" / (entry["artworkName"] + ".png")
                 if not art.exists():
                     art = ROOT / "RawLabMac/Resources/FilmIcons" / (entry["artworkName"] + ".png")
@@ -52,26 +56,14 @@ class BundledLooksTests(unittest.TestCase):
                 self.assertGreaterEqual(width, 256)
         report = json.loads((folder / "adaptation-report.json").read_text())
         self.assertEqual(len(report), 28)
-        self.assertTrue((folder / "REDISTRIBUTION_BLOCKED.md").exists())
+        self.assertEqual(list(folder.glob("*.md")), [])
         for entry in report:
             if entry["resampled"]:
                 self.assertLessEqual(entry["error"]["max"], .025)
                 self.assertLessEqual(entry["error"]["p99"], .002)
             else:
                 self.assertTrue(entry["sourcePayloadByteIdentical"])
-            self.assertEqual(entry["redistribution"], "unconfirmed")
-
-    def test_unconfirmed_permissions_remain_recorded_without_blocking_compilation(self):
-        folder = ROOT / "Shared/BundledLooks"
-        catalog = json.loads((folder / "catalog.json").read_text())
-        self.assertEqual(sum(entry["license"] == "UNCONFIRMED - redistribution permission not verified"
-                             for entry in catalog), 28)
-        self.assertTrue((folder / "REDISTRIBUTION_BLOCKED.md").is_file())
-        self.assertTrue((folder / "NOTICE.md").is_file())
-        for relative in ["RawLabMac/build.sh", "RawLabAndroid/app/build.gradle.kts",
-                         "RawLabWindows/RawLabWindows.csproj", "RawLab/RawLab.xcodeproj/project.pbxproj"]:
-            with self.subTest(platform=relative):
-                self.assertNotIn("REDISTRIBUTION_BLOCKED.md", (ROOT / relative).read_text())
+            self.assertNotIn("redistribution", entry)
 
     def test_all_new_artwork_has_matching_generation_provenance(self):
         folder = ROOT / "Shared/BundledLooks/Artwork"

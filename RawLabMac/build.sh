@@ -213,7 +213,6 @@ mkdir -p "$APP/Contents/Resources/BundledLooks/HDR"
 cp "$ROOT"/Shared/BundledLooks/HDR/* "$APP/Contents/Resources/BundledLooks/HDR/"
 cp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 cp "$ROOT"/Shared/BundledLooks/Artwork/*.png "$APP/Contents/Resources/FilmIcons/"
-cp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 if [ -d "$ROOT/RawLabMac/Resources/MasterRecipes" ]; then
     cp -R "$ROOT/RawLabMac/Resources/MasterRecipes/." "$APP/Contents/Resources/MasterRecipes/"
 fi
