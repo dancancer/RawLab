@@ -1,4 +1,5 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/denoise.h"
 #include "gpu/photo_log_shader.h"
 #include "gpu/photo_tone_shader.h"
 #include "gpu/photo_color_grading_shader.h"
@@ -18,6 +19,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -900,41 +902,86 @@ bool renderPhotoMetalImpl(
     const sony2fuji::RenderParams& renderParams,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output
+    ImageData& output,
+    sony2fuji::GpuRenderOutcome& outcome
 ) {
+    outcome = {};
+    auto failWith = [&](sony2fuji::GpuFailureKind failure, sony2fuji::GpuBackendFault fault, const char* message) {
+        outcome = {failure, fault, message};
+        return false;
+    };
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
         !renderParams.validForGpu()) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Image dimensions or parameters invalid for Metal");
     }
     size_t inputCount = 0;
     size_t targetCount = 0;
     if (!checkedCount(static_cast<uint32_t>(input.width), static_cast<uint32_t>(input.height), &inputCount) ||
         !checkedCount(targetWidth, targetHeight, &targetCount)) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Image pixel count exceeds Metal 32-bit limit");
     }
 
     MetalContext& context = metalContext();
-    if (!context.ready || (renderParams.effects.active() && !context.effectsPipeline)) {
-        return false;
+    if (!context.device) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::NoAdapter,
+            "No Metal GPU device available");
+    }
+    if (!context.ready) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Metal shader or pipeline initialization failed");
+    }
+    if (renderParams.effects.active() && !context.effectsPipeline) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Metal photo effects require macOS 15 or iOS 18");
     }
 
     const float lutStrength = std::max(0.0f, std::min(2.0f, renderParams.lutStrength));
     const bool useLUT = renderParams.lut && lutStrength > 0.0f;
-    if (useLUT && renderParams.lut->requiresCPU()) return false;
+    if (useLUT && renderParams.lut->requiresCPU()) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "LUT requires CPU evaluation");
+    }
     const bool useDcp = renderParams.dcp && lutStrength > 0.0f;
-    if (useDcp && (useLUT || !context.baseDcpPipeline)) return false;
+    if (useDcp && useLUT) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Cannot combine DCP look and 3D LUT in Metal pass");
+    }
+    if (useDcp && !context.baseDcpPipeline) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Metal DCP look requires macOS 15 or iOS 18");
+    }
     CachedDcp cachedDcp;
     id<MTLBuffer> invalid = nil;
     if (useDcp) {
-        if (!getCachedDcp(context, renderParams.dcp, cachedDcp)) return false;
+        if (!getCachedDcp(context, renderParams.dcp, cachedDcp)) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to upload DCP look buffers to Metal");
+        }
         invalid = makeBuffer(context.device, sizeof(uint32_t));
-        if (!invalid) return false;
+        if (!invalid) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal DCP validation buffer");
+        }
         *static_cast<uint32_t*>(invalid.contents) = 0;
     }
     CachedLUT cachedLUT;
     if (useLUT && !getCachedLUT(context, renderParams.lut, &cachedLUT)) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Failed to upload 3D LUT texture to Metal");
     }
 
     ColorConverter::Matrix3x3 toSRGB;
@@ -954,8 +1001,10 @@ bool renderPhotoMetalImpl(
         } else {
             toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? renderParams.lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
         }
-    } catch (...) {
-        return false;
+    } catch (const std::exception& error) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            error.what());
     }
 
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
@@ -969,7 +1018,9 @@ bool renderPhotoMetalImpl(
     const uint32_t processingHeight = earlyResize ? targetHeight : inputHeight;
     size_t processingCount = 0;
     if (!checkedCount(processingWidth, processingHeight, &processingCount)) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Processing pixel count exceeds Metal 32-bit limit");
     }
 
     // 每个 GPU 缓冲区最多 16 MiB。主图只保留一份待提交结果；失败时调用方的
@@ -986,9 +1037,17 @@ bool renderPhotoMetalImpl(
         const size_t srcRowBytes = size_t(srcWidth) * sizeof(RGB);
         const size_t workRowBytes = size_t(workWidth) * sizeof(RGB);
         const size_t dstRowBytes = size_t(dstWidth) * sizeof(RGB);
-        if (srcRowBytes > budget || workRowBytes > budget || dstRowBytes > budget) return false;
+        if (srcRowBytes > budget || workRowBytes > budget || dstRowBytes > budget) {
+            return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                sony2fuji::GpuBackendFault::UnsupportedCapability,
+                "Image row exceeds Metal buffer limit");
+        }
         const bool inplace = &source == &destination;
-        if (inplace && (resizeFirst || srcWidth < dstWidth || srcHeight < dstHeight)) return false;
+        if (inplace && (resizeFirst || srcWidth < dstWidth || srcHeight < dstHeight)) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Invalid inplace Metal band configuration");
+        }
         std::vector<RGB> previousRows;
         uint32_t previousFirst = 0, previousEnd = 0;
         const auto range = [](uint32_t row, uint32_t rows, uint32_t src, uint32_t dst, uint32_t padding) {
@@ -1007,7 +1066,11 @@ bool renderPhotoMetalImpl(
         id<MTLBuffer> a = makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes));
         id<MTLBuffer> b = resizeFirst ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : uploaded;
         id<MTLBuffer> final = makeBuffer(context.device, std::min(budget, size_t(dstHeight) * dstRowBytes));
-        if (!uploaded || !a || !b || !final) return false;
+        if (!uploaded || !a || !b || !final) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal working buffers");
+        }
         for (uint32_t row = 0; row < dstHeight;) {
             // 每带在 waitUntilCompleted 后已同步写回 destination，带顶是安全边界：取消时后续带不再写入，
             // ProcessingCancelled 由 renderPhotoMetal 外层重抛（不吞成 false），调用方丢弃整个输出。
@@ -1025,10 +1088,18 @@ bool renderPhotoMetalImpl(
                 const size_t uploadBytes = size_t(upload.second - upload.first) * srcRowBytes;
                 const size_t workBytes = size_t(work.second - work.first) * workRowBytes;
                 const size_t destinationBytes = size_t(rows) * dstRowBytes;
-                if (uploadBytes > budget || workBytes > budget) return false;
+                if (uploadBytes > budget || workBytes > budget) {
+                    return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                        sony2fuji::GpuBackendFault::UnsupportedCapability,
+                        "Image band exceeds Metal buffer limit");
+                }
                 std::memcpy(uploaded.contents, source.pixels.data() + size_t(upload.first) * srcWidth, uploadBytes);
                 if (inplace && upload.first < previousEnd) {
-                    if (upload.first < previousFirst) return false;
+                    if (upload.first < previousFirst) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Invalid inplace Metal overlap");
+                    }
                     const size_t count = size_t(previousEnd - upload.first) * srcWidth;
                     std::memcpy(uploaded.contents, previousRows.data() + size_t(upload.first - previousFirst) * srcWidth,
                         count * sizeof(RGB));
@@ -1043,7 +1114,11 @@ bool renderPhotoMetalImpl(
                         original + size_t(previousEnd - upload.first) * srcWidth);
                 }
                 id<MTLCommandBuffer> command = [context.queue commandBuffer];
-                if (!command) return false;
+                if (!command) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to create Metal command buffer");
+                }
                 if (useDcp) *static_cast<uint32_t*>(invalid.contents) = 0;
                 id<MTLBuffer> current = uploaded, next = a;
                 if (resizeFirst) {
@@ -1053,13 +1128,21 @@ bool renderPhotoMetalImpl(
                     params.srcRows = upload.second - upload.first; params.dstRows = work.second - work.first;
                     auto constants = makeParamsBuffer(context.device, params);
                     if (!constants || !encodeKernel(command, context.resizePipeline, constants, current, a, nil,
-                        size_t(workWidth) * params.dstRows)) return false;
+                        size_t(workWidth) * params.dstRows)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal resize pass");
+                    }
                     current = a; next = b;
                 }
                 const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
                     toSRGB, toFGamut, renderParams, useLUT ? &cachedLUT : nullptr, lutStrength, true);
                 auto constants = makeParamsBuffer(context.device, params);
-                if (!constants) return false;
+                if (!constants) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to allocate Metal parameter buffer");
+                }
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
                                const CachedDcp* stages = nullptr) {
                     if (!encodeKernel(command, pipeline, constants, current, next, texture,
@@ -1070,16 +1153,28 @@ bool renderPhotoMetalImpl(
                 if (beforeChroma && (!run(context.matrixExposurePipeline, nil) ||
                     !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
                         useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
-                    !run(context.tonePipeline, nil))) return false;
+                    !run(context.tonePipeline, nil))) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to encode Metal color/tone pass");
+                }
                 if (afterChroma) {
-                    if (renderParams.noiseReduction > 0 && !run(context.noisePipeline, nil)) return false;
-                    if (renderParams.sharpening > 0 && !run(context.sharpenPipeline, nil)) return false;
+                    if ((renderParams.noiseReduction > 0 && !run(context.noisePipeline, nil)) ||
+                        (renderParams.sharpening > 0 && !run(context.sharpenPipeline, nil))) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal detail pass");
+                    }
                     if (renderParams.effects.active()) {
                         const PhotoEffectsParams values{workWidth, workHeight, renderParams.effects, work.first, work.second - work.first};
                         id<MTLBuffer> effectConstants = [context.device newBufferWithBytes:&values
                             length:sizeof(values) options:MTLResourceStorageModeShared];
                         if (!effectConstants || !encodeKernel(command, context.effectsPipeline, effectConstants,
-                            current, next, nil, size_t(workWidth) * (work.second - work.first))) return false;
+                            current, next, nil, size_t(workWidth) * (work.second - work.first))) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal photo effects pass");
+                        }
                         std::swap(current, next);
                     }
                 }
@@ -1089,11 +1184,20 @@ bool renderPhotoMetalImpl(
                 resize.srcRows = work.second - work.first; resize.dstRows = rows;
                 auto resizeConstants = makeParamsBuffer(context.device, resize);
                 if (!resizeConstants || !encodeKernel(command, context.resizePipeline, resizeConstants,
-                    current, final, nil, size_t(dstWidth) * rows)) return false;
+                    current, final, nil, size_t(dstWidth) * rows)) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to encode Metal output resize pass");
+                }
                 [command commit];
                 [command waitUntilCompleted];
                 if (command.status != MTLCommandBufferStatusCompleted ||
-                    (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) return false;
+                    (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) {
+                    const char* detail = command.error ? command.error.localizedDescription.UTF8String : nullptr;
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        detail && *detail ? detail : "Metal command buffer execution failed");
+                }
                 std::memcpy(destination.pixels.data() + size_t(row) * dstWidth, final.contents, destinationBytes);
                 row += rows;
             }
@@ -1107,8 +1211,23 @@ bool renderPhotoMetalImpl(
         ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
         if (!runBands(input, display, earlyResize, true, false)) return false;
         // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
-        if (sony2fuji::applyChromaDenoiseWorking(display, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
-            sony2fuji::ErrorCode::Success) return false;
+        sony2fuji::lastGpuFilterOutcome() = {};
+        const auto chromaErr = sony2fuji::applyChromaDenoiseWorking(display, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force);
+        if (chromaErr != sony2fuji::ErrorCode::Success) {
+            const auto filterOutcome = sony2fuji::lastGpuFilterOutcome();
+            if (chromaErr == sony2fuji::ErrorCode::OutOfMemory || filterOutcome.failure == sony2fuji::GpuFailureKind::OutOfMemory) {
+                outcome = {sony2fuji::GpuFailureKind::OutOfMemory, sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Out of memory during Metal chroma denoise" : filterOutcome.message};
+            } else if (chromaErr == sony2fuji::ErrorCode::Unsupported || filterOutcome.failure == sony2fuji::GpuFailureKind::Unsupported) {
+                outcome = {sony2fuji::GpuFailureKind::Unsupported,
+                    filterOutcome.fault != sony2fuji::GpuBackendFault::None ? filterOutcome.fault : sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Metal chroma denoise unavailable" : filterOutcome.message};
+            } else {
+                outcome = {sony2fuji::GpuFailureKind::ProcessingError, sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Metal chroma denoise failed" : filterOutcome.message};
+            }
+            return false;
+        }
         if (processingWidth >= targetWidth && processingHeight >= targetHeight) {
             if (!runBands(display, display, false, false, true, targetWidth, targetHeight)) return false;
             result = std::move(display);
@@ -1128,6 +1247,41 @@ bool renderPhotoMetalImpl(
 
 namespace sony2fuji {
 
+GpuRenderOutcome renderPhotoMetalWithOutcome(
+    const ImageData& input,
+    ColorSpace inputSpace,
+    const RenderParams& params,
+    uint32_t targetWidth,
+    uint32_t targetHeight,
+    ImageData& output
+) {
+    GpuRenderOutcome outcome;
+    @try {
+        @autoreleasepool {
+            try {
+                if (renderPhotoMetalImpl(input, inputSpace, params, targetWidth, targetHeight, output, outcome)) {
+                    outcome = {};
+                } else if (outcome.succeeded()) {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Metal photo render failed"};
+                }
+            } catch (const ProcessingCancelled&) {
+                throw;
+            } catch (const std::bad_alloc& error) {
+                outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::DeviceError, error.what()};
+            } catch (const std::exception& error) {
+                outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, error.what()};
+            } catch (...) {
+                outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Metal photo render failed"};
+            }
+        }
+    } @catch (NSException* exception) {
+        const char* reason = exception.reason ? exception.reason.UTF8String : nullptr;
+        outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError,
+            reason && *reason ? reason : "Metal Objective-C exception"};
+    }
+    return outcome;
+}
+
 bool renderPhotoMetal(
     const ImageData& input,
     ColorSpace inputSpace,
@@ -1137,15 +1291,18 @@ bool renderPhotoMetal(
     ImageData& output
 ) {
     bool result = false;
+    GpuRenderOutcome outcome;
     @try {
         @autoreleasepool {
             try {
                 result = renderPhotoMetalImpl(
-                    input, inputSpace, params, targetWidth, targetHeight, output
+                    input, inputSpace, params, targetWidth, targetHeight, output, outcome
                 );
             } catch (const ProcessingCancelled&) {
                 // 取消不是渲染失败：在 catch(...) 之前原样重抛（对齐 gles_photo 的先例），
                 // 否则 Auto 会把它当成 GPU 失败静默回退 CPU 重跑整张图。
+                throw;
+            } catch (const std::bad_alloc&) {
                 throw;
             } catch (...) {
                 result = false;
@@ -1162,6 +1319,17 @@ bool renderPhotoMetal(
 #else
 
 namespace sony2fuji {
+
+GpuRenderOutcome renderPhotoMetalWithOutcome(
+    const ImageData&,
+    ColorSpace,
+    const RenderParams&,
+    uint32_t,
+    uint32_t,
+    ImageData&
+) {
+    return {GpuFailureKind::Unsupported, GpuBackendFault::GpuDisabled, "Metal backend is not enabled in this build"};
+}
 
 bool renderPhotoMetal(
     const ImageData&,

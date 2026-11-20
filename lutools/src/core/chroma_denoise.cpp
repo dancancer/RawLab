@@ -14,7 +14,11 @@
 #include <vector>
 
 namespace {
-struct ChromaGpuFailure {};
+struct ChromaGpuFailure {
+    sony2fuji::GpuFailureKind failure = sony2fuji::GpuFailureKind::ProcessingError;
+    sony2fuji::GpuBackendFault fault = sony2fuji::GpuBackendFault::FilterError;
+    std::string message;
+};
 
 float quantile(std::vector<float> values, float fraction = .5f) {
     if (values.empty()) return 0;
@@ -186,12 +190,24 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
         bool accelerated = false;
         if (gpuMode != sony2fuji::GpuMode::Off) {
             filtered.create(input.size(), input.type());
+            sony2fuji::lastGpuFilterOutcome() = {};
             accelerated = sony2fuji::gpuGuidedFilter(guide.ptr<float>(), input.ptr<float>(),
                 input.cols, input.rows, radius, static_cast<float>(epsilon), filtered.ptr<float>());
         }
         if (accelerated) gpuUsed = true;
         else {
-            if (gpuMode == sony2fuji::GpuMode::Force) throw ChromaGpuFailure{};
+            if (gpuMode == sony2fuji::GpuMode::Force) {
+                const auto outcome = sony2fuji::lastGpuFilterOutcome();
+                throw ChromaGpuFailure{
+                    outcome.failure != sony2fuji::GpuFailureKind::None
+                        ? outcome.failure
+                        : sony2fuji::GpuFailureKind::ProcessingError,
+                    outcome.fault != sony2fuji::GpuBackendFault::None
+                        ? outcome.fault
+                        : sony2fuji::GpuBackendFault::FilterError,
+                    outcome.message
+                };
+            }
             cv::ximgproc::guidedFilter(guide,input,filtered,radius,epsilon);
         }
         filtered(cv::Rect(x-left,y-top,center.width,center.height)).copyTo(result(center));
@@ -328,7 +344,12 @@ ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostic
     if (noise.confidence == 0) return ErrorCode::Success;
     bool gpuUsed = false;
     try { filter(lab,noise,mode == 2,gpuMode,gpuUsed); }
-    catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
+    catch (const ChromaGpuFailure& failure) {
+        lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+        return failure.failure == GpuFailureKind::Unsupported ? ErrorCode::Unsupported
+            : failure.failure == GpuFailureKind::OutOfMemory ? ErrorCode::OutOfMemory
+            : ErrorCode::ProcessingError;
+    }
     cv::cvtColor(lab,rgb,cv::COLOR_Lab2RGB);
     if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
     return ErrorCode::Success;
@@ -411,7 +432,12 @@ ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode, ChromaDenoiseDia
         convertRows(cv::COLOR_Lab2RGB);
         if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
         return ErrorCode::Success;
-    } catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
+    } catch (const ChromaGpuFailure& failure) {
+        lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+        return failure.failure == GpuFailureKind::Unsupported ? ErrorCode::Unsupported
+            : failure.failure == GpuFailureKind::OutOfMemory ? ErrorCode::OutOfMemory
+            : ErrorCode::ProcessingError;
+    }
     catch (const std::bad_alloc&) { return ErrorCode::OutOfMemory; }
     catch (const cv::Exception& error) {
         return error.code == cv::Error::StsNoMem ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError;

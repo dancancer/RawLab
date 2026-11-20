@@ -460,6 +460,43 @@ class LocalizationTests(unittest.TestCase):
             expected = catalog[language]["重置%@"].replace("%@", catalog[language]["降噪"])
             self.assertEqual(catalog[language]["重置降噪"], expected, language)
 
+    def test_force_gpu_unsupported_uses_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        common = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        self.assertIn(key, common)
+        expected = common[key]
+        self.assertEqual(set(expected), set(LANGUAGES))
+
+        macos = {language: apple_catalog(ROOT / f"RawLabMac/Resources/{language}.lproj/Localizable.strings")
+                 for language in LANGUAGES}
+        ios = {language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+               for language in LANGUAGES}
+        windows = {language: windows_catalog(language) for language in LANGUAGES}
+        android = android_catalogs()
+
+        for language in LANGUAGES:
+            self.assertEqual(macos[language][key], expected[language], f"macOS {language}")
+            self.assertEqual(ios[language][key], expected[language], f"iOS {language}")
+            self.assertEqual(windows[language][key], expected[language], f"Windows {language}")
+            self.assertEqual(android[language]["force_gpu_unsupported"].strip('"'), expected[language], f"Android {language}")
+            if language != "zh-Hans":
+                self.assertNotEqual(expected[language], expected["zh-Hans"], language)
+
+    def test_force_gpu_unsupported_maps_to_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        mac_err = (ROOT / "RawLabMac/Sources/Rendering/RenderError.swift").read_text()
+        ios_err = (ROOT / "RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift").read_text()
+        win_native = (ROOT / "RawLabWindows/Core/Native.cs").read_text()
+        android_exc = (ROOT / "RawLabAndroid/app/src/main/java/com/rawlab/android/engine/NativeProcessor.kt").read_text()
+
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", mac_err)
+        self.assertIn(key, mac_err)
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", ios_err)
+        self.assertIn(key, ios_err)
+        self.assertIn("UnsupportedReason.ForceGpu", win_native)
+        self.assertIn(key, win_native)
+        self.assertIn("R.string.force_gpu_unsupported", android_exc)
+
 
 if __name__ == "__main__":
     unittest.main()

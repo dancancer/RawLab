@@ -49,7 +49,7 @@ public partial class MainWindow
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;
             syncing=false;
             RefreshPhotoInfo();
-            BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BaselineLabel.Text="";
+            BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BackendLabel.ToolTip=BackendLabel.Text;BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
             embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
             TrackOpenViewSource(path, openRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));

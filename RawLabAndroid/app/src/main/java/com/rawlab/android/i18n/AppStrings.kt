@@ -19,6 +19,7 @@ import java.util.Locale
 internal object AppStrings {
     private lateinit var application: Application
     fun initialize(application: Application) { this.application = application }
+    fun isInitialized(): Boolean = ::application.isInitialized
 
     fun preference(context: Context): String {
         if (Build.VERSION.SDK_INT >= 33) {

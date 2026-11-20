@@ -1745,6 +1745,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME gpu_diagnostics
+        SOURCES tests/gpu_diagnostics_tests.cpp
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME cpu_parallel_determinism
         SOURCES tests/cpu_parallel_determinism_tests.cpp
         INCLUDES src

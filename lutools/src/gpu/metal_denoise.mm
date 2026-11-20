@@ -1,4 +1,5 @@
 #include "metal_denoise.h"
+#include "denoise.h"
 #include "metal_denoise_shader.h"
 #include <algorithm>
 #include <array>
@@ -20,6 +21,7 @@ struct Context {
     std::array<id<MTLComputePipelineState>, KernelCount> pipelines{};
     std::mutex work;
     bool ready = false;
+    bool supportedOS = false;
 };
 
 Context& context() {
@@ -28,6 +30,7 @@ Context& context() {
     std::call_once(once, [&] {
         @autoreleasepool {
             if (@available(macOS 15.0, iOS 18.0, *)) {
+                value.supportedOS = true;
                 value.device = MTLCreateSystemDefaultDevice();
                 value.queue = [value.device newCommandQueue];
                 if (!value.device || !value.queue) return;
@@ -83,11 +86,33 @@ bool encode(Context& context, id<MTLCommandBuffer> command, Kernel kernel, const
     return true;
 }
 
+bool recordContextFailure(Context& ctx) {
+    if (!ctx.supportedOS) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability, "Metal denoise filters require macOS 15 or iOS 18"};
+    } else if (!ctx.device) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::NoAdapter, "No Metal GPU device available"};
+    } else {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::FilterError, "Metal denoise pipeline initialization failed"};
+    }
+    return false;
+}
+
 bool finish(id<MTLCommandBuffer> command, id<MTLBuffer> result, size_t count, float* output) {
     [command commit]; [command waitUntilCompleted];
-    if (command.status != MTLCommandBufferStatusCompleted) return false;
+    if (command.status != MTLCommandBufferStatusCompleted) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::FilterError, "Metal denoise command buffer execution failed"};
+        return false;
+    }
     const auto* values = static_cast<const float*>(result.contents);
-    for (size_t i = 0; i < count; ++i) if (!std::isfinite(values[i])) return false;
+    for (size_t i = 0; i < count; ++i) if (!std::isfinite(values[i])) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::FilterError, "Metal denoise produced non-finite output"};
+        return false;
+    }
     std::memcpy(output, values, count * sizeof(float));
     return true;
 }
@@ -101,11 +126,15 @@ bool wavelet(const float* input, int width, int height, const sony2fuji::Wavelet
             if (!std::isfinite(settings.sigma[i * 3 + d]) || settings.sigma[i * 3 + d] <= 0) return false;
     }
     auto& ctx = context();
-    if (!ctx.ready) return false;
+    if (!ctx.ready) return recordContextFailure(ctx);
     // CPU tile workers share one bounded coefficient workspace at a time.
     std::lock_guard<std::mutex> lock(ctx.work);
     const size_t count = size_t(width) * height, bytes = count * sizeof(float);
-    if (count > UINT32_MAX / 19) return false;
+    if (count > UINT32_MAX / 19 || bytes * (1 + 3 * settings.depth) > ctx.device.maxBufferLength) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability, "Wavelet tile exceeds Metal device limit"};
+        return false;
+    }
     auto source = allocate(ctx, bytes, input);
     auto low = allocate(ctx, bytes), high = allocate(ctx, bytes), energy = allocate(ctx, bytes);
     auto bands = allocate(ctx, bytes * (1 + 3 * settings.depth));
@@ -142,10 +171,14 @@ bool guided(const float* guide, const float* input, int width, int height, int r
     if (!guide || !input || !output || width <= 0 || height <= 0 || radius < 1 || radius > 32 ||
         !std::isfinite(epsilon) || epsilon <= 0) return false;
     auto& ctx = context();
-    if (!ctx.ready) return false;
+    if (!ctx.ready) return recordContextFailure(ctx);
     std::lock_guard<std::mutex> lock(ctx.work);
     const size_t count = size_t(width) * height, bytes = count * sizeof(float);
-    if (count > UINT32_MAX / 17) return false;
+    if (count > UINT32_MAX / 17 || bytes * 17 > ctx.device.maxBufferLength) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability, "Guided filter tile exceeds Metal device limit"};
+        return false;
+    }
     auto guidance = allocate(ctx, bytes * 3, guide), source = allocate(ctx, bytes * 2, input);
     auto a = allocate(ctx, bytes * 17), b = allocate(ctx, bytes * 17), result = allocate(ctx, bytes * 2);
     if (!guidance || !source || !a || !b || !result) return false;

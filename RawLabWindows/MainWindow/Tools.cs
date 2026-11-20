@@ -784,13 +784,42 @@ public partial class MainWindow
     }
     private void SetStatus(string text,bool error=false) { localizedStatus=null; Status.Text=text; Status.ToolTip=text; Status.SetResourceReference(TextBlock.ForegroundProperty,error ? "ErrorForeground" : "StatusForeground"); }
     private void SetStatus(Func<string> text,bool error=false) { SetStatus(text(),error); localizedStatus=text; }
+    internal static string? FormatFallbackToolTip(RenderedImage rendered, int gpuMode)
+    {
+        if (rendered.HDR != null || rendered.Backend == 3 || gpuMode == 0)
+            return null;
+        string? reasonText = rendered.FallbackReason switch
+        {
+            Native.GpuFallbackReason.BasicV3Controls => Loc.Text("已启用基础 v3 色调或对比度控制（需在 CPU 上运行）"),
+            Native.GpuFallbackReason.Atmosphere => Loc.Text("已启用清晰度或去朦胧（需在 CPU 上运行）"),
+            Native.GpuFallbackReason.Curves => Loc.Text("已启用通道曲线或不受支持的色调曲线（需在 CPU 上运行）"),
+            Native.GpuFallbackReason.C5Wavelet => Loc.Text("已启用 C5 小波降噪（需在 CPU 上运行）"),
+            Native.GpuFallbackReason.DcpLook => Loc.Text("当前 DCP 外观（.rlook）需要 CPU 显影"),
+            Native.GpuFallbackReason.LutContract => Loc.Text("当前 LUT 色彩契约需要 CPU 显影"),
+            Native.GpuFallbackReason.Geometry => Loc.Text("当前几何变换在强制 GPU 下不支持"),
+            Native.GpuFallbackReason.DisplayInput => Loc.Text("普通显示图像或 Normal X3F 在 CPU 上显影"),
+            Native.GpuFallbackReason.GpuDisabled => Loc.Text("Direct3D 11 已被禁用（RAWLAB_DISABLE_D3D11）"),
+            Native.GpuFallbackReason.NoAdapter => Loc.Text("未检测到可用的 Direct3D 11 硬件 GPU"),
+            Native.GpuFallbackReason.Cooldown => Loc.Text("Direct3D 11 设备正在恢复冷却中"),
+            Native.GpuFallbackReason.DeviceError => Loc.Text("Direct3D 11 设备或着色器执行失败"),
+            Native.GpuFallbackReason.FilterError => Loc.Text("Direct3D 11 滤镜执行失败"),
+            Native.GpuFallbackReason.UnsupportedCapability => Loc.Text("图像尺寸、纹理或缓冲区超出 Direct3D 11 能力限制"),
+            _ => null,
+        };
+        if (reasonText == null)
+            return string.IsNullOrWhiteSpace(rendered.GpuError) ? null : Loc.Format("GPU 已回退至 CPU：{0}", rendered.GpuError);
+        return string.IsNullOrWhiteSpace(rendered.GpuError)
+            ? Loc.Format("GPU 已回退至 CPU：{0}", reasonText)
+            : Loc.Format("GPU 已回退至 CPU：{0}（{1}）", reasonText, rendered.GpuError);
+    }
     private void RefreshRenderLabels()
     {
         RefreshViewingFrames();
         // 没有显影结果：正在打开时说明在显影；空闲或失败时只留平台与色彩空间，不沿用过时的进度
-        if (result == null) { BackendLabel.Text=file != null && !renderFailed ? Loc.Text("相机预览 · 正在显影") : "Windows · sRGB"; return; }
+        if (result == null) { BackendLabel.Text=file != null && !renderFailed ? Loc.Text("相机预览 · 正在显影") : "Windows · sRGB"; BackendLabel.ToolTip=BackendLabel.Text; return; }
         BackendLabel.Text=result.HDR != null ? Loc.Text("HDR 显示不可用，当前显示 SDR。") :
             $"{(result.Backend==3 ? "Direct3D 11 · GPU" : renderedGpuMode==0 || (file!=null && LibraryEntry.IsRaster(file)) ? "CPU" : Loc.Text("CPU · GPU 已回退"))} · sRGB";
+        BackendLabel.ToolTip=FormatFallbackToolTip(result, renderedGpuMode) ?? BackendLabel.Text;
         var raster=file!=null && LibraryEntry.IsRaster(file);
         BaselineLabel.Text=result.HDR != null ? Loc.Text("SDR 兼容预览") : raster ? Loc.Text("显示图像") : Loc.Format("基础偏移 {0:+0.00;-0.00;0.00} EV", result.Baseline);
         AsShotButton.ToolTip=raster ? Loc.Text("不适用") : result.WhiteBalance==null ? Loc.Text("此 RAW 缺少有效校准，使用相机原始白平衡") : Loc.Format("拍摄时：{0} K / {1}", result.WhiteBalance.Value.Temperature.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)), result.WhiteBalance.Value.Tint.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo(Loc.Language)));

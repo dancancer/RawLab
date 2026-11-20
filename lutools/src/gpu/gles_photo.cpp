@@ -16,6 +16,7 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 
 namespace sony2fuji {
@@ -118,12 +119,12 @@ struct GlesPhotoRenderer::Impl {
 
     void initialize() {
         display = sharedDisplay();
-        if (display == EGL_NO_DISPLAY) throw std::runtime_error("EGL display unavailable");
+        if (display == EGL_NO_DISPLAY) throw GpuUnavailableError("EGL display unavailable");
         const EGLint configAttributes[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE };
         EGLConfig config{}; EGLint count = 0;
         if (!eglChooseConfig(display, configAttributes, &config, 1, &count) || count == 0)
-            throw std::runtime_error("EGL compute config unavailable");
+            throw GpuUnavailableError("EGL compute config unavailable");
         const EGLint surfaceAttributes[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
@@ -138,14 +139,14 @@ struct GlesPhotoRenderer::Impl {
         GLint major = 0, minor = 0, invocations = 0, groupSize = 0, groups = 0;
         GLint64 block = 0;
         glGetIntegerv(GL_MAJOR_VERSION, &major); glGetIntegerv(GL_MINOR_VERSION, &minor);
-        if (major < 3 || (major == 3 && minor < 1)) throw std::runtime_error("OpenGL ES 3.1 required");
+        if (major < 3 || (major == 3 && minor < 1)) throw GpuUnavailableError("OpenGL ES 3.1 required");
         glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &invocations);
         glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &groupSize);
         glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &groups);
         glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &block);
         glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &textureLimit);
         if (invocations < int(kWorkgroup) || groupSize < int(kWorkgroup) || groups < 1 || block <= 0)
-            throw std::runtime_error("Insufficient compute limits");
+            throw GpuUnavailableError("Insufficient compute limits");
         blockLimit = static_cast<size_t>(block);
         dispatchLimit = std::min<size_t>(static_cast<size_t>(groups) * kWorkgroup, UINT32_MAX);
         program = makeProgram();
@@ -165,7 +166,7 @@ struct GlesPhotoRenderer::Impl {
         glUniformMatrix3fv(uniform(name), 1, GL_FALSE, values);
     }
     void allocate(int index, size_t bytes) {
-        if (bytes == 0 || bytes > blockLimit) throw std::runtime_error("SSBO size exceeds device limit");
+        if (bytes == 0 || bytes > blockLimit) throw GpuCapabilityLimitError("SSBO size exceeds device limit");
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[index]);
         if (capacities[index] != bytes) {
             capacities[index] = 0;
@@ -181,7 +182,7 @@ struct GlesPhotoRenderer::Impl {
     }
     void dispatch(int source, int destination, size_t count, uint32_t inputRow, uint32_t outputRow, uint32_t offset, int stage) {
         checkProcessingCancellation();
-        if (count > dispatchLimit) throw std::runtime_error("Dispatch exceeds device limit");
+        if (count > dispatchLimit) throw GpuCapabilityLimitError("Dispatch exceeds device limit");
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffers[source]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffers[destination]);
         glUniform1ui(uniform("sourceStartRow"), inputRow);
@@ -219,7 +220,7 @@ struct GlesPhotoRenderer::Impl {
         glActiveTexture(GL_TEXTURE0);
         if (lut && cachedLut != lut) {
             cachedLut.reset();
-            if (lut->getSize() > textureLimit) throw std::runtime_error("LUT exceeds device texture limit");
+            if (lut->getSize() > textureLimit) throw GpuCapabilityLimitError("LUT exceeds device texture limit");
             if (!texture) glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_3D, texture);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -272,14 +273,49 @@ struct GlesPhotoRenderer::Impl {
 GlesPhotoRenderer::GlesPhotoRenderer() = default;
 GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 
+GpuRenderOutcome GlesPhotoRenderer::renderWithOutcome(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    GpuRenderOutcome outcome;
+    try {
+        (void)renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+    } catch (const std::bad_alloc& error) {
+        outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::DeviceError, error.what()};
+    }
+    return outcome;
+}
+
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
-    if (params.lut && params.lut->requiresCPU()) return false;
+    GpuRenderOutcome outcome;
+    return renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+}
+
+bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
+    GpuRenderOutcome& outcome) {
+    outcome = {};
+    if (params.lut && params.lut->requiresCPU()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, "LUT requires CPU evaluation"};
+        return false;
+    }
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        !params.validForGpu()) return false;
-    if (!impl_ && !retry_.ready(glesRetryNow())) return false;
+        !params.validForGpu()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability,
+            "Image dimensions or parameters exceed OpenGL ES limits"};
+        return false;
+    }
+    if (!impl_ && !retry_.ready(glesRetryNow())) {
+        if (initUnavailable_) {
+            outcome = {GpuFailureKind::Unsupported, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "OpenGL ES 3.1 unavailable (retry cooldown)" : lastInitError_};
+        } else {
+            outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "OpenGL ES device recovery cooldown" : lastInitError_};
+        }
+        return false;
+    }
     bool initializing = !impl_;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
@@ -316,16 +352,48 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             context.cachedRevision = 0;
             ImageData native(input.width, input.height);
             context.bands(input, input.width, input.height, 2, &native);
-            if (applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
-                ((params.noiseReduction > 0 || params.sharpening > 0) &&
-                 !gpuDetailFilter(native, params.noiseReduction, params.sharpening)) ||
-                (params.effects.active() && !gpuPhotoEffects(native, params.effects))) return false;
+            auto failFilter = [&](const char* fallbackMessage, ErrorCode err = ErrorCode::ProcessingError) {
+                const auto filterOutcome = lastGpuFilterOutcome();
+                if (err == ErrorCode::OutOfMemory || filterOutcome.failure == GpuFailureKind::OutOfMemory) {
+                    outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else if (err == ErrorCode::Unsupported || filterOutcome.failure == GpuFailureKind::Unsupported) {
+                    outcome = {GpuFailureKind::Unsupported,
+                        filterOutcome.fault != GpuBackendFault::None ? filterOutcome.fault : GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                }
+                return false;
+            };
+            if (params.chromaDenoise != 0) {
+                lastGpuFilterOutcome() = {};
+                const auto chromaErr = applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force);
+                if (chromaErr != ErrorCode::Success) {
+                    return failFilter("GLES chroma denoise failed", chromaErr);
+                }
+            }
+            if (params.noiseReduction > 0 || params.sharpening > 0) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
+                    return failFilter("GLES detail filter failed");
+                }
+            }
+            if (params.effects.active()) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuPhotoEffects(native, params.effects)) {
+                    return failFilter("GLES photo effects failed");
+                }
+            }
             if (width != static_cast<uint32_t>(native.width) || height != static_cast<uint32_t>(native.height)) {
                 ImageData resized(static_cast<int>(width), static_cast<int>(height));
                 context.bands(native, width, height, 4, &resized);
                 output = std::move(resized);
             } else output = std::move(native);
             retry_.succeeded();
+            initUnavailable_ = false;
+            lastInitError_.clear();
             return true;
         }
         ImageData result(static_cast<int>(width), static_cast<int>(height));
@@ -347,18 +415,39 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         } else context.bands(input, width, height, preview ? 3 : 2, &result);
         output = std::move(result);
         retry_.succeeded();
+        initUnavailable_ = false;
+        lastInitError_.clear();
         return true;
     } catch (const ProcessingCancelled&) {
         if (impl_) impl_->clearStickyErrors();
         throw;
+    } catch (const std::bad_alloc&) {
+        if (impl_) impl_->clearStickyErrors();
+        throw;
+    } catch (const GpuUnavailableError& error) {
+        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
+        initUnavailable_ = true;
+        lastInitError_ = error.what();
+        retry_.failed(glesRetryNow());
+        impl_.reset();
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::NoAdapter, error.what()};
+        return false;
+    } catch (const GpuCapabilityLimitError& error) {
+        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
+        if (impl_) impl_->clearStickyErrors();
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, error.what()};
+        return false;
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
         if (initializing || glesLostDevice(error)) {
+            initUnavailable_ = false;
+            lastInitError_ = error.what();
             retry_.failed(glesRetryNow());
             impl_.reset();
         } else if (impl_) {
             impl_->clearStickyErrors();
         }
+        outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, error.what()};
         return false;
     }
 }

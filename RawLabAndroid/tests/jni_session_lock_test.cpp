@@ -66,6 +66,7 @@ struct FakeJObject {
     void* directAddress = nullptr;
     jlong directCapacity = 0;
     jint intArg = 0;
+    jint secondIntArg = 0;
     std::string strArg;
 };
 
@@ -94,6 +95,7 @@ struct ThreadJniException {
     std::string className;
     std::string message;
     jint status = 0;
+    jint unsupportedReason = 0;
 };
 thread_local ThreadJniException gTlsException;
 
@@ -248,6 +250,7 @@ jobject JNICALL mockNewObjectV(JNIEnv*, jclass clazz, jmethodID method, va_list 
         obj->intArg = va_arg(args, jint);
         auto msg = va_arg(args, jstring);
         obj->strArg = msg ? asFake(msg)->text : "";
+        obj->secondIntArg = va_arg(args, jint);
     } else if (mid && mid->className == "com/rawlab/android/engine/NativeFrame") {
         (void)va_arg(args, jint); // width
         (void)va_arg(args, jint); // height
@@ -264,6 +267,7 @@ jint JNICALL mockThrow(JNIEnv*, jthrowable throwable) {
     gTlsException.className = obj ? obj->text : "java/lang/Throwable";
     gTlsException.message = obj ? obj->strArg : "";
     gTlsException.status = obj ? obj->intArg : 0;
+    gTlsException.unsupportedReason = obj ? obj->secondIntArg : 0;
     return 0;
 }
 
@@ -533,6 +537,8 @@ std::string gCapturedMpfPath;
 int32_t gMockMpfResult = 0;
 sony2fuji_status gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_OK;
 sony2fuji_status gMockEffectiveWbStatus = SONY2FUJI_STATUS_OK;
+sony2fuji_status gMockProcessStatus = SONY2FUJI_STATUS_OK;
+sony2fuji_unsupported_reason gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_NONE;
 float gMockEffectiveWbTemp = 5500.0f;
 float gMockEffectiveWbTint = 0.0f;
 
@@ -620,6 +626,8 @@ void resetMocks() {
     gMockMpfResult = 0;
     gMockResolveRecipeWbStatus = SONY2FUJI_STATUS_OK;
     gMockEffectiveWbStatus = SONY2FUJI_STATUS_OK;
+    gMockProcessStatus = SONY2FUJI_STATUS_OK;
+    gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_NONE;
     gMockEffectiveWbTemp = 5500.0f;
     gMockEffectiveWbTint = 0.0f;
 }
@@ -911,6 +919,9 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* s, const sony2fuji_request
     if (cancelCb && cancelCb(cancelCtx) != 0) {
         return SONY2FUJI_STATUS_CANCELLED;
     }
+    if (gMockProcessStatus != SONY2FUJI_STATUS_OK) {
+        return gMockProcessStatus;
+    }
 
     const uint32_t dim = (req && req->preview_long_edge > 0) ? req->preview_long_edge : 16u;
     const size_t size = static_cast<size_t>(dim) * dim * 4;
@@ -975,6 +986,9 @@ int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path) {
 int32_t sony2fuji_is_normal_x3f(const char*, sony2fuji_x3f_mode) { return 0; }
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session*) {
     return SONY2FUJI_BACKEND_CPU;
+}
+sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session*) {
+    return gMockUnsupportedReason;
 }
 const char* sony2fuji_session_x3f_error(const sony2fuji_session*) { return nullptr; }
 void sony2fuji_release_buffer(sony2fuji_buffer* b) {
@@ -2323,6 +2337,35 @@ void testAbiDelegationRecipeWbAndMpf() {
     std::cout << "PASS: testAbiDelegationRecipeWbAndMpf" << std::endl;
 }
 
+void testForceGpuUnsupportedExceptionMarshalling() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 2);
+    jobject req = makeNativeProcessRequest("force-gpu.dng", 64, -1);
+
+    gMockProcessStatus = SONY2FUJI_STATUS_UNSUPPORTED;
+    gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_FORCE_GPU;
+    Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    ThreadJniException ex = consumeException();
+    require(ex.active && ex.className == "com/rawlab/android/engine/NativeProcessingException",
+        "UNSUPPORTED status must throw NativeProcessingException");
+    require(ex.status == SONY2FUJI_STATUS_UNSUPPORTED &&
+            ex.unsupportedReason == SONY2FUJI_UNSUPPORTED_FORCE_GPU,
+        "Force GPU unsupported failure must marshal SONY2FUJI_UNSUPPORTED_FORCE_GPU");
+
+    gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_NONE;
+    Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    ex = consumeException();
+    require(ex.active && ex.className == "com/rawlab/android/engine/NativeProcessingException",
+        "Generic UNSUPPORTED status must also throw NativeProcessingException");
+    require(ex.status == SONY2FUJI_STATUS_UNSUPPORTED &&
+            ex.unsupportedReason == SONY2FUJI_UNSUPPORTED_NONE,
+        "Generic unsupported failure must preserve SONY2FUJI_UNSUPPORTED_NONE");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testForceGpuUnsupportedExceptionMarshalling" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2343,6 +2386,7 @@ int main() {
         {"testStructuredProcessMarshalling", testStructuredProcessMarshalling},
         {"testStructuredHdrMarshalling", testStructuredHdrMarshalling},
         {"testAbiDelegationRecipeWbAndMpf", testAbiDelegationRecipeWbAndMpf},
+        {"testForceGpuUnsupportedExceptionMarshalling", testForceGpuUnsupportedExceptionMarshalling},
     };
     int failures = 0;
     for (const auto& c : cases) {

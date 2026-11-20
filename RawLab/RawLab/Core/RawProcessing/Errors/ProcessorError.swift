@@ -35,7 +35,8 @@ extension Sony2FujiProcessor {
     }
 
     func processingFailure(_ status: sony2fuji_status, input: URL? = nil, look: URL? = nil,
-                           output: URL? = nil, session: OpaquePointer? = nil) -> ProcessorError {
+                           output: URL? = nil, session: OpaquePointer? = nil,
+                           unsupportedReason: sony2fuji_unsupported_reason? = nil) -> ProcessorError {
         if let session, let message = sony2fuji_session_x3f_error(session), message.pointee != 0 {
             return .processFailed(String(cString: message), status: status)
         }
@@ -44,6 +45,10 @@ extension Sony2FujiProcessor {
         case SONY2FUJI_STATUS_IO_ERROR:
             return .nativeFailure(status, L10n.text("无法读取或写入文件，请检查路径和访问权限。"))
         case SONY2FUJI_STATUS_UNSUPPORTED:
+            let resolvedReason = unsupportedReason ?? session.map { sony2fuji_session_get_unsupported_reason($0) }
+            if resolvedReason == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+                return .nativeFailure(status, L10n.text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"))
+            }
             return .nativeFailure(status, L10n.text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"))
         case SONY2FUJI_STATUS_INVALID_ARGUMENT:
             if let output, [input, look].compactMap({ $0 }).contains(where: { aliases($0, output) }) {

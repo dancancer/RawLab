@@ -53,6 +53,7 @@ class LanguageResourcesTest {
             assertEquals(perspectiveVertical[language], localized.getString(R.string.geometry_perspective_vertical))
             assertEquals(usage[language], localized.getString(R.string.usage_analytics))
             assertFalse(localized.getString(R.string.geometry_perspective_hint).isBlank())
+            assertFalse(localized.getString(R.string.force_gpu_unsupported).isBlank())
             localized.getString(R.string.vignette_summary, 1.0, 50.0, 0.0, 50.0, 0.0)
             localized.getString(R.string.grain_summary, 1.0, 25.0, 50.0)
         }

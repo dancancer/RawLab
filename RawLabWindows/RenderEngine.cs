@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -7,7 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
-internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0, HDRRenderedPair? HDR = null);
+internal sealed record RenderedImage(BitmapSource Image, BitmapSource? Clipping, uint[] Histogram, double Shadows, double Highlights, float Baseline, (double Temperature,double Tint)? WhiteBalance, int Backend, LensInfo? Lens = null, int NativeWidth = 0, int NativeHeight = 0, HDRRenderedPair? HDR = null, Native.GpuFallbackReason FallbackReason = Native.GpuFallbackReason.None, string? GpuError = null);
 internal sealed record PreviewFrame(RenderedImage Neutral,RenderedImage Result);
 internal sealed record EmbeddedPreview(BitmapSource? Image,int Width,int Height);
 internal sealed partial class RenderEngine : IDisposable
@@ -40,6 +41,8 @@ internal sealed partial class RenderEngine : IDisposable
     private static long FrameBytes(PreviewFrame frame)=>ImageBytes(frame.Result)+
         (ReferenceEquals(frame.Neutral,frame.Result) ? 0 : ImageBytes(frame.Neutral));
     public int LastBackend => Native.sony2fuji_session_get_last_backend(session);
+    internal Native.GpuFallbackReason LastFallbackReason => (Native.GpuFallbackReason)Native.sony2fuji_session_get_gpu_fallback_reason(session);
+    internal string? LastGpuError => Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_gpu_error(session));
     public RenderEngine(int gpuMode=1, string? lensDatabase=null,StatisticsAnalyzer? statisticsAnalyzer=null,string? aiModelDirectory=null,string? aiCacheDirectory=null,int? aiBackend=null,
         string aiDeviceID="",AIDiagnosticStore? aiDiagnostics=null,AppPaths? appPaths=null)
     {
@@ -327,9 +330,14 @@ internal sealed partial class RenderEngine : IDisposable
             var calibrated = !raster && Native.sony2fuji_session_get_effective_raw_white_balance(session,out temperature,out tint) == 0;
             var normalX3f = !raster && Native.sony2fuji_is_normal_x3f(path,settings.X3fMode) != 0;
             var count = (double)buffer.Width * buffer.Height;
+            var fallbackReason = LastFallbackReason;
+            var gpuError = LastGpuError;
+            if (gpuMode != 0 && LastBackend != 3 && (fallbackReason != Native.GpuFallbackReason.None || !string.IsNullOrWhiteSpace(gpuError)))
+                Trace.WriteLine($"GPU fell back to CPU (mode={gpuMode}, reason={fallbackReason}, detail={gpuError})");
             // Statistics consume RGBA before the private output buffers are swizzled for WPF.
             return new(Bitmap(buffer),!statisticsAvailable || mask.Data==IntPtr.Zero ? null : Bitmap(mask,false),bins,shadows/count,highlights/count,baseline,
-                calibrated ? ((double)temperature,(double)tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight));
+                calibrated ? ((double)temperature,(double)tint) : null,LastBackend,raster || normalX3f ? null : ReadLens(path),checked((int)nativeWidth),checked((int)nativeHeight),
+                FallbackReason: fallbackReason, GpuError: string.IsNullOrWhiteSpace(gpuError) ? null : gpuError);
         }
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }

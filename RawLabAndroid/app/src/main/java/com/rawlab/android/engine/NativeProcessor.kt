@@ -1,5 +1,7 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.ToneCurveSettings
 
@@ -48,11 +50,27 @@ enum class LookFormat(val extension: String) {
 data class LookValidation(val format: LookFormat, val version: Int, val colorState: Int = 5)
 class LUTColorContractException(val reason: Int) : IllegalArgumentException("LUT color contract requires attention")
 
-class NativeProcessingException(val status: Int, message: String) : IOException(message) {
+class NativeProcessingException @JvmOverloads constructor(
+    val status: Int,
+    message: String,
+    val unsupportedReason: Int = UNSUPPORTED_NONE
+) : IOException(
+    if (status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU && AppStrings.isInitialized()) {
+        AppStrings.text(R.string.force_gpu_unsupported)
+    } else {
+        message
+    }
+) {
+    val isForceGpuUnsupported: Boolean
+        get() = status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU
+
     companion object {
+        const val UNSUPPORTED = 2
         const val IO_ERROR = 3
         const val OUTPUT_IO_ERROR = 6
         const val CANCELLED = 7
+        const val UNSUPPORTED_NONE = 0
+        const val UNSUPPORTED_FORCE_GPU = 1
     }
 }
 

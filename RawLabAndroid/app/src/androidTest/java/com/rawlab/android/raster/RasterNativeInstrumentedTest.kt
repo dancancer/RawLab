@@ -15,7 +15,10 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.io.IOException
 import kotlin.math.max
+import com.rawlab.android.R
+import com.rawlab.android.engine.NativeProcessingException
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
@@ -215,9 +218,13 @@ class RasterNativeInstrumentedTest {
         writeGradient(input, 9, 7)
         try {
             NativeProcessor(NativeProcessor.FORCE).use { processor ->
-                assertThrows(IOException::class.java) {
+                val error = assertThrows(NativeProcessingException::class.java) {
                     processor.preview(input, null, EditSettings(), 1600, false, PhotoInputKind.RASTER)
                 }
+                assertTrue(error.isForceGpuUnsupported)
+                assertEquals(NativeProcessingException.UNSUPPORTED, error.status)
+                assertEquals(NativeProcessingException.UNSUPPORTED_FORCE_GPU, error.unsupportedReason)
+                assertEquals(AppStrings.text(R.string.force_gpu_unsupported), error.message)
             }
         } finally {
             root.deleteRecursively()

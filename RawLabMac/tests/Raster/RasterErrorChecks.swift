@@ -24,8 +24,8 @@ func assertMacFailureSemantics(_ context: RasterContext, raster: URL, engine: Re
 
     let force = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
     let unsupported = try message(input: raster, renderer: force)
-    try check(unsupported == "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。",
-              "unsupported processing does not incorrectly restrict input to RAW: \(unsupported)")
+    try check(unsupported == "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+              "unsupported Force GPU does not surface Force GPU prompt: \(unsupported)")
 
     var invalid = Adjustments()
     invalid.exposure = .nan

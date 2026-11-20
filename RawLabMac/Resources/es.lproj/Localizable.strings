@@ -416,6 +416,7 @@
 "当前显示 SDR 兼容预览。" = "Se muestra la vista previa compatible con SDR.";
 "当前构建未配置使用统计，未采集或上报。" = "El análisis de uso no está configurado en esta versión; no se recopila ni se envía ningún dato.";
 "当前照片" = "Foto actual";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo.";
 "当前照片或调整记录无效，无法安全重置。" = "La foto actual o su registro de ajustes no son válidos y no se pueden restablecer de forma segura.";
 "当前照片的设置尚不可用。" = "La configuración de la foto actual aún no está disponible.";
 "当前通道 %@，修改仅作用于该颜色。" = "Canal actual: %@. Los cambios solo se aplican a este color.";

@@ -394,7 +394,7 @@ void initJniCache(JNIEnv* env) {
         c.nativeFrame.ctor = cacheMethod(env, c.nativeFrame.clazz, "<init>", "(II[BFFI[I)V");
 
         c.nativeProcessingException.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessingException");
-        c.nativeProcessingException.ctor = cacheMethod(env, c.nativeProcessingException.clazz, "<init>", "(ILjava/lang/String;)V");
+        c.nativeProcessingException.ctor = cacheMethod(env, c.nativeProcessingException.clazz, "<init>", "(ILjava/lang/String;I)V");
 
         c.hdrProcessingException.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/HDRProcessingException");
         c.hdrProcessingException.ctor = cacheMethod(env, c.hdrProcessingException.clazz, "<init>", "(III)V");
@@ -588,8 +588,13 @@ void throwHDRFailure(JNIEnv* env,const std::exception& error) {
 
 struct NativeStatusError : std::runtime_error {
     sony2fuji_status status;
-    NativeStatusError(sony2fuji_status value)
-        : std::runtime_error(sony2fuji_status_message(value)), status(value) {}
+    sony2fuji_unsupported_reason unsupportedReason;
+    explicit NativeStatusError(
+        sony2fuji_status value,
+        sony2fuji_unsupported_reason reason = SONY2FUJI_UNSUPPORTED_NONE)
+        : std::runtime_error(sony2fuji_status_message(value)),
+          status(value),
+          unsupportedReason(reason) {}
 };
 
 void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
@@ -599,7 +604,7 @@ void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
         LocalRef message(env, env->NewStringUTF(error.what()));
         if (!message) return;
         LocalRef exception(env, env->NewObject(cache.nativeProcessingException.clazz, cache.nativeProcessingException.ctor,
-            static_cast<jint>(error.status), message.get()));
+            static_cast<jint>(error.status), message.get(), static_cast<jint>(error.unsupportedReason)));
         if (exception) env->Throw(static_cast<jthrowable>(exception.get()));
     } catch (...) {
         env->ExceptionClear();
@@ -644,6 +649,11 @@ void check(sony2fuji_status status, sony2fuji_session* session = nullptr) {
     if (status != SONY2FUJI_STATUS_OK && status != SONY2FUJI_STATUS_CANCELLED && session) {
         const char* message = sony2fuji_session_x3f_error(session);
         if (message && *message) throw std::runtime_error(message);
+    }
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
+        throw NativeStatusError(
+            status,
+            session ? sony2fuji_session_get_unsupported_reason(session) : SONY2FUJI_UNSUPPORTED_NONE);
     }
     if (status == SONY2FUJI_STATUS_IO_ERROR || status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR ||
         status == SONY2FUJI_STATUS_CANCELLED)

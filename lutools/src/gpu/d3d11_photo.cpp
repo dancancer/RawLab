@@ -16,6 +16,7 @@
 #include <cstring>
 #include <limits>
 #include <iostream>
+#include <new>
 #include <stdexcept>
 #include <cstddef>
 #include <vector>
@@ -87,7 +88,7 @@ struct D3D11PhotoRenderer::Impl {
             if (SUCCEEDED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0,
                 levels, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
         }
-        if (!device) throw std::runtime_error("No Direct3D 11 hardware adapter");
+        if (!device) throw GpuUnavailableError("No Direct3D 11 hardware adapter");
 #endif
         const auto bytecode = compileD3D11Shader(
             "RawLab photo shader", kD3DPhotoShader, "main", "cs_5_0",
@@ -98,7 +99,7 @@ struct D3D11PhotoRenderer::Impl {
         checked(device->CreateBuffer(&desc, nullptr, &constants));
     }
     void allocate(Buffer& buffer, size_t count, bool writable) {
-        if (!count || count > std::numeric_limits<UINT>::max() / sizeof(RGB)) throw std::runtime_error("GPU buffer too large");
+        if (!count || count > std::numeric_limits<UINT>::max() / sizeof(RGB)) throw GpuCapabilityLimitError("GPU buffer too large");
         const auto bytes = count * sizeof(RGB);
         if (buffer.bytes >= bytes) return;
         buffer = {};
@@ -203,14 +204,57 @@ struct D3D11PhotoRenderer::Impl {
 };
 D3D11PhotoRenderer::D3D11PhotoRenderer() = default;
 D3D11PhotoRenderer::~D3D11PhotoRenderer() = default;
+GpuRenderOutcome D3D11PhotoRenderer::renderWithOutcome(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    GpuRenderOutcome outcome;
+    try {
+        (void)renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+    } catch (const std::bad_alloc& error) {
+        outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::DeviceError, error.what()};
+        OutputDebugStringA(outcome.message.c_str());
+    }
+    return outcome;
+}
 bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
-    if (params.lut && params.lut->requiresCPU()) return false;
-    if (input.width<=0 || input.height<=0 || width==0 || height==0 || width>65535 || height>65535 ||
-        input.pixels.size()!=static_cast<size_t>(input.width)*input.height || !params.validForGpu()) return false;
+    GpuRenderOutcome outcome;
+    return renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+}
+bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
+    GpuRenderOutcome& outcome) {
+    outcome = {};
+    if (params.lut && params.lut->requiresCPU()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, "LUT requires CPU evaluation"};
+        return false;
+    }
+    const bool nativeFilters = params.effects.active() || params.chromaDenoise != 0 ||
+        params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
+    if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 || width > 65535 || height > 65535 ||
+        (nativeFilters && (input.width > 65535 || input.height > 65535)) ||
+        input.pixels.size() != static_cast<size_t>(input.width) * input.height || !params.validForGpu()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability,
+            "Image dimensions or parameters exceed Direct3D 11 limits"};
+        return false;
+    }
     // Diagnostic switch also exercises Auto fallback and Force failure in regression tests.
-    if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11",nullptr,0)>0) return false;
-    if (!impl_ && !retry_.ready(d3d11RetryNow())) return false;
+    if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::GpuDisabled,
+            "Direct3D 11 disabled by RAWLAB_DISABLE_D3D11"};
+        OutputDebugStringA(outcome.message.c_str());
+        return false;
+    }
+    if (!impl_ && !retry_.ready(d3d11RetryNow())) {
+        if (initUnavailable_) {
+            outcome = {GpuFailureKind::Unsupported, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "Direct3D 11 hardware adapter unavailable (retry cooldown)" : lastInitError_};
+        } else {
+            outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "Direct3D 11 device recovery cooldown" : lastInitError_};
+        }
+        OutputDebugStringA(outcome.message.c_str());
+        return false;
+    }
     bool initializing = !impl_;
     try {
         if (!impl_) { impl_=std::make_unique<Impl>();impl_->initialize(); }
@@ -256,25 +300,62 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             p.domainLow[0]=low.r;p.domainLow[1]=low.g;p.domainLow[2]=low.b;
             p.domainHigh[0]=high.r;p.domainHigh[1]=high.g;p.domainHigh[2]=high.b;
         }
-        const bool nativeFilters = params.effects.active() || params.chromaDenoise != 0 ||
-            params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
         if (nativeFilters || input.pixels.size() > kPhotoTileBytes / sizeof(RGB) ||
             uint64_t(width) * height > kPhotoTileBytes / sizeof(RGB)) {
+            if (nativeFilters && (input.width > 65535 || input.height > 65535)) {
+                outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability,
+                    "Source dimensions exceed Direct3D 11 65535 filter limit"};
+                OutputDebugStringA(outcome.message.c_str());
+                return false;
+            }
             // 分带上传会覆盖 source，不能继续沿用上一张整图的 revision。
             c.revision = 0;
             const uint32_t pw = nativeFilters ? input.width : width, ph = nativeFilters ? input.height : height;
             ImageData native(static_cast<int>(pw), static_cast<int>(ph));
             c.bands(input, pw, ph, p, params.intent == RenderIntent::Preview ? 0 : 4, native);
-            if (applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
-                ((params.noiseReduction > 0 || params.sharpening > 0) &&
-                 !gpuDetailFilter(native, params.noiseReduction, params.sharpening)) ||
-                (params.effects.active() && !gpuPhotoEffects(native, params.effects))) return false;
+            auto failFilter = [&](const char* fallbackMessage, ErrorCode err = ErrorCode::ProcessingError) {
+                const auto filterOutcome = lastGpuFilterOutcome();
+                if (err == ErrorCode::OutOfMemory || filterOutcome.failure == GpuFailureKind::OutOfMemory) {
+                    outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else if (err == ErrorCode::Unsupported || filterOutcome.failure == GpuFailureKind::Unsupported) {
+                    outcome = {GpuFailureKind::Unsupported,
+                        filterOutcome.fault != GpuBackendFault::None ? filterOutcome.fault : GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                }
+                OutputDebugStringA(outcome.message.c_str());
+                return false;
+            };
+            if (params.chromaDenoise != 0) {
+                lastGpuFilterOutcome() = {};
+                const auto chromaErr = applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force);
+                if (chromaErr != ErrorCode::Success) {
+                    return failFilter("D3D11 chroma denoise failed", chromaErr);
+                }
+            }
+            if (params.noiseReduction > 0 || params.sharpening > 0) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
+                    return failFilter("D3D11 detail filter failed");
+                }
+            }
+            if (params.effects.active()) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuPhotoEffects(native, params.effects)) {
+                    return failFilter("D3D11 photo effects failed");
+                }
+            }
             if (pw != width || ph != height) {
                 ImageData resized(static_cast<int>(width), static_cast<int>(height));
                 c.bands(native, width, height, p, 1, resized);
                 output = std::move(resized);
             } else output = std::move(native);
             retry_.succeeded();
+            initUnavailable_ = false;
+            lastInitError_.clear();
             return true;
         }
         if (revision==0 || revision!=c.revision || input.width!=c.sourceWidth || input.height!=c.sourceHeight) {
@@ -288,17 +369,34 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
         auto* final=&c.processing[0];
         if (pw!=width || ph!=height) { c.dispatch(*final,c.resized,p,1,pw,ph,width,height);final=&c.resized; }
         ImageData result(static_cast<int>(width),static_cast<int>(height));c.read(*final,result);
-        output=std::move(result);retry_.succeeded();return true;
+        output=std::move(result);retry_.succeeded();initUnavailable_ = false;lastInitError_.clear();return true;
     } catch (const ProcessingCancelled&) {
         // 取消交还调用方，不丢弃健康设备，也不进入重建退避。
         throw;
+    } catch (const std::bad_alloc&) {
+        throw;
+    } catch (const GpuUnavailableError& error) {
+        OutputDebugStringA(error.what());
+        initUnavailable_ = true;
+        lastInitError_ = error.what();
+        retry_.failed(d3d11RetryNow());
+        impl_.reset();
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::NoAdapter, error.what()};
+        return false;
+    } catch (const GpuCapabilityLimitError& error) {
+        OutputDebugStringA(error.what());
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, error.what()};
+        return false;
     } catch (const std::exception& error) {
         OutputDebugStringA(error.what());
         if (initializing || d3d11LostDevice(error) ||
             (impl_ && impl_->device && FAILED(d3d11DeviceStatus(*impl_->device.Get())))) {
+            initUnavailable_ = false;
+            lastInitError_ = error.what();
             retry_.failed(d3d11RetryNow());
             impl_.reset();
         }
+        outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, error.what()};
         return false;
     }
 }
