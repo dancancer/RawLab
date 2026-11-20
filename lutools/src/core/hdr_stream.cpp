@@ -1,4 +1,5 @@
 #include "core/hdr_stream.h"
+#include "core/hdr_resample.h"
 #include "core/hdr_storage.h"
 #include "core/hdr_jpeg.h"
 #include "core/processing_cancellation.h"
@@ -24,34 +25,53 @@ class TileReader {
     File file_;
     uint32_t width_, height_;
     uint64_t clock_ = 0;
+    uint32_t lastLeft_ = std::numeric_limits<uint32_t>::max();
+    uint32_t lastTop_ = std::numeric_limits<uint32_t>::max();
+    Tile* lastTile_ = nullptr;
     std::unordered_map<uint64_t, Tile> tiles_;
 public:
     TileReader(const fs::path& path, uint32_t width, uint32_t height) : file_(path), width_(width), height_(height) {}
     RGB read(int x, int y) {
         const uint32_t left = uint32_t(x) / tileEdge * tileEdge, top = uint32_t(y) / tileEdge * tileEdge;
-        const uint64_t key = uint64_t(top) * width_ + left;
-        auto found = tiles_.find(key);
-        if (found == tiles_.end()) {
-            checkProcessingCancellation();
-            if (tiles_.size() == cachedTiles) {
-                const auto oldest = std::min_element(tiles_.begin(), tiles_.end(),
-                    [](const auto& a, const auto& b) { return a.second.use < b.second.use; });
-                tiles_.erase(oldest);
+        Tile* tile = lastTile_;
+        if (!tile || left != lastLeft_ || top != lastTop_) {
+            const uint64_t key = uint64_t(top) * width_ + left;
+            auto found = tiles_.find(key);
+            if (found == tiles_.end()) {
+                checkProcessingCancellation();
+                if (tiles_.size() == cachedTiles) {
+                    const auto oldest = std::min_element(tiles_.begin(), tiles_.end(),
+                        [](const auto& a, const auto& b) { return a.second.use < b.second.use; });
+                    if (&oldest->second == lastTile_) {
+                        lastTile_ = nullptr;
+                        lastLeft_ = std::numeric_limits<uint32_t>::max();
+                        lastTop_ = std::numeric_limits<uint32_t>::max();
+                    }
+                    tiles_.erase(oldest);
+                }
+                Tile fresh{std::vector<RGB>(tileEdge * tileEdge), 0};
+                const size_t rowBytes = size_t(std::min(tileEdge, width_ - left)) * sizeof(RGB);
+                for (uint32_t row = 0; row < std::min(tileEdge, height_ - top); ++row)
+                    file_.read((uint64_t(top + row) * width_ + left) * sizeof(RGB), fresh.pixels.data() + row * tileEdge, rowBytes);
+                found = tiles_.emplace(key, std::move(fresh)).first;
             }
-            Tile tile{std::vector<RGB>(tileEdge * tileEdge), 0};
-            const size_t rowBytes = size_t(std::min(tileEdge, width_ - left)) * sizeof(RGB);
-            for (uint32_t row = 0; row < std::min(tileEdge, height_ - top); ++row)
-                file_.read((uint64_t(top + row) * width_ + left) * sizeof(RGB), tile.pixels.data() + row * tileEdge, rowBytes);
-            found = tiles_.emplace(key, std::move(tile)).first;
+            lastLeft_ = left;
+            lastTop_ = top;
+            lastTile_ = tile = &found->second;
         }
-        found->second.use = ++clock_;
-        return found->second.pixels[(uint32_t(y) - top) * tileEdge + uint32_t(x) - left];
+        tile->use = ++clock_;
+        return tile->pixels[(uint32_t(y) - top) * tileEdge + uint32_t(x) - left];
     }
 };
 
 class RenderedRows {
     TileReader source_;
+    bool hasGeometry_ = false;
+    bool integerGeometry_ = false;
+    int srcWidth_ = 0, srcHeight_ = 0, rotatedWidth_ = 0, rotatedHeight_ = 0, cropLeft_ = 0, cropTop_ = 0;
+    GeometryOptions geometryOptions_;
     GeometryPixelSampler geometry_;
+    GeometryPixelReader read_;
     std::pair<int, int> nativeSize_;
     uint32_t width_, height_, first_ = std::numeric_limits<uint32_t>::max();
     std::vector<RGB> rows_;
@@ -60,18 +80,36 @@ class RenderedRows {
     std::optional<HDRDetailPlan> detail_;
     double peak_ = 0;
 
-    GeometryPixelReader transformedReader() {
-        const GeometryPixelReader read = [this](int x, int y) { return source_.read(x, y); };
-        return [this, read](int x, int y) { return geometry_(x, y, read); };
+    RGB readIntegerGeometry(int x, int y) {
+        int px = cropLeft_ + x;
+        int py = cropTop_ + y;
+        if (geometryOptions_.flip_horizontal) px = rotatedWidth_ - 1 - px;
+        if (geometryOptions_.flip_vertical) py = rotatedHeight_ - 1 - py;
+        switch (geometryOptions_.quarter_turns) {
+            case 1: return source_.read(py, srcHeight_ - 1 - px);
+            case 2: return source_.read(srcWidth_ - 1 - px, srcHeight_ - 1 - py);
+            case 3: return source_.read(srcWidth_ - 1 - py, px);
+            default: return source_.read(px, py);
+        }
     }
 
-    template<class Write> void sampleBand(uint32_t first, uint32_t end, const Write& write) {
-        const auto transformed = transformedReader();
+    template<class Reader, class Write>
+    void sampleBandWithReader(uint32_t first, uint32_t end, const Reader& reader, const Write& write) {
         // 输出按小块访问，90° 旋转时不让每行反复淘汰整列源块。
         for (uint32_t left = 0; left < width_; left += tileEdge) for (uint32_t row = first; row < end; ++row) {
             checkProcessingCancellation();
             for (uint32_t x = left; x < std::min(left + tileEdge, width_); ++x)
-                write(x, row, sampleHDRResize(x, row, nativeSize_.first, nativeSize_.second, width_, height_, transformed));
+                write(x, row, sampleResample(x, row, nativeSize_.first, nativeSize_.second, width_, height_, reader));
+        }
+    }
+
+    template<class Write> void sampleBand(uint32_t first, uint32_t end, const Write& write) {
+        if (!hasGeometry_) {
+            sampleBandWithReader(first, end, [this](int sx, int sy) { return source_.read(sx, sy); }, write);
+        } else if (integerGeometry_) {
+            sampleBandWithReader(first, end, [this](int sx, int sy) { return readIntegerGeometry(sx, sy); }, write);
+        } else {
+            sampleBandWithReader(first, end, [this](int sx, int sy) { return geometry_(sx, sy, read_); }, write);
         }
     }
 
@@ -86,16 +124,38 @@ class RenderedRows {
 public:
     RenderedRows(const fs::path& path, const HDRRowSource& source, const HDRRenderOptions& options,
         uint32_t width, uint32_t height, float* headroom) : source_(path, source.width, source.height),
-        geometry_(makeGeometrySampler(source.width, source.height, options.geometry)),
+        hasGeometry_(options.geometry.active()),
+        integerGeometry_(hasGeometry_ && options.geometry.straighten_degrees == 0 &&
+            options.geometry.perspective_horizontal == 0 && options.geometry.perspective_vertical == 0),
+        srcWidth_(int(source.width)), srcHeight_(int(source.height)),
+        rotatedWidth_(options.geometry.quarter_turns % 2 ? srcHeight_ : srcWidth_),
+        rotatedHeight_(options.geometry.quarter_turns % 2 ? srcWidth_ : srcHeight_),
+        cropLeft_(integerGeometry_ ? static_cast<int>(std::floor(double(options.geometry.crop_x) * rotatedWidth_)) : 0),
+        cropTop_(integerGeometry_ ? static_cast<int>(std::floor(double(options.geometry.crop_y) * rotatedHeight_)) : 0),
+        geometryOptions_(options.geometry),
+        geometry_(hasGeometry_ && !integerGeometry_ ? makeGeometrySampler(source.width, source.height, options.geometry) : GeometryPixelSampler{}),
+        read_(hasGeometry_ && !integerGeometry_ ? GeometryPixelReader([this](int x, int y) { return source_.read(x, y); }) : GeometryPixelReader{}),
         nativeSize_(geometryOutputSize(source.width, source.height, options.geometry)),
         width_(width), height_(height), rows_(size_t(width) * std::min(tileEdge, height)), headroom_(headroom) {
         if (headroom_ && options.rendition.peakLimitEV > 0) peak_ = std::exp2(double(options.rendition.peakLimitEV));
         if (options.hasPhotoEffects()) effects_.emplace(options.effects, width, height);
         if (options.hasDetail()) {
-            const auto transformed = transformedReader();
-            detail_ = planHDRDetail(width, height, options.detail, peak_, [&](int x, int y) {
-                return sampleHDRResize(x, y, nativeSize_.first, nativeSize_.second, width_, height_, transformed);
-            });
+            if (!hasGeometry_) {
+                detail_ = planHDRDetail(width, height, options.detail, peak_, [&](int x, int y) {
+                    return sampleResample(x, y, nativeSize_.first, nativeSize_.second, width_, height_,
+                        [this](int sx, int sy) { return source_.read(sx, sy); });
+                });
+            } else if (integerGeometry_) {
+                detail_ = planHDRDetail(width, height, options.detail, peak_, [&](int x, int y) {
+                    return sampleResample(x, y, nativeSize_.first, nativeSize_.second, width_, height_,
+                        [this](int sx, int sy) { return readIntegerGeometry(sx, sy); });
+                });
+            } else {
+                detail_ = planHDRDetail(width, height, options.detail, peak_, [&](int x, int y) {
+                    return sampleResample(x, y, nativeSize_.first, nativeSize_.second, width_, height_,
+                        [this](int sx, int sy) { return geometry_(sx, sy, read_); });
+                });
+            }
         }
     }
 
