@@ -60,6 +60,8 @@ class BuildEnvironmentTests(unittest.TestCase):
             tools = root / "tools"
             scripts.mkdir()
             tools.mkdir()
+            (root / "scripts/ci").mkdir(parents=True)
+            shutil.copyfile(ROOT / "scripts/ci/apple-sdk-env.sh", root / "scripts/ci/apple-sdk-env.sh")
             for name in ("build-env.sh", "build-lens-dependency.sh"):
                 shutil.copyfile(ROOT / "RawLabMac" / name, scripts / name)
             prefix, lens = root / "dependencies", root / "lens"
@@ -433,6 +435,8 @@ class BuildEnvironmentTests(unittest.TestCase):
             root = Path(directory)
             scripts = root / "RawLabMac"
             scripts.mkdir(parents=True)
+            (root / "scripts/ci").mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/ci/apple-sdk-env.sh", root / "scripts/ci/apple-sdk-env.sh")
             for name in ("build.sh", "build-env.sh", "release-config.sh", "Info.plist"):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
             (scripts / "Sources").mkdir()

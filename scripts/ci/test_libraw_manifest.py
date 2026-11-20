@@ -321,6 +321,7 @@ class LibRawSingleManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for rel in (
+                "scripts/ci/apple-sdk-env.sh",
                 "RawLabMac/build-env.sh",
                 "RawLabMac/build-dependencies.sh",
                 "lutools/platform/ios/build-framework.sh",

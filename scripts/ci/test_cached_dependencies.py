@@ -64,6 +64,8 @@ class CachedMacTests(unittest.TestCase):
             root = Path(directory)
             scripts = root / "RawLabMac"
             scripts.mkdir()
+            (root / "scripts/ci").mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/ci/apple-sdk-env.sh", root / "scripts/ci/apple-sdk-env.sh")
             for name in ("build.sh", "build-env.sh", "release-config.sh"):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
             libraw_dir = root / "lutools/cmake/libraw"

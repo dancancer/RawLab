@@ -48,7 +48,7 @@ rawlab_ios_make_temp_dir() {
 }
 
 rawlab_ios_host_init() {
-    source "$ROOT/RawLabMac/build-env.sh"
+    source "$ROOT/scripts/ci/apple-sdk-env.sh"
     if [ -z "${DEVELOPER_DIR:-}" ] && command -v xcode-select >/dev/null 2>&1; then
         DEVELOPER_DIR="$(xcode-select -p 2>/dev/null || true)"
         if [ -n "$DEVELOPER_DIR" ]; then

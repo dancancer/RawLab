@@ -29,7 +29,7 @@ SHARED_SOURCE_DEFS = {"Shared/tests/mac-native-sources.sh", "Shared/tests/hdr-na
 def lint_apple_test_script(rel_path: str, text: str) -> list[str]:
     errors = []
     if HARDCODED_SDK_PATTERN.search(text):
-        errors.append(f"{rel_path}: hardcoded MacOSX26.5 or CLT SDK path outside RawLabMac/build-env.sh")
+        errors.append(f"{rel_path}: hardcoded MacOSX26.5 or CLT SDK path outside scripts/ci/apple-sdk-env.sh")
     if HARDCODED_TARGET_PATTERN.search(text):
         errors.append(f"{rel_path}: hardcoded macOS deployment target (use rawlab_mac_target / helper)")
     if RG_FILES_PATTERN.search(text):
@@ -76,10 +76,10 @@ class AppleShellHygieneTests(unittest.TestCase):
 
     def test_only_build_env_contains_clt_sdk_fallback_literal(self):
         hits = []
-        for directory in (ROOT / "RawLabMac", ROOT / "RawLab", ROOT / "Shared"):
+        for directory in (ROOT / "RawLabMac", ROOT / "RawLab", ROOT / "Shared", ROOT / "scripts/ci"):
             for script in sorted(directory.rglob("*.sh")):
                 rel = str(script.relative_to(ROOT))
-                if rel == "RawLabMac/build-env.sh":
+                if rel == "scripts/ci/apple-sdk-env.sh":
                     continue
                 if HARDCODED_SDK_PATTERN.search(script.read_text(encoding="utf-8")):
                     hits.append(rel)
@@ -92,6 +92,7 @@ class AppleShellHygieneTests(unittest.TestCase):
             self.assertFalse(HARDCODED_SDK_PATTERN.search(text), rel)
             self.assertFalse(HARDCODED_TARGET_PATTERN.search(text), rel)
             self.assertFalse(RG_FILES_PATTERN.search(text), rel)
+        self.assertNotIn("RawLabMac/build-env.sh", IOS_LIB.read_text(encoding="utf-8"))
 
     def test_negative_lint_catches_all_forbidden_patterns(self):
         cases = (
@@ -178,22 +179,24 @@ class AppleShellHygieneTests(unittest.TestCase):
             base_env["PATH"] = f"{tools}:{base_env['PATH']}"
 
             # Explicit SDKROOT short-circuits without invoking xcrun
-            res_sdk = subprocess.run(
-                [
-                    "/bin/bash",
-                    "-euo",
-                    "pipefail",
-                    "-c",
-                    f'ROOT="{ROOT}"; source "{ROOT}/RawLabMac/build-env.sh"; '
-                    'printf "%s\\n%s\\n" "$(rawlab_mac_sdk_path)" "$(rawlab_mac_target)"',
-                ],
-                env={**base_env, "RAWLAB_ARCH": "arm64", "SDKROOT": "/explicit/override.sdk"},
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(res_sdk.returncode, 0, res_sdk.stderr)
-            self.assertEqual(res_sdk.stdout.splitlines(), ["/explicit/override.sdk", "arm64-apple-macosx14.0"])
-            self.assertFalse(xcrun_log.exists(), "rawlab_mac_sdk_path should short-circuit SDKROOT without xcrun")
+            for helper_rel in ("scripts/ci/apple-sdk-env.sh", "RawLabMac/build-env.sh"):
+                with self.subTest(helper=helper_rel, case="sdkroot"):
+                    res_sdk = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-euo",
+                            "pipefail",
+                            "-c",
+                            f'ROOT="{ROOT}"; source "{ROOT}/{helper_rel}"; '
+                            'printf "%s\\n%s\\n" "$(rawlab_mac_sdk_path)" "$(rawlab_mac_target)"',
+                        ],
+                        env={**base_env, "RAWLAB_ARCH": "arm64", "SDKROOT": "/explicit/override.sdk"},
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(res_sdk.returncode, 0, res_sdk.stderr)
+                    self.assertEqual(res_sdk.stdout.splitlines(), ["/explicit/override.sdk", "arm64-apple-macosx14.0"])
+                    self.assertFalse(xcrun_log.exists(), "rawlab_mac_sdk_path should short-circuit SDKROOT without xcrun")
 
             # MACOSX_DEPLOYMENT_TARGET override works
             res_override = subprocess.run(
@@ -202,7 +205,7 @@ class AppleShellHygieneTests(unittest.TestCase):
                     "-euo",
                     "pipefail",
                     "-c",
-                    f'ROOT="{ROOT}"; source "{ROOT}/RawLabMac/build-env.sh"; rawlab_mac_target',
+                    f'ROOT="{ROOT}"; source "{ROOT}/scripts/ci/apple-sdk-env.sh"; rawlab_mac_target',
                 ],
                 env={**base_env, "RAWLAB_ARCH": "x86_64", "MACOSX_DEPLOYMENT_TARGET": "15.0"},
                 capture_output=True,
@@ -223,7 +226,7 @@ class AppleShellHygieneTests(unittest.TestCase):
                     "-euo",
                     "pipefail",
                     "-c",
-                    f'ROOT="{ROOT}"; source "{ROOT}/RawLabMac/build-env.sh"; rawlab_mac_sdk_path',
+                    f'ROOT="{ROOT}"; source "{ROOT}/scripts/ci/apple-sdk-env.sh"; rawlab_mac_sdk_path',
                 ],
                 env=base_env,
                 capture_output=True,
