@@ -50,7 +50,7 @@ public sealed class PreviewCancellationTests
             sameSource: true,
             previewDeferred: false,
             aiRunning: false,
-            renderFailed: false,
+            alreadyFailed: false,
             hasFailure: true));
 
         Assert.Equal(MainPreviewDisposition.Ignore, PreviewFallback.ResolveMainPreviewDisposition(
@@ -60,7 +60,7 @@ public sealed class PreviewCancellationTests
             sameSource: true,
             previewDeferred: false,
             aiRunning: false,
-            renderFailed: false,
+            alreadyFailed: false,
             hasFailure: true));
 
         Assert.Equal(MainPreviewDisposition.DegradeWithError, PreviewFallback.ResolveMainPreviewDisposition(
@@ -70,7 +70,7 @@ public sealed class PreviewCancellationTests
             sameSource: true,
             previewDeferred: false,
             aiRunning: false,
-            renderFailed: false,
+            alreadyFailed: false,
             hasFailure: true));
     }
 }
