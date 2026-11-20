@@ -195,6 +195,9 @@ the same affected selection on ephemeral hosted runners; they retain the ordinar
 
 Ready-for-review fork PRs run contracts and all affected platform models on
 GitHub-hosted runners, including macOS/iOS. Drafts retain the normal deferral.
+External fork PRs restore base-branch caches read-only and never execute
+`actions/cache/save` steps, so unprivileged PR runs do not occupy or evict the
+repository's cache quota.
 There are no self-hosted routes in this workflow. The selector and aggregate
 still require every selected job to succeed; an Apple job skipped merely because
 it came from a fork no longer satisfies the gate.
@@ -346,11 +349,16 @@ credentials are not persisted, and no `pull_request_target` is used. Workflow
 edits in a fork PR require security review
 ([External fork pull requests](#external-fork-pull-requests)).
 The workflow has bounded jobs and cancels obsolete runs for the same PR/ref;
-manual runs use their own concurrency groups so a push neither cancels nor is
-cancelled by a manual verification.
+manual runs include `inputs.platform` and `inputs.checks` in their concurrency
+group so concurrent manual runs for different targets/suites on the same branch
+do not cancel one another or automatic PR/push checks. Pull request `edited`
+events re-evaluate checks only when `base` changes; title/body edits use an
+isolated `-noop` concurrency group and skip job execution without cancelling
+active checks.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
-workflow runs when a same-repository PR closes. With `actions: write` and no
+workflow runs when a same-repository PR closes (external fork PRs never save
+caches, so no `pull_request_target` cleanup is needed). With `actions: write` and no
 checkout, it deletes only the caches stored under that PR's merge ref, which no
 other PR or branch can use.
 

@@ -34,7 +34,7 @@ it contains tracked baseline files only, no `.git` or dirty working-tree copies.
 
 ```sh
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest \
-  -PrawlabTestRaw=/Users/xupeng/mycode/rawtools/lutools/test-assets/DSC00316.ARW \
+  -PrawlabTestRaw=lutools/test-assets/DSC00316.ARW \
   -Pandroid.injected.build.abi=arm64-v8a --console=plain
 ```
 

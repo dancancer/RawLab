@@ -99,7 +99,7 @@ Android 资源名、所在文件及参数类型/符号/精度保持不变。死�
 | `audit.py --base c74e3ea --output <报告目录>` | PASS，键集合、格式、中文反查、取值优先级及覆盖原值均自证。 |
 | `git diff --check` | PASS。 |
 
-Windows 使用 `/Users/xupeng/mycode/rawtools/build/tools/dotnet/dotnet`，在
+Windows 使用 `build/tools/dotnet/dotnet`，在
 `RawLabWindows/tests/localization` 执行。为遵守离线要求，`RestoreConfigFile` 指向仅含
 `<packageSources><clear /></packageSources>` 的临时配置，`NUGET_PACKAGES` 显式指向
 现有本机缓存。第一次私有 CLI home 未指定缓存时出现 NU1100，明确缓存后按原命令

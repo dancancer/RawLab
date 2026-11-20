@@ -32,7 +32,7 @@
 | 复 A-N1 路径 `editor/EditorEditStore.kt` | 实际在 `editor/storage/EditorEditStore.kt` | `git grep 'class EditorEditStore' 0cf4a88a` |
 | 复 C-N7 路径 `tools/abi-layout/…` | 实际在 `lutools/tools/abi-layout/…` | `git ls-tree` |
 | 复 §4.1 W1 路径 `UpdateRelease.cs`（放在 Updates 目录下引用） | 实际在 `RawLabWindows/UpdateRelease.cs` | `git ls-tree` |
-| 主 R13：109 处本机路径 | 现在是 26 个文件、102 处 | `git grep -c /Users/xupeng 0cf4a88a` |
+| 主 R13：109 处本机路径 | 现在是 26 个文件、102 处 | `git grep -c <user-home> 0cf4a88a` |
 
 ### E.4 不确定项
 

@@ -17,9 +17,9 @@ Final offline incremental command, using installed SDK/Gradle dependencies and t
 
 ```sh
 JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home \
-ANDROID_HOME=/Users/xupeng/Library/Android/sdk \
+ANDROID_HOME="$HOME/Library/Android/sdk" \
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug \
--PrawlabTestRaw=/Users/xupeng/mycode/rawtools/build/phase-one-basic-geometry/lutools/examples/DJI_20250602164503_0444_D.DNG \
+-PrawlabTestRaw=build/phase-one-basic-geometry/lutools/examples/DJI_20250602164503_0444_D.DNG \
 --offline --console=plain
 ```
 

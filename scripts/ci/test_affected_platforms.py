@@ -15,8 +15,12 @@ spec.loader.exec_module(selection)
 EVERY = set(selection.PLATFORMS)
 
 
-def pull(base="development", head="feature/x", draft=False, external=False):
+def pull(base="development", head="feature/x", draft=False, external=False, action=None, changes=None):
     event = {"pull_request": {"base": {"ref": base}, "head": {"ref": head}, "draft": draft}}
+    if action is not None:
+        event["action"] = action
+    if changes is not None:
+        event["changes"] = changes
     if external:
         event["pull_request"]["base"]["repo"] = {"full_name": "dancancer/RawLab"}
         event["pull_request"]["head"]["repo"] = {"full_name": "contributor/RawLab"}
@@ -148,6 +152,31 @@ class SelectionTests(unittest.TestCase):
     def test_drafts_defer_platform_checks(self):
         platforms, _, draft, _ = selection.select("pull_request", pull(draft=True), "s", unavailable, unavailable)
         self.assertEqual((platforms, draft), (set(), True))
+
+    def test_edited_pull_request_reselects_only_when_base_changed(self):
+        title_edit = pull(action="edited", changes={"title": {"from": "old"}})
+        self.assertEqual(
+            selection.select("pull_request", title_edit, "s", unavailable, unavailable)[:3],
+            (set(), False, True),
+        )
+
+        to_main = pull(base="main", action="edited", changes={"base": {"ref": {"from": "development"}}})
+        self.assertEqual(
+            selection.select("pull_request", to_main, "s", unavailable, unavailable)[:3],
+            (EVERY, True, False),
+        )
+        self.assertEqual(selection.configuration("pull_request", to_main)["checks"], "full")
+
+        files = {"HEAD^1": ["RawLab/RawLab/App.swift"]}
+        to_dev = pull(base="development", action="edited", changes={"base": {"ref": {"from": "release/0.10.0"}}})
+        self.assertEqual(
+            selection.select("pull_request", to_dev, "s", files.__getitem__, unavailable)[:3],
+            ({"ios"}, False, False),
+        )
+        self.assertEqual(selection.configuration("pull_request", to_dev)["checks"], "models")
+
+        ext_to_main = pull(base="main", external=True, action="edited", changes={"base": {"ref": {"from": "development"}}})
+        self.assertEqual(selection.configuration("pull_request", ext_to_main)["checks"], "models")
 
     def test_release_and_hotfix_pull_requests_run_everything_cold(self):
         for base, head in (("main", "release/0.9.0"), ("main", "hotfix/crash"),

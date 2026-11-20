@@ -2,7 +2,7 @@ name: Hosted CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches: [development, 'release/**', main]
   push:
     branches: [development]
@@ -24,7 +24,8 @@ permissions:
 
 concurrency:
   # Manual verification must not cancel, or be cancelled by, automatic PR/push checks.
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Isolate manual runs by (platform, checks) and keep PR title/body edits from cancelling active checks.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-{0}-{1}', inputs.platform, inputs.checks) || (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && '-noop' || '') }}
   cancel-in-progress: true
 
 env:
@@ -35,6 +36,7 @@ env:
 jobs:
   changes:
     name: Select affected platforms
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -126,7 +128,7 @@ jobs:
           CXX=clang++ ABI_LAYOUT_OUT="$out" bash Shared/fixtures/generate-abi-layout.sh
           diff -u Shared/fixtures/abi-layout-v1.json "$out"
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -287,13 +289,13 @@ jobs:
           bash RawLabMac/tests/dualdn-api-package.sh
       - name: Save successful native dependencies
         # Intel shards share one key; the core shard alone saves it.
-        if: success() && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -525,19 +527,19 @@ jobs:
             Stop-Transcript
           }
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
       - name: Save dependency archives
-        if: success() && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.dep-archives-key.outputs.key }}
           path: ${{ steps.dep-archives-key.outputs.path }}
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -668,13 +670,13 @@ jobs:
             Copy-Item build/windows-v08-results/summary.json build/ci/batch-selection-summary.json
           }
       - name: Save dependency archives
-        if: success() && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.dep-archives-key.outputs.key }}
           path: ${{ steps.dep-archives-key.outputs.path }}
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -772,13 +774,13 @@ jobs:
           fi
           python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -880,18 +882,19 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
+          python scripts/ci/test_ios_bundle_hygiene.py --app build/ci-ios/Build/Products/Debug-iphonesimulator/RawLab.app
           if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
             bash RawLab/tests/look-import.sh
           fi
           python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
       - name: Save externalized asset cache
-        if: success() && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
@@ -908,8 +911,8 @@ jobs:
   result:
     name: ${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}
     needs: [changes, contracts, macos, windows, windows-batch-selection, android, ios]
-    # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
-    if: ${{ !cancelled() && needs.changes.outputs.draft != 'true' }}
+    # Drafts and non-base PR edits defer/skip platform checks, so their result stays skipped instead of reporting a pass.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.draft != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

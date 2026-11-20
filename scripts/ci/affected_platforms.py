@@ -149,6 +149,8 @@ def select(event_name, event, sha, changed_files, last_success):
         return platforms, config["checks"] == "full", False, f"manual {config['platform']}/{config['checks']}; separate from CI result"
     if event_name == "pull_request":
         pull = event["pull_request"]
+        if event.get("action") == "edited" and not (event.get("changes") or {}).get("base"):
+            return set(), False, True, "pull request edit did not change base branch: keeping prior checks"
         if pull.get("draft"):
             return set(), False, True, "draft pull request: platform checks wait for ready for review"
         if is_cold_pull_request(pull):

@@ -2,7 +2,7 @@
 
 ## Source And Scope
 
-- Implementation worktree: `/Users/xupeng/.codex/worktrees/fdd7/rawtools`.
+- Implementation worktree: `<worktree>/fdd7/rawtools`.
 - Branch: `feature/windows-v08-editor`; base `440b9788ff4cfd8a3f5dfa781b16a33997ccd801`.
 - Approved design: `88028a1ca49fd41ccb62bab88fed343e9566a549`, `docs/design/2026-10-14-windows-v08/WINDOWS-DESIGN.md` in the read-only design worktree.
 - Owned paths: `RawLabWindows/**` only. No change to Shared, lutools, another platform, root design or the release checklist. No push, PR, merge, release, version bump or Library synchronization.

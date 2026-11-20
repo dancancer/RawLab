@@ -4,7 +4,7 @@
 
 - Current user approval supersedes the historical pending-approval notices in the design package.
 - Base: `440b9788ff4cfd8a3f5dfa781b16a33997ccd801` (`origin/development`, PR #51).
-- Worktree: `/Users/xupeng/.codex/worktrees/56c3/rawtools`.
+- Worktree: `<worktree>/56c3/rawtools`.
 - Branch: `feature/android-v08-editor`.
 - Approved design source: `17b012361d2a4e470a7bba41cd7cf0c1bc7997a3`, read-only design worktree.
 - Android implementation only. No Shared/C++ ABI changes, release, push, PR, or Library writes.
@@ -68,9 +68,9 @@ started while that long dependency build was running; final-source results below
 ```sh
 cd RawLabAndroid
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
-export ANDROID_HOME=/Users/xupeng/Library/Android/sdk
+export ANDROID_HOME="$HOME/Library/Android/sdk"
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest \
-  -PrawlabTestRaw=/Users/xupeng/mycode/rawtools/lutools/test-assets/DSC00316.ARW --console=plain
+  -PrawlabTestRaw=lutools/test-assets/DSC00316.ARW --console=plain
 bash scripts/check-native.sh
 ```
 

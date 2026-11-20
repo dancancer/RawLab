@@ -37,7 +37,7 @@ RAW history 的 A/B 使用同一份 DNG 字节及不同 identity／参数，不�
 
 ## 真实失败、修复与基础设施归属
 
-首轮 host batch 运行中，既有 DNG publication 测试把默认输出解析为真实 `/Users/xupeng/Documents/Exports`，创建被文件系统沙箱拒绝（NSCocoaErrorDomain 513），该轮不计通过。只改测试：脚本以 `CFFIXED_USER_HOME` 指向临时 profile，Swift 首个文件写入前断言实际输出根目录位于该 profile。隔离版 89 条断言全过；未提权重试真实 Documents，也没有修改产品路径逻辑。
+首轮 host batch 运行中，既有 DNG publication 测试把默认输出解析为真实 `~/Documents/Exports`，创建被文件系统沙箱拒绝（NSCocoaErrorDomain 513），该轮不计通过。只改测试：脚本以 `CFFIXED_USER_HOME` 指向临时 profile，Swift 首个文件写入前断言实际输出根目录位于该 profile。隔离版 89 条断言全过；未提权重试真实 Documents，也没有修改产品路径逻辑。
 
 首轮 import-state 在链接阶段发现新引入的 `Shared/tests/UsageAnalyticsTests.swift` 和 `UsageTransportTests.swift` 各含独立 main。7 个 harness 的 production 源码 glob 现排除 `!**/tests/**`；绝对路径比对确认只排除这两个测试入口，保留 49 个 production Swift 文件。初始 link 失败无模型 runtime，不计通过。相关修复已由协调会话独立复核并提交；产品不改。
 
