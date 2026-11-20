@@ -177,11 +177,27 @@ class VersionedEditPersistenceTest {
         assertEquals(.35f, EditStore(directory).readState(brokenProcessing).settings?.exposure)
     }
 
-    @Test fun wholeStoreStructuralCorruptionRemainsFailClosed() = inStore { directory ->
+    @Test fun futureVersionRemainsFailClosedWhileRootCorruptionQuarantinesAndRecovers() = inStore { directory ->
         val file = File(directory, "edits.properties")
+        for (future in listOf("format.version=999", "format.version=2\nfuture.key=1")) {
+            file.writeText(future)
+            val bytes = file.readBytes()
+            assertThrows("Expected future version rejection for: $future", IllegalArgumentException::class.java) {
+                EditStore(directory)
+            }
+            assertArrayEquals(bytes, file.readBytes())
+            assertTrue(directory.listFiles()!!.none { ".corrupt-" in it.name })
+        }
+
         val corruptVariants = listOf(
-            "format.version=999",
+            "",
             "format.version=",
+            "format.version=0",
+            "format.version=-1",
+            "format.version=1.5",
+            "format.version=bad",
+            "=broken",
+            "{\"version\":1}",
             "corrupt-non-record-line",
             "record.YQ.values=\\uZZZZ",
             "record..values=1.0",
@@ -190,9 +206,70 @@ class VersionedEditPersistenceTest {
         )
         for (corrupt in corruptVariants) {
             file.writeText(corrupt)
-            assertThrows("Expected whole-store rejection for: $corrupt", IllegalArgumentException::class.java) {
-                EditStore(directory)
+            val bytes = file.readBytes()
+            var diagnostics = 0
+            val store = EditStore(directory, { from, to -> com.rawlab.android.io.replaceFileAtomically(from, to) }) { _, _ ->
+                diagnostics += 1
             }
+            val archivedName = store.lastQuarantinedPath
+            assertNotNull("Expected quarantine for: $corrupt", archivedName)
+            assertTrue(archivedName!!.startsWith("edits.properties.corrupt-"))
+            val archived = File(directory, archivedName)
+            assertTrue(archived.isFile)
+            assertArrayEquals(bytes, archived.readBytes())
+            assertFalse("Active file should be moved away: $corrupt", file.exists())
+            assertEquals(1, diagnostics)
+            assertNull(store.readState(PhotoIdentity("a")).settings)
+            assertNull(store.load(PhotoIdentity("a")))
+            assertEquals(1, diagnostics)
+        }
+
+        val recovered = EditStore(directory)
+        val saved = recovered.save(PhotoIdentity("recovered"), EditSettings(exposure = 0.75f))
+        assertEquals(0.75f, saved.settings?.exposure)
+        assertEquals(0.75f, EditStore(directory).readState(PhotoIdentity("recovered")).settings?.exposure)
+    }
+
+    @Test fun concurrentCorruptReadersQuarantineOnceAndClearStaleCache() = inStore { directory ->
+        val identity = PhotoIdentity("warm")
+        val warmStore = EditStore(directory)
+        warmStore.save(identity, EditSettings(exposure = 1.25f))
+        assertEquals(1.25f, warmStore.load(identity)?.exposure)
+
+        val file = File(directory, "edits.properties")
+        val payload = "corrupt-non-record-line".toByteArray()
+        file.writeBytes(payload)
+
+        // Warm instance clears lastReadableRecords and quarantines once
+        assertNull(warmStore.readState(identity).settings)
+        assertNull(warmStore.load(identity))
+        val firstArchive = warmStore.lastQuarantinedPath
+        assertNotNull(firstArchive)
+        assertArrayEquals(payload, File(directory, firstArchive!!).readBytes())
+
+        // Concurrent readers hitting a new corrupt file quarantine exactly once
+        file.writeBytes(payload)
+        val diagnostics = java.util.concurrent.atomic.AtomicInteger(0)
+        val pool = Executors.newFixedThreadPool(8)
+        val ready = CountDownLatch(8)
+        val go = CountDownLatch(1)
+        try {
+            val jobs = (0 until 8).map {
+                pool.submit {
+                    ready.countDown()
+                    check(go.await(10, TimeUnit.SECONDS))
+                    val store = EditStore(directory, { from, to -> com.rawlab.android.io.replaceFileAtomically(from, to) }) { _, _ ->
+                        diagnostics.incrementAndGet()
+                    }
+                    assertNull(store.readState(identity).settings)
+                }
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS))
+            go.countDown()
+            jobs.forEach { it.get(15, TimeUnit.SECONDS) }
+            assertEquals(1, diagnostics.get())
+        } finally {
+            pool.shutdownNow()
         }
     }
 

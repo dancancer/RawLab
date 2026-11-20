@@ -120,6 +120,29 @@ public final class MacEditPersistence: @unchecked Sendable {
     private let directory: URL
     private let writeData: (Data, URL) throws -> Void
     private var file: URL { directory.appendingPathComponent("edits.json") }
+    private let quarantineLock = NSLock()
+    private var _lastQuarantinedURL: URL?
+    private var quarantinedError: Error?
+    internal static var onQuarantine: ((URL, Error) -> Void)?
+
+    public var lastQuarantinedURL: URL? {
+        quarantineLock.lock()
+        defer { quarantineLock.unlock() }
+        return _lastQuarantinedURL
+    }
+
+    public func consumeQuarantinedError() -> Error? {
+        quarantineLock.lock()
+        defer { quarantineLock.unlock() }
+        defer { quarantinedError = nil }
+        return quarantinedError
+    }
+
+    private struct RootCorruptionError: Error {
+        let underlying: Error
+    }
+
+    private struct FutureVersionError: Error {}
 
     private static let statsLock = NSLock()
     private static var _registryDiskReadCount = 0
@@ -159,20 +182,31 @@ public final class MacEditPersistence: @unchecked Sendable {
         _ = try readRegistry()
     }
 
-    private func readRegistry(allowCache: Bool = true) throws -> Registry {
+    private func readRegistry(allowCache: Bool = true, holdingWriteLock: Bool = false) throws -> Registry {
         let resolvedFile = Self.resolvedRegistryFileURL(forDirectory: directory)
         let resolvedPath = resolvedFile.path
         guard FileManager.default.fileExists(atPath: resolvedPath) else {
             Self.registryCache.invalidate(path: resolvedPath)
             return Registry()
         }
-        if allowCache {
-            return try Self.registryCache.load(path: resolvedPath) {
-                try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
-            }
-        }
         do {
+            if allowCache {
+                return try Self.registryCache.load(path: resolvedPath) {
+                    try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
+                }
+            }
             return try parseRegistryFromDisk(fileURL: resolvedFile, resolvedPath: resolvedPath)
+        } catch let corruption as RootCorruptionError {
+            Self.registryCache.invalidate(path: resolvedPath)
+            if file.path != resolvedPath {
+                Self.registryCache.invalidate(path: file.path)
+            }
+            if holdingWriteLock {
+                return try quarantineCorruptStore(at: resolvedFile, resolvedPath: resolvedPath, error: corruption.underlying)
+            }
+            return try withWriteLock {
+                try readRegistry(allowCache: false, holdingWriteLock: true)
+            }
         } catch {
             Self.registryCache.invalidate(path: resolvedPath)
             throw error
@@ -181,24 +215,109 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     private func parseRegistryFromDisk(fileURL: URL, resolvedPath: String) throws -> Registry {
         Self.recordRegistryDiskRead(forFilePath: resolvedPath)
-        let data = try Data(contentsOf: fileURL)
-        guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch where Self.isNoSuchFileError(error) {
+            Self.registryCache.invalidate(path: resolvedPath)
+            return Registry()
+        }
+        do {
+            guard (try JSONSerialization.jsonObject(with: data)) is [String: Any] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let root = try EditStoreJSONCodec.scanJSONObjectSlices(data, error: CocoaError(.fileReadCorruptFile))
+            guard let versionSlice = root["version"] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if let version = EditStoreJSONCodec.parseIntegerVersion(versionSlice), version > 1 {
+                throw FutureVersionError()
+            }
+            guard EditStoreJSONCodec.isVersionOne(versionSlice),
+                  let recordsSlice = root["records"] else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let records = try EditStoreJSONCodec.scanJSONObjectSlices(recordsSlice, allowUTF8BOM: false, error: CocoaError(.fileReadCorruptFile))
+            let migrations: [String: Data]?
+            if let migrationsSlice = root["processingMigrations"],
+               String(data: migrationsSlice, encoding: .utf8) != "null" {
+                migrations = try EditStoreJSONCodec.scanJSONObjectSlices(migrationsSlice, allowUTF8BOM: false, error: CocoaError(.fileReadCorruptFile))
+            } else {
+                migrations = nil
+            }
+            return Registry(records: records, processingMigrations: migrations)
+        } catch is FutureVersionError {
             throw CocoaError(.fileReadCorruptFile)
+        } catch {
+            throw RootCorruptionError(underlying: error)
         }
-        let root = try EditStoreJSONCodec.scanJSONObjectSlices(data, error: CocoaError(.fileReadCorruptFile))
-        guard let versionSlice = root["version"], EditStoreJSONCodec.isVersionOne(versionSlice),
-              let recordsSlice = root["records"] else {
-            throw CocoaError(.fileReadCorruptFile)
+    }
+
+    private func quarantineCorruptStore(at resolvedFile: URL, resolvedPath: String, error: Error, now: Date = Date()) throws -> Registry {
+        let parent = resolvedFile.deletingLastPathComponent()
+        let baseName = "\(resolvedFile.lastPathComponent).corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        let candidate: URL
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let proposed = parent.appendingPathComponent(name)
+            if try Self.itemType(atPath: proposed.path) == nil {
+                try FileManager.default.moveItem(at: resolvedFile, to: proposed)
+                candidate = proposed
+                break
+            }
+            suffix += 1
         }
-        let records = try EditStoreJSONCodec.scanJSONObjectSlices(recordsSlice, error: CocoaError(.fileReadCorruptFile))
-        let migrations: [String: Data]?
-        if let migrationsSlice = root["processingMigrations"],
-           String(data: migrationsSlice, encoding: .utf8) != "null" {
-            migrations = try EditStoreJSONCodec.scanJSONObjectSlices(migrationsSlice, error: CocoaError(.fileReadCorruptFile))
-        } else {
-            migrations = nil
+        Self.registryCache.invalidate(path: resolvedPath)
+        if file.path != resolvedPath {
+            Self.registryCache.invalidate(path: file.path)
         }
-        return Registry(records: records, processingMigrations: migrations)
+        quarantineLock.lock()
+        _lastQuarantinedURL = candidate
+        quarantinedError = error
+        quarantineLock.unlock()
+        NSLog("Quarantined corrupt edit store %@ to %@ (%@)", resolvedFile.lastPathComponent, candidate.lastPathComponent, String(describing: error))
+        Self.onQuarantine?(candidate, error)
+        return Registry()
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
+    }
+
+    private static func itemType(atPath path: String) throws -> FileAttributeType? {
+        do {
+            return try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+                if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+                   underlying.domain == NSPOSIXErrorDomain {
+                    if underlying.code == ENOENT { return nil }
+                    throw error
+                }
+                return nil
+            }
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT { return nil }
+            throw error
+        }
+    }
+
+    private static func isNoSuchFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == NSPOSIXErrorDomain {
+                return underlying.code == ENOENT
+            }
+            return true
+        }
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT
     }
 
     private func writeRegistry(_ updated: Registry) throws {
@@ -360,7 +479,7 @@ public final class MacEditPersistence: @unchecked Sendable {
     public func commitProcessingMigration(expected: MacPhotoEditRecord, candidate: MacPhotoEditState?,
                                           quality: ProcessingMigrationQuality) throws -> MacPhotoEditRecord {
         let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false)
+            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
                   let original = expected.state, original.settings.processing.version < 3,
@@ -390,7 +509,7 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     public func rollbackProcessingMigration(expected: MacPhotoEditRecord) throws -> MacPhotoEditRecord {
         let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false)
+            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
                   var stored = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
@@ -426,7 +545,7 @@ public final class MacEditPersistence: @unchecked Sendable {
         var changedPaths: [String: MacPhotoEditRecord] = [:]
         try withWriteLock {
             try Self.validateState(state)
-            var updated = try readRegistry(allowCache: false)
+            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
             for url in urls {
                 let identity = try OriginalFileIdentity(url)
                 if try snapshot(identity: identity, registry: updated).state == state { continue }
@@ -443,7 +562,7 @@ public final class MacEditPersistence: @unchecked Sendable {
         var stateChanged = false
         let result = try withWriteLock {
             if let state { try Self.validateState(state) }
-            var updated = try readRegistry(allowCache: false)
+            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
             try identity.requireCurrent()
             let current = try snapshot(identity: identity, registry: updated)
             stateChanged = current.state != state
@@ -467,7 +586,7 @@ public final class MacEditPersistence: @unchecked Sendable {
     @discardableResult public func resetToUnmodified(_ url: URL) throws -> MacPhotoEditRecord {
         var clearedPath: String?
         let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false)
+            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
             let identity = try OriginalFileIdentity(url)
             let hadRecord = updated.records.removeValue(forKey: identity.path) != nil
             let hadMigration = updated.processingMigrations?.removeValue(forKey: identity.path) != nil

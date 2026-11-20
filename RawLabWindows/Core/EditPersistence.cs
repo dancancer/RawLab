@@ -135,6 +135,16 @@ public static class AtomicJson
         return JsonSerializer.Deserialize<T>(stream) ?? throw new InvalidDataException(Loc.Text("本地记录损坏。"));
     });
 
+    internal static byte[] ReadBytes(string path) => Retry(() => {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
+    });
+
+    internal static void Move(string source, string destination) =>
+        Retry(() => { File.Move(source, destination); return true; });
+
     private static TResult Retry<TResult>(Func<TResult> action)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -168,6 +178,7 @@ public sealed class UnusableEditRecordException(string message, Exception? inner
 
 public sealed class EditStore
 {
+    private sealed class UnsupportedFutureRegistryException(string message) : Exception(message);
     private sealed record Registry(int Version, Dictionary<string, JsonElement> Records,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         Dictionary<string, JsonElement>? MigrationReceipts = null);
@@ -184,6 +195,7 @@ public sealed class EditStore
     private CachedRegistry? cachedRegistry;
     private long diskReadCount;
     internal long DiskReadCount => Interlocked.Read(ref diskReadCount);
+    public string? LastQuarantinedPath { get; private set; }
     public event Action<PhotoEditState>? Changed;
     private void NotifyChanged(PhotoEditState state)
     {
@@ -269,7 +281,7 @@ public sealed class EditStore
         }
     }
 
-    private Registry ReadRegistry(bool forceDisk = false)
+    private Registry ReadRegistry(bool forceDisk = false, bool holdingLock = false)
     {
         var currentStamp = captureStamp(canonicalPath);
         if (currentStamp.StatReliable && !currentStamp.Exists)
@@ -298,6 +310,23 @@ public sealed class EditStore
         {
             parsed = ReadRegistryFromDisk();
         }
+        catch (UnsupportedFutureRegistryException ex)
+        {
+            InvalidateCache();
+            throw new InvalidDataException(ex.Message, ex);
+        }
+        catch (Exception error) when (error is JsonException or InvalidDataException)
+        {
+            InvalidateCache();
+            if (!holdingLock)
+            {
+                using (AcquireLock())
+                {
+                    return ReadRegistry(forceDisk: true, holdingLock: true);
+                }
+            }
+            return QuarantineCorruptRegistry(error);
+        }
         catch
         {
             InvalidateCache();
@@ -325,16 +354,67 @@ public sealed class EditStore
         return parsed;
     }
 
+    private Registry QuarantineCorruptRegistry(Exception error)
+    {
+        if (!File.Exists(path))
+        {
+            InvalidateCache();
+            BumpPathEpoch(canonicalPath);
+            return new(1, new(StringComparer.OrdinalIgnoreCase));
+        }
+        var directory = Path.GetDirectoryName(path)!;
+        var now = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        var baseName = $"edits.json.corrupt-{now}";
+        var candidate = Path.Combine(directory, baseName);
+        var suffix = 1;
+        while (File.Exists(candidate) || Directory.Exists(candidate))
+        {
+            candidate = Path.Combine(directory, $"{baseName}-{suffix++}");
+        }
+        AtomicJson.Move(path, candidate);
+        InvalidateCache();
+        BumpPathEpoch(canonicalPath);
+        LastQuarantinedPath = candidate;
+        System.Diagnostics.Trace.TraceWarning(
+            "RawLab edit store quarantined corrupt registry {0} ({1}: {2})", candidate, error.GetType().Name, error.Message);
+        return new(1, new(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static bool HasDuplicateRootKeys(ReadOnlySpan<byte> utf8)
+    {
+        var reader = new Utf8JsonReader(utf8);
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject) return false;
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject) break;
+            if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                var name = reader.GetString() ?? "";
+                if (!keys.Add(name)) return true;
+                reader.Skip();
+            }
+        }
+        return false;
+    }
+
     private Registry ReadRegistryFromDisk()
     {
         if (!File.Exists(path)) return new(1,new(StringComparer.OrdinalIgnoreCase));
-        var root = AtomicJson.Read<JsonElement>(path);
-        if (root.ValueKind != JsonValueKind.Object ||
-            !root.TryGetProperty("Version", out var versionElement) ||
-            versionElement.ValueKind != JsonValueKind.Number ||
-            !versionElement.TryGetInt32(out var version))
+        var bytes = AtomicJson.ReadBytes(path);
+        var jsonMemory = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF
+            ? bytes.AsMemory(3)
+            : bytes.AsMemory();
+        using var document = JsonDocument.Parse(jsonMemory);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || HasDuplicateRootKeys(jsonMemory.Span))
             throw new InvalidDataException(Loc.Text("本地记录损坏。"));
-        if (version != 1) throw new InvalidDataException(Loc.Text("无法读取此版本的调整记录。"));
+        if (!root.TryGetProperty("Version", out var versionElement) ||
+            versionElement.ValueKind != JsonValueKind.Number ||
+            !versionElement.TryGetInt64(out var version))
+            throw new InvalidDataException(Loc.Text("本地记录损坏。"));
+        if (version > 1) throw new UnsupportedFutureRegistryException(Loc.Text("无法读取此版本的调整记录。"));
+        if (version != 1) throw new InvalidDataException(Loc.Text("本地记录损坏。"));
         if (!root.TryGetProperty("Records", out var recordsElement) || recordsElement.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException(Loc.Text("本地记录损坏。"));
         var records = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
@@ -437,7 +517,7 @@ public sealed class EditStore
         if(expectedCurrent!=null && !expectedCurrent.Identity.SameFile(identity))throw new PhotoChangedException();
         PhotoEditState saved;
         using (AcquireLock()) {
-            var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
+            var registry=ReadRegistry(forceDisk:true, holdingLock:true);identity.RequireCurrent();
             var current=ReadRecord(registry,identity);
             if(expectedCurrent!=null && !current.SameAs(expectedCurrent))throw new AdjustmentOperationExpiredException();
             var recordUnchanged=SavedEdit.Same(current.Edit,edit);
@@ -465,7 +545,7 @@ public sealed class EditStore
         PhotoEditState cleared;
         var changed = false;
         using (AcquireLock()) {
-            var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
+            var registry=ReadRegistry(forceDisk:true, holdingLock:true);identity.RequireCurrent();
             var records=new Dictionary<string,JsonElement>(registry.Records,StringComparer.OrdinalIgnoreCase);
             var receipts=registry.MigrationReceipts == null
                 ? null : new Dictionary<string,JsonElement>(registry.MigrationReceipts,StringComparer.OrdinalIgnoreCase);
@@ -505,7 +585,7 @@ public sealed class EditStore
         _ = expectedBefore.Settings.Restore(); _ = candidate.Settings.Restore();
         PhotoEditState saved;
         using (AcquireLock()) {
-        var registry=ReadRegistry(forceDisk:true);expectedIdentity.RequireCurrent();
+        var registry=ReadRegistry(forceDisk:true, holdingLock:true);expectedIdentity.RequireCurrent();
         var current=ReadRecord(registry,expectedIdentity);
         if (!current.SameAs(new PhotoEditState(expectedIdentity,expectedBefore)))
             throw new AdjustmentOperationExpiredException();
@@ -531,7 +611,7 @@ public sealed class EditStore
         if (!identity.SameFile(expectedCurrent.Identity)) throw new PhotoChangedException();
         PhotoEditState saved;
         using (AcquireLock()) {
-        var registry=ReadRegistry(forceDisk:true);identity.RequireCurrent();
+        var registry=ReadRegistry(forceDisk:true, holdingLock:true);identity.RequireCurrent();
         var storedReceipts=registry.MigrationReceipts;
         if (storedReceipts == null || !storedReceipts.TryGetValue(identity.Path,out var rawReceipt) ||
             TryParseReceipt(rawReceipt,identity) is not { Status: ProcessingMigrationReceipt.Migrated } receipt)
@@ -570,7 +650,7 @@ public sealed class EditStore
         _ = settings.Restore();
         var changed = new List<PhotoEditState>();
         using (AcquireLock()) {
-            var updated = ReadRegistry(forceDisk:true);
+            var updated = ReadRegistry(forceDisk:true, holdingLock:true);
             var records = new Dictionary<string,JsonElement>(updated.Records,StringComparer.OrdinalIgnoreCase);
             foreach (var input in inputs) {
                 var identity = OriginalIdentity.Read(input);

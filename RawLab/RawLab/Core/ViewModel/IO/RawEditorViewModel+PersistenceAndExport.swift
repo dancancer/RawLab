@@ -62,6 +62,9 @@ extension RawEditorViewModel {
         do {
             let store = try requireEditPersistence()
             expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            if let quarantined = store.consumeQuarantinedError() {
+                ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+            }
             guard expected.identity == source.identity else { return false }
             loadedEditRecord = expected
             defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil
@@ -102,6 +105,9 @@ extension RawEditorViewModel {
     private func requireEditPersistence() throws -> EditPersistence {
         if editPersistence == nil { editPersistence = try openEditPersistence() }
         guard let store = editPersistence else { throw EditPersistenceError.corruptStore }
+        if let quarantined = store.consumeQuarantinedError() {
+            ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+        }
         if adjustmentSession == nil { adjustmentSession = IOSAdjustmentTransferSession(store: store) }
         return store
     }
@@ -110,6 +116,9 @@ extension RawEditorViewModel {
         guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
         let store = try requireEditPersistence()
         let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        if let quarantined = store.consumeQuarantinedError() {
+            ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+        }
         guard record.identity == source.identity else { throw AdjustmentCommitError.photoChanged }
         let restored = try record.state?.settings ?? sourceDefaultSettings
         cancelQueuedSettingsSave()

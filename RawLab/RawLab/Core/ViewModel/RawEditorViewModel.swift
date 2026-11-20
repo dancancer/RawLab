@@ -258,8 +258,11 @@ final class RawEditorViewModel: ObservableObject {
         self.exportQueue = exportQueue
         self.importQueue = importQueue
         do {
-            let store = try editPersistence ?? EditPersistence.appStore()
+            let store = try editPersistence ?? openEditPersistence()
             self.editPersistence = store
+            if let quarantined = store.consumeQuarantinedError() {
+                ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+            }
             adjustmentSession = IOSAdjustmentTransferSession(store: store)
             recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
             recentLooks = RecentLooks.load(from: recentLooksURL!)

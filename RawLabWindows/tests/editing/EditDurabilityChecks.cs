@@ -246,18 +246,88 @@ internal static class EditDurabilityChecks
                     "ResetToUnmodified leaves all other photos' records and receipts verbatim unchanged");
             }
 
-            // 整表损坏（JSON 损坏或顶层 Version != 1）仍整库拒绝。
+            // 未来版本保持整库拒绝；根级损坏隔离到 .corrupt-* 并自愈为空库。
             var brokenEnvelope = Path.Combine(root, "broken-envelope");
             Directory.CreateDirectory(brokenEnvelope);
-            File.WriteAllText(Path.Combine(brokenEnvelope, "edits.json"), "{\"Version\":2,\"Records\":{}}");
+            var envelopePath = Path.Combine(brokenEnvelope, "edits.json");
+            var futureBytes = System.Text.Encoding.UTF8.GetBytes("{\"Version\":2,\"Records\":{}}");
+            File.WriteAllBytes(envelopePath, futureBytes);
             try { _ = new EditStore(brokenEnvelope); throw new Exception("Unsupported registry version was accepted"); }
             catch (InvalidDataException) { }
+            Check(File.ReadAllBytes(envelopePath).SequenceEqual(futureBytes),
+                "Unsupported future version bytes remain untouched");
 
-            File.WriteAllText(Path.Combine(brokenEnvelope, "edits.json"), "{corrupt-json");
-            try { _ = new EditStore(brokenEnvelope); throw new Exception("Malformed JSON envelope was accepted"); }
-            catch (JsonException) { }
+            var warningCount = 0;
+            using var listener = new QuarantineTraceListener(() => Interlocked.Increment(ref warningCount));
+            System.Diagnostics.Trace.Listeners.Add(listener);
+            try
+            {
+                var corruptPayloads = new[] {
+                    "{corrupt-json",
+                    "",
+                    "[]",
+                    "{\"Version\":1,\"Version\":1,\"Records\":{}}",
+                    "{\"Version\":0,\"Records\":{}}",
+                    "{\"Version\":1.5,\"Records\":{}}",
+                    "{\"Records\":{}}",
+                    "{\"Version\":1,\"Records\":[]}",
+                    "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":[]}"
+                };
+                foreach (var bad in corruptPayloads)
+                {
+                    var expectedBefore = warningCount + 1;
+                    var badBytes = System.Text.Encoding.UTF8.GetBytes(bad);
+                    File.WriteAllBytes(envelopePath, badBytes);
+                    var healed = new EditStore(brokenEnvelope);
+                    Check(healed.LastQuarantinedPath != null &&
+                          Path.GetFileName(healed.LastQuarantinedPath).StartsWith("edits.json.corrupt-", StringComparison.Ordinal),
+                        "Root corruption quarantines edits.json: " + bad);
+                    Check(File.ReadAllBytes(healed.LastQuarantinedPath!).SequenceEqual(badBytes) && !File.Exists(envelopePath),
+                        "Quarantined archive preserves exact bytes and clears active path: " + bad);
+                    Check(healed.Find(goodPhoto) == null && warningCount == expectedBefore,
+                        "Quarantine emits exactly 1 diagnostic and resets store to empty: " + bad);
+                }
+
+                var recoveredStore = new EditStore(brokenEnvelope);
+                var recoveredAdjustments = new Adjustments();
+                recoveredAdjustments.Set(Parameter.Exposure, 0.75);
+                recoveredStore.Save(goodPhoto, recoveredAdjustments.Capture(), null);
+                Check(new EditStore(brokenEnvelope).Find(goodPhoto)?.Settings.Restore()[Parameter.Exposure] == 0.75,
+                    "Recovered EditStore persists subsequent edits cleanly");
+            }
+            finally
+            {
+                System.Diagnostics.Trace.Listeners.Remove(listener);
+            }
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    private sealed class QuarantineTraceListener(Action onWarning) : System.Diagnostics.TraceListener
+    {
+        public override void TraceEvent(System.Diagnostics.TraceEventCache? eventCache, string source,
+            System.Diagnostics.TraceEventType eventType, int id, string? message)
+        {
+            if (eventType == System.Diagnostics.TraceEventType.Warning &&
+                message != null && message.Contains("quarantined corrupt registry", StringComparison.Ordinal))
+            {
+                onWarning();
+            }
+        }
+
+        public override void TraceEvent(System.Diagnostics.TraceEventCache? eventCache, string source,
+            System.Diagnostics.TraceEventType eventType, int id, string? format, params object?[]? args)
+        {
+            var rendered = format != null && args != null ? string.Format(format, args) : format;
+            if (eventType == System.Diagnostics.TraceEventType.Warning &&
+                rendered != null && rendered.Contains("quarantined corrupt registry", StringComparison.Ordinal))
+            {
+                onWarning();
+            }
+        }
+
+        public override void Write(string? message) { }
+        public override void WriteLine(string? message) { }
     }
 
     private static void MalformedSubSettingsAndEmptyArraysIsolateEntriesAndPreserveTableValidation()
@@ -379,28 +449,65 @@ internal static class EditDurabilityChecks
                     "Healthy sibling receipt remains readable alongside malformed receipt");
             }
 
-            // 整表结构损坏（含大小写不同的重复键）仍由 ReadRegistry 整库拒绝，绝不被单条 catch 吸收。
+            // 未来版本保持整库拒绝（不隔离、不改字节）；根级结构损坏（含大小写不同的重复键与畸形根 JSON）由 ReadRegistry 隔离并自愈为空库，绝不被单条 catch 吸收。
             var brokenTableDir = Path.Combine(root, "broken-table");
             Directory.CreateDirectory(brokenTableDir);
-            foreach (var badEnvelope in new[] {
-                "{\"Version\":2,\"Records\":{}}",
-                "{\"Version\":1,\"Records\":[]}",
-                "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":[]}",
-                "{\"Version\":1,\"Records\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}",
-                "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}"
-            })
+            var brokenTablePath = Path.Combine(brokenTableDir, "edits.json");
+            var futureTableBytes = System.Text.Encoding.UTF8.GetBytes("{\"Version\":2,\"Records\":{}}");
+            File.WriteAllBytes(brokenTablePath, futureTableBytes);
+            try
             {
-                File.WriteAllText(Path.Combine(brokenTableDir, "edits.json"), badEnvelope);
-                try { _ = new EditStore(brokenTableDir); throw new Exception("Broken table structure was accepted: " + badEnvelope); }
-                catch (UnusableEditRecordException)
-                {
-                    throw new Exception("Whole-table structural failure was misclassified as per-entry UnusableEditRecordException: " + badEnvelope);
-                }
-                catch (InvalidDataException) { }
+                _ = new EditStore(brokenTableDir);
+                throw new Exception("Unsupported registry version was accepted");
             }
-            File.WriteAllText(Path.Combine(brokenTableDir, "edits.json"), "{corrupt-root-json");
-            try { _ = new EditStore(brokenTableDir); throw new Exception("Malformed root JSON was accepted"); }
-            catch (JsonException) { }
+            catch (UnusableEditRecordException)
+            {
+                throw new Exception("Whole-table structural failure was misclassified as per-entry UnusableEditRecordException");
+            }
+            catch (InvalidDataException) { }
+            Check(File.ReadAllBytes(brokenTablePath).SequenceEqual(futureTableBytes) &&
+                  Directory.GetFiles(brokenTableDir, "edits.json.corrupt-*").Length == 0,
+                "Unsupported future version table remains fail-closed without quarantine or byte mutation");
+
+            var tableWarningCount = 0;
+            using var tableListener = new QuarantineTraceListener(() => Interlocked.Increment(ref tableWarningCount));
+            System.Diagnostics.Trace.Listeners.Add(tableListener);
+            try
+            {
+                foreach (var badEnvelope in new[] {
+                    "{\"Version\":1,\"Records\":[]}",
+                    "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":[]}",
+                    "{\"Version\":1,\"Records\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}",
+                    "{\"Version\":1,\"Records\":{},\"MigrationReceipts\":{\"C:\\\\dup\\\\photo.ARW\":{},\"c:\\\\dup\\\\photo.arw\":{}}}",
+                    "{corrupt-root-json"
+                })
+                {
+                    var expectedWarnings = tableWarningCount + 1;
+                    var badBytes = System.Text.Encoding.UTF8.GetBytes(badEnvelope);
+                    File.WriteAllBytes(brokenTablePath, badBytes);
+                    var healed = new EditStore(brokenTableDir);
+                    Check(healed.LastQuarantinedPath != null &&
+                          Path.GetFileName(healed.LastQuarantinedPath).StartsWith("edits.json.corrupt-", StringComparison.Ordinal),
+                        "Root table/JSON corruption quarantines edits.json: " + badEnvelope);
+                    Check(File.ReadAllBytes(healed.LastQuarantinedPath!).SequenceEqual(badBytes) && !File.Exists(brokenTablePath),
+                        "Quarantined root table/JSON archive preserves exact bytes and clears active path: " + badEnvelope);
+                    Check(healed.Find(healthyPhoto) == null && tableWarningCount == expectedWarnings,
+                        "Root table/JSON quarantine emits 1 diagnostic and resets store to empty: " + badEnvelope);
+                }
+
+                var recoveredTableStore = new EditStore(brokenTableDir);
+                var recoveredTableAdjustments = new Adjustments();
+                recoveredTableAdjustments.Set(Parameter.Exposure, 0.5);
+                recoveredTableStore.Save(healthyPhoto, recoveredTableAdjustments.Capture(), null);
+                var reopenedClean = new EditStore(brokenTableDir);
+                Check(reopenedClean.LastQuarantinedPath == null &&
+                      reopenedClean.Find(healthyPhoto)?.Settings.Restore()[Parameter.Exposure] == 0.5,
+                    "Recovered EditStore after root table/JSON quarantine persists subsequent edits cleanly");
+            }
+            finally
+            {
+                System.Diagnostics.Trace.Listeners.Remove(tableListener);
+            }
         }
         finally { Directory.Delete(root, true); }
     }

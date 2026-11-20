@@ -42,14 +42,9 @@ class EditRecordFixtureTest {
     // -----------------------------------------------------------------------
     // Divergence ledger (populated ONLY from observed red anchors)
     // -----------------------------------------------------------------------
-    private val maxKnownEditRecordDivergences = 9
+    private val maxKnownEditRecordDivergences = 8
 
     private val knownEditRecordDivergences: Map<String, EditRecordDivergence> = mapOf(
-        "x1-store-root-unknown-field" to EditRecordDivergence(
-            ledgerId = "EDIT-DIV-AND-X1-01",
-            reason = "EditStore.read rejects unrecognized top-level .properties keys instead of tolerating Tier 1 outer store extensions (EditPersistence.kt:209).",
-            expectedObservedSubstring = "Unknown edit store property",
-        ),
         "x1-record-root-unknown-field" to EditRecordDivergence(
             ledgerId = "EDIT-DIV-AND-X1-02",
             reason = "EditStore.read rejects unknown per-record property suffixes outside recordSuffixes instead of tolerating Tier 1 record-level extensions.",

@@ -190,19 +190,27 @@ import Foundation
         try check(openB.readState(for: idB).state?.settings.exposure == -1.0 && openB.readState(for: idA).state == nil,
                   "RegistryCache symlink switch dirA -> dirB never leaks dirA cache")
 
-        // External corruption, deletion, and transient directory unavailability fallback.
+        // External future-version / transient unavailability fallback, plus root corruption self-healing.
         let invDir = root.appendingPathComponent("invalidation")
         let invStore = try EditPersistence(directory: invDir)
         try invStore.save(idA, state: PhotoEditState(settings: sA))
         let invFile = invDir.appendingPathComponent("edits.json")
         _ = try invStore.readState(for: idA)
-        try Data("{corrupt".utf8).write(to: invFile)
+        try Data("{\"version\":99,\"records\":{}}".utf8).write(to: invFile)
         try rejects { _ = try invStore.readState(for: idA) }
-        try check(invStore.state(for: idA)?.settings.exposure == 1.0, "Transient/corrupt fallback preserves lastReadableStore for legacy state(for:)")
+        try check(invStore.state(for: idA)?.settings.exposure == 1.0, "Transient/future-version fallback preserves lastReadableStore for legacy state(for:)")
         try rejects { _ = try EditPersistence(directory: invDir) }
         try FileManager.default.removeItem(at: invFile)
         let emptyAfterDelete = try EditPersistence(directory: invDir)
         try check(emptyAfterDelete.readState(for: idA).state == nil, "External edits.json deletion evicts cached snapshot")
+
+        try invStore.save(idA, state: PhotoEditState(settings: sA))
+        _ = try invStore.readState(for: idA)
+        try Data("{corrupt".utf8).write(to: invFile)
+        try check(invStore.readState(for: idA).state == nil && invStore.state(for: idA) == nil,
+                  "Root corruption quarantines edits.json and clears cached lastReadableStore")
+        try check(invStore.lastQuarantinedURL?.lastPathComponent.hasPrefix("edits.json.corrupt-") == true,
+                  "Quarantined corrupt store records archive URL")
 
         // Bounded LRU capacity (32): creating 33 directories must evict the oldest directory cleanly.
         var lruDirs = [URL]()
