@@ -93,6 +93,17 @@ if(BUILD_TESTING OR SONY2FUJI_ENABLE_AI_DENOISE)
             LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
         )
         rawlab_add_test(
+            NAME dualdn_cache_memory
+            SOURCES tests/dualdn_cache_memory_tests.cpp
+            INCLUDES third_party
+            LIBRARIES rawlab_dualdn_core
+            ARGS "${CMAKE_CURRENT_BINARY_DIR}/dualdn-cache-memory-fixture"
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        if(WIN32)
+            target_link_libraries(dualdn_cache_memory_tests PRIVATE psapi)
+        endif()
+        rawlab_add_test(
             NAME dualdn_identity
             SOURCES tests/dualdn_identity_tests.cpp
             LIBRARIES rawlab_dualdn_core
@@ -145,7 +156,11 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
     foreach(core_target sony2fuji_core_objects sony2fuji_core sony2fuji)
         if(TARGET ${core_target})
             target_compile_definitions(${core_target} PRIVATE SONY2FUJI_ENABLE_AI_DENOISE)
-            target_link_libraries(${core_target} rawlab_dualdn_runtime)
+            if(core_target STREQUAL "sony2fuji_core_objects")
+                target_link_libraries(${core_target} PRIVATE rawlab_dualdn_runtime)
+            else()
+                target_link_libraries(${core_target} rawlab_dualdn_runtime)
+            endif()
         endif()
     endforeach()
     if(BUILD_TESTING)
@@ -166,6 +181,25 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
         target_link_libraries(dualdn_native_tests PRIVATE rawlab_dualdn_runtime)
         add_executable(dualdn_directml_tests tests/dualdn_directml_tests.cpp)
         target_link_libraries(dualdn_directml_tests PRIVATE rawlab_dualdn_runtime)
+        rawlab_add_test(
+            NAME ai_session_memory
+            SOURCES tests/ai_session_memory_tests.cpp
+            INCLUDES third_party
+            DEFINES RESTORMER_TEST_LICENSE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/restormer-v1-LICENSE.txt"
+            LIBRARIES rawlab_dualdn_runtime sony2fuji_core
+            ARGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "${CMAKE_CURRENT_BINARY_DIR}/ai-session-memory-fixture"
+            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+        )
+        if(APPLE)
+            rawlab_add_test(
+                NAME coreml_gpu_placement
+                SOURCES tests/coreml_gpu_placement_tests.cpp
+                LIBRARIES rawlab_dualdn_runtime
+                ARGS "${CMAKE_CURRENT_BINARY_DIR}/coreml-gpu-placement-fixture"
+                SKIP_RETURN_CODE 77
+                LABELS ai gpu ci_macos_arm64 ci_macos_x86_64
+            )
+        endif()
         set(RAWLAB_DUALDN_TEST_MODEL "" CACHE PATH "Optional exported DualDn package with replay fixtures")
         set(RAWLAB_DUALDN_TEST_PACKAGE "" CACHE PATH "Optional production-geometry DualDn package")
         if(NOT RAWLAB_DUALDN_TEST_MODEL OR NOT RAWLAB_DUALDN_TEST_PACKAGE)
@@ -228,7 +262,7 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
         endif()
         # Windows 的系统目录先于 PATH，必须在程序旁放置匹配头文件的运行库。
         foreach(ai_binary sony2fuji sony2fuji_cli core_tests ai_device_abi_tests dualdn_probe dualdn_api_tests dualdn_onnx_tests
-                dualdn_native_tests dualdn_directml_tests dualdn_session_tests)
+                dualdn_native_tests dualdn_directml_tests dualdn_session_tests ai_session_memory_tests)
             if(TARGET ${ai_binary})
                 add_custom_command(TARGET ${ai_binary} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RAWLAB_AI_RUNTIME_DLLS} "$<TARGET_FILE_DIR:${ai_binary}>"

@@ -55,6 +55,8 @@ SOURCE_TO_EXECUTABLE_STEM: dict[str, str] = {
 }
 
 APPLE_ONLY_TEST_SOURCES = {
+    "coreml_gpu_placement_tests.cpp",
+    "display_image_decode_count_tests.cpp",
     "display_image_tests.cpp",
     "hdr_image_tests.mm",
     "metal_lut_init_retry_tests.mm",
@@ -72,6 +74,8 @@ LIBRAW_SOURCE_ONLY_TEST_SOURCES = {
     "sony_arw6_bounds_tests.cpp",
 }
 AI_DENOISE_ONLY_TEST_SOURCES = {
+    "ai_session_memory_tests.cpp",
+    "coreml_gpu_placement_tests.cpp",
     "dualdn_directml_tests.cpp",
     "dualdn_native_tests.cpp",
     "dualdn_onnx_tests.cpp",

@@ -1,6 +1,8 @@
 #include "ai/cache_reader.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
+#include "core/sha256.h"
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -159,6 +161,36 @@ int main(int argc, char** argv) {
         cache.store(sceneKey,CacheKind::SceneRGB,2,1,values.data(),values.size());
         cache.store(rgbKey, CacheKind::RGB, 1, 2, values.data(), values.size(), rawPayload);
         require(cache.load(rgbKey, CacheKind::RGB, 1, 2, rawPayload).has_value(), "matching RAW dependency rejected");
+        {
+            std::string verifiedProducer, verifiedDigest;
+            require(cache.verify(rgbKey, CacheKind::RGB, 1, 2, rawPayload, &verifiedProducer, &verifiedDigest) &&
+                    verifiedDigest == sha256Bytes(values.data(), values.size() * sizeof(float)),
+                    "streaming verify rejected valid RGB cache");
+            std::string loadedProducer, loadedRgbDigest;
+            const auto rgbCorrection = cache.loadRGBCorrection(rgbKey, 1, 2, rawPayload, &loadedProducer, &loadedRgbDigest);
+            require(rgbCorrection && rgbCorrection->size() == 2 &&
+                    loadedRgbDigest == verifiedDigest &&
+                    (*rgbCorrection)[0].r == values[0] && (*rgbCorrection)[0].g == values[2] && (*rgbCorrection)[0].b == values[4] &&
+                    (*rgbCorrection)[1].r == values[1] && (*rgbCorrection)[1].g == values[3] && (*rgbCorrection)[1].b == values[5],
+                    "loadRGBCorrection did not match planar RGB cache");
+            require(cache.verify(sceneKey, CacheKind::SceneRGB, 0, 0),
+                    "streaming verify rejected valid SceneRGB cache");
+            // Streaming Sha256 chunk boundary parity
+            const std::array<size_t, 5> splitSizes = {1, 63, 64, 65, 131079};
+            for (size_t sz : splitSizes) {
+                std::vector<uint8_t> bytes(sz);
+                for (size_t i = 0; i < sz; ++i) bytes[i] = static_cast<uint8_t>((i * 41 + 7) & 0xff);
+                hash::Sha256 streamed;
+                size_t pos = 0;
+                while (pos < sz) {
+                    const size_t step = std::min<size_t>(sz - pos, 17);
+                    streamed.update(bytes.data() + pos, step);
+                    pos += step;
+                }
+                require(streamed.finish() == sha256Bytes(bytes.data(), bytes.size()),
+                        "streaming Sha256 diverged from one-shot sha256Bytes");
+            }
+        }
         auto rebuiltRaw = values; rebuiltRaw[0] += .01f;
         const auto rebuiltPayload = sha256Bytes(rebuiltRaw.data(), rebuiltRaw.size() * sizeof(float));
         require(!cache.load(rgbKey, CacheKind::RGB, 1, 2, rebuiltPayload),
