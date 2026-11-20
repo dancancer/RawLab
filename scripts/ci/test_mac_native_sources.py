@@ -1,18 +1,4 @@
-"""Guard for the shared Mac harness source list (Shared/tests/mac-native-sources.sh).
-
-Eleven full-source Mac harnesses compile every RawLabMac/Sources file plus the
-Shared Swift layer with `swiftc`. They glob RawLabMac/Sources and the Shared
-top level, so new files there are picked up automatically, but Shared/Native
-has no glob in these scripts: when ab9be520 added Shared/Native/HDRPresentation
-.swift and Shared/HDRDisplay.swift and 6f940269 added HDRCameraProfileAssetStore
-to Shared/Native/HDRImage.swift, every harness that hardcoded its list went red
-at once (Engine.swift, EditorView.swift and MacEditedPhotoPreviews.swift now
-reference those types). The harnesses now source one shared list instead; this
-test pins that mechanism so the drift costs one line, not eleven, and a final
-enumeration over RawLabMac/tests/*.sh keeps any new full-source harness from
-re-introducing the broken shape (ai-denoise.sh was the eleventh that the
-original ten-name whitelist missed).
-"""
+"""Guard for the shared Mac harness source list (Shared/tests/mac-native-sources.sh)."""
 from pathlib import Path
 import os
 import subprocess
@@ -20,23 +6,26 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 LIST = ROOT / "Shared/tests/mac-native-sources.sh"
+COMPILE_LIB = ROOT / "RawLabMac/tests/lib/compile.sh"
 
-# The full-source harnesses that were red on the HDR source drift. Every one of
-# them must keep sourcing the shared list and compiling against the HDR header.
-# (test_every_full_source_harness_covers_native_and_hdr_header enumerates the
-# whole directory so a new script outside this list cannot hide the drift.)
+# Every full-source Mac harness (including the 4 harnesses previously bypassing
+# mac-native-sources.sh) must route through RawLabMac/tests/lib/compile.sh.
 HARNESSES = (
+    "ai-batch-native",
+    "ai-denoise",
     "batch-import-presentation",
     "compact-controls-presentation",
     "geometry-render",
     "geometry-viewport",
     "mac-perspective-integration",
     "mac-straighten-preview",
+    "mac-ui-smoke",
+    "mac-viewing-model",
     "photo-effects-presentation",
     "progressive-render",
-    "mac-ui-smoke",
     "update-ui",
-    "ai-denoise",
+    "viewport-preview",
+    "x3f-workflow",
 )
 # The shared native sources the breaking commits added (HDRDisplay moved into RawLabKit).
 DRIFT_SOURCES = (
@@ -69,8 +58,6 @@ class MacHarnessSourceListTests(unittest.TestCase):
     def test_shared_list_resolves_every_shared_swift_source(self):
         self.assertTrue(LIST.is_file(), "Shared harness source list is missing")
         resolved = resolved_shared_sources()
-        # Shared/tests holds harness entry points that each script passes
-        # explicitly; the shared list covers the product layer only.
         on_disk = sorted(list((ROOT / "Shared").glob("*.swift"))
                          + list((ROOT / "Shared/Native").glob("*.swift")))
         self.assertEqual(resolved, on_disk,
@@ -83,18 +70,27 @@ class MacHarnessSourceListTests(unittest.TestCase):
             self.assertIn(name, resolved)
 
     def test_full_source_harnesses_use_the_shared_list_and_hdr_header(self):
+        lib_text = COMPILE_LIB.read_text(encoding="utf-8")
+        self.assertIn('source "$ROOT/Shared/tests/mac-native-sources.sh"', lib_text)
+        self.assertIn('"${MAC_SHARED_SWIFT_SOURCES[@]}"', lib_text)
+        self.assertIn('"$MAC_NATIVE_BRIDGING_HEADER"', lib_text)
+        self.assertNotIn('"$ROOT"/Shared/*.swift', lib_text)
+
         for name in HARNESSES:
             with self.subTest(harness=name):
-                text = (ROOT / "RawLabMac/tests" / (name + ".sh")).read_text()
-                self.assertIn('source "$ROOT/Shared/tests/mac-native-sources.sh"', text)
-                self.assertIn('"${MAC_SHARED_SWIFT_SOURCES[@]}"', text)
-                self.assertIn('"$MAC_NATIVE_BRIDGING_HEADER"', text)
+                text = (ROOT / "RawLabMac/tests" / (name + ".sh")).read_text(encoding="utf-8")
+                self.assertIn('RawLabMac/tests/lib/compile.sh', text)
+                self.assertTrue(
+                    "rawlab_mac_full_app_sources" in text
+                    or "rawlab_mac_compile_native full-app" in text,
+                    f"{name}: must resolve full app sources via RawLabMac/tests/lib/compile.sh",
+                )
                 self.assertNotIn("ffi/sony2fuji_c.h", text,
                                  name + ": Shared/Native needs the HDR header superset")
-                # Passing the top-level glob next to the shared array would
-                # feed swiftc every Shared source twice.
                 self.assertNotIn('"$ROOT"/Shared/*.swift', text,
                                  name + ": raw glob duplicates MAC_SHARED_SWIFT_SOURCES")
+                self.assertNotIn('find "$ROOT/RawLabMac/Sources" -name \'*.swift\'', text,
+                                 name + ": raw find duplicates rawlab_mac_full_app_sources")
 
     def test_bridging_header_resolves_to_the_hdr_superset(self):
         header = resolved_bridging_header()
@@ -107,37 +103,26 @@ class MacHarnessSourceListTests(unittest.TestCase):
             self.assertTrue(path.is_file(), "stale path in shared list: %s" % path)
 
     def test_every_full_source_harness_covers_native_and_hdr_header(self):
-        # Whole-directory enumeration (the interception power, per the review:
-        # the original ten-name whitelist let the eleventh same-root script
-        # ai-denoise.sh slip through). Any harness that globs the full app
-        # sources or the Shared top level compiles the Shared layer and so
-        # must cover Shared/Native too, either by sourcing the shared list or
-        # by an explicit Shared/Native glob (the RawLabMac/build.sh shape),
-        # and must not bridge the flat sony2fuji_c.h that lacks the HDR ABI.
         candidates = []
         for script in sorted((ROOT / "RawLabMac/tests").glob("*.sh")):
-            text = script.read_text()
-            if ('find "$ROOT/RawLabMac/Sources"' in text
-                    or '"$ROOT"/Shared/*.swift' in text):
+            text = script.read_text(encoding="utf-8")
+            self.assertNotIn('find "$ROOT/RawLabMac/Sources" -name \'*.swift\'', text,
+                             f"{script.name}: must use rawlab_mac_full_app_sources instead of raw find")
+            self.assertNotIn('"$ROOT"/Shared/*.swift', text,
+                             f"{script.name}: must not raw-glob Shared/*.swift")
+            self.assertNotIn('"$ROOT"/Shared/Native/*.swift', text,
+                             f"{script.name}: must not raw-glob Shared/Native/*.swift")
+            if "rawlab_mac_full_app_sources" in text or "rawlab_mac_compile_native full-app" in text:
                 candidates.append(script.name)
                 with self.subTest(harness=script.name):
-                    self.assertTrue(
-                        'Shared/tests/mac-native-sources.sh' in text
-                        or 'Shared/Native' in text,
-                        script.name + ": globs the Shared layer but never compiles Shared/Native; "
-                        "source Shared/tests/mac-native-sources.sh")
                     self.assertNotIn("ffi/sony2fuji_c.h", text,
                                      script.name + ": Shared/Native needs the HDR header superset")
-        self.assertIn("ai-denoise.sh", candidates,
-                      "the enumeration predicate must keep covering ai-denoise.sh")
-        self.assertGreaterEqual(len(candidates), 12,
-                                "the enumeration stopped covering the known full-source harnesses")
+        for expected in ("ai-denoise.sh", "ai-batch-native.sh", "mac-viewing-model.sh", "viewport-preview.sh", "x3f-workflow.sh"):
+            self.assertIn(expected, candidates)
+        self.assertGreaterEqual(len(candidates), len(HARNESSES))
 
     def test_subset_harness_shares_the_native_list_and_header(self):
-        # mac-geometry-draft compiles a named Mac subset with its own Shared
-        # list; at least the Shared/Native set and the HDR header must come
-        # from the shared mechanism, not a duplicated hardcoded list.
-        text = (ROOT / "RawLabMac/tests/mac-geometry-draft.sh").read_text()
+        text = (ROOT / "RawLabMac/tests/mac-geometry-draft.sh").read_text(encoding="utf-8")
         self.assertIn('source "$ROOT/Shared/tests/mac-native-sources.sh"', text)
         self.assertIn('"${MAC_NATIVE_SWIFT_SOURCES[@]}"', text)
         self.assertIn('"$MAC_NATIVE_BRIDGING_HEADER"', text)

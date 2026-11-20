@@ -1,12 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-OUT="$(mktemp -d /tmp/rawlab-mac-crop-interaction.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-mac-crop-interaction
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -module-cache-path "$OUT/ModuleCache" \
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/ModuleCache" \
     "$ROOT/RawLabMac/Sources/Geometry/MacCropInteraction.swift" \
     "$ROOT/RawLabMac/tests/MacCropInteractionTests.swift" -o "$OUT/tests"
 "$OUT/tests"

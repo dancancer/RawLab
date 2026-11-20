@@ -1,10 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-localization.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-localization
 mkdir -p "$OUT/Fixture.bundle/Contents/Resources/"{en,de,ja}.lproj
 printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.rawlab.localization-tests</string><key>CFBundleDevelopmentRegion</key><string>en</string></dict></plist>' > "$OUT/Fixture.bundle/Contents/Info.plist"
 printf '%s\n' '"语言" = "Language";' '"仅英文" = "English fallback";' '"导出 %@ 张" = "Export %@ photos";' > "$OUT/Fixture.bundle/Contents/Resources/en.lproj/Localizable.strings"
@@ -22,7 +21,6 @@ for client in macos ios; do
 done
 rawlabkit_flags link "$OUT/swiftpm" macos 0
 test -f "$RAWLABKIT_BIN/libRawLabKit.a" || { echo 'FAIL: shared localization module is missing'; exit 1; }
-swiftc -parse-as-library "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}" \
-    -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-     "$ROOT/RawLabMac/tests/LocalizationTests.swift" -o "$OUT/test"
+rawlab_mac_swiftc -parse-as-library "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
+    "$ROOT/RawLabMac/tests/LocalizationTests.swift" -o "$OUT/test"
 "$OUT/test" "$OUT/Fixture.bundle" "$OUT/macos.bundle" "$OUT/ios.bundle"

@@ -1,21 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-dcp-compiler.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-ARCH="${RAWLAB_ARCH:-$(uname -m)}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-dcp-compiler
 for source in core/dcp_compiler ffi/dcp_compiler_c; do
-    xcrun clang++ -std=c++17 -O2 -isysroot "$SDK" \
-        -target "$ARCH-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+    rawlab_mac_clangxx -std=c++17 -O2 \
         -I "$ROOT/lutools/include" -I "$ROOT/lutools/third_party" \
         -c "$ROOT/lutools/src/$source.cpp" -o "$OUT/$(basename "$source").o"
 done
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}" \
-    -target "$ARCH-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/Shared/DCPCompiler.swift" \
     "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \

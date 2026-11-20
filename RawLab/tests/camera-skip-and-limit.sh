@@ -1,50 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-OUT="$(mktemp -d /tmp/rawlab-camera-skip-limit.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_host_init
+rawlab_ios_make_temp_dir OUT rawlab-camera-skip-limit
 
 ln -s "$ROOT/RawLab/RawLab/Resources/zh-Hans.lproj" "$OUT/zh-Hans.lproj"
 ln -s "$ROOT/RawLab/RawLab/Resources/en.lproj" "$OUT/en.lproj"
 
+rawlab_ios_camera_sources CORE_CAMERA_SOURCES core_only
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -whole-module-optimization -module-cache-path "$OUT/modules" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \
+rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -module-cache-path "$OUT/modules" \
+    "${CORE_CAMERA_SOURCES[@]}" \
     "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift" \
     -o "$OUT/tests"
 
 mkdir -p "$OUT/profile"
 CFFIXED_USER_HOME="$OUT/profile" "$OUT/tests"
 
-if SIM_SDK="$(env -u SDKROOT xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null)" && [[ -n "$SIM_SDK" ]]; then
+if rawlab_ios_sim_init 2>/dev/null; then
+    rawlab_ios_camera_sources FULL_CAMERA_SOURCES full
     rawlabkit_flags typecheck "$OUT/swiftpm" iphonesimulator 0
-    swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -typecheck -swift-version 5 -sdk "$SIM_SDK" -target arm64-apple-ios18.0-simulator \
+    rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -typecheck \
         -module-cache-path "$OUT/sim-modules" \
-        "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
-        "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
-        "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
-        "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \
-        "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraIncrementalImport.swift" \
-        "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraBrowser.swift" \
-        "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraTether.swift" \
-        "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift" \
+        "${FULL_CAMERA_SOURCES[@]}" \
         "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift"
     echo "PASS: iOS Simulator SDK typecheck for Camera Core + UI"
 fi

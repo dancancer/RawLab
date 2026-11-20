@@ -1,30 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass a dedicated simulator UDID}"
-OUT="$(mktemp -d /tmp/rawlab-ios-publication.XXXXXX)"
+rawlab_ios_make_temp_dir OUT rawlab-ios-publication
 BUNDLE_ID=com.rawlab.tests.batch-publication
 HARNESS="$OUT/BatchPublicationTests.app"
-trap 'xcrun simctl uninstall "$DEVICE" "$BUNDLE_ID" >/dev/null 2>&1 || true; rm -rf "$OUT"' EXIT
-mkdir -p "$HARNESS/Frameworks"
-cp "$APP/Info.plist" "$HARNESS/Info.plist"
-/usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $BUNDLE_ID" \
-    -c "Set CFBundleExecutable batch-publication" "$HARNESS/Info.plist"
+cleanup() {
+    xcrun simctl uninstall "$DEVICE" "$BUNDLE_ID" >/dev/null 2>&1 || true
+    rawlab_ios_cleanup_temp_dirs
+}
+trap cleanup EXIT
+rawlab_ios_prepare_sim_app "$HARNESS" "$BUNDLE_ID" batch-publication "$APP"
 RAW_FIXTURE="${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DNG}"
 if [[ -f "$RAW_FIXTURE" ]]; then
     cp "$RAW_FIXTURE" "$HARNESS/batch-raw-fixture.DNG"
 fi
-cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET=arm64-apple-ios18.0-simulator
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
-    -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
-SOURCES=()
-while IFS= read -r source; do SOURCES+=("$source"); done < <(
-    rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**' | sort
-)
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -sdk "$SDK" -target "$TARGET" \
+rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
+rawlab_ios_core_shared_sources SOURCES "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared"
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" \

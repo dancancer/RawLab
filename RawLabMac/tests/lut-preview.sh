@@ -1,19 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 source "$ROOT/Shared/tests/hdr-native-sources.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-OUT="$(mktemp -d /tmp/rawlab-lut-preview.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
+rawlab_mac_native_env
+rawlab_mac_make_temp_dir OUT rawlab-lut-preview
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
+rawlab_mac_native_link_flags NATIVE_LINK
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -O \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-     "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
-        "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "${HDR_SWIFT_SOURCES[@]}" \
-    "$ROOT/Shared/LUTCompatibilityPreview.swift" "$ROOT/RawLabMac/tests/LUTPreviewTests.swift" "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-    -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/lut-preview"
+    "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
+    "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "${HDR_SWIFT_SOURCES[@]}" \
+    "$ROOT/Shared/LUTCompatibilityPreview.swift" "$ROOT/RawLabMac/tests/LUTPreviewTests.swift" "${NATIVE_LINK[@]}" -o "$OUT/lut-preview"
 "$OUT/lut-preview" "$@"

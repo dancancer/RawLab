@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
 DEVICE="${1:?Pass an already booted dedicated simulator UDID (or 'auto')}"
-OUT="${2:-$(mktemp -d "${TMPDIR:-/tmp}/rawlab-camera-import-ft.XXXXXX")}"
-OWN_OUT=0
-if [ $# -lt 2 ]; then
+if [ $# -ge 2 ]; then
+    OUT="$2"
+    OWN_OUT=0
+else
+    rawlab_ios_make_temp_dir OUT rawlab-camera-import-ft
     OWN_OUT=1
 fi
 cleanup() {
@@ -13,7 +15,7 @@ cleanup() {
         xcrun simctl uninstall "$RESOLVED_DEVICE" com.rawlab.tests.camera-import-fault-tolerance >/dev/null 2>&1 || true
     fi
     if [ "$OWN_OUT" = 1 ]; then
-        rm -rf "$OUT"
+        rawlab_ios_cleanup_temp_dirs
     fi
 }
 trap cleanup EXIT
@@ -75,8 +77,7 @@ if [[ "$RESOLVED_DEVICE" == MISSING:* ]]; then
     exit 1
 fi
 
-SDK_VER="$(xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null || echo "18.0")"
-TARGET="${RAWLAB_SIMULATOR_ARCH:-$(uname -m)}-apple-ios17.0-simulator"
+rawlab_ios_sim_init
 mkdir -p "$OUT"
 
 APP="$OUT/CameraImportFaultToleranceHost.app"
@@ -103,8 +104,8 @@ cat > "$APP/Info.plist" << 'PLIST'
 </dict></plist>
 PLIST
 
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -parse-as-library -module-name CameraImportFaultToleranceHost \
-    -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
+rawlab_ios_sim_swiftc -parse-as-library -module-name CameraImportFaultToleranceHost \
+    -module-cache-path "$OUT/module-cache" \
     "$ROOT/RawLab/tests/CameraImportFaultToleranceHarness.swift" \
     -framework SwiftUI -framework UIKit \
     -o "$APP/CameraImportFaultToleranceHost"
@@ -126,30 +127,16 @@ cat > "$BUNDLE/Info.plist" << 'PLIST'
 </dict></plist>
 PLIST
 
+rawlab_ios_camera_sources CAMERA_SOURCES full
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -DRAWLAB_XCTEST -module-name CameraImportFaultToleranceTests \
-    -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -DRAWLAB_XCTEST -module-name CameraImportFaultToleranceTests \
+    -module-cache-path "$OUT/module-cache" \
     -parse-as-library -emit-library \
     -I "$PLAT/Developer/usr/lib" -I "$SDK/System/Library/Frameworks" \
     -F "$PLAT/Developer/Library/Frameworks" -F "$PLAT/Developer/Library/PrivateFrameworks" \
     -L "$PLAT/Developer/usr/lib" -framework XCTest \
     -lXCTestSwiftSupport -Xlinker -rpath -Xlinker @executable_path/Frameworks -Xlinker -rpath -Xlinker @loader_path/../../Frameworks \
-    "$ROOT/RawLab/RawLab/UI/Export/ExportSizePicker.swift" \
-    "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift" \
-    "$ROOT/RawLab/RawLab/Core/Camera/IOSCameraConnection.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraIncrementalImport.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraBrowser.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraTether.swift" \
-    "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift" \
+    "${CAMERA_SOURCES[@]}" \
     "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift" \
     "$ROOT/RawLab/tests/CameraImportFaultToleranceXCTests.swift" \
     -o "$BUNDLE/CameraImportFaultToleranceTests"

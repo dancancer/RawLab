@@ -1,16 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
 OUT="${1:?Pass an isolated output directory}"
 mkdir -p "$OUT"
-STAGE="$(mktemp -d "$OUT/probe.XXXXXX")"
+rawlab_mac_make_temp_dir STAGE probe "$OUT"
 SERVER=""
-trap 'if [ -n "$SERVER" ]; then kill "$SERVER" 2>/dev/null || true; wait "$SERVER" 2>/dev/null || true; fi; rm -rf "$STAGE"' EXIT
+cleanup() {
+    if [ -n "$SERVER" ]; then
+        kill "$SERVER" 2>/dev/null || true
+        wait "$SERVER" 2>/dev/null || true
+    fi
+    rawlab_mac_cleanup_temp_dirs
+}
+trap cleanup EXIT
 APP="$STAGE/SparkleSignatureProbe.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$STAGE/home" "$STAGE/tmp"
 FRAMEWORK="$(bash "$ROOT/RawLabMac/prepare-sparkle.sh")"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-swiftc -parse-as-library -swift-version 5 -warnings-as-errors -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" \
+rawlab_mac_swiftc -parse-as-library -warnings-as-errors \
     -F "$(dirname "$FRAMEWORK")" -framework Sparkle -framework AppKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     "$ROOT/RawLabMac/tests/SparkleSignatureTests.swift" -o "$APP/Contents/MacOS/SparkleSignatureProbe"

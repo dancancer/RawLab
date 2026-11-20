@@ -201,6 +201,10 @@ class BuildEnvironmentTests(unittest.TestCase):
             compiler.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\nexit 73\n')
             package_config = binaries / "pkg-config"
             package_config.write_text("#!/bin/bash\nexit 0\n")
+            xcrun_cli = binaries / "xcrun"
+            xcrun_cli.write_text('#!/bin/bash\nif [[ "$*" == *"--show-sdk-path"* ]]; then\n  printf "/unused/sdk\\n"\nfi\n')
+            xcode_select_cli = binaries / "xcode-select"
+            xcode_select_cli.write_text('#!/bin/bash\nprintf "/unused/Developer\\n"\n')
             swift_cli = binaries / "swift"
             swift_cli.write_text(
                 '#!/bin/bash\n'
@@ -220,11 +224,11 @@ class BuildEnvironmentTests(unittest.TestCase):
                 'mkdir -p "$bin/Modules"\n'
                 'touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a"\n'
             )
-            compiler.chmod(0o755)
-            package_config.chmod(0o755)
-            swift_cli.chmod(0o755)
+            for tool in (compiler, package_config, xcrun_cli, xcode_select_cli, swift_cli):
+                tool.chmod(0o755)
             build = root / "release candidate"
-            env = {key: value for key, value in os.environ.items() if key != "RAWLAB_SWIFTPM_CACHE"}
+            env = {key: value for key, value in os.environ.items()
+                   if key not in ("RAWLAB_SWIFTPM_CACHE", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET")}
             env.update({"PATH": f"{binaries}:{os.environ['PATH']}",
                         "RAWLAB_ARCH": "arm64", "RAWLAB_BUILD_DIR": str(build)})
             for script in ("wavelet-render.sh", "agent-recipe-render.sh", "edit-model.sh"):
@@ -237,6 +241,7 @@ class BuildEnvironmentTests(unittest.TestCase):
                     self.assertIn(str(build / "libsony2fuji_core.a"), args)
                     self.assertNotIn(str(ROOT / "lutools/build-macos/libsony2fuji_core.a"), args)
                     self.assertTrue(any(arg.endswith("/fake-bin/libRawLabKit.a") for arg in args), args)
+                    self.assertIn("arm64-apple-macosx14.0", args)
 
     def test_swiftpm_helper_supports_native_modules_and_rejects_noop_builds(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -304,6 +309,273 @@ class BuildEnvironmentTests(unittest.TestCase):
                             self.assertTrue(any(line.endswith("/fake-bin/Modules") for line in lines), lines)
                         if mode == "link":
                             self.assertTrue(any(line.endswith("/fake-bin/libRawLabKit.a") for line in lines), lines)
+
+    def _make_sparkle_tools(self, tools_dir: Path, expected_sha: str) -> None:
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        shasum_tool = tools_dir / "shasum"
+        shasum_tool.write_text(
+            f"#!/bin/bash\nprintf '%s  %s\\n' '{expected_sha}' \"${{@: -1}}\"\n"
+        )
+        ditto_tool = tools_dir / "ditto"
+        ditto_tool.write_text(
+            "#!/bin/bash\n"
+            "dest=\"$4\"\n"
+            "fw=\"$dest/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework\"\n"
+            "mkdir -p \"$fw/Updater.app/Contents/MacOS\"\n"
+            "touch \"$fw/Sparkle\" \"$fw/Autoupdate\" \"$fw/Updater.app/Contents/MacOS/Updater\"\n"
+        )
+        for tool in (shasum_tool, ditto_tool):
+            tool.chmod(0o755)
+
+    def test_prepare_sparkle_resolves_cache_without_git(self):
+        expected_sha = "17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            tools = base / "tools"
+            self._make_sparkle_tools(tools, expected_sha)
+
+            # 1) Standalone .git-less tarball checkout, unset RAWLAB_SPARKLE_CACHE
+            root = base / "tarball-checkout"
+            (root / "RawLabMac").mkdir(parents=True)
+            shutil.copy2(ROOT / "RawLabMac/prepare-sparkle.sh", root / "RawLabMac/prepare-sparkle.sh")
+            default_archive = root / ".cache/shared/sparkle/2.10.0/Sparkle-for-Swift-Package-Manager.zip"
+            default_archive.parent.mkdir(parents=True)
+            default_archive.write_text("fake-zip")
+
+            env = {key: value for key, value in os.environ.items() if key != "RAWLAB_SPARKLE_CACHE"}
+            env["PATH"] = f"{tools}:{env['PATH']}"
+            res = subprocess.run(
+                ["bash", str(root / "RawLabMac/prepare-sparkle.sh")],
+                cwd=root, env=env, capture_output=True, text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(
+                Path(res.stdout.strip()).resolve(),
+                (root / ".cache/shared/sparkle/2.10.0/unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework").resolve(),
+            )
+
+            # 2) Custom RAWLAB_SPARKLE_CACHE without .git
+            custom_cache = base / "custom-sparkle"
+            custom_cache.mkdir()
+            (custom_cache / "Sparkle-for-Swift-Package-Manager.zip").write_text("fake-zip")
+            res_custom = subprocess.run(
+                ["bash", str(root / "RawLabMac/prepare-sparkle.sh")],
+                cwd=root, env={**env, "RAWLAB_SPARKLE_CACHE": str(custom_cache)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_custom.returncode, 0, res_custom.stderr)
+            self.assertEqual(
+                Path(res_custom.stdout.strip()).resolve(),
+                (custom_cache / "unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework").resolve(),
+            )
+
+            # 3) .git-less checkout nested inside an unrelated outer git repository
+            if shutil.which("git"):
+                outer = base / "outer-repo"
+                outer.mkdir()
+                subprocess.run(["git", "init", "-q"], cwd=outer, check=True)
+                nested = outer / "unpacked-tarball"
+                (nested / "RawLabMac").mkdir(parents=True)
+                shutil.copy2(ROOT / "RawLabMac/prepare-sparkle.sh", nested / "RawLabMac/prepare-sparkle.sh")
+                nested_archive = nested / ".cache/shared/sparkle/2.10.0/Sparkle-for-Swift-Package-Manager.zip"
+                nested_archive.parent.mkdir(parents=True)
+                nested_archive.write_text("fake-zip")
+                res_nested = subprocess.run(
+                    ["bash", str(nested / "RawLabMac/prepare-sparkle.sh")],
+                    cwd=nested, env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(res_nested.returncode, 0, res_nested.stderr)
+                self.assertEqual(
+                    Path(res_nested.stdout.strip()).resolve(),
+                    (nested / ".cache/shared/sparkle/2.10.0/unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework").resolve(),
+                )
+                self.assertFalse((outer / ".cache").exists())
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_prepare_sparkle_shares_cache_across_git_worktree(self):
+        expected_sha = "17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959"
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            tools = base / "tools"
+            self._make_sparkle_tools(tools, expected_sha)
+
+            main_repo = base / "main-repo"
+            (main_repo / "RawLabMac").mkdir(parents=True)
+            shutil.copy2(ROOT / "RawLabMac/prepare-sparkle.sh", main_repo / "RawLabMac/prepare-sparkle.sh")
+            subprocess.run(["git", "init", "-q"], cwd=main_repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=main_repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=main_repo, check=True)
+            subprocess.run(["git", "add", "RawLabMac/prepare-sparkle.sh"], cwd=main_repo, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=main_repo, check=True)
+
+            wt = base / "worktree"
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "wt-branch", str(wt)], cwd=main_repo, check=True)
+
+            shared_archive = main_repo / ".cache/shared/sparkle/2.10.0/Sparkle-for-Swift-Package-Manager.zip"
+            shared_archive.parent.mkdir(parents=True)
+            shared_archive.write_text("fake-zip")
+
+            env = {key: value for key, value in os.environ.items() if key != "RAWLAB_SPARKLE_CACHE"}
+            env["PATH"] = f"{tools}:{env['PATH']}"
+            res = subprocess.run(
+                ["bash", str(wt / "RawLabMac/prepare-sparkle.sh")],
+                cwd=wt, env=env, capture_output=True, text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertEqual(
+                Path(res.stdout.strip()).resolve(),
+                (main_repo / ".cache/shared/sparkle/2.10.0/unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework").resolve(),
+            )
+
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(), "macOS plist tooling is required")
+    def test_non_release_build_cleans_stale_bundle_resources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "RawLabMac"
+            scripts.mkdir(parents=True)
+            for name in ("build.sh", "build-env.sh", "release-config.sh", "Info.plist"):
+                shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
+            (scripts / "Sources").mkdir()
+            (scripts / "Sources/Main.swift").write_text("print(\"ok\")\n")
+            (scripts / "Resources/Licenses").mkdir(parents=True)
+            (scripts / "Resources/Licenses/local.txt").write_text("ok\n")
+            (scripts / "Resources/ThirdPartyNotices.md").write_text("notices\n")
+            (scripts / "Resources/en.lproj").mkdir(parents=True)
+            (scripts / "Resources/en.lproj/Localizable.strings").write_text('"ok" = "ok";\n')
+            (scripts / "Resources/MasterRecipeIcons").mkdir(parents=True)
+            (scripts / "Resources/MasterRecipeIcons/icon.png").write_text("png")
+            (scripts / "Resources/FilmIcons").mkdir(parents=True)
+            (scripts / "Resources/FilmIcons/ektar.png").write_text("png")
+            (scripts / "tests").mkdir()
+            (scripts / "tests/bundle.sh").write_text("#!/bin/bash\nexit 0\n")
+
+            sparkle_root = root / "sparkle-cache/unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+            (sparkle_root / "Versions/B").mkdir(parents=True)
+            (sparkle_root.parent.parent.parent / "LICENSE").write_text("MIT\n")
+            (scripts / "prepare-sparkle.sh").write_text(f"#!/bin/bash\nprintf '%s\\n' '{sparkle_root}'\n")
+            (scripts / "build-lens-dependency.sh").write_text("#!/bin/bash\nexit 0\n")
+            (scripts / "build-icon.sh").write_text('#!/bin/bash\ntouch "$1"\n')
+            (scripts / "sign-bundle.sh").write_text("#!/bin/bash\nexit 0\n")
+
+            libraw_dir = root / "lutools/cmake/libraw"
+            libraw_dir.mkdir(parents=True)
+            for name in ("manifest.json", "manifest.py"):
+                shutil.copy2(ROOT / "lutools/cmake/libraw" / name, libraw_dir / name)
+            for p in (
+                "LICENSE",
+                "LICENSE-ALIYUN-RUM-EXCEPTION",
+                "docs/reference/licensing.md",
+                "lutools/third_party/Adobe-DNG-SDK-LICENSE.txt",
+                "lutools/third_party/nlohmann/LICENSE.MIT",
+                "lutools/third_party/nikon_he/README.md",
+                "lutools/third_party/nikon_he/LICENSE.LGPL-2.1",
+                "lutools/third_party/lensfun/version_1/slr.xml",
+                "lutools/third_party/lensfun/license.txt",
+                "lutools/third_party/lensfun/license.md",
+                "lutools/flog-2-new/test.cube",
+                "Shared/master-recipes.json",
+                "Shared/BundledLooks/catalog.json",
+                "Shared/BundledLooks/NOTICE.md",
+                "Shared/BundledLooks/look.cube",
+                "Shared/BundledLooks/HDR/hdr.cube",
+                "Shared/BundledLooks/Artwork/art.png",
+            ):
+                target = root / p
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("fixture\n")
+            (root / "scripts/assets").mkdir(parents=True)
+            (root / "scripts/assets/prepare.py").write_text("import sys\n")
+
+            build_dir = root / "lutools/build-macos"
+            (build_dir / "licenses/libultrahdr").mkdir(parents=True)
+            (build_dir / "licenses/libjpeg-turbo").mkdir(parents=True)
+            (build_dir / "licenses/libspng").mkdir(parents=True)
+            (build_dir / "CMakeCache.txt").write_text("SONY2FUJI_ENABLE_X3F:BOOL=OFF\n")
+            (build_dir / "dng_jxl_tests").write_text("#!/bin/sh\nexit 0\n")
+            (build_dir / "dng_jxl_tests").chmod(0o755)
+            (build_dir / "hdr-codec/lib").mkdir(parents=True)
+            (build_dir / "raw-jpeg/install/lib").mkdir(parents=True)
+
+            opencv_prefix = root / "deps/opencv"
+            (opencv_prefix / "share/licenses/opencv4").mkdir(parents=True)
+            (opencv_prefix / "share/licenses/opencv4/LICENSE").write_text("ok")
+            chroma_prefix = root / "build/macos-deps/14.0/arm64/install"
+            (chroma_prefix / "share/licenses/wavelib").mkdir(parents=True)
+            (chroma_prefix / "share/licenses/wavelib/COPYRIGHT").write_text("ok")
+            (chroma_prefix / "share/licenses/libtiff").mkdir(parents=True)
+            (chroma_prefix / "share/licenses/libtiff/LICENSE.md").write_text("ok")
+            (chroma_prefix / "share/licenses/rawlab-dng-sdk").mkdir(parents=True)
+            (chroma_prefix / "share/licenses/rawlab-dng-sdk/LICENSE.txt").write_text("ok")
+            lens_prefix = root / "build/lensfun/14.0/arm64/install"
+            (lens_prefix / "licenses/lensfun").mkdir(parents=True)
+            (lens_prefix / "licenses/lensfun/COPYING").write_text("ok")
+
+            tools = root / "tools"
+            tools.mkdir()
+            tool_scripts = {
+                "pkg-config": f"#!/bin/bash\nif [[ \"${{1:-}}\" == --variable=prefix ]]; then echo '{opencv_prefix}'; fi\nexit 0\n",
+                "cmake": "#!/bin/sh\nexit 0\n",
+                "swift": (
+                    "#!/bin/bash\n"
+                    "scratch=''\nshow_bin=0\n"
+                    "while [ $# -gt 0 ]; do\n"
+                    "  case \"$1\" in --scratch-path) scratch=\"$2\"; shift 2 ;; --show-bin-path) show_bin=1; shift ;; *) shift ;; esac\n"
+                    "done\n"
+                    "bin=\"$scratch/bin\"\n"
+                    "if [ \"$show_bin\" = 1 ]; then echo \"$bin\"; exit 0; fi\n"
+                    "mkdir -p \"$bin/Modules\"\n"
+                    "touch \"$bin/Modules/RawLabKit.swiftmodule\" \"$bin/libRawLabKit.a\"\n"
+                ),
+                "swiftc": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\nmkdir -p \"$(dirname \"$out\")\"\ntouch \"$out\"\nchmod +x \"$out\"\n",
+                "sips": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in --out) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\ntouch \"$out\"\n",
+                "otool": "#!/bin/sh\nexit 0\n",
+                "codesign": "#!/bin/sh\nexit 0\n",
+            }
+            for name, content in tool_scripts.items():
+                p = tools / name
+                p.write_text(content)
+                p.chmod(0o755)
+
+            app = root / "build/RawLab Mac.app"
+            stale_paths = [
+                app / "Contents/Resources/LUTs/stale.cube",
+                app / "Contents/Resources/FilmIcons/stale.png",
+                app / "Contents/Resources/FilmIcons/Thumbnails/stale@2x.png",
+                app / "Contents/Resources/MasterRecipes/stale.cube",
+                app / "Contents/Resources/Licenses/stale.txt",
+                app / "Contents/Frameworks/Stale.framework/Stale",
+            ]
+            for sp in stale_paths:
+                sp.parent.mkdir(parents=True, exist_ok=True)
+                sp.write_text("stale")
+
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith("RAWLAB_") and key != "MACOSX_DEPLOYMENT_TARGET"}
+            env.update({
+                "PATH": f"{tools}:{os.environ['PATH']}",
+                "RAWLAB_ARCH": "arm64",
+                "RAWLAB_CI_CACHE_HIT": "true",
+                "RAWLAB_RUM": "0",
+                "RAWLAB_RUM_LOCAL": "0",
+                "SDKROOT": "/unused/sdk",
+            })
+            res = subprocess.run(["bash", str(scripts / "build.sh")], cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            for sp in stale_paths:
+                self.assertFalse(sp.exists(), f"Stale artifact survived non-release build: {sp}")
+            self.assertTrue((app / "Contents/MacOS/RawLabMac").is_file())
+            self.assertTrue((app / "Contents/Resources/bundled-looks.json").is_file())
+            self.assertTrue((app / "Contents/Frameworks/Sparkle.framework").is_dir())
+
+            # Release build must still refuse pre-existing release output
+            release_app = root / "release-existing.app"
+            release_app.mkdir(parents=True)
+            res_rel = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**env, "RAWLAB_RELEASE": "1", "RAWLAB_APP_PATH": str(release_app)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_rel.returncode, 2, res_rel.stdout + res_rel.stderr)
 
 
 if __name__ == "__main__":

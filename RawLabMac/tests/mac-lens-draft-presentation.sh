@@ -1,32 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/Shared/tests/hdr-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
 OUT="${1:-$ROOT/build/lens-draft-ui-evidence}"
 mkdir -p "$OUT"
-STAGE="$(mktemp -d "$OUT/snapshot-run.XXXXXX")"
-trap 'rm -rf "$STAGE"' EXIT
+rawlab_mac_make_temp_dir STAGE snapshot-run "$OUT"
 APP="$STAGE/LensDraftSnapshots.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$STAGE/module-cache"
 RPATHS=()
 for dependency in libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4; do
     RPATHS+=(-Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir "$dependency")")
 done
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
+rawlab_mac_compile_native render-engine "$OUT/swiftpm" "$APP/Contents/MacOS/LensDraftSnapshots" -- \
     -module-cache-path "$STAGE/module-cache" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-         "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
     "$ROOT/RawLabMac/Sources/Lens/MacLensPresentation.swift" "$ROOT/RawLabMac/Sources/Lens/LensControls.swift" \
-    "$ROOT/RawLabMac/tests/MacLensDraftPresentationTests.swift" "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-    -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal "${RPATHS[@]}" \
-    -o "$APP/Contents/MacOS/LensDraftSnapshots"
+    "$ROOT/RawLabMac/tests/MacLensDraftPresentationTests.swift" "${RPATHS[@]}"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

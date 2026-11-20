@@ -1,13 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-OUT="$(mktemp -d /tmp/rawlab-ios-tool-drafts.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_host_init
+rawlab_ios_make_temp_dir OUT rawlab-ios-tool-drafts
 rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -swift-version 5 -sdk "$SDK" -module-cache-path "$OUT/modules" \
- "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
- "$ROOT/RawLab/tests/EditorToolDraftTests.swift" -o "$OUT/tests"
+rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization -module-cache-path "$OUT/modules" \
+    "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
+    "$ROOT/RawLab/tests/EditorToolDraftTests.swift" -o "$OUT/tests"
 cd "$ROOT"
 "$OUT/tests"

@@ -12,7 +12,10 @@ RAWLAB_DEPENDENCY_PREFIX="${RAWLAB_DEPENDENCY_PREFIX:-$RAWLAB_DEPS_BASE/$ARCH/in
 RAWLAB_LENS_BASE="$ROOT/build/lensfun/$MACOSX_DEPLOYMENT_TARGET"
 RAWLAB_LENS_PREFIX="${RAWLAB_LENS_PREFIX:-$RAWLAB_LENS_BASE/$ARCH/install}"
 if [ -z "${RAWLAB_SOURCE_CACHE:-}" ]; then
-    COMMON_GIT_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    COMMON_GIT_DIR=""
+    if [ -e "$ROOT/.git" ]; then
+        COMMON_GIT_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    fi
     SHARED_ROOT="$ROOT"
     if [ -n "$COMMON_GIT_DIR" ]; then SHARED_ROOT="$(dirname "$COMMON_GIT_DIR")"; fi
     RAWLAB_SOURCE_CACHE="$SHARED_ROOT/.cache/shared/macos-sources"
@@ -59,15 +62,29 @@ rawlab_macos_version_at_most() {
 
 # Resolve the macOS SDK for swiftc. The CLT 27 SDK exposes SwiftUI macros
 # without shipping their compiler plugin ("plugin for module 'SwiftUIMacros'
-# not found"); when the CLT 26.5 SDK is installed, prefer it, mirroring the
-# RawLabMac/build.sh guardrail. An explicit SDKROOT always wins.
+# not found"); when xcrun resolves a CommandLineTools SDK and the CLT 26.5 SDK
+# is installed, prefer it, mirroring the RawLabMac/build.sh guardrail. When
+# xcrun resolves an Xcode SDK (or SDKROOT is set), keep that SDK so SwiftPM
+# RawLabKit builds and swiftc use the exact same SDK.
 rawlab_mac_sdk_path() {
-    local sdk
-    sdk="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-    if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
-        sdk=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+    if [ -n "${SDKROOT:-}" ]; then
+        printf '%s\n' "$SDKROOT"
+        return 0
     fi
+    local sdk
+    sdk="$(xcrun --sdk macosx --show-sdk-path)"
+    case "$sdk" in
+        /Library/Developer/CommandLineTools/SDKs/*)
+            if [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
+                sdk=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+            fi
+            ;;
+    esac
     printf '%s\n' "$sdk"
+}
+
+rawlab_mac_target() {
+    printf '%s-apple-macosx%s\n' "$ARCH" "$MACOSX_DEPLOYMENT_TARGET"
 }
 
 rawlab_fetch() {

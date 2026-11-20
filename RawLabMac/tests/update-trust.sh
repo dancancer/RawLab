@@ -1,7 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-STAGE="$(cd "$(mktemp -d /tmp/rawlab-trust-integration.XXXXXX)" && pwd -P)"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir _STAGE_RAW rawlab-trust-integration
+STAGE="$(cd "$_STAGE_RAW" && pwd -P)"
 KEYCHAIN="$STAGE/test.keychain-db"
 PREV_KEYCHAINS=()
 while IFS= read -r kc; do
@@ -17,7 +20,7 @@ cleanup() {
         security list-keychains -d user -s >/dev/null 2>&1 || true
     fi
     security delete-keychain "$KEYCHAIN" >/dev/null 2>&1 || true
-    rm -rf "$STAGE"
+    rawlab_mac_cleanup_temp_dirs
 }
 trap cleanup EXIT
 PKCS12_FLAGS=()
@@ -40,15 +43,15 @@ if ! security find-identity -p codesigning "$KEYCHAIN" | grep -Fq "$IDENTITY"; t
 fi
 FINGERPRINT=$(openssl x509 -in "$STAGE/cert.pem" -fingerprint -sha256 -noout | cut -d= -f2 | tr -d :)
 APP="$STAGE/RawLab.app"
-swiftc -swift-version 5 "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
+rawlab_mac_swiftc "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/MacUpdateTrust.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/MacUpdatePackage.swift" "$ROOT/RawLabMac/tests/MacUpdatePackageTests.swift" -o "$STAGE/package-test"
 PUBLIC_KEY=$("$STAGE/package-test" public-key)
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
 printf 'int main(void) { return 0; }\n' > "$STAGE/main.c"
 printf 'int value(void) { return 42; }\n' > "$STAGE/helper.c"
-clang "$STAGE/main.c" -o "$APP/Contents/MacOS/RawLab"
-clang -dynamiclib "$STAGE/helper.c" -o "$APP/Contents/Frameworks/libtest.dylib"
+rawlab_mac_clang "$STAGE/main.c" -o "$APP/Contents/MacOS/RawLab"
+rawlab_mac_clang -dynamiclib "$STAGE/helper.c" -o "$APP/Contents/Frameworks/libtest.dylib"
 python3 - "$APP" "$FINGERPRINT" "$PUBLIC_KEY" <<'PY'
 import sys,plistlib,pathlib,platform
 p=pathlib.Path(sys.argv[1])/'Contents/Info.plist'
@@ -79,7 +82,7 @@ import Foundation
  }
 }
 SWIFT
-swiftc -swift-version 5 "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/MacUpdateTrust.swift" "$STAGE/test.swift" -o "$STAGE/test"
+rawlab_mac_swiftc "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/MacUpdateTrust.swift" "$STAGE/test.swift" -o "$STAGE/test"
 "$STAGE/test" "$APP" accept
 ditto -c -k --keepParent "$APP" "$STAGE/trusted.zip"
 "$STAGE/package-test" "$APP" "$STAGE/trusted.zip" accept

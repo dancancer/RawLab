@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 FRAMEWORK_DIR="${1:?Usage: preview-performance.sh framework-dir simulator-uuid raw-path output-dir}"
 DEVICE="${2:?Pass an already booted simulator UUID}"
 RAW="${3:?Pass an external RAW fixture}"
@@ -34,35 +35,16 @@ PROCESSOR_ROOT="$(cd "$PROCESSOR_ROOT" && pwd)"
 PROCESSOR_SOURCES=("$PROCESSOR_ROOT/Sony2FujiProcessor.swift" "$PROCESSOR_ROOT/Errors/ProcessorError.swift" "$PROCESSOR_ROOT/Sony2FujiProcessor+Helpers.swift"
                    "$PROCESSOR_ROOT/Sony2FujiProcessor+Lens.swift")
 DEFINES=()
-TEMP="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-preview-performance.XXXXXX")"
-trap 'rm -rf "$TEMP"' EXIT
+rawlab_ios_make_temp_dir TEMP rawlab-preview-performance
 HARNESS="$TEMP/PreviewPerformanceTests.app"
-mkdir -p "$HARNESS/Frameworks"
-cp -R "$FRAMEWORK" "$HARNESS/Frameworks/sony2fuji.framework"
-cat > "$HARNESS/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.rawlab.tests.preview-performance</string>
-<key>CFBundleExecutable</key><string>preview-performance</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleShortVersionString</key><string>1.0</string>
-<key>MinimumOSVersion</key><string>18.0</string>
-<key>CFBundleSupportedPlatforms</key><array><string>iPhoneSimulator</string></array>
-<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
-</dict></plist>
-PLIST
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET="${RAWLAB_SIMULATOR_ARCH:-$(uname -m)}-apple-ios18.0-simulator"
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
-    -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$TEMP/bridge.o"
+rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.preview-performance preview-performance "$FRAMEWORK"
+rawlab_ios_compile_metadata_bridge "$TEMP/bridge.o"
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-xcrun --sdk iphonesimulator swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -O \
     ${DEFINES[@]+"${DEFINES[@]}"} -module-cache-path "$TEMP/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-       "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
+    "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "${PROCESSOR_SOURCES[@]}" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/preview-performance"

@@ -5,21 +5,14 @@ case "${1:-}" in
     *) echo "Usage: $0 [--models-only]" >&2; exit 2 ;;
 esac
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/scripts/ci/swiftpm-rawlabkit.sh"
-source "$ROOT/Shared/tests/hdr-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-presentation.XXXXXX)"
-trap 'rm -r "$OUT"' EXIT
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -swift-version 5 -O -sdk "$SDK" \
-    -target "$(uname -m)-apple-macosx${MACOSX_DEPLOYMENT_TARGET:-14.0}" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
-    "$ROOT/RawLabMac/Sources/Presentation/MacPhotoViewport.swift" "$ROOT/RawLabMac/Sources/Library/FilmArtwork.swift" "$ROOT/RawLabMac/Sources/Editor/View/AdjustmentPanelLayout.swift" "$ROOT/RawLabMac/tests/PresentationTests.swift" "${CORE_LINK[@]}" \
-    -L "$(pkg-config --variable=libdir libraw_r)" -lraw_r $(pkg-config --libs opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-    -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal -o "$OUT/presentation"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_make_temp_dir OUT rawlab-presentation
+rawlab_mac_compile_native render-engine "$OUT/swiftpm" "$OUT/presentation" -- \
+    -O "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
+    "$ROOT/RawLabMac/Sources/Presentation/MacPhotoViewport.swift" \
+    "$ROOT/RawLabMac/Sources/Library/FilmArtwork.swift" \
+    "$ROOT/RawLabMac/Sources/Editor/View/AdjustmentPanelLayout.swift" \
+    "$ROOT/RawLabMac/tests/PresentationTests.swift"
 "$OUT/presentation" "${RAWLAB_FILM_ASSETS:-$ROOT/RawLabMac/Resources/FilmIcons}"
 
 bash "$ROOT/RawLabMac/tests/mac-viewing.sh"
