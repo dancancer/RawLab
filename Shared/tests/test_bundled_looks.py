@@ -17,7 +17,12 @@ class BundledLooksTests(unittest.TestCase):
         self.assertEqual(look["id"], "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
         self.assertEqual(look["name"], "EKTAR 100 RawLab edition")
         self.assertEqual(look["artworkName"], "ektar-100-phuket")
+        self.assertEqual(look["license"], "GPL-3.0-only")
         cube = folder / look["fileName"]
+        self.assertTrue(
+            cube.is_file(),
+            f"Missing externalized LUT {cube}; run 'python3 scripts/assets/prepare.py --group luts'",
+        )
         self.assertEqual(hashlib.sha256(cube.read_bytes()).hexdigest(), look["sha256"])
         text = cube.read_text()
         self.assertIn("#Gamma:F-Log2 to EKTAR 100 Phuket", text)
@@ -37,15 +42,12 @@ class BundledLooksTests(unittest.TestCase):
         catalog = json.loads((folder / "catalog.json").read_text())
         self.assertEqual(len({entry["id"] for entry in catalog}), 29)
         self.assertEqual(len({entry["fileName"] for entry in catalog}), 29)
-        self.assertEqual(len(list(folder.glob("*.cube"))), 29)
+        self.assertEqual(len(list(folder.glob("*.cube"))), 29,
+                         "Missing externalized LUTs; run 'python3 scripts/assets/prepare.py --group luts'")
         for entry in catalog:
             with self.subTest(look=entry["id"]):
                 self.assertEqual(Path(entry["fileName"]).stem, entry["id"])
                 self.assertEqual(hashlib.sha256((folder / entry["fileName"]).read_bytes()).hexdigest(), entry["sha256"])
-                if entry["id"] == "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65":
-                    self.assertEqual(entry.get("license"), "GPL-3.0-only")
-                else:
-                    self.assertNotIn("license", entry)
                 art = folder / "Artwork" / (entry["artworkName"] + ".png")
                 if not art.exists():
                     art = ROOT / "RawLabMac/Resources/FilmIcons" / (entry["artworkName"] + ".png")
@@ -56,14 +58,22 @@ class BundledLooksTests(unittest.TestCase):
                 self.assertGreaterEqual(width, 256)
         report = json.loads((folder / "adaptation-report.json").read_text())
         self.assertEqual(len(report), 28)
-        self.assertEqual(list(folder.glob("*.md")), [])
         for entry in report:
             if entry["resampled"]:
                 self.assertLessEqual(entry["error"]["max"], .025)
                 self.assertLessEqual(entry["error"]["p99"], .002)
             else:
                 self.assertTrue(entry["sourcePayloadByteIdentical"])
-            self.assertNotIn("redistribution", entry)
+            self.assertEqual(entry["redistribution"], "authorized")
+
+    def test_catalog_records_permission_for_the_adapted_looks(self):
+        folder = ROOT / "Shared/BundledLooks"
+        catalog = json.loads((folder / "catalog.json").read_text())
+        report = json.loads((folder / "adaptation-report.json").read_text())
+        authorized = {entry["id"] for entry in catalog
+                      if entry["license"] == "Authorized for redistribution with RawLab"}
+        self.assertEqual(authorized, {entry["id"] for entry in report})
+        self.assertTrue((folder / "NOTICE.md").is_file())
 
     def test_all_new_artwork_has_matching_generation_provenance(self):
         folder = ROOT / "Shared/BundledLooks/Artwork"

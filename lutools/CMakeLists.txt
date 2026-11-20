@@ -452,6 +452,25 @@ if(BUILD_TESTING AND NOT IOS)
 endif()
 
 if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
+    if(NOT Python3_EXECUTABLE)
+        find_package(Python3 QUIET COMPONENTS Interpreter)
+    endif()
+    if(Python3_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/assets/prepare.py")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/assets/prepare.py" --group all --check --quiet
+            RESULT_VARIABLE _rawlab_assets_check
+            OUTPUT_QUIET ERROR_QUIET
+        )
+        if(NOT _rawlab_assets_check EQUAL 0)
+            execute_process(
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/assets/prepare.py" --group all
+                RESULT_VARIABLE _rawlab_assets_prepare
+            )
+            if(NOT _rawlab_assets_prepare EQUAL 0)
+                message(FATAL_ERROR "Externalized test assets are missing or corrupted; run `python3 scripts/assets/prepare.py --group all`.")
+            endif()
+        endif()
+    endif()
     rawlab_add_test(
         NAME tiff_ifd
         SOURCES tests/tiff_ifd_tests.cpp

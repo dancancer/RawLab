@@ -84,7 +84,24 @@ val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val hdrCodecSources = providers.exec {
     commandLine("python3", repo.resolve("lutools/cmake/hdr_sources.py").path, "--portable")
 }.standardOutput.asText.map { text -> text.trim().split(';').map(::File) }
+val prepareExternalLuts by tasks.registering {
+    doLast {
+        val check = ProcessBuilder("python3", repo.resolve("scripts/assets/prepare.py").path, "--group", "luts", "--check", "--quiet")
+            .directory(repo)
+            .start()
+        if (check.waitFor() != 0) {
+            val fetch = ProcessBuilder("python3", repo.resolve("scripts/assets/prepare.py").path, "--group", "luts")
+                .directory(repo)
+                .inheritIO()
+                .start()
+            if (fetch.waitFor() != 0) {
+                throw GradleException("Missing externalized LUT assets; run `python3 scripts/assets/prepare.py --group luts`.")
+            }
+        }
+    }
+}
 val prepareAssets by tasks.registering(Sync::class) {
+    dependsOn(prepareExternalLuts)
     into(generatedAssets)
     from(repo.resolve("lutools/flog-2-new")) {
         into("films")
@@ -96,6 +113,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     from(repo.resolve("Shared/BundledLooks/HDR")) { into("BundledLooks/HDR") }
     from(repo.resolve("Shared/BundledLooks/catalog.json")) { rename { "bundled-looks.json" } }
     from(repo.resolve("Shared/BundledLooks/Artwork")) { into("artwork"); include("*.png") }
+    from(repo.resolve("Shared/BundledLooks/NOTICE.md")) { into("licenses"); rename { "Bundled-Looks.md" } }
     from(repo.resolve("Shared/master-recipes.json"))
     from(repo.resolve("RawLabMac/Resources/MasterRecipes")) { into("MasterRecipes"); include("*.cube") }
     from(repo.resolve("RawLabMac/Resources/MasterRecipeIcons")) { into("MasterRecipeIcons"); include("*.png") }

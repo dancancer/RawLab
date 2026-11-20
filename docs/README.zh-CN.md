@@ -4,7 +4,7 @@
 
 跨品牌 RAW 显影与胶片外观工具，基于共享 C++ 处理核心，提供原生 Windows、macOS、Android 和 iOS 编辑器。
 
-![RawLab Mac：中性显影与 Velvia 效果并排对比](images/rawlab-mac-velvia.png)
+![RawLab Mac：中性显影与 Velvia 效果并排对比](images/rawlab-mac-velvia.webp)
 
 ## 项目介绍
 

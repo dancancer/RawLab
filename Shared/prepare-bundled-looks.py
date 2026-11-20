@@ -1,4 +1,4 @@
-"""Prepare explicitly interpreted bundled LUTs."""
+"""Reproduce the bundled LUTs and their RawLab distribution records."""
 
 import argparse
 import hashlib
@@ -98,14 +98,16 @@ def prepare(source_root, output, force=False):
                 raise ValueError(f"Unknown adaptation: {look['adaptation']}")
             metadata = {"source": look["source"], "sourceSha256": digest,
                         "adaptation": look["adaptation"], "interpretation": plan["notes"][look["adaptation"]],
-                        "ocioVersion": ocio.__version__, **report}
+                        "redistribution": "authorized", "ocioVersion": ocio.__version__, **report}
+            # assets-v1 的 CUBE 尾注记录生成时的状态，保留其字节才能复现清单中的 SHA-256。
+            cube_provenance = {**metadata, "redistribution": "unconfirmed"}
             with target.open("a", encoding="utf-8") as stream:
-                stream.write("\n#RawLab:" + json.dumps(metadata, separators=(",", ":")) + "\n")
+                stream.write("\n#RawLab:" + json.dumps(cube_provenance, separators=(",", ":")) + "\n")
             catalog.append({"id": look["id"], "name": look["name"], "fileName": name,
                             "artworkName": look["artworkName"], "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
                             "input": "neutral display-sRGB / BT.709 / D65 / full range",
                             "output": "display-sRGB / BT.709 / D65 / full range",
-                            "source": look["source"]})
+                            "license": "Authorized for redistribution with RawLab", "source": look["source"]})
             reports.append({"id": look["id"], **metadata})
         for look in catalog[1:]:
             os.replace(temporary / look["fileName"], output / look["fileName"])

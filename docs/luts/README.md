@@ -1,5 +1,9 @@
 # Bundled RawLab Looks
 
+RawLab has permission to distribute the 28 adapted third-party looks with its
+releases. The project-authored Ektar v2 look uses GPL-3.0-only. The bundled
+[attribution notice](../../Shared/BundledLooks/NOTICE.md) credits the sources.
+
 ## Inventory and Identity
 
 The shared source is [Shared/BundledLooks](../../Shared/BundledLooks/).
@@ -148,10 +152,17 @@ endorsement or LUT-rendered samples. Prompts, original output paths and hashes
 are retained in `Artwork/generated-*.json`. The existing Ektar icon is the
 intentional old-resource exception, referenced from its existing source.
 
-Mac packages CUBEs under `LUTs`, catalog/artwork in app resources; iOS packages
-the `BundledLooks` folder reference and separately reuses the old Ektar artwork.
-Android packages `films`, `artwork` and `bundled-looks.json`; Windows uses the
-same catalog and sources through its project resource items.
+The [asset manifest](../../Shared/assets-manifest.json) pins 59 external CUBEs
+in `assets-v1`. Each macOS, Windows, Android and iOS app bundles 53 of them
+(10 Fujifilm film looks, 29 shared looks and 14 master recipes). The four legacy
+`lutools/F-Log2` tables and the `FLog2-709` and `WDR` technical transforms
+stay in the asset pack. The app also includes the Git-tracked `HDR Silver.cube`,
+bringing the app total to 54.
+
+The macOS build script, Windows `build.ps1` and Android Gradle build prepare
+the LUTs before copying them. For an iOS archive from a fresh checkout, run
+`python3 scripts/assets/prepare.py --group luts` at the repository root before
+archiving in Xcode. Each platform includes the attribution notice with the LUTs.
 
 Only the new picker entries receive wider two-line name layouts. Existing
 horizontal picker behavior, legacy widths and custom-look artwork behavior
@@ -194,6 +205,10 @@ Generation used NumPy 2.5.4 and OpenColorIO 2.6.0. Dependency version changes
 require comparing actual output and error metrics, not assuming byte identity.
 `--force` is required to replace generated derivatives; it is not a release flag.
 
+The `#RawLab` footers in the 28 external CUBEs record their provenance at the
+time of adaptation. The catalog and bundled notice record the current permission
+to distribute those looks with RawLab.
+
 ## Verification and Limits
 
 Verified locally on this branch:
@@ -201,7 +216,8 @@ Verified locally on this branch:
 - Shared audit/catalog/adapter tests, including source-tree write prevention,
   native sRGB identity behavior, resource uniqueness, PNG decode structure and
   content hashes. All originals remain unchanged after generation. The expanded
-  11-test suite also covers same-filesystem staging; it now runs in hosted CI's contracts job
+  11-test suite also covers same-filesystem staging and look metadata.
+  It runs in hosted CI's contracts job
   with the existing LUT-preparation requirements. Other default CI builds are
   not reduced or replaced by LUT-specific overrides.
 - Mac private app build, bundle resource byte equality and signatures, native

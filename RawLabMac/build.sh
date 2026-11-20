@@ -204,6 +204,7 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 bash "$ROOT/RawLabMac/build-icon.sh" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $DEPLOYMENT_TARGET" "$APP/Contents/Info.plist"
+"$PYTHON_EXECUTABLE" "$ROOT/scripts/assets/prepare.py" --group luts
 for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     case "$lut" in *FLog2-709*|*to_WDR*) continue ;; esac
     cp "$lut" "$APP/Contents/Resources/LUTs/"
@@ -213,6 +214,7 @@ mkdir -p "$APP/Contents/Resources/BundledLooks/HDR"
 cp "$ROOT"/Shared/BundledLooks/HDR/* "$APP/Contents/Resources/BundledLooks/HDR/"
 cp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 cp "$ROOT"/Shared/BundledLooks/Artwork/*.png "$APP/Contents/Resources/FilmIcons/"
+cp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 if [ -d "$ROOT/RawLabMac/Resources/MasterRecipes" ]; then
     cp -R "$ROOT/RawLabMac/Resources/MasterRecipes/." "$APP/Contents/Resources/MasterRecipes/"
 fi

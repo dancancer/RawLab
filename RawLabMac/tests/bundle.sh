@@ -15,6 +15,7 @@ cmp "$ROOT/RawLabMac/Resources/FilmIcons/ektar-100-phuket.png" "$APP/Contents/Re
 for asset in "$ROOT"/Shared/BundledLooks/Artwork/*.png; do
     cmp "$asset" "$APP/Contents/Resources/FilmIcons/$(basename "$asset")"
 done
+cmp "$ROOT/Shared/BundledLooks/NOTICE.md" "$APP/Contents/Resources/Licenses/Bundled-Looks.md"
 for language in en zh-Hans de fr ja es; do
     cmp "$ROOT/RawLabMac/Resources/$language.lproj/Localizable.strings" "$APP/Contents/Resources/$language.lproj/Localizable.strings"
 done
