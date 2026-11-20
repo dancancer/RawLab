@@ -34,10 +34,10 @@ public sealed class SoftwareUpdateWindow : Window
             Title=Loc.Text(settings ? "软件更新" : "RawLab 更新");panel.Children.Clear();
             AddText(Title,true);AddText(Loc.Format("版本 {0}",updates.CurrentVersion),localized:true);
             if(settings) {
-                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.UnavailableReason!="storage" && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>{
-                    updates.SetAutomaticCheck(value);
-                },"updates.automaticCheck");
-                Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,updates.SetAutomaticInstall,"updates.automaticInstall");
+                Toggle("自动检查更新",updates.Preferences.AutomaticCheck,updates.UnavailableReason!="storage" && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>
+                    updates.SetAutomaticCheckAsync(value),"updates.automaticCheck");
+                Toggle("自动下载并在退出时安装",updates.Preferences.AutomaticInstall,updates.UnavailableReason==null && !updates.RequiresRecovery && !updates.RequiresStartupHealthCheck,value=>
+                    updates.SetAutomaticInstallAsync(value),"updates.automaticInstall");
                 AddText("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。");
                 panel.Children.Add(new Separator{Margin=new Thickness(0,10,0,10)});
             }
@@ -77,7 +77,7 @@ public sealed class SoftwareUpdateWindow : Window
                     AddText(updates.CanRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。");
                     if(updates.CanRepairState) {
                         var repairActions=new WrapPanel();panel.Children.Add(repairActions);
-                        ActionButton(repairActions,"重建更新设置",()=>{updates.RepairState();return Task.CompletedTask;},"updates.repairState");
+                        ActionButton(repairActions,"重建更新设置",updates.RepairStateAsync,"updates.repairState");
                     }
                 }
             }
@@ -99,15 +99,15 @@ public sealed class SoftwareUpdateWindow : Window
             ActionButton(actions,"检查更新",()=>updates.CheckAsync(true),"updates.check",updates.CanCheck);
             if(updates.CanDownload) {
                 ActionButton(actions,"安装更新",()=>updates.DownloadAsync(),"updates.download");
-                ActionButton(actions,"跳过此版本",()=>{updates.Skip();if(updates.StorageError==null)Close();return Task.CompletedTask;});
-                ActionButton(actions,"稍后提醒",()=>{updates.RemindLater();if(updates.StorageError==null)Close();return Task.CompletedTask;});
+                ActionButton(actions,"跳过此版本",async ()=>{await updates.SkipAsync();if(updates.StorageError==null)Close();});
+                ActionButton(actions,"稍后提醒",async ()=>{await updates.RemindLaterAsync();if(updates.StorageError==null)Close();});
             }
             if(updates.CanChooseInstall) {
                 ActionButton(actions,"立即重启安装",()=>updates.ChooseAsync(UpdateInstallChoice.RestartNow),"updates.restart");
                 ActionButton(actions,"任务结束后安装",()=>updates.ChooseAsync(UpdateInstallChoice.AfterTasks),"updates.afterTasks");
                 ActionButton(actions,"下次退出时安装",()=>updates.ChooseAsync(UpdateInstallChoice.OnQuit),"updates.onQuit");
             }
-            if(updates.CanCancel)ActionButton(actions,"取消更新",()=>{updates.Cancel();return Task.CompletedTask;},"updates.cancel");
+            if(updates.CanCancel)ActionButton(actions,"取消更新",updates.CancelAsync,"updates.cancel");
             if((updates.State.Phase==UpdatePhase.Failed || updates.CheckFailure!=null && updates.State.Phase is UpdatePhase.Idle or UpdatePhase.Available) && updates.CanCheck)ActionButton(actions,"重试",updates.RetryAsync,"updates.retry");
             var support=new StackPanel();
             support.Children.Add(Text(Loc.Text("Mac 需要同架构、签名身份匹配的应用。Windows 需要 x64 当前用户 Setup 安装版。旧 ZIP 请先从官方发布页迁移到支持更新的版本。")));
@@ -138,11 +138,11 @@ public sealed class SoftwareUpdateWindow : Window
     {
         var text=Text(localized ? value : Loc.Text(value));if(heading)text.FontWeight=FontWeights.SemiBold;panel.Children.Add(text);
     }
-    private void Toggle(string title,bool value,bool enabled,Action<bool> changed,string identifier)
+    private void Toggle(string title,bool value,bool enabled,Func<bool,Task> changed,string identifier)
     {
         var toggle=new CheckBox{Content=Text(Loc.Text(title)),IsChecked=value,IsEnabled=enabled,Margin=new Thickness(0,6,0,6)};
         AutomationProperties.SetAutomationId(toggle,identifier);AutomationProperties.SetName(toggle,Loc.Text(title));
-        toggle.Checked+=(_,_)=>{if(!refreshing)changed(true);};toggle.Unchecked+=(_,_)=>{if(!refreshing)changed(false);};panel.Children.Add(toggle);
+        toggle.Checked+=async (_,_)=>{if(!refreshing)await changed(true);};toggle.Unchecked+=async (_,_)=>{if(!refreshing)await changed(false);};panel.Children.Add(toggle);
     }
     private static void ActionButton(Panel panel,string title,Func<Task> action,string? identifier=null,bool enabled=true)
     {

@@ -62,7 +62,8 @@ internal static class AgentRecipeChecks
         var job=BatchJob.Create(raw,targetMaster.Capture(),tintRecipe.LutPath,"Frozen");job.Format=ExportFormat.Png;job.LongEdge=128;
         job.OutputDirectory=Path.Combine(output,"batch-output");Directory.CreateDirectory(job.OutputDirectory);
         job.Items=[BatchItem.Create(raw) with{Selected=true},BatchItem.Create(target) with{Selected=true}];journal.FreezeLook(job);journal.Save(job);
-        mixed.ResetAll();targetMaster.ResetAll();
+        mixed=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(raw),mixed.Capture(),null)).Candidate!.Settings.Restore();
+        targetMaster=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(target),targetMaster.Capture(),null)).Candidate!.Settings.Restore();
         BatchRunner.Run(job,journal,false,CancellationToken.None,(_,_)=>{},(input,state,film,target,edge)=>engine.Render(input,state,film,0,output:target,longEdge:edge));
         foreach(var item in job.Items)
         {

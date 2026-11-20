@@ -170,63 +170,117 @@ internal sealed partial class RenderEngine : IDisposable
         if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status,session);
         return ev;
     }
-    public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping,Action? renderStarted=null)
+    public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping,Action? renderStarted=null,Func<bool>? shouldCancel=null)
     {
+        if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
         ValidateHDRRender(settings);
         settings=PrepareInputSettings(path,settings);
-        var rawStamp=OriginalIdentity.Read(path);var lutStamp=lut==null ? null : OriginalIdentity.Read(lut);
-        // Replaced files must invalidate the native decoded data as well as WPF frames.
-        if(sourceStamp is {} previous &&
-            ((previous.Raw.Path==rawStamp.Path && previous.Raw!=rawStamp) ||
-             (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
+        var previousCallback = cancellationCallback;
+        var previousHandle = cancellationHandle;
+        var ticketHandle = default(GCHandle);
+        if (shouldCancel != null)
         {
-            if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
-            RecreateSession();lensStamp=null;
+            ticketHandle = GCHandle.Alloc(shouldCancel);
+            cancellationHandle = ticketHandle;
+            cancellationCallback = static context =>
+            {
+                try
+                {
+                    return GCHandle.FromIntPtr(context).Target is Func<bool> predicate && predicate() ? 1 : 0;
+                }
+                catch
+                {
+                    return 0;
+                }
+            };
         }
-        sourceStamp=(rawStamp,lutStamp);
-        string? sourceFingerprint = null;
-        if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var gainMapInfo) == HDRProbeState.Supported)
-            sourceFingerprint = gainMapInfo!.CacheIdentity;
-        else if (settings.IsHDREditing && PhotoInput.IsRaw(path) &&
-            PhotoInput.ProbeCameraRaw(path, out var cameraInfo, settings.Processing.Version) == HDRProbeState.Supported)
-            sourceFingerprint = cameraInfo!.CacheIdentity;
-        var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
-            settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
-        var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
-        lastSourceFingerprint = sourceFingerprint;
-        // HDR previews have a 2000px ceiling, including the viewport's native-size request.
-        var cacheEdge=settings.IsHDREditing && sourceFingerprint!=null ? HDRPreviewEdge(edge) : edge;
-        var cacheKey = (key, cacheEdge);
-        var referenceKey=(new NeutralReferenceKey(rawStamp,PhotoInput.IsRaster(path),settings.Processing,
-            settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null)),gpuMode,settings.ProRAWDecodeVersion);
-        if(original?.Key!=referenceKey || fingerprintChanged)original=null;
-        // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
-        PreviewFrame? cached = null;
-        if(!settings.ActiveAIDenoise) previewCache.TryGet(cacheKey, out cached);
-        if(cached!=null && !compare)
-            return WithMask(ReferenceEquals(cached.Neutral,cached.Result) ? cached : new(cached.Result,cached.Result));
-        if(cached!=null && !ReferenceEquals(cached.Neutral,cached.Result))
+        try
         {
-            original=(referenceKey,cached.Neutral);
-            return WithMask(cached);
+            if (shouldCancel != null)
+                Native.Check(Native.sony2fuji_session_set_cancellation_callback(session, cancellationCallback,
+                    GCHandle.ToIntPtr(ticketHandle)), session);
+            var rawStamp=OriginalIdentity.Read(path);var lutStamp=lut==null ? null : OriginalIdentity.Read(lut);
+            // Replaced files must invalidate the native decoded data as well as WPF frames.
+            if(sourceStamp is {} previous &&
+                ((previous.Raw.Path==rawStamp.Path && previous.Raw!=rawStamp) ||
+                 (previous.Lut?.Path==lutStamp?.Path && previous.Lut!=lutStamp)))
+            {
+                if(previous.Raw!=rawStamp){Native.sony2fuji_release_buffer(ref displayInput);inputStamp=null;}
+                RecreateSession();lensStamp=null;
+            }
+            sourceStamp=(rawStamp,lutStamp);
+            string? sourceFingerprint = null;
+            if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var gainMapInfo) == HDRProbeState.Supported)
+                sourceFingerprint = gainMapInfo!.CacheIdentity;
+            else if (settings.IsHDREditing && PhotoInput.IsRaw(path) &&
+                PhotoInput.ProbeCameraRaw(path, out var cameraInfo, settings.Processing.Version) == HDRProbeState.Supported)
+                sourceFingerprint = cameraInfo!.CacheIdentity;
+            var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
+                settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
+            var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
+            lastSourceFingerprint = sourceFingerprint;
+            // HDR previews have a 2000px ceiling, including the viewport's native-size request.
+            var cacheEdge=settings.IsHDREditing && sourceFingerprint!=null ? HDRPreviewEdge(edge) : edge;
+            var cacheKey = (key, cacheEdge);
+            var referenceKey=(new NeutralReferenceKey(rawStamp,PhotoInput.IsRaster(path),settings.Processing,
+                settings.Geometry,settings.Lens,cacheEdge,settings.IsHDREditing,settings.X3fMode,NeutralReference.HDRCameraSettings(settings.IsHDREditing ? settings.HDR : null)),gpuMode,settings.ProRAWDecodeVersion);
+            if(original?.Key!=referenceKey || fingerprintChanged)original=null;
+            // AI 模型或磁盘结果可在 WPF 帧之外变化，必须经过 native 的完整性与身份检查。
+            PreviewFrame? cached = null;
+            if(!settings.ActiveAIDenoise) previewCache.TryGet(cacheKey, out cached);
+            if(cached!=null && !compare)
+            {
+                if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
+                return WithMask(ReferenceEquals(cached.Neutral,cached.Result) ? cached : new(cached.Result,cached.Result));
+            }
+            if(cached!=null && !ReferenceEquals(cached.Neutral,cached.Result))
+            {
+                if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
+                original=(referenceKey,cached.Neutral);
+                return WithMask(cached);
+            }
+            var neutral=compare ? original?.Frame : null;
+            if(cached==null || (compare && neutral==null))renderStarted?.Invoke();
+            if(compare && neutral==null)
+            {
+                if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
+                neutral=Render(path,NeutralReference.Settings(path,settings),null,edge,clipping:false,viewportPreview:true)!;
+                if(neutral.Histogram.Length==768)original=(referenceKey,neutral);
+            }
+            if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
+            var result=cached?.Result ?? Render(path,settings,lut,edge,interactive,clipping:false,viewportPreview:true)!;
+            var frame=new PreviewFrame(neutral ?? result,result);
+            if(!interactive && !settings.ActiveAIDenoise && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
+            {
+                previewCache.Set(cacheKey, frame);
+            }
+            return WithMask(frame);
         }
-        var neutral=compare ? original?.Frame : null;
-        if(cached==null || (compare && neutral==null))renderStarted?.Invoke();
-        if(compare && neutral==null)
+        finally
         {
-            neutral=Render(path,NeutralReference.Settings(path,settings),null,edge,clipping:false,viewportPreview:true)!;
-            if(neutral.Histogram.Length==768)original=(referenceKey,neutral);
+            if (shouldCancel != null)
+            {
+                if (!session.IsInvalid && !session.IsClosed)
+                {
+                    if (previousCallback != null)
+                    {
+                        var ptr = previousHandle.IsAllocated ? GCHandle.ToIntPtr(previousHandle) : IntPtr.Zero;
+                        _ = Native.sony2fuji_session_set_cancellation_callback(session, previousCallback, ptr);
+                    }
+                    else
+                    {
+                        _ = Native.sony2fuji_session_set_cancellation_callback(session, null, IntPtr.Zero);
+                    }
+                }
+                cancellationCallback = previousCallback;
+                cancellationHandle = previousHandle;
+                if (ticketHandle.IsAllocated) ticketHandle.Free();
+            }
         }
-        var result=cached?.Result ?? Render(path,settings,lut,edge,interactive,clipping:false,viewportPreview:true)!;
-        var frame=new PreviewFrame(neutral ?? result,result);
-        if(!interactive && !settings.ActiveAIDenoise && result.Histogram.Length==768 && (!compare || neutral?.Histogram.Length==768))
-        {
-            previewCache.Set(cacheKey, frame);
-        }
-        return WithMask(frame);
 
         PreviewFrame WithMask(PreviewFrame preview)
         {
+            if (shouldCancel?.Invoke() == true) throw new OperationCanceledException();
             if (!clipping || preview.Result.Histogram.Length != 768) return preview;
             var masked = preview.Result with { Clipping = CreateClippingMask(preview.Result.Image) };
             return new(ReferenceEquals(preview.Neutral, preview.Result) ? masked : preview.Neutral, masked);
@@ -379,9 +433,20 @@ internal sealed partial class RenderEngine : IDisposable
         }
         var pair = HDRDisplay.CopyPair(rendered.Pair);
         if(statistics)_ = pair.Statistics;
-        var analysis = statistics || clipping ? HDRDisplay.Statistics(pair.SDR,clipping) :
-            (Histogram:Array.Empty<uint>(),Shadows:0d,Highlights:0d,Clipping:(BitmapSource?)null);
-        return new(pair.SDRBitmap, analysis.Clipping, analysis.Histogram, analysis.Shadows, analysis.Highlights, 0, null, LastBackend,
+        BitmapSource image;
+        uint[] histogram = [];
+        double shadows = 0, highlights = 0;
+        BitmapSource? clippingMask = null;
+        if (statistics || clipping)
+        {
+            (image, histogram, shadows, highlights, clippingMask) = HDRDisplay.RenderSDRWithStatistics(pair.SDR, clipping);
+            pair.SeedSDRBitmap(image);
+        }
+        else
+        {
+            image = pair.SDRBitmap;
+        }
+        return new(image, clippingMask, histogram, shadows, highlights, 0, null, LastBackend,
             NativeWidth: checked((int)pair.OutputNativeWidth), NativeHeight: checked((int)pair.OutputNativeHeight), HDR: pair);
     }
 

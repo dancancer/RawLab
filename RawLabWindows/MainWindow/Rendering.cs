@@ -51,8 +51,9 @@ public partial class MainWindow
             RefreshPhotoInfo();
             BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BackendLabel.ToolTip=BackendLabel.Text;BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
-            embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
-            TrackOpenViewSource(path, openRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));
+            var nextOpenRevision = Interlocked.Increment(ref openRevision);
+            embeddedScheduler.Submit(new(path, nextOpenRevision));PumpEmbedded();
+            TrackOpenViewSource(path, nextOpenRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));
             EnsureLookWatch(lut);
             _ = LoadPhotoInfo(path, photoInfoRevision);
             RefreshControls(); Schedule(initialPreview:true);BeginProcessingMigration(path);QueueThumbnailRefresh();
@@ -203,6 +204,10 @@ public partial class MainWindow
             })) : null;
             (neutral,rendered)=await Task.Run(()=> {
                 var w=ticket.Value;
+                Func<bool> shouldCancel = () =>
+                    Volatile.Read(ref closing) ||
+                    ticket.Id != scheduler.Revision ||
+                    Volatile.Read(ref openRevision) != w.OpenRevision;
                 if(w.Probe is {} probe) {
                     engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
@@ -218,7 +223,7 @@ public partial class MainWindow
                         frame=RenderPreviewHook(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,renderStarted);
                     else {
                         engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
-                        frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted);
+                        frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted,shouldCancel:shouldCancel);
                     }
                     return(frame.Neutral,frame.Result);
                 }

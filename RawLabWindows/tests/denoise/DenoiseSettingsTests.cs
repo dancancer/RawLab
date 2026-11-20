@@ -57,7 +57,8 @@ public sealed class DenoiseSettingsTests
         serialized.Remove("Effects"); serialized.Remove("DisplayChromaDenoise");
         var legacy = JsonSerializer.Deserialize<AdjustmentSnapshot>(serialized.ToJsonString())!.Restore();
         Check(legacy.Effects == new PhotoEffectsSettings() && legacy.DisplayChromaDenoise == 0, "Old snapshots default missing effects and display chroma to off");
-        settings.ResetAll(); Check(settings.Denoise == new DenoiseSettings(), "Reset all disables denoising");
+        settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("denoise.arw", 1, 2, 3), settings.Capture(), null)).Candidate!.Settings.Restore();
+        Check(settings.Denoise == new DenoiseSettings(), "Reset all disables denoising");
         Check(settings.Effects == new PhotoEffectsSettings() && settings.DisplayChromaDenoise == 0, "Reset all restores effects and display chroma defaults");
         settings.Denoise = DenoiseSettings.Clean; settings.ResetGroup("细节");
         Check(!settings.Denoise.Enabled, "Detail group reset disables denoising");

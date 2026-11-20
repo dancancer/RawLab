@@ -145,5 +145,54 @@ internal static class PreviewChecks
             check(!ReferenceEquals(original,Frame()),"Replacing a RAW invalidates managed and native cached data");
         }
         finally{File.SetLastWriteTimeUtc(raw,originalTime);}
+
+        var cancelSettings = settings.Clone();
+        cancelSettings.Set(Parameter.Exposure, .72);
+        var polls = 0;
+        var cancelledMidRender = false;
+        try
+        {
+            _ = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false,
+                shouldCancel: () => Interlocked.Increment(ref polls) > 2);
+        }
+        catch (OperationCanceledException)
+        {
+            cancelledMidRender = true;
+        }
+        check(cancelledMidRender && polls >= 3, "Per-ticket shouldCancel cooperatively cancels RenderPreview");
+
+        var afterCancel = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false, shouldCancel: null);
+        check(afterCancel.Result.Image.PixelWidth > 0, "Clearing per-ticket cancellation restores clean RenderPreview on the same engine");
+
+        var cachedCancelled = false;
+        try
+        {
+            _ = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false, shouldCancel: () => true);
+        }
+        catch (OperationCanceledException)
+        {
+            cachedCancelled = true;
+        }
+        check(cachedCancelled, "Per-ticket shouldCancel cancels even on a cached preview hit");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        engine.SetCancellation(cts.Token);
+        var engineTokenCancelled = false;
+        try
+        {
+            var tokenSettings = settings.Clone();
+            tokenSettings.Set(Parameter.Exposure, .83);
+            _ = engine.RenderPreview(raw, tokenSettings, lut, 800, false, false, false);
+        }
+        catch (OperationCanceledException)
+        {
+            engineTokenCancelled = true;
+        }
+        finally
+        {
+            engine.SetCancellation(CancellationToken.None);
+        }
+        check(engineTokenCancelled, "Engine-level SetCancellation remains active when shouldCancel is omitted");
     }
 }

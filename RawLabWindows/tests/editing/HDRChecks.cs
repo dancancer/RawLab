@@ -28,6 +28,7 @@ internal static class HDRChecks
         NativeLayoutsMatchHDRContract();
         LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState();
         BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource();
+        DormantFullHdrSurvivesProductionSdrResetAll();
         RenditionGroupAndSingleToolResetAreIsolatedFromCameraDevelopment();
         Check(JsonSerializer.Deserialize<ExportFormat>("1")==ExportFormat.Png &&
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
@@ -716,5 +717,85 @@ internal static class HDRChecks
             catch (ArgumentOutOfRangeException) { rejected = true; }
             Check(rejected, "SetHDRRendition rejects non-finite value " + bad);
         }
+    }
+
+    private static void DormantFullHdrSurvivesProductionSdrResetAll()
+    {
+        var all = new EditorResetScope(EditorResetKind.All);
+        var identity = new OriginalIdentity("dormant-full-hdr.arw", 11, 22, 33);
+        var richHdr = new HDRSettings {
+            Mode = HDRMode.Sdr,
+            Exposure = 1.25,
+            Temperature = 5800,
+            Tint = -8,
+            Contrast = 18,
+            Highlights = -25,
+            Shadows = 30,
+            Saturation = 12,
+            Geometry = new GeometrySettings(.05, .05, .9, .9, 1, true, false, 1.5),
+            CameraDevelopment = new HDRCameraDevelopmentSettings(
+                CustomWhiteBalance: true, Temperature: 5600, Tint: 6, SensorExposure: true,
+                LensDistortion: true, LensProfile: "test-hdr-lens")
+        }
+        .WithTone(new HDRToneSettings {
+            BlackPoint = -12, WhitePoint = 14, CurveStrength = 40,
+            Curve = ToneCurveSettings.Identity.Inserting(.5, .625)
+        })
+        .WithColor(new HDRColorSettings {
+            Vibrance = 20,
+            Hsl = new HslSettings().WithValue(0, 2, 15),
+            Grading = new ColorGradingSettings { Highlights = new(215, 30) }
+        })
+        .WithRendition(new HDRRenditionSettings {
+            PeakLimitEV = 2.5, SdrExposureEV = -.5, SdrContrast = 15, SdrSaturation = -10
+        })
+        .WithEffects(new PhotoEffectsSettings(-30, 45, 10, 60, 20, 25, 40, 55))
+        .WithDetail(new HDRDetailSettings(Sharpening: .6, Clarity: .2, Dehaze: .15, Denoise: .35))
+        .WithLook(new HDRLookSettings(new string('b', 64), "Dormant HDR Look", .85));
+
+        var sdrEdited = new Adjustments {
+            HDR = richHdr,
+            HDRCameraAIEnabled = true,
+            Denoise = DenoiseSettings.Clean,
+            AIDenoiseEnabled = true,
+            Effects = new PhotoEffectsSettings(-20, 50, 0, 50, 0, 30, 25, 50),
+            ToneControls = new ToneControlsSettings(-10, 12, 8)
+        };
+        sdrEdited.ResolveWhiteBalance((5200, 4));
+        sdrEdited.Set(Parameter.Exposure, .9);
+        sdrEdited.Set(Parameter.Saturation, 22);
+
+        var edit = new SavedEdit(identity, sdrEdited.Capture(), "builtin:provia.cube");
+        var ruleReset = EditorAdjustmentRules.PrepareReset(all, edit);
+        Check(ruleReset.Status == EditorResetStatus.Ready && ruleReset.RequiresConfirmation,
+            "Production PrepareReset(All) prepares confirmed SDR reset");
+        var ruleRestored = ruleReset.Candidate!.Settings.Restore();
+        Check(ruleReset.Candidate.Look == null &&
+              ruleRestored[Parameter.Exposure] == 0 &&
+              ruleRestored[Parameter.Saturation] == 0 &&
+              ruleRestored.Denoise == new DenoiseSettings() &&
+              !ruleRestored.AIDenoiseEnabled &&
+              ruleRestored.Effects == new PhotoEffectsSettings() &&
+              ruleRestored.ToneControls == new ToneControlsSettings() &&
+              ruleRestored.HDR == richHdr &&
+              ruleRestored.HDRCameraAIEnabled,
+            "PrepareReset(All) resets SDR fields while preserving full dormant HDR and HDRCameraAIEnabled");
+
+        var context = new EditorResetContext("builtin:provia.cube", 0);
+        var transaction = EditorResetTransaction.Prepare(all, identity.Path, 1, 1, edit, context);
+        Check(transaction.Status == EditorResetStatus.Ready && transaction.RequiresConfirmation,
+            "EditorResetTransaction.Prepare(All) prepares confirmed SDR reset");
+        var committed = false;
+        Check(transaction.TryCommit(identity.Path, 1, 1, edit, context, candidate => {
+            committed = true;
+            var txRestored = candidate.Settings.Restore();
+            Check(candidate.Look == null &&
+                  txRestored[Parameter.Exposure] == 0 &&
+                  txRestored.Denoise == new DenoiseSettings() &&
+                  !txRestored.AIDenoiseEnabled &&
+                  txRestored.HDR == richHdr &&
+                  txRestored.HDRCameraAIEnabled,
+                "EditorResetTransaction.TryCommit(All) preserves full dormant HDR and HDRCameraAIEnabled");
+        }) && committed, "EditorResetTransaction.TryCommit succeeds");
     }
 }

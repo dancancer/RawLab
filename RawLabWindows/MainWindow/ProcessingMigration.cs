@@ -80,7 +80,7 @@ public partial class MainWindow
             (LookAvailable && ViewSourceState.TryReadIdentity(lookIdentity.Path) is { } currentLook && lookIdentity.SameFile(currentLook));
     }
 
-    private void FinishProcessingMigration(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,
+    private async void FinishProcessingMigration(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,
         long opened,long revision,Native.ProcessingMigrationResult nativeResult,CancellationTokenSource cancellation)
     {
         if (processingMigrationCancellation != cancellation) return;
@@ -93,28 +93,62 @@ public partial class MainWindow
             processingMigrationPending=new(path,source,before,expectedSettings,expectedLook,lookIdentity,opened,revision,nativeResult,cancellation);
             RefreshProcessingMigrationControls();return;
         }
-        processingMigrationCancellation=null;processingMigrationBusy=false;
         try
         {
-            PhotoEditState saved;
-            if (ProcessingMigration.IsRejectedResult(before,nativeResult))
+            var isRejected = ProcessingMigration.IsRejectedResult(before, nativeResult);
+            SavedEdit? candidate = null;
+            if (!isRejected && !(ProcessingMigration.TryBuildCandidate(before, nativeResult, out candidate) && candidate != null))
             {
-                saved=editStore!.CommitProcessingMigration(source,before,before,ProcessingMigrationReceipt.Kept);
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                RefreshProcessingMigrationControls(); return;
+            }
+            var targetEdit = isRejected ? before : candidate!;
+            var status = isRejected ? ProcessingMigrationReceipt.Kept : ProcessingMigrationReceipt.Migrated;
+            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
+            {
+                var committed = editStore!.CommitProcessingMigration(source, before, targetEdit, status);
+                return (committed, editStore.ReadProcessingMigration(path));
+            });
+            if (processingMigrationCancellation != cancellation ||
+                !MigrationIsCurrent(path, source, before, expectedSettings, expectedLook, lookIdentity, opened, revision))
+            {
+                if (processingMigrationCancellation == cancellation)
+                {
+                    processingMigrationCancellation=null;processingMigrationBusy=false;
+                    RefreshProcessingMigrationControls();
+                }
+                return;
+            }
+            processingMigrationCancellation=null;processingMigrationBusy=false;
+            if (isRejected)
+            {
                 TransferSession.RememberExternalSave(saved);
             }
-            else if (ProcessingMigration.TryBuildCandidate(before,nativeResult,out var candidate) && candidate != null)
+            else
             {
-                saved=editStore!.CommitProcessingMigration(source,before,candidate,ProcessingMigrationReceipt.Migrated);
                 TransferSession.AdoptExternalProcessingMigration(saved);
-                currentEditRecord=saved;settings=candidate.Settings.Restore();editDirty=false;++editRevision;
+                currentEditRecord=saved;settings=candidate!.Settings.Restore();editDirty=false;++editRevision;
                 ResetAITask();RefreshControls();Schedule();
             }
-            else { RefreshProcessingMigrationControls(); return; }
-            currentEditRecord=saved;processingMigrationReceipt=editStore.ReadProcessingMigration(path);
+            currentEditRecord=saved;processingMigrationReceipt=receipt;
             RefreshControls();
         }
-        catch (AdjustmentOperationExpiredException) { RefreshProcessingMigrationControls(); }
-        catch (Exception error) { Report(error);RefreshProcessingMigrationControls(); }
+        catch (AdjustmentOperationExpiredException)
+        {
+            if (processingMigrationCancellation == cancellation)
+            {
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                RefreshProcessingMigrationControls();
+            }
+        }
+        catch (Exception error)
+        {
+            if (processingMigrationCancellation == cancellation)
+            {
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                Report(error);RefreshProcessingMigrationControls();
+            }
+        }
     }
 
     private void FailProcessingMigration(string path,long opened,long revision,CancellationTokenSource cancellation,Exception error)
@@ -160,20 +194,30 @@ public partial class MainWindow
             !interacting && editGesture == null;
     }
 
-    private void RollbackProcessingMigrationClicked(object sender,RoutedEventArgs e)
+    private async void RollbackProcessingMigrationClicked(object sender,RoutedEventArgs e)
     {
         if (file == null || processingMigrationBusy || processingMigrationReceipt?.Status != ProcessingMigrationReceipt.Migrated ||
             exporting || transform.Active || interacting || editGesture != null || currentEditRecord == null) return;
         if (MessageBox.Show(this,Loc.Text("将恢复迁移前的全部调整，之后的修改会被替换。"),Loc.Text("回到迁移前"),
             MessageBoxButton.YesNo,MessageBoxImage.Warning,MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        var path = file;
+        var opened = openRevision;
         try
         {
-            if (!SaveEdits()) return;
+            if (!await FlushSaveEditsAsync()) return;
+            if (closing || file != path || openRevision != opened || processingMigrationBusy ||
+                processingMigrationReceipt?.Status != ProcessingMigrationReceipt.Migrated ||
+                exporting || transform.Active || interacting || editGesture != null || currentEditRecord == null) return;
             var before=currentEditRecord;var identity=before.Identity;
-            var saved=editStore!.RollbackProcessingMigration(identity,before);
+            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
+            {
+                var rolledBack = editStore!.RollbackProcessingMigration(identity, before);
+                return (rolledBack, editStore.ReadProcessingMigration(path));
+            });
+            if (closing || file != path || openRevision != opened) return;
             TransferSession.AdoptExternalProcessingMigration(saved);
-            currentEditRecord=saved;processingMigrationReceipt=editStore.ReadProcessingMigration(file);AdoptSavedEdit(saved);
+            currentEditRecord=saved;processingMigrationReceipt=receipt;AdoptSavedEdit(saved);
         }
-        catch (Exception error) { Report(error); }
+        catch (Exception error) { if (!closing && file == path && openRevision == opened) Report(error); }
     }
 }

@@ -32,13 +32,13 @@ public partial class MainWindow
         => TransferSession.Copy(scope,CaptureVerifiedAdjustmentSource(),CurrentTransferContext());
     private async void PasteAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
-        if(!PrepareAdjustmentCommand())return;
+        if(!await PrepareAdjustmentCommandAsync())return;
         if(TransferSession.Clipboard is not {} payload){SetStatus(()=>Loc.Text("尚未复制调整。请先从一张照片复制所需范围。"),true);return;}
         await ShowAdjustmentPreflight(payload,[file!]);
     }
     private async void PasteAdjustmentsToPhotosClicked(object sender,RoutedEventArgs e)
     {
-        if(!PrepareAdjustmentCommand())return;
+        if(!await PrepareAdjustmentCommandAsync())return;
         if(TransferSession.Clipboard is not {} payload){SetStatus(()=>Loc.Text("尚未复制调整。请先从一张照片复制所需范围。"),true);return;}
         var picker=new OpenFileDialog{Title=Loc.Text("选择目标照片"),Filter=Loc.Text("照片|")+LibraryEntry.ImageFilter,Multiselect=true};
         if(picker.ShowDialog(this)==true)await ShowAdjustmentPreflight(payload,picker.FileNames);

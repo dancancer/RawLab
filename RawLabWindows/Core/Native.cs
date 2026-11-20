@@ -317,6 +317,7 @@ internal static partial class Native
     internal const int StatusUnsupported = 2;
     internal const int StatusIoError = 3;
     internal const int StatusOutOfMemory = 5;
+    internal const int StatusCancelled = 7;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct DcpBlob
@@ -396,6 +397,7 @@ internal static partial class Native
     {
         ArgumentNullException.ThrowIfNull(session);
         if (status == 0) return;
+        if (status == StatusCancelled) throw new OperationCanceledException();
         var detail = Marshal.PtrToStringUTF8(sony2fuji_session_x3f_error(session));
         var unsupportedReason = status == 2
             ? (UnsupportedReason)sony2fuji_session_get_unsupported_reason(session)
@@ -410,6 +412,7 @@ internal static partial class Native
     internal static void CheckWithoutSession(int status)
     {
         if (status == 0) return;
+        if (status == StatusCancelled) throw new OperationCanceledException();
         throw new InvalidOperationException(FormatErrorMessage(status, null, UnsupportedReason.None));
     }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] private static extern int sony2fuji_session_create(out IntPtr session);

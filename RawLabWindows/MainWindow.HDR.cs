@@ -128,8 +128,15 @@ public partial class MainWindow
     private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
         if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
+        var initialPath = file;
+        var initialOpened = openRevision;
         CancelParameterInputs();
-        if (!ResolveTransformDraft() || !SaveEdits()) { RefreshHDRControls(); return; }
+        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
+        if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
+        {
+            RefreshHDRControls();
+            return;
+        }
         var before = settings;
         var candidate = before.Clone();
         var enabled = HDREditMenu.IsChecked;
@@ -177,7 +184,7 @@ public partial class MainWindow
         ResetAITask();
         settings = candidate;
         MarkEdited();
-        if (!SaveEdits()) { settings = before; RefreshControls(); return; }
+        if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
         RefreshControls();
         Schedule();
     }
@@ -381,7 +388,7 @@ public partial class MainWindow
             });
             if (!IsCurrent()) return;
             settings=candidate; MarkEdited();
-            if (!SaveEdits()) { settings=previous; RefreshControls(); return; }
+            if (!await FlushSaveEditsAsync()) { settings=previous; RefreshControls(); return; }
             RefreshControls(); Schedule();
         } catch (Exception failure) { if (IsCurrent()) Report(failure); }
         finally { cameraHDRPreflight=false; if (!closing) RefreshHDRControls(); }

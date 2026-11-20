@@ -382,7 +382,6 @@ public sealed class Adjustments
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }
-    public void ResetAll() { Atmosphere = new(); Curve = new(); ColorGrading = new(); ToneControls = new(); AIDenoiseEnabled = HDRCameraAIEnabled = false; MasterRecipeID = null; MasterRecipeSettingsVersion = 3; foreach (var spec in ParameterSpec.All) Reset(spec.Id); ExposureMode = 1; ResetWhiteBalance(); Denoise = new(); Effects = new(); Hsl = new(); DisplayChromaDenoise = 0; Lens = new(); Geometry = new(); if (HDR is { } hdr) HDR = hdr.Reset() with { Mode = hdr.Mode }; }
 
     public void RequireHDRDecodeVersion(bool proRAW)
     {
@@ -447,16 +446,17 @@ public sealed class Adjustments
     }
 }
 
-// Accessed only on the UI thread: one running operation and one replaceable pending request.
+// 提交与开启/完成仍在 UI 线程；Revision 可由渲染后台线程无锁读取以检测陈旧任务。
 public sealed class LatestWork<T> where T : class
 {
     public record Ticket(long Id, T Value);
     private Ticket? pending;
+    private long revision;
     internal Ticket? Pending => pending;
     public Ticket? Active { get; private set; }
-    public long Revision { get; private set; }
+    public long Revision => Volatile.Read(ref revision);
     public bool Busy => Active != null || pending != null;
-    public void Submit(T value) => pending = new Ticket(++Revision, value);
+    public void Submit(T value) => pending = new Ticket(Interlocked.Increment(ref revision), value);
     public Ticket? Start() { if (Active != null) return null; Active = pending; pending = null; return Active; }
-    public bool Finish(Ticket ticket) { if (Active != ticket) return false; Active = null; return ticket.Id == Revision; }
+    public bool Finish(Ticket ticket) { if (Active != ticket) return false; Active = null; return ticket.Id == Volatile.Read(ref revision); }
 }

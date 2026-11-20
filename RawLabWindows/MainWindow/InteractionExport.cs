@@ -199,7 +199,7 @@ public partial class MainWindow
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
-        closing=true;
+        Volatile.Write(ref closing, true);
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();
@@ -212,7 +212,7 @@ public partial class MainWindow
         }
         RefreshViewingFrames();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
-        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
+        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;Volatile.Write(ref closing, true);IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         e.Cancel = true;
         Dispatcher.BeginInvoke(new Action(FinishClose));
     }
