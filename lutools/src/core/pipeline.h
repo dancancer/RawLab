@@ -45,6 +45,24 @@ enum class UnsupportedReason : int32_t {
     ForceGpu = 1
 };
 
+enum class GpuFallbackReason : int32_t {
+    None = 0,
+    BasicV3Controls = 1,
+    Atmosphere = 2,
+    Curves = 3,
+    C5Wavelet = 4,
+    DcpLook = 5,
+    LutContract = 6,
+    Geometry = 7,
+    DisplayInput = 8,
+    GpuDisabled = 9,
+    NoAdapter = 10,
+    Cooldown = 11,
+    DeviceError = 12,
+    FilterError = 13,
+    UnsupportedCapability = 14
+};
+
 enum class RawExposureMode : int32_t {
     Scene = 0,
     Preview = 1,
@@ -155,6 +173,8 @@ public:
     RenderBackend lastBackend() const noexcept { return lastBackend_; }
     void didRenderCpu() noexcept { lastBackend_ = RenderBackend::Cpu; }
     UnsupportedReason unsupportedReason() const noexcept { return unsupportedReason_; }
+    GpuFallbackReason gpuFallbackReason() const noexcept { return gpuFallbackReason_; }
+    const std::string& gpuError() const noexcept { return gpuErrorDetail_; }
     uint64_t rawDecodeCount() const noexcept { return rawDecodeCount_; }
 
     // Raw & processing controls
@@ -330,7 +350,9 @@ private:
     bool interactivePreview_ = false;
     bool viewportPreview_ = false;
     RenderBackend lastBackend_ = RenderBackend::Cpu;
-    UnsupportedReason unsupportedReason_ = UnsupportedReason::None;
+    mutable UnsupportedReason unsupportedReason_ = UnsupportedReason::None;
+    mutable GpuFallbackReason gpuFallbackReason_ = GpuFallbackReason::None;
+    mutable std::string gpuErrorDetail_;
     uint64_t rawDecodeCount_ = 0;
     std::unique_ptr<PipelineRuntimeState> runtime_;
 };

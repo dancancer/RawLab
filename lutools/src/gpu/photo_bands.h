@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include "gpu/photo_gpu.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -23,7 +24,7 @@ public:
         const size_t outputRowBytes = size_t(width) * sizeof(RGB);
         if (!sourceWidth || !sourceHeight || !width || !height ||
             sourceRowBytes_ > limit_ / 2 || outputRowBytes > limit_ || width > dispatchLimit)
-            throw std::runtime_error("Image row exceeds compute limits");
+            throw GpuCapabilityLimitError("Image row exceeds compute limits");
         maxRows_ = static_cast<uint32_t>(std::min<size_t>(height, std::min(limit_ / outputRowBytes, dispatchLimit / width)));
     }
 
@@ -37,7 +38,7 @@ public:
         while (rows > 1 && size_t(lastRow(rows) - first + 1) * sourceRowBytes_ > limit_) rows = (rows + 1) / 2;
         const auto last = lastRow(rows);
         if (size_t(last - first + 1) * sourceRowBytes_ > limit_)
-            throw std::runtime_error("Source halo exceeds the bounded upload budget");
+            throw GpuCapabilityLimitError("Source halo exceeds the bounded upload budget");
         return {rows, first, last};
     }
 

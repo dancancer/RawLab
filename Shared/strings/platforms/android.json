@@ -6891,6 +6891,12 @@
       "formats": [],
       "types": [],
       "file": "strings.xml"
+    },
+    "force_gpu_unsupported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+      "types": []
     }
   },
   "overrides": {

@@ -306,6 +306,22 @@ sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony
     return static_cast<sony2fuji_unsupported_reason>(lease.constRaw()->pipeline.unsupportedReason());
 }
 
+sony2fuji_gpu_fallback_reason sony2fuji_session_get_gpu_fallback_reason(const sony2fuji_session* handle) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_GPU_FALLBACK_NONE;
+    return static_cast<sony2fuji_gpu_fallback_reason>(lease.constRaw()->pipeline.gpuFallbackReason());
+}
+
+const char* sony2fuji_session_get_gpu_error(const sony2fuji_session* handle) {
+    thread_local std::string snapshot;
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return "";
+    try {
+        snapshot = lease.constRaw()->pipeline.gpuError();
+        return snapshot.c_str();
+    } catch (...) { return ""; }
+}
+
 uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* handle) {
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease)) return 0;

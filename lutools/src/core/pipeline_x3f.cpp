@@ -64,6 +64,8 @@ RenderStatus Pipeline::setX3fMode(X3fMode mode) {
     x3fMode_ = mode;
     x3fError_.clear();
     unsupportedReason_ = UnsupportedReason::None;
+    gpuFallbackReason_ = GpuFallbackReason::None;
+    gpuErrorDetail_.clear();
     return RenderStatus::Ok;
 }
 

@@ -142,7 +142,10 @@ struct ProcessorExportTests {
             _ = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                    previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
             check(false, "Force must reject active C5")
-        } catch { print("PASS: Force rejects active C5") }
+        } catch {
+            check(error.localizedDescription == "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+                  "Force rejects active C5 with Force GPU fallback prompt: \(error.localizedDescription)")
+        }
         let combinedAgain = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                                 previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(combinedAgain.data == combinedGPU.data, "iOS GPU grain is deterministic")

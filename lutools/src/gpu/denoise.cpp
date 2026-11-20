@@ -6,6 +6,8 @@
 #endif
 #include <mutex>
 #include <exception>
+#include <new>
+#include <string>
 #if defined(SONY2FUJI_ENABLE_GLES)
 #include <android/log.h>
 #include "gles_recovery.h"
@@ -28,12 +30,20 @@ struct ComputeContext {
     std::mutex mutex;
     std::unique_ptr<FilterDevice> device;
     DeviceRetry retry;
+    bool initUnavailable = false;
+    std::string lastInitError;
     ComputeContext() {
         // Register our destructor after EGL's lazily initialized driver state.
 #if defined(SONY2FUJI_ENABLE_GLES)
         try {
             device = createGlesFilterDevice();
-        } catch (const std::exception&) {
+        } catch (const GpuUnavailableError& error) {
+            initUnavailable = true;
+            lastInitError = error.what();
+            retry.failed(glesRetryNow());
+        } catch (const std::exception& error) {
+            initUnavailable = false;
+            lastInitError = error.what();
             retry.failed(glesRetryNow());
         }
 #endif
@@ -43,66 +53,130 @@ ComputeContext& computeContext() { static ComputeContext context; return context
 #endif
 template<class Operation>
 bool compute(Operation operation) {
+    lastGpuFilterOutcome() = {};
 #if defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    try {
-        auto& context = computeContext();
-        auto& device = context.device;
-        std::lock_guard<std::mutex> lock(context.mutex);
-#if defined(SONY2FUJI_ENABLE_D3D11)
-        if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) return false;
-#endif
-        if (!device && !context.retry.ready(filterRetryNow())) return false;
-        bool initializing = !device;
-        try {
+    auto logError = [](const char* message) {
 #if defined(SONY2FUJI_ENABLE_GLES)
-            if (!device) device = createGlesFilterDevice();
+        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s", message);
 #else
-            if (!device) device = createD3D11FilterDevice();
+        OutputDebugStringA(message);
 #endif
-            initializing = false;
-            auto scope = device->activate();
-            const bool ok = operation(*device);
-            device->trimPool();
-            if (ok) context.retry.succeeded();
-            return ok;
-        } catch (const ProcessingCancelled&) {
-            if (device) device->clearErrors();
-            throw;
-        } catch (const std::exception& error) {
+    };
+    auto& context = computeContext();
+    auto& device = context.device;
+    std::lock_guard<std::mutex> lock(context.mutex);
 #if defined(SONY2FUJI_ENABLE_D3D11)
-            if (initializing || d3d11LostDevice(error) || (device && device->deviceLost())) {
-                context.retry.failed(filterRetryNow());
-                device.reset();
-            } else if (device) {
-                device->clearErrors();
-            }
-#else
-            if (initializing || glesLostDevice(error)) {
-                context.retry.failed(filterRetryNow());
-                device.reset();
-            } else if (device) {
-                device->clearErrors();
-            }
+    if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) {
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::Unsupported,
+            GpuBackendFault::GpuDisabled,
+            "Direct3D 11 filters disabled by RAWLAB_DISABLE_D3D11"
+        };
+        return false;
+    }
 #endif
-            throw;
+    if (!device && !context.retry.ready(filterRetryNow())) {
+        if (context.initUnavailable) {
+            lastGpuFilterOutcome() = {
+                GpuFailureKind::Unsupported,
+                GpuBackendFault::Cooldown,
+                context.lastInitError.empty() ? "GPU filter device unavailable (retry cooldown)" : context.lastInitError
+            };
+        } else {
+            lastGpuFilterOutcome() = {
+                GpuFailureKind::ProcessingError,
+                GpuBackendFault::Cooldown,
+                context.lastInitError.empty() ? "GPU filter device recovery cooldown" : context.lastInitError
+            };
         }
-    } catch (const ProcessingCancelled&) {
-        throw;
-    } catch (const std::exception& error) {
+        return false;
+    }
+    bool initializing = !device;
+    try {
 #if defined(SONY2FUJI_ENABLE_GLES)
-        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s", error.what());
+        if (!device) device = createGlesFilterDevice();
 #else
-        OutputDebugStringA(error.what());
+        if (!device) device = createD3D11FilterDevice();
 #endif
+        initializing = false;
+        auto scope = device->activate();
+        const bool ok = operation(*device);
+        device->trimPool();
+        if (ok) {
+            context.retry.succeeded();
+            context.initUnavailable = false;
+            context.lastInitError.clear();
+            lastGpuFilterOutcome() = {};
+        } else if (lastGpuFilterOutcome().failure == GpuFailureKind::None) {
+            lastGpuFilterOutcome() = {
+                GpuFailureKind::ProcessingError,
+                GpuBackendFault::FilterError,
+                "GPU filter rejected input or produced invalid output"
+            };
+        }
+        return ok;
+    } catch (const ProcessingCancelled&) {
+        if (device) device->clearErrors();
+        throw;
+    } catch (const std::bad_alloc&) {
+        if (device) device->clearErrors();
+        throw;
+    } catch (const GpuUnavailableError& error) {
+        context.initUnavailable = true;
+        context.lastInitError = error.what();
+        context.retry.failed(filterRetryNow());
+        device.reset();
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::Unsupported,
+            GpuBackendFault::NoAdapter,
+            error.what()
+        };
+        logError(error.what());
+        return false;
+    } catch (const GpuCapabilityLimitError& error) {
+        if (device) device->clearErrors();
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::Unsupported,
+            GpuBackendFault::UnsupportedCapability,
+            error.what()
+        };
+        logError(error.what());
+        return false;
+    } catch (const std::exception& error) {
+#if defined(SONY2FUJI_ENABLE_D3D11)
+        const bool lost = initializing || d3d11LostDevice(error) || (device && device->deviceLost());
+#else
+        const bool lost = initializing || glesLostDevice(error);
+#endif
+        if (lost) {
+            context.initUnavailable = false;
+            context.lastInitError = error.what();
+            context.retry.failed(filterRetryNow());
+            device.reset();
+        } else if (device) {
+            device->clearErrors();
+        }
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::ProcessingError,
+            GpuBackendFault::FilterError,
+            error.what()
+        };
+        logError(error.what());
         return false;
     }
 #else
     (void)operation;
+    lastGpuFilterOutcome() = {
+        GpuFailureKind::Unsupported,
+        GpuBackendFault::GpuDisabled,
+        "GPU compute filter backend is not enabled"
+    };
     return false;
 #endif
 }
 } // namespace
 bool gpuWaveletFilter(const float* input, int width, int height, const WaveletFilterSettings& settings, float* output) {
+    lastGpuFilterOutcome() = {};
     if (!validProcessingVersion(settings.processingVersion)) return false;
 #if defined(SONY2FUJI_ENABLE_METAL)
     return metalWaveletFilter(input, width, height, settings, output);
@@ -111,6 +185,7 @@ bool gpuWaveletFilter(const float* input, int width, int height, const WaveletFi
 #endif
 }
 bool gpuGuidedFilter(const float* guide, const float* input, int width, int height, int radius, float epsilon, float* output) {
+    lastGpuFilterOutcome() = {};
 #if defined(SONY2FUJI_ENABLE_METAL)
     return metalGuidedFilter(guide, input, width, height, radius, epsilon, output);
 #else

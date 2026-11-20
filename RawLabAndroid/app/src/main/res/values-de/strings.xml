@@ -242,6 +242,7 @@
     <string name="exposure_sensor">"Sensorreferenz"</string>
     <string name="film">"Film"</string>
     <string name="follow_system">"Systemsprache verwenden"</string>
+    <string name="force_gpu_unsupported">"GPU erzwingen ist für dieses Foto, diesen Look oder diese Verarbeitungsart nicht verfügbar. Wechseln Sie für den Fallback zu Auto."</string>
     <string name="geometry">"Geometrie"</string>
     <string name="geometry_crop_height">"Zuschnitthöhe"</string>
     <string name="geometry_crop_hint">"Die Zuschnittwerte beziehen sich auf das gedrehte, gespiegelte, perspektivisch korrigierte und begradigte Bild."</string>

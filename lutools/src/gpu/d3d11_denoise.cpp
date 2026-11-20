@@ -55,7 +55,7 @@ class Device final : public FilterDevice {
     FilterBufferPtr dummy;
     FilterBufferPool pool;
     FilterBufferPtr createBuffer(size_t count, const float* input) {
-        if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
+        if (!count || count > UINT32_MAX / sizeof(float)) throw GpuCapabilityLimitError("D3D11 filter buffer too large");
 #if defined(RAWLAB_D3D11_TESTING)
         if (count > 1 && d3d11_test::allocationFailures > 0) {
             --d3d11_test::allocationFailures;
@@ -89,7 +89,7 @@ class Device final : public FilterDevice {
     };
 public:
     void initialize() {
-        if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw std::runtime_error("D3D11 filters disabled");
+        if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw GpuUnavailableError("D3D11 filters disabled");
 #if defined(RAWLAB_D3D11_TESTING)
         d3d11_test::createDevice(device, context, true);
 #else
@@ -110,7 +110,7 @@ public:
         const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
         for (const auto& adapter : adapters) if (SUCCEEDED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN,
             nullptr, 0, &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
-        if (!device) throw std::runtime_error("No D3D11 hardware filter adapter");
+        if (!device) throw GpuUnavailableError("No D3D11 hardware filter adapter");
 #endif
         const std::string source = std::string(prefix) + kFilterShaderBody +
             "\n[numthreads(128,1,1)] void main(uint3 id : SV_DispatchThreadID) { filterPixel(baseIndex + id.x); }\n";
@@ -124,9 +124,16 @@ public:
     }
     std::unique_ptr<FilterContext> activate() override { return std::make_unique<TrimContext>(&pool); }
     bool deviceLost() const override { return device.Get() && FAILED(d3d11DeviceStatus(*device.Get())); }
-    void trimPool() override { pool.trimIdleToBudget(); }
+    void trimPool() override {
+        pool.trimIdleToBudget();
+        constexpr size_t kMaxIdleStagingBytes = 16 * 1024 * 1024;
+        if (stagingBytes > kMaxIdleStagingBytes) {
+            staging.Reset();
+            stagingBytes = 0;
+        }
+    }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
-        if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
+        if (!count || count > UINT32_MAX / sizeof(float)) throw GpuCapabilityLimitError("D3D11 filter buffer too large");
         return pool.acquire(count, input,
             [this](size_t n, const float* data) { return createBuffer(n, data); },
             [this](FilterBuffer& buf, size_t n, const float* data) { write(buf, n, data); });

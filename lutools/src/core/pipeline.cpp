@@ -12,10 +12,8 @@
 #include "core/photo_basic_controls_v3.h"
 #include "core/photo_pipeline_stages.h"
 #include "core/x3f_processor.h"
-
-#if defined(SONY2FUJI_ENABLE_METAL)
+#include "gpu/denoise.h"
 #include "gpu/photo_gpu.h"
-#endif
 
 #include <algorithm>
 #include <chrono>
@@ -26,6 +24,21 @@
 #include <stdexcept>
 
 namespace sony2fuji {
+namespace {
+GpuFallbackReason fallbackReasonFromFault(GpuBackendFault fault) noexcept {
+    switch (fault) {
+    case GpuBackendFault::GpuDisabled: return GpuFallbackReason::GpuDisabled;
+    case GpuBackendFault::NoAdapter: return GpuFallbackReason::NoAdapter;
+    case GpuBackendFault::Cooldown: return GpuFallbackReason::Cooldown;
+    case GpuBackendFault::FilterError: return GpuFallbackReason::FilterError;
+    case GpuBackendFault::UnsupportedCapability: return GpuFallbackReason::UnsupportedCapability;
+    case GpuBackendFault::DeviceError:
+    case GpuBackendFault::None:
+    default:
+        return GpuFallbackReason::DeviceError;
+    }
+}
+} // namespace
 
 Pipeline::Pipeline()
     : gpuConfig_(defaultGpuConfig()),
@@ -275,6 +288,8 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
                 LensCorrectionReport rawLensReport;
                 std::string x3fError;
                 UnsupportedReason unsupportedReason;
+                GpuFallbackReason gpuFallbackReason;
+                std::string gpuErrorDetail;
                 explicit ProbeGuard(Pipeline& pipeline)
                     : self(pipeline),
                       processingVersion(pipeline.processingVersion_),
@@ -288,7 +303,9 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
                       lensReport(pipeline.lensReport_),
                       rawLensReport(pipeline.rawLensReport_),
                       x3fError(pipeline.x3fError_),
-                      unsupportedReason(pipeline.unsupportedReason_) {}
+                      unsupportedReason(pipeline.unsupportedReason_),
+                      gpuFallbackReason(pipeline.gpuFallbackReason_),
+                      gpuErrorDetail(pipeline.gpuErrorDetail_) {}
                 ~ProbeGuard() {
                     self.processingVersion_ = processingVersion;
                     self.x3fMode_ = x3fMode;
@@ -302,6 +319,8 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
                     self.rawLensReport_ = rawLensReport;
                     self.x3fError_ = std::move(x3fError);
                     self.unsupportedReason_ = unsupportedReason;
+                    self.gpuFallbackReason_ = gpuFallbackReason;
+                    self.gpuErrorDetail_ = std::move(gpuErrorDetail);
                     self.rawProcessor_.reset();
                     self.processorKey_.clear();
                 }
@@ -542,6 +561,8 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         x3fMode_ = recipe.x3fMode;
         x3fError_.clear();
         unsupportedReason_ = UnsupportedReason::None;
+        gpuFallbackReason_ = GpuFallbackReason::None;
+        gpuErrorDetail_.clear();
         rawExposureMode_ = recipe.exposureMode;
         rawNoiseReduction_ = recipe.rawNoiseReduction;
         chromaDenoise_ = recipe.chromaDenoise;
@@ -640,12 +661,19 @@ RenderStatus Pipeline::createHslProbe(
         RenderBackend backend;
         uint32_t width;
         uint32_t height;
+        UnsupportedReason unsupportedReason;
+        GpuFallbackReason gpuFallbackReason;
+        std::string gpuErrorDetail;
         ~Restore() {
             pipeline.lastBackend_ = backend;
             pipeline.geometryWidth_ = width;
             pipeline.geometryHeight_ = height;
+            pipeline.unsupportedReason_ = unsupportedReason;
+            pipeline.gpuFallbackReason_ = gpuFallbackReason;
+            pipeline.gpuErrorDetail_ = std::move(gpuErrorDetail);
         }
-    } restore{*this, lastBackend_, geometryWidth_, geometryHeight_};
+    } restore{*this, lastBackend_, geometryWidth_, geometryHeight_,
+              unsupportedReason_, gpuFallbackReason_, gpuErrorDetail_};
 
     try {
         beginAiOperation("hsl_probe");
@@ -682,6 +710,8 @@ RenderStatus Pipeline::createHslProbe(
 RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& outExposureEv) {
     x3fError_.clear();
     unsupportedReason_ = UnsupportedReason::None;
+    gpuFallbackReason_ = GpuFallbackReason::None;
+    gpuErrorDetail_.clear();
     if (params.wbMode < RenderWhiteBalanceMode::Camera || params.wbMode > RenderWhiteBalanceMode::Temperature) {
         return RenderStatus::InvalidArgument;
     }
@@ -751,7 +781,13 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
 
 RenderStatus Pipeline::migrateProcessing(const RenderParams& params, ProcessingMigrationResult& outResult) const {
     outResult = {};
+    unsupportedReason_ = UnsupportedReason::None;
+    gpuFallbackReason_ = GpuFallbackReason::None;
+    gpuErrorDetail_.clear();
     if (gpuConfig_.mode == GpuMode::Force || aiEnabled()) {
+        if (gpuConfig_.mode == GpuMode::Force && !aiEnabled()) {
+            unsupportedReason_ = UnsupportedReason::ForceGpu;
+        }
         return RenderStatus::Unsupported;
     }
     const MigrationParameters initial{
@@ -871,6 +907,8 @@ RenderStatus Pipeline::processImpl(
 ) {
     x3fError_.clear();
     unsupportedReason_ = UnsupportedReason::None;
+    gpuFallbackReason_ = GpuFallbackReason::None;
+    gpuErrorDetail_.clear();
     checkProcessingCancellation();
     geometryWidth_ = geometryHeight_ = 0;
 
@@ -908,8 +946,12 @@ RenderStatus Pipeline::processImpl(
         }
         if (rawNoiseReduction_ == 0 && !unsupportedDisplayLens && effectiveGpuMode == GpuMode::Force) {
             unsupportedReason_ = UnsupportedReason::ForceGpu;
+            gpuFallbackReason_ = GpuFallbackReason::DisplayInput;
         }
         return RenderStatus::Unsupported;
+    }
+    if (displayInput && !cpuAnalysis && gpuConfig_.mode != GpuMode::Off) {
+        gpuFallbackReason_ = GpuFallbackReason::DisplayInput;
     }
     local.lutStrength = clampFloat(local.lutStrength, 0.0f, 2.0f);
     lastBackend_ = RenderBackend::Cpu;
@@ -928,6 +970,7 @@ RenderStatus Pipeline::processImpl(
     const bool geometryActive = geometry_.active();
     if (geometryActive && effectiveGpuMode == GpuMode::Force) {
         unsupportedReason_ = UnsupportedReason::ForceGpu;
+        gpuFallbackReason_ = GpuFallbackReason::Geometry;
         return RenderStatus::Unsupported;
     }
     // 预览到缓冲（含未开启视口标志的预览）必须保留大图 RAW 缓存供下一次渲染复用；
@@ -948,9 +991,21 @@ RenderStatus Pipeline::processImpl(
     const bool fastWavelet = !neighborhoodActive && !geometryActive && waveletActive && !effectsActive &&
         chromaMode == 0 && interactivePreview_ &&
         local.intent == RenderIntent::Preview && local.outputTarget == RenderOutputTarget::Buffer;
+    auto cpuStageFallbackReason = [&]() {
+        if (atmosphereActive) return GpuFallbackReason::Atmosphere;
+        if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
+        if (channelCurvesActive || !toneCurve_.gpuSupported()) return GpuFallbackReason::Curves;
+        if (c5Wavelet) return GpuFallbackReason::C5Wavelet;
+        return GpuFallbackReason::GpuDisabled;
+    };
     if ((cpuOnlyStages || c5Wavelet) && effectiveGpuMode == GpuMode::Force) {
         unsupportedReason_ = UnsupportedReason::ForceGpu;
+        gpuFallbackReason_ = cpuStageFallbackReason();
         return RenderStatus::Unsupported;
+    }
+    if (cpuOnlyStages && !cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
+        gpuFallbackReason_ == GpuFallbackReason::None) {
+        gpuFallbackReason_ = cpuStageFallbackReason();
     }
     if (needsSourceSizePreflight(local)) {
         uint32_t sourceWidth = local.inputWidth;
@@ -1003,8 +1058,13 @@ RenderStatus Pipeline::processImpl(
             dcp = DcpLook::loadCached(local.lutPath);
             if (!dcp) return RenderStatus::Unsupported;
 #if !defined(SONY2FUJI_ENABLE_METAL)
+            if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
+                gpuFallbackReason_ == GpuFallbackReason::None) {
+                gpuFallbackReason_ = GpuFallbackReason::DcpLook;
+            }
             if (effectiveGpuMode == GpuMode::Force) {
                 unsupportedReason_ = UnsupportedReason::ForceGpu;
+                gpuFallbackReason_ = GpuFallbackReason::DcpLook;
                 return RenderStatus::Unsupported;
             }
 #endif
@@ -1021,8 +1081,15 @@ RenderStatus Pipeline::processImpl(
     bool sessionGpuPipeline = !cpuOnlyStages && !dcp && gpuConfig_.mode != GpuMode::Off;
 #else
     bool sessionGpuPipeline = false;
+    if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
+        gpuFallbackReason_ == GpuFallbackReason::None) {
+        gpuFallbackReason_ = GpuFallbackReason::GpuDisabled;
+    }
     if (effectiveGpuMode == GpuMode::Force) {
         unsupportedReason_ = UnsupportedReason::ForceGpu;
+        if (gpuFallbackReason_ == GpuFallbackReason::None) {
+            gpuFallbackReason_ = GpuFallbackReason::GpuDisabled;
+        }
         return RenderStatus::Unsupported;
     }
 #endif
@@ -1031,8 +1098,13 @@ RenderStatus Pipeline::processImpl(
     if (displayInput) sessionGpuPipeline = false;
     const bool contractCPU = lut && lut->requiresCPU();
     if (contractCPU) {
+        if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
+            gpuFallbackReason_ == GpuFallbackReason::None) {
+            gpuFallbackReason_ = GpuFallbackReason::LutContract;
+        }
         if (effectiveGpuMode == GpuMode::Force) {
             unsupportedReason_ = UnsupportedReason::ForceGpu;
+            gpuFallbackReason_ = GpuFallbackReason::LutContract;
             return RenderStatus::Unsupported;
         }
         sessionGpuPipeline = false;
@@ -1213,9 +1285,21 @@ RenderStatus Pipeline::processImpl(
                 if (diagnostics.analysisReused) ++waveletCache_.diagnostics.analysisHits;
                 return result;
             };
+            lastGpuFilterOutcome() = {};
             auto result = filter(mode);
             checkProcessingCancellation();
-            const bool fallback = result != ErrorCode::Success && effectiveGpuMode == GpuMode::Auto;
+            if (result != ErrorCode::Success && mode == GpuMode::Force && !cpuAnalysis &&
+                gpuConfig_.mode != GpuMode::Off) {
+                const auto filterOutcome = lastGpuFilterOutcome();
+                gpuFallbackReason_ = fallbackReasonFromFault(
+                    filterOutcome.fault != GpuBackendFault::None
+                        ? filterOutcome.fault
+                        : GpuBackendFault::FilterError);
+                gpuErrorDetail_ = filterOutcome.message;
+            }
+            const bool fallback = result != ErrorCode::Success &&
+                result != ErrorCode::OutOfMemory &&
+                effectiveGpuMode == GpuMode::Auto;
             if (fallback) {
                 gpuPipeline = false;
                 result = filter(GpuMode::Off);
@@ -1267,11 +1351,23 @@ RenderStatus Pipeline::processImpl(
         const auto& source = local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview
             ? rawCache_ : image;
         ImageData rendered;
-        if (renderPhotoMetal(source, colorSpace, local, width, height, rendered)) {
+        const auto outcome = renderPhotoMetalWithOutcome(source, colorSpace, local, width, height, rendered);
+        if (outcome.succeeded()) {
             lastBackend_ = RenderBackend::Metal;
+            gpuFallbackReason_ = GpuFallbackReason::None;
+            gpuErrorDetail_.clear();
             return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
         }
-        if (gpuConfig_.mode == GpuMode::Force) return RenderStatus::ProcessingError;
+        gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
+        gpuErrorDetail_ = outcome.message;
+        if (outcome.failure == GpuFailureKind::OutOfMemory) return RenderStatus::OutOfMemory;
+        if (gpuConfig_.mode == GpuMode::Force) {
+            if (outcome.failure == GpuFailureKind::Unsupported) {
+                unsupportedReason_ = UnsupportedReason::ForceGpu;
+                return RenderStatus::Unsupported;
+            }
+            return RenderStatus::ProcessingError;
+        }
         if (local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview) {
             if (rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget && !previewToBuffer)
                 image = std::move(rawCache_);
@@ -1293,12 +1389,24 @@ RenderStatus Pipeline::processImpl(
         const bool raw = local.inputType == RenderInputType::Raw && !viewportPreview;
         const auto& source = raw && !waveletActive ? rawCache_ : image;
         ImageData rendered;
-        if (runtime_->glesRenderer->render(source, colorSpace, local, width, height,
-                raw && !waveletActive ? runtime_->rawRevision : 0, rendered)) {
+        const auto outcome = runtime_->glesRenderer->renderWithOutcome(source, colorSpace, local, width, height,
+                raw && !waveletActive ? runtime_->rawRevision : 0, rendered);
+        if (outcome.succeeded()) {
             lastBackend_ = RenderBackend::Gles;
+            gpuFallbackReason_ = GpuFallbackReason::None;
+            gpuErrorDetail_.clear();
             return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
         }
-        if (gpuConfig_.mode == GpuMode::Force) return RenderStatus::ProcessingError;
+        gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
+        gpuErrorDetail_ = outcome.message;
+        if (outcome.failure == GpuFailureKind::OutOfMemory) return RenderStatus::OutOfMemory;
+        if (gpuConfig_.mode == GpuMode::Force) {
+            if (outcome.failure == GpuFailureKind::Unsupported) {
+                unsupportedReason_ = UnsupportedReason::ForceGpu;
+                return RenderStatus::Unsupported;
+            }
+            return RenderStatus::ProcessingError;
+        }
         if (raw && !waveletActive) image = rawCache_;
     }
 #endif
@@ -1315,12 +1423,24 @@ RenderStatus Pipeline::processImpl(
         const bool raw = local.inputType == RenderInputType::Raw && !viewportPreview;
         const auto& source = raw && !waveletActive ? rawCache_ : image;
         ImageData rendered;
-        if (runtime_->d3dRenderer->render(source, colorSpace, local, width, height,
-                raw && !waveletActive ? runtime_->rawRevision : 0, rendered)) {
+        const auto outcome = runtime_->d3dRenderer->renderWithOutcome(source, colorSpace, local, width, height,
+                raw && !waveletActive ? runtime_->rawRevision : 0, rendered);
+        if (outcome.succeeded()) {
             lastBackend_ = RenderBackend::D3d11;
+            gpuFallbackReason_ = GpuFallbackReason::None;
+            gpuErrorDetail_.clear();
             return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
         }
-        if (gpuConfig_.mode == GpuMode::Force) return RenderStatus::ProcessingError;
+        gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
+        gpuErrorDetail_ = outcome.message;
+        if (outcome.failure == GpuFailureKind::OutOfMemory) return RenderStatus::OutOfMemory;
+        if (gpuConfig_.mode == GpuMode::Force) {
+            if (outcome.failure == GpuFailureKind::Unsupported) {
+                unsupportedReason_ = UnsupportedReason::ForceGpu;
+                return RenderStatus::Unsupported;
+            }
+            return RenderStatus::ProcessingError;
+        }
         if (raw && !waveletActive) image = rawCache_;
     }
 #endif

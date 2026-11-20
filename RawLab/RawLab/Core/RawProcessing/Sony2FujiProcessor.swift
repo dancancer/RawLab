@@ -348,6 +348,10 @@ struct Sony2FujiProcessor {
                 }
             } else { throw ProcessorError.rasterDecodeFailed }
             guard status == SONY2FUJI_STATUS_OK else {
+                if status == SONY2FUJI_STATUS_UNSUPPORTED,
+                   sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+                    throw processingFailure(status, session: session)
+                }
                 let detail = sony2fuji_session_x3f_error(session).map { String(cString: $0) } ?? ""
                 throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", detail.isEmpty ? statusMessage(status) : detail))
             }
@@ -536,7 +540,7 @@ struct Sony2FujiProcessor {
                 outBuffer: &outBuffer
             )
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status)
+                throw processingFailure(status, session: session)
             }
 
             var output = try takeBuffer(&outBuffer, semantic: buffer.semantic)
@@ -616,7 +620,7 @@ struct Sony2FujiProcessor {
                                              lutPath: lutURL?.path, outputPath: outputURL.path)
             if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status, look: lutURL, output: outputURL)
+                throw processingFailure(status, look: lutURL, output: outputURL, session: session)
             }
         }
     }

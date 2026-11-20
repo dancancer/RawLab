@@ -36,6 +36,24 @@ typedef enum sony2fuji_unsupported_reason {
     SONY2FUJI_UNSUPPORTED_FORCE_GPU = 1
 } sony2fuji_unsupported_reason;
 
+typedef enum sony2fuji_gpu_fallback_reason {
+    SONY2FUJI_GPU_FALLBACK_NONE = 0,
+    SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS = 1,
+    SONY2FUJI_GPU_FALLBACK_ATMOSPHERE = 2,
+    SONY2FUJI_GPU_FALLBACK_CURVES = 3,
+    SONY2FUJI_GPU_FALLBACK_C5_WAVELET = 4,
+    SONY2FUJI_GPU_FALLBACK_DCP_LOOK = 5,
+    SONY2FUJI_GPU_FALLBACK_LUT_CONTRACT = 6,
+    SONY2FUJI_GPU_FALLBACK_GEOMETRY = 7,
+    SONY2FUJI_GPU_FALLBACK_DISPLAY_INPUT = 8,
+    SONY2FUJI_GPU_FALLBACK_GPU_DISABLED = 9,
+    SONY2FUJI_GPU_FALLBACK_NO_ADAPTER = 10,
+    SONY2FUJI_GPU_FALLBACK_COOLDOWN = 11,
+    SONY2FUJI_GPU_FALLBACK_DEVICE_ERROR = 12,
+    SONY2FUJI_GPU_FALLBACK_FILTER_ERROR = 13,
+    SONY2FUJI_GPU_FALLBACK_UNSUPPORTED_CAPABILITY = 14
+} sony2fuji_gpu_fallback_reason;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -597,6 +615,10 @@ sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* se
 sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
 sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session* session);
+sony2fuji_gpu_fallback_reason sony2fuji_session_get_gpu_fallback_reason(const sony2fuji_session* session);
+// UTF-8 diagnostic detail for the last GPU fallback or Force GPU failure on this session.
+// Valid until the next getter call on the calling thread; always returns a non-null string.
+const char* sony2fuji_session_get_gpu_error(const sony2fuji_session* session);
 // RAW decodes stored into this session's cache, including half-size proxy and exposure-anchor decodes.
 // A render that reuses the decoded cache does not increment it, so repeated previews and the export
 // that follows can be checked for re-decoding.

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -352,7 +353,29 @@ internal static partial class Native
         None = 0,
         ForceGpu = 1,
     }
-    internal static string FormatErrorMessage(int status, string? x3fDetail, UnsupportedReason unsupportedReason = UnsupportedReason.None)
+    internal enum GpuFallbackReason
+    {
+        None = 0,
+        BasicV3Controls = 1,
+        Atmosphere = 2,
+        Curves = 3,
+        C5Wavelet = 4,
+        DcpLook = 5,
+        LutContract = 6,
+        Geometry = 7,
+        DisplayInput = 8,
+        GpuDisabled = 9,
+        NoAdapter = 10,
+        Cooldown = 11,
+        DeviceError = 12,
+        FilterError = 13,
+        UnsupportedCapability = 14,
+    }
+    internal static string FormatErrorMessage(
+        int status,
+        string? x3fDetail,
+        UnsupportedReason unsupportedReason = UnsupportedReason.None,
+        string? gpuError = null)
     {
         if (status != 0 && !string.IsNullOrEmpty(x3fDetail))
             return Loc.Format("无法正常显影 X3F：{0}", x3fDetail);
@@ -362,6 +385,9 @@ internal static partial class Native
                 ? Loc.Text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。")
                 : Loc.Text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"),
             3 => Loc.Text("无法读取或写入文件，请检查路径和访问权限。"),
+            4 => !string.IsNullOrWhiteSpace(gpuError)
+                ? Loc.Format("照片处理失败：{0}", gpuError)
+                : Loc.Text("照片处理失败。"),
             5 => Loc.Text("内存不足，请关闭其他大型应用或使用适合窗口预览。"),
             _ => Loc.Text("照片处理失败。")
         };
@@ -374,7 +400,11 @@ internal static partial class Native
         var unsupportedReason = status == 2
             ? (UnsupportedReason)sony2fuji_session_get_unsupported_reason(session)
             : UnsupportedReason.None;
-        throw new InvalidOperationException(FormatErrorMessage(status, detail, unsupportedReason));
+        var gpuError = Marshal.PtrToStringUTF8(sony2fuji_session_get_gpu_error(session));
+        var fallbackReason = (GpuFallbackReason)sony2fuji_session_get_gpu_fallback_reason(session);
+        if (fallbackReason != GpuFallbackReason.None || !string.IsNullOrWhiteSpace(gpuError))
+            Trace.WriteLine($"Native GPU failure status={status} unsupported={unsupportedReason} fallback={fallbackReason} detail={gpuError}");
+        throw new InvalidOperationException(FormatErrorMessage(status, detail, unsupportedReason, gpuError));
     }
 
     internal static void CheckWithoutSession(int status)
@@ -408,6 +438,8 @@ internal static partial class Native
         Session session, CancellationCallback? callback, IntPtr context);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_last_backend(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_unsupported_reason(Session session);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_gpu_fallback_reason(Session session);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_gpu_error(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_interactive_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_viewport_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);

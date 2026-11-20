@@ -401,6 +401,7 @@
 "当前拍摄模式下不可调整" = "Non réglable dans le mode de prise de vue actuel";
 "当前显示 SDR 兼容预览。" = "L’aperçu compatible SDR est affiché.";
 "当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.";
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前照片的设置尚不可用。" = "Les paramètres de la photo actuelle ne sont pas encore disponibles.";
 "当前相机模式未提供此功能。" = "Cette fonction est indisponible dans le mode actuel de l’appareil.";

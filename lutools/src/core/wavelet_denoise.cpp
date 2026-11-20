@@ -18,7 +18,11 @@
 #include <wavelib.h>
 
 namespace {
-struct WaveletGpuFailure {};
+struct WaveletGpuFailure {
+    sony2fuji::GpuFailureKind failure = sony2fuji::GpuFailureKind::ProcessingError;
+    sony2fuji::GpuBackendFault fault = sony2fuji::GpuBackendFault::FilterError;
+    std::string message;
+};
 constexpr int levels = 4, halo = 96, tileSize = 512;
 constexpr int coarseLevels = 6, coarseHalo = 256;
 using Bands = std::array<std::array<float,3>,levels>;
@@ -440,11 +444,23 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
                 settings.sigma[scale * 3 + direction] = bandSigma(model, channel, sourceLevel, direction);
         }
         cv::Mat result(plane.size(), CV_32F);
+        sony2fuji::lastGpuFilterOutcome() = {};
         if (sony2fuji::gpuWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
             gpuUsed.store(true, std::memory_order_relaxed);
             return result;
         }
-        if (gpuMode == sony2fuji::GpuMode::Force) throw WaveletGpuFailure{};
+        if (gpuMode == sony2fuji::GpuMode::Force) {
+            const auto outcome = sony2fuji::lastGpuFilterOutcome();
+            throw WaveletGpuFailure{
+                outcome.failure != sony2fuji::GpuFailureKind::None
+                    ? outcome.failure
+                    : sony2fuji::GpuFailureKind::ProcessingError,
+                outcome.fault != sony2fuji::GpuBackendFault::None
+                    ? outcome.fault
+                    : sony2fuji::GpuBackendFault::FilterError,
+                outcome.message
+            };
+        }
     }
     StationaryWavelet transform(plane,depth);
     for (int scale=0;scale<depth;++scale) {
@@ -764,8 +780,14 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
         }
         if (usesC5Denoise(options.processingVersion)) {
             // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
-            if (gpuMode == GpuMode::Force)
+            if (gpuMode == GpuMode::Force) {
+                lastGpuFilterOutcome() = {
+                    GpuFailureKind::Unsupported,
+                    GpuBackendFault::UnsupportedCapability,
+                    "C5 wavelet denoise requires CPU"
+                };
                 return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::Unsupported);
+            }
             const float strengthScale=eaw::noiseScale(model);
             if (strengthScale==0) {
                 state->ready=true;
@@ -829,9 +851,15 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
                 transformed.release();
                 restore(rgb,std::move(filtered),model,options.processingVersion);
             }
-        } catch (const WaveletGpuFailure&) {
+        } catch (const WaveletGpuFailure& failure) {
             if (reloadable) { transformed.release(); rgb.release(); image={}; }
-            return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+            const ErrorCode code = failure.failure == GpuFailureKind::Unsupported
+                ? ErrorCode::Unsupported
+                : failure.failure == GpuFailureKind::OutOfMemory
+                    ? ErrorCode::OutOfMemory
+                    : ErrorCode::ProcessingError;
+            return finish(WaveletDenoiseOutcome::GpuFailure, code);
         }
         if (diagnostics) {
             diagnostics->applied=true;

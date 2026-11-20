@@ -242,6 +242,7 @@
     <string name="exposure_sensor">"传感器基准"</string>
     <string name="film">"胶片"</string>
     <string name="follow_system">"跟随系统"</string>
+    <string name="force_gpu_unsupported">"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"</string>
     <string name="geometry">"几何"</string>
     <string name="geometry_crop_height">"裁切高度"</string>
     <string name="geometry_crop_hint">"裁切百分比基于旋转、翻转、透视校正和拉直后的画面。"</string>

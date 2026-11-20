@@ -7,8 +7,8 @@ private func check(_ value: Bool, _ message: String) throws {
     print("PASS: \(message)")
 }
 
-// RenderError.processing 对 UNSUPPORTED 的固定文案（RenderError.swift）。
-private let unsupportedMessage = "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"
+// RenderError.processing 对 Force GPU UNSUPPORTED 的固定文案（RenderError.swift）。
+private let forceGpuUnsupportedMessage = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
 
 private func pixels(_ frame: RenderedImage) -> Data {
     frame.image.dataProvider!.data! as Data
@@ -251,8 +251,8 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                         } catch RenderError.failed(let message) {
                             forcedMessage = message
                         }
-                        try check(forcedMessage == unsupportedMessage,
-                                  "\(label) \(Int(strength * 100))%: CPU-only stages report UNSUPPORTED under Force")
+                        try check(forcedMessage == forceGpuUnsupportedMessage,
+                                  "\(label) \(Int(strength * 100))%: CPU-only stages report Force GPU UNSUPPORTED prompt")
                     }
                 }
                 saved.strength = 1

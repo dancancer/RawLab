@@ -8798,5 +8798,13 @@
     "ja": "自動更新を利用できません。手動でダウンロードしてください。",
     "es": "Las actualizaciones automáticas no están disponibles. Descárguela manualmente.",
     "zh-Hans": "自动更新不可用，请手动下载"
+  },
+  "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+    "zh-Hans": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+    "en": "Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back.",
+    "de": "GPU erzwingen ist für dieses Foto, diesen Look oder diese Verarbeitungsart nicht verfügbar. Wechseln Sie für den Fallback zu Auto.",
+    "fr": "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.",
+    "ja": "この写真、ルック、または処理方法では強制 GPU を利用できません。フォールバックするには自動（Auto）に切り替えてください。",
+    "es": "GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo."
   }
 }

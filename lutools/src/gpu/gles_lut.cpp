@@ -138,13 +138,13 @@ struct Binding {
     }
 };
 
-bool initContext(GlesContext& context) {
+sony2fuji::ErrorCode initContext(GlesContext& context) {
     context.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (context.display == EGL_NO_DISPLAY) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     if (!eglInitialize(context.display, nullptr, nullptr)) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     const EGLint config_attribs[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -159,7 +159,7 @@ bool initContext(GlesContext& context) {
     EGLint num_configs = 0;
     if (!eglChooseConfig(context.display, config_attribs, &config, 1, &num_configs) ||
         num_configs == 0) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     const EGLint pbuffer_attribs[] = {
         EGL_WIDTH, 1,
@@ -168,7 +168,7 @@ bool initContext(GlesContext& context) {
     };
     context.surface = eglCreatePbufferSurface(context.display, config, pbuffer_attribs);
     if (context.surface == EGL_NO_SURFACE) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     const EGLint context_attribs[] = {
         EGL_CONTEXT_CLIENT_VERSION, 3,
@@ -180,18 +180,18 @@ bool initContext(GlesContext& context) {
     }
     if (previousApi != EGL_NONE) eglBindAPI(previousApi);
     if (context.context == EGL_NO_CONTEXT) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     Binding binding(context);
     if (!binding.bound) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     GLint major = 0;
     GLint minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
     if (major < 3 || (major == 3 && minor < 1)) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     GLint invocations = 0, group_size = 0, groups = 0;
     GLint64 block_size = 0;
@@ -200,9 +200,12 @@ bool initContext(GlesContext& context) {
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &groups);
     glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &block_size);
     glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &context.texture_limit);
-    if (glGetError() != GL_NO_ERROR || invocations < GLint(kWorkgroup) ||
+    if (glGetError() != GL_NO_ERROR) {
+        return sony2fuji::ErrorCode::ProcessingError;
+    }
+    if (invocations < GLint(kWorkgroup) ||
         group_size < GLint(kWorkgroup) || groups <= 0 || block_size < GLint64(sizeof(sony2fuji::RGB))) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     // 先限制字节数，避免整张大图超过 SSBO 上限，也避免窄平台上的乘法溢出。
     const size_t tile_bytes = static_cast<size_t>(std::min<GLint64>(block_size, kTileBytes));
@@ -210,7 +213,7 @@ bool initContext(GlesContext& context) {
         tile_bytes / sizeof(sony2fuji::RGB), uint64_t(groups) * kWorkgroup));
     context.program = createProgram();
     if (context.program == 0) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     context.pixel_count_loc = glGetUniformLocation(context.program, "pixel_count");
     context.lut_size_loc = glGetUniformLocation(context.program, "lut_size");
@@ -220,22 +223,27 @@ bool initContext(GlesContext& context) {
     if (!context.ready) {
         glDeleteProgram(context.program);
         context.program = 0;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
-    return context.ready;
+    return sony2fuji::ErrorCode::Success;
 }
 
-GlesContext* getGlesContext() {
+GlesContext* getGlesContext(sony2fuji::ErrorCode& status) {
     static GlesContext context;
+    status = sony2fuji::ErrorCode::Success;
     // 调用方持有 gles_mutex。失败不缓存比 TTL 少一套计时状态，下一次调用即可重试；
     // 释放失败尝试的资源，避免连续失败耗尽 EGL 资源后无法恢复。
-    if (!context.ready && !initContext(context)) {
-        if (context.context != EGL_NO_CONTEXT) {
-            eglDestroyContext(context.display, context.context);
+    if (!context.ready) {
+        status = initContext(context);
+        if (status != sony2fuji::ErrorCode::Success) {
+            if (context.context != EGL_NO_CONTEXT) {
+                eglDestroyContext(context.display, context.context);
+            }
+            if (context.surface != EGL_NO_SURFACE) {
+                eglDestroySurface(context.display, context.surface);
+            }
+            context = GlesContext{};
         }
-        if (context.surface != EGL_NO_SURFACE) {
-            eglDestroySurface(context.display, context.surface);
-        }
-        context = GlesContext{};
     }
     return context.ready ? &context : nullptr;
 }
@@ -319,28 +327,32 @@ bool dispatchCompute(
 
 namespace sony2fuji {
 
-bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+ErrorCode applyLutGlesStatus(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
     if (completedPixels) {
         *completedPixels = 0;
     }
     size_t completed = 0;
     std::lock_guard<std::mutex> lock(gles_mutex);
-    GlesContext* context = getGlesContext();
+    ErrorCode initStatus = ErrorCode::Success;
+    GlesContext* context = getGlesContext(initStatus);
     if (!context) {
-        return false;
+        return initStatus == ErrorCode::Success ? ErrorCode::Unsupported : initStatus;
     }
     Binding binding(*context);
     if (!binding.bound) {
-        return false;
+        return ErrorCode::ProcessingError;
     }
     const size_t pixel_count = image.pixels.size();
-    if (pixel_count == 0 || lut.getSize() > context->texture_limit || glGetError() != GL_NO_ERROR) {
-        return false;
+    if (pixel_count == 0 || glGetError() != GL_NO_ERROR) {
+        return ErrorCode::ProcessingError;
+    }
+    if (lut.getSize() > context->texture_limit) {
+        return ErrorCode::Unsupported;
     }
 
     GLuint lut_texture = createLutTexture(lut);
     if (!lut_texture) {
-        return false;
+        return ErrorCode::ProcessingError;
     }
     GLuint ssbo = 0;
     const size_t tile_pixels = std::min(pixel_count, context->tile_pixels);
@@ -374,7 +386,11 @@ bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
     }
     glDeleteTextures(1, &lut_texture);
     glDeleteBuffers(1, &ssbo);
-    return ok;
+    return ok ? ErrorCode::Success : ErrorCode::ProcessingError;
+}
+
+bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    return applyLutGlesStatus(lut, image, completedPixels) == ErrorCode::Success;
 }
 
 }

@@ -82,7 +82,7 @@ class Device final : public FilterDevice {
     size_t blockLimit = 0;
     uint32_t dispatchLimit = 0;
     FilterBufferPtr createBuffer(size_t count, const float* input) {
-        if (!count || count > blockLimit / sizeof(float)) throw std::runtime_error("GLES filter buffer exceeds device limit");
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
         auto buffer = std::make_unique<Buffer>();
         glGenBuffers(1, &buffer->name); glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer->name);
         glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(count * sizeof(float)), input, GL_DYNAMIC_COPY);
@@ -116,10 +116,10 @@ public:
     }
     void initialize() {
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) throw std::runtime_error("EGL filter display unavailable");
+        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) throw GpuUnavailableError("EGL filter display unavailable");
         const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE};
         EGLConfig config{}; EGLint count = 0;
-        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count == 0) throw std::runtime_error("EGL filter config unavailable");
+        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count == 0) throw GpuUnavailableError("EGL filter config unavailable");
         const EGLint surfaceAttributes[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
@@ -138,7 +138,7 @@ public:
         glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
         glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &bytes);
         if (major < 3 || (major == 3 && minor < 1) || invocations < int(groupSize) || size < int(groupSize) ||
-            groups <= 0 || blocks < 4 || bytes <= 0) throw std::runtime_error("GLES 3.1 filter limits unavailable");
+            groups <= 0 || blocks < 4 || bytes <= 0) throw GpuUnavailableError("GLES 3.1 filter limits unavailable");
         blockLimit = static_cast<size_t>(bytes);
         dispatchLimit = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(groups) * groupSize, UINT32_MAX));
         const std::string source = std::string(prefix) + kFilterShaderBody +
@@ -168,13 +168,13 @@ public:
     }
     void trimPool() override { pool.trimIdleToBudget(); }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
-        if (!count || count > blockLimit / sizeof(float)) throw std::runtime_error("GLES filter buffer exceeds device limit");
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
         return pool.acquire(count, input,
             [this](size_t n, const float* data) { return createBuffer(n, data); },
             [this](FilterBuffer& buf, size_t n, const float* data) { write(buf, n, data); });
     }
     void write(FilterBuffer& buffer, size_t count, const float* input) override {
-        if (!count || count > blockLimit / sizeof(float)) throw std::runtime_error("GLES filter buffer exceeds device limit");
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
         if (!input) return;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer.underlying()).name);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(count * sizeof(float)), input);

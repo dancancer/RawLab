@@ -327,8 +327,12 @@ class EditorViewModel internal constructor(
     }
 
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
-    private fun failure(error: Throwable): String = if (error is OutOfMemoryError) strings.text(R.string.memory_error)
-    else strings.text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
+    private fun failure(error: Throwable): String = when {
+        error is OutOfMemoryError -> strings.text(R.string.memory_error)
+        error is com.rawlab.android.engine.NativeProcessingException && error.isForceGpuUnsupported ->
+            strings.text(R.string.force_gpu_unsupported)
+        else -> strings.text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
+    }
 
     fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) = systemPhotoHolder.receive(uris, requestID)
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)

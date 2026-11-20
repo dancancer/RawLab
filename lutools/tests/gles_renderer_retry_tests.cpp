@@ -308,6 +308,41 @@ void readbackMapUnmapErrorsAndStickyDrain() {
     require(gpuDetailFilter(filterImg, .2f, 0.f), "filter must recover after cooldown");
 }
 
+void photoOutcomeDistinguishesUnsupportedFromProcessingError() {
+    rawlabtest::glesVmConfig() = {};
+    rawlabtest::glesVmConfig().maxTexture3DSize = 1;
+    gles_test::now = {};
+
+    GlesPhotoRenderer renderer;
+    ImageData input(17, 19), output;
+    for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
+    auto params = makeParams();
+    params.lut = makeSimpleLut();
+    params.lutStrength = 1.0f;
+
+    const auto unsupported = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(unsupported.failure == GpuFailureKind::Unsupported &&
+            unsupported.fault == GpuBackendFault::UnsupportedCapability &&
+            !unsupported.message.empty(),
+        "oversized 3D LUT must report Unsupported / UnsupportedCapability with diagnostic message");
+
+    params.lut.reset();
+    params.lutStrength = 0.0f;
+    rawlabtest::glesVmConfig().maxTexture3DSize = 64;
+    rawlabtest::glesVmConfig().failNextMapBufferError = GL_CONTEXT_LOST;
+    const auto lost = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(lost.failure == GpuFailureKind::ProcessingError &&
+            lost.fault == GpuBackendFault::DeviceError &&
+            !lost.message.empty(),
+        "GL_CONTEXT_LOST readback fault must report ProcessingError / DeviceError with diagnostic message");
+
+    const auto cooldown = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(cooldown.failure == GpuFailureKind::ProcessingError &&
+            cooldown.fault == GpuBackendFault::Cooldown &&
+            !cooldown.message.empty(),
+        "post-lost-device cooldown must report ProcessingError / Cooldown with diagnostic message");
+}
+
 } // namespace
 
 int main() {
@@ -319,6 +354,7 @@ int main() {
         photoResizeOomAndLutOomResetState();
         photoStickyErrorsAreDrainedAfterNonGlExceptions();
         readbackMapUnmapErrorsAndStickyDrain();
+        photoOutcomeDistinguishesUnsupportedFromProcessingError();
         std::cout << "PASS: gpu_gles_renderer_retry\n";
         return 0;
     } catch (const std::exception& error) {

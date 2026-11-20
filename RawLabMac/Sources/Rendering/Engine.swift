@@ -447,6 +447,10 @@ final class RenderEngine {
             sony2fuji_session_estimate_auto_exposure(session, &input, &ev)
         }
         if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
+        if status == SONY2FUJI_STATUS_UNSUPPORTED,
+           sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+            throw RenderError.processing(status, session: session)
+        }
         guard status == SONY2FUJI_STATUS_OK else { throw RenderError.failed(L10n.format("无法自动调整曝光：%@", String(describing: String(cString: sony2fuji_status_message(status))))) }
         return Double(ev)
     }
@@ -610,6 +614,10 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else {
+            if status == SONY2FUJI_STATUS_UNSUPPORTED,
+               sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+                throw RenderError.processing(status, session: session)
+            }
             throw RenderError.failed(String(cString: sony2fuji_status_message(status)))
         }
         return ProcessingMigrationOutcome(native)
@@ -667,7 +675,7 @@ final class RenderEngine {
                 (settings.aiDenoiseEnabled && sony2fuji_session_get_ai_error(session).pointee != 0) {
                 throw aiError(status)
             }
-            throw RenderError.processing(status, input: url, look: lut, output: output)
+            throw RenderError.processing(status, input: url, look: lut, output: output, session: session)
         }
         if let output {
             let targetURL = destinationURL ?? output
