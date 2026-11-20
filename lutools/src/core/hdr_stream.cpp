@@ -143,12 +143,11 @@ HDRStreamResult streamShape(const HDRRowSource& source, const HDRRenderOptions& 
     return result;
 }
 
-std::shared_ptr<Directory> stageSource(const HDRRowSource& source, const HDRRenderOptions& options,
-    HDRStreamResult& result, const fs::path& temporaryRoot, uint64_t requiredBytes) {
-    auto scratch = std::make_shared<Directory>(temporaryRoot, requiredBytes);
+void stageSource(const HDRRowSource& source, const HDRRenderOptions& options,
+    HDRStreamResult& result, const Directory& scratch) {
     admitMemory(uint64_t(source.width) * std::min(decodeRows, source.height) * sizeof(RGB) + (32ull << 20));
     for (bool hdr : {true, false}) {
-        File file(scratch->path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), true);
+        File file(scratch.path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), true);
         for (uint32_t row = 0; row < source.height; row += decodeRows) {
             checkProcessingCancellation();
             ImageData strip(source.width, std::min(decodeRows, source.height - row));
@@ -172,7 +171,6 @@ std::shared_ptr<Directory> stageSource(const HDRRowSource& source, const HDRRend
         extra = uint64_t(result.width) * std::min(result.height, tileEdge + 2 * halo) * (sizeof(RGB) + sizeof(float));
     }
     admitMemory(uint64_t(result.width) * tileEdge * 20 + (32ull << 20) + extra);
-    return scratch;
 }
 }
 
@@ -184,14 +182,15 @@ HDRStreamFiles renderStreamFiles(const HDRRowSource& source, const HDRRenderOpti
     // 完整源双平面、输出浮点文件与成片空间一并准入，避免中途才发现磁盘不足。
     const uint64_t requiredBytes = uint64_t(source.width) * source.height * 24 +
         outputPixels * (includeHDR ? 40 : 24) + (64ull << 20);
-    output.directory = stageSource(source, options, output.result, temporaryRoot, requiredBytes);
-    output.sdr = output.directory->path / "rendered-sdr.rgb32f";
-    if (includeHDR) output.hdr = output.directory->path / "rendered-hdr.rgb32f";
+    auto scratch = std::make_shared<Directory>(temporaryRoot, requiredBytes);
+    stageSource(source, options, output.result, *scratch);
+    output.sdr = scratch->path / "rendered-sdr.rgb32f";
+    if (includeHDR) output.hdr = scratch->path / "rendered-hdr.rgb32f";
     output.result.editedHeadroom = includeHDR ? 1 : 0;
     for (bool hdr : {true, false}) {
         if (hdr && !includeHDR) continue;
         File file(hdr ? output.hdr : output.sdr, true);
-        RenderedRows rows(output.directory->path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), source, options,
+        RenderedRows rows(scratch->path / (hdr ? "hdr.rgb32f" : "sdr.rgb32f"), source, options,
             output.result.width, output.result.height, hdr ? &output.result.editedHeadroom : nullptr);
         for (uint32_t row = 0; row < output.result.height; ++row) {
             checkProcessingCancellation();
@@ -201,6 +200,7 @@ HDRStreamFiles renderStreamFiles(const HDRRowSource& source, const HDRRenderOpti
             file.append(pixels, size_t(output.result.width) * sizeof(RGB));
         }
     }
+    output.directory = std::move(scratch);
     return output;
 }
 
@@ -223,8 +223,9 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
     if (result.width > 65500 || result.height > 65500) throw std::invalid_argument("Stream output exceeds JPEG limits");
     const uint64_t outputPixels = uint64_t(result.width) * result.height;
     // 两份浮点源、紧凑编码输入及压缩产物；不依赖稀疏文件虚报可用空间。
-    auto scratch = stageSource(source, options, result, temporaryRoot,
-        streamScratchBytes(source.width, source.height, options, highDynamicRange));
+    const uint64_t requiredBytes = streamScratchBytes(source.width, source.height, options, highDynamicRange);
+    auto scratch = std::make_shared<Directory>(temporaryRoot, requiredBytes);
+    stageSource(source, options, result, *scratch);
     const auto high = scratch->path / "hdr.rgb32f", low = scratch->path / "sdr.rgb32f";
     if (!highDynamicRange) {
         RenderedRows rows(low, source, options, result.width, result.height, nullptr);
