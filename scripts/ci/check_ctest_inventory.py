@@ -102,15 +102,19 @@ def _cache_truthy(cache: dict[str, str], key: str) -> bool:
 def resolve_ctest_config(cache: dict[str, str], explicit_config: str | None = None) -> str | None:
     if explicit_config:
         return explicit_config
-    if cache.get("CMAKE_BUILD_TYPE", "").strip():
-        return None
     config_types = cache.get("CMAKE_CONFIGURATION_TYPES", "").strip()
-    if not config_types:
+    generator = cache.get("CMAKE_GENERATOR", "").strip()
+    is_multi_config = (
+        bool(config_types)
+        or generator.startswith("Visual Studio")
+        or generator in {"Xcode", "Ninja Multi-Config"}
+    )
+    if not is_multi_config:
         return None
     configs = [item.strip() for item in config_types.split(";") if item.strip()]
-    if "Release" in configs:
+    if "Release" in configs or not configs:
         return "Release"
-    return configs[0] if configs else None
+    return configs[0]
 
 
 def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest", config: str | None = None) -> dict:

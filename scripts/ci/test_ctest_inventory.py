@@ -115,17 +115,24 @@ class CTestInventoryTests(unittest.TestCase):
 
     def test_resolve_ctest_config_for_multi_config_and_single_config_caches(self) -> None:
         multi_cache = {
+            "CMAKE_GENERATOR": "Visual Studio 17 2022",
             "CMAKE_CONFIGURATION_TYPES": "Debug;Release;MinSizeRel;RelWithDebInfo",
         }
         self.assertEqual(cci.resolve_ctest_config(multi_cache), "Release")
         self.assertEqual(cci.resolve_ctest_config(multi_cache, "Debug"), "Debug")
+        # Subprojects like libultrahdr force CMAKE_BUILD_TYPE=Release into CMakeCache.txt even on VS.
+        polluted_multi_cache = {
+            **multi_cache,
+            "CMAKE_BUILD_TYPE": "Release",
+        }
+        self.assertEqual(cci.resolve_ctest_config(polluted_multi_cache), "Release")
         self.assertEqual(
             cci.resolve_ctest_config({"CMAKE_CONFIGURATION_TYPES": "Debug;RelWithDebInfo"}),
             "Debug",
         )
         single_cache = {
+            "CMAKE_GENERATOR": "Ninja",
             "CMAKE_BUILD_TYPE": "Release",
-            "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
         }
         self.assertIsNone(cci.resolve_ctest_config(single_cache))
         self.assertEqual(cci.resolve_ctest_config(single_cache, "RelWithDebInfo"), "RelWithDebInfo")
@@ -134,7 +141,9 @@ class CTestInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             build_dir = Path(tmp)
             (build_dir / "CMakeCache.txt").write_text(
-                "CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release;MinSizeRel;RelWithDebInfo\n",
+                "CMAKE_GENERATOR:INTERNAL=Visual Studio 17 2022\n"
+                "CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release;MinSizeRel;RelWithDebInfo\n"
+                "CMAKE_BUILD_TYPE:STRING=Release\n",
                 encoding="utf-8",
             )
             payload = json.dumps({"tests": [_make_entry("tiff_ifd", ["core", "ci_windows"], "tiff_ifd_tests")]})
