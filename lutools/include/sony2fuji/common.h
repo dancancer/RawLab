@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -30,12 +31,24 @@ struct ImageData {
           pixels(checkedPixelCount(width, height)) {}
 
     RGB& at(int x, int y) {
-        assert(x >= 0 && x < width && y >= 0 && y < height);
-        return pixels[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            throw std::out_of_range("ImageData::at coordinate out of range");
+        }
+        const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+        if (index >= pixels.size()) {
+            throw std::out_of_range("ImageData::at pixel index out of range");
+        }
+        return pixels[index];
     }
     const RGB& at(int x, int y) const {
-        assert(x >= 0 && x < width && y >= 0 && y < height);
-        return pixels[static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)];
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            throw std::out_of_range("ImageData::at coordinate out of range");
+        }
+        const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+        if (index >= pixels.size()) {
+            throw std::out_of_range("ImageData::at pixel index out of range");
+        }
+        return pixels[index];
     }
 
 private:

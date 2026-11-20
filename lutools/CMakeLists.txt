@@ -1241,6 +1241,27 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME image_data_bounds_release
+        SOURCES tests/image_data_bounds_release_tests.cpp
+        DEFINES NDEBUG
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    if(MSVC)
+        set(pipeline_ai_rollback_opts /W4 /utf-8 /USONY2FUJI_ENABLE_METAL /USONY2FUJI_ENABLE_GLES /USONY2FUJI_ENABLE_D3D11)
+        set(pipeline_ai_rollback_defs SONY2FUJI_ENABLE_AI_DENOISE NOMINMAX)
+    else()
+        set(pipeline_ai_rollback_opts -Wall -Wextra -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_GLES -USONY2FUJI_ENABLE_D3D11)
+        set(pipeline_ai_rollback_defs SONY2FUJI_ENABLE_AI_DENOISE)
+    endif()
+    rawlab_add_test(
+        NAME pipeline_ai_rollback
+        SOURCES tests/pipeline_ai_rollback_tests.cpp src/core/pipeline_ai.cpp
+        INCLUDES_BEFORE tests/ai_stub
+        DEFINES ${pipeline_ai_rollback_defs}
+        COMPILE_OPTIONS ${pipeline_ai_rollback_opts}
+        LABELS ai core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(WIN32)
         rawlab_add_test(
             NAME d3d11_shader
@@ -1435,6 +1456,15 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             NAME gpu_metal_lut_init_retry
             TARGET metal_lut_init_retry_tests
             SOURCES tests/metal_lut_init_retry_tests.mm
+                src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
+            LIBRARIES ${metal_retry_libs}
+            COMPILE_OPTIONS -UNDEBUG "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+            LABELS gpu metal lut ci_macos_arm64 ci_macos_x86_64
+        )
+        rawlab_add_test(
+            NAME gpu_metal_lut_bounds
+            TARGET metal_lut_bounds_tests
+            SOURCES tests/metal_lut_bounds_tests.mm
                 src/gpu/lut_gpu.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
             LIBRARIES ${metal_retry_libs}
             COMPILE_OPTIONS -UNDEBUG "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"

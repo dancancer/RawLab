@@ -151,15 +151,31 @@ fn decode(
     Ok((pixels, width, height, orientation))
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rawlab_x3f_decode(
+fn format_panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    let detail = if let Some(s) = payload.downcast_ref::<&'static str>() {
+        *s
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.as_str()
+    } else {
+        ""
+    };
+    if detail.is_empty() {
+        "X3F decoder failed; no output was published".into()
+    } else {
+        format!("X3F decoder panicked: {detail}")
+    }
+}
+
+unsafe fn rawlab_x3f_decode_with<F>(
     handle: *mut RawlabX3fHandle,
     path: *const c_char,
-    pipeline: u32,
-    orientation: u32,
     token: *const RawlabX3fCancel,
     output: *mut RawlabX3fImage,
-) -> i32 {
+    run: F,
+) -> i32
+where
+    F: FnOnce(&Path, &AtomicBool) -> Result<(Vec<f32>, u32, u32, u32), String>,
+{
     if handle.is_null() || output.is_null() {
         return 1;
     }
@@ -191,7 +207,7 @@ pub unsafe extern "C" fn rawlab_x3f_decode(
         let path = unsafe { CStr::from_ptr(path) }
             .to_str()
             .map_err(|_| "Invalid UTF-8 X3F path".to_string())?;
-        decode(Path::new(path), pipeline, orientation, cancel)
+        run(Path::new(path), cancel)
     }));
     if cancel.load(Ordering::Relaxed) {
         handle.error = c"X3F conversion cancelled".into();
@@ -219,11 +235,29 @@ pub unsafe extern "C" fn rawlab_x3f_decode(
             let message = match other {
                 Ok(Err(e)) => e,
                 Ok(Ok(_)) => "Nonfinite X3F pixels".into(),
-                Err(_) => "X3F decoder failed; no output was published".into(),
+                Err(payload) => format_panic_message(payload),
             };
-            handle.error = CString::new(message.replace('\0', "?")).unwrap();
+            let sanitized = message.replace('\0', "?");
+            handle.error = CString::new(sanitized)
+                .unwrap_or_else(|_| c"X3F decoder failed; no output was published".to_owned());
             3
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rawlab_x3f_decode(
+    handle: *mut RawlabX3fHandle,
+    path: *const c_char,
+    pipeline: u32,
+    orientation: u32,
+    token: *const RawlabX3fCancel,
+    output: *mut RawlabX3fImage,
+) -> i32 {
+    unsafe {
+        rawlab_x3f_decode_with(handle, path, token, output, |path, cancel| {
+            decode(path, pipeline, orientation, cancel)
+        })
     }
 }
 
@@ -278,6 +312,78 @@ mod tests {
             rawlab_x3f_cancel_free(token);
             rawlab_x3f_free(h);
             rawlab_x3f_free(ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn ffi_panic_payload_is_preserved_and_nul_sanitized() {
+        unsafe {
+            let h = rawlab_x3f_create();
+            let mut output = RawlabX3fImage {
+                pixels: ptr::dangling(),
+                sample_count: 7,
+                width: 2,
+                height: 2,
+                encoding: 1,
+                orientation: 1,
+            };
+
+            let rc_str = rawlab_x3f_decode_with(
+                h,
+                c"/nonexistent/panic_str.x3f".as_ptr(),
+                ptr::null(),
+                &mut output,
+                |_, _| panic!("dp1s\0calibration boom"),
+            );
+            assert_eq!(rc_str, 3);
+            assert!(output.pixels.is_null());
+            assert_eq!(output.sample_count, 0);
+            assert_eq!(
+                CStr::from_ptr(rawlab_x3f_error(h)).to_str().unwrap(),
+                "X3F decoder panicked: dp1s?calibration boom"
+            );
+
+            let rc_string = rawlab_x3f_decode_with(
+                h,
+                c"/nonexistent/panic_string.x3f".as_ptr(),
+                ptr::null(),
+                &mut output,
+                |_, _| panic!("dynamic {} failure\0detail", 42),
+            );
+            assert_eq!(rc_string, 3);
+            assert!(output.pixels.is_null());
+            assert_eq!(
+                CStr::from_ptr(rawlab_x3f_error(h)).to_str().unwrap(),
+                "X3F decoder panicked: dynamic 42 failure?detail"
+            );
+
+            let rc_empty = rawlab_x3f_decode_with(
+                h,
+                c"/nonexistent/panic_empty.x3f".as_ptr(),
+                ptr::null(),
+                &mut output,
+                |_, _| panic!(""),
+            );
+            assert_eq!(rc_empty, 3);
+            assert_eq!(
+                CStr::from_ptr(rawlab_x3f_error(h)).to_str().unwrap(),
+                "X3F decoder failed; no output was published"
+            );
+
+            let rc_non_string = rawlab_x3f_decode_with(
+                h,
+                c"/nonexistent/panic_any.x3f".as_ptr(),
+                ptr::null(),
+                &mut output,
+                |_, _| std::panic::panic_any(99_u32),
+            );
+            assert_eq!(rc_non_string, 3);
+            assert_eq!(
+                CStr::from_ptr(rawlab_x3f_error(h)).to_str().unwrap(),
+                "X3F decoder failed; no output was published"
+            );
+
+            rawlab_x3f_free(h);
         }
     }
 }

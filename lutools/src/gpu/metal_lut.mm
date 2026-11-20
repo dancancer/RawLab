@@ -6,6 +6,8 @@
 #import <Metal/Metal.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <mutex>
 #include <vector>
 
@@ -125,10 +127,15 @@ bool runCompute(
     MetalContext& context,
     id<MTLBuffer> pixel_buffer,
     id<MTLTexture> lut_texture,
-    uint32_t pixel_count,
+    size_t pixel_count,
     uint32_t lut_size
 ) {
-    id<MTLBuffer> params = createParamsBuffer(context, pixel_count, lut_size);
+    if (pixel_count == 0 ||
+        static_cast<uint64_t>(pixel_count) > std::numeric_limits<uint32_t>::max()) {
+        return false;
+    }
+    const uint32_t count32 = static_cast<uint32_t>(pixel_count);
+    id<MTLBuffer> params = createParamsBuffer(context, count32, lut_size);
     if (!params) {
         return false;
     }
@@ -148,7 +155,7 @@ bool runCompute(
     NSUInteger max_threads = context.pipeline.maxTotalThreadsPerThreadgroup;
     NSUInteger threadgroup_size = std::min<NSUInteger>(256, max_threads);
     MTLSize threads_per_group = MTLSizeMake(threadgroup_size, 1, 1);
-    MTLSize grid = MTLSizeMake(pixel_count, 1, 1);
+    MTLSize grid = MTLSizeMake(count32, 1, 1);
     [encoder dispatchThreads:grid threadsPerThreadgroup:threads_per_group];
     [encoder endEncoding];
 
@@ -161,9 +168,18 @@ bool runCompute(
 
 namespace sony2fuji {
 
-bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+bool applyLutMetalPixels(
+    const LUT3D& lut,
+    RGB* pixels,
+    size_t pixel_count,
+    size_t* completedPixels
+) {
     if (completedPixels) {
         *completedPixels = 0;
+    }
+    if (!pixels || pixel_count == 0 ||
+        static_cast<uint64_t>(pixel_count) > std::numeric_limits<uint32_t>::max()) {
+        return false;
     }
     size_t completed = 0;
     @autoreleasepool {
@@ -171,10 +187,6 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) 
             try {
                 MetalContext* context = getMetalContext();
                 if (!context) {
-                    return false;
-                }
-                const size_t pixel_count = image.pixels.size();
-                if (pixel_count == 0) {
                     return false;
                 }
                 id<MTLTexture> lut_texture = createLutTexture(*context, lut);
@@ -189,6 +201,9 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) 
                     pixel_count,
                     kLutTileBytes / sizeof(RGB),
                     static_cast<size_t>(context->device.maxBufferLength) / sizeof(RGB)});
+                if (tile_pixels == 0) {
+                    return false;
+                }
                 id<MTLBuffer> pixel_buffer = [context->device newBufferWithLength:tile_pixels * sizeof(RGB)
                                                                           options:MTLResourceStorageModeShared];
                 if (!pixel_buffer || !pixel_buffer.contents) {
@@ -198,15 +213,15 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) 
                 for (size_t offset = 0; offset < pixel_count; offset += tile_pixels) {
                     const size_t count = std::min(tile_pixels, pixel_count - offset);
                     const size_t bytes = count * sizeof(RGB);
-                    std::memcpy(staging, image.pixels.data() + offset, bytes);
-                    if (!runCompute(*context, pixel_buffer, lut_texture, static_cast<uint32_t>(count),
+                    std::memcpy(staging, pixels + offset, bytes);
+                    if (!runCompute(*context, pixel_buffer, lut_texture, count,
                                     static_cast<uint32_t>(lut.getSize()))) {
                         if (completedPixels) {
                             *completedPixels = completed;
                         }
                         return false;
                     }
-                    std::memcpy(image.pixels.data() + offset, staging, bytes);
+                    std::memcpy(pixels + offset, staging, bytes);
                     completed = offset + count;
                 }
                 if (completedPixels) {
@@ -226,6 +241,10 @@ bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) 
             return false;
         }
     }
+}
+
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    return applyLutMetalPixels(lut, image.pixels.data(), image.pixels.size(), completedPixels);
 }
 
 }
