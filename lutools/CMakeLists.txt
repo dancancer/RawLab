@@ -404,6 +404,13 @@ if(BUILD_TESTING AND NOT IOS)
             LABELS core lut contracts ci_macos_arm64 ci_macos_x86_64 ci_windows
         )
     endforeach()
+    rawlab_add_test(
+        NAME lut_parser
+        SOURCES tests/lut_parser_tests.cpp
+        INCLUDES third_party
+        LIBRARIES sony2fuji_core
+        LABELS core lut ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     set(hsl_boundary_libs)
     if(SONY2FUJI_DENOISE_LIBRARIES)
         list(APPEND hsl_boundary_libs ${SONY2FUJI_DENOISE_LIBRARIES})
@@ -824,6 +831,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/hdr_stream_geometry_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS hdr geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME hdr_resample
+        SOURCES tests/hdr_resample_tests.cpp
+        LIBRARIES sony2fuji_core
+        LABELS hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(APPLE OR WIN32 OR ANDROID)
         rawlab_add_test(

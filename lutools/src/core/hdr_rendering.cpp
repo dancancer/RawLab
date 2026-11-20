@@ -1,5 +1,6 @@
 #include "core/hdr_rendering.h"
 #include "core/hdr_look.h"
+#include "core/hdr_resample.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_tone_curve.h"
 
@@ -244,36 +245,11 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     return true;
 }
 
-template<class Reader> RGB sampleResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
-    const Reader& read) {
-    if (width == outputWidth && height == outputHeight) return read(x, y);
-    const float sy = outputHeight > 1 ? float(y) * (height - 1) / (outputHeight - 1) : (height - 1) * .5f;
-    const int y0 = int(sy), y1 = std::min(y0 + 1, height - 1);
-    const float fy = sy - y0;
-    const float sx = outputWidth > 1 ? float(x) * (width - 1) / (outputWidth - 1) : (width - 1) * .5f;
-    const int x0 = int(sx), x1 = std::min(x0 + 1, width - 1);
-    const float fx = sx - x0;
-    const auto a = read(x0, y0), b = read(x1, y0), c = read(x0, y1), d = read(x1, y1);
-    auto blend = [&](float av, float bv, float cv, float dv) {
-        return (av + (bv - av) * fx) * (1 - fy) + (cv + (dv - cv) * fx) * fy;
-    };
-    return {blend(a.r, b.r, c.r, d.r), blend(a.g, b.g, c.g, d.g), blend(a.b, b.b, c.b, d.b)};
-}
-
 void resize(ImageData& image, uint32_t longEdge) {
     const int edge = std::max(image.width, image.height);
     if (longEdge == 0 || longEdge >= uint32_t(edge)) return;
     const auto size = hdrResizeSize(image.width, image.height, longEdge);
-    const int width = size.first, height = size.second;
-    ImageData output(width, height);
-    parallelPixelRanges(output.pixels.size(), [&](size_t begin, size_t end) {
-        for (size_t i = begin; i < end; ++i) {
-            const int y = int(i / width), x = int(i % width);
-            output.at(x, y) = sampleResize(x, y, image.width, image.height, width, height,
-                [&](int sx, int sy) { return image.at(sx, sy); });
-        }
-    });
-    image = std::move(output);
+    image = hdr::resample(image, static_cast<uint32_t>(size.first), static_cast<uint32_t>(size.second));
 }
 
 } // namespace
@@ -462,7 +438,7 @@ std::pair<int, int> hdrResizeSize(int width, int height, uint32_t longEdge) {
 
 RGB sampleHDRResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
     const GeometryPixelReader& read) {
-    return sampleResize(x, y, width, height, outputWidth, outputHeight, read);
+    return hdr::sampleResample(x, y, width, height, outputWidth, outputHeight, read);
 }
 
 } // namespace sony2fuji
