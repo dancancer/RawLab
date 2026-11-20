@@ -226,8 +226,21 @@ int main(int argc, char* argv[]) {
             "Mismatched source digest was published");
         source.source_sha256[0] ^= 1;
         context.cancelAtFinish = true;
-        require(run(output) == SONY2FUJI_STATUS_CANCELLED && read(output) == existing && fs::is_empty(directory / "scratch"),
-            "Cancellation published output or leaked scratch");
+        const auto cancelStatus = run(output);
+        const bool cancelOutputUnchanged = read(output) == existing;
+        const bool cancelScratchEmpty = fs::is_empty(directory / "scratch");
+        std::string cancelDetail = "Cancellation published output or leaked scratch";
+        if (!(cancelStatus == SONY2FUJI_STATUS_CANCELLED && cancelOutputUnchanged && cancelScratchEmpty)) {
+            cancelDetail += " (status=" + std::to_string(cancelStatus) + ", reason=" + std::to_string(diagnostic.reason) +
+                ", field=" + std::to_string(diagnostic.field) + ", outputUnchanged=" + std::to_string(cancelOutputUnchanged) +
+                ", scratchEmpty=" + std::to_string(cancelScratchEmpty) + ", entries=[";
+            std::error_code ec;
+            for (fs::recursive_directory_iterator it(directory / "scratch", ec), end; !ec && it != end; it.increment(ec))
+                cancelDetail += it->path().filename().u8string() + ",";
+            if (ec) cancelDetail += "iter_err=" + std::to_string(ec.value());
+            cancelDetail += "])";
+        }
+        require(cancelStatus == SONY2FUJI_STATUS_CANCELLED && cancelOutputUnchanged && cancelScratchEmpty, cancelDetail);
         context.cancelled = false; context.cancelAtFinish = false;
         fs::create_directory(directory / "rename-target"); write(directory / "rename-target" / "keep", {9});
         const auto beforeCount = std::distance(fs::directory_iterator(directory), fs::directory_iterator{});
