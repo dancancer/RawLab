@@ -82,9 +82,14 @@ sony2fuji_status sony2fuji_compute_histogram(
         buffer->pixel_format != SONY2FUJI_PIXEL_RGBA8) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
+    const uint32_t channels = buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4u : 3u;
+    const uint64_t rowBytes = static_cast<uint64_t>(buffer->width) * channels;
+    if (rowBytes > static_cast<uint64_t>(buffer->stride_bytes) ||
+        static_cast<uint64_t>(buffer->stride_bytes) * (buffer->height - 1u) + rowBytes > buffer->size_bytes) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
 
     try {
-        uint32_t channels = buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 : 3;
         const uint8_t* data = static_cast<const uint8_t*>(buffer->data);
         std::vector<uint32_t> counts(bins, 0);
 

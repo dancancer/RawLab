@@ -144,6 +144,13 @@ RenderStatus Pipeline::setAiDenoise(const AiDenoiseConfig& config) {
     }
     const bool hadAI = runtime_->ai != nullptr;
     const bool previousEnabled = hadAI ? runtime_->ai->enabled : false;
+    auto rollback = [&]() noexcept {
+        if (!hadAI) {
+            runtime_->ai.reset();
+        } else if (runtime_->ai) {
+            runtime_->ai->enabled = previousEnabled;
+        }
+    };
     try {
         if (!runtime_->ai) runtime_->ai = std::make_unique<ai::AISession>();
         const auto backend =
@@ -155,13 +162,13 @@ RenderStatus Pipeline::setAiDenoise(const AiDenoiseConfig& config) {
         runtime_->ai->configure(config.modelDirectory, config.cacheDirectory, backend);
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
-        if (hadAI) runtime_->ai->enabled = previousEnabled;
+        rollback();
         return RenderStatus::OutOfMemory;
     } catch (const std::exception&) {
-        if (hadAI) runtime_->ai->enabled = previousEnabled;
+        rollback();
         return RenderStatus::InvalidArgument;
     } catch (...) {
-        if (hadAI) runtime_->ai->enabled = previousEnabled;
+        rollback();
         return RenderStatus::ProcessingError;
     }
 #else

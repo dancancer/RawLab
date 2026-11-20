@@ -57,6 +57,7 @@ SOURCE_TO_EXECUTABLE_STEM: dict[str, str] = {
 APPLE_ONLY_TEST_SOURCES = {
     "display_image_tests.cpp",
     "hdr_image_tests.mm",
+    "metal_lut_bounds_tests.mm",
     "metal_lut_init_retry_tests.mm",
     "metal_workspace_tests.mm",
     "noise_aware_sharpen_metal_failure_tests.mm",

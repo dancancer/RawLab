@@ -358,6 +358,92 @@ void testPublicCAPIInvalidBounds() {
           "public C API rejects short stride");
 }
 
+void testComputeHistogramBoundsAndNormalization() {
+    {
+        // Valid RGB8 with row padding and tight final row (no trailing padding after last pixel).
+        Fixture rgb(3, 2, 3, 5);
+        rgb.bind();
+        // Row 0: black (0,0,0), mid (128,128,128), white (255,255,255)
+        rgb.pixel(0, 0)[0] = 0;   rgb.pixel(0, 0)[1] = 0;   rgb.pixel(0, 0)[2] = 0;
+        rgb.pixel(1, 0)[0] = 128; rgb.pixel(1, 0)[1] = 128; rgb.pixel(1, 0)[2] = 128;
+        rgb.pixel(2, 0)[0] = 255; rgb.pixel(2, 0)[1] = 255; rgb.pixel(2, 0)[2] = 255;
+        // Row 1: two black, one white
+        rgb.pixel(0, 1)[0] = 0;   rgb.pixel(0, 1)[1] = 0;   rgb.pixel(0, 1)[2] = 0;
+        rgb.pixel(1, 1)[0] = 0;   rgb.pixel(1, 1)[1] = 0;   rgb.pixel(1, 1)[2] = 0;
+        rgb.pixel(2, 1)[0] = 255; rgb.pixel(2, 1)[1] = 255; rgb.pixel(2, 1)[2] = 255;
+
+        sony2fuji_buffer tightLastRow = rgb.buffer;
+        tightLastRow.size_bytes = static_cast<size_t>(rgb.buffer.stride_bytes) * (rgb.buffer.height - 1u) +
+            static_cast<size_t>(rgb.buffer.width) * 3u;
+        float bins[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
+        checkPass(sony2fuji_compute_histogram(&tightLastRow, 4, bins) == SONY2FUJI_STATUS_OK,
+                  "compute_histogram accepts padded RGB8 with tight last row");
+        checkPass(bins[0] == 1.0f && bins[3] > 0.6f && bins[3] < 0.7f,
+                  "compute_histogram normalizes RGB8 peak bin to 1.0");
+    }
+
+    {
+        Fixture rgba(2, 2, 4, 4);
+        rgba.bind();
+        rgba.pixel(0, 0)[0] = 255; rgba.pixel(0, 0)[1] = 255; rgba.pixel(0, 0)[2] = 255; rgba.pixel(0, 0)[3] = 0;
+        rgba.pixel(1, 0)[0] = 255; rgba.pixel(1, 0)[1] = 255; rgba.pixel(1, 0)[2] = 255; rgba.pixel(1, 0)[3] = 128;
+        rgba.pixel(0, 1)[0] = 0;   rgba.pixel(0, 1)[1] = 0;   rgba.pixel(0, 1)[2] = 0;   rgba.pixel(0, 1)[3] = 255;
+        rgba.pixel(1, 1)[0] = 255; rgba.pixel(1, 1)[1] = 255; rgba.pixel(1, 1)[2] = 255; rgba.pixel(1, 1)[3] = 42;
+        float bins[4] = {};
+        checkPass(sony2fuji_compute_histogram(&rgba.buffer, 4, bins) == SONY2FUJI_STATUS_OK,
+                  "compute_histogram accepts valid RGBA8 buffer");
+        checkPass(bins[3] == 1.0f && bins[0] > 0.3f && bins[0] < 0.4f,
+                  "compute_histogram ignores alpha and normalizes RGBA8 peak bin to 1.0");
+    }
+
+    {
+        // Over-allocated backing storage makes invalid size_bytes / stride_bytes safe under ASan if reverted.
+        Fixture fixture(4, 2, 4, 5);
+        fixture.bind();
+        float bins[8];
+        std::fill(std::begin(bins), std::end(bins), -9.0f);
+
+        auto shortSize = fixture.buffer;
+        shortSize.size_bytes = shortSize.stride_bytes + 1;
+        rawlab::test::requirePass(
+            sony2fuji_compute_histogram(&shortSize, 8, bins) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "compute_histogram rejects short size_bytes");
+        checkPass(std::all_of(std::begin(bins), std::end(bins), [](float v) { return v == -9.0f; }),
+                  "compute_histogram leaves out_bins untouched on short size_bytes");
+
+        auto shortStride = fixture.buffer;
+        shortStride.stride_bytes = 1;
+        rawlab::test::requirePass(
+            sony2fuji_compute_histogram(&shortStride, 8, bins) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "compute_histogram rejects short stride_bytes");
+
+        auto overflowWidth = fixture.buffer;
+        overflowWidth.width = std::numeric_limits<uint32_t>::max() / 2u;
+        checkPass(sony2fuji_compute_histogram(&overflowWidth, 8, bins) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "compute_histogram rejects width overflow against stride_bytes");
+
+        checkPass(sony2fuji_compute_histogram(&fixture.buffer, 0, bins) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "compute_histogram rejects bins == 0");
+
+        auto unsupported = fixture.buffer;
+        unsupported.pixel_format = static_cast<sony2fuji_pixel_format>(99);
+        checkPass(sony2fuji_compute_histogram(&unsupported, 8, bins) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "compute_histogram rejects unsupported pixel_format");
+    }
+
+    {
+        Fixture packed(4, 2, 3, 0);
+        packed.bind();
+        float bins[8] = {};
+        auto offByOne = packed.buffer;
+        offByOne.size_bytes = 23;
+        checkPass(sony2fuji_compute_histogram(&offByOne, 8, bins) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "compute_histogram rejects packed buffer off by 1 byte");
+        checkPass(sony2fuji_compute_histogram(&packed.buffer, 8, bins) == SONY2FUJI_STATUS_OK,
+                  "compute_histogram accepts exact packed buffer size");
+    }
+}
+
 void benchmarkStats(uint32_t width, uint32_t height, uint32_t channels,
                     const std::string& label) {
     Fixture fixture(width, height, channels, 13);
@@ -458,12 +544,18 @@ void testLargeBenchmark() {
 } // namespace
 
 int main() {
-    testSynthetic(3, "RGB8 padded");
-    testSynthetic(4, "RGBA8 padded");
-    testOneByOne();
-    testInvalidBuffers();
-    testPublicCAPI();
-    testPublicCAPIInvalidBounds();
-    testLargeBenchmark();
-    return rawlab::test::exitCode();
+    try {
+        testSynthetic(3, "RGB8 padded");
+        testSynthetic(4, "RGBA8 padded");
+        testOneByOne();
+        testInvalidBuffers();
+        testPublicCAPI();
+        testPublicCAPIInvalidBounds();
+        testComputeHistogramBoundsAndNormalization();
+        testLargeBenchmark();
+        return rawlab::test::exitCode();
+    } catch (const std::exception& error) {
+        std::cerr << "FAIL: " << error.what() << '\n';
+        return 1;
+    }
 }
