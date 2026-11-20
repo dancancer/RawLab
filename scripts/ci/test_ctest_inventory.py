@@ -168,6 +168,38 @@ class CTestInventoryTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+    def test_glslang_gated_sources_require_glslang_only_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            (tdir / "tiff_ifd_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (tdir / "gles_photo_pixel_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (tdir / "gles_renderer_retry_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            data = {
+                "tests": [
+                    _make_entry("tiff_ifd", ["core", "ci_macos_arm64", "ci_windows"], "tiff_ifd_tests"),
+                ]
+            }
+            self.assertEqual(
+                cci.validate_ctest_inventory(
+                    data,
+                    ci_label="ci_windows",
+                    platform="windows",
+                    tests_dir=tdir,
+                    glslang_available=False,
+                ),
+                [],
+            )
+            errors = cci.validate_ctest_inventory(
+                data,
+                ci_label="ci_macos_arm64",
+                platform="macos",
+                tests_dir=tdir,
+                glslang_available=True,
+            )
+            self.assertEqual(len(errors), 2)
+            self.assertTrue(any("gles_photo_pixel_tests.cpp" in e for e in errors), errors)
+            self.assertTrue(any("gles_renderer_retry_tests.cpp" in e for e in errors), errors)
+
     def test_optional_live_build_dir_reconciliation(self) -> None:
         build_dir = os.environ.get("RAWLAB_CTEST_BUILD_DIR")
         if not build_dir:

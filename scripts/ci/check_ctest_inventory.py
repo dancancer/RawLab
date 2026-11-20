@@ -77,6 +77,10 @@ AI_DENOISE_ONLY_TEST_SOURCES = {
     "dualdn_onnx_tests.cpp",
     "dualdn_session_tests.cpp",
 }
+GLSLANG_ONLY_TEST_SOURCES = {
+    "gles_photo_pixel_tests.cpp",
+    "gles_renderer_retry_tests.cpp",
+}
 
 
 def parse_cmake_cache(build_dir: Path) -> dict[str, str]:
@@ -154,6 +158,7 @@ def validate_ctest_inventory(
     ai_enabled: bool = False,
     portable_hdr_enabled: bool | None = None,
     libraw_source_present: bool | None = None,
+    glslang_available: bool | None = None,
 ) -> list[str]:
     errors: list[str] = []
     tests = data.get("tests")
@@ -198,6 +203,8 @@ def validate_ctest_inventory(
             portable_hdr_enabled = platform != "macos"
         if libraw_source_present is None:
             libraw_source_present = platform == "windows"
+        if glslang_available is None:
+            glslang_available = platform != "windows"
         on_disk = sorted(
             p.name
             for suffix in (".cpp", ".mm")
@@ -215,6 +222,8 @@ def validate_ctest_inventory(
             if not libraw_source_present and fname in LIBRAW_SOURCE_ONLY_TEST_SOURCES:
                 continue
             if not ai_enabled and fname in AI_DENOISE_ONLY_TEST_SOURCES:
+                continue
+            if not glslang_available and fname in GLSLANG_ONLY_TEST_SOURCES:
                 continue
             expected_stem = SOURCE_TO_EXECUTABLE_STEM.get(fname, Path(fname).stem)
             if expected_stem not in observed_stems:
@@ -253,6 +262,12 @@ def main(argv: list[str] | None = None) -> int:
     portable_hdr = _cache_truthy(cache, "SONY2FUJI_TEST_PORTABLE_HDR") if "SONY2FUJI_TEST_PORTABLE_HDR" in cache else None
     libraw_src = cache.get("SONY2FUJI_TEST_LIBRAW_SOURCE", "")
     libraw_source_present = (Path(libraw_src) / "src/decoders/sony_arw6.cpp").is_file() if libraw_src else (False if cache else None)
+    raw_glslang = cache.get("RAWLAB_GLSLANG", "").strip()
+    glslang_available = (
+        bool(raw_glslang and not raw_glslang.endswith("-NOTFOUND"))
+        if "RAWLAB_GLSLANG" in cache
+        else None
+    )
 
     tests_dir = None if args.skip_orphan_check else LUTOOLS_TESTS_DIR
     errors = validate_ctest_inventory(
@@ -263,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         ai_enabled=ai_enabled,
         portable_hdr_enabled=portable_hdr,
         libraw_source_present=libraw_source_present,
+        glslang_available=glslang_available,
     )
     if errors:
         for err in errors:
