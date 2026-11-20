@@ -66,8 +66,7 @@ open "build/RawLab Mac.app"
 `.cache/shared/aliyun-rum/`，SHA-256 不符即停止。`RAWLAB_RUM=0` 出不带 SDK 的包，
 `tests/bundle.sh` 会核对带与不带和构建方式一致。
 
-RawLab 已取得随应用分发 28 个第三方改编 LUT 的授权。构建脚本会从外置资产包准备这些 LUT，
-将它们和署名说明一起打入应用。来源和各端打包范围见 [LUT 接入记录](../docs/luts/README.md)。
+RawLab 已获授权，可随应用分发这 28 个第三方改编 LUT。作者及来源见[随包署名说明](../Shared/BundledLooks/NOTICE.md)，清单和改编方式见 [LUT 接入记录](../docs/luts/README.md)。
 
 依赖 CMake 3.24+、pkg-config、Python 3.11+、Rust 1.88+（Cargo 和 `rust-docs` 组件）和 Apple Command Line Tools 或 Xcode。LibRaw、GLib、Lensfun 等依赖从固定版本源码构建，不能直接混用最低系统高于 14 的 Homebrew 动态库。Panasonic S5 II 的 RW2 使用 encoding 8，旧 LibRaw 0.21.x 会错误解码；LibRaw 0.22 还改变了 ABI，因此不要仅替换应用内动态库。脚本默认以 14.0 为 deployment target，归档在主工作区 `.cache/shared/macos-sources` 共用，依赖产物在 `build/macos-deps/<target>/<arch>` 和 `build/lensfun/<target>/<arch>` 隔离。`SDKROOT` 可以指定构建 SDK；较新的 SDK 不等于较高的最低运行系统。
 

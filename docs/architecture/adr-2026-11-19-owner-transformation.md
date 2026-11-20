@@ -15,7 +15,7 @@ RawLab 已具备可复用的核心地基（C ABI 布局 fixture、跨端场景�
 | R3 | **同语言双写与上帝类并发膨胀** | iOS/Mac 存在 44 个同名领域类型重复维护；`EditorViewModel.kt`（2132 行/152 函数，JVM 单测零构造）、Windows `MainWindow`（24 个 partial/5610 行/9 个互斥 `choosingX` 布尔）、iOS `ContentView`（103 个 `@State`）导致改动双写、竞态难下沉，“顺手拆”策略已证伪 |
 | R4 | **测试体系倒挂与 change-detector 泛滥** | Apple 202 个 shell 测试脚本手抄 886 处源文件路径（113 个无主）；Windows 测试约 1000 处字符串反射私有成员与 70 个手写 `--flag`；Android 474 个仪器测试承担过多逻辑；`test_workflow.py` 用 75 处 `assertIn` 锁死 `ci.yml`；`lutools/tests` 存在 11 个孤儿测试；缺路径即静默跳过形成假绿 |
 | R5 | **流程记账吞吐带宽并误触 CI** | 大量 docs/kanban/changelog/ledger 直推 `development`；多份架构方案并存；`affected_platforms.py` 将未分类路径默认判为四端全跑并通过 `cancel-in-progress` 取消代码 CI；约 1789 行自托管 runner 遗留脚本仍随 contracts 执行 |
-| R6 | **仓库体积膨胀** | 改造前 HEAD 跟踪 66 个 `.cube`（233MB）与 18MB DJI DNG，pack 达 2.46GiB。平台根目录留存 13 份单次过程文档及大量历史分支/worktree。LUT 授权与外置方式分别见 D1、D2 |
+| R6 | **仓库体积膨胀与合规缺口** | HEAD 跟踪 66 个 `.cube`（233MB，未用 LFS）与 18MB DJI DNG，pack 达 2.46GiB；平台根目录留存 13 份单次过程文档及大量历史分支/worktree；当时尚未记录 Fujifilm `flog-2-new` LUT 与 14 个摄影师命名配方的分发授权，后续确认见 D1 |
 
 ## 2. 推翻或修正的既有决策
 
@@ -48,7 +48,7 @@ W0（止血与治理） ──▶ W1（构建与测试地基） ──▶ W2（�
 | W0-2 | 一次性归档平台根目录 13 份过程文档、`reviews/`、`release-artifacts/`、`codebase-review-2026-11-12.md`；移除 `raw_decode_check.swift`、`lutools/build.sh` android 入口与过时 `platform/android/README.md`；`stb_image_write.h` 迁入测试目录 | 仓库根目录与平台根目录仅保留 `README` / `AGENTS` / 长期有效文档 |
 | W0-3 | 归档打 tag 后删除自托管 runner 遗留脚本与测试，删去 `docs/process/ci.md` 中 Inactive / Not Enabled 段落 | `docs/process/ci.md` 仅描述现行托管 CI 流程 |
 | W0-4 | `test_workflow.py` 仅保留语义不变量（不发布、fork 隔离密钥、SKIP 失败），删除逐字 `assertIn` 锁 | 修改无关 step 名称不再破坏工作流测试 |
-| W0-5 | 记录 Fujifilm LUT 与摄影师命名配方的随包分发许可 | 项目负责人已确认现有授权（见 D1） |
+| W0-5 | 合规排查（Fujifilm LUT 与摄影师命名配方来源许可） | 项目负责人已确认随 RawLab 分发的授权，见 D1 |
 | W0-6 | 新增含验证锚点栏的 PR 模板与 `CODEOWNERS`；更新 `AGENTS.md` 与 `integration-workflow.md`（D5）；台账未修/部分修复项迁入 GitHub Issues；按 D7 清理已合并远端分支并开启 auto-delete | 仓内不再维护任务台账流水文件 |
 
 ### W1：构建与测试地基
@@ -99,8 +99,8 @@ W0（止血与治理） ──▶ W1（构建与测试地基） ──▶ W2（�
 
 | # | 议题 | 最终裁定 | 落地约束 |
 |---|---|---|---|
-| D1 | Fujifilm LUT、摄影师命名配方与第三方改编 LUT 的分发许可 | **已获授权随 RawLab 分发** | 随包保留来源与署名，见 [LUT 说明](../luts/README.md) |
-| D2 | 仓库体积治理范围 | **仅治理 HEAD**，LUT 与测试 DNG 存在 `assets-v1`，由清单校验 SHA-256 | 历史重写留待 W3 之后协调所有协作者另行评估 |
+| D1 | Fujifilm LUT 与摄影师命名配方的分发许可 | **已获授权随 RawLab 分发** | 项目负责人于 2026-11-20 确认，分发时保留原有署名 |
+| D2 | 仓库体积治理范围 | **仅治理 HEAD**（LFS 或发布资产 + SHA-256 校验） | 历史重写留待 W3 之后协调所有协作者另行评估 |
 | D3 | 原子编辑态 ABI 载体 | **规范 recipe JSON** | 复用核心既有 recipe 校验；**性能门禁**：W2-2 实施前实测每帧解析与转换开销，若交互预览路径不可接受则退回版本化 C 结构体，JSON 保留给持久化与批量 |
 | D4 | 代码生成边界 | **仅限 protocol 层** | 范围、默认值、步长、量化、wire 精度自动生成并带 `--check` 门禁；UI 层坚持手写（W3-1） |
 | D5 | 台账与评审制度 | **状态迁至 GitHub Issues/Projects；carbon 仅对 `CODEOWNERS` 高风险目录强制** | 同步修订 `AGENTS.md` 与 `docs/process/integration-workflow.md`（W0-6） |

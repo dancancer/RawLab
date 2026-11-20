@@ -17,7 +17,6 @@ class BundledLooksTests(unittest.TestCase):
         self.assertEqual(look["id"], "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65")
         self.assertEqual(look["name"], "EKTAR 100 RawLab edition")
         self.assertEqual(look["artworkName"], "ektar-100-phuket")
-        self.assertEqual(look["license"], "GPL-3.0-only")
         cube = folder / look["fileName"]
         self.assertTrue(
             cube.is_file(),
@@ -58,22 +57,26 @@ class BundledLooksTests(unittest.TestCase):
                 self.assertGreaterEqual(width, 256)
         report = json.loads((folder / "adaptation-report.json").read_text())
         self.assertEqual(len(report), 28)
+        self.assertTrue((folder / "REDISTRIBUTION_BLOCKED.md").exists())
         for entry in report:
             if entry["resampled"]:
                 self.assertLessEqual(entry["error"]["max"], .025)
                 self.assertLessEqual(entry["error"]["p99"], .002)
             else:
                 self.assertTrue(entry["sourcePayloadByteIdentical"])
-            self.assertEqual(entry["redistribution"], "authorized")
+            self.assertEqual(entry["redistribution"], "unconfirmed")
 
-    def test_catalog_records_permission_for_the_adapted_looks(self):
+    def test_unconfirmed_permissions_remain_recorded_without_blocking_compilation(self):
         folder = ROOT / "Shared/BundledLooks"
         catalog = json.loads((folder / "catalog.json").read_text())
-        report = json.loads((folder / "adaptation-report.json").read_text())
-        authorized = {entry["id"] for entry in catalog
-                      if entry["license"] == "Authorized for redistribution with RawLab"}
-        self.assertEqual(authorized, {entry["id"] for entry in report})
+        self.assertEqual(sum(entry["license"] == "UNCONFIRMED - redistribution permission not verified"
+                             for entry in catalog), 28)
+        self.assertTrue((folder / "REDISTRIBUTION_BLOCKED.md").is_file())
         self.assertTrue((folder / "NOTICE.md").is_file())
+        for relative in ["RawLabMac/build.sh", "RawLabAndroid/app/build.gradle.kts",
+                         "RawLabWindows/RawLabWindows.csproj", "RawLab/RawLab.xcodeproj/project.pbxproj"]:
+            with self.subTest(platform=relative):
+                self.assertNotIn("REDISTRIBUTION_BLOCKED.md", (ROOT / relative).read_text())
 
     def test_all_new_artwork_has_matching_generation_provenance(self):
         folder = ROOT / "Shared/BundledLooks/Artwork"

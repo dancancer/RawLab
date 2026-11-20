@@ -1,8 +1,8 @@
 # Bundled RawLab Looks
 
 RawLab has permission to distribute the 28 adapted third-party looks with its
-releases. The project-authored Ektar v2 look uses GPL-3.0-only. The bundled
-[attribution notice](../../Shared/BundledLooks/NOTICE.md) credits the sources.
+releases. The project-authored Ektar v2 look uses GPL-3.0-only. See the
+[bundled attribution notice](../../Shared/BundledLooks/NOTICE.md).
 
 ## Inventory and Identity
 
@@ -152,17 +152,11 @@ endorsement or LUT-rendered samples. Prompts, original output paths and hashes
 are retained in `Artwork/generated-*.json`. The existing Ektar icon is the
 intentional old-resource exception, referenced from its existing source.
 
-The [asset manifest](../../Shared/assets-manifest.json) pins 59 external CUBEs
-in `assets-v1`. Each macOS, Windows, Android and iOS app bundles 53 of them
-(10 Fujifilm film looks, 29 shared looks and 14 master recipes). The four legacy
-`lutools/F-Log2` tables and the `FLog2-709` and `WDR` technical transforms
-stay in the asset pack. The app also includes the Git-tracked `HDR Silver.cube`,
-bringing the app total to 54.
-
-The macOS build script, Windows `build.ps1` and Android Gradle build prepare
-the LUTs before copying them. For an iOS archive from a fresh checkout, run
-`python3 scripts/assets/prepare.py --group luts` at the repository root before
-archiving in Xcode. Each platform includes the attribution notice with the LUTs.
+Mac packages CUBEs under `LUTs`, catalog/artwork in app resources; iOS packages
+the `BundledLooks` folder reference and separately reuses the old Ektar artwork.
+Android packages `films`, `artwork` and `bundled-looks.json`; Windows uses the
+same catalog and sources through its project resource items. Each packages the
+permanent [NOTICE.md](../../Shared/BundledLooks/NOTICE.md).
 
 Only the new picker entries receive wider two-line name layouts. Existing
 horizontal picker behavior, legacy widths and custom-look artwork behavior
@@ -205,10 +199,6 @@ Generation used NumPy 2.5.4 and OpenColorIO 2.6.0. Dependency version changes
 require comparing actual output and error metrics, not assuming byte identity.
 `--force` is required to replace generated derivatives; it is not a release flag.
 
-The `#RawLab` footers in the 28 external CUBEs record their provenance at the
-time of adaptation. The catalog and bundled notice record the current permission
-to distribute those looks with RawLab.
-
 ## Verification and Limits
 
 Verified locally on this branch:
@@ -216,8 +206,8 @@ Verified locally on this branch:
 - Shared audit/catalog/adapter tests, including source-tree write prevention,
   native sRGB identity behavior, resource uniqueness, PNG decode structure and
   content hashes. All originals remain unchanged after generation. The expanded
-  11-test suite also covers same-filesystem staging and look metadata.
-  It runs in hosted CI's contracts job
+  11-test suite also covers same-filesystem staging and the permission fields
+  recorded in the October 2026 catalog. It runs in hosted CI's contracts job
   with the existing LUT-preparation requirements. Other default CI builds are
   not reduced or replaced by LUT-specific overrides.
 - Mac private app build, bundle resource byte equality and signatures, native
@@ -259,6 +249,11 @@ Verified locally on this branch:
   warnings/errors). The standalone `tests/looks/LookGrouping.Tests.csproj`
   passes all 9 grouping checks; the Windows runner includes the `looks` suite.
   WPF group-divider/name assertions compile but were not executed on Windows.
+- The original compile-time blockers were subsequently removed from all four
+  platforms under the owner's source/development integration exception. A
+  regression first failed on all four build configurations, then passed after
+  removal. It also checks the 28 original `UNCONFIRMED` catalog entries and
+  the presence of the notices.
 
 The generic LUT validator accepts all 29 files in non-strict mode, but reports
 real artistic quality warnings: camera-table interior clipping is 4.89% Lumix,
@@ -281,3 +276,13 @@ dynamic-type size, or global camera/film fidelity. The initial missing iOS
 framework was resolved by a source build in this worktree, not by copying a
 compiled framework from another checkout. The interactive grouping preview
 uses a repository JPEG fixture, not a RAW camera-fidelity comparison.
+
+## Redistribution
+
+The catalog, adaptation report and CUBE provenance comments record the status
+when the tables were generated in October 2026. The project owner confirmed
+permission to distribute the 28 adapted looks with RawLab on 2026-11-20.
+The [redistribution record](../../Shared/BundledLooks/REDISTRIBUTION_BLOCKED.md)
+lists the sources. The film credits are also documented in the
+[G'MIC credits](https://gmic.eu/color_presets/) and
+[Pat David's article](https://patdavid.net/2013/08/film-emulation-presets-in-gmic-gimp/).

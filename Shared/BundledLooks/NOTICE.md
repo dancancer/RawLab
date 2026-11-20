@@ -4,6 +4,10 @@ The project owner confirmed on 2026-11-20 that RawLab has permission to
 redistribute the five adapted camera looks and the 23 adapted Kodak-named
 looks with RawLab releases. Their original authors and sources are credited below.
 
+The `UNCONFIRMED` and `unconfirmed` labels in the generated catalog,
+adaptation report and CUBE comments record the status at the time of the
+October 2026 review.
+
 Camera source: u/Aggressive-Win-6351's public share, with ROGER WANG credited in
 some source headers. Source and author statements:
 <https://www.reddit.com/r/Lumix/comments/1tgii1i/reverseengineering_camera_color_pipelines_instead/>
