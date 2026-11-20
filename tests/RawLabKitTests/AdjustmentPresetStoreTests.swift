@@ -269,4 +269,28 @@ final class AdjustmentPresetStoreTests: XCTestCase {
         XCTAssertTrue(try retiredStore.list().isEmpty)
         XCTAssertTrue(try retiredStore.listUnreadable().isEmpty)
     }
+
+    func testNonArrayRetiredIDsRejectWholeLibrary() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("RawLabPresetRetiredShape-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = AdjustmentPresetStore(directory: directory, clock: { 1000 })
+        let file = directory.appendingPathComponent("presets.json")
+
+        for value in ["null", "123", "{}", "\"bad\"", "true"] {
+            let bytes = Data("{\"registry_version\":1,\"presets\":[],\"retired_ids\":\(value)}".utf8)
+            try bytes.write(to: file, options: .atomic)
+
+            XCTAssertThrowsError(try store.list(), "Non-array retired_ids (\(value)) must reject list()") { error in
+                XCTAssertEqual(error as? AdjustmentPresetError, .corruptLibrary)
+            }
+            XCTAssertThrowsError(try store.listUnreadable(), "Non-array retired_ids (\(value)) must reject listUnreadable()") { error in
+                XCTAssertEqual(error as? AdjustmentPresetError, .corruptLibrary)
+            }
+            XCTAssertThrowsError(try store.create(name: "Blocked", payload: payload()), "Non-array retired_ids (\(value)) must block writes") { error in
+                XCTAssertEqual(error as? AdjustmentPresetError, .corruptLibrary)
+            }
+            XCTAssertEqual(try Data(contentsOf: file), bytes, "Non-array retired_ids (\(value)) must preserve original bytes")
+        }
+    }
 }

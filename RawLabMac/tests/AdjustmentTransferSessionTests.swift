@@ -542,25 +542,45 @@ struct AdjustmentTransferSessionTests {
         check(try MacEditPersistence(directory: directory).state(for: brokenVer)?.settings.exposure == 0.4,
               "Recovered photo can save new adjustments normally")
 
-        // D2/d: Whole-table structural corruption still rejects the entire store.
+        // D2/d: Future version remains fail-closed, while root-level corruption self-heals via quarantine.
+        let futureStoreDir = root.appendingPathComponent("future-whole-store")
+        try FileManager.default.createDirectory(at: futureStoreDir, withIntermediateDirectories: true)
+        let futureFile = futureStoreDir.appendingPathComponent("edits.json")
+        let futureBytes = Data("{\"version\":2,\"records\":{}}".utf8)
+        try futureBytes.write(to: futureFile)
+        do {
+            _ = try MacEditPersistence(directory: futureStoreDir)
+            fatalError("Future version must fail closed")
+        } catch is CocoaError { }
+        check(try Data(contentsOf: futureFile) == futureBytes, "Future registry version bytes remain untouched")
+
         let corruptStoreDir = root.appendingPathComponent("corrupt-whole-store")
         try FileManager.default.createDirectory(at: corruptStoreDir, withIntermediateDirectories: true)
         let corruptFile = corruptStoreDir.appendingPathComponent("edits.json")
         for badJSON in [
             "{\"version\":1,\"records\":{",
-            "{\"version\":2,\"records\":{}}",
             "{\"records\":{}}",
             "{\"version\":1,\"records\":[]}",
             "{\"version\":1,\"records\":{},\"processingMigrations\":[]}",
             "{\"version\":1,\"version\":1,\"records\":{}}"
         ] {
-            try Data(badJSON.utf8).write(to: corruptFile)
-            do {
-                _ = try MacEditPersistence(directory: corruptStoreDir)
-                fatalError("Whole-store corruption must fail closed: \(badJSON)")
-            } catch is CocoaError { }
+            let badBytes = Data(badJSON.utf8)
+            try badBytes.write(to: corruptFile)
+            let healed = try MacEditPersistence(directory: corruptStoreDir)
+            let archived = healed.lastQuarantinedURL
+            check(archived != nil && archived!.lastPathComponent.hasPrefix("edits.json.corrupt-"),
+                  "Root corruption quarantines corrupt edits.json: \(badJSON)")
+            check(try Data(contentsOf: archived!) == badBytes && !FileManager.default.fileExists(atPath: corruptFile.path),
+                  "Quarantined file preserves exact bytes and clears active path: \(badJSON)")
+            check(healed.consumeQuarantinedError() != nil && healed.consumeQuarantinedError() == nil,
+                  "Quarantine error is surfaced once: \(badJSON)")
         }
-        check(true, "Whole-store structural corruption remains fail-closed")
+        let recoveryPhoto = root.appendingPathComponent("healed-photo.raw")
+        try Data("healed-photo-bytes".utf8).write(to: recoveryPhoto)
+        let recoveredStore = try MacEditPersistence(directory: corruptStoreDir)
+        try recoveredStore.save(recoveryPhoto, state: state(0.75))
+        check(try MacEditPersistence(directory: corruptStoreDir).state(for: recoveryPhoto)?.settings.exposure == 0.75,
+              "Recovered MacEditPersistence persists subsequent edits cleanly")
     }
 
     // Q3/S1 seam：提示按实际应用结果过滤；跳过与预检失败目标不产生误报。

@@ -27,6 +27,24 @@ class EditorEditStoreTest {
         } finally { root.deleteRecursively() }
     }
 
+    @Test fun rootCorruptionSelfHealsOnOpenAndAllowsSaving() {
+        val root = Files.createTempDirectory("rawlab-edit-heal").toFile()
+        val record = File(root, "edits.properties").apply { writeText("corrupt-non-record-line") }
+        val original = record.readBytes()
+        try {
+            val store = EditorEditStore(root)
+            assertEquals(EditSaveState.NONE, store.initialResult.state)
+            assertTrue(store.available)
+            assertFalse(record.exists())
+            val archived = root.listFiles()!!.single { it.name.startsWith("edits.properties.corrupt-") }
+            assertArrayEquals(original, archived.readBytes())
+            val id = PhotoIdentity("healed-photo")
+            assertEquals(EditSaveState.SAVED, store.save(id, EditSettings(exposure = 0.5f)).state)
+            assertEquals(0.5f, store.readState(id).settings?.exposure)
+            assertArrayEquals(original, archived.readBytes())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun perRecordCorruptionKeepsStoreAvailableAndAllowsTargetedResetToUnmodified() {
         val root = Files.createTempDirectory("rawlab-edit-isolated").toFile()
         val broken = PhotoIdentity("a")

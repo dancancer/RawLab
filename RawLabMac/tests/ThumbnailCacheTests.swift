@@ -958,14 +958,21 @@ struct ThumbnailCacheTests {
         check(overwrittenState?.settings.exposure == 2.5,
               "Direct on-disk edits.json replacement invalidates registry cache")
 
-        try Data("{\"version\":1,\"records\":{".utf8).write(to: editsFile)
-        var threwCorrupt = false
+        try Data("{\"version\":2,\"records\":{}}".utf8).write(to: editsFile)
+        var threwFuture = false
         do {
             _ = try MacEditPersistence(directory: editsDir)
         } catch is CocoaError {
-            threwCorrupt = true
+            threwFuture = true
         }
-        check(threwCorrupt, "On-disk edits.json corruption invalidates cache and throws CocoaError")
+        check(threwFuture, "On-disk future-version edits.json invalidates cache and throws CocoaError")
+
+        try Data("{\"version\":1,\"records\":{".utf8).write(to: editsFile)
+        let healedAfterCorrupt = try MacEditPersistence(directory: editsDir)
+        let reopenedAfterCorrupt = try reopened.state(for: photos[0])
+        check(healedAfterCorrupt.lastQuarantinedURL != nil &&
+              reopenedAfterCorrupt == nil,
+              "On-disk corrupt edits.json invalidates cache, quarantines archive, and recovers empty")
 
         // External deletion of edits.json on an already-warmed instance must invalidate cache.
         let deleteDir = dir.appendingPathComponent("external-delete", isDirectory: true)

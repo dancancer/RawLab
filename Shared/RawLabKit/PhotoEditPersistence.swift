@@ -121,6 +121,65 @@ public final class EditPersistence: @unchecked Sendable {
     private let writeData: (Data, URL) throws -> Void
     private let snapshotLock = NSLock()
     private var lastReadableStore = StoreFile(records: [:])
+    private var _lastQuarantinedURL: URL?
+    private var quarantinedError: Error?
+    internal static var onQuarantine: ((URL, Error) -> Void)?
+
+    public static var defaultDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RawLab/Edits", isDirectory: true)
+    }
+
+    public var lastQuarantinedURL: URL? {
+        snapshotLock.lock(); defer { snapshotLock.unlock() }
+        return _lastQuarantinedURL
+    }
+
+    public func consumeQuarantinedError() -> Error? {
+        snapshotLock.lock(); defer { snapshotLock.unlock() }
+        defer { quarantinedError = nil }
+        return quarantinedError
+    }
+
+    @discardableResult
+    public static func removeStaleAtomicTempFiles(in directory: URL = defaultDirectory) -> Int {
+        guard let dirAttrs = try? FileManager.default.attributesOfItem(atPath: directory.path),
+              (dirAttrs[.type] as? FileAttributeType) == .typeDirectory else {
+            return 0
+        }
+        return (try? EditStoreFileLock.withExclusiveLock(directory: directory, lockFileName: ".edits.lock", createDirectory: false) {
+            guard let lockedAttrs = try? FileManager.default.attributesOfItem(atPath: directory.path),
+                  (lockedAttrs[.type] as? FileAttributeType) == .typeDirectory,
+                  let entries = try? FileManager.default.contentsOfDirectory(
+                      at: directory,
+                      includingPropertiesForKeys: nil,
+                      options: []
+                  ) else {
+                return 0
+            }
+            var removed = 0
+            for entry in entries {
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: entry.path),
+                      let fileType = attrs[.type] as? FileAttributeType,
+                      fileType != .typeSymbolicLink else {
+                    continue
+                }
+                let name = entry.lastPathComponent
+                let isAtomicTempFile = fileType == .typeRegular && (
+                    name.hasPrefix("edits.json.sb-") ||
+                    name.hasPrefix(".dat.nosync") ||
+                    (name.hasSuffix(".tmp") && (name.hasPrefix("edits.json.") || name.hasPrefix(".edits")))
+                )
+                let isAtomicStagingDir = fileType == .typeDirectory &&
+                    name.hasPrefix("(A Document Being Saved By ") && name.hasSuffix(")")
+                guard isAtomicTempFile || isAtomicStagingDir else { continue }
+                if (try? FileManager.default.removeItem(at: entry)) != nil {
+                    removed += 1
+                }
+            }
+            return removed
+        }) ?? 0
+    }
 
     public init(directory: URL, writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) throws {
         self.directory = directory
@@ -156,7 +215,7 @@ public final class EditPersistence: @unchecked Sendable {
     public func save(_ identity: PhotoIdentity, state: PhotoEditState) throws {
         try validate(identity)
         try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             _ = try write(state, identity: identity, store: &store)
         }
     }
@@ -168,7 +227,7 @@ public final class EditPersistence: @unchecked Sendable {
     public func reset(_ identity: PhotoIdentity) throws {
         try validate(identity)
         try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             _ = try write(nil, identity: identity, clearsProcessingMigration: true, store: &store)
         }
     }
@@ -181,7 +240,7 @@ public final class EditPersistence: @unchecked Sendable {
     public func resetToUnmodified(_ identity: PhotoIdentity) throws -> PhotoEditRecord {
         try validate(identity)
         return try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             let resolvedKey = recordKey(identity, from: store)
             let hadFallbackRecord = store.records[resolvedKey] != nil
             let hadOwnRecord = store.records.removeValue(forKey: identity.editKey) != nil
@@ -233,7 +292,7 @@ public final class EditPersistence: @unchecked Sendable {
 
     public func resolveUnverifiedAssetEdit(for identity: PhotoIdentity, expected: PhotoEditState, restore: Bool) throws {
         try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             guard try unverifiedAssetEdit(for: identity, from: store) == expected else { throw AdjustmentCommitError.expired }
             if restore {
                 _ = try write(expected, identity: identity, store: &store)
@@ -260,7 +319,7 @@ public final class EditPersistence: @unchecked Sendable {
                                           quality: ProcessingMigrationQuality) throws -> PhotoEditRecord {
         try validate(expected.identity)
         return try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             guard try record(expected.identity, from: store) == expected, let original = expected.state,
                   (1...2).contains(original.settings.processing.version), quality.isValid else {
                 throw AdjustmentCommitError.expired
@@ -286,7 +345,7 @@ public final class EditPersistence: @unchecked Sendable {
     public func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
         try validate(expected.identity)
         return try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             guard try record(expected.identity, from: store) == expected,
                   var receipt = storedMigration(expected.identity, from: store)?.receipt,
                   receipt.status == .migrated else { throw AdjustmentCommitError.expired }
@@ -319,7 +378,7 @@ public final class EditPersistence: @unchecked Sendable {
                           clearsProcessingMigration: Bool = false) throws -> PhotoEditRecord {
         try validate(identity)
         return try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             return try write(state, identity: identity, clearsProcessingMigration: clearsProcessingMigration, store: &store)
         }
     }
@@ -328,7 +387,7 @@ public final class EditPersistence: @unchecked Sendable {
         let identity = expected.identity
         try validate(identity)
         return try withWriteLock {
-            var store = try readStore()
+            var store = try readStore(holdingWriteLock: true)
             guard try unverifiedAssetEdit(for: identity, from: store) == nil else {
                 throw EditPersistenceError.legacyAssetEditNeedsDecision
             }
@@ -378,7 +437,14 @@ public final class EditPersistence: @unchecked Sendable {
         return stored
     }
 
-    private func readStore() throws -> StoreFile {
+    private struct FutureStoreVersionError: Error {}
+
+    private enum StoreReadOutcome {
+        case ok(StoreFile)
+        case rootCorrupt(Error)
+    }
+
+    private func readStore(holdingWriteLock: Bool = false) throws -> StoreFile {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             Self.sharedRegistryCache.invalidate(fileURL: fileURL)
@@ -397,6 +463,20 @@ public final class EditPersistence: @unchecked Sendable {
             return cached
         }
 
+        switch try readStoreUnderStripe(initialPath: initialPath) {
+        case .ok(let store):
+            return store
+        case .rootCorrupt(let error):
+            if holdingWriteLock {
+                return try quarantineCorruptStore(error: error)
+            }
+            return try withWriteLock {
+                try readStore(holdingWriteLock: true)
+            }
+        }
+    }
+
+    private func readStoreUnderStripe(initialPath: String) throws -> StoreReadOutcome {
         let stripe = Self.sharedRegistryCache.stripeLock(for: initialPath)
         stripe.lock(); defer { stripe.unlock() }
 
@@ -405,13 +485,13 @@ public final class EditPersistence: @unchecked Sendable {
                 Self.sharedRegistryCache.invalidate(fileURL: fileURL)
                 let empty = StoreFile(records: [:])
                 remember(empty)
-                return empty
+                return .ok(empty)
             }
             let beforePath = FileDigestCache.canonicalPath(for: fileURL)
             let before = FileStatFingerprint(resolvedPath: beforePath)
             if let before, let cached = Self.sharedRegistryCache.cachedStore(forPath: beforePath, fingerprint: before) {
                 remember(cached)
-                return cached
+                return .ok(cached)
             }
             let startEpoch = Self.sharedRegistryCache.epoch(for: beforePath)
             Self.recordRegistryDiskRead(forDirectory: directory)
@@ -420,11 +500,22 @@ public final class EditPersistence: @unchecked Sendable {
                 data = try Data(contentsOf: fileURL)
             } catch {
                 Self.sharedRegistryCache.invalidate(fileURL: fileURL)
+                var dirExists: ObjCBool = false
+                if Self.isNoSuchFileError(error),
+                   FileManager.default.fileExists(atPath: directory.path, isDirectory: &dirExists),
+                   dirExists.boolValue {
+                    let empty = StoreFile(records: [:])
+                    remember(empty)
+                    return .ok(empty)
+                }
                 throw error
             }
             let normalized: StoreFile
             do {
                 normalized = try Self.decodeStoreFile(from: data)
+            } catch is FutureStoreVersionError {
+                Self.sharedRegistryCache.invalidate(fileURL: fileURL)
+                throw EditPersistenceError.corruptStore
             } catch {
                 let afterPath = FileDigestCache.canonicalPath(for: fileURL)
                 let after = FileStatFingerprint(resolvedPath: afterPath)
@@ -432,7 +523,7 @@ public final class EditPersistence: @unchecked Sendable {
                     continue
                 }
                 Self.sharedRegistryCache.invalidate(fileURL: fileURL)
-                throw EditPersistenceError.corruptStore
+                return .rootCorrupt(error)
             }
             let afterPath = FileDigestCache.canonicalPath(for: fileURL)
             let after = FileStatFingerprint(resolvedPath: afterPath)
@@ -440,14 +531,86 @@ public final class EditPersistence: @unchecked Sendable {
             if let before, afterPath == beforePath, after == before, endEpoch == startEpoch {
                 Self.sharedRegistryCache.store(normalized, fingerprint: before, forPath: beforePath, expectedEpoch: startEpoch)
                 remember(normalized)
-                return normalized
+                return .ok(normalized)
             }
             if attempt == 2 {
                 remember(normalized)
-                return normalized
+                return .ok(normalized)
             }
         }
         throw CocoaError(.fileReadUnknown)
+    }
+
+    private func quarantineCorruptStore(error: Error, now: Date = Date()) throws -> StoreFile {
+        let resolvedFile = fileURL.resolvingSymlinksInPath().standardizedFileURL
+        guard FileManager.default.fileExists(atPath: resolvedFile.path) else {
+            Self.sharedRegistryCache.invalidate(fileURL: fileURL)
+            let empty = StoreFile(records: [:])
+            remember(empty)
+            return empty
+        }
+        let parent = resolvedFile.deletingLastPathComponent()
+        let baseName = "\(resolvedFile.lastPathComponent).corrupt-\(Self.corruptTimestamp(now))"
+        var suffix = 0
+        let candidate: URL
+        while true {
+            let name = suffix == 0 ? baseName : "\(baseName)-\(suffix)"
+            let proposed = parent.appendingPathComponent(name)
+            if try Self.itemType(atPath: proposed.path) == nil {
+                try FileManager.default.moveItem(at: resolvedFile, to: proposed)
+                candidate = proposed
+                break
+            }
+            suffix += 1
+        }
+        Self.sharedRegistryCache.invalidate(fileURL: fileURL)
+        snapshotLock.lock()
+        _lastQuarantinedURL = candidate
+        quarantinedError = error
+        lastReadableStore = StoreFile(records: [:])
+        snapshotLock.unlock()
+        NSLog("Quarantined corrupt edit store %@ to %@ (%@)", resolvedFile.lastPathComponent, candidate.lastPathComponent, String(describing: error))
+        Self.onQuarantine?(candidate, error)
+        return StoreFile(records: [:])
+    }
+
+    private static func corruptTimestamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02d",
+                      parts.year ?? 0, parts.month ?? 0, parts.day ?? 0,
+                      parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0)
+    }
+
+    private static func itemType(atPath path: String) throws -> FileAttributeType? {
+        do {
+            return try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+                if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+                   underlying.domain == NSPOSIXErrorDomain {
+                    if underlying.code == ENOENT { return nil }
+                    throw error
+                }
+                return nil
+            }
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT { return nil }
+            throw error
+        }
+    }
+
+    private static func isNoSuchFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError {
+            if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+               underlying.domain == NSPOSIXErrorDomain {
+                return underlying.code == ENOENT
+            }
+            return true
+        }
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT
     }
 
     private static func decodeStoreFile(from data: Data) throws -> StoreFile {
@@ -457,19 +620,22 @@ public final class EditPersistence: @unchecked Sendable {
         let root = try EditStoreJSONCodec.scanJSONObjectSlices(data, error: EditPersistenceError.corruptStore)
         let version: Int?
         if let versionSlice = root["version"], String(data: versionSlice, encoding: .utf8) != "null" {
+            if let parsedVersion = EditStoreJSONCodec.parseIntegerVersion(versionSlice), parsedVersion > 1 {
+                throw FutureStoreVersionError()
+            }
             guard EditStoreJSONCodec.isVersionOne(versionSlice) else { throw EditPersistenceError.corruptStore }
             version = 1
         } else {
             version = nil
         }
         guard let recordsSlice = root["records"] else { throw EditPersistenceError.corruptStore }
-        let records = try EditStoreJSONCodec.scanJSONObjectSlices(recordsSlice, error: EditPersistenceError.corruptStore)
+        let records = try EditStoreJSONCodec.scanJSONObjectSlices(recordsSlice, allowUTF8BOM: false, error: EditPersistenceError.corruptStore)
         var deleted: Set<String>?
         if let deletedSlice = root["deleted"], String(data: deletedSlice, encoding: .utf8) != "null" {
             deleted = Set(try JSONDecoder().decode([String].self, from: deletedSlice))
         }
         if let revisionsSlice = root["revisions"], String(data: revisionsSlice, encoding: .utf8) != "null" {
-            _ = try EditStoreJSONCodec.scanJSONObjectSlices(revisionsSlice, error: EditPersistenceError.corruptStore)
+            _ = try EditStoreJSONCodec.scanJSONObjectSlices(revisionsSlice, allowUTF8BOM: false, error: EditPersistenceError.corruptStore)
             let revisions = try JSONDecoder().decode([String: String].self, from: revisionsSlice)
             guard revisions.values.allSatisfy({ !$0.isEmpty }) else { throw EditPersistenceError.corruptStore }
             let tombstones = Set(revisions.keys.filter { records[$0] == nil })
@@ -478,7 +644,7 @@ public final class EditPersistence: @unchecked Sendable {
         let migrations: [String: Data]?
         if let migrationsSlice = root["processingMigrations"],
            String(data: migrationsSlice, encoding: .utf8) != "null" {
-            migrations = try EditStoreJSONCodec.scanJSONObjectSlices(migrationsSlice, error: EditPersistenceError.corruptStore)
+            migrations = try EditStoreJSONCodec.scanJSONObjectSlices(migrationsSlice, allowUTF8BOM: false, error: EditPersistenceError.corruptStore)
         } else {
             migrations = nil
         }

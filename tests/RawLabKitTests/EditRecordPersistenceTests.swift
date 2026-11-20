@@ -490,4 +490,529 @@ final class EditRecordPersistenceTests: XCTestCase {
         let afterReads = EditPersistence.registryDiskReadCount(forDirectory: dir)
         XCTAssertEqual(afterReads, beforeReads, "Write updates registry cache in place and subsequent reads hit cache")
     }
+
+    func testIOSAndMacRootCorruptionQuarantinesAndRecoversWithoutAffectingFutureVersionsOrIOErrors() throws {
+        // 1) iOS EditPersistence root corruption variants
+        let iosCorruptPayloads: [(String, Data)] = [
+            ("truncated", Data("{\"version\":1,\"records\":{".utf8)),
+            ("empty", Data()),
+            ("non-object-array", Data("[]".utf8)),
+            ("non-object-string", Data("\"bad\"".utf8)),
+            ("duplicate-root-key", Data("{\"version\":1,\"version\":1,\"records\":{}}".utf8)),
+            ("missing-records", Data("{\"version\":1}".utf8)),
+            ("version-zero", Data("{\"version\":0,\"records\":{}}".utf8)),
+            ("version-negative", Data("{\"version\":-1,\"records\":{}}".utf8)),
+            ("version-decimal", Data("{\"version\":1.5,\"records\":{}}".utf8)),
+            ("version-string", Data("{\"version\":\"1\",\"records\":{}}".utf8)),
+            ("version-bool", Data("{\"version\":true,\"records\":{}}".utf8)),
+            ("records-array", Data("{\"version\":1,\"records\":[]}".utf8)),
+            ("migrations-array", Data("{\"version\":1,\"records\":{},\"processingMigrations\":[]}".utf8)),
+            ("deleted-non-array", Data("{\"version\":1,\"records\":{},\"deleted\":\"bad\"}".utf8)),
+            ("revisions-empty", Data("{\"version\":1,\"records\":{},\"revisions\":{\"a\":\"\"}}".utf8))
+        ]
+        for (label, payload) in iosCorruptPayloads {
+            let dir = temporaryRoot.appendingPathComponent("ios-corrupt-\(label)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("edits.json")
+            try payload.write(to: file)
+
+            var diagnosticCount = 0
+            EditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+            defer { EditPersistence.onQuarantine = nil }
+
+            let store = try EditPersistence(directory: dir)
+            XCTAssertEqual(diagnosticCount, 1, "iOS \(label) should emit exactly 1 diagnostic")
+            XCTAssertNotNil(store.consumeQuarantinedError(), "iOS \(label) should expose quarantined error once")
+            XCTAssertNil(store.consumeQuarantinedError(), "iOS \(label) should clear quarantined error after consume")
+            let archived = try XCTUnwrap(store.lastQuarantinedURL, "iOS \(label) should record quarantined URL")
+            XCTAssertTrue(archived.lastPathComponent.hasPrefix("edits.json.corrupt-"), "iOS \(label) prefix")
+            XCTAssertEqual(try Data(contentsOf: archived), payload, "iOS \(label) preserves corrupt bytes verbatim")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "iOS \(label) removes active corrupt file")
+
+            let id = PhotoIdentity(resourceIdentifier: "recovered-\(label)")
+            XCTAssertNil(try store.readState(for: id).state)
+            XCTAssertNil(try store.state(for: id))
+            XCTAssertEqual(diagnosticCount, 1, "Subsequent reads must not emit extra diagnostics for \(label)")
+
+            var s = RawSettings.default; s.exposure = 0.75
+            try store.save(id, state: PhotoEditState(settings: s))
+            XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id).state?.settings.exposure, 0.75)
+            XCTAssertEqual(try Data(contentsOf: archived), payload, "Post-recovery save preserves quarantined archive")
+        }
+
+        // Collision suffix (-1, -2) when multiple corruptions occur in the same second, plus lastReadableStore reset
+        do {
+            let dir = temporaryRoot.appendingPathComponent("ios-collision", isDirectory: true)
+            let store = try EditPersistence(directory: dir)
+            let id = PhotoIdentity(resourceIdentifier: "warm-photo")
+            var s = RawSettings.default; s.exposure = 1.25
+            try store.save(id, state: PhotoEditState(settings: s))
+            XCTAssertEqual(try store.state(for: id)?.settings.exposure, 1.25)
+
+            let file = dir.appendingPathComponent("edits.json")
+            let corruptA = Data("{corrupt-a".utf8)
+            try corruptA.write(to: file)
+            XCTAssertNil(try store.readState(for: id).state, "Quarantine clears store to empty")
+            XCTAssertNil(try store.state(for: id), "Quarantine clears lastReadableStore fallback")
+            let firstArchive = try XCTUnwrap(store.lastQuarantinedURL)
+
+            let corruptB = Data("{corrupt-b".utf8)
+            try corruptB.write(to: file)
+            XCTAssertNil(try store.readState(for: id).state)
+            let secondArchive = try XCTUnwrap(store.lastQuarantinedURL)
+            XCTAssertNotEqual(firstArchive, secondArchive)
+            XCTAssertEqual(try Data(contentsOf: firstArchive), corruptA)
+            XCTAssertEqual(try Data(contentsOf: secondArchive), corruptB)
+        }
+
+        // Concurrent readers/writers on a corrupt iOS store serialize cleanly and quarantine once
+        do {
+            let dir = temporaryRoot.appendingPathComponent("ios-concurrent-corrupt", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let payload = Data("{concurrent-corrupt".utf8)
+            try payload.write(to: dir.appendingPathComponent("edits.json"))
+
+            var quarantineCount = 0
+            let countLock = NSLock()
+            EditPersistence.onQuarantine = { _, _ in
+                countLock.lock(); quarantineCount += 1; countLock.unlock()
+            }
+            defer { EditPersistence.onQuarantine = nil }
+
+            let group = DispatchGroup()
+            var errors: [Error] = []
+            for idx in 0..<8 {
+                group.enter()
+                DispatchQueue.global().async {
+                    defer { group.leave() }
+                    do {
+                        let store = try EditPersistence(directory: dir)
+                        _ = try store.readState(for: PhotoIdentity(resourceIdentifier: "p-\(idx)"))
+                    } catch {
+                        countLock.lock(); errors.append(error); countLock.unlock()
+                    }
+                }
+            }
+            XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+            XCTAssertTrue(errors.isEmpty, "Concurrent quarantine errors: \(errors)")
+            XCTAssertEqual(quarantineCount, 1, "Concurrent readers must quarantine corrupt file exactly once")
+            let archives = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("edits.json.corrupt-") }
+            XCTAssertEqual(archives.count, 1)
+            XCTAssertEqual(try Data(contentsOf: dir.appendingPathComponent(archives[0])), payload)
+        }
+
+        // Future version (> 1), EISDIR, chmod 0o000, and read-only directory (0o555) MUST stay fail-closed
+        do {
+            for futureJSON in ["{\"version\":2,\"records\":{}}", "{\"version\":99,\"records\":[]}"] {
+                let dir = temporaryRoot.appendingPathComponent("ios-future-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let file = dir.appendingPathComponent("edits.json")
+                let bytes = Data(futureJSON.utf8)
+                try bytes.write(to: file)
+                XCTAssertThrowsError(try EditPersistence(directory: dir))
+                XCTAssertEqual(try Data(contentsOf: file), bytes)
+                let archives = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".corrupt-") }
+                XCTAssertTrue(archives.isEmpty, "Future version must never be quarantined: \(futureJSON)")
+            }
+
+            // EISDIR: directory at edits.json path
+            let eisdirDir = temporaryRoot.appendingPathComponent("ios-eisdir", isDirectory: true)
+            try FileManager.default.createDirectory(at: eisdirDir.appendingPathComponent("edits.json"), withIntermediateDirectories: true)
+            XCTAssertThrowsError(try EditPersistence(directory: eisdirDir))
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: eisdirDir.path).filter { $0.contains(".corrupt-") }.isEmpty)
+
+            if geteuid() != 0 {
+                // chmod 0o000 unreadable file
+                let permDir = temporaryRoot.appendingPathComponent("ios-perm", isDirectory: true)
+                try FileManager.default.createDirectory(at: permDir, withIntermediateDirectories: true)
+                let permFile = permDir.appendingPathComponent("edits.json")
+                let validBytes = Data("{\"version\":1,\"records\":{}}".utf8)
+                try validBytes.write(to: permFile)
+                try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: permFile.path)
+                defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: permFile.path) }
+                XCTAssertThrowsError(try EditPersistence(directory: permDir))
+                XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: permDir.path).filter { $0.contains(".corrupt-") }.isEmpty)
+
+                // Read-only directory (0o555): quarantine rename fails -> must throw, not return empty
+                let roDir = temporaryRoot.appendingPathComponent("ios-ro-dir", isDirectory: true)
+                try FileManager.default.createDirectory(at: roDir, withIntermediateDirectories: true)
+                let roFile = roDir.appendingPathComponent("edits.json")
+                let badBytes = Data("{broken".utf8)
+                try badBytes.write(to: roFile)
+                try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: roDir.path)
+                defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roDir.path) }
+                XCTAssertThrowsError(try EditPersistence(directory: roDir))
+                XCTAssertEqual(try Data(contentsOf: roFile), badBytes)
+            }
+        }
+
+        // 2) MacEditPersistence root corruption variants, future version, I/O errors, and concurrency
+        let macCorruptPayloads: [(String, Data)] = [
+            ("truncated", Data("{\"version\":1,\"records\":{".utf8)),
+            ("empty", Data()),
+            ("non-object", Data("[]".utf8)),
+            ("duplicate-root-key", Data("{\"version\":1,\"version\":1,\"records\":{}}".utf8)),
+            ("missing-version", Data("{\"records\":{}}".utf8)),
+            ("missing-records", Data("{\"version\":1}".utf8)),
+            ("version-zero", Data("{\"version\":0,\"records\":{}}".utf8)),
+            ("version-negative", Data("{\"version\":-1,\"records\":{}}".utf8)),
+            ("version-decimal", Data("{\"version\":1.5,\"records\":{}}".utf8)),
+            ("version-string", Data("{\"version\":\"1\",\"records\":{}}".utf8)),
+            ("version-bool", Data("{\"version\":true,\"records\":{}}".utf8)),
+            ("records-array", Data("{\"version\":1,\"records\":[]}".utf8)),
+            ("migrations-array", Data("{\"version\":1,\"records\":{},\"processingMigrations\":[]}".utf8))
+        ]
+        for (label, payload) in macCorruptPayloads {
+            let dir = temporaryRoot.appendingPathComponent("mac-corrupt-\(label)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("edits.json")
+            try payload.write(to: file)
+
+            var diagnosticCount = 0
+            MacEditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+            defer { MacEditPersistence.onQuarantine = nil }
+
+            let store = try MacEditPersistence(directory: dir)
+            XCTAssertEqual(diagnosticCount, 1, "Mac \(label) should emit exactly 1 diagnostic")
+            XCTAssertNotNil(store.consumeQuarantinedError())
+            XCTAssertNil(store.consumeQuarantinedError())
+            let archived = try XCTUnwrap(store.lastQuarantinedURL)
+            XCTAssertTrue(archived.lastPathComponent.hasPrefix("edits.json.corrupt-"))
+            XCTAssertEqual(try Data(contentsOf: archived), payload)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+            let photo = try makeTempFile(named: "mac-recover-\(label).ARW")
+            XCTAssertNil(try store.readState(for: photo).state)
+            XCTAssertEqual(diagnosticCount, 1)
+
+            var a = Adjustments(); a.exposure = -0.65
+            try store.save(photo, state: MacPhotoEditState(settings: a, filmID: ""))
+            XCTAssertEqual(try MacEditPersistence(directory: dir).readState(for: photo).state?.settings.exposure, -0.65)
+            XCTAssertEqual(try Data(contentsOf: archived), payload)
+        }
+
+        // Mac concurrent readers & future version / EISDIR / 0o000 / 0o555 exclusions
+        do {
+            let dir = temporaryRoot.appendingPathComponent("mac-concurrent-corrupt", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let payload = Data("{mac-concurrent-corrupt".utf8)
+            try payload.write(to: dir.appendingPathComponent("edits.json"))
+
+            var quarantineCount = 0
+            let countLock = NSLock()
+            MacEditPersistence.onQuarantine = { _, _ in
+                countLock.lock(); quarantineCount += 1; countLock.unlock()
+            }
+            defer { MacEditPersistence.onQuarantine = nil }
+
+            let photo = try makeTempFile(named: "mac-conc.ARW")
+            let group = DispatchGroup()
+            var errors: [Error] = []
+            for _ in 0..<8 {
+                group.enter()
+                DispatchQueue.global().async {
+                    defer { group.leave() }
+                    do {
+                        let store = try MacEditPersistence(directory: dir)
+                        _ = try store.readState(for: photo)
+                    } catch {
+                        countLock.lock(); errors.append(error); countLock.unlock()
+                    }
+                }
+            }
+            XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+            XCTAssertTrue(errors.isEmpty, "Concurrent Mac quarantine errors: \(errors)")
+            XCTAssertEqual(quarantineCount, 1)
+
+            for futureJSON in ["{\"version\":2,\"records\":{}}", "{\"version\":99,\"records\":[]}"] {
+                let futureDir = temporaryRoot.appendingPathComponent("mac-future-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: futureDir, withIntermediateDirectories: true)
+                let futureFile = futureDir.appendingPathComponent("edits.json")
+                let bytes = Data(futureJSON.utf8)
+                try bytes.write(to: futureFile)
+                XCTAssertThrowsError(try MacEditPersistence(directory: futureDir))
+                XCTAssertEqual(try Data(contentsOf: futureFile), bytes)
+                XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: futureDir.path).filter { $0.contains(".corrupt-") }.isEmpty)
+            }
+
+            let eisdirDir = temporaryRoot.appendingPathComponent("mac-eisdir", isDirectory: true)
+            try FileManager.default.createDirectory(at: eisdirDir.appendingPathComponent("edits.json"), withIntermediateDirectories: true)
+            XCTAssertThrowsError(try MacEditPersistence(directory: eisdirDir))
+
+            if geteuid() != 0 {
+                let roDir = temporaryRoot.appendingPathComponent("mac-ro-dir", isDirectory: true)
+                try FileManager.default.createDirectory(at: roDir, withIntermediateDirectories: true)
+                let roFile = roDir.appendingPathComponent("edits.json")
+                let badBytes = Data("{broken".utf8)
+                try badBytes.write(to: roFile)
+                try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: roDir.path)
+                defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roDir.path) }
+                XCTAssertThrowsError(try MacEditPersistence(directory: roDir))
+                XCTAssertEqual(try Data(contentsOf: roFile), badBytes)
+            }
+        }
+    }
+
+    func testRemoveStaleAtomicTempFilesCleansOnlyAtomicStagingEntries() throws {
+        XCTAssertTrue(EditPersistence.defaultDirectory.path.hasSuffix("/RawLab/Edits"))
+
+        let missingDir = temporaryRoot.appendingPathComponent("missing-edits-dir", isDirectory: true)
+        XCTAssertEqual(EditPersistence.removeStaleAtomicTempFiles(in: missingDir), 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingDir.path),
+                       "Cleanup must not create a missing Edits directory")
+
+        let regularAsDir = temporaryRoot.appendingPathComponent("regular-file-as-dir")
+        try Data("keep".utf8).write(to: regularAsDir)
+        XCTAssertEqual(EditPersistence.removeStaleAtomicTempFiles(in: regularAsDir), 0)
+        XCTAssertEqual(try Data(contentsOf: regularAsDir), Data("keep".utf8))
+
+        let realTargetDir = temporaryRoot.appendingPathComponent("real-target-dir", isDirectory: true)
+        try FileManager.default.createDirectory(at: realTargetDir, withIntermediateDirectories: true)
+        let targetAtomicTemp = realTargetDir.appendingPathComponent("edits.json.sb-real")
+        try Data("stay".utf8).write(to: targetAtomicTemp)
+        let symlinkDir = temporaryRoot.appendingPathComponent("symlink-edits-dir", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: symlinkDir, withDestinationURL: realTargetDir)
+        XCTAssertEqual(EditPersistence.removeStaleAtomicTempFiles(in: symlinkDir), 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: targetAtomicTemp.path),
+                      "Cleanup must not traverse symlinked Edits directories")
+
+        let editsDir = temporaryRoot.appendingPathComponent("atomic-cleanup-edits", isDirectory: true)
+        let store = try EditPersistence(directory: editsDir)
+        let id = PhotoIdentity(resourceIdentifier: "cleanup-photo")
+        var settings = RawSettings.default; settings.exposure = 0.5
+        try store.save(id, state: PhotoEditState(settings: settings))
+
+        let staleFiles = [
+            "edits.json.sb-1234abcd",
+            ".dat.nosync0123.abcdef",
+            "edits.json.staged.tmp",
+            ".edits-999.tmp"
+        ]
+        for name in staleFiles {
+            try Data("orphan-\(name)".utf8).write(to: editsDir.appendingPathComponent(name))
+        }
+        let stagingDir = editsDir.appendingPathComponent("(A Document Being Saved By RawLab)", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: stagingDir.appendingPathComponent("edits.json"))
+
+        let preservedFiles = [
+            "edits.json",
+            ".edits.lock",
+            "edits.json.corrupt-20261120-000000",
+            "recent-looks.json",
+            "unrelated.tmp",
+            "edits.json.bak"
+        ]
+        for name in preservedFiles where name != "edits.json" && name != ".edits.lock" {
+            try Data("keep-\(name)".utf8).write(to: editsDir.appendingPathComponent(name))
+        }
+        let symlinkTarget = temporaryRoot.appendingPathComponent("external-target")
+        try Data("do-not-follow".utf8).write(to: symlinkTarget)
+        try FileManager.default.createSymbolicLink(at: editsDir.appendingPathComponent("edits.json.sb-symlink"), withDestinationURL: symlinkTarget)
+        try FileManager.default.createSymbolicLink(at: editsDir.appendingPathComponent(".dat.nosync-symlink"), withDestinationURL: symlinkTarget)
+
+        let removed = EditPersistence.removeStaleAtomicTempFiles(in: editsDir)
+        XCTAssertEqual(removed, staleFiles.count + 1)
+
+        for name in staleFiles {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: editsDir.appendingPathComponent(name).path),
+                           "Stale atomic temp file \(name) must be removed")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagingDir.path),
+                       "Stale atomic staging directory must be removed")
+        for name in preservedFiles {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: editsDir.appendingPathComponent(name).path),
+                          "Preserved file \(name) must remain intact")
+        }
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: editsDir.appendingPathComponent("edits.json.sb-symlink").path))
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: editsDir.appendingPathComponent(".dat.nosync-symlink").path))
+        XCTAssertEqual(try Data(contentsOf: symlinkTarget), Data("do-not-follow".utf8))
+        XCTAssertEqual(try EditPersistence(directory: editsDir).readState(for: id).state?.settings.exposure, 0.5)
+    }
+
+    func testUTF8BOMParityValidFutureVersionAndCorruptPayloadsOnIOSAndMac() throws {
+        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        let validRootBytes = Array("{\"version\":1,\"records\":{}}".utf8)
+
+        // 1) Direct EditStoreJSONCodec.scanJSONObjectSlices coverage (including non-zero Data startIndex)
+        let directBOM = Data(bom + validRootBytes)
+        let directSlices = try EditStoreJSONCodec.scanJSONObjectSlices(directBOM, error: EditPersistenceError.corruptStore)
+        XCTAssertEqual(EditStoreJSONCodec.parseIntegerVersion(try XCTUnwrap(directSlices["version"])), 1)
+        XCTAssertEqual(String(data: try XCTUnwrap(directSlices["records"]), encoding: .utf8), "{}")
+
+        let nonzeroStartSlice = Data([0x00] + bom + validRootBytes).dropFirst(1)
+        XCTAssertNotEqual(nonzeroStartSlice.startIndex, 0)
+        let nonzeroSlices = try EditStoreJSONCodec.scanJSONObjectSlices(nonzeroStartSlice, error: EditPersistenceError.corruptStore)
+        XCTAssertEqual(EditStoreJSONCodec.parseIntegerVersion(try XCTUnwrap(nonzeroSlices["version"])), 1)
+
+        XCTAssertThrowsError(try EditStoreJSONCodec.scanJSONObjectSlices(directBOM, allowUTF8BOM: false, error: EditPersistenceError.corruptStore))
+        for badDirect in [
+            Data(bom),
+            Data([0xEF]),
+            Data([0xEF, 0xBB]),
+            Data(Array(" ".utf8) + bom + validRootBytes),
+            Data(bom + bom + validRootBytes)
+        ] {
+            XCTAssertThrowsError(try EditStoreJSONCodec.scanJSONObjectSlices(badDirect, error: EditPersistenceError.corruptStore))
+        }
+
+        // 2) Valid v1 store with leading BOM (and BOM + whitespace) on iOS EditPersistence and MacEditPersistence
+        for (suffixLabel, prefixBytes) in [
+            ("bom-only-prefix", bom),
+            ("bom-whitespace-prefix", bom + Array("  \n\t".utf8))
+        ] {
+            // iOS EditPersistence
+            do {
+                let dir = temporaryRoot.appendingPathComponent("ios-valid-\(suffixLabel)", isDirectory: true)
+                let writer = try EditPersistence(directory: dir)
+                let id = PhotoIdentity(resourceIdentifier: "bom-ios-\(suffixLabel)")
+                var s = RawSettings.default
+                s.exposure = 0.75
+                try writer.save(id, state: PhotoEditState(settings: s))
+
+                let editsFile = dir.appendingPathComponent("edits.json")
+                let original = try Data(contentsOf: editsFile)
+                try (Data(prefixBytes) + original).write(to: editsFile)
+
+                var diagnosticCount = 0
+                EditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+                defer { EditPersistence.onQuarantine = nil }
+
+                let reopened = try EditPersistence(directory: dir)
+                XCTAssertEqual(diagnosticCount, 0, "iOS valid BOM store (\(suffixLabel)) must not quarantine")
+                XCTAssertNil(reopened.lastQuarantinedURL)
+                XCTAssertNil(reopened.consumeQuarantinedError())
+                let archives = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".corrupt-") }
+                XCTAssertTrue(archives.isEmpty)
+                XCTAssertEqual(try reopened.readState(for: id).state?.settings.exposure, 0.75)
+            }
+
+            // MacEditPersistence
+            do {
+                let dir = temporaryRoot.appendingPathComponent("mac-valid-\(suffixLabel)", isDirectory: true)
+                let photo = try makeTempFile(named: "mac-valid-\(suffixLabel).ARW")
+                let writer = try MacEditPersistence(directory: dir)
+                var a = Adjustments()
+                a.exposure = -0.45
+                try writer.save(photo, state: MacPhotoEditState(settings: a, filmID: "provia"))
+
+                let editsFile = dir.appendingPathComponent("edits.json")
+                let original = try Data(contentsOf: editsFile)
+                try (Data(prefixBytes) + original).write(to: editsFile)
+
+                var diagnosticCount = 0
+                MacEditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+                defer { MacEditPersistence.onQuarantine = nil }
+
+                let reopened = try MacEditPersistence(directory: dir)
+                XCTAssertEqual(diagnosticCount, 0, "Mac valid BOM store (\(suffixLabel)) must not quarantine")
+                XCTAssertNil(reopened.lastQuarantinedURL)
+                XCTAssertNil(reopened.consumeQuarantinedError())
+                let archives = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".corrupt-") }
+                XCTAssertTrue(archives.isEmpty)
+                let loaded = try XCTUnwrap(try reopened.readState(for: photo).state)
+                XCTAssertEqual(loaded.settings.exposure, -0.45)
+                XCTAssertEqual(loaded.filmID, "provia")
+            }
+        }
+
+        // 3) Future version with leading UTF-8 BOM stays fail-closed (no quarantine) on both iOS and Mac
+        let bomFutureBytes = Data(bom + Array("{\"version\":2,\"records\":{}}".utf8))
+        do {
+            let iosFutureDir = temporaryRoot.appendingPathComponent("ios-bom-future", isDirectory: true)
+            try FileManager.default.createDirectory(at: iosFutureDir, withIntermediateDirectories: true)
+            let iosFutureFile = iosFutureDir.appendingPathComponent("edits.json")
+            try bomFutureBytes.write(to: iosFutureFile)
+
+            var diagnosticCount = 0
+            EditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+            defer { EditPersistence.onQuarantine = nil }
+
+            XCTAssertThrowsError(try EditPersistence(directory: iosFutureDir))
+            XCTAssertEqual(diagnosticCount, 0)
+            XCTAssertEqual(try Data(contentsOf: iosFutureFile), bomFutureBytes)
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: iosFutureDir.path).filter { $0.contains(".corrupt-") }.isEmpty)
+        }
+        do {
+            let macFutureDir = temporaryRoot.appendingPathComponent("mac-bom-future", isDirectory: true)
+            try FileManager.default.createDirectory(at: macFutureDir, withIntermediateDirectories: true)
+            let macFutureFile = macFutureDir.appendingPathComponent("edits.json")
+            try bomFutureBytes.write(to: macFutureFile)
+
+            var diagnosticCount = 0
+            MacEditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+            defer { MacEditPersistence.onQuarantine = nil }
+
+            XCTAssertThrowsError(try MacEditPersistence(directory: macFutureDir))
+            XCTAssertEqual(diagnosticCount, 0)
+            XCTAssertEqual(try Data(contentsOf: macFutureFile), bomFutureBytes)
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: macFutureDir.path).filter { $0.contains(".corrupt-") }.isEmpty)
+        }
+
+        // 4) Corrupt / edge BOM payloads quarantine cleanly and preserve exact bytes on both iOS and Mac
+        let edgePayloads: [(String, Data)] = [
+            ("bom-corrupt", Data(bom + Array("{broken".utf8))),
+            ("bom-duplicate-key", Data(bom + Array("{\"version\":1,\"version\":1,\"records\":{}}".utf8))),
+            ("bom-only", Data(bom)),
+            ("partial-bom-1", Data([0xEF])),
+            ("partial-bom-2", Data([0xEF, 0xBB])),
+            ("double-bom", Data(bom + bom + validRootBytes)),
+            ("whitespace-before-bom", Data(Array(" ".utf8) + bom + validRootBytes))
+        ]
+        for (label, payload) in edgePayloads {
+            // iOS
+            do {
+                let dir = temporaryRoot.appendingPathComponent("ios-bom-edge-\(label)", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let file = dir.appendingPathComponent("edits.json")
+                try payload.write(to: file)
+
+                var diagnosticCount = 0
+                EditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+                defer { EditPersistence.onQuarantine = nil }
+
+                let store = try EditPersistence(directory: dir)
+                XCTAssertEqual(diagnosticCount, 1, "iOS \(label) should emit 1 diagnostic")
+                XCTAssertNotNil(store.consumeQuarantinedError())
+                XCTAssertNil(store.consumeQuarantinedError())
+                let archived = try XCTUnwrap(store.lastQuarantinedURL)
+                XCTAssertTrue(archived.lastPathComponent.hasPrefix("edits.json.corrupt-"))
+                XCTAssertEqual(try Data(contentsOf: archived), payload)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+                let id = PhotoIdentity(resourceIdentifier: "bom-recover-ios-\(label)")
+                var s = RawSettings.default; s.exposure = 0.25
+                try store.save(id, state: PhotoEditState(settings: s))
+                XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id).state?.settings.exposure, 0.25)
+                XCTAssertEqual(try Data(contentsOf: archived), payload)
+            }
+
+            // Mac
+            do {
+                let dir = temporaryRoot.appendingPathComponent("mac-bom-edge-\(label)", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let file = dir.appendingPathComponent("edits.json")
+                try payload.write(to: file)
+
+                var diagnosticCount = 0
+                MacEditPersistence.onQuarantine = { _, _ in diagnosticCount += 1 }
+                defer { MacEditPersistence.onQuarantine = nil }
+
+                let store = try MacEditPersistence(directory: dir)
+                XCTAssertEqual(diagnosticCount, 1, "Mac \(label) should emit 1 diagnostic")
+                XCTAssertNotNil(store.consumeQuarantinedError())
+                XCTAssertNil(store.consumeQuarantinedError())
+                let archived = try XCTUnwrap(store.lastQuarantinedURL)
+                XCTAssertTrue(archived.lastPathComponent.hasPrefix("edits.json.corrupt-"))
+                XCTAssertEqual(try Data(contentsOf: archived), payload)
+                XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+                let photo = try makeTempFile(named: "bom-recover-mac-\(label).ARW")
+                var a = Adjustments(); a.exposure = 0.35
+                try store.save(photo, state: MacPhotoEditState(settings: a, filmID: ""))
+                XCTAssertEqual(try MacEditPersistence(directory: dir).readState(for: photo).state?.settings.exposure, 0.35)
+                XCTAssertEqual(try Data(contentsOf: archived), payload)
+            }
+        }
+    }
 }

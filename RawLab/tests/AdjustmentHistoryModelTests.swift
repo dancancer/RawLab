@@ -649,5 +649,16 @@ struct AdjustmentHistoryModelTests {
                   editedFlags?[uneditedRecent.id] == false &&
                   editedFlags?[brokenRecent.id] == nil,
                   "recentStates omits unusable record instead of misclassifying it as unedited")
+
+        let quarantineDir = directory.appendingPathComponent("quarantine-vm-edits")
+        try FileManager.default.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+        try Data("{corrupt-vm-root".utf8).write(to: quarantineDir.appendingPathComponent("edits.json"))
+        let healedStore = try EditPersistence(directory: quarantineDir)
+        let vm = RawEditorViewModel(editPersistence: healedStore)
+        try check(vm.editSaveState == .idle && healedStore.consumeQuarantinedError() == nil,
+                  "RawEditorViewModel opens healed store without failing and consumes quarantine diagnostic")
+        let diagText = String(decoding: (try ErrorDiagnostics.app.reportData()) ?? Data(), as: UTF8.self)
+        try check(diagText.contains("\"stage\" : \"quarantineStore\""),
+                  "RawEditorViewModel records quarantineStore diagnostic in ErrorDiagnostics")
     }
 }

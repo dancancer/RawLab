@@ -113,12 +113,16 @@ public struct UnusableEditRecordError: LocalizedError {
 }
 
 public enum EditStoreJSONCodec {
-    public static func isVersionOne(_ slice: Data) -> Bool {
+    public static func parseIntegerVersion(_ slice: Data) -> Int64? {
         guard !slice.contains(UInt8(ascii: ".")),
               !slice.contains(UInt8(ascii: "e")),
               !slice.contains(UInt8(ascii: "E")),
-              let value = try? JSONDecoder().decode(Int.self, from: slice) else { return false }
-        return value == 1
+              let value = try? JSONDecoder().decode(Int64.self, from: slice) else { return nil }
+        return value
+    }
+
+    public static func isVersionOne(_ slice: Data) -> Bool {
+        parseIntegerVersion(slice) == 1
     }
 
     public static func appendRawMap(_ map: [String: Data], encoder: JSONEncoder, to out: inout Data) throws {
@@ -134,9 +138,12 @@ public enum EditStoreJSONCodec {
         out.append(UInt8(ascii: "}"))
     }
 
-    public static func scanJSONObjectSlices(_ data: Data, error: @autoclosure () -> Error) throws -> [String: Data] {
+    public static func scanJSONObjectSlices(_ data: Data, allowUTF8BOM: Bool = true, error: @autoclosure () -> Error) throws -> [String: Data] {
         let bytes = [UInt8](data)
         var index = 0
+        if allowUTF8BOM, bytes.count >= 3, bytes[0] == 0xEF, bytes[1] == 0xBB, bytes[2] == 0xBF {
+            index = 3
+        }
         let end = bytes.count
         let decoder = JSONDecoder()
 

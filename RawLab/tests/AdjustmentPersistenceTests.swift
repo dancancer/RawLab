@@ -63,6 +63,7 @@ import Foundation
         try await lazyTransferableFallback(root.appendingPathComponent("lazy-transferable-fallback"))
         try perRecordIsolationAndRecovery(root.appendingPathComponent("per-record-isolation"))
         try writeThenReadHitsRegistryCache(root.appendingPathComponent("write-then-read-cache"))
+        try removeStaleAtomicTempFiles(root.appendingPathComponent("atomic-temp-cleanup"))
     }
 
     static func processingMigration() throws {
@@ -401,7 +402,8 @@ import Foundation
         try store.reset(photo)
         try check(store.state(for: photo) == nil && store.state(for: legacyID) != nil,
                   "A library tombstone also blocks the transferable fallback")
-        try Data("corrupt".utf8).write(to: file)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
         try check(store.state(for: photo) == nil,
                   "Cached reads preserve the library tombstone with a transferable fallback")
     }
@@ -447,7 +449,8 @@ import Foundation
         let deleted = try store.readState(for: photo)
         try check(deleted.state == nil && store.state(for: content) != nil,
                   "Photo deletion tombstone prevents old content edits from reappearing")
-        try Data("corrupt".utf8).write(to: file)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
         try check(store.state(for: photo) == nil,
                   "Cached reads also respect the photo deletion tombstone")
 
@@ -460,7 +463,8 @@ import Foundation
         let oldRecord = try oldStore.readState(for: photo)
         try check(oldRecord.state == legacy && Data(contentsOf: oldFile) == oldBytes,
                   "Unversioned content edits remain readable without adding a revision map")
-        try Data("corrupt".utf8).write(to: oldFile)
+        try FileManager.default.removeItem(at: oldFile)
+        try FileManager.default.createDirectory(at: oldFile, withIntermediateDirectories: false)
         try check(oldStore.state(for: photo) == legacy,
                   "Storage failure retains the last readable fallback edit")
         try rejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.readState(for: photo) }
@@ -602,8 +606,15 @@ import Foundation
         try future.write(to: file)
         try rejects("Future registry version blocks ordinary writes") { _ = try store.saveState(identity: before.identity, state: .init(settings: .default)) }
         try check(try Data(contentsOf: file) == future, "Future registry bytes are preserved")
-        try Data("broken".utf8).write(to: file)
-        try rejects("Corrupt registry blocks existing writers") { try store.save(identity, state: .init(settings: .default)) }
+        let broken = Data("broken".utf8)
+        try broken.write(to: file)
+        var settings = RawSettings.default; settings.exposure = 0.5
+        try store.save(identity, state: .init(settings: settings))
+        let archived = store.lastQuarantinedURL
+        try check(archived != nil && (try? Data(contentsOf: archived!)) == broken && store.consumeQuarantinedError() != nil,
+                  "Corrupt root registry is quarantined and self-heals on subsequent save")
+        try check(try EditPersistence(directory: directory).state(for: identity)?.settings.exposure == 0.5,
+                  "Recovered store persists new edits cleanly")
     }
 
     static func concurrent(_ directory: URL) throws {
@@ -771,25 +782,45 @@ import Foundation
                   legacyBrokenStore.state(for: legacyBrokenCurrent) == nil,
                   "resetToUnmodified tombstones broken legacy photo:<asset-id> record for the recovered photo")
 
-        // D2/d: Whole-table structural corruption still rejects the entire store.
+        // D2/d: Future version remains fail-closed, while root-level corruption self-heals via quarantine.
+        let futureDir = directory.appendingPathComponent("whole-store-future")
+        try FileManager.default.createDirectory(at: futureDir, withIntermediateDirectories: true)
+        let futureFile = futureDir.appendingPathComponent("edits.json")
+        let futureBytes = Data("{\"version\":99,\"records\":{}}".utf8)
+        try futureBytes.write(to: futureFile)
+        do {
+            _ = try EditPersistence(directory: futureDir)
+            try check(false, "Future store version must fail closed")
+        } catch EditPersistenceError.corruptStore { }
+        try check(try Data(contentsOf: futureFile) == futureBytes, "Future store bytes remain untouched")
+
         let corruptDir = directory.appendingPathComponent("whole-store-corrupt")
         try FileManager.default.createDirectory(at: corruptDir, withIntermediateDirectories: true)
         let corruptFile = corruptDir.appendingPathComponent("edits.json")
         for badJSON in [
             "{\"version\":1,\"records\":{",
-            "{\"version\":99,\"records\":{}}",
             "{\"version\":1,\"records\":[]}",
             "{\"version\":1,\"records\":{},\"processingMigrations\":[]}",
             "{\"version\":1,\"records\":{},\"deleted\":\"bad\"}",
             "{\"version\":1,\"version\":1,\"records\":{}}"
         ] {
-            try Data(badJSON.utf8).write(to: corruptFile)
-            do {
-                _ = try EditPersistence(directory: corruptDir)
-                try check(false, "Whole-store corruption must fail closed: \(badJSON)")
-            } catch EditPersistenceError.corruptStore { }
+            let badBytes = Data(badJSON.utf8)
+            try badBytes.write(to: corruptFile)
+            let healed = try EditPersistence(directory: corruptDir)
+            let archived = healed.lastQuarantinedURL
+            try check(archived != nil && archived!.lastPathComponent.hasPrefix("edits.json.corrupt-"),
+                      "Root corruption quarantines edits.json: \(badJSON)")
+            try check(try Data(contentsOf: archived!) == badBytes && !FileManager.default.fileExists(atPath: corruptFile.path),
+                      "Quarantined archive preserves exact bytes and clears active path: \(badJSON)")
+            try check(healed.consumeQuarantinedError() != nil && healed.consumeQuarantinedError() == nil,
+                      "Quarantine error is surfaced once: \(badJSON)")
         }
-        print("PASS: iOS per-record isolation, verbatim preservation, D5 identity safety, and D2 fail-closed")
+        let healedID = PhotoIdentity(resourceIdentifier: "healed-after-root-corruption")
+        var healedSettings = RawSettings.default; healedSettings.exposure = 0.85
+        try EditPersistence(directory: corruptDir).save(healedID, state: PhotoEditState(settings: healedSettings))
+        try check(try EditPersistence(directory: corruptDir).readState(for: healedID).state?.settings.exposure == 0.85,
+                  "Recovered iOS store persists new edits cleanly")
+        print("PASS: iOS per-record isolation, verbatim preservation, D5 identity safety, and root self-healing")
     }
 
     static func writeThenReadHitsRegistryCache(_ directory: URL) throws {
@@ -808,5 +839,48 @@ import Foundation
             "An externally appended byte still parses the same record")
         try check(EditPersistence.registryDiskReadCount(forDirectory: directory) == readsAfterSave + 1,
             "An externally modified ledger is read from disk again")
+    }
+
+    static func removeStaleAtomicTempFiles(_ directory: URL) throws {
+        try check(EditPersistence.defaultDirectory.path.hasSuffix("/RawLab/Edits"),
+                  "EditPersistence.defaultDirectory targets RawLab/Edits")
+        let missing = directory.appendingPathComponent("missing")
+        try check(EditPersistence.removeStaleAtomicTempFiles(in: missing) == 0 &&
+                  !FileManager.default.fileExists(atPath: missing.path),
+                  "Cleanup skips missing directories without creating them")
+
+        let store = try EditPersistence(directory: directory)
+        let id = PhotoIdentity(resourceIdentifier: "atomic-cleanup")
+        var settings = RawSettings.default; settings.exposure = 0.35
+        try store.save(id, state: PhotoEditState(settings: settings))
+
+        let stale = ["edits.json.sb-1234", ".dat.nosync0001.tmp", "edits.json.swap.tmp", ".edits-001.tmp"]
+        for name in stale {
+            try Data("stale".utf8).write(to: directory.appendingPathComponent(name))
+        }
+        let stagingDir = directory.appendingPathComponent("(A Document Being Saved By RawLab)", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: stagingDir.appendingPathComponent("edits.json"))
+
+        let archive = directory.appendingPathComponent("edits.json.corrupt-20261120-000000")
+        try Data("{archive".utf8).write(to: archive)
+        let unrelated = directory.appendingPathComponent("recent-looks.json")
+        try Data("{}".utf8).write(to: unrelated)
+
+        let removed = EditPersistence.removeStaleAtomicTempFiles(in: directory)
+        try check(removed == stale.count + 1, "Cleanup removes only orphaned .atomic staging artifacts")
+        for name in stale {
+            try check(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
+                      "Removed stale .atomic artifact: \(name)")
+        }
+        try check(!FileManager.default.fileExists(atPath: stagingDir.path),
+                  "Removed stale (A Document Being Saved By ...) directory")
+        try check(FileManager.default.fileExists(atPath: directory.appendingPathComponent("edits.json").path) &&
+                  FileManager.default.fileExists(atPath: directory.appendingPathComponent(".edits.lock").path) &&
+                  FileManager.default.fileExists(atPath: archive.path) &&
+                  FileManager.default.fileExists(atPath: unrelated.path),
+                  "Cleanup preserves edits.json, .edits.lock, .corrupt-*, and unrelated files")
+        try check(try EditPersistence(directory: directory).readState(for: id).state?.settings.exposure == 0.35,
+                  "Store remains readable after stale .atomic temp cleanup")
     }
 }
