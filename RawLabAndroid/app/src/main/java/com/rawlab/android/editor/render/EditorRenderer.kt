@@ -14,16 +14,19 @@ import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.requireHDRDecodeVersion
 import com.rawlab.android.format.ExportFormat
-import kotlin.math.pow
-import kotlin.math.roundToInt
+import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.engine.NativeFrame
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.HslTargetAvailability
+import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.PhotoEditState
+import java.io.Closeable
 import java.io.File
 import java.util.IdentityHashMap
 
@@ -39,8 +42,245 @@ internal class EditorRenderer(
     private val destinationDeleter: ExportDestinationDeleter = ExportDestinationDeleter { destination, original ->
         storage.deleteIncompleteDocument(destination, original)
     },
+    private val engineFactory: () -> RenderEngine = { NativeRenderEngine(NativeProcessor(lensDatabase = storage.lensDatabase())) },
+    private val hdrBridge: HdrRenderBridge = NativeHdrRenderBridge,
 ) {
-    private var processor: NativeProcessor? = null
+    internal interface HdrImageHandle : Closeable {
+        val sourceInfo: HDRSourceInfo
+        val outputNativeWidth: Int
+        val outputNativeHeight: Int
+        fun snapshot(): HDRPreviewFrame
+        fun sdrBitmap(): Bitmap
+    }
+
+    internal interface RenderEngine : Closeable {
+        fun setGpuMode(mode: Int)
+        fun cancellationGeneration(): Long
+        fun cancelPreview()
+        fun releaseRasterCache()
+        fun preview(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            interactive: Boolean,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long = -1L,
+        ): NativeFrame
+        fun sampleHsl(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            interactive: Boolean,
+            inputKind: PhotoInputKind,
+            revision: HslTargetRevision,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long = -1L,
+        ): HslTargetSample
+        fun export(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            output: File,
+            format: ExportFormat,
+            longEdge: Int?,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long = -1L,
+        ): Int
+        fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind): Float
+        fun decodeHDRCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            cancellationGeneration: Long = -1L,
+            camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
+            profileDirectory: File? = null,
+        ): HdrImageHandle
+        fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long = -1L,
+            lookDirectory: File? = null,
+        ): HdrImageHandle
+        fun sampleHDRHsl(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            revision: HslTargetRevision,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long,
+            lookDirectory: File? = null,
+        ): HslTargetSample
+        fun estimateHDRExposure(source: HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long): Float
+        fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long = -1L,
+            lookDirectory: File? = null,
+        )
+    }
+
+    internal interface HdrSourceHandle : Closeable {
+        val image: HdrImageHandle
+    }
+
+    internal interface HdrRenderBridge {
+        fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int): HDRSourceInfo
+        fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray
+        fun acquireCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            camera: HDRCameraDevelopmentSettings?,
+            lensDatabase: File?,
+            decode: () -> HdrImageHandle,
+        ): HdrSourceHandle
+        fun acquireGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrSourceHandle
+        fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrImageHandle
+        fun exportJpeg(rendered: HdrImageHandle, metadataSource: File?, output: File)
+        fun exportSdr(rendered: HdrImageHandle, metadataSource: File?, output: File, format: Int)
+        fun clearCache()
+    }
+
+    private class NativeHdrImageHandle(val underlying: NativeHDRImage) : HdrImageHandle {
+        override val sourceInfo: HDRSourceInfo get() = underlying.sourceInfo
+        override val outputNativeWidth: Int get() = underlying.outputNativeWidth
+        override val outputNativeHeight: Int get() = underlying.outputNativeHeight
+        override fun snapshot(): HDRPreviewFrame = underlying.snapshot()
+        override fun sdrBitmap(): Bitmap = underlying.sdrBitmap()
+        override fun close() = underlying.close()
+    }
+
+    private class NativeRenderEngine(private val native: NativeProcessor) : RenderEngine {
+        override fun setGpuMode(mode: Int) = native.setGpuMode(mode)
+        override fun cancellationGeneration(): Long = native.cancellationGeneration()
+        override fun cancelPreview() = native.cancelPreview()
+        override fun releaseRasterCache() = native.releaseRasterCache()
+        override fun preview(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            interactive: Boolean,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long,
+        ): NativeFrame = native.preview(input, lut, settings, edge, interactive, inputKind, cancellationGeneration)
+        override fun sampleHsl(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            interactive: Boolean,
+            inputKind: PhotoInputKind,
+            revision: HslTargetRevision,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long,
+        ): HslTargetSample = native.sampleHsl(input, lut, settings, edge, interactive, inputKind, revision, x, y, cancellationGeneration)
+        override fun export(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            output: File,
+            format: ExportFormat,
+            longEdge: Int?,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long,
+        ): Int {
+            return native.export(input, lut, settings, output, format, longEdge, inputKind, cancellationGeneration)
+        }
+        override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind): Float =
+            native.autoExposure(input, settings, inputKind)
+        override fun decodeHDRCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            cancellationGeneration: Long,
+            camera: HDRCameraDevelopmentSettings,
+            profileDirectory: File?,
+        ): HdrImageHandle = NativeHdrImageHandle(native.decodeHDRCamera(file, info, edge, cancellationGeneration, camera, profileDirectory))
+        override fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+        ): HdrImageHandle = NativeHdrImageHandle(
+            native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory)
+        )
+        override fun sampleHDRHsl(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            revision: HslTargetRevision,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+        ): HslTargetSample = native.sampleHDRHsl(
+            (source as NativeHdrImageHandle).underlying, settings, edge, revision, x, y, cancellationGeneration, lookDirectory
+        )
+        override fun estimateHDRExposure(source: HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long): Float =
+            native.estimateHDRExposure((source as NativeHdrImageHandle).underlying, settings, cancellationGeneration)
+        override fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+        ) = native.exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory)
+        override fun close() = native.close()
+    }
+
+    private object NativeHdrRenderBridge : HdrRenderBridge {
+        override fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int): HDRSourceInfo =
+            NativeHDRBridge.cameraFraming(file, info, processingVersion)
+        override fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray =
+            NativeHDRBridge.geometrySize(info, geometry)
+        override fun acquireCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            camera: HDRCameraDevelopmentSettings?,
+            lensDatabase: File?,
+            decode: () -> HdrImageHandle,
+        ): HdrSourceHandle {
+            val lease = com.rawlab.android.engine.HDRSourceCache.acquire(file, info, edge, camera, lensDatabase) {
+                (decode() as NativeHdrImageHandle).underlying
+            }
+            return object : HdrSourceHandle {
+                override val image: HdrImageHandle = NativeHdrImageHandle(lease.image)
+                override fun close() = lease.close()
+            }
+        }
+        override fun acquireGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrSourceHandle {
+            val lease = com.rawlab.android.engine.HDRSourceCache.acquire(file, info, edge)
+            return object : HdrSourceHandle {
+                override val image: HdrImageHandle = NativeHdrImageHandle(lease.image)
+                override fun close() = lease.close()
+            }
+        }
+        override fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrImageHandle =
+            NativeHdrImageHandle(NativeHDRBridge.decode(file, info, edge))
+        override fun exportJpeg(rendered: HdrImageHandle, metadataSource: File?, output: File) =
+            NativeHDRBridge.exportJpeg((rendered as NativeHdrImageHandle).underlying, metadataSource, output)
+        override fun exportSdr(rendered: HdrImageHandle, metadataSource: File?, output: File, format: Int) =
+            NativeHDRBridge.exportSdr((rendered as NativeHdrImageHandle).underlying, metadataSource, output, format)
+        override fun clearCache() = com.rawlab.android.engine.HDRSourceCache.clear()
+    }
+
+    private var processor: RenderEngine? = null
     private data class ReferenceFrame(val bitmap: Bitmap, val histogram: RgbHistogram?)
     private var original: Pair<NeutralSourceKey, ReferenceFrame>? = null
     private var originalAspect = 1f
@@ -62,12 +302,12 @@ internal class EditorRenderer(
 
     private data class HDRReference(val frame: HDRPreviewFrame, val bitmap: Bitmap)
     private val hdrReference = HDRReferenceCoordinator<FileStamp, HDRReference>()
-    private var hdrSource: com.rawlab.android.engine.NativeHDRImage? = null
-    private var hdrSourceLease: com.rawlab.android.engine.HDRSourceLease? = null
+    private var hdrSource: HdrImageHandle? = null
+    private var hdrSourceLease: HdrSourceHandle? = null
     private var hdrSourceKey: Triple<String, Long, Long>? = null
     private var hdrSourceCamera: HDRCameraDevelopmentSettings? = null
 
-    fun close() { releaseDecodedRaster();com.rawlab.android.engine.HDRSourceCache.clear();processor?.close() }
+    fun close() { releaseDecodedRaster(); hdrBridge.clearCache(); processor?.close() }
     private fun releaseHDRSource(clearReference: Boolean = true) {
         hdrSourceLease?.close(); hdrSourceLease=null; hdrSource=null; hdrSourceKey=null; hdrSourceCamera=null
         if (clearReference) hdrReference.clear()
@@ -77,7 +317,7 @@ internal class EditorRenderer(
         processor?.releaseRasterCache(); releaseHDRSource()
     }
 
-    private fun engine() = processor ?: NativeProcessor(lensDatabase = storage.lensDatabase()).also { processor = it }
+    private fun engine(): RenderEngine = processor ?: engineFactory().also { processor = it }
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
         runGuardedExportWork(work, destinationDeleter) {
@@ -190,7 +430,7 @@ internal class EditorRenderer(
         // 拍摄白平衡的显示值会随首帧回填；配方的相对色调仍是渲染输入。
         val edits = if (work.edits.customWb) work.edits else work.edits.copy(temperature = 6500f,
             tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
-        val scope = if (work.interactive || work.draft || source == null || (lut != null && lutStamp == null)) null
+        val scope = if (work.interactive || work.draft || !work.includeNeutral || source == null || (lut != null && lutStamp == null)) null
             else PreviewScope(work.photo, source, lutStamp, edits, work.gpuMode)
         if (previewScope != scope) {
             previews.clear()
@@ -236,6 +476,15 @@ internal class EditorRenderer(
         val edge = work.edge
         val native = engine()
         native.setGpuMode(work.gpuMode)
+        if (!work.includeNeutral) {
+            val film = native.preview(work.photo.file, lut, work.edits, edge, work.interactive, work.photo.inputKind, generation)
+            val resultBitmap = film.bitmap()
+            val dimensions = comparisonDimensions(film.geometryWidth, film.geometryHeight)
+            return PreviewPair(resultBitmap, resultBitmap, film.temperature, film.tint, film.lens,
+                dimensions.first, dimensions.second, film.geometryWidth.toFloat() / film.geometryHeight,
+                null, film.histogram,
+                renderedGeometry = work.edits.geometry, nativeWidth = film.geometryWidth, nativeHeight = film.geometryHeight)
+        }
         val sourceKey = NeutralSourceKey(work.photo.identity, work.photo.file.absolutePath, work.photo.inputKind, work.edits.processing, work.edits.x3fMode)
         if (original?.first != sourceKey) {
             original = null
@@ -269,11 +518,11 @@ internal class EditorRenderer(
             info.isCameraRaw && hdrSourceKey?.first == photo.file.canonicalPath &&
                 it.cameraStamp == info.cameraStamp && it.cameraProcessingVersion == version
         }
-        return cached ?: NativeHDRBridge.cameraFraming(photo.file, info, version)
+        return cached ?: hdrBridge.cameraFraming(photo.file, info, version)
     }
 
     private fun cachedHDRSource(photo: ImportedPhoto, info: HDRSourceInfo, generation: Long,
-        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings()): NativeHDRImage {
+        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings()): HdrImageHandle {
         require(camera.isDefault || info.isCameraRaw && !info.isProRAW)
         camera.cameraProfile?.requireAsset(storage.hdrCameraProfileDirectory)
         val file = photo.file
@@ -285,7 +534,7 @@ internal class EditorRenderer(
             if (!sameSource || hdrSourceCamera != development) {
                 releaseHDRSource(clearReference = !sameSource)
                 val database = if (camera.lensActive) storage.lensDatabase() else null
-                hdrSourceLease = com.rawlab.android.engine.HDRSourceCache.acquire(file, info, 1600, development, database) {
+                hdrSourceLease = hdrBridge.acquireCamera(file, info, 1600, development, database) {
                     engine().decodeHDRCamera(file, info, 1600, generation, camera, storage.hdrCameraProfileDirectory)
                 }
                 hdrSource = hdrSourceLease!!.image
@@ -295,15 +544,15 @@ internal class EditorRenderer(
         } else {
             if (hdrSourceKey != key || hdrSource?.sourceInfo?.fingerprint?.contentEquals(info.fingerprint) != true) {
                 releaseHDRSource()
-                hdrSourceLease=com.rawlab.android.engine.HDRSourceCache.acquire(file,info,1600)
-                hdrSource=hdrSourceLease!!.image;hdrSourceKey=key
+                hdrSourceLease = hdrBridge.acquireGainMap(file, info, 1600)
+                hdrSource = hdrSourceLease!!.image; hdrSourceKey = key
             }
         }
         return checkNotNull(hdrSource)
     }
 
     private fun hdrPreviewEdge(work: Work.Preview, info: HDRSourceInfo): Int {
-        val canvas = NativeHDRBridge.geometrySize(info, work.edits.geometry)
+        val canvas = hdrBridge.geometrySize(info, work.edits.geometry)
         return com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0], canvas[1], work.edge.coerceIn(1, 1600))
     }
 
@@ -317,21 +566,35 @@ internal class EditorRenderer(
         val geometry = work.edits.geometry
         val edge = hdrPreviewEdge(work, info)
         val plan = buildHDRRenderPlan(stamp, work.photo, work.edits, geometry, edge, info.cameraProcessingVersion)
+        val originalAspect = if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height
+        if (!work.includeNeutral) {
+            val source = cachedHDRSource(work.photo, info, generation, plan.resultCameraSettings)
+            native.renderHDR(source, plan.resultSettings, edge, generation, storage.hdrLookDirectory).use { result ->
+                val resultBitmap = result.sdrBitmap()
+                val dimensions = comparisonDimensions(result.outputNativeWidth, result.outputNativeHeight)
+                return PreviewPair(
+                    resultBitmap, resultBitmap, Float.NaN, Float.NaN,
+                    null, dimensions.first, dimensions.second,
+                    originalAspect, null, null,
+                    null, renderedGeometry = geometry,
+                    nativeWidth = result.outputNativeWidth, nativeHeight = result.outputNativeHeight)
+            }
+        }
         val reference = hdrReference.resolveReference(plan) { neutralCamera, neutralSettings ->
             val source = cachedHDRSource(work.photo, info, generation, neutralCamera)
             native.renderHDR(source, neutralSettings, edge, generation).use { neutral ->
-                val frame = neutral.snapshot()
-                HDRReference(frame, sdrBitmap(frame))
+                HDRReference(neutral.snapshot(), neutral.sdrBitmap())
             }
         }
         val source = cachedHDRSource(work.photo, info, generation, plan.resultCameraSettings)
         native.renderHDR(source, plan.resultSettings, edge, generation, storage.hdrLookDirectory).use { result ->
             val resultFrame = result.snapshot()
+            val resultBitmap = result.sdrBitmap()
             val dimensions = comparisonDimensions(resultFrame.nativeWidth, resultFrame.nativeHeight)
             return PreviewPair(
-                reference.bitmap, sdrBitmap(resultFrame), Float.NaN, Float.NaN,
+                reference.bitmap, resultBitmap, Float.NaN, Float.NaN,
                 null, dimensions.first, dimensions.second,
-                (if (info.orientation >= 5) info.height.toFloat() / info.width else info.width.toFloat() / info.height), null, null,
+                originalAspect, null, null,
                 HDRPreview(reference.frame, resultFrame), renderedGeometry = geometry,
                 nativeWidth = resultFrame.nativeWidth, nativeHeight = resultFrame.nativeHeight)
         }
@@ -345,7 +608,7 @@ internal class EditorRenderer(
         if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
-        val canvas = NativeHDRBridge.geometrySize(info, work.edits.geometry)
+        val canvas = hdrBridge.geometrySize(info, work.edits.geometry)
         val edge = com.rawlab.android.engine.HDRPreviewBudget.edge(canvas[0], canvas[1], work.edge.coerceIn(1, 1600))
         val settings = (work.edits.hdr ?: HDRSettings()).copy(geometry = work.edits.geometry)
         val source = native.decodeHDRCamera(work.photo.file, info, edge, generation, settings.cameraSettings, storage.hdrCameraProfileDirectory)
@@ -364,7 +627,7 @@ internal class EditorRenderer(
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
         if (info.isProRAW && work.format in setOf(ExportFormat.HDR_JPEG, ExportFormat.JPEG)) {
-            com.rawlab.android.engine.HDRSourceCache.clear()
+            hdrBridge.clearCache()
             val output = storage.temporaryOutput(work.format)
             try {
                 native.exportProRAW(work.photo.file, info, work.edits, output,
@@ -379,15 +642,15 @@ internal class EditorRenderer(
             .copy(geometry = work.edits.geometry)
         val source = if (info.isCameraRaw) native.decodeHDRCamera(work.photo.file, info, 0, generation,
             settings.cameraSettings, storage.hdrCameraProfileDirectory)
-            else NativeHDRBridge.decode(work.photo.file, info, 0)
+            else hdrBridge.decodeGainMap(work.photo.file, info, 0)
         val rendered = try { native.renderHDR(source, settings, work.longEdge ?: 0, generation, storage.hdrLookDirectory) }
             finally { source.close() }
         val output = storage.temporaryOutput(work.format)
         try {
             val metadataSource = work.photo.hdrSource?.takeUnless { it.isCameraRaw && !it.isProRAW }?.let { work.photo.file }
             if (work.format == ExportFormat.HDR_JPEG)
-                NativeHDRBridge.exportJpeg(rendered, metadataSource, output)
-            else NativeHDRBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
+                hdrBridge.exportJpeg(rendered, metadataSource, output)
+            else hdrBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
             // Q12: 输出文件写盘即已过提交点；迟到的取消不删文件，按「已完成」收尾。
             if (work.destination == null) storage.saveAlbum(output, work.format)
             else storage.saveDocument(output, work.destination, work.photo.uri)
@@ -395,23 +658,6 @@ internal class EditorRenderer(
             rendered.close(); output.delete()
         }
         WorkResult.Export
-    }
-
-    private fun sdrBitmap(frame: HDRPreviewFrame): Bitmap {
-        val pixels = IntArray(frame.width * frame.height)
-        for (index in pixels.indices) {
-            val base = index * 3
-            val r = encodeSrgb(frame.sdr[base]).times(255f).roundToInt().coerceIn(0, 255)
-            val g = encodeSrgb(frame.sdr[base + 1]).times(255f).roundToInt().coerceIn(0, 255)
-            val b = encodeSrgb(frame.sdr[base + 2]).times(255f).roundToInt().coerceIn(0, 255)
-            pixels[index] = (255 shl 24) or (r shl 16) or (g shl 8) or b
-        }
-        return Bitmap.createBitmap(pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
-    }
-
-    private fun encodeSrgb(value: Float): Float {
-        val v = value.coerceIn(0f, 1f)
-        return if (v <= .0031308f) 12.92f * v else 1.055f * v.toDouble().pow(1.0 / 2.4).toFloat() - .055f
     }
 }
 

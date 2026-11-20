@@ -75,8 +75,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
         val imported = storage.import(photo.uri)
         try {
             cancellation.check()
-            val result = renderer.perform(Work.Preview(imported, settings, false, NativeProcessor.AUTO,
-                edge = EditedPhotoPreviewKey.EDGE), cancellation) as WorkResult.Preview
+            val result = renderer.perform(thumbnailPreviewWork(imported, settings), cancellation) as WorkResult.Preview
             cancellation.check()
             requireCurrent(record, photo.uri, stamp, resources)
             val bytes = encode(result.pair.result)
@@ -175,6 +174,10 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
         }
     }
     companion object {
+        internal fun thumbnailPreviewWork(photo: ImportedPhoto, settings: EditSettings): Work.Preview =
+            Work.Preview(photo, settings, false, NativeProcessor.AUTO,
+                edge = EditedPhotoPreviewKey.EDGE, includeNeutral = false)
+
         private val completed = MutableSharedFlow<PhotoIdentity>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         val ready = completed.asSharedFlow()
         private val busyOwners = mutableSetOf<String>()

@@ -1,5 +1,7 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.ui.AppIcons
+
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.graphics.Bitmap
@@ -19,8 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.NavigateBefore
-import androidx.compose.material.icons.automirrored.outlined.NavigateNext
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -125,7 +125,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
         }, actions = {
             if (page == "browse" && preview == null && state.connected && !incremental) {
                 IconButton(onClick = { draftFormat = format; draftDate = date; filterOpen = true }, modifier = Modifier.testTag("camera-filter")) {
-                    Icon(Icons.Outlined.FilterList, stringResource(R.string.camera_filter),
+                    Icon(AppIcons.Outlined.FilterList, stringResource(R.string.camera_filter),
                         tint = if (format != "all" || date != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 }
             }
@@ -157,11 +157,11 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                 when {
                     preview != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         val index = filtered.indexOfFirst { it.key == preview.key }
-                        IconButton(onClick = { previewKey = filtered[index - 1].key }, enabled = index > 0) { Icon(Icons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous)) }
+                        IconButton(onClick = { previewKey = filtered[index - 1].key }, enabled = index > 0) { Icon(AppIcons.AutoMirrored.Outlined.NavigateBefore, stringResource(R.string.camera_previous)) }
                         Button(onClick = { model.toggle(preview) }, enabled = !state.transferring, shape = CameraControlShape, modifier = Modifier.weight(1f)) {
                             Text(stringResource(if (preview.key in state.selected) R.string.camera_deselect else R.string.camera_select))
                         }
-                        IconButton(onClick = { previewKey = filtered[index + 1].key }, enabled = index >= 0 && index + 1 < filtered.size) { Icon(Icons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next)) }
+                        IconButton(onClick = { previewKey = filtered[index + 1].key }, enabled = index >= 0 && index + 1 < filtered.size) { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, stringResource(R.string.camera_next)) }
                     }
                     page == "task" -> {
                         val job = checkNotNull(state.job)
@@ -222,7 +222,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         Text(stringResource(R.string.camera_selection_count, selected.size, bytes(selected.sumOf { it.size })), Modifier.weight(1f),
                             style = MaterialTheme.typography.labelMedium)
                         if (selected.size == 1) IconButton(onClick = { previewKey = selected.single().key }, modifier = Modifier.testTag("camera-preview-selected")) {
-                            Icon(Icons.Outlined.ZoomIn, stringResource(R.string.camera_preview))
+                            Icon(AppIcons.Outlined.ZoomIn, stringResource(R.string.camera_preview))
                         }
                         Button(onClick = { model.startImport(); page = "task" }, enabled = canImport,
                             shape = CameraControlShape, modifier = Modifier.testTag("camera-import")) { Text(stringResource(R.string.camera_import_count, selected.size)) }

@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
@@ -10,8 +12,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -56,12 +56,12 @@ internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.strin
     R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze,
     R.string.hdr_peak_limit, R.string.hdr_sdr_exposure, R.string.hdr_sdr_contrast, R.string.hdr_sdr_saturation)
 
-internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
-    Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
-    Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
-    Icons.Outlined.Deblur, Icons.Outlined.BlurOff, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud,
-    Icons.Outlined.BrightnessHigh, Icons.Outlined.BrightnessMedium, Icons.Outlined.Brightness6, Icons.Outlined.Opacity)
+internal val editorToolIcons: List<ImageVector> get() = listOf(AppIcons.Outlined.PhotoFilter, AppIcons.Outlined.Tune,
+    AppIcons.Outlined.Exposure, AppIcons.Outlined.WbSunny, AppIcons.Outlined.DarkMode, AppIcons.Outlined.Contrast,
+    AppIcons.Outlined.SsidChart, AppIcons.Outlined.WaterDrop, AppIcons.Outlined.Thermostat, AppIcons.Outlined.Palette,
+    AppIcons.Outlined.Deblur, AppIcons.Outlined.BlurOff, AppIcons.Outlined.Circle, AppIcons.Outlined.Grain,
+    AppIcons.Outlined.ColorLens, AppIcons.Outlined.Layers, AppIcons.Outlined.CenterFocusStrong, AppIcons.Outlined.CropRotate, AppIcons.Filled.Circle, AppIcons.Outlined.RadioButtonUnchecked, AppIcons.Filled.WaterDrop, AppIcons.Outlined.Palette, AppIcons.Outlined.Tonality, AppIcons.Outlined.Cloud,
+    AppIcons.Outlined.BrightnessHigh, AppIcons.Outlined.BrightnessMedium, AppIcons.Outlined.Brightness6, AppIcons.Outlined.Opacity)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -96,7 +96,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int>
         items(entries, key = { it }) { index ->
             if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
-                Icon(Icons.Outlined.Transform, null, Modifier.size(18.dp))
+                Icon(AppIcons.Outlined.Transform, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
             } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
         }

@@ -43,12 +43,14 @@ void require(bool condition, const std::string& message) {
 
 enum class FakeObjKind {
     String,
+    BooleanArray,
     ByteArray,
     IntArray,
     FloatArray,
     DoubleArray,
     ObjectArray,
     DirectBuffer,
+    Bitmap,
     Class,
     Object,
     Throwable,
@@ -57,6 +59,7 @@ enum class FakeObjKind {
 struct FakeJObject {
     FakeObjKind kind;
     std::string text;
+    std::vector<jboolean> booleans;
     std::vector<jbyte> bytes;
     std::vector<jint> ints;
     std::vector<jfloat> floats;
@@ -65,6 +68,12 @@ struct FakeJObject {
     std::unordered_map<std::string, jvalue> fields;
     void* directAddress = nullptr;
     jlong directCapacity = 0;
+    uint32_t bitmapWidth = 0;
+    uint32_t bitmapHeight = 0;
+    uint32_t bitmapStride = 0;
+    std::vector<uint8_t> bitmapPixels;
+    int bitmapLockCount = 0;
+    int bitmapUnlockCount = 0;
     jint intArg = 0;
     jint secondIntArg = 0;
     std::string strArg;
@@ -89,6 +98,20 @@ std::vector<std::unique_ptr<FakeFieldId>> gAllocatedFields;
 std::atomic<int> gFindClassCalls{0};
 std::atomic<int> gGetFieldIdCalls{0};
 std::atomic<int> gGetMethodIdCalls{0};
+std::atomic<int> gGetStaticMethodIdCalls{0};
+std::atomic<int> gNewByteArrayCalls{0};
+std::atomic<int> gAllocateBitmapCalls{0};
+std::atomic<int> gBitmapLockCalls{0};
+std::atomic<int> gBitmapUnlockCalls{0};
+uint32_t gMockBitmapStridePaddingBytes = 0;
+uint32_t gMockProcessBufferStridePaddingBytes = 0;
+uint8_t gMockProcessPixelSeed = 0;
+bool gCancelOnNextBitmapLock = false;
+jlong gCancelSessionIdOnBitmapLock = 0;
+uint32_t gMockHdrPlaneStridePaddingFloats = 0;
+bool gMockLensAppliedDistortion = false;
+bool gMockLensAppliedTca = false;
+bool gMockLensAppliedVignetting = false;
 
 struct ThreadJniException {
     bool active = false;
@@ -187,6 +210,44 @@ jmethodID JNICALL mockGetMethodID(JNIEnv*, jclass clazz, const char* name, const
     return raw;
 }
 
+jmethodID JNICALL mockGetStaticMethodID(JNIEnv*, jclass clazz, const char* name, const char* sig) {
+    gGetStaticMethodIdCalls.fetch_add(1, std::memory_order_relaxed);
+    auto method = std::make_unique<FakeMethodId>();
+    method->className = clazz ? asFake(clazz)->text : "";
+    method->name = name ? name : "";
+    method->sig = sig ? sig : "";
+    auto* raw = reinterpret_cast<jmethodID>(method.get());
+    std::lock_guard<std::mutex> lock(gJniMutex);
+    gAllocatedMethods.push_back(std::move(method));
+    return raw;
+}
+
+jobject makeFakeBitmap(uint32_t width, uint32_t height, uint32_t extraStrideBytes = 0) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::Bitmap));
+    obj->bitmapWidth = width;
+    obj->bitmapHeight = height;
+    obj->bitmapStride = width * 4u + extraStrideBytes;
+    obj->bitmapPixels.assign(static_cast<size_t>(obj->bitmapStride) * height, 0xAA);
+    return reinterpret_cast<jobject>(obj);
+}
+
+jobject JNICALL mockCallStaticObjectMethodV(JNIEnv*, jclass, jmethodID method, va_list args) {
+    auto* mid = reinterpret_cast<FakeMethodId*>(method);
+    if (mid && mid->className == "com/rawlab/android/engine/NativeFrame" && mid->name == "allocateBitmap") {
+        gAllocateBitmapCalls.fetch_add(1, std::memory_order_relaxed);
+        const jint w = va_arg(args, jint);
+        const jint h = va_arg(args, jint);
+        jobject reusable = va_arg(args, jobject);
+        if (reusable && asFake(reusable)->kind == FakeObjKind::Bitmap &&
+            asFake(reusable)->bitmapWidth == static_cast<uint32_t>(w) &&
+            asFake(reusable)->bitmapHeight == static_cast<uint32_t>(h)) {
+            return reusable;
+        }
+        return makeFakeBitmap(static_cast<uint32_t>(w), static_cast<uint32_t>(h), gMockBitmapStridePaddingBytes);
+    }
+    return nullptr;
+}
+
 jfieldID JNICALL mockGetFieldID(JNIEnv*, jclass clazz, const char* name, const char* sig) {
     gGetFieldIdCalls.fetch_add(1, std::memory_order_relaxed);
     auto field = std::make_unique<FakeFieldId>();
@@ -254,7 +315,7 @@ jobject JNICALL mockNewObjectV(JNIEnv*, jclass clazz, jmethodID method, va_list 
     } else if (mid && mid->className == "com/rawlab/android/engine/NativeFrame") {
         (void)va_arg(args, jint); // width
         (void)va_arg(args, jint); // height
-        (void)va_arg(args, jobject); // pixels
+        obj->fields["bitmap"].l = va_arg(args, jobject); // backingBitmap
         obj->fields["rawTemperature"].f = static_cast<jfloat>(va_arg(args, double));
         obj->fields["rawTint"].f = static_cast<jfloat>(va_arg(args, double));
     }
@@ -298,6 +359,7 @@ jsize JNICALL mockGetArrayLength(JNIEnv*, jarray array) {
     if (!array) return 0;
     const auto* obj = asFake(array);
     switch (obj->kind) {
+        case FakeObjKind::BooleanArray: return static_cast<jsize>(obj->booleans.size());
         case FakeObjKind::ByteArray: return static_cast<jsize>(obj->bytes.size());
         case FakeObjKind::IntArray: return static_cast<jsize>(obj->ints.size());
         case FakeObjKind::FloatArray: return static_cast<jsize>(obj->floats.size());
@@ -307,7 +369,14 @@ jsize JNICALL mockGetArrayLength(JNIEnv*, jarray array) {
     }
 }
 
+jbooleanArray JNICALL mockNewBooleanArray(JNIEnv*, jsize len) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::BooleanArray));
+    obj->booleans.resize(static_cast<size_t>(len));
+    return reinterpret_cast<jbooleanArray>(obj);
+}
+
 jbyteArray JNICALL mockNewByteArray(JNIEnv*, jsize len) {
+    gNewByteArrayCalls.fetch_add(1, std::memory_order_relaxed);
     auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::ByteArray));
     obj->bytes.resize(static_cast<size_t>(len));
     return reinterpret_cast<jbyteArray>(obj);
@@ -333,6 +402,11 @@ void JNICALL mockGetByteArrayRegion(JNIEnv*, jbyteArray arr, jsize start, jsize 
 void JNICALL mockSetByteArrayRegion(JNIEnv*, jbyteArray arr, jsize start, jsize len, const jbyte* buf) {
     if (!arr || !buf) return;
     std::memcpy(asFake(arr)->bytes.data() + start, buf, static_cast<size_t>(len) * sizeof(jbyte));
+}
+
+void JNICALL mockSetBooleanArrayRegion(JNIEnv*, jbooleanArray arr, jsize start, jsize len, const jboolean* buf) {
+    if (!arr || !buf) return;
+    std::memcpy(asFake(arr)->booleans.data() + start, buf, static_cast<size_t>(len) * sizeof(jboolean));
 }
 
 void JNICALL mockGetIntArrayRegion(JNIEnv*, jintArray arr, jsize start, jsize len, jint* buf) {
@@ -408,6 +482,8 @@ JNINativeInterface_ makeEnvTable() {
     t.ExceptionClear = mockExceptionClear;
     t.DeleteLocalRef = mockDeleteLocalRef;
     t.GetMethodID = mockGetMethodID;
+    t.GetStaticMethodID = mockGetStaticMethodID;
+    t.CallStaticObjectMethodV = mockCallStaticObjectMethodV;
     t.GetFieldID = mockGetFieldID;
     t.GetObjectField = mockGetObjectField;
     t.GetBooleanField = mockGetBooleanField;
@@ -419,12 +495,14 @@ JNINativeInterface_ makeEnvTable() {
     t.GetStringUTFChars = mockGetStringUTFChars;
     t.ReleaseStringUTFChars = mockReleaseStringUTFChars;
     t.GetArrayLength = mockGetArrayLength;
+    t.NewBooleanArray = mockNewBooleanArray;
     t.NewByteArray = mockNewByteArray;
     t.NewIntArray = mockNewIntArray;
     t.NewFloatArray = mockNewFloatArray;
     t.GetByteArrayElements = mockGetByteArrayElements;
     t.ReleaseByteArrayElements = mockReleaseByteArrayElements;
     t.GetByteArrayRegion = mockGetByteArrayRegion;
+    t.SetBooleanArrayRegion = mockSetBooleanArrayRegion;
     t.SetByteArrayRegion = mockSetByteArrayRegion;
     t.GetIntArrayRegion = mockGetIntArrayRegion;
     t.SetIntArrayRegion = mockSetIntArrayRegion;
@@ -456,6 +534,49 @@ ThreadJniException consumeException() {
     gTlsException = {};
     return copy;
 }
+
+int hostBitmapGetInfo(JNIEnv*, jobject bitmap, AndroidBitmapInfo* info) {
+    if (!bitmap || !info) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    auto* obj = asFake(bitmap);
+    if (obj->kind != FakeObjKind::Bitmap) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    info->width = obj->bitmapWidth;
+    info->height = obj->bitmapHeight;
+    info->stride = obj->bitmapStride;
+    info->format = ANDROID_BITMAP_FORMAT_RGBA_8888;
+    info->flags = 0;
+    return ANDROID_BITMAP_RESULT_SUCCESS;
+}
+
+int hostBitmapLockPixels(JNIEnv*, jobject bitmap, void** addrPtr) {
+    if (!bitmap || !addrPtr) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    auto* obj = asFake(bitmap);
+    if (obj->kind != FakeObjKind::Bitmap) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    gBitmapLockCalls.fetch_add(1, std::memory_order_relaxed);
+    obj->bitmapLockCount++;
+    *addrPtr = obj->bitmapPixels.data();
+    if (gCancelOnNextBitmapLock && gCancelSessionIdOnBitmapLock > 0) {
+        gCancelOnNextBitmapLock = false;
+        LocalEnv cancelEnv;
+        Java_com_rawlab_android_engine_NativeProcessor_nativeCancelPreview(
+            cancelEnv.ptr(), nullptr, gCancelSessionIdOnBitmapLock);
+    }
+    return ANDROID_BITMAP_RESULT_SUCCESS;
+}
+
+int hostBitmapUnlockPixels(JNIEnv*, jobject bitmap) {
+    if (!bitmap) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    auto* obj = asFake(bitmap);
+    if (obj->kind != FakeObjKind::Bitmap) return ANDROID_BITMAP_RESULT_BAD_PARAMETER;
+    gBitmapUnlockCalls.fetch_add(1, std::memory_order_relaxed);
+    obj->bitmapUnlockCount++;
+    return ANDROID_BITMAP_RESULT_SUCCESS;
+}
+
+RawLabHostBitmapHooks gHostBitmapHooks{
+    hostBitmapGetInfo,
+    hostBitmapLockPixels,
+    hostBitmapUnlockPixels,
+};
 
 // ============================================================================
 //  Deterministic Mock State for sony2fuji_* C ABI (ZERO sleeps!)
@@ -578,7 +699,21 @@ void clearJniRegistries() {
 }
 
 void resetMocks() {
+    *rawlabHostBitmapHooksSlot() = &gHostBitmapHooks;
     clearJniRegistries();
+    gNewByteArrayCalls.store(0, std::memory_order_relaxed);
+    gAllocateBitmapCalls.store(0, std::memory_order_relaxed);
+    gBitmapLockCalls.store(0, std::memory_order_relaxed);
+    gBitmapUnlockCalls.store(0, std::memory_order_relaxed);
+    gMockBitmapStridePaddingBytes = 0;
+    gMockProcessBufferStridePaddingBytes = 0;
+    gMockProcessPixelSeed = 0;
+    gCancelOnNextBitmapLock = false;
+    gCancelSessionIdOnBitmapLock = 0;
+    gMockHdrPlaneStridePaddingFloats = 0;
+    gMockLensAppliedDistortion = false;
+    gMockLensAppliedTca = false;
+    gMockLensAppliedVignetting = false;
     std::lock_guard<std::mutex> lock(gCoreMutex);
     gMockSessions.clear();
     gMockPairs.clear();
@@ -754,15 +889,27 @@ sony2fuji_status sony2fuji_session_get_geometry_size(const sony2fuji_session* s,
     *w = 64; *h = 64;
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* s, const char*, sony2fuji_lens_report_v2*,
+sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* s, const char*, sony2fuji_lens_report_v2* r,
     sony2fuji_lens_profile_v2*, uint32_t, uint32_t* count) {
     SessionCallScope scope(s);
+    if (r) {
+        std::memset(r, 0, sizeof(*r));
+        r->base.applied_distortion = gMockLensAppliedDistortion ? 1 : 0;
+        r->base.applied_tca = gMockLensAppliedTca ? 1 : 0;
+        r->applied_vignetting = gMockLensAppliedVignetting ? 1 : 0;
+    }
     *count = 0;
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* s, const sony2fuji_lens_metadata*,
-    sony2fuji_lens_report_v2*, sony2fuji_lens_profile_v2*, uint32_t, uint32_t* count) {
+    sony2fuji_lens_report_v2* r, sony2fuji_lens_profile_v2*, uint32_t, uint32_t* count) {
     SessionCallScope scope(s);
+    if (r) {
+        std::memset(r, 0, sizeof(*r));
+        r->base.applied_distortion = gMockLensAppliedDistortion ? 1 : 0;
+        r->base.applied_tca = gMockLensAppliedTca ? 1 : 0;
+        r->applied_vignetting = gMockLensAppliedVignetting ? 1 : 0;
+    }
     *count = 0;
     return SONY2FUJI_STATUS_OK;
 }
@@ -924,12 +1071,25 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* s, const sony2fuji_request
     }
 
     const uint32_t dim = (req && req->preview_long_edge > 0) ? req->preview_long_edge : 16u;
-    const size_t size = static_cast<size_t>(dim) * dim * 4;
-    out->data = std::calloc(1, size);
+    const uint32_t strideBytes = dim * 4u + gMockProcessBufferStridePaddingBytes;
+    const size_t size = static_cast<size_t>(strideBytes) * dim;
+    auto* bytes = static_cast<uint8_t*>(std::calloc(1, size));
+    if (gMockProcessPixelSeed != 0 && bytes) {
+        for (uint32_t y = 0; y < dim; ++y) {
+            uint8_t* row = bytes + static_cast<size_t>(y) * strideBytes;
+            for (uint32_t x = 0; x < dim; ++x) {
+                row[x * 4 + 0] = static_cast<uint8_t>((gMockProcessPixelSeed + x + y * 3) & 0xFF);
+                row[x * 4 + 1] = static_cast<uint8_t>((gMockProcessPixelSeed + x * 2 + y) & 0xFF);
+                row[x * 4 + 2] = static_cast<uint8_t>((gMockProcessPixelSeed + x + y * 5) & 0xFF);
+                row[x * 4 + 3] = 255;
+            }
+        }
+    }
+    out->data = bytes;
     out->size_bytes = size;
     out->width = dim;
     out->height = dim;
-    out->stride_bytes = dim * 4;
+    out->stride_bytes = strideBytes;
     out->pixel_format = SONY2FUJI_PIXEL_RGBA8;
     return SONY2FUJI_STATUS_OK;
 }
@@ -1076,17 +1236,31 @@ static sony2fuji_hdr_image_pair_v1 makeMockPair() {
     std::lock_guard<std::mutex> lock(gCoreMutex);
     auto pair = std::make_shared<MockHdrPairState>();
     pair->token = gNextMockToken++;
-    pair->hdrPixels.assign(4 * 3, 1.0f);
-    pair->sdrPixels.assign(4 * 3, 0.5f);
+    const uint32_t hdrWidth = 2;
+    const uint32_t hdrHeight = 2;
+    const uint32_t hdrStrideFloats = hdrWidth * 3 + gMockHdrPlaneStridePaddingFloats;
+    pair->hdrPixels.assign(static_cast<size_t>(hdrStrideFloats) * hdrHeight, 0.0f);
+    pair->sdrPixels.assign(static_cast<size_t>(hdrStrideFloats) * hdrHeight, 0.0f);
+    for (uint32_t y = 0; y < hdrHeight; ++y) {
+        for (uint32_t x = 0; x < hdrWidth; ++x) {
+            const size_t idx = static_cast<size_t>(y) * hdrStrideFloats + x * 3;
+            pair->hdrPixels[idx + 0] = 1.0f + y * 0.25f + x * 0.1f;
+            pair->hdrPixels[idx + 1] = 1.0f;
+            pair->hdrPixels[idx + 2] = 0.5f;
+            pair->sdrPixels[idx + 0] = 0.5f;
+            pair->sdrPixels[idx + 1] = 0.25f;
+            pair->sdrPixels[idx + 2] = 0.75f;
+        }
+    }
     gMockPairs.emplace(pair->token, pair);
 
     sony2fuji_hdr_image_pair_v1 out{};
     out.version = SONY2FUJI_HDR_VERSION;
     out.struct_size = sizeof(out);
     out.hdr = {SONY2FUJI_HDR_VERSION, sizeof(out.hdr), pair->hdrPixels.data(), pair->hdrPixels.size() * sizeof(float),
-        2, 2, 2 * 12, SONY2FUJI_HDR_RGB32F_LINEAR, SONY2FUJI_HDR_LINEAR_SRGB, 2.0f, SONY2FUJI_HDR_HEADROOM_MEASURED};
+        hdrWidth, hdrHeight, static_cast<uint32_t>(hdrStrideFloats * sizeof(float)), SONY2FUJI_HDR_RGB32F_LINEAR, SONY2FUJI_HDR_LINEAR_SRGB, 2.0f, SONY2FUJI_HDR_HEADROOM_MEASURED};
     out.sdr = {SONY2FUJI_HDR_VERSION, sizeof(out.sdr), pair->sdrPixels.data(), pair->sdrPixels.size() * sizeof(float),
-        2, 2, 2 * 12, SONY2FUJI_HDR_RGB32F_LINEAR, SONY2FUJI_HDR_LINEAR_SRGB, 1.0f, SONY2FUJI_HDR_HEADROOM_MEASURED};
+        hdrWidth, hdrHeight, static_cast<uint32_t>(hdrStrideFloats * sizeof(float)), SONY2FUJI_HDR_RGB32F_LINEAR, SONY2FUJI_HDR_LINEAR_SRGB, 1.0f, SONY2FUJI_HDR_HEADROOM_MEASURED};
     out.native_width = 2; out.native_height = 2;
     out.output_native_width = 2; out.output_native_height = 2;
     out.orientation_applied = 1;
@@ -1277,6 +1451,7 @@ jobject makeNativeProcessRequest(const std::string& path, jint edge, jlong gener
     setIntField(output, "longEdge", 0);
     setBoolField(output, "interactive", JNI_FALSE);
     setBoolField(output, "viewportPreview", edge > 0 ? JNI_TRUE : JNI_FALSE);
+    setObjField(output, "reusableBitmap", nullptr);
 
     jobject wb = makeStruct("com/rawlab/android/engine/NativeProcessWhiteBalance");
     setBoolField(wb, "custom", JNI_FALSE);
@@ -1964,7 +2139,8 @@ void testCachedJniFieldAndClassLookups() {
     const int findBefore = gFindClassCalls.load(std::memory_order_relaxed);
     const int fieldBefore = gGetFieldIdCalls.load(std::memory_order_relaxed);
     const int methodBefore = gGetMethodIdCalls.load(std::memory_order_relaxed);
-    require(findBefore > 0 && fieldBefore > 0 && methodBefore > 0, "JniCache must initialize on first use");
+    const int staticMethodBefore = gGetStaticMethodIdCalls.load(std::memory_order_relaxed);
+    require(findBefore > 0 && fieldBefore > 0 && methodBefore > 0 && staticMethodBefore > 0, "JniCache must initialize on first use");
 
     // Subsequent calls across process, geometry, HDR render, HSL sample, ProRAW export must perform ZERO lookups.
     jobject frame2 = callNativeProcess(env.ptr(), s, "second.dng", 64, -1);
@@ -1995,6 +2171,8 @@ void testCachedJniFieldAndClassLookups() {
         "Cached jfieldIDs must eliminate repeat GetFieldID calls");
     require(gGetMethodIdCalls.load(std::memory_order_relaxed) == methodBefore,
         "Cached jmethodIDs must eliminate repeat GetMethodID calls");
+    require(gGetStaticMethodIdCalls.load(std::memory_order_relaxed) == staticMethodBefore,
+        "Cached static jmethodIDs must eliminate repeat GetStaticMethodID calls");
 
     Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, rendered);
     Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
@@ -2366,6 +2544,144 @@ void testForceGpuUnsupportedExceptionMarshalling() {
     std::cout << "PASS: testForceGpuUnsupportedExceptionMarshalling" << std::endl;
 }
 
+void testBitmapBackedPreviewZeroByteArrayAndPaddedStride() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+
+    // Padded source buffer AND padded Bitmap stride, non-zero pixel pattern.
+    gMockProcessBufferStridePaddingBytes = 12;
+    gMockBitmapStridePaddingBytes = 20;
+    gMockProcessPixelSeed = 17;
+    gNewByteArrayCalls.store(0, std::memory_order_relaxed);
+    gAllocateBitmapCalls.store(0, std::memory_order_relaxed);
+    gBitmapLockCalls.store(0, std::memory_order_relaxed);
+    gBitmapUnlockCalls.store(0, std::memory_order_relaxed);
+
+    jobject req = makeNativeProcessRequest("padded.dng", 12, -1);
+    jobject frame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    auto ex = consumeException();
+    require(frame != nullptr && !ex.active, "Bitmap-backed nativeProcess must succeed: " + ex.message);
+    require(gNewByteArrayCalls.load() == 0,
+        "Bitmap-backed preview must allocate ZERO jbyteArrays, got " + std::to_string(gNewByteArrayCalls.load()));
+    require(gAllocateBitmapCalls.load() == 1, "nativeProcess must invoke NativeFrame.allocateBitmap");
+    require(gBitmapLockCalls.load() == 1 && gBitmapUnlockCalls.load() == 1,
+        "nativeProcess must lock and unlock Bitmap pixels symmetrically");
+
+    jobject bmp = asFake(frame)->fields.at("bitmap").l;
+    require(bmp != nullptr && asFake(bmp)->kind == FakeObjKind::Bitmap, "NativeFrame must hold backing Bitmap");
+    const auto* fakeBmp = asFake(bmp);
+    require(fakeBmp->bitmapWidth == 12 && fakeBmp->bitmapHeight == 12, "Bitmap dimensions mismatch");
+    require(fakeBmp->bitmapLockCount == 1 && fakeBmp->bitmapUnlockCount == 1, "Per-bitmap lock/unlock mismatch");
+    for (uint32_t y = 0; y < 12; ++y) {
+        const uint8_t* row = fakeBmp->bitmapPixels.data() + static_cast<size_t>(y) * fakeBmp->bitmapStride;
+        for (uint32_t x = 0; x < 12; ++x) {
+            const uint8_t r = static_cast<uint8_t>((17 + x + y * 3) & 0xFF);
+            const uint8_t g = static_cast<uint8_t>((17 + x * 2 + y) & 0xFF);
+            const uint8_t b = static_cast<uint8_t>((17 + x + y * 5) & 0xFF);
+            require(row[x * 4 + 0] == r && row[x * 4 + 1] == g && row[x * 4 + 2] == b && row[x * 4 + 3] == 255,
+                "Padded-stride pixel mismatch in Bitmap");
+        }
+    }
+
+    // Passing reusableBitmap reuses the exact same Bitmap object.
+    jobject outObj = mockGetObjectField(env.ptr(), req, nullptr);
+    (void)outObj;
+    auto reqOutIt = asFake(req)->fields.find("output");
+    require(reqOutIt != asFake(req)->fields.end() && reqOutIt->second.l != nullptr, "Missing request.output");
+    setObjField(reqOutIt->second.l, "reusableBitmap", bmp);
+    gMockProcessPixelSeed = 41;
+    jobject reusedFrame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    ex = consumeException();
+    require(reusedFrame != nullptr && !ex.active, "Reusable bitmap nativeProcess must succeed");
+    require(gNewByteArrayCalls.load() == 0, "Reusable bitmap preview must perform ZERO NewByteArray allocations");
+    require(asFake(reusedFrame)->fields.at("bitmap").l == bmp, "Reusable bitmap must be reused in place");
+    require(asFake(bmp)->bitmapPixels[0] == 41, "Reusable bitmap must receive updated pixels");
+
+    // nativeCompatibilityPreview also uses Bitmap-backed NativeFrame with zero NewByteArray calls.
+    gMockProcessPixelSeed = 73;
+    jobject compatFrame = Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(
+        env.ptr(), nullptr, s, makeJString("compat.dng"), nullptr, 0, 0, 0, nullptr, nullptr);
+    ex = consumeException();
+    require(compatFrame != nullptr && !ex.active, "nativeCompatibilityPreview must succeed: " + ex.message);
+    require(gNewByteArrayCalls.load() == 0, "nativeCompatibilityPreview must perform ZERO NewByteArray allocations");
+    jobject compatBmp = asFake(compatFrame)->fields.at("bitmap").l;
+    require(compatBmp != nullptr && asFake(compatBmp)->kind == FakeObjKind::Bitmap &&
+            asFake(compatBmp)->bitmapPixels[0] == 73,
+        "nativeCompatibilityPreview must write directly into NativeFrame Bitmap");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testBitmapBackedPreviewZeroByteArrayAndPaddedStride" << std::endl;
+}
+
+void testBitmapPreviewMidCopyCancellationUnlocksSymmetrically() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    const jlong gen = Java_com_rawlab_android_engine_NativeProcessor_nativeCancellationGeneration(env.ptr(), nullptr, s);
+    gCancelOnNextBitmapLock = true;
+    gCancelSessionIdOnBitmapLock = s;
+
+    jobject req = makeNativeProcessRequest("cancel-copy.dng", 16, gen);
+    jobject frame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(env.ptr(), nullptr, s, req);
+    auto ex = consumeException();
+    require(frame == nullptr && ex.active &&
+            ex.className == "com/rawlab/android/engine/NativeProcessingException" &&
+            ex.status == SONY2FUJI_STATUS_CANCELLED,
+        "Mid-copy cancellation must throw NativeProcessingException(CANCELLED)");
+    require(gBitmapLockCalls.load() == 1 && gBitmapUnlockCalls.load() == 1,
+        "Mid-copy cancellation must unlock Bitmap pixels via RAII guard");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testBitmapPreviewMidCopyCancellationUnlocksSymmetrically" << std::endl;
+}
+
+void testNativePlaneDirectCopyAndMetadataInspection() {
+    resetMocks();
+    LocalEnv env;
+    gMockHdrPlaneStridePaddingFloats = 6; // padded float stride
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    require(p > 0 && !consumeException().active, "Setup HDR pair failed");
+
+    jfloatArray hdrPlane = Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(env.ptr(), nullptr, p, JNI_TRUE);
+    auto ex = consumeException();
+    require(hdrPlane != nullptr && !ex.active, "Padded HDR nativePlane must succeed");
+    const auto& floats = asFake(hdrPlane)->floats;
+    require(floats.size() == 2 * 2 * 3, "Compacted HDR plane float count mismatch");
+    require(floats[0] == 1.0f && floats[3] == 1.1f && floats[6] == 1.25f && floats[9] == 1.35f,
+        "Padded HDR plane row compaction mismatch");
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+
+    // Metadata-only lens inspection & recipe WB resolution (0 pixel decode)
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    gMockLensAppliedDistortion = true;
+    gMockLensAppliedTca = false;
+    gMockLensAppliedVignetting = true;
+    jbooleanArray lensFlags = Java_com_rawlab_android_engine_NativeProcessor_nativeInspectLens(
+        env.ptr(), nullptr, s, makeJString("raw.arw"));
+    ex = consumeException();
+    require(lensFlags != nullptr && !ex.active && asFake(lensFlags)->booleans.size() == 3,
+        "nativeInspectLens must return 3 booleans");
+    require(asFake(lensFlags)->booleans[0] == JNI_TRUE &&
+            asFake(lensFlags)->booleans[1] == JNI_FALSE &&
+            asFake(lensFlags)->booleans[2] == JNI_TRUE,
+        "nativeInspectLens flags mismatch");
+
+    gCapturePayloads = true;
+    jfloatArray wb = Java_com_rawlab_android_engine_NativeProcessor_nativeResolveCameraWhiteBalance(
+        env.ptr(), nullptr, s, makeJString("raw.arw"), SONY2FUJI_PROCESSING_BASIC_V3, SONY2FUJI_X3F_NORMAL, SONY2FUJI_EXPOSURE_SCENE);
+    ex = consumeException();
+    require(wb != nullptr && !ex.active && asFake(wb)->floats.size() == 2,
+        "nativeResolveCameraWhiteBalance must return camera WB");
+    require(asFake(wb)->floats[0] == 5200.0f && asFake(wb)->floats[1] == 4.0f,
+        "nativeResolveCameraWhiteBalance values mismatch");
+    require(gCapturedRecipeWbRequest.recipe_active == 1 && gCapturedRecipeWbRequest.recipe_strength == 1.0f,
+        "nativeResolveCameraWhiteBalance must engage recipe_active=1 calibration");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testNativePlaneDirectCopyAndMetadataInspection" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2387,6 +2703,9 @@ int main() {
         {"testStructuredHdrMarshalling", testStructuredHdrMarshalling},
         {"testAbiDelegationRecipeWbAndMpf", testAbiDelegationRecipeWbAndMpf},
         {"testForceGpuUnsupportedExceptionMarshalling", testForceGpuUnsupportedExceptionMarshalling},
+        {"testBitmapBackedPreviewZeroByteArrayAndPaddedStride", testBitmapBackedPreviewZeroByteArrayAndPaddedStride},
+        {"testBitmapPreviewMidCopyCancellationUnlocksSymmetrically", testBitmapPreviewMidCopyCancellationUnlocksSymmetrically},
+        {"testNativePlaneDirectCopyAndMetadataInspection", testNativePlaneDirectCopyAndMetadataInspection},
     };
     int failures = 0;
     for (const auto& c : cases) {

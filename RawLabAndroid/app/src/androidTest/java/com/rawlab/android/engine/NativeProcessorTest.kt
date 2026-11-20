@@ -421,4 +421,29 @@ class NativeProcessorTest {
             }
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun bitmapBackedPreviewReusesMatchingBitmapAndMatchesPixels() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val root = File(instrumentation.targetContext.cacheDir, "bitmap-preview-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val input = File(root, "source.arw")
+        instrumentation.context.assets.open("sample.RAW").use { from -> input.outputStream().use { from.copyTo(it) } }
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val first = processor.preview(input, null, EditSettings(), 320, false)
+                val firstBitmap = first.bitmap()
+                assertSame(firstBitmap, first.bitmap())
+                assertEquals(android.graphics.Bitmap.Config.ARGB_8888, firstBitmap.config)
+                assertEquals(first.width, firstBitmap.width)
+                assertEquals(first.height, firstBitmap.height)
+                val buffer = ByteBuffer.allocate(first.width * first.height * 4)
+                firstBitmap.copyPixelsToBuffer(buffer)
+                assertArrayEquals(buffer.array(), first.pixels)
+
+                val reusable = android.graphics.Bitmap.createBitmap(first.width, first.height, android.graphics.Bitmap.Config.ARGB_8888)
+                val second = processor.preview(input, null, EditSettings(exposure = 0.5f), 320, false, reusableBitmap = reusable)
+                assertSame(reusable, second.bitmap())
+                assertFalse(first.pixels.contentEquals(second.pixels))
+            }
+        } finally { root.deleteRecursively() }
+    }
 }

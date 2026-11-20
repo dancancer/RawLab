@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -23,8 +24,8 @@ import android.net.MacAddress
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiManager
 import android.net.wifi.WifiInfo
+import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.os.Handler
@@ -40,10 +41,19 @@ import java.util.UUID
 internal data class CameraCandidate(val id: String, val name: String)
 
 /** 只管理 Android BLE/Wi-Fi 连接；PTP、凭据持久化、进程绑网和解绑不在此处。 */
-internal class SonyCameraConnection(
+internal class SonyCameraConnection internal constructor(
     context: Context,
     private val listener: Listener,
+    private val platform: Platform,
+    private val wifiStartingTimeoutMs: Long = WIFI_STARTING_TIMEOUT_MS,
+    private val wifiRequestTimeoutMs: Long = WIFI_REQUEST_TIMEOUT_MS,
 ) : Closeable {
+    constructor(context: Context, listener: Listener) : this(
+        context,
+        listener,
+        AndroidPlatform(context.applicationContext),
+    )
+
     interface Listener {
         fun onCandidates(items: List<CameraCandidate>)
         fun onStage(stage: Stage)
@@ -66,11 +76,89 @@ internal class SonyCameraConnection(
         DISCONNECTED,
     }
 
+    internal data class BleScanEntry(
+        val id: String,
+        val name: String,
+        val isSony: Boolean,
+        val isBonded: Boolean,
+        val connectGatt: (GattClientCallback) -> GattHandle?,
+        val createBond: () -> Boolean,
+    )
+
+    internal data class WifiApResult(val ssid: String?, val bssid: String?, val timestampMicros: Long)
+
+    internal interface Handle {
+        fun close()
+    }
+
+    internal interface GattHandle {
+        val address: String?
+        fun requestMtu(mtu: Int): Boolean
+        fun discoverServices(): Boolean
+        fun hasRequiredCharacteristics(): Boolean
+        fun hasWifiOnCharacteristic(): Boolean
+        fun writePairingInit(): Boolean
+        fun writeWifiOn(): Boolean
+        fun readSsid(): Boolean
+        fun readPassword(): Boolean
+        fun disconnect()
+        fun close()
+    }
+
+    internal interface GattClientCallback {
+        fun onConnectionStateChange(source: GattHandle, status: Int, newState: Int)
+        fun onMtuChanged(source: GattHandle, mtu: Int, status: Int)
+        fun onServicesDiscovered(source: GattHandle, status: Int)
+        fun onCharacteristicWrite(source: GattHandle, uuid: UUID, status: Int)
+        fun onCharacteristicRead(source: GattHandle, uuid: UUID, value: ByteArray?, status: Int)
+    }
+
+    internal interface WifiNetworkCallbacks {
+        fun onAvailable(network: Network, properties: LinkProperties?)
+        fun onLinkPropertiesChanged(network: Network, properties: LinkProperties)
+        fun onUnavailable()
+        fun onLost(network: Network)
+    }
+
+    internal interface LegacyWifiCallbacks {
+        fun onLegacyNetworkReady(network: Network, identity: String, properties: LinkProperties)
+        fun onLost(network: Network)
+    }
+
+    internal interface Platform {
+        val sdkInt: Int
+        fun isMainThread(): Boolean
+        fun post(action: Runnable)
+        fun postDelayed(action: Runnable, delayMs: Long)
+        fun removeCallbacks(action: Runnable)
+        fun elapsedMicros(): Long
+        fun hasPermissions(permissions: List<String>): Boolean
+        fun isBluetoothPresent(): Boolean
+        fun isBluetoothEnabled(): Boolean
+        fun isLocationEnabled(): Boolean
+        fun startBleScan(onEntry: (BleScanEntry) -> Unit, onFailed: (Int) -> Unit): Handle?
+        fun registerBondReceiver(onBondChanged: (address: String, bondState: Int) -> Unit): Handle
+        fun isWifiAvailable(): Boolean
+        fun startWifiScan(): Boolean
+        fun wifiScanResults(): List<WifiApResult>
+        fun registerWifiScanReceiver(onScanResults: () -> Unit): Handle
+        fun isConnectivityAvailable(): Boolean
+        fun requestWifiNetwork(ssid: String, password: String, bssid: String, callbacks: WifiNetworkCallbacks): Handle
+        fun registerManualWifiNetwork(callbacks: LegacyWifiCallbacks): Handle
+        fun defaultIpv4Gateway(properties: LinkProperties?): Inet4Address? =
+            properties?.routes?.asSequence()
+                ?.filter { it.isDefaultRoute }
+                ?.mapNotNull { it.gateway as? Inet4Address }
+                ?.firstOrNull()
+    }
+
     private companion object {
         const val SONY_MANUFACTURER_ID = 0x012d
         const val SONY_CAMERA_LABEL = "Sony camera"
         const val BLE_MTU = 158
         const val BLE_TIMEOUT_MS = 3 * 60 * 1000L
+        const val WIFI_STARTING_TIMEOUT_MS = 45 * 1000L
+        const val WIFI_REQUEST_TIMEOUT_MS = 60 * 1000L
         const val BLE_SCAN_TIMEOUT_MS = 25 * 1000L
         const val WIFI_SCAN_TIMEOUT_MS = 35 * 1000L
         const val WIFI_FRESHNESS_US = 2_000_000L
@@ -87,95 +175,38 @@ internal class SonyCameraConnection(
         val PAIRING_INIT_CHARACTERISTIC = sonyCharacteristic("ee01")
     }
 
-    private val appContext = context.applicationContext
-    private val main = Handler(Looper.getMainLooper())
-    private val bluetoothManager = appContext.getSystemService(BluetoothManager::class.java)
-    private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
-    private val wifi = appContext.getSystemService(WifiManager::class.java)
-    private val location = appContext.getSystemService(LocationManager::class.java)
-
-    private var adapter: BluetoothAdapter? = bluetoothManager?.adapter
-    private var scanner: BluetoothLeScanner? = null
-    private var scannerCallback: ScanCallback? = null
-    private var gatt: BluetoothGatt? = null
-    private var selectedDevice: BluetoothDevice? = null
+    private var scanHandle: Handle? = null
+    private var gatt: GattHandle? = null
+    private var selectedDevice: BleScanEntry? = null
     private var selectedId: String? = null
 
-    private val devices = LinkedHashMap<String, BluetoothDevice>()
+    private val devices = LinkedHashMap<String, BleScanEntry>()
     private val deviceNames = LinkedHashMap<String, String>()
     private var scanning = false
     private var active = false
     @Volatile private var generation = 0L
     private var stage: Stage? = null
+    private var wifiCredentialsReady = false
     private var readAttempts = 0
     private var scanStartedMicros = 0L
     private var pendingSSID: String? = null
     private var pendingPassword: String? = null
 
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var networkHandle: Handle? = null
     private var cameraNetwork: Network? = null
     private var cameraAddress: InetAddress? = null
 
-    private var bondReceiverRegistered = false
-    private var wifiReceiverRegistered = false
-    private var bondReceiverGeneration = 0L
-    private var wifiReceiverGeneration = 0L
+    private var bondReceiverHandle: Handle? = null
+    private var wifiReceiverHandle: Handle? = null
     private var bleTimeout: Runnable? = null
     private var bleScanTimeout: Runnable? = null
     private var wifiScanTimeout: Runnable? = null
+    private var wifiRequestTimeout: Runnable? = null
+    private var ssidReadRunnable: Runnable? = null
 
-    private val bondReceiver = object : BroadcastReceiver() {
-        @Suppress("DEPRECATION")
-        override fun onReceive(context: Context, intent: Intent) {
-            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-            if (!active || bondReceiverGeneration != generation || device == null) return
-            val selectedAddress = try { selectedDevice?.address } catch (_: SecurityException) {
-                fail(Failure.PERMISSION)
-                return
-            }
-            val deviceAddress = try { device.address } catch (_: SecurityException) {
-                fail(Failure.PERMISSION)
-                return
-            }
-            if (selectedAddress != deviceAddress) return
-            val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
-            when (bondState) {
-                BluetoothDevice.BOND_BONDED -> {
-                    unregisterBondReceiver()
-                    setStage(Stage.BLUETOOTH)
-                    openGatt()
-                }
-                BluetoothDevice.BOND_NONE -> fail(Failure.PAIRING)
-            }
-        }
-    }
-
-    private val wifiScanReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION &&
-                wifiReceiverGeneration == generation) findFreshAccessPoint()
-        }
-    }
-
-    private fun createScanCallback(current: Long): ScanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            main.post { handleScanResult(current, result) }
-        }
-
-        override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            main.post { results.forEach { handleScanResult(current, it) } }
-        }
-
-        override fun onScanFailed(errorCode: Int) {
-            main.post {
-                if (current == generation && active && scanning) fail(Failure.BLUETOOTH)
-            }
-        }
-    }
-
-    private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(source: BluetoothGatt, status: Int, newState: Int) {
-            main.post {
+    private val gattCallback = object : GattClientCallback {
+        override fun onConnectionStateChange(source: GattHandle, status: Int, newState: Int) {
+            platform.post {
                 if (!isCurrentGatt(source)) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                     val requested = try {
@@ -185,16 +216,16 @@ internal class SonyCameraConnection(
                         return@post
                     }
                     if (!requested) fail(Failure.BLUETOOTH)
-                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    fail(Failure.BLUETOOTH)
-                } else if (status != BluetoothGatt.GATT_SUCCESS) {
-                    fail(Failure.BLUETOOTH)
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
+                    if (stage == Stage.BLUETOOTH || (stage == Stage.WIFI_STARTING && !wifiCredentialsReady)) {
+                        fail(Failure.BLUETOOTH)
+                    }
                 }
             }
         }
 
-        override fun onMtuChanged(source: BluetoothGatt, mtu: Int, status: Int) {
-            main.post {
+        override fun onMtuChanged(source: GattHandle, mtu: Int, status: Int) {
+            platform.post {
                 if (!isCurrentGatt(source)) return@post
                 if (status != BluetoothGatt.GATT_SUCCESS || mtu < 67) {
                     fail(Failure.BLUETOOTH)
@@ -210,30 +241,20 @@ internal class SonyCameraConnection(
             }
         }
 
-        override fun onServicesDiscovered(source: BluetoothGatt, status: Int) {
-            main.post {
+        override fun onServicesDiscovered(source: GattHandle, status: Int) {
+            platform.post {
                 if (!isCurrentGatt(source)) return@post
-                val command = characteristic(source, CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC)
-                val ssid = characteristic(source, CONTROL_SERVICE, SSID_CHARACTERISTIC)
-                val password = characteristic(source, CONTROL_SERVICE, PASSWORD_CHARACTERISTIC)
-                val pairing = characteristic(source, PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC)
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail(Failure.BLUETOOTH)
                     return@post
                 }
-                if (command == null || ssid == null || password == null || pairing == null ||
-                    command.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
-                    pairing.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
-                    ssid.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
-                    password.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0) {
+                if (!source.hasRequiredCharacteristics()) {
                     beginOperation()
                     setStage(Stage.MANUAL_WIFI)
                     return@post
                 }
-                pairing.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                pairing.value = byteArrayOf(6, 8, 1, 0, 0, 0, 0)
                 val wrote = try {
-                    source.writeCharacteristic(pairing)
+                    source.writePairingInit()
                 } catch (_: SecurityException) {
                     fail(Failure.PERMISSION)
                     return@post
@@ -242,14 +263,10 @@ internal class SonyCameraConnection(
             }
         }
 
-        override fun onCharacteristicWrite(
-            source: BluetoothGatt,
-            item: BluetoothGattCharacteristic,
-            status: Int,
-        ) {
-            main.post {
+        override fun onCharacteristicWrite(source: GattHandle, uuid: UUID, status: Int) {
+            platform.post {
                 if (!isCurrentGatt(source)) return@post
-                when (item.uuid) {
+                when (uuid) {
                     PAIRING_INIT_CHARACTERISTIC -> {
                         if (status != BluetoothGatt.GATT_SUCCESS) fail(Failure.PAIRING) else activateWifi(source)
                     }
@@ -263,99 +280,59 @@ internal class SonyCameraConnection(
             }
         }
 
-        override fun onCharacteristicRead(
-            source: BluetoothGatt,
-            item: BluetoothGattCharacteristic,
-            status: Int,
-        ) {
-            val value = item.value?.clone()
-            val key = item.uuid
-            main.post { handleCharacteristicRead(source, key, value, status) }
+        override fun onCharacteristicRead(source: GattHandle, uuid: UUID, value: ByteArray?, status: Int) {
+            val copy = value?.clone()
+            platform.post { handleCharacteristicRead(source, uuid, copy, status) }
         }
     }
 
     fun scan() {
-        main.post { scanOnMain() }
+        platform.post { scanOnMain() }
     }
 
     fun connect(id: String) {
-        main.post { connectOnMain(id) }
+        platform.post { connectOnMain(id) }
     }
 
     fun prepareLegacyWifi() {
-        main.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
+        platform.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
     }
 
     /** 手动连接当前 Wi-Fi，以协议握手确认相机能力，不根据 SSID 推断机型。 */
     fun useLegacyWifi() {
-        main.post {
+        platform.post {
             beginOperation()
             if (!isSupported()) return@post fail(Failure.UNSUPPORTED)
-            if (!hasPermissions(cameraWifiPermissions(Build.VERSION.SDK_INT))) return@post fail(Failure.PERMISSION)
-            if (location?.isLocationEnabled != true) return@post fail(Failure.LOCATION_OFF)
-            val manager = connectivity ?: return@post fail(Failure.WIFI)
+            if (!platform.hasPermissions(cameraWifiPermissions(platform.sdkInt))) return@post fail(Failure.PERMISSION)
+            if (!platform.isLocationEnabled()) return@post fail(Failure.LOCATION_OFF)
+            if (!platform.isConnectivityAvailable()) return@post fail(Failure.WIFI)
             val current = generation
-            class ManualWifiCallback : ConnectivityManager.NetworkCallback {
-                constructor() : super()
-                @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
-                constructor(flags: Int) : super(flags)
-
-                private val capabilitiesByNetwork = mutableMapOf<Network, NetworkCapabilities>()
-                private val propertiesByNetwork = mutableMapOf<Network, LinkProperties>()
-
-                private fun inspect(network: Network) {
-                    val capabilities = capabilitiesByNetwork[network] ?: return
-                    val properties = propertiesByNetwork[network] ?: return
-                    inspectLegacyNetwork(network, capabilities, properties, current, this)
-                }
-
-                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    main.post {
-                        if (!isCurrentNetwork(current, this)) return@post
-                        capabilitiesByNetwork[network] = capabilities
-                        inspect(network)
+            lateinit var handle: Handle
+            val callbacks = object : LegacyWifiCallbacks {
+                override fun onLegacyNetworkReady(network: Network, identity: String, properties: LinkProperties) {
+                    platform.post {
+                        if (!isCurrentNetwork(current, handle) || cameraNetwork != null) return@post
+                        selectedId = identity
+                        inspectNetwork(network, properties, handle)
                     }
                 }
-                override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
-                    main.post {
-                        if (!isCurrentNetwork(current, this)) return@post
-                        propertiesByNetwork[network] = properties
-                        inspect(network)
+
+                override fun onLost(network: Network) {
+                    platform.post {
+                        if (isCurrentNetwork(current, handle) && network == cameraNetwork) {
+                            fail(Failure.DISCONNECTED)
+                        }
                     }
                 }
-                override fun onLost(network: Network) { main.post {
-                    if (!isCurrentNetwork(current, this)) return@post
-                    capabilitiesByNetwork.remove(network)
-                    propertiesByNetwork.remove(network)
-                    if (network == cameraNetwork) fail(Failure.DISCONNECTED)
-                } }
             }
-            val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                ManualWifiCallback(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO)
-            else ManualWifiCallback()
-            networkCallback = callback
             setStage(Stage.MANUAL_WIFI)
             try {
-                manager.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
-            } catch (_: SecurityException) { fail(Failure.PERMISSION) }
+                handle = platform.registerManualWifiNetwork(callbacks)
+                networkHandle = handle
+            } catch (_: SecurityException) {
+                fail(Failure.PERMISSION)
+            }
         }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun inspectLegacyNetwork(network: Network, capabilities: NetworkCapabilities, properties: LinkProperties,
-        current: Long, callback: ConnectivityManager.NetworkCallback) {
-        if (Build.VERSION.SDK_INT < 29 || !isCurrentNetwork(current, callback) || cameraNetwork != null) return
-        if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
-        val info = capabilities.transportInfo as? WifiInfo
-        var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
-        // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
-        if (identity == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            val legacy = wifi?.connectionInfo
-            identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
-        }
-        selectedId = identity ?: return
-        inspectNetwork(network, properties, callback)
     }
 
     /** 释放当前 BLE/Wi-Fi 资源，但保留 Android 系统配对关系。 */
@@ -365,21 +342,22 @@ internal class SonyCameraConnection(
             active = false
             releaseResources()
         }
-        if (Looper.myLooper() == Looper.getMainLooper()) release() else main.post(release)
+        if (platform.isMainThread()) release() else platform.post(release)
     }
 
     private fun scanOnMain() {
         beginOperation()
         if (!isSupported()) return fail(Failure.UNSUPPORTED)
-        if (!hasPermissions(cameraBluetoothPermissions(Build.VERSION.SDK_INT))) return fail(Failure.PERMISSION)
-        val bluetooth = adapter ?: return fail(Failure.UNSUPPORTED)
-        val bluetoothEnabled = try { bluetooth.isEnabled } catch (_: SecurityException) {
+        if (!platform.hasPermissions(cameraBluetoothPermissions(platform.sdkInt))) return fail(Failure.PERMISSION)
+        if (!platform.isBluetoothPresent()) return fail(Failure.UNSUPPORTED)
+        val bluetoothEnabled = try { platform.isBluetoothEnabled() } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
         if (!bluetoothEnabled) return fail(Failure.BLUETOOTH_OFF)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && location?.isLocationEnabled != true)
+        if (platform.sdkInt < Build.VERSION_CODES.S && !platform.isLocationEnabled()) {
             return fail(Failure.LOCATION_OFF)
+        }
 
         devices.clear()
         deviceNames.clear()
@@ -387,48 +365,46 @@ internal class SonyCameraConnection(
         setStage(Stage.SCANNING)
         emitCandidates()
         if (!active) return
+        val current = generation
         try {
-            scanner = bluetooth.bluetoothLeScanner ?: return fail(Failure.BLUETOOTH)
-            val callback = createScanCallback(generation)
-            scannerCallback = callback
-            scanner?.startScan(callback)
+            val handle = platform.startBleScan(
+                onEntry = { entry -> platform.post { handleScanResult(current, entry) } },
+                onFailed = { platform.post { if (current == generation && active && scanning) fail(Failure.BLUETOOTH) } },
+            ) ?: return fail(Failure.BLUETOOTH)
+            scanHandle = handle
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
-        val current = generation
         bleScanTimeout = Runnable {
             if (current != generation || !active || !scanning) return@Runnable
             scanning = false
             stopBleScan()
             if (devices.isEmpty()) fail(Failure.NOT_FOUND)
-        }.also { main.postDelayed(it, BLE_SCAN_TIMEOUT_MS) }
+        }.also { platform.postDelayed(it, BLE_SCAN_TIMEOUT_MS) }
     }
 
     private fun connectOnMain(id: String) {
         beginOperation()
         if (!isSupported()) return fail(Failure.UNSUPPORTED)
-        val sdk = Build.VERSION.SDK_INT
-        if (!hasPermissions(cameraBluetoothPermissions(sdk) + cameraWifiPermissions(sdk))) return fail(Failure.PERMISSION)
-        val bluetooth = adapter ?: return fail(Failure.UNSUPPORTED)
-        val bluetoothEnabled = try { bluetooth.isEnabled } catch (_: SecurityException) {
+        val sdk = platform.sdkInt
+        if (!platform.hasPermissions(cameraBluetoothPermissions(sdk) + cameraWifiPermissions(sdk))) return fail(Failure.PERMISSION)
+        if (!platform.isBluetoothPresent()) return fail(Failure.UNSUPPORTED)
+        val bluetoothEnabled = try { platform.isBluetoothEnabled() } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
         if (!bluetoothEnabled) return fail(Failure.BLUETOOTH_OFF)
-        if (location?.isLocationEnabled != true) return fail(Failure.LOCATION_OFF)
+        if (!platform.isLocationEnabled()) return fail(Failure.LOCATION_OFF)
 
         val selected = devices.entries.firstOrNull { it.key.equals(id, ignoreCase = true) }?.value
             ?: return fail(Failure.NOT_FOUND)
         selectedDevice = selected
-        selectedId = try { selected.address } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
-            return
-        }
+        selectedId = selected.id
         scanning = false
         stopBleScan()
         val bonded = try {
-            selected.bondState == BluetoothDevice.BOND_BONDED
+            selected.isBonded
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
@@ -454,40 +430,19 @@ internal class SonyCameraConnection(
         active = true
     }
 
-    private fun isSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    private fun isSupported(): Boolean = platform.sdkInt >= Build.VERSION_CODES.Q
 
-    private fun hasPermissions(permissions: List<String>): Boolean =
-        permissions.all { appContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-
-    private fun handleScanResult(current: Long, result: ScanResult) {
+    private fun handleScanResult(current: Long, entry: BleScanEntry) {
         if (current != generation || !active || !scanning) return
-        val record: ScanRecord = result.scanRecord ?: return
-        val services = record.serviceUuids.orEmpty().map { it.uuid }
-        if (record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) == null &&
-            CONTROL_SERVICE !in services && PAIRING_SERVICE !in services) return
-        val name = record.deviceName?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
-        val device = try { result.device } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
-            return
-        }
-        val id = try { device.address } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
-            return
-        }
-        if (devices.putIfAbsent(id, device) == null) {
-            deviceNames[id] = name
+        if (!entry.isSony) return
+        if (devices.putIfAbsent(entry.id, entry) == null) {
+            deviceNames[entry.id] = entry.name
             emitCandidates()
         }
     }
 
     private fun emitCandidates() {
-        listener.onCandidates(devices.map { CameraCandidate(it.key, deviceNames[it.key] ?: it.value.nameOrFallback()) })
-    }
-
-    private fun BluetoothDevice.nameOrFallback(): String = try {
-        name?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
-    } catch (_: SecurityException) {
-        SONY_CAMERA_LABEL
+        listener.onCandidates(devices.map { CameraCandidate(it.key, deviceNames[it.key] ?: it.value.name) })
     }
 
     private fun openGatt() {
@@ -495,35 +450,27 @@ internal class SonyCameraConnection(
         setStage(Stage.BLUETOOTH)
         if (!active) return
         try {
-            gatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+            gatt = device.connectGatt(gattCallback)
             if (gatt == null) fail(Failure.BLUETOOTH)
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
         }
     }
 
-    private fun characteristic(
-        source: BluetoothGatt,
-        serviceUuid: UUID,
-        characteristicUuid: UUID,
-    ): BluetoothGattCharacteristic? = source.getService(serviceUuid)?.getCharacteristic(characteristicUuid)
-
-    private fun isCurrentGatt(source: BluetoothGatt): Boolean {
+    private fun isCurrentGatt(source: GattHandle): Boolean {
         if (!active || source !== gatt) return false
-        val selectedAddress = try { selectedDevice?.address } catch (_: SecurityException) { return false }
-        val sourceAddress = try { source.device.address } catch (_: SecurityException) { return false }
+        val selectedAddress = selectedDevice?.id ?: return false
+        val sourceAddress = try { source.address } catch (_: SecurityException) { return false }
         return selectedAddress == sourceAddress
     }
 
-    private fun activateWifi(source: BluetoothGatt) {
-        val command = characteristic(source, CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC)
-            ?: return fail(Failure.WIFI)
+    private fun activateWifi(source: GattHandle) {
+        if (!source.hasWifiOnCharacteristic()) return fail(Failure.WIFI)
         setStage(Stage.WIFI_STARTING)
         if (!active) return
-        command.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        command.value = byteArrayOf(1)
+        startBleTimeout(wifiStartingTimeoutMs)
         val wrote = try {
-            source.writeCharacteristic(command)
+            source.writeWifiOn()
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
@@ -531,24 +478,25 @@ internal class SonyCameraConnection(
         if (!wrote) fail(Failure.WIFI)
     }
 
-    private fun scheduleSSIDRead(source: BluetoothGatt) {
+    private fun scheduleSSIDRead(source: GattHandle) {
+        ssidReadRunnable?.let(platform::removeCallbacks)
         val current = generation
-        main.postDelayed({
-            if (current != generation || !isCurrentGatt(source)) return@postDelayed
+        ssidReadRunnable = Runnable {
+            ssidReadRunnable = null
+            if (current != generation || !isCurrentGatt(source)) return@Runnable
             readAttempts++
-            val characteristic = characteristic(source, CONTROL_SERVICE, SSID_CHARACTERISTIC)
             val read = try {
-                characteristic != null && source.readCharacteristic(characteristic)
+                source.readSsid()
             } catch (_: SecurityException) {
                 fail(Failure.PERMISSION)
-                return@postDelayed
+                return@Runnable
             }
             if (!read) fail(Failure.WIFI)
-        }, 3_000L)
+        }.also { platform.postDelayed(it, 3_000L) }
     }
 
     private fun handleCharacteristicRead(
-        source: BluetoothGatt,
+        source: GattHandle,
         key: UUID,
         value: ByteArray?,
         status: Int,
@@ -566,9 +514,8 @@ internal class SonyCameraConnection(
             when (key) {
                 SSID_CHARACTERISTIC -> {
                     pendingSSID = SonyWifiCredentials.decode(value, false)
-                    val password = characteristic(source, CONTROL_SERVICE, PASSWORD_CHARACTERISTIC)
                     val read = try {
-                        password != null && source.readCharacteristic(password)
+                        source.readPassword()
                     } catch (_: SecurityException) {
                         fail(Failure.PERMISSION)
                         return
@@ -578,6 +525,7 @@ internal class SonyCameraConnection(
                 PASSWORD_CHARACTERISTIC -> {
                     val ssid = pendingSSID ?: return fail(Failure.WIFI)
                     pendingPassword = SonyWifiCredentials.decode(value, true)
+                    wifiCredentialsReady = true
                     waitForAccessPoint(ssid)
                 }
             }
@@ -587,36 +535,39 @@ internal class SonyCameraConnection(
     }
 
     private fun waitForAccessPoint(name: String) {
-        if (pendingPassword == null || wifi == null) return fail(Failure.WIFI)
+        if (pendingPassword == null || !platform.isWifiAvailable()) return fail(Failure.WIFI)
         if (!active) return
         cancelBleTimeout()
-        scanStartedMicros = SystemClock.elapsedRealtimeNanos() / 1_000L
+        closeGatt()
+        scanStartedMicros = platform.elapsedMicros()
         pendingSSID = name
         if (!registerWifiReceiver() || !active) return
-        try {
-            wifi.startScan()
+        val scanStarted = try {
+            val started = platform.startWifiScan()
             findFreshAccessPoint()
+            started
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
         if (!active || pendingSSID == null) return
+        if (!scanStarted) return fail(Failure.WIFI)
         val current = generation
         wifiScanTimeout = Runnable {
             if (current == generation && active && pendingSSID != null) fail(Failure.WIFI)
-        }.also { main.postDelayed(it, WIFI_SCAN_TIMEOUT_MS) }
+        }.also { platform.postDelayed(it, WIFI_SCAN_TIMEOUT_MS) }
     }
 
     private fun findFreshAccessPoint() {
         val name = pendingSSID ?: return
-        if (!active || generation <= 0L || wifi == null) return
-        val results = try { wifi.scanResults } catch (_: SecurityException) {
+        if (!active || generation <= 0L || !platform.isWifiAvailable()) return
+        val results = try { platform.wifiScanResults() } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
         for (result in results) {
-            val bssid = result.BSSID ?: continue
-            if (result.SSID == name && result.timestamp >= scanStartedMicros - WIFI_FRESHNESS_US) {
+            val bssid = result.bssid ?: continue
+            if (result.ssid == name && result.timestampMicros >= scanStartedMicros - WIFI_FRESHNESS_US) {
                 requestWiFi(name, pendingPassword ?: return fail(Failure.WIFI), bssid)
                 return
             }
@@ -624,7 +575,7 @@ internal class SonyCameraConnection(
     }
 
     private fun requestWiFi(name: String, password: String, bssid: String) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (platform.sdkInt < Build.VERSION_CODES.Q) {
             fail(Failure.UNSUPPORTED)
             return
         }
@@ -632,84 +583,72 @@ internal class SonyCameraConnection(
         pendingSSID = null
         pendingPassword = null
         cancelWifiScanTimeout()
-        val manager = connectivity ?: return fail(Failure.WIFI)
+        if (!platform.isConnectivityAvailable()) return fail(Failure.WIFI)
         val current = generation
-        val specifier = try {
-            WifiNetworkSpecifier.Builder()
-                .setSsid(name)
-                .setBssid(MacAddress.fromString(bssid))
-                .setWpa2Passphrase(password)
-                .build()
-        } catch (_: IllegalArgumentException) {
-            fail(Failure.WIFI)
-            return
-        }
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .setNetworkSpecifier(specifier)
-            .build()
-        lateinit var callback: ConnectivityManager.NetworkCallback
-        callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                val source = this
-                main.post {
-                    if (!isCurrentNetwork(current, source)) return@post
-                    inspectNetwork(network, manager.getLinkProperties(network), source)
+        lateinit var handle: Handle
+        val callbacks = object : WifiNetworkCallbacks {
+            override fun onAvailable(network: Network, properties: LinkProperties?) {
+                platform.post {
+                    if (!isCurrentNetwork(current, handle)) return@post
+                    inspectNetwork(network, properties, handle)
                 }
             }
 
             override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
-                val source = this
-                main.post {
-                    if (!isCurrentNetwork(current, source)) return@post
-                    inspectNetwork(network, properties, source)
+                platform.post {
+                    if (!isCurrentNetwork(current, handle)) return@post
+                    inspectNetwork(network, properties, handle)
                 }
             }
 
             override fun onUnavailable() {
-                val source = this
-                main.post {
-                    if (isCurrentNetwork(current, source)) fail(Failure.WIFI)
+                platform.post {
+                    if (isCurrentNetwork(current, handle)) fail(Failure.WIFI)
                 }
             }
 
             override fun onLost(network: Network) {
-                val source = this
-                main.post {
-                    if (isCurrentNetwork(current, source)) fail(Failure.DISCONNECTED)
+                platform.post {
+                    if (isCurrentNetwork(current, handle)) fail(Failure.DISCONNECTED)
                 }
             }
         }
-        networkCallback = callback
         setStage(Stage.WIFI_CONFIRMATION)
         if (!active) return
         try {
-            manager.requestNetwork(request, callback)
+            handle = platform.requestWifiNetwork(name, password, bssid, callbacks)
+            networkHandle = handle
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
+            return
         } catch (_: IllegalArgumentException) {
             fail(Failure.WIFI)
+            return
+        }
+        if (active && stage == Stage.WIFI_CONFIRMATION && cameraNetwork == null && networkHandle === handle) {
+            val timeoutGeneration = generation
+            wifiRequestTimeout = Runnable {
+                if (timeoutGeneration == generation && active && stage == Stage.WIFI_CONFIRMATION && cameraNetwork == null) {
+                    fail(Failure.WIFI)
+                }
+            }.also { platform.postDelayed(it, wifiRequestTimeoutMs) }
         }
     }
 
-    private fun isCurrentNetwork(current: Long, callback: ConnectivityManager.NetworkCallback): Boolean =
-        active && current == generation && networkCallback === callback
+    private fun isCurrentNetwork(current: Long, handle: Handle): Boolean =
+        active && current == generation && networkHandle === handle
 
     private fun inspectNetwork(
         network: Network,
         properties: LinkProperties?,
-        callback: ConnectivityManager.NetworkCallback,
+        handle: Handle,
     ) {
-        if (networkCallback !== callback || cameraNetwork != null) return
-        val routes = properties?.routes ?: return
-        val gateway = routes.asSequence()
-            .filter { it.isDefaultRoute }
-            .mapNotNull { it.gateway as? Inet4Address }
-            .firstOrNull() ?: return
+        if (networkHandle !== handle || cameraNetwork != null) return
+        val gateway = platform.defaultIpv4Gateway(properties) ?: return
         cameraNetwork = network
         cameraAddress = gateway
         cancelBleTimeout()
+        cancelWifiRequestTimeout()
         val cameraId = selectedId ?: return
         setStage(Stage.NETWORK)
         if (!active) return
@@ -722,7 +661,7 @@ internal class SonyCameraConnection(
         listener.onStage(value)
     }
 
-    private fun startBleTimeout() {
+    private fun startBleTimeout(timeoutMs: Long = BLE_TIMEOUT_MS) {
         cancelBleTimeout()
         val current = generation
         bleTimeout = Runnable {
@@ -730,19 +669,36 @@ internal class SonyCameraConnection(
             when (stage) {
                 Stage.PAIRING -> fail(Failure.PAIRING)
                 Stage.BLUETOOTH -> fail(Failure.BLUETOOTH)
+                Stage.WIFI_STARTING -> fail(Failure.WIFI)
                 else -> Unit
             }
-        }.also { main.postDelayed(it, BLE_TIMEOUT_MS) }
+        }.also { platform.postDelayed(it, timeoutMs) }
     }
 
     private fun cancelBleTimeout() {
-        bleTimeout?.let(main::removeCallbacks)
+        bleTimeout?.let(platform::removeCallbacks)
         bleTimeout = null
     }
 
     private fun cancelWifiScanTimeout() {
-        wifiScanTimeout?.let(main::removeCallbacks)
+        wifiScanTimeout?.let(platform::removeCallbacks)
         wifiScanTimeout = null
+    }
+
+    private fun cancelWifiRequestTimeout() {
+        wifiRequestTimeout?.let(platform::removeCallbacks)
+        wifiRequestTimeout = null
+    }
+
+    private fun closeGatt() {
+        ssidReadRunnable?.let(platform::removeCallbacks)
+        ssidReadRunnable = null
+        val oldGatt = gatt
+        gatt = null
+        if (oldGatt != null) {
+            try { oldGatt.disconnect() } catch (_: SecurityException) { }
+            try { oldGatt.close() } catch (_: SecurityException) { }
+        }
     }
 
     private fun fail(reason: Failure) {
@@ -754,13 +710,15 @@ internal class SonyCameraConnection(
 
     private fun releaseResources() {
         scanning = false
-        bleScanTimeout?.let(main::removeCallbacks)
+        bleScanTimeout?.let(platform::removeCallbacks)
         bleScanTimeout = null
         cancelBleTimeout()
         cancelWifiScanTimeout()
+        cancelWifiRequestTimeout()
         stopBleScan()
         unregisterBondReceiver()
         unregisterWifiReceiver()
+        wifiCredentialsReady = false
         pendingSSID = null
         pendingPassword = null
         selectedDevice = null
@@ -768,78 +726,344 @@ internal class SonyCameraConnection(
         stage = null
         cameraNetwork = null
         cameraAddress = null
-        val callback = networkCallback
-        networkCallback = null
-        if (callback != null) {
-            try { connectivity?.unregisterNetworkCallback(callback) } catch (_: Exception) { }
+        val handle = networkHandle
+        networkHandle = null
+        if (handle != null) {
+            try { handle.close() } catch (_: Exception) { }
         }
-        val oldGatt = gatt
-        gatt = null
-        if (oldGatt != null) {
-            try { oldGatt.disconnect() } catch (_: SecurityException) { }
-            try { oldGatt.close() } catch (_: SecurityException) { }
-        }
+        closeGatt()
     }
 
     private fun stopBleScan() {
-        val currentScanner = scanner ?: return
-        val callback = scannerCallback
-        scanner = null
-        scannerCallback = null
-        if (callback != null) {
-            try { currentScanner.stopScan(callback) } catch (_: SecurityException) { }
-        }
+        val currentScanner = scanHandle ?: return
+        scanHandle = null
+        try { currentScanner.close() } catch (_: SecurityException) { }
     }
 
     private fun registerBondReceiver(): Boolean {
-        if (bondReceiverRegistered) return true
-        try {
-            val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                appContext.registerReceiver(bondReceiver, filter, Context.RECEIVER_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                appContext.registerReceiver(bondReceiver, filter)
+        if (bondReceiverHandle != null) return true
+        val expectedGeneration = generation
+        return try {
+            bondReceiverHandle = platform.registerBondReceiver { deviceAddress, bondState ->
+                if (!active || expectedGeneration != generation) return@registerBondReceiver
+                val selectedAddress = selectedDevice?.id ?: return@registerBondReceiver
+                if (selectedAddress != deviceAddress) return@registerBondReceiver
+                when (bondState) {
+                    BluetoothDevice.BOND_BONDED -> {
+                        unregisterBondReceiver()
+                        setStage(Stage.BLUETOOTH)
+                        openGatt()
+                    }
+                    BluetoothDevice.BOND_NONE -> fail(Failure.PAIRING)
+                }
             }
-            bondReceiverRegistered = true
-            bondReceiverGeneration = generation
-            return true
+            true
         } catch (_: Exception) {
             fail(Failure.PAIRING)
-            return false
+            false
         }
     }
 
     private fun unregisterBondReceiver() {
-        if (!bondReceiverRegistered) return
-        try { appContext.unregisterReceiver(bondReceiver) } catch (_: Exception) { }
-        bondReceiverRegistered = false
-        bondReceiverGeneration = 0L
+        val handle = bondReceiverHandle ?: return
+        bondReceiverHandle = null
+        try { handle.close() } catch (_: Exception) { }
     }
 
     private fun registerWifiReceiver(): Boolean {
-        if (wifiReceiverRegistered) return true
-        try {
-            val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                appContext.registerReceiver(wifiScanReceiver, filter, Context.RECEIVER_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                appContext.registerReceiver(wifiScanReceiver, filter)
+        if (wifiReceiverHandle != null) return true
+        val expectedGeneration = generation
+        return try {
+            wifiReceiverHandle = platform.registerWifiScanReceiver {
+                if (expectedGeneration == generation) findFreshAccessPoint()
             }
-            wifiReceiverRegistered = true
-            wifiReceiverGeneration = generation
-            return true
+            true
         } catch (_: Exception) {
             fail(Failure.WIFI)
-            return false
+            false
         }
     }
 
     private fun unregisterWifiReceiver() {
-        if (!wifiReceiverRegistered) return
-        try { appContext.unregisterReceiver(wifiScanReceiver) } catch (_: Exception) { }
-        wifiReceiverRegistered = false
-        wifiReceiverGeneration = 0L
+        val handle = wifiReceiverHandle ?: return
+        wifiReceiverHandle = null
+        try { handle.close() } catch (_: Exception) { }
+    }
+
+    @SuppressLint("MissingPermission")
+    private class AndroidPlatform(private val appContext: Context) : Platform {
+        private val main = Handler(Looper.getMainLooper())
+        private val bluetoothManager = appContext.getSystemService(BluetoothManager::class.java)
+        private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
+        private val wifi = appContext.getSystemService(WifiManager::class.java)
+        private val location = appContext.getSystemService(LocationManager::class.java)
+
+        override val sdkInt: Int get() = Build.VERSION.SDK_INT
+        override fun isMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+        override fun post(action: Runnable) { main.post(action) }
+        override fun postDelayed(action: Runnable, delayMs: Long) { main.postDelayed(action, delayMs) }
+        override fun removeCallbacks(action: Runnable) { main.removeCallbacks(action) }
+        override fun elapsedMicros(): Long = SystemClock.elapsedRealtimeNanos() / 1_000L
+        override fun hasPermissions(permissions: List<String>): Boolean =
+            permissions.all { appContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        override fun isBluetoothPresent(): Boolean = bluetoothManager?.adapter != null
+        override fun isBluetoothEnabled(): Boolean = bluetoothManager?.adapter?.isEnabled == true
+        override fun isLocationEnabled(): Boolean =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && location?.isLocationEnabled == true
+
+        override fun startBleScan(onEntry: (BleScanEntry) -> Unit, onFailed: (Int) -> Unit): Handle? {
+            val scanner: BluetoothLeScanner = bluetoothManager?.adapter?.bluetoothLeScanner ?: return null
+            val callback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) {
+                    toBleEntry(result)?.let(onEntry)
+                }
+                override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                    results.forEach { toBleEntry(it)?.let(onEntry) }
+                }
+                override fun onScanFailed(errorCode: Int) = onFailed(errorCode)
+            }
+            scanner.startScan(callback)
+            return object : Handle {
+                override fun close() {
+                    scanner.stopScan(callback)
+                }
+            }
+        }
+
+        private fun toBleEntry(result: ScanResult): BleScanEntry? {
+            val record: ScanRecord = result.scanRecord ?: return null
+            val services = record.serviceUuids.orEmpty().map { it.uuid }
+            val isSony = record.getManufacturerSpecificData(SONY_MANUFACTURER_ID) != null ||
+                CONTROL_SERVICE in services || PAIRING_SERVICE in services
+            if (!isSony) return null
+            val device = result.device
+            val id = device.address
+            val name = record.deviceName?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL
+            return BleScanEntry(
+                id = id,
+                name = name,
+                isSony = true,
+                isBonded = device.bondState == BluetoothDevice.BOND_BONDED,
+                connectGatt = { cb -> connectAndroidGatt(device, cb) },
+                createBond = { device.createBond() },
+            )
+        }
+
+        private fun connectAndroidGatt(device: BluetoothDevice, callback: GattClientCallback): GattHandle? {
+            lateinit var handle: AndroidGattHandle
+            val androidCallback = object : BluetoothGattCallback() {
+                override fun onConnectionStateChange(source: BluetoothGatt, status: Int, newState: Int) {
+                    callback.onConnectionStateChange(handle, status, newState)
+                }
+                override fun onMtuChanged(source: BluetoothGatt, mtu: Int, status: Int) {
+                    callback.onMtuChanged(handle, mtu, status)
+                }
+                override fun onServicesDiscovered(source: BluetoothGatt, status: Int) {
+                    callback.onServicesDiscovered(handle, status)
+                }
+                override fun onCharacteristicWrite(source: BluetoothGatt, item: BluetoothGattCharacteristic, status: Int) {
+                    callback.onCharacteristicWrite(handle, item.uuid, status)
+                }
+                @Suppress("DEPRECATION")
+                override fun onCharacteristicRead(source: BluetoothGatt, item: BluetoothGattCharacteristic, status: Int) {
+                    callback.onCharacteristicRead(handle, item.uuid, item.value, status)
+                }
+            }
+            val rawGatt = device.connectGatt(appContext, false, androidCallback, BluetoothDevice.TRANSPORT_LE) ?: return null
+            handle = AndroidGattHandle(rawGatt)
+            return handle
+        }
+
+        override fun registerBondReceiver(onBondChanged: (address: String, bondState: Int) -> Unit): Handle {
+            val receiver = object : BroadcastReceiver() {
+                @Suppress("DEPRECATION")
+                override fun onReceive(context: Context, intent: Intent) {
+                    val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+                    val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                    onBondChanged(device.address, bondState)
+                }
+            }
+            val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                appContext.registerReceiver(receiver, filter)
+            }
+            return object : Handle {
+                override fun close() { appContext.unregisterReceiver(receiver) }
+            }
+        }
+
+        override fun isWifiAvailable(): Boolean = wifi != null
+
+        @Suppress("DEPRECATION")
+        override fun startWifiScan(): Boolean = wifi?.startScan() == true
+
+        @Suppress("DEPRECATION")
+        override fun wifiScanResults(): List<WifiApResult> =
+            wifi?.scanResults.orEmpty().map { WifiApResult(it.SSID, it.BSSID, it.timestamp) }
+
+        override fun registerWifiScanReceiver(onScanResults: () -> Unit): Handle {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (intent.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) onScanResults()
+                }
+            }
+            val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                appContext.registerReceiver(receiver, filter)
+            }
+            return object : Handle {
+                override fun close() { appContext.unregisterReceiver(receiver) }
+            }
+        }
+
+        override fun isConnectivityAvailable(): Boolean = connectivity != null
+
+        override fun requestWifiNetwork(
+            ssid: String,
+            password: String,
+            bssid: String,
+            callbacks: WifiNetworkCallbacks,
+        ): Handle {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                throw UnsupportedOperationException("WifiNetworkSpecifier requires Android 10+")
+            }
+            val manager = checkNotNull(connectivity)
+            val specifier = WifiNetworkSpecifier.Builder()
+                .setSsid(ssid)
+                .setBssid(MacAddress.fromString(bssid))
+                .setWpa2Passphrase(password)
+                .build()
+            val request = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .setNetworkSpecifier(specifier)
+                .build()
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) =
+                    callbacks.onAvailable(network, manager.getLinkProperties(network))
+                override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) =
+                    callbacks.onLinkPropertiesChanged(network, properties)
+                override fun onUnavailable() = callbacks.onUnavailable()
+                override fun onLost(network: Network) = callbacks.onLost(network)
+            }
+            manager.requestNetwork(request, callback)
+            return object : Handle {
+                override fun close() { manager.unregisterNetworkCallback(callback) }
+            }
+        }
+
+        override fun registerManualWifiNetwork(callbacks: LegacyWifiCallbacks): Handle {
+            val manager = checkNotNull(connectivity)
+            class ManualWifiCallback : ConnectivityManager.NetworkCallback {
+                constructor() : super()
+                @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+                constructor(flags: Int) : super(flags)
+
+                private val capabilitiesByNetwork = mutableMapOf<Network, NetworkCapabilities>()
+                private val propertiesByNetwork = mutableMapOf<Network, LinkProperties>()
+
+                @Suppress("DEPRECATION")
+                private fun inspect(network: Network) {
+                    if (Build.VERSION.SDK_INT < 29) return
+                    val capabilities = capabilitiesByNetwork[network] ?: return
+                    val properties = propertiesByNetwork[network] ?: return
+                    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
+                    val info = capabilities.transportInfo as? WifiInfo
+                    var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
+                    // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
+                    if (identity == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                        val legacy = wifi?.connectionInfo
+                        identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
+                    }
+                    identity ?: return
+                    callbacks.onLegacyNetworkReady(network, identity, properties)
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    capabilitiesByNetwork[network] = capabilities
+                    inspect(network)
+                }
+                override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
+                    propertiesByNetwork[network] = properties
+                    inspect(network)
+                }
+                override fun onLost(network: Network) {
+                    capabilitiesByNetwork.remove(network)
+                    propertiesByNetwork.remove(network)
+                    callbacks.onLost(network)
+                }
+            }
+            val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ManualWifiCallback(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO)
+            else ManualWifiCallback()
+            manager.registerNetworkCallback(
+                NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
+                callback,
+            )
+            return object : Handle {
+                override fun close() { manager.unregisterNetworkCallback(callback) }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private class AndroidGattHandle(private val source: BluetoothGatt) : GattHandle {
+        override val address: String? get() = source.device.address
+        override fun requestMtu(mtu: Int): Boolean = source.requestMtu(mtu)
+        override fun discoverServices(): Boolean = source.discoverServices()
+
+        private fun characteristic(serviceUuid: UUID, characteristicUuid: UUID): BluetoothGattCharacteristic? =
+            source.getService(serviceUuid)?.getCharacteristic(characteristicUuid)
+
+        override fun hasRequiredCharacteristics(): Boolean {
+            val command = characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC)
+            val ssid = characteristic(CONTROL_SERVICE, SSID_CHARACTERISTIC)
+            val password = characteristic(CONTROL_SERVICE, PASSWORD_CHARACTERISTIC)
+            val pairing = characteristic(PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC)
+            return command != null && ssid != null && password != null && pairing != null &&
+                command.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 &&
+                pairing.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 &&
+                ssid.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 &&
+                password.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0
+        }
+
+        override fun hasWifiOnCharacteristic(): Boolean =
+            characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) != null
+
+        @Suppress("DEPRECATION")
+        override fun writePairingInit(): Boolean {
+            val pairing = characteristic(PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC) ?: return false
+            pairing.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            pairing.value = byteArrayOf(6, 8, 1, 0, 0, 0, 0)
+            return source.writeCharacteristic(pairing)
+        }
+
+        @Suppress("DEPRECATION")
+        override fun writeWifiOn(): Boolean {
+            val command = characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) ?: return false
+            command.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            command.value = byteArrayOf(1)
+            return source.writeCharacteristic(command)
+        }
+
+        override fun readSsid(): Boolean {
+            val c = characteristic(CONTROL_SERVICE, SSID_CHARACTERISTIC) ?: return false
+            return source.readCharacteristic(c)
+        }
+
+        override fun readPassword(): Boolean {
+            val c = characteristic(CONTROL_SERVICE, PASSWORD_CHARACTERISTIC) ?: return false
+            return source.readCharacteristic(c)
+        }
+
+        override fun disconnect() = source.disconnect()
+        override fun close() = source.close()
     }
 }

@@ -1,12 +1,13 @@
 package com.rawlab.android.editor.panels
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,7 +53,7 @@ internal fun PhotoEffectsControls(
             ) {
                 Text(stringResource(if (advanced) R.string.collapse_vignette else R.string.expand_vignette))
             }
-            if (!vignette || advanced) ToolIcon(Icons.Outlined.RestartAlt, resetLabel,
+            if (!vignette || advanced) ToolIcon(AppIcons.Outlined.RestartAlt, resetLabel,
                 enabled = enabled && !value.isEffectDefault(vignette)) {
                     onReset?.invoke() ?: onChange(value.resetEffects(vignette), false)
                 }

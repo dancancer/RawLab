@@ -9,7 +9,8 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
     val sourceSupportsCameraHDR: Boolean = false, val sourceIsProRAW: Boolean = false, val hdrLookDirectory: File? = null,
     val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap(),
-    val onTransferNotice: ((AdjustmentTransferNotice) -> Unit)? = null) {
+    val onTransferNotice: ((AdjustmentTransferNotice) -> Unit)? = null,
+    val cameraWhiteBalanceProvider: (() -> Pair<Float, Float>?)? = null) {
     val supportsHDRCameraDevelopment get() = isRaw && sourceSupportsCameraHDR && !sourceIsProRAW
 }
 

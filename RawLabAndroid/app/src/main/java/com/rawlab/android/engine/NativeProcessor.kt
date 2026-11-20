@@ -74,8 +74,15 @@ class NativeProcessingException @JvmOverloads constructor(
     }
 }
 
-class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int,
-    histogram: IntArray? = null) {
+class NativeFrame(
+    val width: Int,
+    val height: Int,
+    private val backingBitmap: Bitmap,
+    val temperature: Float,
+    val tint: Float,
+    val backend: Int,
+    histogram: IntArray? = null,
+) {
     val histogram: RgbHistogram? = RgbHistogram.fromNative(width, height, histogram)
     var lens: LensInfo? = null
         internal set
@@ -83,8 +90,23 @@ class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val te
         internal set
     var geometryHeight: Int = height
         internal set
-    fun bitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-        it.copyPixelsFromBuffer(ByteBuffer.wrap(pixels))
+    fun bitmap(): Bitmap = backingBitmap
+    val pixels: ByteArray by lazy(LazyThreadSafetyMode.NONE) {
+        ByteArray(width * height * 4).also { out ->
+            backingBitmap.copyPixelsToBuffer(ByteBuffer.wrap(out))
+        }
+    }
+
+    internal companion object {
+        @JvmStatic
+        fun allocateBitmap(width: Int, height: Int, reusable: Bitmap? = null): Bitmap {
+            if (reusable != null && reusable.isMutable && !reusable.isRecycled &&
+                reusable.config == Bitmap.Config.ARGB_8888 &&
+                reusable.width == width && reusable.height == height) {
+                return reusable
+            }
+            return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
     }
 }
 
@@ -112,9 +134,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
-        cancellationGeneration: Long = -1L): NativeFrame {
+        cancellationGeneration: Long = -1L, reusableBitmap: Bitmap? = null): NativeFrame {
         val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind,
-            cancellationGeneration = cancellationGeneration))
+            cancellationGeneration = cancellationGeneration, reusableBitmap = reusableBitmap))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -148,7 +170,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
-        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame? {
+        cancellationGeneration: Long = -1L, migration: FloatArray? = null, reusableBitmap: Bitmap? = null): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, edge)
@@ -169,6 +191,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
                 probe = probe,
                 cancellationGeneration = cancellationGeneration,
                 migrationOut = migration,
+                reusableBitmap = reusableBitmap,
             ),
         )
     }
@@ -364,6 +387,55 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             displayLensMetadata?.focalLength?.takeIf { it > 0 }, displayLensMetadata?.aperture?.takeIf { it > 0 }, report[6] == "1")
     }
 
+    @Synchronized
+    internal fun inspectLens(input: File, settings: EditSettings, inputKind: PhotoInputKind): LensInfo {
+        check(handle != 0L) { "Processor is closed" }
+        val effective = settings.effectiveFor(inputKind)
+        val metadata = if (inputKind == PhotoInputKind.RASTER) {
+            DisplayLensMetadata.read(input).also {
+                val configured = it.copy(
+                    focalLength = effective.lens.focalLength ?: it.focalLength,
+                    cropFactor = effective.lens.cropFactor ?: it.cropFactor,
+                )
+                nativeSetDisplayLensMetadata(handle, configured.names, configured.numbers, configured.sourceOrientation)
+            }
+        } else {
+            nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+            null
+        }
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = inputKind != PhotoInputKind.RAW,
+            includeDenoise = false,
+        ))
+        val applied = nativeInspectLens(handle, if (metadata == null) input.path else null)
+        require(applied.size == 3) { "Invalid native lens inspection" }
+        return LensInfo(0, "", "", applied[0], applied[1], 1f, emptyList(),
+            appliedVignetting = applied[2])
+    }
+
+    @Synchronized
+    internal fun resolveCameraWhiteBalance(
+        input: File,
+        settings: EditSettings,
+        inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    ): Pair<Float, Float>? {
+        check(handle != 0L) { "Processor is closed" }
+        if (inputKind != PhotoInputKind.RAW) return null
+        val effective = settings.effectiveFor(inputKind)
+        val result = nativeResolveCameraWhiteBalance(
+            handle,
+            input.path,
+            effective.processing.version,
+            effective.x3fMode.nativeValue,
+            effective.exposureMode,
+        ) ?: return null
+        require(result.size == 2) { "Invalid native camera white balance" }
+        val temp = result[0]
+        val tint = result[1]
+        if (!temp.isFinite() || !tint.isFinite()) return null
+        return temp to tint
+    }
+
     private external fun nativeCreate(mode: Int): Long
     private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, configuration: String?): NativeFrame
@@ -374,6 +446,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeGeometrySize(handle: Long): IntArray
     private external fun nativeLensProfiles(handle: Long, input: String?): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
+    private external fun nativeInspectLens(handle: Long, input: String?): BooleanArray
+    private external fun nativeResolveCameraWhiteBalance(handle: Long, input: String, processingVersion: Int, x3fMode: Int, exposureMode: Int): FloatArray?
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,

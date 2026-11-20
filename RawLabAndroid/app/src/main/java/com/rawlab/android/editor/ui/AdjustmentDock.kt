@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -182,7 +184,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 TextButton(onClick = onPresets, enabled = navigationEnabled && state.controlsEnabled,
                     colors = ButtonDefaults.textButtonColors(contentColor = if (quickPresetsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.heightIn(min = 48.dp).testTag("preset-dock").semantics { selected = quickPresetsVisible }) {
-                    Icon(Icons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Icon(AppIcons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.preset_library))
                 }
             }) else null, select = { if (it == 17) perspective = false; selectTool(it) })
@@ -278,7 +280,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                 Box(Modifier.size(64.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
-                                    else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                                    else Icon(AppIcons.Outlined.Image, null, Modifier.size(32.dp))
                                     if (look.compatibilityMode != 0) Icon(Icons.Outlined.Warning,
                                         stringResource(R.string.lut_compatibility_title), Modifier.align(Alignment.TopStart).size(20.dp)
                                             .testTag("film-compatibility-${look.id}"), tint = MaterialTheme.colorScheme.primary)
@@ -338,7 +340,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 TextButton(onClick = autoExposure, enabled = parameterEnabled && !state.rendering,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.testTag("exposure.auto")) {
-                    Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
+                    Icon(AppIcons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure), style = MaterialTheme.typography.labelMedium)
                 }
                 }
@@ -549,7 +551,7 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                     val artwork = recipe?.let { assetBitmap("MasterRecipeIcons/${it.id}.png", 64.dp) }
                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("recipe-artwork-${recipe?.id}"),
                         contentScale = ContentScale.Crop)
-                    else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Icon(AppIcons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     if (selected == recipe?.id) Icon(Icons.Outlined.CheckCircle, null,
                         Modifier.align(Alignment.TopEnd).size(20.dp).background(MaterialTheme.colorScheme.surface, CircleShape)
                             .testTag("recipe-selected-${recipe?.id ?: "neutral"}"), tint = MaterialTheme.colorScheme.primary)

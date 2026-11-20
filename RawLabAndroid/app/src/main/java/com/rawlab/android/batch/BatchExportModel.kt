@@ -1,5 +1,6 @@
 package com.rawlab.android.batch
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -38,6 +39,8 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.photo.WorkingCopy
+import com.rawlab.android.photo.WorkingCopyStorageFull
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.PhotoIdentity
@@ -152,9 +155,45 @@ class BatchExportModel(
         cancelRequested.reset()
         scope.launch {
             val failures = mutableListOf<String>()
-            val additions = withContext(Dispatchers.IO) { uris.mapNotNull { uri ->
-                if (cancelRequested.get()) null else try { copyTarget(uri) } catch (error: Exception) { failures += "${displayName(uri)}: ${error.message}"; null }
-            } }
+            val additions = withContext(Dispatchers.IO) {
+                val snapshot = mutable.value.job
+                val inputsRoot = File(context.filesDir, "RawLab/BatchJobs/${snapshot.id}/inputs")
+                val spaceError = try {
+                    preflightBatchInputsSpace(
+                        uris = uris,
+                        resolver = resolver,
+                        inputsRoot = inputsRoot,
+                        destinationFor = { uri ->
+                            inputFile(snapshot.id, PhotoIdentity(uri.toString()), displayName(uri))
+                        },
+                    )
+                    null
+                } catch (_: WorkingCopyStorageFull) {
+                    AppStrings.text(R.string.system_open_storage_full)
+                }
+                if (spaceError != null) {
+                    failures += spaceError
+                    return@withContext emptyList()
+                }
+                var batchProcessor: NativeProcessor? = null
+                fun sharedProcessor(): NativeProcessor =
+                    batchProcessor ?: processorFactory(gpuMode, storage.lensDatabase()).also { batchProcessor = it }
+                try {
+                    uris.mapNotNull { uri ->
+                        if (cancelRequested.get()) null else try {
+                            copyTarget(uri, ::sharedProcessor)
+                        } catch (_: WorkingCopyStorageFull) {
+                            failures += "${displayName(uri)}: ${AppStrings.text(R.string.system_open_storage_full)}"
+                            null
+                        } catch (error: Exception) {
+                            failures += "${displayName(uri)}: ${error.message}"
+                            null
+                        }
+                    }
+                } finally {
+                    batchProcessor?.close()
+                }
+            }
             val error = failures.takeIf { it.isNotEmpty() }?.joinToString("\n")
             mutable.update { current ->
                 val existing = current.job.rows.mapTo(mutableSetOf()) { it.id }
@@ -279,7 +318,7 @@ class BatchExportModel(
         }
     }
 
-    private fun copyTarget(uri: Uri): BatchTarget {
+    private fun copyTarget(uri: Uri, obtainProcessor: () -> NativeProcessor): BatchTarget {
         val identity = PhotoIdentity(uri.toString())
         val name = displayName(uri)
         val inputKind = PhotoFiles.kind(name, resolver.getType(uri))
@@ -288,12 +327,17 @@ class BatchExportModel(
         val destination = inputFile(snapshot.id, identity, name)
         val candidate = BatchTarget(identity, destination, name, uri.toString(), inputKind)
         if (!destination.exists()) {
+            val expectedBytes = WorkingCopy.declaredBytes(resolver, uri)
             val input = resolver.openInputStream(uri) ?: throw IOException(AppStrings.text(R.string.message_unable_to_read_file))
-            try { input.use { source -> destination.outputStream().use { source.copyTo(it) } }
+            try {
+                WorkingCopy.copyTo(
+                    destination = destination,
+                    input = input,
+                    expectedBytes = expectedBytes,
+                    spaceDirectory = destination.parentFile ?: File("."),
+                )
                 val x3fMode = if (candidate.isX3f) x3fModeResolver()(candidate) else snapshot.source.settings.x3fMode
-                processorFactory(gpuMode, storage.lensDatabase()).use {
-                    it.preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = x3fMode), 256, false, inputKind)
-                }
+                obtainProcessor().preview(destination, null, EditSettings(processing = snapshot.source.settings.processing, x3fMode = x3fMode), 256, false, inputKind)
             } catch (error: Exception) { destination.delete(); throw error }
         }
         val hdrInfo = com.rawlab.android.engine.NativeHDRBridge.probeSource(destination, inputKind == PhotoInputKind.RAW)
@@ -310,9 +354,15 @@ class BatchExportModel(
         val sourceIdentity = job.source.identity
         val sourceCopy = inputFile(job.id, sourceIdentity, job.source.displayName)
         val look = synchronized(storage) {
-            if (!sourceCopy.exists()) job.source.sourceFile.copyTo(sourceCopy)
-            (if (job.source.settings.isHDREditing) null else storage.lookPath(job.source.settings))?.let { original ->
-                File(journalRoot, "${job.id}/look.${original.extension}").also { original.copyTo(it, overwrite = true) }
+            val lookSource = if (job.source.settings.isHDREditing) null else storage.lookPath(job.source.settings)
+            val neededBytes = (if (!sourceCopy.exists()) job.source.sourceFile.length() else 0L) +
+                (lookSource?.length() ?: 0L)
+            WorkingCopy.requireTotalSpace(journalRoot, neededBytes)
+            if (!sourceCopy.exists()) WorkingCopy.copyFile(job.source.sourceFile, sourceCopy, journalRoot)
+            lookSource?.let { original ->
+                File(journalRoot, "${job.id}/look.${original.extension}").also {
+                    WorkingCopy.copyFile(original, it, journalRoot)
+                }
             }
         }
         return job.copy(source = job.source.copy(sourceFile = sourceCopy, lookFile = look))
@@ -440,6 +490,25 @@ class BatchExportModel(
         if (job?.isActive == true) job.invokeOnCompletion { scope.coroutineContext[Job]?.cancel() }
         else scope.coroutineContext[Job]?.cancel()
     }
+}
+
+internal fun preflightBatchInputsSpace(
+    uris: Iterable<Uri>,
+    resolver: ContentResolver,
+    inputsRoot: File,
+    destinationFor: (Uri) -> File,
+    declaredBytes: (ContentResolver, Uri) -> Long = WorkingCopy::declaredBytes,
+    requireSpace: (File, Long) -> Unit = WorkingCopy::requireTotalSpace,
+) {
+    var totalBytes = 0L
+    for (uri in uris) {
+        if (destinationFor(uri).exists()) continue
+        val bytes = declaredBytes(resolver, uri)
+        if (bytes > 0L) {
+            totalBytes = if (Long.MAX_VALUE - totalBytes < bytes) Long.MAX_VALUE else totalBytes + bytes
+        }
+    }
+    requireSpace(inputsRoot, totalBytes)
 }
 
 internal class BatchConfirmations(private val scope: CoroutineScope) {

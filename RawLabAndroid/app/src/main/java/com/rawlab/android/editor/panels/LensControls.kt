@@ -1,12 +1,13 @@
 package com.rawlab.android.editor.panels
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +45,7 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
                 }
             }
             IconButton(onClick = { onReset?.invoke() ?: change(LensSettings()) }, enabled = enabled && value != LensSettings(),
-                modifier = Modifier.testTag("lens.reset")) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
+                modifier = Modifier.testTag("lens.reset")) { Icon(AppIcons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
         }
         val candidate = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }
             else info?.candidates?.singleOrNull { it.isMatch }

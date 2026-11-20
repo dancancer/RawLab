@@ -203,6 +203,18 @@ class PhotoStorage(
         }.getOrDefault(false)
     }
 
+    fun preflightImportSpace(uris: Iterable<Uri>) {
+        var totalBytes = 0L
+        for (uri in uris) {
+            val source = knownCameraSource(uri) ?: uri
+            val bytes = WorkingCopy.declaredBytes(resolver, source)
+            if (bytes > 0L) {
+                totalBytes = if (Long.MAX_VALUE - totalBytes < bytes) Long.MAX_VALUE else totalBytes + bytes
+            }
+        }
+        WorkingCopy.requireTotalSpace(directory, totalBytes)
+    }
+
     fun import(uri: Uri): ImportedPhoto {
         val source = knownCameraSource(uri) ?: uri
         runCatching {
@@ -220,8 +232,9 @@ class PhotoStorage(
             ?: throw IOException("Selected item is not a supported photo")
         val original = OriginalPhotoSource.snapshot(resolver, source)
         val validate = original.validate
+        val expectedBytes = WorkingCopy.declaredBytes(resolver, source)
         val stream = resolver.openInputStream(source) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
+        val file = WorkingCopy.import(directory, stream, retained?.name ?: name, expectedBytes = expectedBytes)
         try {
             validate()
             val hdrSource = when (inputKind) {

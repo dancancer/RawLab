@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.canvas
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -25,7 +27,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -232,7 +233,7 @@ internal fun PhotoCanvas(
                         }.focusable())
                         Box(Modifier.offset { IntOffset((image.splitX(state.split).coerceIn(image.left + minOf(24.dp.toPx(), image.width / 2), image.right - minOf(24.dp.toPx(), image.width / 2)) - 16.dp.toPx()).roundToInt(), ((image.top + image.bottom) / 2 - 16.dp.toPx()).roundToInt()) }
                             .size(32.dp).testTag("comparison-handle").background(Color.White, CircleShape).padding(4.dp)) {
-                            Icon(Icons.Outlined.SwapHoriz, null, Modifier.fillMaxSize().testTag("comparison-handle-glyph"), tint = Color.Black)
+                            Icon(AppIcons.Outlined.SwapHoriz, null, Modifier.fillMaxSize().testTag("comparison-handle-glyph"), tint = Color.Black)
                         }
                     }
                     if (showOverlays && (paneLabel != null || wipe)) {
@@ -326,7 +327,7 @@ internal fun PhotoCanvas(
                     var menu by remember { mutableStateOf(false) }
                     Box(Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 0.dp, end = 56.dp)) {
                         IconButton(onClick = { menu = true }, Modifier.size(48.dp).testTag("comparison-mode")) {
-                            Icon(Icons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
+                            Icon(AppIcons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
                         }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.editor_compare_side_by_side)) }, onClick = { menu = false; onModeChange(ComparisonMode.SIDE_BY_SIDE) })
