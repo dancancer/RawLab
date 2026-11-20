@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 public struct MacPhotoEditRecord: Equatable {
     public let identity: OriginalFileIdentity
@@ -117,8 +118,53 @@ public final class MacEditPersistence: @unchecked Sendable {
         }
     }
 
+    public struct FilmReferenceScanResult: Equatable, Sendable {
+        public let matchedPaths: Set<String>
+        public let corruptPaths: Set<String>
+        public let registryUnreadable: Bool
+        public let diagnostics: [String]
+
+        public init(matchedPaths: Set<String>, corruptPaths: Set<String>, registryUnreadable: Bool, diagnostics: [String]) {
+            self.matchedPaths = matchedPaths
+            self.corruptPaths = corruptPaths
+            self.registryUnreadable = registryUnreadable
+            self.diagnostics = diagnostics
+        }
+
+        public var pathsToInvalidate: Set<String> {
+            matchedPaths.union(corruptPaths)
+        }
+    }
+
+    private struct PreparedRecordsChange {
+        let changes: [String: MacPhotoEditRecord]
+        let editedRevisions: [String: String]
+        let fileIdentities: [String: (UInt64, Date, UInt64)]
+    }
+
+    private final class PendingCommitEntry {
+        let sequence: UInt64
+        let path: String
+        let postNotification: Bool
+        let completion: ((Result<MacPhotoEditRecord, Error>) -> Void)?
+        var ioCompleted = false
+        var delivered = false
+        var result: Result<MacPhotoEditRecord, Error>?
+        var notification: PreparedRecordsChange?
+
+        init(sequence: UInt64, path: String, postNotification: Bool,
+             completion: ((Result<MacPhotoEditRecord, Error>) -> Void)?) {
+            self.sequence = sequence
+            self.path = path
+            self.postNotification = postNotification
+            self.completion = completion
+        }
+    }
+
     private let directory: URL
     private let writeData: (Data, URL) throws -> Void
+    private let diagnostics: ErrorDiagnostics?
+    private let onDiagnostic: ((String) -> Void)?
     private var file: URL { directory.appendingPathComponent("edits.json") }
     private let quarantineLock = NSLock()
     private var _lastQuarantinedURL: URL?
@@ -143,7 +189,20 @@ public final class MacEditPersistence: @unchecked Sendable {
     }
 
     private struct FutureVersionError: Error {}
+    private struct QueuedPathFailure {
+        let sequence: UInt64
+        let blockThroughSequence: UInt64
+        let error: Error
+    }
 
+    private let ioQueue = DispatchQueue(label: "rawlab.mac-edit-persistence.io", qos: .utility)
+    private let pendingLock = NSLock()
+    private var nextCommitSequence: UInt64 = 0
+    private var pendingCommits: [PendingCommitEntry] = []
+    private var failedPathsInQueue: [String: QueuedPathFailure] = [:]
+    private var activeDeliveryFailureStates: [Bool] = []
+
+    private static let logger = Logger(subsystem: "com.rawlab.mac", category: "MacEditPersistence")
     private static let statsLock = NSLock()
     private static var _registryDiskReadCount = 0
     private static var _registryDiskReadCountsByPath: [String: Int] = [:]
@@ -176,9 +235,13 @@ public final class MacEditPersistence: @unchecked Sendable {
     }
 
     public init(directory: URL = MacEditPersistence.defaultDirectory,
-                writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }) throws {
+                writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) },
+                diagnostics: ErrorDiagnostics? = nil,
+                onDiagnostic: ((String) -> Void)? = nil) throws {
         self.directory = directory
         self.writeData = writeData
+        self.diagnostics = diagnostics
+        self.onDiagnostic = onDiagnostic
         _ = try readRegistry()
     }
 
@@ -410,16 +473,57 @@ public final class MacEditPersistence: @unchecked Sendable {
         directory.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    public func pathsReferencingFilms(_ identifiers: Set<String>) -> Set<String> {
-        guard !identifiers.isEmpty, let registry = try? readRegistry() else { return [] }
+    public func scanPathsReferencingFilms(_ identifiers: Set<String>) -> FilmReferenceScanResult {
+        guard !identifiers.isEmpty else {
+            return FilmReferenceScanResult(matchedPaths: [], corruptPaths: [], registryUnreadable: false, diagnostics: [])
+        }
+        let registry: Registry
+        do {
+            registry = try readRegistry()
+        } catch {
+            let message = "Failed to read edit registry during film invalidation: \(error.localizedDescription)"
+            Self.logger.error("\(message, privacy: .public)")
+            diagnostics?.record(error as NSError, operation: .editPersistence, stage: "scanPathsReferencingFilms.readRegistry")
+            onDiagnostic?(message)
+            return FilmReferenceScanResult(matchedPaths: [], corruptPaths: [], registryUnreadable: true, diagnostics: [message])
+        }
         var matched = Set<String>()
+        var corrupt = Set<String>()
+        var recordedDiagnostics: [String] = []
         for (path, raw) in registry.records {
-            guard let record = try? Self.parseRecord(raw), record.identity.path == path else { continue }
-            if identifiers.contains(record.state.filmID) {
-                matched.insert(path)
+            do {
+                let record = try Self.parseRecord(raw)
+                guard record.identity.path == path else {
+                    let message = "Mismatched record path during film invalidation for \(path)"
+                    Self.logger.error("\(message, privacy: .public)")
+                    diagnostics?.record(CocoaError(.fileReadCorruptFile) as NSError, operation: .editPersistence, stage: "scanPathsReferencingFilms.pathMismatch")
+                    onDiagnostic?(message)
+                    recordedDiagnostics.append(message)
+                    corrupt.insert(path)
+                    continue
+                }
+                if identifiers.contains(record.state.filmID) {
+                    matched.insert(path)
+                }
+            } catch {
+                let message = "Corrupt or unreadable edit record during film invalidation for \(path): \(error.localizedDescription)"
+                Self.logger.error("\(message, privacy: .public)")
+                diagnostics?.record(error as NSError, operation: .editPersistence, stage: "scanPathsReferencingFilms.parseRecord")
+                onDiagnostic?(message)
+                recordedDiagnostics.append(message)
+                corrupt.insert(path)
             }
         }
-        return matched
+        return FilmReferenceScanResult(
+            matchedPaths: matched,
+            corruptPaths: corrupt,
+            registryUnreadable: false,
+            diagnostics: recordedDiagnostics
+        )
+    }
+
+    public func pathsReferencingFilms(_ identifiers: Set<String>) -> Set<String> {
+        scanPathsReferencingFilms(identifiers).pathsToInvalidate
     }
 
     public func notifyEditedInvalidation(forPaths paths: Set<String>) {
@@ -453,8 +557,8 @@ public final class MacEditPersistence: @unchecked Sendable {
         return stateRevisionDigest(for: state)
     }
 
-    private func postRecordsChanged(_ changes: [String: MacPhotoEditRecord]) {
-        guard !changes.isEmpty else { return }
+    private static func prepareRecordsChanged(_ changes: [String: MacPhotoEditRecord]) -> PreparedRecordsChange? {
+        guard !changes.isEmpty else { return nil }
         var editedRevisions: [String: String] = [:]
         var fileIdentities: [String: (UInt64, Date, UInt64)] = [:]
         for (path, record) in changes {
@@ -463,43 +567,245 @@ public final class MacEditPersistence: @unchecked Sendable {
                 editedRevisions[path] = revision
             }
         }
+        return PreparedRecordsChange(changes: changes, editedRevisions: editedRevisions, fileIdentities: fileIdentities)
+    }
+
+    private func postPreparedRecordsChanged(_ prepared: PreparedRecordsChange?) {
+        guard let prepared else { return }
         NotificationCenter.default.post(
             name: Self.didChangeRecordsNotification,
             object: nil,
             userInfo: [
                 Self.directoryPathUserInfoKey: canonicalDirectoryPath,
-                Self.changedRecordsUserInfoKey: changes,
-                Self.invalidatedPathsUserInfoKey: Set(changes.keys),
-                Self.editedRevisionsUserInfoKey: editedRevisions,
-                Self.fileIdentitiesUserInfoKey: fileIdentities
+                Self.changedRecordsUserInfoKey: prepared.changes,
+                Self.invalidatedPathsUserInfoKey: Set(prepared.changes.keys),
+                Self.editedRevisionsUserInfoKey: prepared.editedRevisions,
+                Self.fileIdentitiesUserInfoKey: prepared.fileIdentities
             ]
         )
     }
 
+    private func postRecordsChanged(_ changes: [String: MacPhotoEditRecord]) {
+        postPreparedRecordsChanged(Self.prepareRecordsChanged(changes))
+    }
+
+    public var hasPendingCommits: Bool {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        return pendingCommits.contains { !$0.delivered }
+    }
+
+    public var pendingCommitCount: Int {
+        pendingLock.lock()
+        defer { pendingLock.unlock() }
+        return pendingCommits.reduce(into: 0) { count, entry in
+            if !entry.delivered { count += 1 }
+        }
+    }
+
+    public func waitForPendingIO() {
+        ioQueue.sync {}
+    }
+
+    @discardableResult
+    public func deliverReadyCompletedCommits() -> Bool {
+        pendingLock.lock()
+        let hasReady = pendingCommits.first?.ioCompleted == true
+        pendingLock.unlock()
+        guard hasReady else { return true }
+        if Thread.isMainThread {
+            return deliverCompletedCommits()
+        }
+        var succeeded = true
+        DispatchQueue.main.sync {
+            succeeded = deliverCompletedCommits()
+        }
+        return succeeded
+    }
+
+    @discardableResult
+    public func flushPendingCommits() -> Bool {
+        var allSucceeded = true
+        while true {
+            ioQueue.sync {}
+            pendingLock.lock()
+            let hasReadyOrPending = !pendingCommits.isEmpty
+            pendingLock.unlock()
+            guard hasReadyOrPending else { return allSucceeded }
+            let batchSucceeded: Bool
+            if Thread.isMainThread {
+                batchSucceeded = deliverCompletedCommits()
+            } else {
+                var succeeded = true
+                DispatchQueue.main.sync {
+                    succeeded = deliverCompletedCommits()
+                }
+                batchSucceeded = succeeded
+            }
+            if !batchSucceeded {
+                allSucceeded = false
+            }
+        }
+    }
+
+    @discardableResult
+    private func deliverCompletedCommits() -> Bool {
+        let depthIndex = activeDeliveryFailureStates.count
+        activeDeliveryFailureStates.append(false)
+        defer { activeDeliveryFailureStates.removeLast() }
+
+        while true {
+            pendingLock.lock()
+            guard let first = pendingCommits.first, first.ioCompleted else {
+                pendingLock.unlock()
+                break
+            }
+            pendingCommits.removeFirst()
+            let shouldDeliver = !first.delivered
+            if shouldDeliver {
+                first.delivered = true
+            }
+            pendingLock.unlock()
+
+            guard shouldDeliver else { continue }
+            if case .failure = first.result {
+                for idx in activeDeliveryFailureStates.indices {
+                    activeDeliveryFailureStates[idx] = true
+                }
+            }
+            if let result = first.result {
+                first.completion?(result)
+            }
+            if first.postNotification {
+                postPreparedRecordsChanged(first.notification)
+            }
+        }
+        return !activeDeliveryFailureStates[depthIndex]
+    }
+
+    public func enqueueSaveState(identity: OriginalFileIdentity,
+                               state: MacPhotoEditState?,
+                               clearsProcessingMigration: Bool = false,
+                               postNotification: Bool = true,
+                               chainIfUndeliveredFailure: Bool = false,
+                               completion: ((Result<MacPhotoEditRecord, Error>) -> Void)? = nil) throws {
+        if let state { try Self.validateState(state) }
+        pendingLock.lock()
+        nextCommitSequence &+= 1
+        let seq = nextCommitSequence
+        if chainIfUndeliveredFailure {
+            if let existing = failedPathsInQueue[identity.path],
+               pendingCommits.contains(where: { $0.sequence == existing.sequence && !$0.delivered }) {
+                if seq > existing.blockThroughSequence {
+                    failedPathsInQueue[identity.path] = QueuedPathFailure(
+                        sequence: existing.sequence,
+                        blockThroughSequence: seq,
+                        error: existing.error
+                    )
+                }
+            } else if let latestCompletedForPath = pendingCommits.last(where: { $0.path == identity.path && $0.ioCompleted && !$0.delivered }),
+                      case .failure(let error) = latestCompletedForPath.result {
+                failedPathsInQueue[identity.path] = QueuedPathFailure(
+                    sequence: latestCompletedForPath.sequence,
+                    blockThroughSequence: seq,
+                    error: error
+                )
+            }
+        }
+        let entry = PendingCommitEntry(sequence: seq, path: identity.path, postNotification: postNotification, completion: completion)
+        pendingCommits.append(entry)
+        ioQueue.async { [weak self] in
+            guard let self else { return }
+            self.pendingLock.lock()
+            let chainedFailure: Error?
+            if let recorded = self.failedPathsInQueue[identity.path], entry.sequence <= recorded.blockThroughSequence {
+                chainedFailure = recorded.error
+            } else {
+                chainedFailure = nil
+            }
+            self.pendingLock.unlock()
+
+            let outcome: Result<(record: MacPhotoEditRecord, notification: PreparedRecordsChange?), Error>
+            if let chainedFailure {
+                outcome = .failure(chainedFailure)
+            } else {
+                outcome = Result {
+                    try self.performSaveStateCore(identity: identity, state: state, clearsProcessingMigration: clearsProcessingMigration)
+                }
+            }
+
+            self.pendingLock.lock()
+            switch outcome {
+            case .success(let pair):
+                entry.result = .success(pair.record)
+                entry.notification = pair.notification
+                if let recorded = self.failedPathsInQueue[entry.path], entry.sequence >= recorded.sequence {
+                    self.failedPathsInQueue.removeValue(forKey: entry.path)
+                }
+            case .failure(let error):
+                entry.result = .failure(error)
+                let maxPendingSeq = self.pendingCommits.lazy
+                    .filter { $0.path == entry.path }
+                    .map(\.sequence)
+                    .max() ?? entry.sequence
+                if let existing = self.failedPathsInQueue[entry.path] {
+                    if entry.sequence > existing.blockThroughSequence {
+                        if maxPendingSeq > entry.sequence {
+                            self.failedPathsInQueue[entry.path] = QueuedPathFailure(
+                                sequence: entry.sequence,
+                                blockThroughSequence: maxPendingSeq,
+                                error: error
+                            )
+                        } else {
+                            self.failedPathsInQueue.removeValue(forKey: entry.path)
+                        }
+                    } else if entry.sequence >= existing.blockThroughSequence {
+                        self.failedPathsInQueue.removeValue(forKey: entry.path)
+                    }
+                } else if maxPendingSeq > entry.sequence {
+                    self.failedPathsInQueue[entry.path] = QueuedPathFailure(
+                        sequence: entry.sequence,
+                        blockThroughSequence: maxPendingSeq,
+                        error: error
+                    )
+                }
+            }
+            entry.ioCompleted = true
+            self.pendingLock.unlock()
+
+            DispatchQueue.main.async { [weak self] in
+                _ = self?.deliverCompletedCommits()
+            }
+        }
+        pendingLock.unlock()
+    }
+
     public func commitProcessingMigration(expected: MacPhotoEditRecord, candidate: MacPhotoEditState?,
                                           quality: ProcessingMigrationQuality) throws -> MacPhotoEditRecord {
-        let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
-            try expected.identity.requireCurrent()
-            guard try snapshot(identity: expected.identity, registry: updated) == expected,
-                  let original = expected.state, original.settings.processing.version < 3,
-                  quality.isValid else { throw AdjustmentCommitError.expired }
-            if let previous = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
-               !previous.receipt.shouldAttempt(current: original, sourceVersion: original.settings.processing.version) {
-                throw AdjustmentCommitError.expired
+        let result = try ioQueue.sync {
+            try withWriteLock {
+                var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
+                try expected.identity.requireCurrent()
+                guard try snapshot(identity: expected.identity, registry: updated) == expected,
+                      let original = expected.state, original.settings.processing.version < 3,
+                      quality.isValid else { throw AdjustmentCommitError.expired }
+                if let previous = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
+                   !previous.receipt.shouldAttempt(current: original, sourceVersion: original.settings.processing.version) {
+                    throw AdjustmentCommitError.expired
+                }
+                if let candidate {
+                    try Self.validateState(candidate)
+                    guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
+                    updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: candidate))
+                }
+                let receipt = ProcessingMigrationReceipt(status: candidate == nil ? .kept : .migrated,
+                    original: original, quality: quality)
+                var migrations = updated.processingMigrations ?? [:]
+                migrations[expected.identity.path] = try JSONEncoder().encode(StoredMigration(identity: expected.identity, receipt: receipt))
+                updated.processingMigrations = migrations
+                try writeRegistry(updated)
+                return try snapshot(identity: expected.identity, registry: updated)
             }
-            if let candidate {
-                try Self.validateState(candidate)
-                guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
-                updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: candidate))
-            }
-            let receipt = ProcessingMigrationReceipt(status: candidate == nil ? .kept : .migrated,
-                original: original, quality: quality)
-            var migrations = updated.processingMigrations ?? [:]
-            migrations[expected.identity.path] = try JSONEncoder().encode(StoredMigration(identity: expected.identity, receipt: receipt))
-            updated.processingMigrations = migrations
-            try writeRegistry(updated)
-            return try snapshot(identity: expected.identity, registry: updated)
         }
         if let candidate, expected.state != candidate {
             postRecordsChanged([expected.identity.path: result])
@@ -508,20 +814,22 @@ public final class MacEditPersistence: @unchecked Sendable {
     }
 
     public func rollbackProcessingMigration(expected: MacPhotoEditRecord) throws -> MacPhotoEditRecord {
-        let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
-            try expected.identity.requireCurrent()
-            guard try snapshot(identity: expected.identity, registry: updated) == expected,
-                  var stored = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
-                  stored.receipt.status == .migrated else {
-                throw AdjustmentCommitError.expired
+        let result = try ioQueue.sync {
+            try withWriteLock {
+                var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
+                try expected.identity.requireCurrent()
+                guard try snapshot(identity: expected.identity, registry: updated) == expected,
+                      var stored = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity),
+                      stored.receipt.status == .migrated else {
+                    throw AdjustmentCommitError.expired
+                }
+                try Self.validateState(stored.receipt.original)
+                updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: stored.receipt.original))
+                stored.receipt.status = .rolledBack
+                updated.processingMigrations?[expected.identity.path] = try JSONEncoder().encode(stored)
+                try writeRegistry(updated)
+                return try snapshot(identity: expected.identity, registry: updated)
             }
-            try Self.validateState(stored.receipt.original)
-            updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: stored.receipt.original))
-            stored.receipt.status = .rolledBack
-            updated.processingMigrations?[expected.identity.path] = try JSONEncoder().encode(stored)
-            try writeRegistry(updated)
-            return try snapshot(identity: expected.identity, registry: updated)
         }
         if expected.state != result.state {
             postRecordsChanged([expected.identity.path: result])
@@ -543,22 +851,30 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     public func save(_ urls: [URL], state: MacPhotoEditState) throws {
         var changedPaths: [String: MacPhotoEditRecord] = [:]
-        try withWriteLock {
-            try Self.validateState(state)
-            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
-            for url in urls {
-                let identity = try OriginalFileIdentity(url)
-                if try snapshot(identity: identity, registry: updated).state == state { continue }
-                updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
-                changedPaths[identity.path] = MacPhotoEditRecord(identity: identity, state: state)
+        let prepared = try ioQueue.sync {
+            try withWriteLock {
+                try Self.validateState(state)
+                var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
+                for url in urls {
+                    let identity = try OriginalFileIdentity(url)
+                    if try snapshot(identity: identity, registry: updated).state == state { continue }
+                    updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
+                    changedPaths[identity.path] = MacPhotoEditRecord(identity: identity, state: state)
+                }
+                if !changedPaths.isEmpty { try writeRegistry(updated) }
             }
-            if !changedPaths.isEmpty { try writeRegistry(updated) }
+            pendingLock.lock()
+            for path in changedPaths.keys {
+                failedPathsInQueue.removeValue(forKey: path)
+            }
+            pendingLock.unlock()
+            return Self.prepareRecordsChanged(changedPaths)
         }
-        postRecordsChanged(changedPaths)
+        postPreparedRecordsChanged(prepared)
     }
 
-    @discardableResult public func saveState(identity: OriginalFileIdentity, state: MacPhotoEditState?,
-                                             clearsProcessingMigration: Bool = false) throws -> MacPhotoEditRecord {
+    private func performSaveStateCore(identity: OriginalFileIdentity, state: MacPhotoEditState?,
+                                      clearsProcessingMigration: Bool) throws -> (record: MacPhotoEditRecord, notification: PreparedRecordsChange?) {
         var stateChanged = false
         let result = try withWriteLock {
             if let state { try Self.validateState(state) }
@@ -577,29 +893,45 @@ public final class MacEditPersistence: @unchecked Sendable {
             try writeRegistry(updated)
             return MacPhotoEditRecord(identity: identity, state: state)
         }
-        if stateChanged {
-            postRecordsChanged([identity.path: result])
+        let notification = stateChanged ? Self.prepareRecordsChanged([identity.path: result]) : nil
+        return (result, notification)
+    }
+
+    @discardableResult public func saveState(identity: OriginalFileIdentity, state: MacPhotoEditState?,
+                                             clearsProcessingMigration: Bool = false) throws -> MacPhotoEditRecord {
+        let pair = try ioQueue.sync {
+            let result = try performSaveStateCore(identity: identity, state: state, clearsProcessingMigration: clearsProcessingMigration)
+            pendingLock.lock()
+            failedPathsInQueue.removeValue(forKey: identity.path)
+            pendingLock.unlock()
+            return result
         }
-        return result
+        postPreparedRecordsChanged(pair.notification)
+        return pair.record
     }
 
     @discardableResult public func resetToUnmodified(_ url: URL) throws -> MacPhotoEditRecord {
         var clearedPath: String?
-        let result = try withWriteLock {
-            var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
-            let identity = try OriginalFileIdentity(url)
-            let hadRecord = updated.records.removeValue(forKey: identity.path) != nil
-            let hadMigration = updated.processingMigrations?.removeValue(forKey: identity.path) != nil
-            if updated.processingMigrations?.isEmpty == true { updated.processingMigrations = nil }
-            if hadRecord || hadMigration {
-                try writeRegistry(updated)
+        let (result, prepared) = try ioQueue.sync {
+            let record = try withWriteLock {
+                var updated = try readRegistry(allowCache: false, holdingWriteLock: true)
+                let identity = try OriginalFileIdentity(url)
+                let hadRecord = updated.records.removeValue(forKey: identity.path) != nil
+                let hadMigration = updated.processingMigrations?.removeValue(forKey: identity.path) != nil
+                if updated.processingMigrations?.isEmpty == true { updated.processingMigrations = nil }
+                if hadRecord || hadMigration {
+                    try writeRegistry(updated)
+                }
+                if hadRecord { clearedPath = identity.path }
+                return MacPhotoEditRecord(identity: identity, state: nil)
             }
-            if hadRecord { clearedPath = identity.path }
-            return MacPhotoEditRecord(identity: identity, state: nil)
+            let prepared = clearedPath.flatMap { Self.prepareRecordsChanged([$0: record]) }
+            pendingLock.lock()
+            failedPathsInQueue.removeValue(forKey: record.identity.path)
+            pendingLock.unlock()
+            return (record, prepared)
         }
-        if let clearedPath {
-            postRecordsChanged([clearedPath: result])
-        }
+        postPreparedRecordsChanged(prepared)
         return result
     }
 

@@ -357,21 +357,89 @@ enum BatchFlowModelTests {
         var noticeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
         noticeJob.items = [normalNoticeItem, legacyNoticeItem, failedNoticeItem]
         var noticeProbeCount = 0
+        var noticeProbeOnMainThread = false
+        let noticeLock = NSLock()
         let noticeBatch = BatchExportModel(
             job: noticeJob,
             journal: MacBatchJournal(directory: directory.appendingPathComponent("notice-journal")),
             resolveX3fMode: { url in
+                let isMain = Thread.isMainThread
+                noticeLock.lock()
                 noticeProbeCount += 1
+                if isMain { noticeProbeOnMainThread = true }
+                noticeLock.unlock()
                 return url.standardizedFileURL == normal.standardizedFileURL ? .normal : .legacy
             }
         )
+        try wait { !noticeBatch.isProbingX3fNotices }
+        noticeLock.lock()
+        let probedCount = noticeProbeCount
+        let probedOnMain = noticeProbeOnMainThread
+        noticeLock.unlock()
+        try require(!probedOnMain,
+                    "X3F batch notice probing executes off the main thread")
         try require(noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
                     noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
-                    noticeProbeCount == 1,
-                    "normal X3F batch items explain why AI denoise is omitted and cache fallback mode lookups")
+                    probedCount == 2,
+                    "normal X3F batch items explain why AI denoise is omitted without re-probing on main thread")
         try require(noticeBatch.notice(for: legacyNoticeItem) == nil &&
                     noticeBatch.notice(for: failedNoticeItem) == nil,
                     "legacy X3F and validation-failed X3F items do not show the normal AI omission notice")
+
+        // #496: Probe failure surfaces a visible localized notice instead of silently caching nil.
+        let brokenProbeFile = directory.appendingPathComponent("broken-probe.X3F")
+        try Data("FOVb-broken-probe".utf8).write(to: brokenProbeFile)
+        let brokenProbeItem = try MacBatchExportItem(url: brokenProbeFile)
+        var brokenProbeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        brokenProbeJob.items = [brokenProbeItem]
+        var failureProbeCalls = 0
+        let expectedProbeError = RenderError.failed("corrupt X3F header")
+        let failureProbeBatch = BatchExportModel(
+            job: brokenProbeJob,
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("broken-probe-journal")),
+            resolveX3fMode: { _ in
+                try require(!Thread.isMainThread, "failing X3F probe must run off the main thread")
+                noticeLock.lock()
+                failureProbeCalls += 1
+                noticeLock.unlock()
+                throw expectedProbeError
+            }
+        )
+        try wait { !failureProbeBatch.isProbingX3fNotices }
+        let expectedNotice = L10n.format("无法读取 X3F 显影模式：%@", expectedProbeError.localizedDescription)
+        try require(failureProbeBatch.hasX3fProbeFailure(for: brokenProbeItem) &&
+                    failureProbeBatch.notice(for: brokenProbeItem) == expectedNotice &&
+                    failureProbeBatch.notice(for: brokenProbeItem) == expectedNotice,
+                    "X3F probe failure surfaces a visible localized notice instead of caching nil")
+        noticeLock.lock()
+        let recordedFailureProbes = failureProbeCalls
+        noticeLock.unlock()
+        try require(recordedFailureProbes == 1,
+                    "failed X3F probe does not synchronously re-probe on main thread during repeated notice reads")
+
+        // #496: Removing or cancelling an in-flight probe discards late completions safely.
+        let enteredCancelProbe = DispatchSemaphore(value: 0)
+        let releaseCancelProbe = DispatchSemaphore(value: 0)
+        let cancelProbeItem = try MacBatchExportItem(url: normal)
+        var cancelProbeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        cancelProbeJob.items = [cancelProbeItem]
+        let cancelProbeBatch = BatchExportModel(
+            job: cancelProbeJob,
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("cancel-probe-journal")),
+            resolveX3fMode: { _ in
+                enteredCancelProbe.signal()
+                releaseCancelProbe.wait()
+                return .normal
+            }
+        )
+        try require(enteredCancelProbe.wait(timeout: .now() + 5) == .success, "in-flight X3F probe entered background queue")
+        cancelProbeBatch.remove(cancelProbeItem.id)
+        cancelProbeBatch.cancel()
+        releaseCancelProbe.signal()
+        try wait { !cancelProbeBatch.isProbingX3fNotices }
+        try require(cancelProbeBatch.x3fProbeStates[cancelProbeItem.id] == nil &&
+                    cancelProbeBatch.notice(for: cancelProbeItem) == nil,
+                    "cancelled/removed in-flight X3F probe leaves no stale probe state")
 
         let dp2SavedLegacy = directory.appendingPathComponent("dp2-saved-legacy.X3F")
         try Data("FOVb-corrupt-if-probed".utf8).write(to: dp2SavedLegacy)
@@ -382,6 +450,9 @@ enum BatchFlowModelTests {
         var attachedAIJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
         attachedAIJob.items = [dp2Item]
         model.attachBatch(attachedAIJob)
+        if let attachedBatch = model.batch {
+            try wait { !attachedBatch.isProbingX3fNotices }
+        }
         try require(model.batch?.notice(for: dp2Item) == nil,
                     "EditorModel.attachBatch wires editStore so a DP2 Merrill saved as legacy keeps AI without probing header")
         _ = model.batch?.discardDraft()

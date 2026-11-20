@@ -27,6 +27,7 @@ enum ParameterValueField { static var hasPendingInputs = false }
     var geometryDraft: Any?
     var scheduler = Scheduler()
     var dirty = false
+    var hasPendingEditCommits = false
     var saveError: String?
     var workerActive = false, busy = false, exporting = false, lookLibraryBusy = false
     var aiState = AIState()
@@ -496,6 +497,60 @@ enum ParameterValueField { static var hasPendingInputs = false }
             codes["edits"] == "data_edits" && codes["journal"] == "data_journal" &&
             Set(codes.values).count == 4,
             "Startup health check failure codes distinguish presets, looks, edits and journal data causes")
+
+        // #531: 60s 1Hz update gate polling performs <= 1 disk read when presets.json and Looks/registry.json are unchanged,
+        // and immediately detects deletion, replacement, and corruption.
+        let pollRoot = root.appendingPathComponent("poll-cache")
+        let pollPresets = pollRoot.appendingPathComponent("Presets"), pollLooks = pollRoot.appendingPathComponent("Looks")
+        try FileManager.default.createDirectory(at: pollPresets, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pollLooks, withIntermediateDirectories: true)
+        let pollPresetStore = AdjustmentPresetStore(directory: pollPresets, clock: { 1000 })
+        let payload = try AdjustmentTransferPayload(
+            source: .init(identifier: "poll", isRaw: true, processingVersion: 2, recipe: nil),
+            values: ["light.exposure": .number(0.5)]
+        )
+        _ = try pollPresetStore.create(name: "PollPreset", payload: payload)
+        try Data("{\"looks\":[],\"version\":1}".utf8).write(to: pollLooks.appendingPathComponent("registry.json"))
+
+        let pollModel = EditorModel(presetDirectory: pollPresets, lookDirectory: pollLooks)
+        let pollGate = UpdateInstallGate(), pollAdapter = FakeUpdateAdapter()
+        pollModel.registerUpdateGate(pollGate)
+        let pollController = DesktopUpdateController(adapter: pollAdapter, gate: pollGate,
+            store: UpdateStore(directory: pollRoot.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        pollController.check(manual: true); pollAdapter.send(.found(release)); pollController.download()
+        pollAdapter.send(.preparing); pollAdapter.hasPreparedInstaller = true; pollAdapter.send(.verified)
+        pollController.choose(.afterTasks)
+        pollModel.busy = true
+        for _ in 0..<60 {
+            pollController.refreshGate()
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        check(pollController.state.phase == .waitingForTasks && !pollGate.blockers().contains("presets") && !pollGate.blockers().contains("looks"),
+            "60s poll with healthy preset and look files reports zero data blockers")
+        check(pollModel.presetStore.diskReadCount <= 1,
+            "60s update gate poll performs <= 1 presets.json disk read when unchanged (reads=\(pollModel.presetStore.diskReadCount))")
+        check((pollModel.lookLibrary?.diskReadCount ?? 0) <= 1,
+            "60s update gate poll performs <= 1 Looks/registry.json disk read when unchanged (reads=\(pollModel.lookLibrary?.diskReadCount ?? -1))")
+
+        let presetReadsStable = pollModel.presetStore.diskReadCount
+        let lookReadsStable = pollModel.lookLibrary?.diskReadCount ?? 0
+        try Data("{corrupt".utf8).write(to: pollPresets.appendingPathComponent("presets.json"), options: .atomic)
+        pollController.refreshGate()
+        check(pollGate.blockers().contains("presets") && pollModel.presetStore.diskReadCount == presetReadsStable + 1,
+            "Corrupting presets.json immediately trips update gate blocker on next poll")
+        try FileManager.default.removeItem(at: pollPresets.appendingPathComponent("presets.json"))
+        pollController.refreshGate()
+        check(!pollGate.blockers().contains("presets"),
+            "Deleting presets.json immediately clears stale presets blocker")
+
+        try Data("{corrupt".utf8).write(to: pollLooks.appendingPathComponent("registry.json"), options: .atomic)
+        pollController.refreshGate()
+        check(pollGate.blockers().contains("looks") && (pollModel.lookLibrary?.diskReadCount ?? 0) == lookReadsStable + 1,
+            "Corrupting Looks/registry.json immediately trips update gate blocker on next poll")
+        try Data("{\"looks\":[],\"version\":1}".utf8).write(to: pollLooks.appendingPathComponent("registry.json"), options: .atomic)
+        pollController.refreshGate()
+        check(!pollGate.blockers().contains("looks"),
+            "Replacing Looks/registry.json with valid content immediately clears looks blocker")
     }
 
     @MainActor static func installationFailureBlocksEditing() async throws {

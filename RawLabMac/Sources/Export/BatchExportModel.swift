@@ -95,12 +95,27 @@ final class BatchExportModel: ObservableObject {
     private var cancellation = BatchCancellation()
     private var previewCancellation = BatchCancellation()
     private var previewRevision = UUID()
+    private final class ProbeToken: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return value }
+        func cancel() { lock.lock(); value = true; lock.unlock() }
+    }
+
+    enum X3fProbeState: Equatable {
+        case pending
+        case resolved(X3fMode)
+        case failed(String)
+    }
+
     private let prepareAIOperation: (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
     private let probeHDRSource: HDRSourceInfo.Probe
     private let resolveX3fMode: MacBatchExportJob.X3fModeResolver
-    private var cachedNoticeX3fModes: [UUID: X3fMode?] = [:]
+    @Published private(set) var x3fProbeStates: [UUID: X3fProbeState] = [:]
+    private var activeProbeToken: ProbeToken?
+    var isProbingX3fNotices: Bool { x3fProbeStates.values.contains(.pending) }
 
     init(job: MacBatchExportJob, journal: MacBatchJournal,hdrPreparation: MacHDRBatchPreparation? = nil,
          probeHDRSource: @escaping HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) },
@@ -119,6 +134,11 @@ final class BatchExportModel: ObservableObject {
         self.resolveX3fMode = resolveX3fMode
         self.prepareAIOperation = prepareAI
         error = job.failure
+        probePendingX3fNotices()
+    }
+
+    deinit {
+        activeProbeToken?.cancel()
     }
 
     var canRun: Bool { !running && !validating && (job.mode == .perTargetFrozen || !sourceEditingGeometry) && job.selectedCount > 0 && job.outputDirectory != nil }
@@ -134,26 +154,83 @@ final class BatchExportModel: ObservableObject {
         return L10n.format("成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张", String(describing: job.succeededCount), String(describing: job.failedCount), String(describing: job.remainingCount))
     }
 
+    func hasX3fProbeFailure(for item: MacBatchExportItem) -> Bool {
+        guard job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled,
+              RenderEngine.isX3fInput(item.input), item.validationError == nil,
+              case .failed = noticeX3fProbeState(for: item) else { return false }
+        return true
+    }
+
     func notice(for item: MacBatchExportItem) -> String? {
         var messages = item.noticeKey.map { [L10n.text($0)] } ?? []
         if job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled {
             if RenderEngine.isRasterInput(item.input) {
                 messages.append(L10n.text("普通图片未使用 AI 降噪"))
-            } else if RenderEngine.isX3fInput(item.input), item.validationError == nil,
-                      noticeX3fMode(for: item) == .normal {
-                messages.append(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+            } else if RenderEngine.isX3fInput(item.input), item.validationError == nil {
+                switch noticeX3fProbeState(for: item) {
+                case .resolved(.normal):
+                    messages.append(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
+                case .failed(let detail):
+                    messages.append(L10n.format("无法读取 X3F 显影模式：%@", detail))
+                case .pending, .resolved(.legacy), nil:
+                    break
+                }
             }
         }
         return messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
 
-    private func noticeX3fMode(for item: MacBatchExportItem) -> X3fMode? {
-        if let resolved = item.resolvedX3fMode { return resolved }
-        guard !validating else { return nil }
-        if let cached = cachedNoticeX3fModes[item.id] { return cached }
-        let resolved = try? resolveX3fMode(item.input)
-        cachedNoticeX3fModes[item.id] = resolved
-        return resolved
+    private func noticeX3fProbeState(for item: MacBatchExportItem) -> X3fProbeState? {
+        if let resolved = item.resolvedX3fMode { return .resolved(resolved) }
+        return x3fProbeStates[item.id]
+    }
+
+    private func cancelPendingX3fProbes() {
+        activeProbeToken?.cancel()
+        activeProbeToken = nil
+        for (id, state) in x3fProbeStates where state == .pending {
+            x3fProbeStates.removeValue(forKey: id)
+        }
+    }
+
+    private func probePendingX3fNotices() {
+        guard job.mode == .uniformFrozen, !job.settings.isHDREditing, job.settings.aiDenoiseEnabled else { return }
+        let candidates = job.items.filter { item in
+            RenderEngine.isX3fInput(item.input) &&
+            item.resolvedX3fMode == nil &&
+            item.validationError == nil &&
+            x3fProbeStates[item.id] == nil
+        }
+        guard !candidates.isEmpty else { return }
+        cancelPendingX3fProbes()
+        let token = ProbeToken()
+        activeProbeToken = token
+        for item in candidates {
+            x3fProbeStates[item.id] = .pending
+        }
+        let resolver = resolveX3fMode
+        validationQueue.async { [weak self] in
+            for item in candidates {
+                guard !token.cancelled else { break }
+                let outcome = Result { try resolver(item.input) }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.activeProbeToken === token, !token.cancelled else { return }
+                    guard let index = self.job.items.firstIndex(where: {
+                        $0.id == item.id && $0.input == item.input && $0.identity == item.identity
+                    }) else {
+                        self.x3fProbeStates.removeValue(forKey: item.id)
+                        return
+                    }
+                    switch outcome {
+                    case .success(let mode):
+                        self.x3fProbeStates[item.id] = .resolved(mode)
+                        self.job.items[index].resolvedX3fMode = mode
+                    case .failure(let failure):
+                        self.x3fProbeStates[item.id] = .failed(failure.localizedDescription)
+                    }
+                }
+            }
+        }
     }
 
     func addFiles() {
@@ -179,7 +256,7 @@ final class BatchExportModel: ObservableObject {
                 item.selected = true
                 if let index = job.items.firstIndex(where: { $0.input == item.input }) {
                     job.items[index].selected = true
-                    cachedNoticeX3fModes.removeValue(forKey: job.items[index].id)
+                    x3fProbeStates.removeValue(forKey: job.items[index].id)
                 } else { job.items.append(item) }
                 added.append(item)
             } catch { failures.append(L10n.format("%@：%@", url.lastPathComponent, error.localizedDescription)) }
@@ -216,6 +293,9 @@ final class BatchExportModel: ObservableObject {
                     if let index = self.job.items.firstIndex(where: { $0.input == item.input }) {
                         self.job.items[index].noticeKey = noticeKey
                         self.job.items[index].resolvedX3fMode = x3fMode
+                        if let x3fMode {
+                            self.x3fProbeStates[self.job.items[index].id] = .resolved(x3fMode)
+                        }
                         if let message {
                             self.job.items[index].validationError = message
                             self.job.items[index].selected = false
@@ -243,7 +323,7 @@ final class BatchExportModel: ObservableObject {
     func remove(_ id: UUID) {
         guard job.mode == .uniformFrozen, !running, !job.started else { return }
         job.items.removeAll { $0.id == id }
-        cachedNoticeX3fModes.removeValue(forKey: id)
+        x3fProbeStates.removeValue(forKey: id)
         saveDraft()
     }
 
@@ -308,6 +388,7 @@ final class BatchExportModel: ObservableObject {
         guard job.outputDirectory != nil else { error = L10n.text("选择输出文件夹"); return false }
         // 渲染队列先排空已取消的预览，避免同一引擎并发使用或 AI 预览挡住导出。
         closePreview()
+        cancelPendingX3fProbes()
         let cancellation = BatchCancellation()
         self.cancellation = cancellation
         error = nil; running = true; stopping = false
@@ -408,6 +489,7 @@ final class BatchExportModel: ObservableObject {
 
     func cancel() {
         closePreview()
+        cancelPendingX3fProbes()
         guard running else { return }
         stopping = true; cancellation.cancel()
     }
@@ -424,6 +506,7 @@ final class BatchExportModel: ObservableObject {
 
     func discardTask() -> Bool {
         guard !running, !validating, !previewing else { return false }
+        cancelPendingX3fProbes()
         do {
             try journal.discard(job)
             let notice = consumeQuarantinedNotice()

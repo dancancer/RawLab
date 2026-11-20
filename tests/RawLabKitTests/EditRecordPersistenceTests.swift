@@ -1015,4 +1015,759 @@ final class EditRecordPersistenceTests: XCTestCase {
             }
         }
     }
+
+    func testRasterClassificationParityForEditedRevision() throws {
+        var sensorNeutral = Adjustments()
+        sensorNeutral.exposureMode = .sensor
+        let sensorState = MacPhotoEditState(settings: sensorNeutral, filmID: "")
+        var modified = Adjustments()
+        modified.exposure = 0.5
+        let modifiedState = MacPhotoEditState(settings: modified, filmID: "")
+
+        for ext in ["tiff", "tif", "heic"] {
+            let path = "/tmp/parity-sample.\(ext)"
+            let url = URL(fileURLWithPath: path)
+            XCTAssertTrue(PhotoInputClassification.isRasterInput(url), "\(ext) should be classified as raster")
+            XCTAssertNil(MacEditPersistence.editedRevision(for: sensorState, atPath: path),
+                         "Neutral .sensor state should be unedited for \(ext)")
+            XCTAssertNotNil(MacEditPersistence.editedRevision(for: modifiedState, atPath: path),
+                            "Exposure-modified state should have editedRevision for \(ext)")
+        }
+
+        let rawPath = "/tmp/parity-sample.arw"
+        XCTAssertFalse(PhotoInputClassification.isRasterInput(URL(fileURLWithPath: rawPath)))
+        XCTAssertNotNil(MacEditPersistence.editedRevision(for: sensorState, atPath: rawPath),
+                        "RAW .sensor state differs from default .preview")
+    }
+
+    func testScanPathsReferencingFilmsReportsCorruptRecordsAndUnreadableRegistryWithoutDeletion() throws {
+        let dir = temporaryRoot.appendingPathComponent("film-scan-diagnostics", isDirectory: true)
+        let diagDir = temporaryRoot.appendingPathComponent("error-diag", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let matchedURL = try makeTempFile(named: "matched.DNG")
+        let siblingURL = try makeTempFile(named: "sibling.DNG")
+        let corruptURL = try makeTempFile(named: "corrupt-record.DNG")
+        let futureURL = try makeTempFile(named: "future-record.DNG")
+
+        let env = DiagnosticEnvironment(platform: "macos", appVersion: "0.9", build: "1", osVersion: "15.0", deviceModel: "Mac")
+        let diagnostics = ErrorDiagnostics(directory: diagDir, environment: env)
+        var capturedLogs: [String] = []
+        let store = try MacEditPersistence(directory: dir, diagnostics: diagnostics, onDiagnostic: { capturedLogs.append($0) })
+
+        let matchedState = MacPhotoEditState(settings: Adjustments(), filmID: "custom-look-1")
+        let siblingState = MacPhotoEditState(settings: Adjustments(), filmID: "other-look")
+        try store.save(matchedURL, state: matchedState)
+        try store.save(siblingURL, state: siblingState)
+        try store.save([corruptURL, futureURL], state: MacPhotoEditState(settings: Adjustments(), filmID: "custom-look-1"))
+
+        // Inject corrupt entry and future processing version into edits.json on disk.
+        let editsURL = dir.appendingPathComponent("edits.json")
+        var doc = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: editsURL)) as? [String: Any])
+        var records = try XCTUnwrap(doc["records"] as? [String: Any])
+        let corruptPath = try OriginalFileIdentity(corruptURL).path
+        let futurePath = try OriginalFileIdentity(futureURL).path
+        let matchedPath = try OriginalFileIdentity(matchedURL).path
+        let siblingPath = try OriginalFileIdentity(siblingURL).path
+        records[corruptPath] = ["broken": true]
+        var futureEntry = try XCTUnwrap(records[futurePath] as? [String: Any])
+        var futureState = try XCTUnwrap(futureEntry["state"] as? [String: Any])
+        var futureSettings = try XCTUnwrap(futureState["settings"] as? [String: Any])
+        var futureProc = try XCTUnwrap(futureSettings["processing"] as? [String: Any])
+        futureProc["version"] = 99
+        futureSettings["processing"] = futureProc
+        futureState["settings"] = futureSettings
+        futureEntry["state"] = futureState
+        records[futurePath] = futureEntry
+        doc["records"] = records
+        try JSONSerialization.data(withJSONObject: doc, options: [.sortedKeys]).write(to: editsURL)
+
+        let scan = store.scanPathsReferencingFilms(["custom-look-1"])
+        XCTAssertFalse(scan.registryUnreadable)
+        XCTAssertEqual(scan.matchedPaths, [matchedPath])
+        XCTAssertEqual(scan.corruptPaths, [corruptPath, futurePath])
+        XCTAssertEqual(scan.pathsToInvalidate, [matchedPath, corruptPath, futurePath])
+        XCTAssertFalse(scan.pathsToInvalidate.contains(siblingPath))
+        XCTAssertEqual(scan.diagnostics.count, 2, "Corrupt and future-version records must each emit a diagnostic")
+        XCTAssertEqual(capturedLogs.count, 2)
+        XCTAssertNotNil(try diagnostics.reportData(), "ErrorDiagnostics must record corrupt record failures")
+
+        // Verify corrupt and future records remain preserved in edits.json (never deleted).
+        let postDoc = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: editsURL)) as? [String: Any])
+        let postRecords = try XCTUnwrap(postDoc["records"] as? [String: Any])
+        XCTAssertNotNil(postRecords[corruptPath])
+        XCTAssertNotNil(postRecords[futurePath])
+
+        // Unreadable / future-version registry must report registryUnreadable + diagnostics without deleting edits.json.
+        let futureBytes = Data("{\"version\":2,\"records\":{}}".utf8)
+        try futureBytes.write(to: editsURL, options: .atomic)
+        let rootScan = store.scanPathsReferencingFilms(["custom-look-1"])
+        XCTAssertTrue(rootScan.registryUnreadable)
+        XCTAssertEqual(rootScan.diagnostics.count, 1)
+        XCTAssertEqual(try Data(contentsOf: editsURL), futureBytes)
+    }
+
+    func testEnqueueSaveStateOffMainThreadOrderingAndFlush() throws {
+        let dir = temporaryRoot.appendingPathComponent("async-commit-order", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photo = try makeTempFile(named: "ordered.ARW")
+        let identity = try OriginalFileIdentity(photo)
+
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var writeOnMainThread = false
+        var writeCount = 0
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            let isMain = Thread.isMainThread
+            lock.lock()
+            writeCount += 1
+            let count = writeCount
+            if isMain { writeOnMainThread = true }
+            lock.unlock()
+            if count == 1 {
+                entered.signal()
+                release.wait()
+            }
+            try data.write(to: url, options: .atomic)
+        })
+
+        var receivedRevisions: [String] = []
+        let token = NotificationCenter.default.addObserver(
+            forName: MacEditPersistence.didChangeRecordsNotification,
+            object: nil,
+            queue: nil
+        ) { note in
+            guard note.userInfo?[MacEditPersistence.directoryPathUserInfoKey] as? String == store.canonicalDirectoryPath,
+                  let revs = note.userInfo?[MacEditPersistence.editedRevisionsUserInfoKey] as? [String: String],
+                  let rev = revs[identity.path] else { return }
+            receivedRevisions.append(rev)
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        var s1 = Adjustments(); s1.exposure = 0.5
+        var s2 = Adjustments(); s2.exposure = 1.5
+        var s3 = Adjustments(); s3.exposure = 2.5
+
+        var completedExposures: [Double] = []
+        try store.enqueueSaveState(identity: identity, state: MacPhotoEditState(settings: s1, filmID: "")) { res in
+            if case .success(let rec) = res, let exp = rec.state?.settings.exposure {
+                completedExposures.append(exp)
+            }
+        }
+        try store.enqueueSaveState(identity: identity, state: MacPhotoEditState(settings: s2, filmID: "")) { res in
+            if case .success(let rec) = res, let exp = rec.state?.settings.exposure {
+                completedExposures.append(exp)
+            }
+        }
+        try store.enqueueSaveState(identity: identity, state: MacPhotoEditState(settings: s3, filmID: "")) { res in
+            if case .success(let rec) = res, let exp = rec.state?.settings.exposure {
+                completedExposures.append(exp)
+            }
+        }
+
+        XCTAssertTrue(store.hasPendingCommits)
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success)
+        release.signal()
+        XCTAssertTrue(store.flushPendingCommits())
+        XCTAssertFalse(store.hasPendingCommits)
+
+        lock.lock()
+        let onMain = writeOnMainThread
+        let totalWrites = writeCount
+        lock.unlock()
+        XCTAssertFalse(onMain, "enqueueSaveState must write off the main thread")
+        XCTAssertEqual(totalWrites, 3)
+        XCTAssertEqual(completedExposures, [0.5, 1.5, 2.5], "Serial ioQueue preserves strict revision ordering")
+        XCTAssertEqual(receivedRevisions.count, 3, "Flush delivers all precomputed didChangeRecordsNotification revisions")
+        XCTAssertEqual(try MacEditPersistence(directory: dir).readState(for: photo).state?.settings.exposure, 2.5)
+    }
+
+    func testTenThousandRecordCommitLatencyBenchmark() throws {
+        let dir = temporaryRoot.appendingPathComponent("bench-10k", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let targetPhoto = try makeTempFile(named: "target-bench.ARW")
+        let targetIdentity = try OriginalFileIdentity(targetPhoto)
+
+        // Seed edits.json with 10,000 valid records directly so setup is fast.
+        var recordsJSON: [String: Any] = [:]
+        var baseSettings = Adjustments()
+        baseSettings.exposure = 0.1
+        let baseStateData = try JSONEncoder().encode(MacPhotoEditState(settings: baseSettings, filmID: ""))
+        let baseStateObj = try JSONSerialization.jsonObject(with: baseStateData)
+        for i in 0..<9_999 {
+            let path = "/tmp/rawlab-bench-synthetic/photo-\(i).ARW"
+            recordsJSON[path] = [
+                "identity": [
+                    "fileNumber": i + 1,
+                    "modified": 700_000_000.0,
+                    "path": path,
+                    "size": 1024
+                ],
+                "state": baseStateObj
+            ]
+        }
+        recordsJSON[targetIdentity.path] = [
+            "identity": [
+                "fileNumber": targetIdentity.fileNumber,
+                "modified": targetIdentity.modified.timeIntervalSinceReferenceDate,
+                "path": targetIdentity.path,
+                "size": targetIdentity.size
+            ],
+            "state": baseStateObj
+        ]
+        let rootDoc: [String: Any] = ["version": 1, "records": recordsJSON]
+        let seededBytes = try JSONSerialization.data(withJSONObject: rootDoc)
+        try seededBytes.write(to: dir.appendingPathComponent("edits.json"), options: .atomic)
+
+        let iterations = 20
+        let syncStore = try MacEditPersistence(directory: dir)
+        var syncLatenciesMs: [Double] = []
+        for idx in 1...iterations {
+            var s = Adjustments()
+            s.exposure = Double(idx) * 0.1
+            let state = MacPhotoEditState(settings: s, filmID: "")
+            let start = CFAbsoluteTimeGetCurrent()
+            _ = try syncStore.saveState(identity: targetIdentity, state: state)
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+            syncLatenciesMs.append(elapsedMs)
+        }
+        let syncTotalMs = syncLatenciesMs.reduce(0, +)
+        let syncAvgMs = syncTotalMs / Double(iterations)
+
+        let asyncStore = try MacEditPersistence(directory: dir)
+        var enqueueLatenciesMs: [Double] = []
+        for idx in 1...iterations {
+            var s = Adjustments()
+            s.exposure = Double(idx) * -0.1
+            let state = MacPhotoEditState(settings: s, filmID: "")
+            let start = CFAbsoluteTimeGetCurrent()
+            try asyncStore.enqueueSaveState(identity: targetIdentity, state: state)
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+            enqueueLatenciesMs.append(elapsedMs)
+        }
+        let enqueueTotalMs = enqueueLatenciesMs.reduce(0, +)
+        let enqueueAvgMs = enqueueTotalMs / Double(iterations)
+
+        let flushStart = CFAbsoluteTimeGetCurrent()
+        XCTAssertTrue(asyncStore.flushPendingCommits())
+        let flushMs = (CFAbsoluteTimeGetCurrent() - flushStart) * 1000.0
+
+        let reloaded = try MacEditPersistence(directory: dir)
+        let finalExposure = try XCTUnwrap(reloaded.readState(for: targetPhoto).state?.settings.exposure)
+        XCTAssertEqual(finalExposure, Double(iterations) * -0.1, accuracy: 1e-9,
+                       "Final ordered commit at 10,000 records must persist durably on disk")
+
+        let persistedDoc = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: dir.appendingPathComponent("edits.json"))) as? [String: Any]
+        )
+        let persistedRecords = try XCTUnwrap(persistedDoc["records"] as? [String: Any])
+        XCTAssertEqual(persistedRecords.count, 10_000)
+
+        print(String(
+            format: "BENCHMARK_10K: syncTotalMs=%.3f syncAvgMs=%.3f enqueueTotalMs=%.3f enqueueAvgMs=%.3f flushMs=%.3f speedup=%.1fx",
+            syncTotalMs, syncAvgMs, enqueueTotalMs, enqueueAvgMs, flushMs, syncAvgMs / max(enqueueAvgMs, 0.0001)
+        ))
+        XCTAssertLessThan(enqueueAvgMs, syncAvgMs * 0.25,
+                          "Offloaded enqueue latency (\(enqueueAvgMs) ms) must be < 25% of sync saveState (\(syncAvgMs) ms) at 10,000 records")
+    }
+
+    func testInterleavedCommitsClearStaleFailedPathsInQueueAndPreserveConcurrentOrder() throws {
+        let dir = temporaryRoot.appendingPathComponent("interleaved-failed-paths", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photo = try makeTempFile(named: "interleaved.ARW")
+        let identity = try OriginalFileIdentity(photo)
+
+        let lock = NSLock()
+        var failWriteIndex = 1
+        var writeAttempts = 0
+        let commit1Entered = DispatchSemaphore(value: 0)
+        let commit1Release = DispatchSemaphore(value: 0)
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            let shouldFail = idx == failWriteIndex
+            lock.unlock()
+            if idx == 1 {
+                commit1Entered.signal()
+                commit1Release.wait()
+            }
+            if shouldFail {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+
+        var s1 = Adjustments(); s1.exposure = 0.5
+        var s2 = Adjustments(); s2.exposure = 1.5
+        var s3 = Adjustments(); s3.exposure = 2.5
+
+        var outcomes: [Int: Result<MacPhotoEditRecord, Error>] = [:]
+        try store.enqueueSaveState(identity: identity, state: MacPhotoEditState(settings: s1, filmID: "")) { res in
+            outcomes[1] = res
+        }
+        XCTAssertEqual(commit1Entered.wait(timeout: .now() + 5), .success)
+
+        // Commit 2 is pending when Commit 1 fails.
+        try store.enqueueSaveState(identity: identity, state: MacPhotoEditState(settings: s2, filmID: "")) { res in
+            outcomes[2] = res
+        }
+
+        // Release Commit 1 to fail; wait until Commit 1's failure is processed on ioQueue?
+        // Actually queue a barrier after Commit 2? No: queue Commit 3 from a background thread right after
+        // releasing Commit 1, AND also test sync saveState clearing failedPathsInQueue while Commit 3 is queued.
+        commit1Release.signal()
+        XCTAssertFalse(store.flushPendingCommits(), "Commit 1 and chained Commit 2 fail")
+        if case .failure = outcomes[1] {} else { XCTFail("Commit 1 must fail") }
+        if case .failure = outcomes[2] {} else { XCTFail("Commit 2 must chain-fail with Commit 1") }
+
+        // Now test interleaved Commit 1 fail while Commit 2 is pending, then Commit 3 queued before Commit 1+2 deliver:
+        // Commit 1 fails on write #2; Commit 2 is in pendingCommits when Commit 1 fails;
+        // Before flush/delivery completes, Commit 3 is queued after Commit 1 fails (e.g. from Commit 1's completion or concurrent enqueue).
+        lock.lock()
+        writeAttempts = 0
+        failWriteIndex = 1
+        lock.unlock()
+
+        var interleavedOutcomes: [Int: Result<MacPhotoEditRecord, Error>] = [:]
+        let c1Started = DispatchSemaphore(value: 0)
+        let c1Gate = DispatchSemaphore(value: 0)
+        let dir2 = temporaryRoot.appendingPathComponent("interleaved-2", isDirectory: true)
+        let store2 = try MacEditPersistence(directory: dir2,
+                                            writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            let shouldFail = idx == 1
+            lock.unlock()
+            if idx == 1 {
+                c1Started.signal()
+                c1Gate.wait()
+            }
+            if shouldFail {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let photo2 = try makeTempFile(named: "interleaved2.ARW")
+        let identity2 = try OriginalFileIdentity(photo2)
+
+        try store2.enqueueSaveState(identity: identity2, state: MacPhotoEditState(settings: s1, filmID: "")) { res in
+            interleavedOutcomes[1] = res
+            // Enqueue Commit 3 inside Commit 1's delivery callback while Commit 2 is still ahead/pending or right after Commit 1 fails!
+        }
+        XCTAssertEqual(c1Started.wait(timeout: .now() + 5), .success)
+        try store2.enqueueSaveState(identity: identity2, state: MacPhotoEditState(settings: s2, filmID: "")) { res in
+            interleavedOutcomes[2] = res
+        }
+        c1Gate.signal()
+        // Wait for Commit 1's ioQueue block to finish, or enqueue Commit 3 immediately on a concurrent thread,
+        // and verify sync saveState (or Commit 2 finishing) leaves Commit 3 clean.
+        // Specifically: enqueue Commit 3 before deliverCompletedCommits drains, and check Commit 3 succeeds!
+        // Wait: deliverCompletedCommits hasn't run on RunLoop.main yet, so enqueueing Commit 3 right after ioQueue
+        // finishes Commit 1 & 2 (before RunLoop.main drains) triggers the exact deliverCompletedCommits bug!
+        store2.waitForPendingIO()
+        // At this exact moment, Commit 1 & 2 are completed on ioQueue, NOT YET delivered on main!
+        // Enqueue Commit 3 NOW (while Commit 1 & 2 are still in pendingCommits awaiting delivery).
+        try store2.enqueueSaveState(identity: identity2, state: MacPhotoEditState(settings: s3, filmID: "")) { res in
+            interleavedOutcomes[3] = res
+        }
+        XCTAssertFalse(store2.flushPendingCommits(), "Flush reports false because Commit 1 & 2 failed, while delivering Commit 3")
+        if case .failure = interleavedOutcomes[1] {} else { XCTFail("Commit 1 must fail") }
+        if case .failure = interleavedOutcomes[2] {} else { XCTFail("Commit 2 must chain-fail") }
+        if case .success(let rec3) = interleavedOutcomes[3] {
+            XCTAssertEqual(rec3.state?.settings.exposure, 2.5)
+        } else {
+            XCTFail("Commit 3 enqueued before Commit 1/2 delivery must succeed cleanly: \(String(describing: interleavedOutcomes[3]))")
+        }
+        XCTAssertEqual(try MacEditPersistence(directory: dir2).readState(for: photo2).state?.settings.exposure, 2.5)
+
+        // Also test: Commit 1 fails while Commit 2 (sync saveState) runs and Commit 3 is queued -> Commit 3 succeeds!
+        let dir3 = temporaryRoot.appendingPathComponent("interleaved-3", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir3, withIntermediateDirectories: true)
+        let photo3 = try makeTempFile(named: "interleaved3.ARW")
+        let identity3 = try OriginalFileIdentity(photo3)
+        let c3Started = DispatchSemaphore(value: 0)
+        let c3Gate = DispatchSemaphore(value: 0)
+        var store3Attempts = 0
+        let store3 = try MacEditPersistence(directory: dir3, writeData: { data, url in
+            lock.lock()
+            store3Attempts += 1
+            let idx = store3Attempts
+            lock.unlock()
+            if idx == 1 {
+                c3Started.signal()
+                c3Gate.wait()
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        var outcomes3: [Int: Result<MacPhotoEditRecord, Error>] = [:]
+        try store3.enqueueSaveState(identity: identity3, state: MacPhotoEditState(settings: s1, filmID: "")) { outcomes3[1] = $0 }
+        XCTAssertEqual(c3Started.wait(timeout: .now() + 5), .success)
+        try store3.enqueueSaveState(identity: identity3, state: MacPhotoEditState(settings: s2, filmID: "")) { outcomes3[2] = $0 }
+        c3Gate.signal()
+        // Sync saveState runs after Commit 1 & Commit 2, clears any stale failure, and Commit 3 is queued before delivery.
+        _ = try store3.saveState(identity: identity3, state: MacPhotoEditState(settings: s2, filmID: ""))
+        try store3.enqueueSaveState(identity: identity3, state: MacPhotoEditState(settings: s3, filmID: "")) { outcomes3[3] = $0 }
+        XCTAssertFalse(store3.flushPendingCommits(), "Flush reports false for earlier Commit 1/2 failure while delivering Commit 3")
+        if case .success(let rec3) = outcomes3[3] {
+            XCTAssertEqual(rec3.state?.settings.exposure, 2.5)
+        } else {
+            XCTFail("Commit 3 after sync saveState recovery must succeed")
+        }
+
+        // Concurrent multi-thread enqueueSaveState must match completion callback order and final disk state.
+        let concDir = temporaryRoot.appendingPathComponent("concurrent-enqueue-order", isDirectory: true)
+        try FileManager.default.createDirectory(at: concDir, withIntermediateDirectories: true)
+        let concPhoto = try makeTempFile(named: "concurrent.ARW")
+        let concIdentity = try OriginalFileIdentity(concPhoto)
+        let concStore = try MacEditPersistence(directory: concDir)
+        let callbackLock = NSLock()
+        var callbackExposures: [Double] = []
+        let group = DispatchGroup()
+        for t in 0..<4 {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { group.leave() }
+                for i in 1...15 {
+                    let exp = Double(t * 100 + i) * 0.01
+                    var s = Adjustments(); s.exposure = exp
+                    try? concStore.enqueueSaveState(identity: concIdentity, state: MacPhotoEditState(settings: s, filmID: "")) { res in
+                        if case .success(let rec) = res, let value = rec.state?.settings.exposure {
+                            callbackLock.lock()
+                            callbackExposures.append(value)
+                            callbackLock.unlock()
+                        }
+                    }
+                }
+            }
+        }
+        group.wait()
+        XCTAssertTrue(concStore.flushPendingCommits())
+        let diskExposure = try MacEditPersistence(directory: concDir).readState(for: concPhoto).state?.settings.exposure
+        XCTAssertEqual(callbackExposures.count, 60)
+        XCTAssertEqual(callbackExposures.last, diskExposure, "Concurrent enqueueSaveState ioQueue order must never invert vs completion delivery")
+    }
+
+    func testDeliverCompletedCommitsDoesNotClearNewerPathFailureDuringInterleavedDrain() throws {
+        let dir = temporaryRoot.appendingPathComponent("split-brain-interleaved-drain", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photoA = try makeTempFile(named: "photo-a.ARW")
+        let photoB = try makeTempFile(named: "photo-b.ARW")
+        let identityA = try OriginalFileIdentity(photoA)
+        let identityB = try OriginalFileIdentity(photoB)
+
+        let lock = NSLock()
+        var writeAttempts = 0
+        let a1Entered = DispatchSemaphore(value: 0)
+        let a1Release = DispatchSemaphore(value: 0)
+        let b1Entered = DispatchSemaphore(value: 0)
+        let b1Release = DispatchSemaphore(value: 0)
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            lock.unlock()
+
+            switch idx {
+            case 1:
+                a1Entered.signal()
+                a1Release.wait()
+            case 2:
+                throw CocoaError(.fileWriteOutOfSpace)
+            case 3:
+                b1Entered.signal()
+                b1Release.wait()
+            default:
+                break
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+
+        var sA1 = Adjustments(); sA1.exposure = 1.0
+        var sA2 = Adjustments(); sA2.exposure = 2.0
+        var sB1 = Adjustments(); sB1.exposure = 1.5
+        var sA3 = Adjustments(); sA3.exposure = 3.0
+
+        let initialA = MacPhotoEditRecord(identity: identityA, state: nil)
+        let initialB = MacPhotoEditRecord(identity: identityB, state: nil)
+
+        var outcomes: [String: AdjustmentTransferStatus] = [:]
+        session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: sA1, filmID: ""), completion: { outcome, _ in
+            outcomes["A1"] = outcome.status
+        })
+        XCTAssertEqual(a1Entered.wait(timeout: .now() + 5), .success)
+
+        // Queue A2 (will fail), B1 (will pause ioQueue), and A3 (must chain-fail) behind A1.
+        session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: sA2, filmID: ""), completion: { outcome, _ in
+            outcomes["A2"] = outcome.status
+        })
+        session.commitEditAsync(expected: initialB, state: MacPhotoEditState(settings: sB1, filmID: ""), completion: { outcome, _ in
+            outcomes["B1"] = outcome.status
+        })
+        session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: sA3, filmID: ""), completion: { outcome, _ in
+            outcomes["A3"] = outcome.status
+        })
+
+        // Release A1 so A1 succeeds and A2 fails, then pause B1 on ioQueue before A3 executes.
+        a1Release.signal()
+        XCTAssertEqual(b1Entered.wait(timeout: .now() + 5), .success)
+
+        // Drain RunLoop.main so deliverCompletedCommits() processes [A1(.success), A2(.failure)]
+        // while B1 is still holding ioQueue and before A3 checks failedPathsInQueue.
+        let deadline = Date().addingTimeInterval(5)
+        while outcomes["A2"] == nil && Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        XCTAssertEqual(outcomes["A1"], .applied)
+        XCTAssertEqual(outcomes["A2"], .failed)
+        XCTAssertEqual(session.knownRecord(forPath: identityA.path)?.state?.settings.exposure, 1.0)
+
+        // Release B1 and flush remaining commits (B1, A3). A3 must chain-fail instead of writing 3.0.
+        b1Release.signal()
+        let flushed = session.flushPendingCommits()
+
+        XCTAssertFalse(flushed, "Chained failure of A3 must cause flushPendingCommits() to return false")
+        XCTAssertEqual(outcomes["B1"], .applied)
+        XCTAssertEqual(outcomes["A3"], .failed, "A3 must chain-fail after A2 even if A1+A2 already drained on RunLoop.main")
+
+        lock.lock()
+        let totalWrites = writeAttempts
+        lock.unlock()
+        XCTAssertEqual(totalWrites, 3, "A3 must be blocked on ioQueue before reaching writeData")
+        XCTAssertEqual(session.knownRecord(forPath: identityA.path)?.state?.settings.exposure, 1.0)
+
+        let diskStore = try MacEditPersistence(directory: dir)
+        XCTAssertEqual(try diskStore.readState(for: photoA).state?.settings.exposure, 1.0,
+                       "edits.json must retain A1 (1.0) and never split-brain to A3 (3.0)")
+        XCTAssertEqual(try diskStore.readState(for: photoB).state?.settings.exposure, 1.5)
+    }
+
+    func testSessionCommitEditAsyncPostFailurePreDrainDoesNotSplitBrain1Bi() throws {
+        let dir = temporaryRoot.appendingPathComponent("split-brain-1bi", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photoA = try makeTempFile(named: "photo-1bi.ARW")
+        let identityA = try OriginalFileIdentity(photoA)
+
+        let lock = NSLock()
+        var writeAttempts = 0
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            lock.unlock()
+            if idx == 1 {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+        let initialA = MacPhotoEditRecord(identity: identityA, state: nil)
+
+        var s1 = Adjustments(); s1.exposure = 1.0
+        var s2 = Adjustments(); s2.exposure = 2.0
+        var outcomes: [(String, AdjustmentTransferStatus, Double?)] = []
+
+        let out1 = session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: s1, filmID: ""), completion: { outcome, record in
+            outcomes.append(("A1", outcome.status, record?.state?.settings.exposure))
+        })
+        // Let A1 fail on ioQueue WITHOUT pumping RunLoop.main (1B-i window).
+        store.waitForPendingIO()
+
+        // Enqueue A2 on main before RunLoop.main drains A1.
+        _ = session.commitEditAsync(expected: out1.saved!, state: MacPhotoEditState(settings: s2, filmID: ""), completion: { outcome, record in
+            outcomes.append(("A2", outcome.status, record?.state?.settings.exposure))
+        })
+        _ = session.flushPendingCommits()
+
+        let memExp = session.knownRecord(forPath: identityA.path)?.state?.settings.exposure
+        let diskExp = try MacEditPersistence(directory: dir).readState(for: photoA).state?.settings.exposure
+        XCTAssertEqual(memExp, diskExp, "1B-i: memory (\(String(describing: memExp))) must match disk (\(String(describing: diskExp)))")
+        XCTAssertEqual(diskExp, 2.0)
+        XCTAssertEqual(session.transactions.count, 1)
+        XCTAssertNil(session.transactions.first?.parts.first?.before,
+                     "1B-i: A2 history baseline must reflect rolled-back nil state, not failed A1")
+        let undone = session.undoPhoto(photoA)
+        XCTAssertEqual(undone.first?.status, .applied)
+        XCTAssertNil(try MacEditPersistence(directory: dir).state(for: photoA),
+                     "Undoing A2 after A1 failure must restore nil, not failed A1")
+    }
+
+    func testSessionCommitEditAsyncBlockedQueueExpiryPreDrainDoesNotSplitBrain1Bii() throws {
+        let dir = temporaryRoot.appendingPathComponent("split-brain-1bii", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photoA = try makeTempFile(named: "photo-1bii-a.ARW")
+        let photoB = try makeTempFile(named: "photo-1bii-b.ARW")
+        let identityA = try OriginalFileIdentity(photoA)
+        let identityB = try OriginalFileIdentity(photoB)
+
+        let lock = NSLock()
+        var writeAttempts = 0
+        let a1Entered = DispatchSemaphore(value: 0)
+        let a1Release = DispatchSemaphore(value: 0)
+        let b1Entered = DispatchSemaphore(value: 0)
+        let b1Release = DispatchSemaphore(value: 0)
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            lock.unlock()
+            if idx == 1 {
+                a1Entered.signal()
+                a1Release.wait()
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            if idx == 2 {
+                b1Entered.signal()
+                b1Release.wait()
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+        let initialA = MacPhotoEditRecord(identity: identityA, state: nil)
+        let initialB = MacPhotoEditRecord(identity: identityB, state: nil)
+
+        var sA1 = Adjustments(); sA1.exposure = 1.0
+        var sA2 = Adjustments(); sA2.exposure = 2.0
+        var sB1 = Adjustments(); sB1.exposure = 1.5
+        var sA3 = Adjustments(); sA3.exposure = 3.0
+
+        var outcomes: [String: AdjustmentTransferStatus] = [:]
+        let out1 = session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: sA1, filmID: ""), completion: { outcome, _ in
+            outcomes["A1"] = outcome.status
+        })
+        XCTAssertEqual(a1Entered.wait(timeout: .now() + 5), .success)
+
+        let out2 = session.commitEditAsync(expected: out1.saved!, state: MacPhotoEditState(settings: sA2, filmID: ""), completion: { outcome, _ in
+            outcomes["A2"] = outcome.status
+        })
+        _ = session.commitEditAsync(expected: initialB, state: MacPhotoEditState(settings: sB1, filmID: ""), completion: { outcome, _ in
+            outcomes["B1"] = outcome.status
+        })
+
+        // A1 fails -> A2 chain-fails (clearing failedPathsInQueue[A]) -> B1 pauses ioQueue.
+        a1Release.signal()
+        XCTAssertEqual(b1Entered.wait(timeout: .now() + 5), .success)
+
+        // Enqueue A3 BEFORE RunLoop.main drains A1/A2 while B1 still holds ioQueue (1B-ii window).
+        _ = session.commitEditAsync(expected: out2.saved!, state: MacPhotoEditState(settings: sA3, filmID: ""), completion: { outcome, _ in
+            outcomes["A3"] = outcome.status
+        })
+
+        b1Release.signal()
+        _ = session.flushPendingCommits()
+
+        let memA = session.knownRecord(forPath: identityA.path)?.state?.settings.exposure
+        let diskStore = try MacEditPersistence(directory: dir)
+        let diskA = try diskStore.readState(for: photoA).state?.settings.exposure
+        let diskB = try diskStore.readState(for: photoB).state?.settings.exposure
+
+        XCTAssertEqual(memA, diskA, "1B-ii: memA (\(String(describing: memA))) must match diskA (\(String(describing: diskA)))")
+        XCTAssertEqual(diskA, 3.0)
+        XCTAssertEqual(diskB, 1.5)
+        XCTAssertEqual(outcomes["A1"], .failed)
+        XCTAssertEqual(outcomes["A2"], .failed)
+        XCTAssertEqual(outcomes["B1"], .applied)
+        XCTAssertEqual(outcomes["A3"], .applied)
+        XCTAssertEqual(session.transactions.count, 2)
+    }
+
+    func testEnqueueSaveStateChainIfUndeliveredFailureClosesTOCTOURace() throws {
+        let dir = temporaryRoot.appendingPathComponent("toctou-undelivered-failure", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photoA = try makeTempFile(named: "photo-toctou.ARW")
+        let identityA = try OriginalFileIdentity(photoA)
+
+        let lock = NSLock()
+        var writeAttempts = 0
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            lock.unlock()
+            if idx == 1 {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+
+        var s1 = Adjustments(); s1.exposure = 1.0
+        var s2 = Adjustments(); s2.exposure = 2.0
+        var results: [Int: Result<MacPhotoEditRecord, Error>] = [:]
+
+        // Simulate A1 failing on ioQueue in the narrow TOCTOU window after deliverReadyCompletedCommits()
+        // and before enqueueSaveState acquires pendingLock:
+        try store.enqueueSaveState(identity: identityA, state: MacPhotoEditState(settings: s1, filmID: "")) { results[1] = $0 }
+        store.waitForPendingIO()
+
+        // Session mode (chainIfUndeliveredFailure: true) must chain-fail A2 before touching disk.
+        try store.enqueueSaveState(identity: identityA, state: MacPhotoEditState(settings: s2, filmID: ""), chainIfUndeliveredFailure: true) {
+            results[2] = $0
+        }
+        XCTAssertFalse(store.flushPendingCommits())
+        if case .failure = results[1] {} else { XCTFail("A1 must fail") }
+        if case .failure = results[2] {} else { XCTFail("A2 enqueued during TOCTOU window must chain-fail") }
+        lock.lock()
+        let attemptsAfterSession = writeAttempts
+        lock.unlock()
+        XCTAssertEqual(attemptsAfterSession, 1, "A2 must be blocked before calling writeData")
+        XCTAssertNil(try MacEditPersistence(directory: dir).state(for: photoA))
+    }
+
+    func testReentrantCommitEditAsyncInsideSuccessCompletionDeliversQueuedFailureFirst() throws {
+        let dir = temporaryRoot.appendingPathComponent("reentrant-delivery", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photoA = try makeTempFile(named: "photo-reentrant.ARW")
+        let identityA = try OriginalFileIdentity(photoA)
+
+        let lock = NSLock()
+        var writeAttempts = 0
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            lock.lock()
+            writeAttempts += 1
+            let idx = writeAttempts
+            lock.unlock()
+            if idx == 2 {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+        let initialA = MacPhotoEditRecord(identity: identityA, state: nil)
+
+        var s1 = Adjustments(); s1.exposure = 1.0
+        var s2 = Adjustments(); s2.exposure = 2.0
+        var s3 = Adjustments(); s3.exposure = 3.0
+        var a3Status: AdjustmentTransferStatus?
+        var a2Status: AdjustmentTransferStatus?
+
+        var out1: AdjustmentTransferOutcome!
+        out1 = session.commitEditAsync(expected: initialA, state: MacPhotoEditState(settings: s1, filmID: ""), completion: { outcome, _ in
+            XCTAssertEqual(outcome.status, .applied)
+            // Re-entrantly enqueue A3 while A2(.failure) is already ioCompleted behind A1.
+            _ = session.commitEditAsync(expected: out1.saved!, state: MacPhotoEditState(settings: s3, filmID: ""), completion: { a3Outcome, _ in
+                a3Status = a3Outcome.status
+            })
+        })
+        _ = session.commitEditAsync(expected: out1.saved!, state: MacPhotoEditState(settings: s2, filmID: ""), completion: { outcome, _ in
+            a2Status = outcome.status
+        })
+
+        // Both A1(.success) and A2(.failure) finish on ioQueue before main drains.
+        store.waitForPendingIO()
+        // Outer flushPendingCommits() must still return false because A2 failed (even though re-entrant A3 delivered A2).
+        XCTAssertFalse(session.flushPendingCommits())
+        XCTAssertEqual(a2Status, .failed)
+        XCTAssertEqual(a3Status, .applied)
+        XCTAssertEqual(session.knownRecord(forPath: identityA.path)?.state?.settings.exposure, 3.0)
+        XCTAssertEqual(try MacEditPersistence(directory: dir).state(for: photoA)?.settings.exposure, 3.0)
+    }
 }

@@ -293,4 +293,74 @@ final class AdjustmentPresetStoreTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: file), bytes, "Non-array retired_ids (\(value)) must preserve original bytes")
         }
     }
+
+    func testIsReadableCachesByStatAndDetectsMutations() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("RawLabPresetReadableCache-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = AdjustmentPresetStore(directory: directory, clock: { 1000 })
+        let file = directory.appendingPathComponent("presets.json")
+
+        for _ in 0..<60 {
+            XCTAssertTrue(store.isReadable)
+        }
+        XCTAssertEqual(store.diskReadCount, 0, "Missing presets.json stays cached with zero disk reads")
+
+        _ = try store.create(name: "Cached", payload: payload())
+        let readsAfterCreate = store.diskReadCount
+        for _ in 0..<60 {
+            XCTAssertTrue(store.isReadable)
+        }
+        XCTAssertLessThanOrEqual(store.diskReadCount - readsAfterCreate, 1,
+                                 "60 repeated isReadable polls on unchanged presets.json perform <= 1 disk read")
+
+        let readsBeforeCorrupt = store.diskReadCount
+        try Data("{corrupt".utf8).write(to: file, options: .atomic)
+        XCTAssertFalse(store.isReadable, "External corruption immediately invalidates cached readability")
+        XCTAssertEqual(store.diskReadCount, readsBeforeCorrupt + 1)
+        for _ in 0..<60 {
+            XCTAssertFalse(store.isReadable)
+        }
+        XCTAssertEqual(store.diskReadCount, readsBeforeCorrupt + 1,
+                       "Unchanged corrupt file caches false without repeated disk reads")
+
+        try FileManager.default.removeItem(at: file)
+        XCTAssertTrue(store.isReadable, "Deleting corrupt file transitions back to readable immediately")
+        XCTAssertEqual(store.diskReadCount, readsBeforeCorrupt + 1)
+    }
+
+    func testIsReadableReturnsFalseWhenParentDirectoryIsUnreadable() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("RawLabPresetParentChmod-\(UUID())")
+        let presetsDir = root.appendingPathComponent("Presets", isDirectory: true)
+        try FileManager.default.createDirectory(at: presetsDir, withIntermediateDirectories: true)
+        defer {
+            _ = chmod(presetsDir.path, 0o755)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = AdjustmentPresetStore(directory: presetsDir, clock: { 1000 })
+        XCTAssertTrue(store.isReadable)
+
+        // chmod 000 on parent directory before presets.json exists -> must return false and never cache true.
+        XCTAssertEqual(chmod(presetsDir.path, 0o000), 0)
+        if geteuid() != 0 {
+            XCTAssertFalse(store.isReadable, "chmod 000 on Presets directory must report isReadable == false")
+            XCTAssertFalse(store.isReadable, "Repeated poll on chmod 000 Presets directory must remain false")
+            XCTAssertThrowsError(try store.list(), "list() must fail closed when Presets directory is chmod 000")
+        }
+
+        XCTAssertEqual(chmod(presetsDir.path, 0o755), 0)
+        XCTAssertTrue(store.isReadable, "Restoring directory permissions restores isReadable == true")
+
+        // Create presets.json, then chmod 000 on parent directory -> must also return false.
+        _ = try store.create(name: "Existing", payload: payload())
+        XCTAssertTrue(store.isReadable)
+        XCTAssertEqual(chmod(presetsDir.path, 0o000), 0)
+        if geteuid() != 0 {
+            XCTAssertFalse(store.isReadable, "chmod 000 on Presets directory with existing presets.json must report false")
+            XCTAssertFalse(store.isReadable)
+        }
+        XCTAssertEqual(chmod(presetsDir.path, 0o755), 0)
+        XCTAssertTrue(store.isReadable)
+    }
 }

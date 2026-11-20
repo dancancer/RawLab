@@ -65,6 +65,11 @@ public final class AdjustmentPresetStore {
         init() {}
     }
 
+    private enum ReadabilityProbe: Equatable {
+        case missing
+        case present(FileStatFingerprint)
+    }
+
     public static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/Presets", isDirectory: true)
@@ -74,12 +79,54 @@ public final class AdjustmentPresetStore {
     private let makeID: () -> String
     private let clock: () -> Int64
     private var file: URL { directory.appendingPathComponent("presets.json") }
+    private let readabilityLock = NSLock()
+    private var cachedReadability: (probe: ReadabilityProbe, readable: Bool)?
+    public private(set) var diskReadCount = 0
 
     public init(directory: URL = AdjustmentPresetStore.defaultDirectory,
          writeData: @escaping (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) },
          makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
          clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.directory = directory; self.writeData = writeData; self.makeID = makeID; self.clock = clock
+    }
+
+    public var isReadable: Bool {
+        let resolvedPath = file.resolvingSymlinksInPath().standardizedFileURL.path
+        let probe = Self.probeReadability(for: resolvedPath)
+        readabilityLock.lock()
+        if let probe, let cached = cachedReadability, cached.probe == probe {
+            readabilityLock.unlock()
+            return cached.readable
+        }
+        readabilityLock.unlock()
+
+        let readable: Bool
+        if !FileManager.default.fileExists(atPath: file.path) {
+            readable = probe == .missing
+        } else {
+            readable = (try? read()) != nil
+        }
+        let probeAfter = Self.probeReadability(for: resolvedPath)
+        readabilityLock.lock()
+        if let probe, let probeAfter, probe == probeAfter {
+            if case .present(let fp) = probe, !fp.isRegularFile {
+                cachedReadability = nil
+            } else {
+                cachedReadability = (probe, readable)
+            }
+        } else {
+            cachedReadability = nil
+        }
+        readabilityLock.unlock()
+        return readable
+    }
+
+    private static func probeReadability(for resolvedPath: String) -> ReadabilityProbe? {
+        var st = POSIXStat()
+        if stat(resolvedPath, &st) == 0 {
+            return .present(FileStatFingerprint(statBuffer: st))
+        }
+        return errno == ENOENT ? .missing : nil
     }
 
     public func list() throws -> [AdjustmentPreset] { try read().presets }
@@ -185,7 +232,15 @@ public final class AdjustmentPresetStore {
         if registry.unreadable.contains(where: { $0.name == name }) { throw AdjustmentPresetError.duplicateName(nil) }
     }
     private func read() throws -> Registry {
-        guard FileManager.default.fileExists(atPath: file.path) else { return Registry() }
+        if !FileManager.default.fileExists(atPath: file.path) {
+            let resolvedPath = file.resolvingSymlinksInPath().standardizedFileURL.path
+            if Self.probeReadability(for: resolvedPath) == .missing {
+                return Registry()
+            }
+        }
+        readabilityLock.lock()
+        diskReadCount += 1
+        readabilityLock.unlock()
         let bytes = Array(try Data(contentsOf: file))
         let root: PresetJSONNode
         do { root = try PresetJSONScanner.scan(bytes) }
@@ -265,6 +320,9 @@ public final class AdjustmentPresetStore {
         out.append(Data("],\"registry_version\":1,\"retired_ids\":".utf8))
         out.append(try encoder.encode(registry.retiredIDs))
         out.append(UInt8(0x7D))
+        readabilityLock.lock()
+        cachedReadability = nil
+        readabilityLock.unlock()
         try writeData(out, file)
     }
     private func withWriteLock<T>(_ body: () throws -> T) throws -> T {

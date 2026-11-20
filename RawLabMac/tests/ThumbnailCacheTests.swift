@@ -7,8 +7,17 @@ import ImageIO
 // Standalone model stub for RenderEngine / AIPreparation so MacEditedPhotoPreviews
 // can be tested deterministically without linking the C++ ISP static libraries.
 final class AIPreparation: @unchecked Sendable {
-    init(onProgress: @escaping @Sendable (Int, Int, String) -> Void) {}
-    func cancel() {}
+    private let lock = NSLock()
+    private var cancelled = false
+    let progress: (Int, UInt64, UInt64) -> Void
+    init(progress: @escaping (Int, UInt64, UInt64) -> Void) { self.progress = progress }
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    @discardableResult func report(phase: Int, completed: UInt64, total: UInt64) -> Int32 {
+        guard !isCancelled else { return 0 }
+        progress(phase, completed, total)
+        return isCancelled ? 0 : 1
+    }
 }
 
 enum HDRCameraProfileAssetStore {
@@ -114,6 +123,7 @@ struct ThumbnailCacheTests {
         try await verifyUnwatchedReplacementRejectsInFlightOriginal(in: root)
         try await verifyResetIdempotentSingleInvalidation(in: root)
         try await verifyLookRemovalAndRenderFailureClearStaleTile(in: root)
+        try await verifyOffMainThreadFilmScanAndCorruptRecordDiagnostics(in: root)
         try await verifyFolderRefreshInvalidation(in: root)
         try await verifyLUTResourceDigestCacheAndInvalidation(in: root)
         try await verifyCommitEditPersistenceReadBudget(in: root)
@@ -833,6 +843,65 @@ struct ThumbnailCacheTests {
         await mountedTile.refresh(url: photo, previews: previews)
         check(mountedTile.thumbnail !== expEditedImg && mountedTile.thumbnail === uneditedImg && !mountedTile.adjustedThumbnail && mountedTile.notice == "预览未更新",
               "Render failure clears stale prior edited thumbnail from mounted tile")
+    }
+
+    @MainActor
+    private static func verifyOffMainThreadFilmScanAndCorruptRecordDiagnostics(in root: URL) async throws {
+        let dir = root.appendingPathComponent("film-scan-corrupt", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let matchedPhoto = dir.appendingPathComponent("matched.png")
+        let corruptPhoto = dir.appendingPathComponent("corrupt.png")
+        try writePNG(to: matchedPhoto, red: 0.25)
+        try writePNG(to: corruptPhoto, red: 0.75)
+
+        let lut = dir.appendingPathComponent("scan.cube")
+        try Data("LUT_3D_SIZE 2\n".utf8).write(to: lut)
+        let film = Film(name: "ScanLook", url: lut, managedID: "managed-scan-look")
+
+        let store = try MacEditPersistence(directory: editsDir)
+        var lookSettings = Adjustments(); lookSettings.exposureMode = .sensor
+        try store.save([matchedPhoto, corruptPhoto], state: MacPhotoEditState(settings: lookSettings, filmID: film.id))
+
+        let thumbnails = PhotoThumbnails()
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+        previews.films = [film]
+
+        // Render both edited thumbnails (without registering resourceWatches for corruptPhoto).
+        let matchedRec = try MacEditPersistence(directory: editsDir).readState(for: matchedPhoto)
+        let corruptRec = try MacEditPersistence(directory: editsDir).readState(for: corruptPhoto)
+        _ = try await previews.image(for: matchedRec)
+        _ = try await previews.image(for: corruptRec)
+        check(previews.cachedThumbnail(for: matchedPhoto) != nil && previews.cachedThumbnail(for: corruptPhoto) != nil,
+              "#495 setup: both edited thumbnails are cached")
+
+        // Corrupt corruptPhoto's record on disk in edits.json before changing films.
+        let editsFile = editsDir.appendingPathComponent("edits.json")
+        var doc = try JSONSerialization.jsonObject(with: try Data(contentsOf: editsFile)) as! [String: Any]
+        var records = doc["records"] as! [String: Any]
+        records[corruptRec.identity.path] = ["corrupt_payload": 123]
+        doc["records"] = records
+        try JSONSerialization.data(withJSONObject: doc, options: [.sortedKeys]).write(to: editsFile)
+
+        try FileManager.default.removeItem(at: lut)
+        previews.films = []
+
+        // Wait for background Task.detached film scan to complete.
+        for _ in 0..<200 where previews.isScanningFilmChanges {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        check(!previews.isScanningFilmChanges, "#495: off-main-thread film scan completes")
+        check(!previews.lastFilmScanDiagnostics.isEmpty,
+              "#495: corrupt record during film scan emits explicit diagnostic instead of silent try? skip")
+        check(previews.cachedThumbnail(for: matchedPhoto) == nil && previews.cachedThumbnail(for: corruptPhoto) == nil,
+              "#495: film change invalidates both matched and unreadable/unverified record thumbnails")
+
+        let postDoc = try JSONSerialization.jsonObject(with: try Data(contentsOf: editsFile)) as! [String: Any]
+        let postRecords = postDoc["records"] as! [String: Any]
+        check(postRecords[corruptRec.identity.path] != nil,
+              "#495: corrupt record in edits.json is preserved without deletion")
     }
 
     @MainActor
