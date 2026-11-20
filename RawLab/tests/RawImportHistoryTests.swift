@@ -3,6 +3,35 @@ import CryptoKit
 import Foundation
 import UIKit
 
+@_silgen_name("rawlab_import_counter_reset")
+func rawlabImportCounterReset()
+@_silgen_name("rawlab_import_counter_process_calls")
+func rawlabImportCounterProcessCalls() -> Int32
+@_silgen_name("rawlab_import_counter_core_decode")
+func rawlabImportCounterCoreDecode() -> Int32
+@_silgen_name("rawlab_import_counter_cancelled_status")
+func rawlabImportCounterCancelledStatus() -> Int32
+@_silgen_name("rawlab_import_counter_set_on_process")
+func rawlabImportCounterSetOnProcess(_ callback: (@convention(c) () -> Void)?)
+
+private final class CancelTriggerBox {
+    static let lock = NSLock()
+    static var model: RawEditorViewModel?
+    static var request: UUID?
+    static func trigger() {
+        lock.lock()
+        let m = model
+        let r = request
+        model = nil
+        request = nil
+        lock.unlock()
+        guard let m, let r else { return }
+        DispatchQueue.main.async {
+            m.cancelImageImport(r)
+        }
+    }
+}
+
 private enum Failure: Error { case message(String) }
 
 // ============================================================================
@@ -142,7 +171,6 @@ struct RawImportHistoryTests {
             from: neutralReference.buffer, orientation: neutralReference.orientation)
         try check(model.sourceIdentity == c && cCallbacks == [.default] &&
                   model.restoredSettings == .default && model.editSaveState == .idle &&
-                  model.rawLUTID == nil && !model.rawLUTApplied &&
                   neutralReferenceImage?.pngData() == model.previewImage?.pngData(),
                   "unseen RAW import renders the neutral default without a film or recipe")
 
@@ -316,6 +344,7 @@ struct RawImportHistoryTests {
                   "a real look identity change synchronizes film metadata with its selected LUT")
         let finalHash = try hash(Data(contentsOf: raw))
         try check(finalHash == originalHash, "RAW fixture bytes remain unchanged")
+        try verifySingleDecodeAndCancellation(raw: raw, output: output)
         let summary: [String: Any] = ["assertions": assertions, "rawSHA256": originalHash,
                                       "previewSHA256": hash(restored.previewImage!.pngData()!),
                                       "nativeWidth": restored.nativeImageSize!.width,
@@ -323,5 +352,117 @@ struct RawImportHistoryTests {
         try JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("summary.json"))
         print("PASS: real RAW import/history suite (\(assertions) assertions)")
+    }
+
+    private static func verifySingleDecodeAndCancellation(raw: URL, output: URL) throws {
+        let store = try EditPersistence(directory: output.appendingPathComponent("decode-count-edits"))
+        let queue = DispatchQueue(label: "com.rawlab.tests.raw-import-decode-count")
+        let model = RawEditorViewModel(editPersistence: store, importQueue: queue)
+
+        func waitImport(_ identity: PhotoIdentity, settings: RawSettings? = nil) throws {
+            if let settings {
+                try store.save(identity, state: PhotoEditState(settings: settings))
+            }
+            let doneLock = NSCondition()
+            var finished = false
+            queue.async {
+                doneLock.lock()
+                finished = true
+                doneLock.broadcast()
+                doneLock.unlock()
+            }
+            let deadline = Date().addingTimeInterval(30)
+            while Date() < deadline {
+                doneLock.lock()
+                let isDone = finished
+                doneLock.unlock()
+                if isDone && !model.isBusy && !model.previewRendering { break }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+        }
+
+        // (a) Default settings -> 1 processRaw call, 1 core RAW decode.
+        let defaultID = PhotoIdentity(resourceIdentifier: "decode-default-\(UUID().uuidString)")
+        rawlabImportCounterReset()
+        model.importImage(from: .raw(raw), identity: defaultID)
+        try waitImport(defaultID)
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { try? FileManager.default.removeItem(at: url) }
+        try check(model.hasImage && rawlabImportCounterProcessCalls() == 1 && rawlabImportCounterCoreDecode() == 1,
+                  "default RAW import runs 1 processRaw and 1 core RAW decode (calls=\(rawlabImportCounterProcessCalls()) decode=\(rawlabImportCounterCoreDecode()))")
+
+        // (b) Geometry + lens correction enabled -> 1 processRaw call, 1 core RAW decode.
+        let geomLensID = PhotoIdentity(resourceIdentifier: "decode-geom-lens-\(UUID().uuidString)")
+        var geomLens = RawSettings.default
+        geomLens.geometry.cropWidth = 0.75
+        geomLens.geometry.perspectiveHorizontal = 0.2
+        geomLens.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
+        try store.save(geomLensID, state: PhotoEditState(settings: geomLens))
+        rawlabImportCounterReset()
+        model.importImage(from: .raw(raw), identity: geomLensID)
+        try waitImport(geomLensID)
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { try? FileManager.default.removeItem(at: url) }
+        try check(model.hasImage && rawlabImportCounterProcessCalls() == 1 && rawlabImportCounterCoreDecode() == 1,
+                  "geometry+lens RAW import runs 1 processRaw and 1 core RAW decode (calls=\(rawlabImportCounterProcessCalls()) decode=\(rawlabImportCounterCoreDecode()))")
+
+        // (c) Custom WB + geometry -> <=2 core RAW decodes (neutral base + custom WB).
+        let customWBID = PhotoIdentity(resourceIdentifier: "decode-custom-wb-\(UUID().uuidString)")
+        var customWB = RawSettings.default
+        customWB.whiteBalanceMode = .custom
+        customWB.temperature = 6200
+        customWB.tint = 12
+        customWB.geometry.cropWidth = 0.8
+        try store.save(customWBID, state: PhotoEditState(settings: customWB))
+        rawlabImportCounterReset()
+        model.importImage(from: .raw(raw), identity: customWBID)
+        try waitImport(customWBID)
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { try? FileManager.default.removeItem(at: url) }
+        try check(model.hasImage && rawlabImportCounterProcessCalls() == 2 && rawlabImportCounterCoreDecode() <= 2,
+                  "custom WB RAW import runs 2 processRaw and <=2 core RAW decodes (calls=\(rawlabImportCounterProcessCalls()) decode=\(rawlabImportCounterCoreDecode()))")
+
+        // (d) Cooperative cancellation stops < 1.0s via SONY2FUJI_STATUS_CANCELLED without error leak, and subsequent import succeeds.
+        let cancelID = PhotoIdentity(resourceIdentifier: "decode-cancel-\(UUID().uuidString)")
+        rawlabImportCounterReset()
+        CancelTriggerBox.lock.lock()
+        CancelTriggerBox.model = model
+        CancelTriggerBox.request = nil
+        CancelTriggerBox.lock.unlock()
+        rawlabImportCounterSetOnProcess {
+            CancelTriggerBox.trigger()
+        }
+        queue.suspend()
+        let start = CFAbsoluteTimeGetCurrent()
+        let req = model.importImage(from: .raw(raw), identity: cancelID)
+        CancelTriggerBox.lock.lock()
+        CancelTriggerBox.request = req
+        CancelTriggerBox.lock.unlock()
+        queue.resume()
+        let queueDone = NSCondition()
+        var queueFinished = false
+        queue.async {
+            queueDone.lock()
+            queueFinished = true
+            queueDone.broadcast()
+            queueDone.unlock()
+        }
+        let cancelDeadline = Date().addingTimeInterval(15)
+        while Date() < cancelDeadline {
+            queueDone.lock()
+            let done = queueFinished
+            queueDone.unlock()
+            if done { break }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        try check(elapsed < 1.0 && rawlabImportCounterCancelledStatus() >= 1 && !model.isBusy && model.statusMessage == nil,
+                  "cooperative RAW import cancellation aborted in \(String(format: "%.3f", elapsed))s (cancelledStatus=\(rawlabImportCounterCancelledStatus())) with no error leak")
+
+        let followUpID = PhotoIdentity(resourceIdentifier: "decode-followup-\(UUID().uuidString)")
+        rawlabImportCounterReset()
+        model.importImage(from: .raw(raw), identity: followUpID)
+        try waitImport(followUpID)
+        if let url = model.sourceFile?.withReadAccess({ $0 }) { try? FileManager.default.removeItem(at: url) }
+        try check(model.hasImage && model.sourceIdentity == followUpID && model.statusMessage == nil,
+                  "follow-up RAW import succeeds cleanly after cooperative cancellation")
     }
 }

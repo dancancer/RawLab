@@ -1,6 +1,22 @@
 import RawLabKit
 import Foundation
+import ImageIO
 import UIKit
+
+@_silgen_name("rawlab_preflight_counter_reset")
+func rawlabPreflightCounterReset()
+@_silgen_name("rawlab_preflight_counter_process")
+func rawlabPreflightCounterProcess() -> Int32
+@_silgen_name("rawlab_preflight_counter_load_display_image")
+func rawlabPreflightCounterLoadDisplayImage() -> Int32
+@_silgen_name("rawlab_preflight_counter_cg_full_image")
+func rawlabPreflightCounterCGFullImage() -> Int32
+@_silgen_name("rawlab_preflight_counter_inspect_lens")
+func rawlabPreflightCounterInspectLens() -> Int32
+@_silgen_name("rawlab_preflight_counter_inspect_lens_metadata")
+func rawlabPreflightCounterInspectLensMetadata() -> Int32
+@_silgen_name("rawlab_preflight_counter_look_access")
+func rawlabPreflightCounterLookAccess() -> Int32
 
 @main
 struct AdjustmentHistoryModelTests {
@@ -425,6 +441,94 @@ struct AdjustmentHistoryModelTests {
                   afterLens.state?.settings.lensSettings.profileID == "fixture-profile" &&
                   afterLens.state?.settings.lensSettings.isEnabled == false,
                   "raster keeps an inactive manual profile without claiming correction")
+
+        // #510: Metadata-only preflight (0 full pixel decodes) + hoisted O(looks) look checks.
+        let largeJPEG = directory.appendingPathComponent("preflight-large.jpg")
+        let largeImage = UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1200), format: format).image { ctx in
+            UIColor.red.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        }
+        try largeImage.jpegData(compressionQuality: 0.85)!.write(to: largeJPEG)
+        let corruptRAW = directory.appendingPathComponent("corrupt-target.arw")
+        try Data("not a raw file".utf8).write(to: corruptRAW)
+
+        let lookCount = 5
+        for i in 0..<lookCount {
+            let lookURL = directory.appendingPathComponent("preflight-look-\(i).cube")
+            try Data("TITLE \"Test\"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".utf8).write(to: lookURL)
+            model.lutMap["preflight-look-\(i)"] = LUTReference(id: "preflight-look-\(i)", name: "Look \(i)", sourceURL: lookURL, isCustom: true)
+        }
+
+        let targetIDs = (0..<4).map { PhotoIdentity(resourceIdentifier: "preflight-zero-decode-\($0)") }
+        let targetPhotos = targetIDs.enumerated().map { idx, id in
+            IOSAdjustmentPhoto(identity: id, displayName: "target-\(idx)",
+                               file: .externallyManaged(idx.isMultiple(of: 2) ? png : largeJPEG), isRaw: false)
+        }
+        rawlabPreflightCounterReset()
+        var batchResult: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(payload, photos: targetPhotos) { batchResult = $0 }
+        let batchDeadline = Date().addingTimeInterval(30)
+        while batchResult == nil && Date() < batchDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let batchOp = try batchResult!.get()
+        try check(batchOp.targets.allSatisfy { $0.error == nil },
+                  "metadata-only preflight accepts valid PNG and large JPEG targets")
+        try check(rawlabPreflightCounterProcess() == 0 &&
+                  rawlabPreflightCounterLoadDisplayImage() == 0 &&
+                  rawlabPreflightCounterCGFullImage() == 0,
+                  "raster non-WB preflight performs 0 pixel decodes (process=\(rawlabPreflightCounterProcess()) loadDisplay=\(rawlabPreflightCounterLoadDisplayImage()) cgFull=\(rawlabPreflightCounterCGFullImage()))")
+        try check(rawlabPreflightCounterLookAccess() == Int32(lookCount),
+                  "look readability is hoisted O(looks)=\(lookCount) across \(targetPhotos.count) targets (got \(rawlabPreflightCounterLookAccess()))")
+
+        // Active lens request on raster targets uses inspect_lens_metadata_v2 with 0 pixel decodes.
+        let activeLensPayload = try AdjustmentTransferPayload(
+            source: .init(identifier: "raw-source", isRaw: true, processingVersion: 2, recipe: nil),
+            values: ["geometry.lens.distortion": .boolean(true)])
+        rawlabPreflightCounterReset()
+        var activeLensRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(activeLensPayload, photos: [targetPhotos[0], targetPhotos[1]]) { activeLensRes = $0 }
+        let activeLensDeadline = Date().addingTimeInterval(30)
+        while activeLensRes == nil && Date() < activeLensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let activeLensOp = try activeLensRes!.get()
+        try check(activeLensOp.targets.allSatisfy { $0.error != nil },
+                  "active lens request rejects raster targets lacking EXIF/lens match")
+        try check(rawlabPreflightCounterProcess() == 0 &&
+                  rawlabPreflightCounterLoadDisplayImage() == 0 &&
+                  rawlabPreflightCounterCGFullImage() == 0 &&
+                  rawlabPreflightCounterInspectLensMetadata() == 2,
+                  "raster lens preflight uses inspect_lens_metadata_v2 with 0 pixel decodes (process=\(rawlabPreflightCounterProcess()) loadDisplay=\(rawlabPreflightCounterLoadDisplayImage()) inspectMeta=\(rawlabPreflightCounterInspectLensMetadata()))")
+
+        // Corrupt RAW fails preflight with 0 full decodes.
+        let corruptID = PhotoIdentity(resourceIdentifier: "corrupt-raw-target")
+        rawlabPreflightCounterReset()
+        var corruptRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(payload, photos: [.init(identity: corruptID, displayName: "corrupt.arw", file: .externallyManaged(corruptRAW), isRaw: true)]) { corruptRes = $0 }
+        let corruptDeadline = Date().addingTimeInterval(30)
+        while corruptRes == nil && Date() < corruptDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let corruptOp = try corruptRes!.get()
+        try check(corruptOp.targets.first?.error != nil && rawlabPreflightCounterProcess() == 0,
+                  "corrupt RAW target fails preflight with 0 pixel decodes")
+
+        if let rawPath = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"], !rawPath.isEmpty {
+            let rawURL = URL(fileURLWithPath: rawPath)
+            let rawID = PhotoIdentity(resourceIdentifier: "preflight-real-raw-\(UUID().uuidString)")
+            rawlabPreflightCounterReset()
+            var rawRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+            model.prepareAdjustmentPaste(payload, photos: [.init(identity: rawID, displayName: rawURL.lastPathComponent, file: .externallyManaged(rawURL), isRaw: true)]) { rawRes = $0 }
+            let rawDeadline = Date().addingTimeInterval(30)
+            while rawRes == nil && Date() < rawDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            let rawOp = try rawRes!.get()
+            try check(rawOp.targets.first?.error == nil && rawlabPreflightCounterProcess() == 0 &&
+                      rawlabPreflightCounterInspectLens() >= 1,
+                      "real RAW non-WB preflight succeeds via inspect_lens_v2 with 0 sony2fuji_process decodes")
+
+            rawlabPreflightCounterReset()
+            var rawLensRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+            model.prepareAdjustmentPaste(activeLensPayload, photos: [.init(identity: rawID, displayName: rawURL.lastPathComponent, file: .externallyManaged(rawURL), isRaw: true)]) { rawLensRes = $0 }
+            let rawLensDeadline = Date().addingTimeInterval(30)
+            while rawLensRes == nil && Date() < rawLensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            _ = try rawLensRes!.get()
+            try check(rawlabPreflightCounterProcess() == 0 && rawlabPreflightCounterInspectLens() >= 1,
+                      "real RAW lens preflight runs inspect_lens_v2 with 0 sony2fuji_process decodes")
+        }
 
     }
 

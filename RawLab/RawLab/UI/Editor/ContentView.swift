@@ -466,17 +466,10 @@ struct ContentView: View {
     }
 
     private func handleEditorAppear() {
-        if ProcessInfo.processInfo.arguments.contains("-RawLab.testBusyEditor") {
-            coordinator.isImporting = true
-        }
         if !coordinator.checkedBatchRecovery {
             coordinator.checkedBatchRecovery = true
             recoverBatchExport()
         }
-        guard !coordinator.didAutoLoadSample else { return }
-        guard ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] == "1" else { return }
-        coordinator.didAutoLoadSample = true
-        viewModel.runBundledSampleSmokeTest(settings: settings)
     }
 }
 

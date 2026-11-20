@@ -207,7 +207,6 @@ final class EditorCoordinator: ObservableObject {
     @Published var toolWorkspaceOpen = false
     @Published var workspaceDraftID = UUID()
     @Published var lookSearchExpanded = false
-    var didAutoLoadSample = false
     @Published var photoViewing = PhotoViewingState()
     @Published var photoViewport = PhotoViewport()
     @Published var selectedGroup = EditorAdjustmentGroup.looks

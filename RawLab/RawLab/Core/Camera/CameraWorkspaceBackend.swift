@@ -95,6 +95,8 @@ final class CameraWorkspaceBackend {
     static let shared = CameraWorkspaceBackend()
     private static let sessionFailureCodes: Set<UInt16> = [0x2003, 0x2004, 0x2013, 0x201e]
     let queue = DispatchQueue(label: "rawlab.camera.owner", qos: .userInitiated)
+    private let thumbnailQueue = DispatchQueue(label: "rawlab.camera.thumbnails", qos: .userInitiated)
+    private let storageLock = NSLock()
     private var storage: CameraOriginalStore?
     private let ownerLock = NSLock()
     private var active: IOSCameraRun?
@@ -117,9 +119,16 @@ final class CameraWorkspaceBackend {
         }
     }
     private func store() throws -> CameraOriginalStore {
+        storageLock.lock()
+        defer { storageLock.unlock() }
         if let storage { return storage }
         let created = try CameraOriginalStore(directory: CameraOriginalStore.applicationDirectory())
         storage = created; return created
+    }
+    private var currentStorage: CameraOriginalStore? {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        return storage
     }
     func loadHistory(_ result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
         queue.async { result(Result { try self.store().snapshot }) }
@@ -155,7 +164,7 @@ final class CameraWorkspaceBackend {
         }
     }
     private func owns(_ run: IOSCameraRun) -> Bool { ownerLock.lock(); defer { ownerLock.unlock() }; return active === run && !run.stopped }
-    private func publishManifest(_ run: IOSCameraRun) { if let storage { run.emit(.manifest(storage.snapshot)) } }
+    private func publishManifest(_ run: IOSCameraRun) { if let storage = currentStorage { run.emit(.manifest(storage.snapshot)) } }
     private func failure(_ error: Error, run: IOSCameraRun) {
         guard owns(run) else { return }
         run.stop(); run.emit(.phase(.paused)); run.emit(.failure(error)); publishManifest(run)
@@ -297,7 +306,7 @@ final class CameraWorkspaceBackend {
         run.nextCardCheck = Date().addingTimeInterval(session.family == .legacy ? 120 : 1.5)
     }
     private func publishProperties(_ run: IOSCameraRun, values: [UInt16: CameraProperty], session: SonyCameraSession) {
-        let pending = storage?.snapshot.tether?.shutterRequestedAt != nil
+        let pending = currentStorage?.snapshot.tether?.shutterRequestedAt != nil
         let blocked = pending || run.receiving || run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume
         run.emit(.properties(values, writable: session.canWriteParameters,
             shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !blocked))
@@ -658,5 +667,8 @@ final class CameraWorkspaceBackend {
     }
     func original(_ sourceID: UUID, result: @escaping (Result<URL, Error>) -> Void) {
         queue.async { result(Result { try self.store().verifiedURL(sourceID) }) }
+    }
+    func originalThumbnailURL(_ sourceID: UUID, result: @escaping (Result<URL, Error>) -> Void) {
+        thumbnailQueue.async { result(Result { try self.store().thumbnailURL(sourceID) }) }
     }
 }

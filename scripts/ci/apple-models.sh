@@ -41,7 +41,7 @@ case "${1:-}" in
         # HDR 渲染重置按钮契约由不依赖辅助功能授权的 hdr-rendition-reset.sh 覆盖；
         # 依赖 AXUIElement 的 hdr-rendition-ui.sh 保留为本地/发布前手工检查，CI 不执行。
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/color-grading-interaction.sh
-            RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-rendition-reset.sh
+            RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-canvas.sh RawLabMac/tests/hdr-rendition-reset.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/reset-scenarios.sh
@@ -60,7 +60,7 @@ case "${1:-}" in
     ios)
         pre_checks=(scripts/rum/test_embed_ios.py)
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/color-grading-interaction.sh
-            RawLab/tests/hdr-model.sh RawLab/tests/hdr-resource-notice.sh
+            RawLab/tests/hdr-model.sh RawLab/tests/hdr-canvas.sh RawLab/tests/hdr-resource-notice.sh
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/editor-coordinator.sh RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh

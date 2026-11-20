@@ -242,8 +242,18 @@ struct ImportStateTests {
 
         let invalid = Sony2FujiProcessor.Buffer(data: Data([0, 0, 0, 255]), width: 2, height: 1,
             stride: 8, pixelFormat: SONY2FUJI_PIXEL_RGBA8, semantic: .display)
+        let cacheKey = RawEditorViewModel.PreviewCacheKey(
+            sourceRevision: f.model.sourceRevision,
+            settings: second,
+            referenceKey: f.model.comparisonKey(settings: second, longEdge: f.model.previewLongEdge),
+            lut: nil,
+            edge: f.model.previewLongEdge,
+            quality: .final,
+            includeHistogram: true
+        )
         f.model.scheduleHistogramUpdate(for: invalid, renderID: f.model.acceptedPreviewFrameID!,
-                                        sourceRevision: f.model.sourceRevision, delay: 0)
+                                        sourceRevision: f.model.sourceRevision, delay: 0,
+                                        cacheKey: cacheKey)
         f.model.renderQueue.sync {}
         try deliver(f.collector.take())
         try check(f.model.histogram == nil && f.model.previewImage?.pngData() == accepted && !f.model.previewFailed,
