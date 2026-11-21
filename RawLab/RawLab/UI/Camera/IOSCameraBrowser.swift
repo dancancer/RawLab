@@ -13,6 +13,7 @@ struct IOSCameraBrowser: View {
     @State private var day: String?
     @State private var onlySelected = false
     @State private var filters = false
+    @State private var showJPEG = false
     @State private var previewAsset: CameraRemoteAsset?
     private var visible: [CameraRemoteAsset] {
         model.manualAssets.filter { asset in
@@ -50,6 +51,9 @@ struct IOSCameraBrowser: View {
             IOSCameraFilters(format: $format, day: $day, onlySelected: $onlySelected,
                 days: Array(Set(model.assets.compactMap { Self.dayKey($0.snapshot) })).sorted(by: >))
         }
+        .sheet(isPresented: $showJPEG) {
+            IOSCameraJPEGSettings(draft: model.importPreferences.jpeg, apply: model.setJPEGOptions)
+        }
         .sheet(item: $previewAsset) { asset in
             IOSCameraPreview(model: model, name: asset.snapshot.name) {
                 if let original = model.original(for: asset) {
@@ -81,6 +85,28 @@ struct IOSCameraBrowser: View {
                     else { model.selection.formUnion(ids) }
                 }.disabled(visible.isEmpty || model.busy).accessibilityIdentifier("camera.select.all")
             }.font(.callout).frame(minHeight: 44).padding(.horizontal, 14)
+            Button {
+                showJPEG = true
+            } label: {
+                HStack {
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            Text(L10n.text("JPEG 保存"))
+                            Spacer(minLength: 12)
+                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("JPEG 保存"))
+                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }.frame(minHeight: 44).padding(.horizontal, 14).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(model.busy).accessibilityIdentifier("camera.jpeg.settings")
+            Divider()
             if !model.connected {
                 HStack {
                     Text(L10n.text("相机连接已断开。已保存的照片仍可查看。")).font(.caption)

@@ -521,7 +521,8 @@ struct CameraSkipAndLimitTests {
             ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile),
             ("testManualBrowseOrderNewestFirst", testManualBrowseOrderNewestFirst),
             ("testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial", testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial),
-            ("testTetheringAutomaticallySavesNewShotsToPhotoLibrary", testTetheringAutomaticallySavesNewShotsToPhotoLibrary)
+            ("testTetheringAutomaticallySavesNewShotsToPhotoLibrary", testTetheringAutomaticallySavesNewShotsToPhotoLibrary),
+            ("testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary", testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary)
         ]
         #if os(macOS)
         suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
@@ -2804,6 +2805,136 @@ struct CameraSkipAndLimitTests {
                   && controller.notice == "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。"
                   && store.snapshot.originals.count == 3 && shot3?.photoLibraryAssetID == nil,
                   "Tether Photos (Shot 3): Denied Photos permission retains local tethered original and keeps tether session active")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
+    }
+
+    @MainActor static func testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary() async throws {
+        final class RecordingPhotoLibrarySaver: CameraPhotoLibrarySaving {
+            private let lock = NSLock()
+            private var nextID = 1
+            private(set) var saved: [(filename: String, url: URL, size: UInt64, pixelSize: CGSize?)] = []
+
+            func requestAddAuthorization() -> Bool { true }
+
+            func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+                let data = try Data(contentsOf: fileURL)
+                let dims: CGSize?
+                if let src = CGImageSourceCreateWithData(data as CFData, nil),
+                   let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                   let w = props[kCGImagePropertyPixelWidth] as? Int,
+                   let h = props[kCGImagePropertyPixelHeight] as? Int {
+                    dims = CGSize(width: w, height: h)
+                } else {
+                    dims = nil
+                }
+                lock.lock(); defer { lock.unlock() }
+                let assetID = "ph-manual-jpeg-\(nextID)"
+                nextID += 1
+                saved.append((filename: filename, url: fileURL, size: UInt64(data.count), pixelSize: dims))
+                return assetID
+            }
+        }
+
+        func makeLargeLandscapeJPEG(width: Int, height: Int, targetSize: Int) throws -> Data {
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+                throw CameraProtocolError.invalid("Failed to construct test CGContext")
+            }
+            ctx.setFillColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1)
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            guard let image = ctx.makeImage() else {
+                throw CameraProtocolError.invalid("Failed to construct test CGImage")
+            }
+            let encoded = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(encoded, "public.jpeg" as CFString, 1, nil) else {
+                throw CameraProtocolError.invalid("Failed to construct JPEG encoder")
+            }
+            CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.95] as CFDictionary)
+            guard CGImageDestinationFinalize(dest) else {
+                throw CameraProtocolError.invalid("Failed to finalize landscape JPEG")
+            }
+            let base = encoded as Data
+            var out = Data(capacity: max(targetSize, base.count))
+            out.append(base.prefix(2))
+            var remaining = max(0, targetSize - base.count)
+            while remaining >= 4 {
+                let payload = min(32_768, remaining - 4)
+                let segLen = UInt16(payload + 2)
+                out.append(contentsOf: [0xff, 0xfe, UInt8(segLen >> 8), UInt8(segLen & 0xff)])
+                out.append(Data(repeating: 0x22, count: payload))
+                remaining -= (4 + payload)
+            }
+            out.append(base.dropFirst(2))
+            return out
+        }
+
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-manual-jpeg-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let saver = RecordingPhotoLibrarySaver()
+        let rawBytes = validRAWBytes(15)
+        let jpegBytes = try makeLargeLandscapeJPEG(width: 128, height: 64, targetSize: 250_000)
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let channel = FakeSonyCameraChannel(entries: [
+            FakeSonyCameraEntry(content: 1, name: "DSC09201.ARW", createdMillis: baseMillis + 1_000, bytes: rawBytes),
+            FakeSonyCameraEntry(content: 2, name: "DSC09201.JPG", createdMillis: baseMillis + 1_000, bytes: jpegBytes)
+        ])
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend)
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:MANUAL-JPEG", label: "Fake")
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing && controller.assets.count == 2 }
+
+        // 1) Manual mode with adjust=true shrinks JPEG to 40x20, keeps ARW untouched, and sends shrunk JPEG to Photos.
+        controller.setIncrementalMode(false)
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72))
+        controller.selection = Set(controller.assets.map(\.id))
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && controller.lastSavedToPhotoLibraryCount == 2 }
+
+        let adjustedOrig = try store.snapshot.originals.first { $0.name == "DSC09201.JPG" }
+            ?? { throw CameraProtocolError.invalid("Missing manual adjusted JPG") }()
+        let savedToPhotosAdjusted = saver.saved.first { $0.filename == "DSC09201.JPG" }
+        try check(adjustedOrig.jpegSource?.options == CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72)
+                  && savedToPhotosAdjusted?.pixelSize == CGSize(width: 40, height: 20)
+                  && adjustedOrig.size < UInt64(jpegBytes.count),
+                  "Manual import with adjust=true resizes JPEG to 40x20 and streams resized file to Photos")
+        let storedRaw = try store.snapshot.originals.first { $0.name == "DSC09201.ARW" }
+            ?? { throw CameraProtocolError.invalid("Missing manual ARW") }()
+        let storedRawBytes = try Data(contentsOf: store.verifiedURL(storedRaw.id))
+        try check(storedRaw.jpegSource == nil && storedRawBytes == rawBytes,
+                  "Manual import with JPEG resize leaves paired ARW untouched")
+
+        // 2) Switch to adjust=false and manually import the JPEG: keeps full 128x64 resolution without reusing resized copy.
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: false))
+        let jpgAsset = try controller.assets.first { $0.snapshot.name == "DSC09201.JPG" }
+            ?? { throw CameraProtocolError.invalid("Missing JPG remote asset") }()
+        controller.selection = [jpgAsset.id]
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && saver.saved.count == 3 }
+        let fullSavedToPhotos = saver.saved.last
+        let unadjustedOrig = store.snapshot.originals.last { $0.name == "DSC09201.JPG" }
+        try check(unadjustedOrig?.jpegSource == nil && unadjustedOrig?.id != adjustedOrig.id
+                  && fullSavedToPhotos?.pixelSize == CGSize(width: 128, height: 64)
+                  && unadjustedOrig?.size == UInt64(jpegBytes.count),
+                  "Manual import with adjust=false stores full 128x64 JPEG original")
+
+        // 3) Re-enable adjust=true when an unadjusted local copy exists: must NOT bypass resizing via 3x64KiB sampling!
+        channel.resetTransferStats()
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72))
+        controller.selection = [jpgAsset.id]
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && channel.bytesReadByName["DSC09201.JPG"] == jpegBytes.count }
+        try check(channel.mobileRangeReads["DSC09201.JPG"] == [0..<jpegBytes.count],
+                  "Manual import with adjust=true downloads full bytes rather than sampling unadjusted original")
 
         await withCheckedContinuation { continuation in
             controller.stop { continuation.resume() }

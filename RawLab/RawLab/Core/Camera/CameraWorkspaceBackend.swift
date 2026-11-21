@@ -714,7 +714,8 @@ final class CameraWorkspaceBackend {
             return nil
         }
     }
-    func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil, run: IOSCameraRun) {
+    func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil,
+                      jpeg: CameraJPEGOptions? = nil, run: IOSCameraRun) {
         perform(run) {
             guard run.mode == .importing, !run.receiving else { throw CameraProtocolError.invalid("Camera import is busy") }
             run.receiving = true; defer { run.receiving = false }
@@ -722,7 +723,8 @@ final class CameraWorkspaceBackend {
             guard assets.allSatisfy({ $0.owner == session.id }) else { throw CameraProtocolError.invalid("Camera selection belongs to an old session") }
             let store = try self.store()
             let job = try store.enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
-                                        assets: assets.map(\.snapshot), listingOwner: session.id, incremental: incremental)
+                                        assets: assets.map(\.snapshot), listingOwner: session.id,
+                                        incremental: incremental, jpeg: jpeg)
             self.publishManifest(run)
             if incremental != nil { run.emit(.incrementalJob(job.id)) }
             try self.receive(job, assets: run.knownAssets, run: run)

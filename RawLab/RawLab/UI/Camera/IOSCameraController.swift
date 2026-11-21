@@ -293,7 +293,8 @@ struct IOSCameraImportPreferences: Codable {
         guard let run, mode == .importing, phase == .browsing, !scanning, selectionAllowed else { return }
         phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
         lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
-        backend.importAssets(selectedAssets, run: run)
+        let jpeg = importPreferences.jpeg.adjust ? importPreferences.jpeg : nil
+        backend.importAssets(selectedAssets, jpeg: jpeg, run: run)
     }
     func resumeImport(_ job: CameraTransferJob) {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }

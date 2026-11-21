@@ -158,12 +158,8 @@ struct IOSCameraIncrementalImport: View {
         }
     }
     private var jpegSummary: some View {
-        let options = model.importPreferences.jpeg
-        let size = options.longEdge.map { L10n.format("长边 %@ px", String($0)) } ?? L10n.text("原始尺寸")
-        let summary = options.adjust
-            ? L10n.format("%@ · 质量 %@", size, (Double(options.quality) / 100).formatted(.percent.locale(L10n.locale)))
-            : L10n.text("原样保存")
-        return Text(summary).font(.subheadline).foregroundStyle(.secondary)
+        Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+            .font(.subheadline).foregroundStyle(.secondary)
     }
     private func taskStatus(_ job: CameraTransferJob?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -250,7 +246,13 @@ struct IOSCameraIncrementalImport: View {
     }
 }
 
-private struct IOSCameraJPEGSettings: View {
+struct IOSCameraJPEGSettings: View {
+    static func summary(for options: CameraJPEGOptions) -> String {
+        guard options.adjust else { return L10n.text("原样保存") }
+        let size = options.longEdge.map { L10n.format("长边 %@ px", String($0)) } ?? L10n.text("原始尺寸")
+        return L10n.format("%@ · 质量 %@", size, (Double(options.quality) / 100).formatted(.percent.locale(L10n.locale)))
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State var draft: CameraJPEGOptions
     let apply: (CameraJPEGOptions) -> Void
@@ -259,7 +261,15 @@ private struct IOSCameraJPEGSettings: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker(L10n.text("JPEG 保存"), selection: $draft.adjust) {
+                Picker(L10n.text("JPEG 保存"), selection: Binding(
+                    get: { draft.adjust },
+                    set: { value in
+                        if value && !draft.adjust && draft.longEdge == nil {
+                            draft.longEdge = ExportSize.presets.first ?? 2048
+                        }
+                        draft.adjust = value
+                    }
+                )) {
                     Text(L10n.text("原样保存")).tag(false)
                     Text(L10n.text("调整后保存")).tag(true)
                 }.accessibilityIdentifier("camera.jpeg.mode")
