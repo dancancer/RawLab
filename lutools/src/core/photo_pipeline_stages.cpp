@@ -328,12 +328,18 @@ void applyDetailAdjustments(
     float clarity,
     int sourceWidth,
     int sourceHeight,
-    ProcessingVersion version
+    ProcessingVersion version,
+    const ClarityField* clarityField,
+    const SubRectMap& roiMap
 ) {
     if (noiseReduction > 0.0f) {
         applyNoiseReduction(image, noiseReduction);
     }
-    applyClarity(image, clarity, sourceWidth, sourceHeight, version);
+    if (clarityField && !clarityField->empty() && roiMap.active()) {
+        applyClarityWithField(image, clarity, *clarityField, roiMap);
+    } else {
+        applyClarity(image, clarity, sourceWidth, sourceHeight, version);
+    }
     if (sharpening > 0.0f) {
         applySharpening(image, sharpening);
     }

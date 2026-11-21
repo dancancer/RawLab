@@ -4,9 +4,13 @@
 #include "ffi/hdr_session.h"
 #include "core/pipeline.h"
 #include "core/pixel_buffer.h"
+#include <memory>
+
+namespace sony2fuji::hdr { struct RoiSessionCache; }
 
 struct sony2fuji_session {
     sony2fuji::Pipeline pipeline;
+    std::shared_ptr<sony2fuji::hdr::RoiSessionCache> hdrRoiCache;
 };
 
 inline sony2fuji_status toFfiStatus(sony2fuji::RenderStatus status) noexcept {

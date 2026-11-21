@@ -335,6 +335,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onDeleteLook = model::deleteLook, onLookImportReportDismiss = model::dismissLookImportReport,
             onAbout = { about = true }, updateVersion = updateState.available?.version,
             onPreviewSizeChange = model::updatePreviewSize,
+            onDetailRequest = model::updateDetailRequest,
+            onDetailNeedsBeforeChange = model::setDetailNeedsBefore,
             onUndoDraft = model::undoDraft, onRedoDraft = model::redoDraft,
             onBeginDraft = model::beginDraft, onDraftEdit = model::changeDraft,
             onApplyDraft = model::applyDraft, onDiscardDraft = model::discardDraft,

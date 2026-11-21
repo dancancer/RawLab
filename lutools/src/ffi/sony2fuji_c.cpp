@@ -1,4 +1,5 @@
 #include "ffi/session_internal.h"
+#include "core/hdr_pipeline.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include "core/hsl_probe.h"
@@ -205,6 +206,21 @@ sony2fuji::RAWBayerOverride hdrSessionLoadCameraAI(
     return dummy.loadHdrCameraAi(key, metadata);
 }
 
+sony2fuji::hdr::RoiSessionCache* hdrSessionRoiCache(const SessionLease& lease) {
+    auto* raw = lease.raw();
+    if (!raw) return nullptr;
+    if (!raw->hdrRoiCache) {
+        raw->hdrRoiCache = std::make_shared<sony2fuji::hdr::RoiSessionCache>();
+    }
+    return raw->hdrRoiCache.get();
+}
+
+void hdrSessionClearRoiCache(const SessionLease& lease) {
+    if (auto* raw = lease.raw()) {
+        raw->hdrRoiCache.reset();
+    }
+}
+
 sony2fuji_hsl_probe* makeHDRHslProbe(
     sony2fuji::ImageData image, uint64_t sourceRevision, uint64_t requestRevision, bool preview
 ) {
@@ -296,6 +312,48 @@ sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* handl
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease) || (enabled != 0 && enabled != 1)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     lease.raw()->pipeline.setViewportPreview(enabled != 0);
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_viewport_roi(
+    sony2fuji_session* handle,
+    const sony2fuji_viewport_roi* roi
+) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !roi || roi->struct_size < sizeof(sony2fuji_viewport_roi) ||
+        (roi->enabled != 0 && roi->enabled != 1)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    sony2fuji::Pipeline::ViewportRoiConfig cfg{};
+    cfg.enabled = roi->enabled != 0;
+    cfg.normX0 = roi->norm_x0;
+    cfg.normY0 = roi->norm_y0;
+    cfg.normX1 = roi->norm_x1;
+    cfg.normY1 = roi->norm_y1;
+    cfg.maxOutputLongEdge = roi->max_output_long_edge;
+    return toFfiStatus(lease.raw()->pipeline.setViewportRoi(cfg));
+}
+
+sony2fuji_status sony2fuji_session_get_viewport_roi_result(
+    const sony2fuji_session* handle,
+    sony2fuji_viewport_roi_result* out_result
+) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !out_result ||
+        out_result->struct_size < sizeof(sony2fuji_viewport_roi_result)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint32_t size = out_result->struct_size;
+    std::memset(out_result, 0, size);
+    out_result->struct_size = size;
+    const auto r = lease.constRaw()->pipeline.viewportRoiResult();
+    out_result->active = r.active ? 1u : 0u;
+    out_result->native_x0 = r.nativeX0;
+    out_result->native_y0 = r.nativeY0;
+    out_result->native_x1 = r.nativeX1;
+    out_result->native_y1 = r.nativeY1;
+    out_result->full_native_width = r.fullNativeWidth;
+    out_result->full_native_height = r.fullNativeHeight;
     return SONY2FUJI_STATUS_OK;
 }
 

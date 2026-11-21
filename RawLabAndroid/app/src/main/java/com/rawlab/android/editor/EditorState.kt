@@ -1,6 +1,7 @@
 package com.rawlab.android.editor
 
 import com.rawlab.android.editor.render.ExportDestinationCleanup
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.format.ExportFormat
@@ -65,6 +66,8 @@ data class EditorState(
     val unreadableLooks: List<com.rawlab.android.looks.UnreadableLook> = emptyList(),
     val recentLookIds: List<String> = emptyList(),
     val preview: PreviewPair? = null,
+    val detail: PreviewDetailOverlay? = null,
+    val detailTiles: List<PreviewDetailOverlay> = emptyList(),
     val operation: Operation = Operation.NONE,
     val exportStep: SingleExportStep = when (operation) {
         Operation.PREPARE_EXPORT -> SingleExportStep.PREPARING

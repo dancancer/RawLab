@@ -53,7 +53,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {},
     workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
-    onCancelExport: () -> Unit = {}) {
+    onCancelExport: () -> Unit = {},
+    onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -72,6 +73,9 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null, hslTarget = hslTarget,
                 showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
                 histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview,
+                detail = state.detail.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY },
+                detailTiles = state.detailTiles.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY }.orEmpty(),
+                onDetailRequest = if (state.draft?.group == AdjustmentGroup.GEOMETRY) ({}) else onDetailRequest,
                 onCanvasTap = { if (state.draft?.group != AdjustmentGroup.GEOMETRY) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft?.group != AdjustmentGroup.GEOMETRY) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {

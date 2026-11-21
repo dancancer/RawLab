@@ -8,6 +8,7 @@
 #include <string>
 
 namespace sony2fuji { struct RAWBayerSource; struct RAWBayerOverride; }
+namespace sony2fuji::hdr { struct RoiSessionCache; }
 
 struct sony2fuji_session_slot;
 
@@ -41,4 +42,6 @@ void hdrSessionPrepareCameraAI(const SessionLease& session, const char* path, ui
 std::string hdrSessionCameraAIKey(const SessionLease& session, const char* path);
 sony2fuji::RAWBayerOverride hdrSessionLoadCameraAI(const SessionLease& session, const std::string& key,
     const sony2fuji::RAWBayerSource& metadata);
+sony2fuji::hdr::RoiSessionCache* hdrSessionRoiCache(const SessionLease& session);
+void hdrSessionClearRoiCache(const SessionLease& session);
 sony2fuji_hsl_probe* makeHDRHslProbe(sony2fuji::ImageData image, uint64_t sourceRevision, uint64_t requestRevision, bool preview);

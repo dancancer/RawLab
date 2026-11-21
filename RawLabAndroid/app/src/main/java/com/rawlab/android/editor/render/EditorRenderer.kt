@@ -18,7 +18,10 @@ import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.engine.NativeFrame
+import com.rawlab.android.engine.NativeRoiBounds
+import com.rawlab.android.engine.NativeRoiFrame
 import com.rawlab.android.engine.RgbHistogram
+import com.rawlab.android.editor.canvas.NormalizedRect
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.HslTargetAvailability
@@ -51,8 +54,11 @@ internal class EditorRenderer(
         val outputNativeWidth: Int
         val outputNativeHeight: Int
         fun snapshot(): HDRPreviewFrame
+        fun snapshot(headroomOverride: Float): HDRPreviewFrame = snapshot()
         fun sdrBitmap(): Bitmap
     }
+
+    internal class HdrRoiHandle(val image: HdrImageHandle, val bounds: NativeRoiBounds)
 
     internal interface RenderEngine : Closeable {
         fun setGpuMode(mode: Int)
@@ -68,6 +74,18 @@ internal class EditorRenderer(
             inputKind: PhotoInputKind,
             cancellationGeneration: Long = -1L,
         ): NativeFrame
+        fun previewRoi(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long = -1L,
+        ): NativeRoiFrame = throw UnsupportedOperationException("previewRoi")
         fun sampleHsl(
             input: File,
             lut: File?,
@@ -123,6 +141,46 @@ internal class EditorRenderer(
             lookDirectory: File?,
             progress: HDRProgressListener?,
         ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory)
+        fun renderHDRRoi(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long = -1L,
+            lookDirectory: File? = null,
+        ): HdrRoiHandle = throw UnsupportedOperationException("renderHDRRoi")
+        fun renderHDRCameraRawRoi(
+            file: File,
+            info: HDRSourceInfo,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long = -1L,
+            lookDirectory: File? = null,
+            profileDirectory: File? = null,
+        ): HdrRoiHandle = throw UnsupportedOperationException("renderHDRCameraRawRoi")
+        fun renderHDRFileRoi(
+            file: File,
+            info: HDRSourceInfo,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long = -1L,
+            lookDirectory: File? = null,
+        ): HdrRoiHandle = throw UnsupportedOperationException("renderHDRFileRoi")
+        fun clearHDRSessionCache() = Unit
         fun sampleHDRHsl(
             source: HdrImageHandle,
             settings: HDRSettings,
@@ -209,7 +267,8 @@ internal class EditorRenderer(
         override val sourceInfo: HDRSourceInfo get() = underlying.sourceInfo
         override val outputNativeWidth: Int get() = underlying.outputNativeWidth
         override val outputNativeHeight: Int get() = underlying.outputNativeHeight
-        override fun snapshot(): HDRPreviewFrame = underlying.snapshot()
+        override fun snapshot(): HDRPreviewFrame = underlying.snapshot(0f)
+        override fun snapshot(headroomOverride: Float): HDRPreviewFrame = underlying.snapshot(headroomOverride)
         override fun sdrBitmap(): Bitmap = underlying.sdrBitmap()
         override fun close() = underlying.close()
     }
@@ -228,6 +287,18 @@ internal class EditorRenderer(
             inputKind: PhotoInputKind,
             cancellationGeneration: Long,
         ): NativeFrame = native.preview(input, lut, settings, edge, interactive, inputKind, cancellationGeneration)
+        override fun previewRoi(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long,
+        ): NativeRoiFrame = native.previewRoi(input, lut, settings, x0, y0, x1, y1, maxOutputLongEdge, inputKind, cancellationGeneration)
         override fun sampleHsl(
             input: File,
             lut: File?,
@@ -290,6 +361,55 @@ internal class EditorRenderer(
         ): HdrImageHandle = NativeHdrImageHandle(
             native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory, progress)
         )
+        override fun renderHDRRoi(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+        ): HdrRoiHandle = native.renderHDRRoi(
+            (source as NativeHdrImageHandle).underlying, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory,
+        ).let { HdrRoiHandle(NativeHdrImageHandle(it.image), it.bounds) }
+        override fun renderHDRCameraRawRoi(
+            file: File,
+            info: HDRSourceInfo,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            profileDirectory: File?,
+        ): HdrRoiHandle = native.renderHDRCameraRawRoi(
+            file, info, settings, x0, y0, x1, y1, maxOutputLongEdge, baseContentHeadroom,
+            cancellationGeneration, lookDirectory, profileDirectory,
+        ).let { HdrRoiHandle(NativeHdrImageHandle(it.image), it.bounds) }
+        override fun renderHDRFileRoi(
+            file: File,
+            info: HDRSourceInfo,
+            settings: HDRSettings,
+            x0: Float,
+            y0: Float,
+            x1: Float,
+            y1: Float,
+            maxOutputLongEdge: Int,
+            baseContentHeadroom: Float,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+        ): HdrRoiHandle = native.renderHDRFileRoi(
+            file, info, settings, x0, y0, x1, y1, maxOutputLongEdge, baseContentHeadroom,
+            cancellationGeneration, lookDirectory,
+        ).let { HdrRoiHandle(NativeHdrImageHandle(it.image), it.bounds) }
+        override fun clearHDRSessionCache() = native.clearHDRSessionCache()
         override fun sampleHDRHsl(
             source: HdrImageHandle,
             settings: HDRSettings,
@@ -460,6 +580,7 @@ internal class EditorRenderer(
     }
     fun releaseDecodedRaster() {
         previews.clear(); previewScope = null
+        processor?.clearHDRSessionCache()
         processor?.releaseRasterCache(); releaseHDRSource()
     }
 
@@ -467,7 +588,7 @@ internal class EditorRenderer(
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
         runGuardedExportWork(work, destinationDeleter) {
-            if (work !is Work.Preview && work !is Work.HslProbe && work !is Work.Import &&
+            if (work !is Work.Preview && work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.Import &&
                 work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
                 return@runGuardedExportWork perform(work)
             cancellation.check()
@@ -520,6 +641,7 @@ internal class EditorRenderer(
             }
         }
         is Work.Preview -> WorkResult.Preview(work, preview(work, generation))
+        is Work.DetailPreview -> performDetail(work, generation)
         is Work.HslProbe -> {
             val preview = work.preview
             val sample = runCatching {
@@ -825,6 +947,124 @@ internal class EditorRenderer(
             rendered.close(); output.delete()
         }
         WorkResult.Export
+    }
+
+    private fun performDetail(work: Work.DetailPreview, generation: Long): WorkResult.DetailPreview {
+        val overlay = try {
+            val roi = work.roi.overscanRect
+            val hdr = work.photo.hdrSource != null && work.edits.isHDREditing
+            if (hdr) {
+                if (work.gpuMode == NativeProcessor.FORCE) return WorkResult.DetailPreview(work, null)
+                val info = hdrSourceInfo(work.photo, work.edits)
+                if (info.isProRAW) {
+                    work.edits.requireProRAWDecoder()
+                    if (info.width.toLong() * info.height.toLong() > 16_000_000L) {
+                        return WorkResult.DetailPreview(work, null)
+                    }
+                }
+                val native = engine()
+                native.setGpuMode(NativeProcessor.CPU)
+                val edge = work.roi.maxOutputLongEdge.coerceIn(1, 1280)
+                val plan = buildHDRRenderPlan(null, work.photo, work.edits, work.edits.geometry, edge, info.cameraProcessingVersion)
+                fun renderHdrTile(settings: HDRSettings, headroom: Float): Pair<HDRPreviewFrame, NativeRoiBounds> {
+                    val handle = when {
+                        info.isProRAW -> native.decodeHDRCamera(
+                            work.photo.file, info, 0, generation, settings.cameraSettings, storage.hdrCameraProfileDirectory,
+                        ).use { source ->
+                            native.renderHDRRoi(
+                                source, settings, roi.x0, roi.y0, roi.x1, roi.y1, edge, headroom,
+                                generation, storage.hdrLookDirectory,
+                            )
+                        }
+                        info.isCameraRaw -> native.renderHDRCameraRawRoi(
+                            work.photo.file, info, settings, roi.x0, roi.y0, roi.x1, roi.y1, edge, headroom,
+                            generation, storage.hdrLookDirectory, storage.hdrCameraProfileDirectory,
+                        )
+                        else -> native.renderHDRFileRoi(
+                            work.photo.file, info, settings, roi.x0, roi.y0, roi.x1, roi.y1, edge, headroom,
+                            generation, storage.hdrLookDirectory,
+                        )
+                    }
+                    handle.image.use { img ->
+                        return img.snapshot(headroomOverride = headroom) to handle.bounds
+                    }
+                }
+                val (afterFrame, bounds) = renderHdrTile(plan.resultSettings, work.baseResultHeadroom)
+                val neutralFrame = if (plan.resultSettings == plan.neutralSettings) {
+                    afterFrame
+                } else if (work.includeNeutral) {
+                    runCatching { renderHdrTile(plan.neutralSettings, work.baseNeutralHeadroom).first }.getOrNull()
+                } else null
+                PreviewDetailOverlay(
+                    neutral = null,
+                    result = null,
+                    hdrNeutral = neutralFrame,
+                    hdrResult = afterFrame,
+                    normalizedRect = NormalizedRect(
+                        bounds.x0.toFloat() / bounds.fullWidth,
+                        bounds.y0.toFloat() / bounds.fullHeight,
+                        bounds.x1.toFloat() / bounds.fullWidth,
+                        bounds.y1.toFloat() / bounds.fullHeight,
+                    ),
+                    pixelWidth = afterFrame.width,
+                    pixelHeight = afterFrame.height,
+                    fullNativeWidth = bounds.fullWidth,
+                    fullNativeHeight = bounds.fullHeight,
+                    sourceRevision = work.sourceRevision,
+                    editRevision = work.editRevision,
+                    tileKey = work.tileKey,
+                )
+            } else {
+                val native = engine()
+                native.setGpuMode(work.gpuMode)
+                val edge = work.roi.maxOutputLongEdge.coerceIn(1, 2048)
+                val lut = storage.lookPath(work.edits)
+                val afterRoi = native.previewRoi(
+                    work.photo.file, lut, work.edits, roi.x0, roi.y0, roi.x1, roi.y1,
+                    edge, work.photo.inputKind, generation,
+                )
+                val afterBitmap = afterRoi.frame.bitmap()
+                val neutralSettings = EditSettings(
+                    geometry = work.edits.geometry,
+                    lens = work.edits.lens,
+                    processing = work.edits.processing,
+                    x3fMode = work.edits.x3fMode,
+                )
+                val neutralBitmap = if (work.edits == neutralSettings && lut == null) {
+                    afterBitmap
+                } else if (work.includeNeutral) {
+                    runCatching {
+                        native.previewRoi(
+                            work.photo.file, null, neutralSettings, roi.x0, roi.y0, roi.x1, roi.y1,
+                            edge, work.photo.inputKind, generation,
+                        ).frame.bitmap()
+                    }.getOrNull()
+                } else null
+                val bounds = afterRoi.bounds
+                PreviewDetailOverlay(
+                    neutral = neutralBitmap,
+                    result = afterBitmap,
+                    hdrNeutral = null,
+                    hdrResult = null,
+                    normalizedRect = NormalizedRect(
+                        bounds.x0.toFloat() / bounds.fullWidth,
+                        bounds.y0.toFloat() / bounds.fullHeight,
+                        bounds.x1.toFloat() / bounds.fullWidth,
+                        bounds.y1.toFloat() / bounds.fullHeight,
+                    ),
+                    pixelWidth = afterRoi.frame.width,
+                    pixelHeight = afterRoi.frame.height,
+                    fullNativeWidth = bounds.fullWidth,
+                    fullNativeHeight = bounds.fullHeight,
+                    sourceRevision = work.sourceRevision,
+                    editRevision = work.editRevision,
+                    tileKey = work.tileKey,
+                )
+            }
+        } catch (_: Throwable) {
+            null
+        }
+        return WorkResult.DetailPreview(work, overlay)
     }
 }
 

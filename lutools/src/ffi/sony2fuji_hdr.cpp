@@ -260,6 +260,72 @@ template <class ProbeFn>
 sony2fuji_status probeFileEntry(const char* file, sony2fuji_hdr_source_info_v1* info, sony2fuji_hdr_diagnostic_v1* diag, ProbeFn fn) {
     return boundary(diag, [&] { header(info, SONY2FUJI_HDR_FIELD_RESULT); clearOutput(info); requirePath(file); *info = toFfiSourceInfo(fn(file), info->struct_size); });
 }
+hdr::CameraRawDevelopmentSpec buildCameraRawDevSpec(
+    const SessionLease& session,
+    const sony2fuji_hdr_camera_development_v1* development,
+    bool preview,
+    uint32_t longEdge,
+    bool ai,
+    sony2fuji_hdr_camera_development_v2& profiledOut
+) {
+    hdr::CameraRawDevelopmentSpec spec;
+    spec.preview = preview;
+    spec.longEdge = longEdge;
+    spec.legacySonyCrop = hdrSessionUsesLegacySonyCrop(session);
+    spec.useAi = ai;
+    if (ai) {
+        spec.aiKeyForFile = [&session](const char* f) { return hdrSessionCameraAIKey(session, f); };
+        spec.loadAiOverride = [&session](const std::string& k, const RAWBayerSource& m) { return hdrSessionLoadCameraAI(session, k, m); };
+    }
+    profiledOut = {};
+    if (development) {
+        if (development->version == 2 && !ai) {
+            if (development->struct_size < sizeof(profiledOut))
+                fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Truncated HDR camera profile configuration");
+            std::memcpy(&profiledOut, development, sizeof(profiledOut));
+        } else header(development, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT);
+        spec.hasDevelopment = true;
+        spec.whiteBalance = development->white_balance;
+        spec.exposureReference = development->exposure_reference;
+        spec.temperature = development->temperature;
+        spec.tint = development->tint;
+        spec.fbddLevel = development->fbdd_level;
+        spec.lensFlags = development->lens_flags;
+        spec.lensProfileId = development->lens_profile_id;
+        spec.getLensDatabase = [&session] { return hdrSessionLensDatabase(session); };
+        if (profiledOut.base.version == 2) {
+            spec.hasCameraProfile = true;
+            spec.cameraProfilePath = profiledOut.profile_path;
+            spec.cameraProfileSha256 = profiledOut.profile_sha256;
+        }
+    }
+    return spec;
+}
+
+HDRRoiSpec toCoreRoiSpec(const sony2fuji_hdr_roi_v1* roi) {
+    header(roi, SONY2FUJI_HDR_FIELD_REQUEST);
+    if ((roi->full_source_width == 0 && roi->full_source_height == 0 && (roi->source_x0 != 0 || roi->source_y0 != 0)) ||
+        ((roi->full_source_width == 0) != (roi->full_source_height == 0))) {
+        fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid HDR ROI source sub-rect metadata");
+    }
+    return {
+        roi->norm_x0, roi->norm_y0, roi->norm_x1, roi->norm_y1,
+        roi->max_output_long_edge, roi->base_content_headroom,
+        roi->source_x0, roi->source_y0, roi->full_source_width, roi->full_source_height
+    };
+}
+
+void writeRoiResult(const hdr::RoiRenderOutput& output, sony2fuji_hdr_roi_result_v1* out_roi) {
+    if (!out_roi) return;
+    out_roi->native_x0 = static_cast<uint32_t>(output.bounds.plan.ox0);
+    out_roi->native_y0 = static_cast<uint32_t>(output.bounds.plan.oy0);
+    out_roi->native_x1 = static_cast<uint32_t>(output.bounds.plan.ox1);
+    out_roi->native_y1 = static_cast<uint32_t>(output.bounds.plan.oy1);
+    out_roi->full_native_width = static_cast<uint32_t>(output.bounds.plan.fullNativeWidth);
+    out_roi->full_native_height = static_cast<uint32_t>(output.bounds.plan.fullNativeHeight);
+    out_roi->is_proxy = output.isProxy ? 1u : 0u;
+}
+
 sony2fuji_status decodeCameraRawEntry(sony2fuji_session* sessionHandle, const char* file, const sony2fuji_hdr_decode_options_v1* options,
                                       const sony2fuji_hdr_camera_development_v1* development, bool ai,
                                       sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic) {
@@ -272,26 +338,9 @@ sony2fuji_status decodeCameraRawEntry(sony2fuji_session* sessionHandle, const ch
         const HdrProgressScope progress(hdrSessionProgress(session));
         checkProcessingCancellation();
         reportHdrProgress(0, 1000);
-        hdr::CameraRawDevelopmentSpec spec;
-        spec.preview = options->intent == SONY2FUJI_INTENT_PREVIEW; spec.longEdge = options->long_edge;
-        spec.legacySonyCrop = hdrSessionUsesLegacySonyCrop(session); spec.useAi = ai;
-        if (ai) {
-            spec.aiKeyForFile = [&session](const char* f) { return hdrSessionCameraAIKey(session, f); };
-            spec.loadAiOverride = [&session](const std::string& k, const RAWBayerSource& m) { return hdrSessionLoadCameraAI(session, k, m); };
-        }
         sony2fuji_hdr_camera_development_v2 profiled{};
-        if (development) {
-            if (development->version == 2 && !ai) {
-                if (development->struct_size < sizeof(profiled))
-                    fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Truncated HDR camera profile configuration");
-                std::memcpy(&profiled, development, sizeof(profiled));
-            } else header(development, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT);
-            spec.hasDevelopment = true; spec.whiteBalance = development->white_balance; spec.exposureReference = development->exposure_reference;
-            spec.temperature = development->temperature; spec.tint = development->tint; spec.fbddLevel = development->fbdd_level;
-            spec.lensFlags = development->lens_flags; spec.lensProfileId = development->lens_profile_id;
-            spec.getLensDatabase = [&session] { return hdrSessionLensDatabase(session); };
-            if (profiled.base.version == 2) { spec.hasCameraProfile = true; spec.cameraProfilePath = profiled.profile_path; spec.cameraProfileSha256 = profiled.profile_sha256; }
-        }
+        const auto spec = buildCameraRawDevSpec(session, development, options->intent == SONY2FUJI_INTENT_PREVIEW,
+            options->long_edge, ai, profiled);
         auto decoded = hdr::decodeCameraRaw(file, spec);
         hdr::ExportSourceMetadata meta{{}, file, {}, decoded.usedCameraProfile ? profiled.profile_path : ""};
         publishPair(std::move(decoded.pixels), 0.0f, 0.0f, decoded.sourceHeadroomKind, std::move(meta), result);
@@ -634,6 +683,174 @@ sony2fuji_status sony2fuji_hdr_export_tiled(sony2fuji_session* sessionHandle,
         fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, SONY2FUJI_HDR_FIELD_EXPORT, "Tiled HDR file export requires an Apple runtime", SONY2FUJI_STATUS_UNSUPPORTED);
 #endif
     });
+}
+
+sony2fuji_status sony2fuji_hdr_roi_source_bounds(uint32_t native_width, uint32_t native_height,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_roi_source_bounds_v1* out_bounds, sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        header(out_bounds, SONY2FUJI_HDR_FIELD_RESULT);
+        if (requestAliases(request, out_bounds, sizeof(*out_bounds)) ||
+            overlaps(roi, sizeof(*roi), out_bounds, sizeof(*out_bounds))) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR ROI bounds alias input");
+        }
+        clearOutput(out_bounds);
+        validateRequestVersion(request);
+        if (request->flip_horizontal > 1 || request->flip_vertical > 1) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid HDR flip");
+        }
+        const auto roiSpec = toCoreRoiSpec(roi);
+        HDRRenderOptions options;
+        options.processingVersion = request->hdr_processing_version;
+        options.geometry = {request->crop_x, request->crop_y, request->crop_width, request->crop_height,
+            request->quarter_turns, request->flip_horizontal != 0, request->flip_vertical != 0,
+            request->straighten_degrees, request->perspective_horizontal, request->perspective_vertical};
+        options.intent = static_cast<HDRQuality>(request->intent);
+        options.longEdge = request->long_edge;
+        if (options.processingVersion >= SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION) {
+            const auto e = readExt<sony2fuji_hdr_request_v6>(request);
+            options.detail = {e.sharpening, e.clarity, e.dehaze, e.denoise};
+        }
+        const auto bounds = computeHDRRoiSourceBounds(native_width, native_height, options, roiSpec);
+        out_bounds->source_x0 = static_cast<uint32_t>(bounds.sourceRect.x0);
+        out_bounds->source_y0 = static_cast<uint32_t>(bounds.sourceRect.y0);
+        out_bounds->source_x1 = static_cast<uint32_t>(bounds.sourceRect.x1);
+        out_bounds->source_y1 = static_cast<uint32_t>(bounds.sourceRect.y1);
+        out_bounds->native_x0 = static_cast<uint32_t>(bounds.plan.ox0);
+        out_bounds->native_y0 = static_cast<uint32_t>(bounds.plan.oy0);
+        out_bounds->native_x1 = static_cast<uint32_t>(bounds.plan.ox1);
+        out_bounds->native_y1 = static_cast<uint32_t>(bounds.plan.oy1);
+        out_bounds->full_native_width = static_cast<uint32_t>(bounds.plan.fullNativeWidth);
+        out_bounds->full_native_height = static_cast<uint32_t>(bounds.plan.fullNativeHeight);
+        out_bounds->output_width = static_cast<uint32_t>(bounds.plan.outputWidth);
+        out_bounds->output_height = static_cast<uint32_t>(bounds.plan.outputHeight);
+    });
+}
+
+sony2fuji_status sony2fuji_hdr_render_roi(sony2fuji_session* sessionHandle, const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        if (sourceAliases(source, result, sizeof(*result)) || requestAliases(request, result, sizeof(*result)) ||
+            overlaps(roi, sizeof(*roi), result, sizeof(*result))) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR result aliases input");
+        }
+        if (out_roi) {
+            header(out_roi, SONY2FUJI_HDR_FIELD_RESULT);
+            if (sourceAliases(source, out_roi, sizeof(*out_roi)) ||
+                requestAliases(request, out_roi, sizeof(*out_roi)) ||
+                overlaps(roi, sizeof(*roi), out_roi, sizeof(*out_roi)) ||
+                overlaps(result, sizeof(*result), out_roi, sizeof(*out_roi))) {
+                fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR ROI metadata aliases buffer");
+            }
+            clearOutput(out_roi);
+        }
+        prepareOutput(result);
+        SessionLease session;
+        requireCpuSession(sessionHandle, session, "HDR computation is CPU only");
+        validateRequestVersion(request);
+        const auto roiSpec = toCoreRoiSpec(roi);
+        auto input = readPair(source);
+        std::string lookPath;
+        const auto options = parseRenderOptions(request, session, &lookPath);
+        const ProcessingCancellationScope cancellation(
+            options.hasPhotoEffects() || options.hasDetail() || options.look ? hdrSessionCancellation(session) : ProcessingCancellation{});
+        auto output = hdr::renderPairROI(input->pixels, lookPath, input->meta, input->sourceHeadroomKind, options, roiSpec);
+        writeRoiResult(output, out_roi);
+        publishPair(std::move(output.pixels), output.hdrHeadroom, output.sdrHeadroom, output.sourceHeadroomKind, std::move(output.meta), result);
+        hdrSessionDidRenderCPU(session);
+    });
+}
+
+sony2fuji_status sony2fuji_hdr_render_camera_raw_roi(sony2fuji_session* sessionHandle, const char* file,
+    const sony2fuji_hdr_camera_development_v1* development, uint32_t use_ai,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        if (requestAliases(request, result, sizeof(*result)) ||
+            overlaps(roi, sizeof(*roi), result, sizeof(*result)) ||
+            overlaps(development, sizeof(*development), result, sizeof(*result))) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR result aliases input");
+        }
+        if (out_roi) {
+            header(out_roi, SONY2FUJI_HDR_FIELD_RESULT);
+            if (requestAliases(request, out_roi, sizeof(*out_roi)) ||
+                overlaps(roi, sizeof(*roi), out_roi, sizeof(*out_roi)) ||
+                overlaps(result, sizeof(*result), out_roi, sizeof(*out_roi))) {
+                fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR ROI metadata aliases buffer");
+            }
+            clearOutput(out_roi);
+        }
+        prepareOutput(result);
+        SessionLease session;
+        requireCpuSession(sessionHandle, session, "HDR computation is CPU only");
+        requirePath(file);
+        if (use_ai > 1) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT, "Invalid AI flag");
+        validateRequestVersion(request);
+        const auto roiSpec = toCoreRoiSpec(roi);
+        if (roiSpec.fullSourceWidth != 0 || roiSpec.fullSourceHeight != 0) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Camera RAW ROI cannot use pre-cropped source metadata");
+        }
+        std::string lookPath;
+        const auto options = parseRenderOptions(request, session, &lookPath);
+        sony2fuji_hdr_camera_development_v2 profiled{};
+        const auto devSpec = buildCameraRawDevSpec(session, development, false, 0, use_ai != 0, profiled);
+        const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
+        checkProcessingCancellation();
+        auto* cache = hdrSessionRoiCache(session);
+        auto output = hdr::renderCameraRawROI(*cache, file, devSpec, lookPath, options, roiSpec);
+        writeRoiResult(output, out_roi);
+        publishPair(std::move(output.pixels), output.hdrHeadroom, output.sdrHeadroom, output.sourceHeadroomKind, std::move(output.meta), result);
+        hdrSessionDidRenderCPU(session);
+    });
+}
+
+sony2fuji_status sony2fuji_hdr_render_file_roi(sony2fuji_session* sessionHandle, const char* file,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return boundary(diagnostic, [&] {
+        if (requestAliases(request, result, sizeof(*result)) ||
+            overlaps(roi, sizeof(*roi), result, sizeof(*result))) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR result aliases input");
+        }
+        if (out_roi) {
+            header(out_roi, SONY2FUJI_HDR_FIELD_RESULT);
+            if (requestAliases(request, out_roi, sizeof(*out_roi)) ||
+                overlaps(roi, sizeof(*roi), out_roi, sizeof(*out_roi)) ||
+                overlaps(result, sizeof(*result), out_roi, sizeof(*out_roi))) {
+                fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "HDR ROI metadata aliases buffer");
+            }
+            clearOutput(out_roi);
+        }
+        prepareOutput(result);
+        SessionLease session;
+        requireCpuSession(sessionHandle, session, "HDR computation is CPU only");
+        requirePath(file);
+        validateRequestVersion(request);
+        const auto roiSpec = toCoreRoiSpec(roi);
+        if (roiSpec.fullSourceWidth != 0 || roiSpec.fullSourceHeight != 0) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "HDR file ROI cannot use pre-cropped source metadata");
+        }
+        std::string lookPath;
+        const auto options = parseRenderOptions(request, session, &lookPath);
+        const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
+        checkProcessingCancellation();
+        auto* cache = hdrSessionRoiCache(session);
+        auto output = hdr::renderFileROI(*cache, file, lookPath, options, roiSpec);
+        writeRoiResult(output, out_roi);
+        publishPair(std::move(output.pixels), output.hdrHeadroom, output.sdrHeadroom, output.sourceHeadroomKind, std::move(output.meta), result);
+        hdrSessionDidRenderCPU(session);
+    });
+}
+
+void sony2fuji_hdr_clear_session_cache(sony2fuji_session* sessionHandle) {
+    SessionLease session;
+    if (SessionLease::acquire(sessionHandle, session, false)) {
+        hdrSessionClearRoiCache(session);
+    }
 }
 
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image) {

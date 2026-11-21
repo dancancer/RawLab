@@ -17,7 +17,12 @@ struct ZoomablePhoto: UIViewRepresentable {
     var interactionEnabled = true
     var onPreviewSizeChange: ((Int) -> Void)? = nil
     private let nativePixelSize: CGSize?
+    private let previewSourceSize: CGSize?
     private let previewLongEdgeLimit: Int
+    private let detailOverlay: PhotoDetailOverlay?
+    private let detailTiles: [PhotoDetailOverlay]
+    private let detailBacking: PhotoDetailBacking?
+    var onDetailRequest: ((PhotoDetailRequest?) -> Void)? = nil
     var hdr: HDRDisplayImage? = nil
     var referenceHDR: HDRDisplayImage? = nil
     var hdrDisplay: HDRDisplayState? = nil
@@ -26,8 +31,12 @@ struct ZoomablePhoto: UIViewRepresentable {
          viewing: Binding<PhotoViewingState>, viewport: Binding<PhotoViewport>,
          isDraft: Bool = false, interactionEnabled: Bool = true, overlayAvoidanceRect: CGRect = .zero,
          onPreviewSizeChange: ((Int) -> Void)? = nil, hslTarget: HSLTargetCanvasInput? = nil, hslTargetPoint: CGPoint? = nil,
-         nativePixelSize: CGSize? = nil, previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge,
-         hdr: HDRDisplayImage? = nil, referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
+         nativePixelSize: CGSize? = nil, previewSourceSize: CGSize? = nil,
+         previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge,
+         detailOverlay: PhotoDetailOverlay? = nil, detailTiles: [PhotoDetailOverlay] = [],
+         detailBacking: PhotoDetailBacking? = nil,
+         onDetailRequest: ((PhotoDetailRequest?) -> Void)? = nil,
+         hdr: HDRDisplayImage? = nil, referenceHDR: HDRDisplayImage? = nil, hdrDisplay: HDRDisplayState? = nil) {
         self.image = image
         self.referenceImage = referenceImage
         self.label = label
@@ -38,17 +47,23 @@ struct ZoomablePhoto: UIViewRepresentable {
         self.overlayAvoidanceRect = overlayAvoidanceRect
         self.onPreviewSizeChange = onPreviewSizeChange
         self.nativePixelSize = nativePixelSize
+        self.previewSourceSize = previewSourceSize
         self.previewLongEdgeLimit = previewLongEdgeLimit
+        self.detailOverlay = detailOverlay
+        self.detailTiles = detailTiles
+        self.detailBacking = detailBacking
+        self.onDetailRequest = onDetailRequest
         self.hslTarget = hslTarget; self.hslTargetPoint = hslTargetPoint
-        self.hdr=hdr; self.referenceHDR=referenceHDR; self.hdrDisplay=hdrDisplay
+        self.hdr = hdr; self.referenceHDR = referenceHDR; self.hdrDisplay = hdrDisplay
     }
 
     // 批量结果查看沿用只读缩放接口，不启用编辑器的查看会话动作。
-    init(image:UIImage,referenceImage:UIImage,label:String,onPreviewSizeChange:((Int)->Void)?=nil,
-         hdr:HDRDisplayImage?=nil,referenceHDR:HDRDisplayImage?=nil,hdrDisplay:HDRDisplayState?=nil) {
+    init(image: UIImage, referenceImage: UIImage, label: String, onPreviewSizeChange: ((Int) -> Void)? = nil,
+         hdr: HDRDisplayImage? = nil, referenceHDR: HDRDisplayImage? = nil, hdrDisplay: HDRDisplayState? = nil) {
         self.init(image: image, referenceImage: referenceImage, label: label,
                   viewing: .constant(PhotoViewingState()), viewport: .constant(PhotoViewport()),
-                  interactionEnabled:false,onPreviewSizeChange:onPreviewSizeChange,hdr:hdr,referenceHDR:referenceHDR,hdrDisplay:hdrDisplay)
+                  interactionEnabled: false, onPreviewSizeChange: onPreviewSizeChange,
+                  hdr: hdr, referenceHDR: referenceHDR, hdrDisplay: hdrDisplay)
     }
 
     func makeUIView(context: Context) -> PhotoCanvasView { PhotoCanvasView() }
@@ -58,11 +73,14 @@ struct ZoomablePhoto: UIViewRepresentable {
         view.onViewingChange = { viewing = $0 }
         view.onViewportChange = { viewport = $0 }
         view.onPreviewSizeChange = onPreviewSizeChange
+        view.onDetailRequest = onDetailRequest
         view.configure(image: image, reference: referenceImage, label: label, state: viewing,
                        viewport: viewport, displayScale: displayScale, overlayAvoidanceRect: overlayAvoidanceRect,
                        isDraft: isDraft, interactionEnabled: interactionEnabled, hslTarget: hslTarget, hslTargetPoint: hslTargetPoint,
-                       nativePixelSize: nativePixelSize, previewLongEdgeLimit: previewLongEdgeLimit,
-                       hdr:hdr,referenceHDR:referenceHDR,hdrDisplay:hdrDisplay)
+                       nativePixelSize: nativePixelSize, previewSourceSize: previewSourceSize,
+                       previewLongEdgeLimit: previewLongEdgeLimit, detailOverlay: detailOverlay, detailTiles: detailTiles,
+                       detailBacking: detailBacking,
+                       hdr: hdr, referenceHDR: referenceHDR, hdrDisplay: hdrDisplay)
     }
 }
 
@@ -74,6 +92,7 @@ final class PhotoCanvasView: UIView {
     private let divider = PhotoSplitControl()
     private var state = PhotoViewingState()
     private var viewport = PhotoViewport()
+    private var lastPublishedViewport: PhotoViewport?
     private var syncingViewport = false
     private var isDraft = false
     private var overlayAvoidanceRect = CGRect.zero
@@ -83,12 +102,16 @@ final class PhotoCanvasView: UIView {
     private var hslTargetPoint: CGPoint?
     private var targetOrigin: CGPoint?
     private var targetImage: UIImage?
+    private var lastLayoutBounds = CGSize.zero
+    private var lastLayoutSide: Bool?
+    private var needsViewportApply = true
     private let targetRecognizer = PhotoHSLTargetRecognizer()
     private let sampleLoupe = PhotoSampleLoupe(frame: CGRect(x: 0, y: 0, width: 88, height: 88))
     private let sampleMarker = UIView()
     var onViewingChange: ((PhotoViewingState) -> Void)?
     var onViewportChange: ((PhotoViewport) -> Void)?
     var onPreviewSizeChange: ((Int) -> Void)?
+    var onDetailRequest: ((PhotoDetailRequest?) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -130,17 +153,29 @@ final class PhotoCanvasView: UIView {
             self.onViewingChange?(self.state)
             self.layoutOverlays()
         }
+        let handleScrollViewport: (PhotoScrollView, PhotoViewport, Bool) -> Void = { [weak self] scroll, value, commitToSwiftUI in
+            guard let self, !self.syncingViewport else { return }
+            self.cancelTargetInput()
+            self.viewport = value
+            self.needsViewportApply = false
+            self.syncingViewport = true
+            (scroll === self.result ? self.reference : self.result).applyViewport(value)
+            self.syncingViewport = false
+            self.layoutOverlays()
+            if commitToSwiftUI {
+                self.lastPublishedViewport = value
+                self.onViewportChange?(value)
+            }
+        }
         for scroll in [result, reference] {
             scroll.onGestureCancel = { [weak self] in self?.cancelTargetInput() }
-            scroll.onViewportChange = { [weak self, weak scroll] value in
-                guard let self, let scroll, !self.syncingViewport else { return }
-                self.cancelTargetInput()
-                self.viewport = value
-                self.syncingViewport = true
-                (scroll === self.result ? self.reference : self.result).applyViewport(value)
-                self.syncingViewport = false
-                self.layoutOverlays()
-                self.onViewportChange?(value)
+            scroll.onInteractiveViewportSync = { [weak scroll] value in
+                guard let scroll else { return }
+                handleScrollViewport(scroll, value, false)
+            }
+            scroll.onViewportChange = { [weak scroll] value in
+                guard let scroll else { return }
+                handleScrollViewport(scroll, value, true)
             }
             scroll.onCanvasTap = { [weak self] in
                 guard let self, self.interactionEnabled else { return }
@@ -155,6 +190,7 @@ final class PhotoCanvasView: UIView {
             }
         }
         result.onPreviewSizeChange = { [weak self] edge in self?.onPreviewSizeChange?(edge) }
+        result.onDetailRequest = { [weak self] request in self?.onDetailRequest?(request) }
         NotificationCenter.default.addObserver(self, selector: #selector(cancelTemporaryViewing),
                                                name: UIApplication.willResignActiveNotification, object: nil)
     }
@@ -165,31 +201,70 @@ final class PhotoCanvasView: UIView {
     func configure(image: UIImage, reference imageBefore: UIImage?, label: String,
                    state: PhotoViewingState, viewport: PhotoViewport, displayScale: CGFloat, overlayAvoidanceRect: CGRect = .zero,
                    isDraft: Bool, interactionEnabled: Bool, hslTarget: HSLTargetCanvasInput? = nil,
-                   hslTargetPoint: CGPoint? = nil, nativePixelSize: CGSize? = nil,
-                   previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge, hdr: HDRDisplayImage? = nil,
-                   referenceHDR: HDRDisplayImage? = nil,hdrDisplay: HDRDisplayState? = nil) {
-        if self.hslTarget?.scope != hslTarget?.scope || !interactionEnabled || isDraft || self.viewport != viewport {
+                   hslTargetPoint: CGPoint? = nil, nativePixelSize: CGSize? = nil, previewSourceSize: CGSize? = nil,
+                   previewLongEdgeLimit: Int = PhotoZoomGeometry.defaultPreviewLongEdge,
+                   detailOverlay: PhotoDetailOverlay? = nil, detailTiles: [PhotoDetailOverlay] = [],
+                   detailBacking: PhotoDetailBacking? = nil, hdr: HDRDisplayImage? = nil,
+                   referenceHDR: HDRDisplayImage? = nil, hdrDisplay: HDRDisplayState? = nil) {
+        let externalViewportChange = viewport != self.viewport && viewport != self.lastPublishedViewport
+        if self.hslTarget?.scope != hslTarget?.scope || !interactionEnabled || isDraft || externalViewportChange {
             cancelTargetInput()
         }
-        self.hslTarget = interactionEnabled && !isDraft ? hslTarget : nil
-        self.hslTargetPoint = hslTargetPoint
-        targetRecognizer.isEnabled = self.hslTarget != nil
         var displayState = state
-        if self.hslTarget != nil { displayState.endTemporaryViewing() }
+        if interactionEnabled && !isDraft && hslTarget != nil { displayState.endTemporaryViewing() }
         if imageBefore == nil {
             displayState.enabled = false
             displayState.endTemporaryViewing()
         }
+        let renderedPixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        let pixels = nativePixelSize ?? renderedPixels
+        let sideBySide = displayState.enabled && displayState.preferredMode == .sideBySide && !isDraft
+        let wipeActive = displayState.enabled && displayState.preferredMode == .wipe && !isDraft
+        let nextResultImage = displayState.holdingBefore ? imageBefore : image
+        let nextAvoidance = displayState.enabled && !displayState.previewOnly && !isDraft ? overlayAvoidanceRect : .zero
+        let viewportInputsChanged = externalViewportChange
+            || result.pixels != pixels
+            || result.displayScale != displayScale
+            || result.photoMargin != displayState.photoMargin
+            || lastLayoutSide != sideBySide
+        let layoutInputsChanged = viewportInputsChanged
+            || self.state != displayState
+            || self.isDraft != isDraft
+            || self.overlayAvoidanceRect != nextAvoidance
+            || self.hslTargetPoint != hslTargetPoint
+            || result.imageView.image !== nextResultImage
+            || reference.imageView.image !== imageBefore
+            || (wipeActive && result.comparisonImage !== imageBefore)
+            || (!wipeActive && result.comparisonImage != nil)
+        if viewportInputsChanged {
+            needsViewportApply = true
+        }
+
+        self.hslTarget = interactionEnabled && !isDraft ? hslTarget : nil
+        self.hslTargetPoint = hslTargetPoint
+        targetRecognizer.isEnabled = self.hslTarget != nil
         self.state = displayState
-        self.overlayAvoidanceRect = displayState.enabled && !displayState.previewOnly && !isDraft ? overlayAvoidanceRect : .zero
-        self.viewport = viewport
+        self.overlayAvoidanceRect = nextAvoidance
+        if externalViewportChange || self.lastPublishedViewport == nil {
+            self.viewport = viewport
+            self.lastPublishedViewport = viewport
+        }
         self.isDraft = isDraft
         self.interactionEnabled = interactionEnabled
-        let renderedPixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
-        let pixels = hdr == nil ? nativePixelSize ?? renderedPixels : renderedPixels
-        let sideBySide = displayState.enabled && displayState.preferredMode == .sideBySide && !isDraft
-        result.previewNativeSize = hdr == nil ? nil : nativePixelSize
+        result.previewNativeSize = previewSourceSize ?? (hdr == nil ? nil : nativePixelSize)
         result.previewLongEdgeLimit = previewLongEdgeLimit
+        let activeBacking = (isDraft || hdr != nil) ? nil : detailBacking
+        let backingEdge = activeBacking.map { Int(max($0.pixelSize.width, $0.pixelSize.height).rounded()) } ?? 0
+        let beforeBackingEdge = (activeBacking?.beforeCGImage != nil) ? backingEdge : 0
+        let afterBaseEdge = max(Int(max(renderedPixels.width, renderedPixels.height).rounded()), backingEdge)
+        let beforeBaseEdge = imageBefore.map {
+            max(Int(max($0.size.width * $0.scale, $0.size.height * $0.scale).rounded()), beforeBackingEdge)
+        } ?? afterBaseEdge
+        result.baseLongEdge = displayState.holdingBefore ? beforeBaseEdge : afterBaseEdge
+        reference.baseLongEdge = beforeBaseEdge
+        let maxDetailEdge = hdr == nil ? 2048 : 1280
+        result.maxDetailLongEdge = maxDetailEdge
+        reference.maxDetailLongEdge = maxDetailEdge
         for scroll in [result, reference] {
             scroll.pixels = pixels
             scroll.displayScale = displayScale
@@ -198,16 +273,53 @@ final class PhotoCanvasView: UIView {
             scroll.canvasActionsEnabled = interactionEnabled && !isDraft && self.hslTarget == nil
             scroll.holdEnabled = interactionEnabled && !isDraft && !displayState.enabled && imageBefore != nil && self.hslTarget == nil
             scroll.previewOnly = displayState.previewOnly
-            scroll.refreshAccessibilityActions()
+            scroll.refreshAccessibilityActionsIfNeeded()
         }
-        result.imageView.image = displayState.holdingBefore ? imageBefore : image
-        result.comparisonImage = displayState.enabled && displayState.preferredMode == .wipe && !isDraft ? imageBefore : nil
-        result.wipePosition = displayState.split
+        if result.imageView.image !== nextResultImage {
+            result.imageView.image = nextResultImage
+        }
+        let nextComparison = wipeActive ? imageBefore : nil
+        if result.comparisonImage !== nextComparison {
+            result.comparisonImage = nextComparison
+        }
+        if abs(result.wipePosition - displayState.split) > 1e-6 {
+            result.wipePosition = displayState.split
+        }
         result.setHDR(displayState.holdingBefore ? referenceHDR : hdr,
-            before:displayState.enabled && displayState.preferredMode == .wipe && !isDraft ? referenceHDR : nil,state:hdrDisplay)
-        result.accessibilityLabel = displayState.holdingBefore ? L10n.text("调整前") : label
-        reference.imageView.image = imageBefore
-        reference.setHDR(referenceHDR,before:nil,state:hdrDisplay)
+            before: wipeActive ? referenceHDR : nil, state: hdrDisplay)
+        let activeTiles = isDraft ? [] : detailTiles
+        let useTiledSDR = !activeTiles.isEmpty && hdr == nil
+        let activeDetail = (isDraft || useTiledSDR) ? nil : detailOverlay
+        let afterDetailImage = activeDetail?.cgImage.map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+        let beforeDetailImage = activeDetail?.beforeCGImage.map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+        result.setDetailBacking(activeBacking, showBefore: displayState.holdingBefore, wipeBefore: wipeActive)
+        result.setDetailTiles(useTiledSDR ? activeTiles : [], showBefore: displayState.holdingBefore, wipeBefore: wipeActive)
+        result.setDetail(
+            image: displayState.holdingBefore ? beforeDetailImage : afterDetailImage,
+            hdr: displayState.holdingBefore ? activeDetail?.beforeHDR : activeDetail?.hdr,
+            beforeImage: wipeActive ? beforeDetailImage : nil,
+            beforeHDR: wipeActive ? activeDetail?.beforeHDR : nil,
+            normalizedRect: activeDetail?.normalizedRect,
+            state: hdrDisplay
+        )
+        let nextResultLabel = displayState.holdingBefore ? L10n.text("调整前") : label
+        if result.accessibilityLabel != nextResultLabel {
+            result.accessibilityLabel = nextResultLabel
+        }
+        if reference.imageView.image !== imageBefore {
+            reference.imageView.image = imageBefore
+        }
+        reference.setHDR(referenceHDR, before: nil, state: hdrDisplay)
+        reference.setDetailBacking(sideBySide ? activeBacking : nil, showBefore: true, wipeBefore: false)
+        reference.setDetailTiles(useTiledSDR && sideBySide ? activeTiles : [], showBefore: true, wipeBefore: false)
+        reference.setDetail(
+            image: sideBySide ? beforeDetailImage : nil,
+            hdr: sideBySide ? activeDetail?.beforeHDR : nil,
+            beforeImage: nil,
+            beforeHDR: nil,
+            normalizedRect: sideBySide ? activeDetail?.normalizedRect : nil,
+            state: hdrDisplay
+        )
         reference.accessibilityLabel = L10n.text("调整前")
         reference.accessibilityIdentifier = "editor.photo.before"
         reference.isHidden = !sideBySide
@@ -216,21 +328,43 @@ final class PhotoCanvasView: UIView {
         divider.accessibilityLabel = L10n.text("分割位置")
         divider.position = displayState.split
         if displayState.previewOnly && window != nil { becomeFirstResponder() }
-        setNeedsLayout()
+        if layoutInputsChanged || bounds.size != lastLayoutBounds || lastLayoutSide != sideBySide {
+            setNeedsLayout()
+        }
+        result.reportDetailRequestIfNeeded()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let side = state.enabled && state.preferredMode == .sideBySide && !isDraft
+        let boundsChanged = lastLayoutBounds != bounds.size
+        let sideChanged = lastLayoutSide != side
+        lastLayoutBounds = bounds.size
+        lastLayoutSide = side
         let layout = PhotoComparisonLayout(size: bounds.size, enabled: side)
         syncingViewport = true
-        reference.frame = CGRect(origin: .zero, size: layout.paneSize)
-        result.frame = side ? CGRect(origin: CGPoint(x: layout.horizontal ? layout.paneSize.width : 0,
-                                                    y: layout.horizontal ? 0 : layout.paneSize.height), size: layout.paneSize) : bounds
+        let refFrame = CGRect(origin: .zero, size: layout.paneSize)
+        if reference.frame != refFrame {
+            reference.frame = refFrame
+        }
+        let resFrame = side ? CGRect(origin: CGPoint(x: layout.horizontal ? layout.paneSize.width : 0,
+                                                     y: layout.horizontal ? 0 : layout.paneSize.height), size: layout.paneSize) : bounds
+        if result.frame != resFrame {
+            result.frame = resFrame
+        }
         for scroll in [result, reference] where !scroll.isHidden {
-            scroll.setNeedsLayout()
-            scroll.layoutIfNeeded()
-            if !scroll.isTracking && !scroll.isDragging && !scroll.isZooming { scroll.applyViewport(viewport) }
+            if boundsChanged || sideChanged || needsViewportApply {
+                scroll.setNeedsLayout()
+                scroll.layoutIfNeeded()
+            }
+            let gestureActive = scroll.isTracking || scroll.isDragging || scroll.isZooming || scroll.isDecelerating
+            if (boundsChanged || sideChanged || needsViewportApply) && !gestureActive {
+                scroll.applyViewport(viewport)
+            }
+        }
+        if !result.isTracking && !result.isDragging && !result.isZooming && !result.isDecelerating &&
+           !reference.isTracking && !reference.isDragging && !reference.isZooming && !reference.isDecelerating {
+            needsViewportApply = false
         }
         syncingViewport = false
         layoutOverlays()
@@ -434,34 +568,261 @@ final class PhotoSplitControl: UIControl {
 
 final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     let imageView = UIImageView()
+    let detailBackingLayer = CALayer()
+    let detailTileContainer = UIView()
+    let detailImageView = UIImageView()
     private let beforeImageView = UIImageView()
+    let beforeDetailBackingLayer = CALayer()
+    let beforeDetailTileContainer = UIView()
+    let beforeDetailImageView = UIImageView()
+    private let wipeMaskLayer = CAShapeLayer()
     private var hdrHost: UIHostingController<HDRCanvas>?
     private var beforeHDRHost: UIHostingController<HDRCanvas>?
+    private var detailHDRHost: UIHostingController<HDRCanvas>?
+    private var beforeDetailHDRHost: UIHostingController<HDRCanvas>?
+    private var afterBackingCGImage: CGImage?
+    private var beforeBackingCGImage: CGImage?
+    private var lastDetailInputs: (
+        afterCG: CGImage?,
+        beforeCG: CGImage?,
+        hdrID: ObjectIdentifier?,
+        beforeHDRID: ObjectIdentifier?,
+        normalizedRect: CGRect?,
+        state: HDRDisplayState?
+    )?
+    private var lastAccessibilitySignature: (Bool, Bool, Bool)?
+    private var afterTileLayers: [PhotoDetailTileKey: (layer: CALayer, normalizedRect: CGRect, cgImage: CGImage)] = [:]
+    private var beforeTileLayers: [PhotoDetailTileKey: (layer: CALayer, normalizedRect: CGRect, cgImage: CGImage)] = [:]
 
-    func setHDR(_ presentation: HDRDisplayImage?,before: HDRDisplayImage?,state: HDRDisplayState?) {
-        func update(_ host: inout UIHostingController<HDRCanvas>?,image: HDRDisplayImage?,container: UIImageView) {
-            guard let image,let state else { host?.view.removeFromSuperview(); host=nil; return }
-            if let host { host.rootView=HDRCanvas(presentation:image,state:state) }
-            else {
-                let next=UIHostingController(rootView:HDRCanvas(presentation:image,state:state))
-                next.view.backgroundColor = .clear; next.view.isUserInteractionEnabled=false
-                next.view.frame=container.bounds; next.view.autoresizingMask=[.flexibleWidth,.flexibleHeight]
-                container.insertSubview(next.view,at:0); host=next
+    var activeDetailTileCount: Int { afterTileLayers.count }
+    var activeBeforeDetailTileCount: Int { beforeTileLayers.count }
+    var currentWipeMaskLayer: CAShapeLayer { wipeMaskLayer }
+
+    func detailTileLayer(for key: PhotoDetailTileKey) -> CALayer? { afterTileLayers[key]?.layer }
+
+    private func updateHDRHost(_ host: inout UIHostingController<HDRCanvas>?, image: HDRDisplayImage?, state: HDRDisplayState?, container: UIImageView) {
+        guard let image, let state else { host?.view.removeFromSuperview(); host = nil; return }
+        if let host { host.rootView = HDRCanvas(presentation: image, state: state, boundedDrawable: true) }
+        else {
+            let next = UIHostingController(rootView: HDRCanvas(presentation: image, state: state, boundedDrawable: true))
+            next.view.backgroundColor = .clear
+            next.view.isUserInteractionEnabled = false
+            next.view.frame = container.bounds
+            next.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.insertSubview(next.view, at: 0)
+            host = next
+        }
+    }
+
+    func setHDR(_ presentation: HDRDisplayImage?, before: HDRDisplayImage?, state: HDRDisplayState?) {
+        updateHDRHost(&hdrHost, image: presentation, state: state, container: imageView)
+        updateHDRHost(&beforeHDRHost, image: before, state: state, container: beforeImageView)
+    }
+
+    func setDetailBacking(_ backing: PhotoDetailBacking?, showBefore: Bool, wipeBefore: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        let nextAfter = backing.flatMap { showBefore ? ($0.beforeCGImage ?? $0.cgImage) : $0.cgImage }
+        let nextBefore = wipeBefore ? backing.flatMap { $0.beforeCGImage ?? $0.cgImage } : nil
+
+        detailBackingLayer.frame = imageView.bounds
+        if let nextAfter {
+            let shouldFade = detailBackingLayer.isHidden || afterBackingCGImage !== nextAfter
+            detailBackingLayer.isHidden = false
+            if afterBackingCGImage !== nextAfter {
+                detailBackingLayer.contents = nextAfter
+                afterBackingCGImage = nextAfter
+            }
+            detailBackingLayer.opacity = 1
+            if shouldFade && imageView.window != nil {
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0
+                fade.toValue = 1
+                fade.duration = 0.12
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                detailBackingLayer.add(fade, forKey: "rawlab.backing.fade")
+            }
+        } else {
+            detailBackingLayer.isHidden = true
+            if afterBackingCGImage != nil {
+                detailBackingLayer.contents = nil
+                afterBackingCGImage = nil
             }
         }
-        update(&hdrHost,image:presentation,container:imageView)
-        update(&beforeHDRHost,image:before,container:beforeImageView)
+
+        beforeDetailBackingLayer.frame = beforeImageView.bounds
+        if let nextBefore, !beforeImageView.isHidden {
+            let shouldFade = beforeDetailBackingLayer.isHidden || beforeBackingCGImage !== nextBefore
+            beforeDetailBackingLayer.isHidden = false
+            if beforeBackingCGImage !== nextBefore {
+                beforeDetailBackingLayer.contents = nextBefore
+                beforeBackingCGImage = nextBefore
+            }
+            beforeDetailBackingLayer.opacity = 1
+            if shouldFade && beforeImageView.window != nil {
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0
+                fade.toValue = 1
+                fade.duration = 0.12
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                beforeDetailBackingLayer.add(fade, forKey: "rawlab.backing.fade")
+            }
+        } else {
+            beforeDetailBackingLayer.isHidden = true
+            if beforeBackingCGImage != nil {
+                beforeDetailBackingLayer.contents = nil
+                beforeBackingCGImage = nil
+            }
+        }
     }
-    var comparisonImage: UIImage? { didSet { beforeImageView.image = comparisonImage; updateWipe() } }
-    var wipePosition: CGFloat = 0.5 { didSet { updateWipe() } }
+
+    func setDetail(
+        image: UIImage?,
+        hdr: HDRDisplayImage?,
+        beforeImage: UIImage?,
+        beforeHDR: HDRDisplayImage?,
+        normalizedRect: CGRect?,
+        state: HDRDisplayState?
+    ) {
+        let nextInputs = (
+            afterCG: image?.cgImage,
+            beforeCG: beforeImage?.cgImage,
+            hdrID: hdr.map { ObjectIdentifier($0) },
+            beforeHDRID: beforeHDR.map { ObjectIdentifier($0) },
+            normalizedRect: normalizedRect,
+            state: state
+        )
+        if let prev = lastDetailInputs,
+           prev.afterCG === nextInputs.afterCG,
+           prev.beforeCG === nextInputs.beforeCG,
+           prev.hdrID == nextInputs.hdrID,
+           prev.beforeHDRID == nextInputs.beforeHDRID,
+           prev.normalizedRect == nextInputs.normalizedRect,
+           prev.state === nextInputs.state {
+            return
+        }
+        lastDetailInputs = nextInputs
+        detailNormalizedRect = normalizedRect
+        detailImageView.image = image
+        beforeDetailImageView.image = beforeImage
+        updateHDRHost(&detailHDRHost, image: hdr, state: state, container: detailImageView)
+        updateHDRHost(&beforeDetailHDRHost, image: beforeHDR, state: state, container: beforeDetailImageView)
+        updateDetailLayout()
+    }
+
+    func setDetailTiles(_ tiles: [PhotoDetailOverlay], showBefore: Bool, wipeBefore: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        let bounds = imageView.bounds
+        if detailTileContainer.frame != bounds {
+            detailTileContainer.frame = bounds
+        }
+        if beforeDetailTileContainer.frame != beforeImageView.bounds {
+            beforeDetailTileContainer.frame = beforeImageView.bounds
+        }
+
+        var desiredAfter: [PhotoDetailTileKey: (PhotoDetailOverlay, CGImage)] = [:]
+        var desiredBefore: [PhotoDetailTileKey: (PhotoDetailOverlay, CGImage)] = [:]
+        for tile in tiles {
+            guard let key = tile.tileKey else { continue }
+            if let afterCG = showBefore ? (tile.beforeCGImage ?? tile.cgImage) : tile.cgImage {
+                desiredAfter[key] = (tile, afterCG)
+            }
+            if wipeBefore, let beforeCG = tile.beforeCGImage ?? tile.cgImage {
+                desiredBefore[key] = (tile, beforeCG)
+            }
+        }
+
+        syncTileLayers(&afterTileLayers, in: detailTileContainer, desired: desiredAfter, bounds: bounds)
+        syncTileLayers(&beforeTileLayers, in: beforeDetailTileContainer, desired: desiredBefore, bounds: beforeImageView.bounds)
+        detailTileContainer.isHidden = afterTileLayers.isEmpty
+        beforeDetailTileContainer.isHidden = beforeImageView.isHidden || beforeTileLayers.isEmpty
+    }
+
+    private func syncTileLayers(
+        _ pool: inout [PhotoDetailTileKey: (layer: CALayer, normalizedRect: CGRect, cgImage: CGImage)],
+        in container: UIView,
+        desired: [PhotoDetailTileKey: (PhotoDetailOverlay, CGImage)],
+        bounds: CGRect
+    ) {
+        for key in Array(pool.keys) where desired[key] == nil {
+            pool.removeValue(forKey: key)?.layer.removeFromSuperlayer()
+        }
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let visibleInImage = container.window != nil ? convert(self.bounds, to: imageView) : .null
+        for (key, (tile, cg)) in desired {
+            let rect = tile.normalizedRect
+            let frame = CGRect(
+                x: rect.minX * bounds.width,
+                y: rect.minY * bounds.height,
+                width: rect.width * bounds.width,
+                height: rect.height * bounds.height
+            )
+            if var entry = pool[key] {
+                if entry.cgImage !== cg {
+                    entry.layer.contents = cg
+                    entry.cgImage = cg
+                }
+                if entry.layer.frame != frame {
+                    entry.layer.frame = frame
+                }
+                entry.normalizedRect = rect
+                pool[key] = entry
+            } else {
+                let layer = CALayer()
+                layer.contentsGravity = .resize
+                layer.minificationFilter = .trilinear
+                layer.magnificationFilter = .linear
+                layer.isOpaque = true
+                layer.edgeAntialiasingMask = []
+                layer.zPosition = CGFloat(100 - key.level)
+                layer.contents = cg
+                layer.frame = frame
+                layer.opacity = 1
+                container.layer.addSublayer(layer)
+                if !visibleInImage.isNull && !visibleInImage.isEmpty && frame.intersects(visibleInImage) {
+                    let fade = CABasicAnimation(keyPath: "opacity")
+                    fade.fromValue = 0
+                    fade.toValue = 1
+                    fade.duration = 0.10
+                    fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    layer.add(fade, forKey: "rawlab.tile.fade")
+                }
+                pool[key] = (layer: layer, normalizedRect: rect, cgImage: cg)
+            }
+        }
+    }
+
+    var comparisonImage: UIImage? {
+        didSet {
+            if comparisonImage !== oldValue {
+                beforeImageView.image = comparisonImage
+                updateWipe()
+            }
+        }
+    }
+    var wipePosition: CGFloat = 0.5 {
+        didSet {
+            if abs(wipePosition - oldValue) > 1e-6 {
+                updateWipe()
+            }
+        }
+    }
     var pixels = CGSize.zero
     var previewNativeSize: CGSize?
     var previewLongEdgeLimit = PhotoZoomGeometry.defaultPreviewLongEdge
+    var baseLongEdge = 0
+    var maxDetailLongEdge = 2048
     var displayScale: CGFloat = 1
     var photoMargin = true
     var canvasActionsEnabled = true
     var holdEnabled = true
     var previewOnly = false
+    private var detailNormalizedRect: CGRect?
     private var previousSize = CGSize.zero
     private var previousPixels = CGSize.zero
     private var previousDisplayScale: CGFloat = 0
@@ -478,10 +839,17 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     private let singleTap = UITapGestureRecognizer()
     private let holding = PhotoHoldRecognizer()
     var onPreviewSizeChange: ((Int) -> Void)?
+    var onDetailRequest: ((PhotoDetailRequest?) -> Void)?
+    var onInteractiveViewportSync: ((PhotoViewport) -> Void)?
     var onViewportChange: ((PhotoViewport) -> Void)?
     var onCanvasTap: (() -> Void)?
     var onHoldingChange: ((Bool) -> Void)?
     private var reportedEdge: Int?
+    private var lastDetailRequest: PhotoDetailRequest?
+
+    private var isGestureActive: Bool {
+        isTracking || isDragging || isZooming || isDecelerating
+    }
 
     init() {
         super.init(frame: .zero)
@@ -491,8 +859,36 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         contentInsetAdjustmentBehavior = .never
         bounces = false
         bouncesZoom = false
-        imageView.contentMode = .scaleAspectFit
+        imageView.contentMode = .scaleToFill
+        imageView.layer.minificationFilter = .trilinear
         beforeImageView.contentMode = .scaleToFill
+        beforeImageView.layer.minificationFilter = .trilinear
+        for backingLayer in [detailBackingLayer, beforeDetailBackingLayer] {
+            backingLayer.contentsGravity = .resize
+            backingLayer.minificationFilter = .trilinear
+            backingLayer.magnificationFilter = .linear
+            backingLayer.isOpaque = true
+            backingLayer.edgeAntialiasingMask = []
+            backingLayer.isHidden = true
+        }
+        detailTileContainer.isUserInteractionEnabled = false
+        detailTileContainer.clipsToBounds = true
+        detailTileContainer.isHidden = true
+        detailImageView.contentMode = .scaleToFill
+        detailImageView.clipsToBounds = true
+        detailImageView.isHidden = true
+        beforeDetailTileContainer.isUserInteractionEnabled = false
+        beforeDetailTileContainer.clipsToBounds = true
+        beforeDetailTileContainer.isHidden = true
+        beforeDetailImageView.contentMode = .scaleToFill
+        beforeDetailImageView.clipsToBounds = true
+        beforeDetailImageView.isHidden = true
+        beforeImageView.layer.addSublayer(beforeDetailBackingLayer)
+        beforeImageView.addSubview(beforeDetailTileContainer)
+        beforeImageView.addSubview(beforeDetailImageView)
+        imageView.layer.addSublayer(detailBackingLayer)
+        imageView.addSubview(detailTileContainer)
+        imageView.addSubview(detailImageView)
         imageView.addSubview(beforeImageView)
         addSubview(imageView)
         doubleTap.addTarget(self, action: #selector(toggleZoom(_:)))
@@ -510,6 +906,15 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         isAccessibilityElement = true
         accessibilityIdentifier = "editor.photo"
         accessibilityTraits = [.image, .adjustable]
+        refreshAccessibilityActionsIfNeeded()
+    }
+
+    func refreshAccessibilityActionsIfNeeded() {
+        let signature = (canvasActionsEnabled, holdEnabled, previewOnly)
+        if let prev = lastAccessibilitySignature, prev == signature {
+            return
+        }
+        lastAccessibilitySignature = signature
         refreshAccessibilityActions()
     }
 
@@ -531,7 +936,14 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     override func layoutSubviews() {
         super.layoutSubviews()
         guard bounds.width > 0, bounds.height > 0, pixels.width > 0, pixels.height > 0 else { return }
-        guard previousSize != bounds.size || previousPixels != pixels || previousDisplayScale != displayScale || previousMargin != photoMargin || geometry == nil else { updateWipe(); return }
+        guard previousSize != bounds.size || previousPixels != pixels || previousDisplayScale != displayScale || previousMargin != photoMargin || geometry == nil else {
+            if !isGestureActive {
+                updateWipe()
+            } else {
+                updateDetailLayout()
+            }
+            return
+        }
         let saved = sharedViewport
         updatingGeometry = true
         let next = PhotoZoomGeometry(pixels: pixels, viewport: bounds.size, displayScale: displayScale, margin: photoMargin ? PhotoZoomGeometry.defaultMargin : 0)
@@ -563,38 +975,181 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         updateAccessibilityValue()
         updatingGeometry = false
         reportPreviewSize()
+        reportDetailRequest()
     }
 
     func visiblePhotoRect(in view: UIView) -> CGRect { imageView.convert(imageView.bounds, to: view).intersection(convert(bounds, to: view)) }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { publishViewport() }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        publishViewport()
+        reportDetailRequest()
+    }
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         centerImage()
-        updateAccessibilityValue()
+        if !isZooming || UIAccessibility.isVoiceOverRunning {
+            updateAccessibilityValue()
+        }
         reportPreviewSize()
         publishViewport()
+        reportDetailRequest()
+    }
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate {
+            publishViewport(forceCommit: true)
+            updateAccessibilityValue()
+        }
+    }
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        publishViewport(forceCommit: true)
+        updateAccessibilityValue()
+    }
+    func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+        if !isDragging && !isDecelerating {
+            publishViewport(forceCommit: true)
+        }
+        updateAccessibilityValue()
     }
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { cancelCanvasGestures() }
     func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) { cancelCanvasGestures() }
 
-    private func publishViewport() {
+    private func publishViewport(forceCommit: Bool = false) {
         // 布局切换先改变 bounds，旧 geometry 此时不能反算新的查看中心。
         guard !updatingGeometry, previousSize == bounds.size, let geometry, geometry.fitScale > 0, zoomScale > 0 else { return }
         sharedViewport = PhotoViewport(relativeScale: zoomScale / geometry.fitScale,
                                       focus: CGPoint(x: (contentOffset.x + bounds.width / 2) / (geometry.imageSize.width * zoomScale),
                                                      y: (contentOffset.y + bounds.height / 2) / (geometry.imageSize.height * zoomScale)))
-        onViewportChange?(sharedViewport)
+        if forceCommit || !isGestureActive {
+            onViewportChange?(sharedViewport)
+        } else {
+            onInteractiveViewportSync?(sharedViewport)
+        }
     }
 
     private func updateWipe() {
-        beforeImageView.frame = imageView.bounds
-        beforeImageView.isHidden = comparisonImage == nil
-        let mask = CAShapeLayer()
-        mask.path = UIBezierPath(rect: CGRect(x: 0, y: 0, width: imageView.bounds.width * wipePosition, height: imageView.bounds.height)).cgPath
-        beforeImageView.layer.mask = mask
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        if comparisonImage != nil {
+            beforeImageView.frame = imageView.bounds
+            beforeImageView.isHidden = false
+            let maskRect = CGRect(x: 0, y: 0, width: imageView.bounds.width * wipePosition, height: imageView.bounds.height)
+            if beforeImageView.layer.mask !== wipeMaskLayer {
+                beforeImageView.layer.mask = wipeMaskLayer
+            }
+            wipeMaskLayer.frame = beforeImageView.bounds
+            wipeMaskLayer.path = CGPath(rect: maskRect, transform: nil)
+        } else {
+            beforeImageView.isHidden = true
+            if beforeImageView.layer.mask != nil {
+                beforeImageView.layer.mask = nil
+            }
+        }
+        updateDetailLayout()
+    }
+
+    private func updateDetailLayout() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        let bounds = imageView.bounds
+        detailBackingLayer.frame = bounds
+        beforeDetailBackingLayer.frame = beforeImageView.bounds
+        if detailTileContainer.frame != bounds {
+            detailTileContainer.frame = bounds
+        }
+        if beforeDetailTileContainer.frame != beforeImageView.bounds {
+            beforeDetailTileContainer.frame = beforeImageView.bounds
+        }
+        if bounds.width > 0, bounds.height > 0 {
+            for (_, entry) in afterTileLayers {
+                let rect = entry.normalizedRect
+                let frame = CGRect(
+                    x: rect.minX * bounds.width,
+                    y: rect.minY * bounds.height,
+                    width: rect.width * bounds.width,
+                    height: rect.height * bounds.height
+                )
+                if entry.layer.frame != frame { entry.layer.frame = frame }
+            }
+            let bBounds = beforeImageView.bounds
+            if bBounds.width > 0, bBounds.height > 0 {
+                for (_, entry) in beforeTileLayers {
+                    let rect = entry.normalizedRect
+                    let frame = CGRect(
+                        x: rect.minX * bBounds.width,
+                        y: rect.minY * bBounds.height,
+                        width: rect.width * bBounds.width,
+                        height: rect.height * bBounds.height
+                    )
+                    if entry.layer.frame != frame { entry.layer.frame = frame }
+                }
+            }
+        }
+        detailTileContainer.isHidden = afterTileLayers.isEmpty
+        beforeDetailTileContainer.isHidden = beforeImageView.isHidden || beforeTileLayers.isEmpty
+
+        guard let rect = detailNormalizedRect,
+              rect.width > 0, rect.height > 0,
+              bounds.width > 0, bounds.height > 0 else {
+            detailImageView.isHidden = true
+            beforeDetailImageView.isHidden = true
+            return
+        }
+        let frame = CGRect(
+            x: rect.minX * bounds.width,
+            y: rect.minY * bounds.height,
+            width: rect.width * bounds.width,
+            height: rect.height * bounds.height
+        )
+        detailImageView.frame = frame
+        detailHDRHost?.view.frame = detailImageView.bounds
+        detailImageView.isHidden = detailImageView.image == nil && detailHDRHost == nil
+        if !beforeImageView.isHidden {
+            beforeDetailImageView.frame = frame
+            beforeDetailHDRHost?.view.frame = beforeDetailImageView.bounds
+            beforeDetailImageView.isHidden = beforeDetailImageView.image == nil && beforeDetailHDRHost == nil
+        } else {
+            beforeDetailImageView.isHidden = true
+        }
+    }
+
+    func reportDetailRequestIfNeeded() {
+        reportDetailRequest()
+    }
+
+    private func reportDetailRequest() {
+        guard !updatingGeometry, previousSize == bounds.size, onDetailRequest != nil, let geometry else { return }
+        let request = geometry.detailRegion(
+            contentOffset: contentOffset,
+            boundsSize: bounds.size,
+            zoomScale: zoomScale,
+            baseLongEdge: baseLongEdge,
+            maxOutputLongEdge: maxDetailLongEdge,
+            active: lastDetailRequest != nil
+        ).map {
+            PhotoDetailRequest(
+                visibleRect: $0.visibleRect,
+                overscanRect: $0.overscanRect,
+                zoomScale: $0.zoomScale,
+                baseScale: $0.baseScale,
+                maxOutputLongEdge: $0.maxOutputLongEdge
+            )
+        }
+        guard lastDetailRequest != request else { return }
+        lastDetailRequest = request
+        DispatchQueue.main.async { [weak self] in self?.onDetailRequest?(request) }
     }
     private func reportPreviewSize() {
         guard !updatingGeometry, onPreviewSizeChange != nil, let geometry else { return }
+        if previewNativeSize == nil && onDetailRequest != nil && previewLongEdgeLimit <= PhotoZoomGeometry.defaultPreviewLongEdge {
+            let edge = min(previewLongEdgeLimit, max(1, Int(geometry.pixelEdge.rounded())))
+            guard reportedEdge != edge else { return }
+            reportedEdge = edge
+            DispatchQueue.main.async { [weak self] in self?.onPreviewSizeChange?(edge) }
+            return
+        }
         // HDR 渲染请求取整张源图的尺寸，查看缩放仍以交付像素为准。
         let edge = previewNativeSize.map { pixels in
             let native = PhotoZoomGeometry(pixels: pixels, viewport: bounds.size, displayScale: displayScale,

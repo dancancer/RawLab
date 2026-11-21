@@ -217,6 +217,10 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        clearDetailState(releaseRaster: true, keepRequest: true)
+        renderQueue.async { [weak self] in
+            self?.processor.clearHDRSessionCache()
+        }
         let cancellation = ExportCancellation()
         if settings.isHDREditing {
             hdrExportCancellation = cancellation
@@ -296,6 +300,7 @@ extension RawEditorViewModel {
                         self.hdrExportCancellation = nil
                         completion(cancellation.isCancelled ? .failure(CancellationError()) : .success(data))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 } catch {
                     self.resultDelivery {
@@ -306,6 +311,7 @@ extension RawEditorViewModel {
                         self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 }
             }
@@ -336,6 +342,10 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        clearDetailState(releaseRaster: true, keepRequest: true)
+        renderQueue.async { [weak self] in
+            self?.processor.clearHDRSessionCache()
+        }
         let cancellation = ExportCancellation()
         if settings.isHDREditing {
             hdrExportCancellation = cancellation
@@ -390,6 +400,7 @@ extension RawEditorViewModel {
                         self.hdrExportCancellation = nil
                         completion(.success(outputURL))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 } catch {
                     try? FileManager.default.removeItem(at: outputURL)
@@ -401,6 +412,7 @@ extension RawEditorViewModel {
                         self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 }
             }

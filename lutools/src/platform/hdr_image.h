@@ -30,6 +30,7 @@ void admitStreamingMemory(uint64_t additionalBytes);
 
 HDRSourceInfo probeFile(const char* path);
 DecodedImage decodeFile(const char* path, const HDRDecodeOptions& options);
+DecodedImage decodeFileROI(const char* path, const RoiSubRect& rect);
 void exportJPEG(const HDRImagePair& image, const HDRExportConfig& config, const char* path);
 bool heifExportAvailable();
 void exportHEIF(const HDRImagePair& image, const HDRExportConfig& config, const char* path);

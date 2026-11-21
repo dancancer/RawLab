@@ -170,8 +170,29 @@ public:
     ProcessingVersion processingVersion() const noexcept { return processingVersion_; }
     bool usesLegacySonyCrop() const noexcept { return sony2fuji::usesLegacySonyCrop(processingVersion_); }
 
+    struct ViewportRoiConfig {
+        bool enabled = false;
+        double normX0 = 0.0;
+        double normY0 = 0.0;
+        double normX1 = 1.0;
+        double normY1 = 1.0;
+        uint32_t maxOutputLongEdge = 2048;
+    };
+
+    struct ViewportRoiResult {
+        bool active = false;
+        uint32_t nativeX0 = 0;
+        uint32_t nativeY0 = 0;
+        uint32_t nativeX1 = 0;
+        uint32_t nativeY1 = 0;
+        uint32_t fullNativeWidth = 0;
+        uint32_t fullNativeHeight = 0;
+    };
+
     void setInteractivePreview(bool enabled) noexcept { interactivePreview_ = enabled; }
     void setViewportPreview(bool enabled) noexcept { viewportPreview_ = enabled; }
+    RenderStatus setViewportRoi(const ViewportRoiConfig& roi) noexcept;
+    ViewportRoiResult viewportRoiResult() const noexcept { return viewportRoiResult_; }
 
     RenderBackend lastBackend() const noexcept { return lastBackend_; }
     void didRenderCpu() noexcept { lastBackend_ = RenderBackend::Cpu; }
@@ -270,6 +291,24 @@ private:
 
     // pipeline_io.cpp
     static RenderStatus loadBufferImage(const RenderParams& params, ImageData& image, ColorSpace* space, bool* isLinear);
+    static RenderStatus loadBufferImageROI(const RenderParams& params, const RoiSubRect& rect,
+        ImageData& image, ColorSpace* space, bool* isLinear);
+    static RenderStatus loadBufferImageDownsampled(const RenderParams& params, uint32_t maxLongEdge,
+        ImageData& image, ColorSpace* space, bool* isLinear);
+    static ImageData extractImageSubRect(const ImageData& source, const RoiSubRect& rect);
+    RenderStatus processPreviewRoi(
+        const RenderParams& params,
+        OwnedPixelBuffer* outBuffer,
+        std::shared_ptr<LUT3D> lut,
+        std::shared_ptr<const DcpLook> dcp,
+        bool displayInput,
+        bool normalX3f,
+        bool waveletActive,
+        int chromaMode,
+        bool basicV3,
+        float exposure,
+        const RGB& wb
+    );
     static RenderStatus writeOutputFile(const RenderParams& params, const ImageData& image);
     static RenderStatus writeOutputBuffer(const RenderParams& params, const ImageData& image, OwnedPixelBuffer* outBuffer);
     RenderStatus finishOutput(
@@ -353,6 +392,13 @@ private:
     std::string processorKey_;
     bool interactivePreview_ = false;
     bool viewportPreview_ = false;
+    ViewportRoiConfig viewportRoi_{};
+    ViewportRoiResult viewportRoiResult_{};
+    struct RoiGuideCache {
+        std::string key;
+        ImageData linearSrgb;
+    };
+    RoiGuideCache roiGuideCache_{};
     RenderBackend lastBackend_ = RenderBackend::Cpu;
     mutable UnsupportedReason unsupportedReason_ = UnsupportedReason::None;
     mutable GpuFallbackReason gpuFallbackReason_ = GpuFallbackReason::None;

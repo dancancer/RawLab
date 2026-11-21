@@ -35,10 +35,11 @@ enum HDRCanvasTesting {
 struct HDRCanvas: View {
     let presentation: HDRDisplayImage
     @ObservedObject var state: HDRDisplayState
+    var boundedDrawable: Bool = false
     var body: some View {
         ZStack {
             Image(decorative: presentation.sdrImage, scale: 1).resizable().interpolation(.high)
-            HDRMetalCanvas(presentation: presentation, state: state).id(state.retry)
+            HDRMetalCanvas(presentation: presentation, state: state, boundedDrawable: boundedDrawable).id(state.retry)
         }.allowsHitTesting(false).accessibilityHidden(true)
     }
 }
@@ -707,9 +708,23 @@ final class HDRCanvasRenderer: NSObject, MTKViewDelegate {
     }
 }
 
-private func makeHDRMetalView(presentation: HDRDisplayImage, state: HDRDisplayState) -> (HDRMTKView, HDRCanvasRenderer?) {
+private func applyBoundedDrawableSize(_ view: HDRMTKView, presentation: HDRDisplayImage) {
+    view.autoResizeDrawable = false
+    let target = CGSize(
+        width: CGFloat(max(1, min(2048, presentation.width))),
+        height: CGFloat(max(1, min(2048, presentation.height)))
+    )
+    if view.drawableSize != target {
+        view.drawableSize = target
+    }
+}
+
+private func makeHDRMetalView(presentation: HDRDisplayImage, state: HDRDisplayState, boundedDrawable: Bool) -> (HDRMTKView, HDRCanvasRenderer?) {
     let view = HDRMTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
     view.colorPixelFormat = .rgba16Float
+    if boundedDrawable {
+        applyBoundedDrawableSize(view, presentation: presentation)
+    }
     #if os(macOS)
     view.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
     #endif
@@ -725,7 +740,10 @@ private func makeHDRMetalView(presentation: HDRDisplayImage, state: HDRDisplaySt
     let renderer = view.device.flatMap { try? HDRCanvasRenderer(presentation: presentation, state: state, device: $0, view: view) }
     view.delegate = renderer
     if let renderer {
-        view.onEnvironmentChange = { [weak renderer] in
+        view.onEnvironmentChange = { [weak renderer, weak view] in
+            if boundedDrawable, let view, let presentation = renderer?.presentation {
+                applyBoundedDrawableSize(view, presentation: presentation)
+            }
             renderer?.scheduleUpdate()
         }
         renderer.scheduleUpdate()
@@ -740,15 +758,19 @@ private func makeHDRMetalView(presentation: HDRDisplayImage, state: HDRDisplaySt
 private struct HDRMetalCanvas: NSViewRepresentable {
     let presentation: HDRDisplayImage
     let state: HDRDisplayState
+    let boundedDrawable: Bool
     final class Coordinator { var renderer: HDRCanvasRenderer? }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> HDRMTKView {
-        let (view, renderer) = makeHDRMetalView(presentation: presentation, state: state)
+        let (view, renderer) = makeHDRMetalView(presentation: presentation, state: state, boundedDrawable: boundedDrawable)
         context.coordinator.renderer = renderer
         return view
     }
     func updateNSView(_ view: HDRMTKView, context: Context) {
         context.coordinator.renderer?.presentation = presentation
+        if boundedDrawable {
+            applyBoundedDrawableSize(view, presentation: presentation)
+        }
         context.coordinator.renderer?.scheduleUpdate()
     }
     static func dismantleNSView(_ view: HDRMTKView, coordinator: Coordinator) {
@@ -764,15 +786,19 @@ private struct HDRMetalCanvas: NSViewRepresentable {
 private struct HDRMetalCanvas: UIViewRepresentable {
     let presentation: HDRDisplayImage
     let state: HDRDisplayState
+    let boundedDrawable: Bool
     final class Coordinator { var renderer: HDRCanvasRenderer? }
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> HDRMTKView {
-        let (view, renderer) = makeHDRMetalView(presentation: presentation, state: state)
+        let (view, renderer) = makeHDRMetalView(presentation: presentation, state: state, boundedDrawable: boundedDrawable)
         context.coordinator.renderer = renderer
         return view
     }
     func updateUIView(_ view: HDRMTKView, context: Context) {
         context.coordinator.renderer?.presentation = presentation
+        if boundedDrawable {
+            applyBoundedDrawableSize(view, presentation: presentation)
+        }
         context.coordinator.renderer?.scheduleUpdate()
     }
     static func dismantleUIView(_ view: HDRMTKView, coordinator: Coordinator) {

@@ -7,6 +7,7 @@
 #include "sony2fuji/processing_version.h"
 #include "sony2fuji/sony2fuji.h"
 #include "core/pixel_buffer.h"
+#include "core/photo_geometry.h"
 #include "core/photo_tone_curve.h"
 #include "core/render_params.h"
 
@@ -16,6 +17,8 @@
 #include <memory>
 
 namespace sony2fuji {
+
+struct ClarityField;
 
 inline float clampFloat(float value, float low, float high) {
     return std::max(low, std::min(high, value));
@@ -51,7 +54,9 @@ void applyDetailAdjustments(
     float clarity,
     int sourceWidth,
     int sourceHeight,
-    ProcessingVersion version
+    ProcessingVersion version,
+    const ClarityField* clarityField = nullptr,
+    const SubRectMap& roiMap = {}
 );
 
 RenderStatus applyPhotoLook(

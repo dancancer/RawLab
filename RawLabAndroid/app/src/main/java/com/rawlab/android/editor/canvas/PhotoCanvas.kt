@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -55,6 +56,7 @@ import kotlin.math.max
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.rawlab.android.R
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.HDRBitmapAdapter
 import com.rawlab.android.photo.PhotoInfo
@@ -113,6 +115,53 @@ class PhotoCanvasState {
 }
 
 @Composable
+private fun DetailOverlayTiles(
+    tiles: List<PreviewDetailOverlay>,
+    useNeutral: Boolean,
+    image: PhotoImageRect,
+    hdrParameters: com.rawlab.android.engine.HDRDisplayParameters,
+    fp16Enabled: Boolean,
+) {
+    if (tiles.isEmpty() || image.width <= 0f || image.height <= 0f) return
+    val resolved = ArrayList<Pair<PreviewDetailOverlay, androidx.compose.ui.graphics.ImageBitmap>>(tiles.size)
+    for (tile in tiles) {
+        key(tile.tileKey ?: tile.normalizedRect) {
+            val bitmap = if (useNeutral) {
+                HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled) ?: tile.neutral
+            } else {
+                HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled) ?: tile.result
+            }
+            if (bitmap != null) {
+                resolved += tile to remember(bitmap) { bitmap.asImageBitmap() }
+            }
+        }
+    }
+    if (resolved.isEmpty()) return
+    Canvas(Modifier.fillMaxSize()) {
+        for ((tile, imageBitmap) in resolved) {
+            val r = tile.normalizedRect
+            val dstLeft = (image.left + r.x0 * image.width).roundToInt()
+            val dstTop = (image.top + r.y0 * image.height).roundToInt()
+            val dstRight = (image.left + r.x1 * image.width).roundToInt()
+            val dstBottom = (image.top + r.y1 * image.height).roundToInt()
+            val dstWidth = dstRight - dstLeft
+            val dstHeight = dstBottom - dstTop
+            if (dstWidth > 0 && dstHeight > 0 &&
+                dstRight > 0 && dstBottom > 0 &&
+                dstLeft < size.width && dstTop < size.height
+            ) {
+                drawImage(
+                    image = imageBitmap,
+                    dstOffset = IntOffset(dstLeft, dstTop),
+                    dstSize = IntSize(dstWidth, dstHeight),
+                    filterQuality = FilterQuality.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun PhotoCanvas(
     pair: PreviewPair, compare: Boolean, filename: String, state: PhotoCanvasState,
     info: PhotoInfo? = null, infoMode: Int = 0, onInfoClick: () -> Unit = {},
@@ -125,6 +174,9 @@ internal fun PhotoCanvas(
     hslTarget: HslTargetActions? = null, workspaceControls: Boolean = false,
     histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
     hdrPreview: PhotoHDRPreview = rememberPhotoHDRPreview(pair.hdr?.result),
+    detail: PreviewDetailOverlay? = null,
+    detailTiles: List<PreviewDetailOverlay> = emptyList(),
+    onDetailRequest: (ViewportRoiRequest?) -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -137,6 +189,7 @@ internal fun PhotoCanvas(
     val tap by rememberUpdatedState(onCanvasTap)
     val hold by rememberUpdatedState(onHoldBefore)
     val target by rememberUpdatedState(hslTarget)
+    val latestOnDetailRequest by rememberUpdatedState(onDetailRequest)
     val focusRequester = remember { FocusRequester() }
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
     val labelBounds = remember { mutableStateMapOf<String, Rect>() }
@@ -152,11 +205,27 @@ internal fun PhotoCanvas(
         val sideBySide = compare && mode == ComparisonMode.SIDE_BY_SIDE
         val gap = 1.dp
         val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { gap.roundToPx() }
-        val primary = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight,
+        val nativeWidth = pair.nativeWidth.coerceAtLeast(1).toFloat()
+        val nativeHeight = pair.nativeHeight.coerceAtLeast(1).toFloat()
+        val primary = PhotoViewport(nativeWidth, nativeHeight,
             if (sideBySide && horizontal) ((constraints.maxWidth - gapPx) / 2).toFloat() else constraints.maxWidth.toFloat(),
             if (sideBySide && !horizontal) ((constraints.maxHeight - gapPx) / 2).toFloat() else constraints.maxHeight.toFloat())
         SideEffect { if (state.viewport != primary) state.resize(primary) }
-        val previewEdge = primary.previewLongEdge(state.view.project(primary).scale)
+        val projectedZoom = state.view.project(primary)
+        val previewEdge = if (pair.hdr == null) {
+            minOf(1600, maxOf(pair.nativeWidth, pair.nativeHeight))
+        } else {
+            primary.previewLongEdge(projectedZoom.scale)
+        }
+        val baseLongEdge = maxOf(pair.result.width, pair.result.height)
+        var detailActive by remember(pair.nativeWidth, pair.nativeHeight) { mutableStateOf(false) }
+        val detailRequest = primary.detailRequest(
+            projectedZoom,
+            baseLongEdge,
+            if (pair.hdr != null) 1280 else 2048,
+            active = detailActive,
+        )
+        SideEffect { detailActive = detailRequest != null }
         // Use the current pane geometry, not globally-positioned hit-test bounds: those
         // also contain this overlay and arrive a frame after a resize/zoom/mode change.
         val captionTop = if (sideBySide && horizontal) {
@@ -164,11 +233,12 @@ internal fun PhotoCanvas(
             val measurer = rememberTextMeasurer()
             val labelHeight = maxOf(measurer.measure(beforeLabel, labelStyle, maxLines = 1).size.height,
                 measurer.measure(afterLabel, labelStyle, maxLines = 1).size.height)
-            photoImageRect(primary, state.view.project(primary)).bottom - labelHeight -
+            photoImageRect(primary, projectedZoom).bottom - labelHeight -
                 with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
         } else null
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
-        val percent = "${(state.view.project(primary).scale * 100).roundToInt()}%"
+        LaunchedEffect(detailRequest) { latestOnDetailRequest(detailRequest) }
+        val percent = "${(projectedZoom.scale * 100).roundToInt()}%"
         val before = holdingBefore && !compare && hslTarget == null
         val resultOrigin = Offset(if (sideBySide && horizontal) primary.width + gapPx else 0f,
             if (sideBySide && !horizontal) primary.height + gapPx else 0f)
@@ -184,7 +254,7 @@ internal fun PhotoCanvas(
         }
         @Composable fun pane(modifier: Modifier, neutralOnly: Boolean = false, paneLabel: String? = null) {
             BoxWithConstraints(modifier.clipToBounds()) {
-                val area = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+                val area = PhotoViewport(nativeWidth, nativeHeight, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                 val zoom = state.view.project(area)
                 val image = photoImageRect(area, zoom)
                 val transform = Modifier.fillMaxSize().graphicsLayer {
@@ -196,6 +266,7 @@ internal fun PhotoCanvas(
                     HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                 else hdrPreview.bitmap
                 val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
+                val activeTiles = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
                     .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
                         if (hslTarget == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
@@ -206,6 +277,7 @@ internal fun PhotoCanvas(
                         transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
                             if (hdrParameters.falseColor && hdrBitmap != null) stateDescription = falseColorLabel
                         }, contentScale = ContentScale.Fit)
+                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
                             val x = image.splitX(state.split)
@@ -214,6 +286,7 @@ internal fun PhotoCanvas(
                         }) {
                             val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                             Image((neutralBitmap ?: pair.neutral).asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
+                            DetailOverlayTiles(activeTiles, useNeutral = true, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
                         }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
                             .size(with(androidx.compose.ui.platform.LocalDensity.current) { image.width.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { image.height.toDp() })

@@ -74,6 +74,20 @@ class NativeProcessingException @JvmOverloads constructor(
     }
 }
 
+internal data class NativeRoiBounds(
+    val x0: Int,
+    val y0: Int,
+    val x1: Int,
+    val y1: Int,
+    val fullWidth: Int,
+    val fullHeight: Int,
+)
+
+internal class NativeRoiFrame(
+    val frame: NativeFrame,
+    val bounds: NativeRoiBounds,
+)
+
 class NativeFrame(
     val width: Int,
     val height: Int,
@@ -147,6 +161,52 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         }
         frame.lens = if (inputKind == PhotoInputKind.RAW || rasterHDRSource == null) readLens(input) else null
         return frame
+    }
+
+    @Synchronized
+    internal fun previewRoi(
+        input: File,
+        lut: File?,
+        settings: EditSettings,
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        maxOutputLongEdge: Int,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L,
+    ): NativeRoiFrame {
+        check(handle != 0L) { "Processor is closed" }
+        val clampedEdge = maxOutputLongEdge.coerceIn(1, 2048)
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind, 0)
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = true,
+        ))
+        val roiBounds = IntArray(6)
+        val frame = checkNotNull(nativeProcessRoi(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = 1600,
+                interactive = false,
+                cancellationGeneration = cancellationGeneration,
+            ),
+            x0, y0, x1, y1, clampedEdge, roiBounds,
+        ))
+        require(roiBounds[4] > 0 && roiBounds[5] > 0 && roiBounds[2] > roiBounds[0] && roiBounds[3] > roiBounds[1]) {
+            "Invalid native ROI bounds"
+        }
+        frame.geometryWidth = roiBounds[4]
+        frame.geometryHeight = roiBounds[5]
+        return NativeRoiFrame(
+            frame = frame,
+            bounds = NativeRoiBounds(roiBounds[0], roiBounds[1], roiBounds[2], roiBounds[3], roiBounds[4], roiBounds[5]),
+        )
     }
 
     // 仅供独立兼容预览实例使用，固定基础处理，不接触编辑器的调整或外观库。
@@ -311,6 +371,40 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory, progress)
     }
 
+    @Synchronized
+    internal fun renderHDRRoi(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings,
+        x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, baseContentHeadroom: Float,
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderRoi(handle, source, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory)
+    }
+
+    @Synchronized
+    internal fun renderHDRCameraRawRoi(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
+        settings: com.rawlab.android.settings.HDRSettings, x0: Float, y0: Float, x1: Float, y1: Float,
+        maxOutputLongEdge: Int, baseContentHeadroom: Float, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null, profileDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderCameraRawRoi(handle, file, info, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory, profileDirectory)
+    }
+
+    @Synchronized
+    internal fun renderHDRFileRoi(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
+        settings: com.rawlab.android.settings.HDRSettings, x0: Float, y0: Float, x1: Float, y1: Float,
+        maxOutputLongEdge: Int, baseContentHeadroom: Float, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderFileRoi(handle, file, info, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory)
+    }
+
+    @Synchronized
+    internal fun clearHDRSessionCache() {
+        if (handle != 0L) NativeHDRBridge.clearSessionCache(handle)
+    }
+
     internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
         cancellationGeneration: Long = -1L,
         camera: com.rawlab.android.settings.HDRCameraDevelopmentSettings = com.rawlab.android.settings.HDRCameraDevelopmentSettings(),
@@ -342,7 +436,10 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     internal fun releaseRasterCache() {
         raster?.close(); raster = null; rasterKey = null; rasterHDRSource = null; rasterEdge = -1
         displayLensMetadata = null
-        if (handle != 0L) nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+        if (handle != 0L) {
+            nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+            NativeHDRBridge.clearSessionCache(handle)
+        }
     }
 
     private fun rasterInput(input: File, kind: PhotoInputKind, edge: Int = 0): DecodedRaster? {
@@ -360,7 +457,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         }
         displayLensMetadata?.let { nativeSetDisplayLensMetadata(handle, it.names, it.numbers, it.sourceOrientation) }
         val hdr = rasterHDRSource
-        if (raster == null || (hdr != null && rasterEdge != edge)) {
+        if (raster == null || (hdr != null && rasterEdge != 0 && rasterEdge != edge)) {
             val decoded = if (hdr == null) RasterImageDecoder.decode(input) else {
                 NativeHDRBridge.decode(input, hdr, edge).use { DecodedRaster(it.sdrBitmap()) }
             }
@@ -458,6 +555,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
     private external fun nativeProcess(handle: Long, request: NativeProcessRequest): NativeFrame?
+    private external fun nativeProcessRoi(handle: Long, request: NativeProcessRequest,
+        x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, roiBoundsOut: IntArray): NativeFrame?
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean

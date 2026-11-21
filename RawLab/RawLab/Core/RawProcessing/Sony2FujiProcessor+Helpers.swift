@@ -1,3 +1,4 @@
+import Accelerate
 import RawLabKit
 import CoreGraphics
 import Foundation
@@ -247,6 +248,43 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func applyViewportROI(session: OpaquePointer, roi: ViewportROI?) -> sony2fuji_status {
+        var nativeRoi = sony2fuji_viewport_roi()
+        nativeRoi.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi>.size)
+        if let roi {
+            nativeRoi.enabled = 1
+            nativeRoi.norm_x0 = Double(roi.normalizedRect.minX)
+            nativeRoi.norm_y0 = Double(roi.normalizedRect.minY)
+            nativeRoi.norm_x1 = Double(roi.normalizedRect.maxX)
+            nativeRoi.norm_y1 = Double(roi.normalizedRect.maxY)
+            nativeRoi.max_output_long_edge = UInt32(max(0, roi.maxOutputLongEdge))
+        } else {
+            nativeRoi.enabled = 0
+        }
+        return sony2fuji_session_set_viewport_roi(session, &nativeRoi)
+    }
+
+    func readViewportROIResult(session: OpaquePointer) -> ViewportROIResult? {
+        var result = sony2fuji_viewport_roi_result()
+        result.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi_result>.size)
+        guard sony2fuji_session_get_viewport_roi_result(session, &result) == SONY2FUJI_STATUS_OK,
+              result.active != 0,
+              result.native_x1 > result.native_x0,
+              result.native_y1 > result.native_y0,
+              result.full_native_width > 0,
+              result.full_native_height > 0 else {
+            return nil
+        }
+        return ViewportROIResult(
+            nativeX0: Int(result.native_x0),
+            nativeY0: Int(result.native_y0),
+            nativeX1: Int(result.native_x1),
+            nativeY1: Int(result.native_y1),
+            fullNativeWidth: Int(result.full_native_width),
+            fullNativeHeight: Int(result.full_native_height)
+        )
+    }
+
     func processRaw(
         session: OpaquePointer,
         request: inout sony2fuji_request,
@@ -382,6 +420,107 @@ extension Sony2FujiProcessor {
             shouldInterpolate: true,
             intent: .defaultIntent
         )
+    }
+
+    func makeNativeBGRADisplayCGImage(
+        consuming buffer: inout sony2fuji_buffer,
+        semantic: Buffer.Semantic = .legacy
+    ) -> CGImage? {
+        if buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
+           let baseAddress = buffer.data,
+           buffer.width > 0, buffer.height > 0,
+           buffer.stride_bytes == buffer.width * 4 {
+            let width = Int(buffer.width)
+            let height = Int(buffer.height)
+            let rowBytes = Int(buffer.stride_bytes)
+            var src = vImage_Buffer(
+                data: baseAddress,
+                height: vImagePixelCount(height),
+                width: vImagePixelCount(width),
+                rowBytes: rowBytes
+            )
+            let permuteMap: [UInt8] = [2, 1, 0, 3]
+            if vImagePermuteChannels_ARGB8888(&src, &src, permuteMap, vImage_Flags(kvImageNoFlags)) == kvImageNoError,
+               let taken = try? takeBuffer(&buffer, semantic: semantic),
+               let provider = CGDataProvider(data: taken.data as CFData) {
+                let bgraInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue)
+                    .union(.byteOrder32Little)
+                return CGImage(
+                    width: taken.width,
+                    height: taken.height,
+                    bitsPerComponent: 8,
+                    bitsPerPixel: 32,
+                    bytesPerRow: taken.stride,
+                    space: outputColorSpace(),
+                    bitmapInfo: bgraInfo,
+                    provider: provider,
+                    decode: nil,
+                    shouldInterpolate: true,
+                    intent: .defaultIntent
+                )
+            }
+        }
+        guard let taken = try? takeBuffer(&buffer, semantic: semantic) else { return nil }
+        return makeCGImage(from: taken)
+    }
+
+    func downscaleDisplayCGImage(_ cgImage: CGImage, maxLongEdge: Int) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0, maxLongEdge > 0 else { return nil }
+        let longest = max(width, height)
+        if longest <= maxLongEdge {
+            return cgImage
+        }
+        let scale = Double(maxLongEdge) / Double(longest)
+        let dstW = max(1, Int((Double(width) * scale).rounded()))
+        let dstH = max(1, Int((Double(height) * scale).rounded()))
+        if cgImage.bitsPerPixel == 32,
+           cgImage.bitsPerComponent == 8,
+           let srcData = cgImage.dataProvider?.data,
+           CFDataGetLength(srcData) >= cgImage.bytesPerRow * height,
+           let srcPtr = CFDataGetBytePtr(srcData) {
+            let dstStride = dstW * 4
+            let byteCount = dstStride * dstH
+            if let dstRaw = malloc(byteCount) {
+                let dstData = Data(bytesNoCopy: dstRaw, count: byteCount, deallocator: .free)
+                var srcBuf = vImage_Buffer(
+                    data: UnsafeMutableRawPointer(mutating: srcPtr),
+                    height: vImagePixelCount(height),
+                    width: vImagePixelCount(width),
+                    rowBytes: cgImage.bytesPerRow
+                )
+                var dstBuf = vImage_Buffer(
+                    data: dstRaw,
+                    height: vImagePixelCount(dstH),
+                    width: vImagePixelCount(dstW),
+                    rowBytes: dstStride
+                )
+                if vImageScale_ARGB8888(&srcBuf, &dstBuf, nil, vImage_Flags(kvImageHighQualityResampling)) == kvImageNoError,
+                   let provider = CGDataProvider(data: dstData as CFData) {
+                    return CGImage(
+                        width: dstW,
+                        height: dstH,
+                        bitsPerComponent: 8,
+                        bitsPerPixel: 32,
+                        bytesPerRow: dstStride,
+                        space: cgImage.colorSpace ?? outputColorSpace(),
+                        bitmapInfo: cgImage.bitmapInfo,
+                        provider: provider,
+                        decode: nil,
+                        shouldInterpolate: true,
+                        intent: .defaultIntent
+                    )
+                }
+            }
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: dstW, height: dstH), format: format).image { _ in
+            UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+                .draw(in: CGRect(x: 0, y: 0, width: dstW, height: dstH))
+        }.cgImage
     }
 
     func orientedCGImage(_ image: CGImage, orientation: CGImagePropertyOrientation) -> CGImage? {

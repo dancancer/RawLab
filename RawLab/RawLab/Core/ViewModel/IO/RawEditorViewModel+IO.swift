@@ -144,6 +144,10 @@ extension RawEditorViewModel {
         activeImportRevision = importRevision
         sourceRevision = importRevision
         invalidatePreviewRequests()
+        clearDetailState(releaseRaster: true, keepRequest: false)
+        renderQueue.async { [weak self] in
+            self?.processor.clearHDRSessionCache()
+        }
         previewLongEdge = Int(previewMaxDimension)
         requestedPreviewLongEdge = previewLongEdge
 

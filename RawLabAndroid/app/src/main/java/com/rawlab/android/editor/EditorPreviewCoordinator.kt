@@ -36,6 +36,7 @@ internal class EditorPreviewCoordinator(
     private val isEditorActive: () -> Boolean,
     private val currentActivationRevision: () -> Long,
     private val currentSourceRevision: () -> Long,
+    private val currentEditRevision: () -> Long,
     private val currentRenderRevision: () -> Long,
     private val getPreviewLongEdge: () -> Int,
     private val setPreviewLongEdge: (Int) -> Unit,
@@ -54,10 +55,18 @@ internal class EditorPreviewCoordinator(
     private val batchHolder: EditorBatchStateHolder,
     private val draftHolder: EditorDraftStateHolder,
     private val formatFailure: (Throwable) -> String,
+    private val onExactPreviewAccepted: () -> Unit = {},
+    private val onDetailAccepted: (WorkResult.DetailPreview) -> Unit = { value ->
+        mutable.value = mutable.value.copy(detail = value.overlay)
+    },
 ) {
     private var saveNotice: Job? = null
 
     fun accept(result: Result<WorkResult>) {
+        (result.getOrNull() as? WorkResult.DetailPreview)?.let {
+            acceptDetailPreview(it)
+            return
+        }
         hdrHolder.onRenderResult()
         result.fold({ value ->
             when (value) {
@@ -67,6 +76,7 @@ internal class EditorPreviewCoordinator(
                 is WorkResult.HslProbe -> hslHolder.accept(value)
                 is WorkResult.CameraHDRPreflight -> hdrHolder.onCameraHDRPreflight(value)
                 is WorkResult.Preview -> acceptPreview(value)
+                is WorkResult.DetailPreview -> acceptDetailPreview(value)
                 WorkResult.Export -> exportHolder.onExportCompleted()
                 is WorkResult.AutoExposure -> acceptAutoExposure(value)
             }
@@ -80,6 +90,24 @@ internal class EditorPreviewCoordinator(
         draftHolder.updatePreviewSize(draftHolder.requestedPreviewLongEdge)
     }
 
+    private fun acceptDetailPreview(value: WorkResult.DetailPreview) {
+        val current = mutable.value
+        val request = value.request
+        if (current.photo != request.photo ||
+            current.visibleEdits != request.edits ||
+            currentSourceRevision() != request.sourceRevision ||
+            currentEditRevision() != request.editRevision ||
+            !current.controlsEnabled ||
+            !current.exact ||
+            current.rendering ||
+            current.previewResizePending ||
+            current.draft?.group == AdjustmentGroup.GEOMETRY
+        ) {
+            return
+        }
+        onDetailAccepted(value)
+    }
+
     private fun acceptPreview(value: WorkResult.Preview) {
         val request = value.request
         if (request.draft) {
@@ -90,6 +118,7 @@ internal class EditorPreviewCoordinator(
             mutable.value = EditorStateReducer.renderFinished(current)
                 .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
             hslHolder.recordAcceptedPreview(request, refitted.project(current.edits), currentSourceRevision(), currentRenderRevision())
+            if (!request.interactive && refitted.group != AdjustmentGroup.GEOMETRY) onExactPreviewAccepted()
             return
         }
         val imported = importRecoveryHolder.completePendingImport(request.photo.identity)
@@ -142,6 +171,7 @@ internal class EditorPreviewCoordinator(
         }
         if (request.importing && mutable.value.draft == null) draftHolder.restoreEditorDraft()
         processingMigrationHolder.startIfNeeded()
+        if (!request.interactive) onExactPreviewAccepted()
     }
 
     private fun acceptAutoExposure(value: WorkResult.AutoExposure) {

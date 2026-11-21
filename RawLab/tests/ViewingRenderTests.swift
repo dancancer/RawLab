@@ -50,6 +50,7 @@ struct ViewingRenderTests {
             view.configure(image: model.previewImage!, reference: nil, label: "HDR preview",
                            state: PhotoViewingState(), viewport: viewport, displayScale: 3,
                            isDraft: false, interactionEnabled: true, nativePixelSize: model.viewportNativeSize,
+                           previewSourceSize: model.viewportPreviewSourceSize,
                            previewLongEdgeLimit: model.viewportPreviewLimit, hdr: model.hdrPresentation)
             view.layoutIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
@@ -122,6 +123,26 @@ struct ViewingRenderTests {
         waitForHistogram(cacheModel)
         check(cacheModel.histogram?.width == 1280, "reused zoom preview gets its own histogram")
         print("PASS: completed raster Fit and zoom previews reuse pixels and preserve their own histograms")
+        cacheModel.invalidatePreviewRequests()
+        cacheModel.recordImportedComparison(settings: .default)
+        check(cacheModel.acceptedPreviewFrameID.map { cacheModel.isLatestRenderID($0) } == true,
+              "recordImportedComparison must register latestRenderID so post-import ROI renders are not self-cancelled")
+        cacheModel.updateDetailRequest(PhotoDetailRequest(
+            visibleRect: CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2),
+            overscanRect: CGRect(x: 0.38, y: 0.38, width: 0.24, height: 0.24),
+            zoomScale: 1.0,
+            baseScale: 0.25,
+            maxOutputLongEdge: 2048
+        ))
+        let rasterDetailDeadline = Date().addingTimeInterval(6)
+        while cacheModel.detailOverlay == nil && Date() < rasterDetailDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        check(cacheModel.detailOverlay?.cgImage != nil && cacheModel.detailOverlay?.beforeCGImage != nil,
+              "raster ROI detail overlay completes after recordImportedComparison")
+        cacheModel.updateDetailRequest(nil)
+        check(cacheModel.detailOverlay == nil, "clearing raster detail request clears detailOverlay")
+        print("PASS: post-import ROI detail scheduling is not self-cancelled")
         let buffer = try model.processor.loadRasterBuffer(url: url).buffer
         model.sourceFile = .externallyManaged(url)
         model.draftBuffer = buffer
@@ -231,6 +252,92 @@ struct ViewingRenderTests {
             let deadline = Date().addingTimeInterval(35)
             while rawModel.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
             check(rawModel.hasImage, "RAW import succeeds: \(rawModel.statusMessage ?? "nil")")
+            let backingDeadline = Date().addingTimeInterval(15)
+            while rawModel.detailBacking == nil && Date() < backingDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailBacking != nil &&
+                  max(rawModel.detailBacking!.pixelSize.width, rawModel.detailBacking!.pixelSize.height) <= CGFloat(rawModel.detailBackingMaxLongEdge) &&
+                  rawModel.detailBacking!.fullNativeSize.width > 1280,
+                  "RAW import pre-warms high-resolution detailBacking without clobbering 1280px previewImage")
+
+            let regionA = PhotoDetailRequest(
+                visibleRect: CGRect(x: 0.05, y: 0.05, width: 0.15, height: 0.18),
+                overscanRect: CGRect(x: 0.03, y: 0.03, width: 0.19, height: 0.22),
+                zoomScale: 1.0,
+                baseScale: 0.21,
+                maxOutputLongEdge: 2048
+            )
+            let expectedA = PhotoDetailTilePlan.tiles(
+                visibleRect: regionA.visibleRect,
+                fullNativeSize: rawModel.viewportNativeSize ?? .zero,
+                zoomScale: regionA.zoomScale,
+                baseScale: regionA.baseScale
+            )
+            check(!expectedA.isEmpty, "RAW import produces non-empty tile plan for region A")
+            rawModel.updateDetailRequest(regionA)
+            let detailDeadlineA = Date().addingTimeInterval(15)
+            while !expectedA.allSatisfy({ rawModel.detailTileCache[$0.key] != nil }) &&
+                    Date() < detailDeadlineA {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailOverlay != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key] != nil }) &&
+                  !rawModel.detailTiles.isEmpty,
+                  "RAW import immediately supports viewport ROI tile rendering without needing preview resize")
+            check(rawModel.detailOverlay?.cgImage != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage == nil }),
+                  "Single-view edited RAW ROI skips redundant before renders")
+            check((rawModel.detailOverlay?.pixelSize.width ?? 0) > 200 &&
+                  (rawModel.detailOverlay?.fullNativeSize.width ?? 0) > 1280,
+                  "RAW ROI overlay reports full native dimensions and high-res tile pixels")
+
+            rawModel.setDetailNeedsBefore(true)
+            let beforeDeadline = Date().addingTimeInterval(15)
+            while (!expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }) ||
+                   rawModel.detailBacking?.beforeCGImage == nil) &&
+                    Date() < beforeDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailBacking?.beforeCGImage != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }),
+                  "Enabling comparison lazily populates beforeCGImage on backing and visible RAW tiles")
+
+            let cachedAfterA = rawModel.detailTileCache.count
+            let regionB = PhotoDetailRequest(
+                visibleRect: CGRect(x: 0.65, y: 0.55, width: 0.15, height: 0.18),
+                overscanRect: CGRect(x: 0.63, y: 0.53, width: 0.19, height: 0.22),
+                zoomScale: 1.0,
+                baseScale: 0.21,
+                maxOutputLongEdge: 2048
+            )
+            let expectedB = PhotoDetailTilePlan.tiles(
+                visibleRect: regionB.visibleRect,
+                fullNativeSize: rawModel.viewportNativeSize ?? .zero,
+                zoomScale: regionB.zoomScale,
+                baseScale: regionB.baseScale
+            )
+            rawModel.updateDetailRequest(regionB)
+            let detailDeadlineB = Date().addingTimeInterval(15)
+            while !expectedB.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }) &&
+                    Date() < detailDeadlineB {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailTileCache.count > cachedAfterA &&
+                  expectedB.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }),
+                  "panning to a second RAW region adds its tiles while retaining previously rendered tiles")
+            rawModel.updateDetailRequest(regionA)
+            check(rawModel.detailDebounceWorkItem == nil,
+                  "panning back to a previously rendered RAW region hits the tile cache without re-rendering")
+            rawModel.updateDetailRequest(nil)
+            check(rawModel.detailOverlay == nil && rawModel.detailTiles.isEmpty &&
+                  !rawModel.detailTileCache.isEmpty && rawModel.detailBacking != nil,
+                  "zooming back to Fit clears active tiles while retaining cached RAW tiles and detailBacking")
+            rawModel.updateDetailRequest(regionA)
+            check(rawModel.detailDebounceWorkItem == nil && !rawModel.detailTiles.isEmpty,
+                  "zooming back into a previously rendered RAW region hits the preserved tile cache synchronously")
+            rawModel.updateDetailRequest(nil)
+            print("PASS: real RAW post-import ROI tile pyramid caches and reuses visited regions")
             let rawZoom = rawModel.previewImage
             rawModel.updatePreviewSize(320, settings: edited)
             wait(rawModel)

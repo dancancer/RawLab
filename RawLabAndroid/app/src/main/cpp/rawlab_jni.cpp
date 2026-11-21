@@ -1898,6 +1898,214 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
     return 0;
 }
 
+namespace {
+sony2fuji_hdr_roi_v1 makeHdrRoi(jfloat x0, jfloat y0, jfloat x1, jfloat y1,
+    jint maxOutputLongEdge, jfloat baseContentHeadroom) {
+    if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(x1) || !std::isfinite(y1) || maxOutputLongEdge <= 0)
+        throw std::invalid_argument("Invalid HDR ROI bounds");
+    sony2fuji_hdr_roi_v1 roi{};
+    roi.version = SONY2FUJI_HDR_VERSION;
+    roi.struct_size = sizeof(roi);
+    roi.norm_x0 = x0;
+    roi.norm_y0 = y0;
+    roi.norm_x1 = x1;
+    roi.norm_y1 = y1;
+    roi.max_output_long_edge = static_cast<uint32_t>(std::clamp(maxOutputLongEdge, jint(1), jint(1280)));
+    roi.base_content_headroom = std::isfinite(baseContentHeadroom) ? baseContentHeadroom : 0.0f;
+    return roi;
+}
+
+void writeHdrRoiBounds(JNIEnv* env, jintArray roiBoundsOut, const sony2fuji_hdr_roi_result_v1& roiResult) {
+    if (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6)
+        throw std::invalid_argument("Invalid HDR ROI bounds array");
+    const jint bounds[] = {
+        static_cast<jint>(roiResult.native_x0),
+        static_cast<jint>(roiResult.native_y0),
+        static_cast<jint>(roiResult.native_x1),
+        static_cast<jint>(roiResult.native_y1),
+        static_cast<jint>(roiResult.full_native_width),
+        static_cast<jint>(roiResult.full_native_height),
+    };
+    env->SetIntArrayRegion(roiBoundsOut, 0, 6, bounds);
+    if (env->ExceptionCheck()) throw std::runtime_error("Failed to write HDR ROI bounds");
+}
+
+jlong completeHdrRoi(JNIEnv* env, const CancellationScope& cancellation, sony2fuji_status status,
+    const sony2fuji_hdr_diagnostic_v1& diagnostic, sony2fuji_hdr_image_pair_v1& result,
+    const sony2fuji_hdr_roi_result_v1& roiResult, jintArray roiBoundsOut) {
+    if (cancellation.isCancelled()) {
+        sony2fuji_hdr_release_pair(&result);
+        throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+    }
+    if (status != SONY2FUJI_STATUS_OK) {
+        sony2fuji_hdr_release_pair(&result);
+        throw HDRStatusError(status, diagnostic);
+    }
+    try {
+        writeHdrRoiBounds(env, roiBoundsOut, roiResult);
+    } catch (...) {
+        sony2fuji_hdr_release_pair(&result);
+        throw;
+    }
+    return retainHdrPair(result);
+}
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeRenderRoi(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
+    jobject requestObj, jfloat x0, jfloat y0, jfloat x1, jfloat y1, jint maxOutputLongEdge, jfloat baseContentHeadroom,
+    jintArray roiBoundsOut, jlong cancellationGeneration) {
+    try {
+        if (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6)
+            throw std::invalid_argument("Invalid HDR ROI bounds array");
+        const auto roi = makeHdrRoi(x0, y0, x1, y1, maxOutputLongEdge, baseContentHeadroom);
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
+        if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        const auto sourceOwner = acquireHdrPair(sourceId);
+        const auto& source = sourceOwner->value;
+        base.intent = source.source_intent;
+        sony2fuji_hdr_image_pair_v1 result{SONY2FUJI_HDR_VERSION, sizeof(result)};
+        sony2fuji_hdr_roi_result_v1 roiResult{SONY2FUJI_HDR_VERSION, sizeof(roiResult)};
+        sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
+        const auto status = sony2fuji_hdr_render_roi(guard.get(), &source, &base, &roi, &result, &roiResult, &diagnostic);
+        return completeHdrRoi(env, cancellation, status, diagnostic, result, roiResult, roiBoundsOut);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR ROI render");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwHDRFailure(env, error);
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeRenderCameraRawRoi(JNIEnv* env, jclass, jlong sessionId,
+    jstring path, jobject requestObj, jboolean customWhiteBalance, jfloat temperature, jfloat tint,
+    jboolean sensorExposure, jint fbddLevel, jint lensFlags, jstring lensProfile, jstring profilePath,
+    jstring profileDigest, jint processingVersion, jfloat x0, jfloat y0, jfloat x1, jfloat y1,
+    jint maxOutputLongEdge, jfloat baseContentHeadroom, jintArray roiBoundsOut, jlong cancellationGeneration) {
+    try {
+        if (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6)
+            throw std::invalid_argument("Invalid HDR ROI bounds array");
+        UtfChars source(env, path), profile(env, lensProfile), resource(env, profilePath), digest(env, profileDigest);
+        if (!source.chars || !*source.chars) throw std::invalid_argument("Invalid camera RAW HDR ROI request");
+        const auto roi = makeHdrRoi(x0, y0, x1, y1, maxOutputLongEdge, baseContentHeadroom);
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
+        base.intent = SONY2FUJI_INTENT_PREVIEW;
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
+        if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        const auto paramsJson = processingOnlyParamsJson(processingVersion, "preview");
+        check(sony2fuji_apply_params(guard.get(), paramsJson.c_str()));
+        sony2fuji_hdr_camera_development_v1 development{SONY2FUJI_HDR_VERSION, sizeof(development),
+            uint32_t(customWhiteBalance != 0), uint32_t(sensorExposure != 0), temperature, tint,
+            static_cast<uint32_t>(fbddLevel), static_cast<uint32_t>(lensFlags), profile.chars};
+        sony2fuji_hdr_camera_development_v2 profiled{};
+        const auto* dev = &development;
+        if (resource.chars) {
+            profiled.base = development;
+            profiled.base.version = 2;
+            profiled.base.struct_size = sizeof(profiled);
+            profiled.profile_path = resource.chars;
+            if (digest.chars) std::strncpy(profiled.profile_sha256, digest.chars, sizeof(profiled.profile_sha256) - 1);
+            dev = &profiled.base;
+        }
+        sony2fuji_hdr_image_pair_v1 result{SONY2FUJI_HDR_VERSION, sizeof(result)};
+        sony2fuji_hdr_roi_result_v1 roiResult{SONY2FUJI_HDR_VERSION, sizeof(roiResult)};
+        sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
+        const auto status = sony2fuji_hdr_render_camera_raw_roi(guard.get(), source.chars, dev, 0u, &base, &roi,
+            &result, &roiResult, &diagnostic);
+        return completeHdrRoi(env, cancellation, status, diagnostic, result, roiResult, roiBoundsOut);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for camera RAW HDR ROI render");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwHDRFailure(env, error);
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeRenderFileRoi(JNIEnv* env, jclass, jlong sessionId,
+    jstring path, jbyteArray expectedFingerprint, jobject requestObj, jfloat x0, jfloat y0, jfloat x1, jfloat y1,
+    jint maxOutputLongEdge, jfloat baseContentHeadroom, jintArray roiBoundsOut, jlong cancellationGeneration) {
+    try {
+        if (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6)
+            throw std::invalid_argument("Invalid HDR ROI bounds array");
+        if (!expectedFingerprint || env->GetArrayLength(expectedFingerprint) != 32)
+            throw std::invalid_argument("Invalid HDR fingerprint");
+        uint8_t expected[32]{};
+        env->GetByteArrayRegion(expectedFingerprint, 0, 32, reinterpret_cast<jbyte*>(expected));
+        if (env->ExceptionCheck()) throw std::invalid_argument("Failed to read HDR fingerprint");
+        UtfChars source(env, path);
+        if (!source.chars || !*source.chars) throw std::invalid_argument("Invalid HDR file ROI request");
+        const auto roi = makeHdrRoi(x0, y0, x1, y1, maxOutputLongEdge, baseContentHeadroom);
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
+        base.intent = SONY2FUJI_INTENT_PREVIEW;
+        SessionGuard guard(sessionId);
+        CancellationScope cancellation(guard.session(), cancellationGeneration);
+        if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        sony2fuji_hdr_image_pair_v1 result{SONY2FUJI_HDR_VERSION, sizeof(result)};
+        sony2fuji_hdr_roi_result_v1 roiResult{SONY2FUJI_HDR_VERSION, sizeof(roiResult)};
+        sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
+        const auto status = sony2fuji_hdr_render_file_roi(guard.get(), source.chars, &base, &roi,
+            &result, &roiResult, &diagnostic);
+        if (cancellation.isCancelled()) {
+            sony2fuji_hdr_release_pair(&result);
+            throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        }
+        if (status != SONY2FUJI_STATUS_OK) {
+            sony2fuji_hdr_release_pair(&result);
+            throw HDRStatusError(status, diagnostic);
+        }
+        if (std::memcmp(result.source_sha256, expected, 32) != 0) {
+            sony2fuji_hdr_release_pair(&result);
+            sony2fuji_hdr_diagnostic_v1 mismatch{SONY2FUJI_HDR_VERSION, sizeof(mismatch),
+                SONY2FUJI_HDR_REASON_SOURCE_CHANGED, SONY2FUJI_HDR_FIELD_SOURCE};
+            throw HDRStatusError(SONY2FUJI_STATUS_INVALID_ARGUMENT, mismatch);
+        }
+        try {
+            writeHdrRoiBounds(env, roiBoundsOut, roiResult);
+        } catch (...) {
+            sony2fuji_hdr_release_pair(&result);
+            throw;
+        }
+        return retainHdrPair(result);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR file ROI render");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) {
+        throwHDRFailure(env, error);
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeClearHdrSessionCache(JNIEnv*, jclass, jlong sessionId) {
+    try {
+        SessionGuard guard(sessionId);
+        sony2fuji_hdr_clear_session_cache(guard.get());
+    } catch (...) {
+    }
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeSampleHsl(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
     jobject requestObj, jlong sourceRevision, jlong requestRevision, jfloatArray output, jlong cancellationGeneration) {
@@ -2225,10 +2433,31 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
     }
 }
 
-extern "C" JNIEXPORT jobject JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id, jobject requestObj) {
+namespace {
+struct ViewportRoiScope {
+    sony2fuji_session* session;
+    explicit ViewportRoiScope(sony2fuji_session* s, const sony2fuji_viewport_roi* roi)
+        : session(roi ? s : nullptr) {
+        if (session && roi) {
+            sony2fuji_viewport_roi clamped = *roi;
+            clamped.max_output_long_edge = std::clamp<uint32_t>(clamped.max_output_long_edge, 1u, 2048u);
+            const auto status = sony2fuji_session_set_viewport_roi(session, &clamped);
+            if (status != SONY2FUJI_STATUS_OK) throw NativeStatusError(status);
+        }
+    }
+    ~ViewportRoiScope() {
+        if (session) (void)sony2fuji_session_set_viewport_roi(session, nullptr);
+    }
+    ViewportRoiScope(const ViewportRoiScope&) = delete;
+    ViewportRoiScope& operator=(const ViewportRoiScope&) = delete;
+};
+
+jobject processRequestInternal(JNIEnv* env, jlong id, jobject requestObj,
+    const sony2fuji_viewport_roi* roi, jintArray roiBoundsOut) {
     try {
         if (!requestObj) throw std::invalid_argument("Missing native process request");
+        if (roi != nullptr && (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6))
+            throw std::invalid_argument("Invalid ROI bounds output");
         const auto& cache = jniCache(env);
 
         LocalRef inputObj(env, env->GetObjectField(requestObj, cache.processRequest.input));
@@ -2305,6 +2534,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
 
         auto migrationValues = migrationRef.asFloatArray();
         auto hslProbe = hslProbeRef.asFloatArray();
+        if (roi != nullptr && (out.chars || migrationValues || hslProbe))
+            throw std::invalid_argument("ROI mode only supports preview buffer renders");
         const auto outputFormat = rawlab::parseExportFormat(format);
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
@@ -2317,8 +2548,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
                 toneCurve, saturation, sharpening, edge, outputFormat,
                 longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge), migrationValues != nullptr);
 
-        check(sony2fuji_session_set_interactive_preview(session, interactive != JNI_FALSE ? 1 : 0));
-        check(sony2fuji_session_set_viewport_preview(session, viewportPreview != JNI_FALSE ? 1 : 0));
+        check(sony2fuji_session_set_interactive_preview(session, (interactive != JNI_FALSE && roi == nullptr) ? 1 : 0));
+        check(sony2fuji_session_set_viewport_preview(session, (viewportPreview != JNI_FALSE || roi != nullptr) ? 1 : 0));
 
         if (migrationValues) {
             if (env->GetArrayLength(migrationValues) != 20 || out.chars || hslProbe)
@@ -2345,6 +2576,7 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             sampleHslProbe(env, snapshot, sourceRevision, requestRevision, hslProbe);
             return nullptr;
         }
+        ViewportRoiScope roiScope(session, roi);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         Buffer buffer;
         const auto status = sony2fuji_process(session, &request, &buffer.value);
@@ -2362,12 +2594,28 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             if (env->ExceptionCheck()) return nullptr;
         }
         if (outputPathRef) return nullptr;
+        if (roi != nullptr) {
+            sony2fuji_viewport_roi_result roiRes{};
+            roiRes.struct_size = sizeof(roiRes);
+            check(sony2fuji_session_get_viewport_roi_result(session, &roiRes), session);
+            if (roiRes.active == 0) throw std::runtime_error("Viewport ROI result was not produced");
+            const jint bounds[] = {
+                static_cast<jint>(roiRes.native_x0),
+                static_cast<jint>(roiRes.native_y0),
+                static_cast<jint>(roiRes.native_x1),
+                static_cast<jint>(roiRes.native_y1),
+                static_cast<jint>(roiRes.full_native_width),
+                static_cast<jint>(roiRes.full_native_height),
+            };
+            env->SetIntArrayRegion(roiBoundsOut, 0, 6, bounds);
+            if (env->ExceptionCheck()) return nullptr;
+        }
         const auto& b = buffer.value;
-        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, reusableBitmapRef.get(), &cancellation));
+        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, roi == nullptr ? reusableBitmapRef.get() : nullptr, &cancellation));
         if (!bitmapOut) return nullptr;
         LocalRef histogram(env, nullptr);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
-        if (!interactive) {
+        if (!interactive && roi == nullptr) {
             uint32_t counts[768]{};
             uint32_t shadowsCount = 0, highlightsCount = 0;
             // 统计当前 CPU 显示 buffer，独立于照片渲染 backend；失败仍交付像素。
@@ -2383,7 +2631,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         }
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         float kelvin = NAN, wbTint = NAN;
-        if (displayInput || sony2fuji_session_get_effective_raw_white_balance(session, &kelvin, &wbTint) != SONY2FUJI_STATUS_OK) {
+        if (displayInput || roi != nullptr ||
+            sony2fuji_session_get_effective_raw_white_balance(session, &kelvin, &wbTint) != SONY2FUJI_STATUS_OK) {
             kelvin = NAN; wbTint = NAN;
         }
         return env->NewObject(cache.nativeFrame.clazz, cache.nativeFrame.ctor, static_cast<jint>(b.width),
@@ -2401,6 +2650,30 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         throwJava(env, "java/io/IOException", "RAW processing failed");
     }
     return nullptr;
+}
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id, jobject requestObj) {
+    return processRequestInternal(env, id, requestObj, nullptr, nullptr);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeProcessRoi(JNIEnv* env, jobject, jlong id, jobject requestObj,
+    jfloat x0, jfloat y0, jfloat x1, jfloat y1, jint maxOutputLongEdge, jintArray roiBoundsOut) {
+    if (!std::isfinite(x0) || !std::isfinite(y0) || !std::isfinite(x1) || !std::isfinite(y1) || maxOutputLongEdge <= 0) {
+        throwJava(env, "java/lang/IllegalArgumentException", "Invalid ROI bounds");
+        return nullptr;
+    }
+    sony2fuji_viewport_roi roi{};
+    roi.struct_size = sizeof(roi);
+    roi.enabled = 1u;
+    roi.norm_x0 = x0;
+    roi.norm_y0 = y0;
+    roi.norm_x1 = x1;
+    roi.norm_y1 = y1;
+    roi.max_output_long_edge = static_cast<uint32_t>(std::clamp(maxOutputLongEdge, jint(1), jint(2048)));
+    return processRequestInternal(env, id, requestObj, &roi, roiBoundsOut);
 }
 
 extern "C" JNIEXPORT jfloat JNICALL

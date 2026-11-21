@@ -105,6 +105,41 @@ struct Sony2FujiProcessor {
         }
     }
 
+    struct ViewportROI: Equatable, Sendable {
+        let normalizedRect: CGRect
+        let maxOutputLongEdge: Int
+    }
+
+    struct ViewportROIResult: Equatable, Sendable {
+        let nativeX0: Int
+        let nativeY0: Int
+        let nativeX1: Int
+        let nativeY1: Int
+        let fullNativeWidth: Int
+        let fullNativeHeight: Int
+
+        var normalizedRect: CGRect {
+            let w = CGFloat(max(1, fullNativeWidth))
+            let h = CGFloat(max(1, fullNativeHeight))
+            return CGRect(
+                x: CGFloat(nativeX0) / w,
+                y: CGFloat(nativeY0) / h,
+                width: CGFloat(nativeX1 - nativeX0) / w,
+                height: CGFloat(nativeY1 - nativeY0) / h
+            )
+        }
+    }
+
+    struct ViewportROIRenderOutput {
+        let image: UIImage
+        let roi: ViewportROIResult
+    }
+
+    struct HDRROIRenderOutput {
+        let image: HDRImage
+        let roi: HDRViewportROIResult
+    }
+
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
                     processing: ProcessingIdentity = .current,
                     proRAWDecodeVersion: Int? = nil,
@@ -148,6 +183,68 @@ struct Sony2FujiProcessor {
             if let sessionOverride { return try run(sessionOverride) }
             return try withRawSession(reuse: false, inputType: inputType, body: run)
         }
+    }
+
+    func processHDRROI(
+        url: URL,
+        settings: HDRSettings,
+        roi: HDRViewportROI,
+        processing: ProcessingIdentity = .current,
+        proRAWDecodeVersion: Int? = nil,
+        cancelled: () -> Bool = { false }
+    ) throws -> HDRROIRenderOutput {
+        guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
+        guard gpuMode != SONY2FUJI_GPU_FORCE else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+                                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),
+                                 field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
+            throw HDRSettings.ModeError.unsupportedSource
+        }
+        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
+        if cancelled() { throw CancellationError() }
+        let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+        return try withRawSession(reuse: true, inputType: inputType) { session in
+            if let proRAW = info.proRAW, let stamp = info.cameraStamp {
+                let bounds = try HDRImage.roiSourceBounds(
+                    nativeWidth: proRAW.width, nativeHeight: proRAW.height,
+                    settings: settings, roi: roi, longEdge: nil
+                )
+                if cancelled() { throw CancellationError() }
+                let decoded = try proRAW.decodeROI(
+                    url, stamp: stamp,
+                    sourceX0: bounds.sourceX0, sourceY0: bounds.sourceY0,
+                    sourceX1: bounds.sourceX1, sourceY1: bounds.sourceY1,
+                    cancelled: cancelled
+                )
+                let tile = HDRImage.fromProRAW(pair: decoded.pair, url: url, info: info,
+                                              buffers: (decoded.hdr, decoded.sdr))
+                var tileRoi = roi
+                tileRoi.sourceX0 = bounds.sourceX0
+                tileRoi.sourceY0 = bounds.sourceY0
+                tileRoi.fullSourceWidth = proRAW.width
+                tileRoi.fullSourceHeight = proRAW.height
+                let rendered = try tile.renderedROI(session: session, settings: settings, roi: tileRoi, longEdge: nil)
+                return HDRROIRenderOutput(image: rendered.image, roi: rendered.result)
+            }
+            if info.isCameraRAW {
+                let rendered = try HDRImage.renderCameraRawROI(
+                    session: session, url: url, info: info,
+                    settings: settings, roi: roi, longEdge: nil
+                )
+                return HDRROIRenderOutput(image: rendered.image, roi: rendered.result)
+            }
+            let rendered = try HDRImage.renderFileROI(
+                session: session, url: url, info: info,
+                settings: settings, roi: roi, longEdge: nil
+            )
+            return HDRROIRenderOutput(image: rendered.image, roi: rendered.result)
+        }
+    }
+
+    func clearHDRSessionCache() {
+        previewSession.clearHDRCacheIfActive()
     }
 
     private func hdrPreviewSource(_ url: URL, info: HDRSourceInfo, settings: HDRSettings, edge: Int,
@@ -204,6 +301,14 @@ struct Sony2FujiProcessor {
                 if let session { sony2fuji_session_destroy(session) }
                 session = nil
                 throw error
+            }
+        }
+
+        func clearHDRCacheIfActive() {
+            lock.lock()
+            defer { lock.unlock() }
+            if let session {
+                HDRImage.clearSessionCache(session: session)
             }
         }
     }
@@ -551,6 +656,162 @@ struct Sony2FujiProcessor {
         }
     }
 
+    private final class SessionCancellationBox {
+        let check: () -> Bool
+        init(_ check: @escaping () -> Bool) { self.check = check }
+    }
+
+    private func withSessionCancellation<T>(
+        _ session: OpaquePointer,
+        cancelled: () -> Bool,
+        body: (() -> Bool) throws -> T
+    ) throws -> T {
+        try withoutActuallyEscaping(cancelled) { escapingCancelled in
+            let box = SessionCancellationBox(escapingCancelled)
+            return try withExtendedLifetime(box) {
+                let context = Unmanaged.passUnretained(box).toOpaque()
+                _ = sony2fuji_session_set_cancellation_callback(session, { pointer in
+                    guard let pointer else { return 0 }
+                    return Unmanaged<SessionCancellationBox>.fromOpaque(pointer).takeUnretainedValue().check() ? 1 : 0
+                }, context)
+                defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+                return try body(box.check)
+            }
+        }
+    }
+
+    func canFastMetalFullRes(url: URL, settings: RawSettings, lutURL: URL?) -> Bool {
+        guard gpuMode != SONY2FUJI_GPU_OFF,
+              !settings.isHDREditing,
+              !settings.denoise.enabled,
+              settings.displayChromaDenoise == 0 else {
+            return false
+        }
+        let resolved = settings.masterRecipeID == nil
+            ? settings
+            : settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
+        guard resolved.geometrySettings.isIdentity,
+              resolved.atmosphereSettings.isIdentity,
+              resolved.curveSettings.channels.isIdentity,
+              (resolved.curveSettings.mode != .custom || resolved.curveSettings.master.isIdentity),
+              !(resolved.processing.core == SONY2FUJI_PROCESSING_BASIC_V3 &&
+                (resolved.highlights != 0 || resolved.shadows != 0 || resolved.contrast != 1 || !resolved.toneSettings.isIdentity)),
+              !isNormalX3f(url, settings: resolved) else {
+            return false
+        }
+        if let lutURL {
+            let ext = lutURL.pathExtension.lowercased()
+            if ext != "cube" && ext != "rlook" {
+                return false
+            }
+        }
+        return true
+    }
+
+    func processRawDisplayBacking(
+        url: URL,
+        settings: RawSettings,
+        lutURL: URL?,
+        longEdge: Int,
+        viewportPreview: Bool,
+        cancelled: () -> Bool = { false }
+    ) throws -> (cgImage: CGImage, nativeSize: CGSize) {
+        if cancelled() { throw CancellationError() }
+        _ = try url.checkResourceIsReachable()
+        return try withRawSession(reuse: true) { session in
+            try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
+                if isCancelled() { throw CancellationError() }
+                let prepared = try prepareRecipe(settings, session: session, url: url)
+                if isCancelled() { throw CancellationError() }
+                try configureSession(session, settings: prepared, interactive: false, viewportPreview: viewportPreview)
+                let roiStatus = applyViewportROI(session: session, roi: nil)
+                guard roiStatus == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(roiStatus, session: session)
+                }
+
+                var request = makeBaseRequest(settings: prepared, inputType: SONY2FUJI_INPUT_RAW)
+                request.input_type = SONY2FUJI_INPUT_RAW
+                applySize(&request, width: 0, height: 0, previewLongEdge: CGFloat(max(1, longEdge)), exportLongEdge: nil)
+                request.lut_strength = lutURL == nil ? 0 : prepared.clampedLUTStrength
+
+                var buffer = sony2fuji_buffer()
+                defer { sony2fuji_release_buffer(&buffer) }
+                let status = processRaw(
+                    session: session,
+                    request: &request,
+                    inputPath: url.path,
+                    lutPath: lutURL?.path,
+                    outBuffer: &buffer
+                )
+                if status == SONY2FUJI_STATUS_CANCELLED || isCancelled() {
+                    throw CancellationError()
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, session: session)
+                }
+                let normalX3f = isNormalX3f(url, settings: prepared)
+                guard let cgImage = makeNativeBGRADisplayCGImage(consuming: &buffer, semantic: normalX3f ? .display : .legacy) else {
+                    throw ProcessorError.bufferCopyFailed
+                }
+                let nativeSize = geometrySize(session) ?? CGSize(width: cgImage.width, height: cgImage.height)
+                return (cgImage, nativeSize)
+            }
+        }
+    }
+
+    func processRawROI(
+        url: URL,
+        settings: RawSettings,
+        lutURL: URL?,
+        roi: ViewportROI,
+        cancelled: () -> Bool = { false }
+    ) throws -> ViewportROIRenderOutput {
+        if cancelled() { throw CancellationError() }
+        _ = try url.checkResourceIsReachable()
+        return try withRawSession(reuse: true) { session in
+            try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
+                if isCancelled() { throw CancellationError() }
+                let settings = try prepareRecipe(settings, session: session, url: url)
+                if isCancelled() { throw CancellationError() }
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                let roiStatus = applyViewportROI(session: session, roi: roi)
+                guard roiStatus == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(roiStatus, session: session)
+                }
+                defer { _ = applyViewportROI(session: session, roi: nil) }
+
+                var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
+                request.input_type = SONY2FUJI_INPUT_RAW
+                applySize(&request, width: 0, height: 0, previewLongEdge: 1280, exportLongEdge: nil)
+                request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+
+                var buffer = sony2fuji_buffer()
+                defer { sony2fuji_release_buffer(&buffer) }
+                let status = processRaw(
+                    session: session,
+                    request: &request,
+                    inputPath: url.path,
+                    lutPath: lutURL?.path,
+                    outBuffer: &buffer
+                )
+                if status == SONY2FUJI_STATUS_CANCELLED || isCancelled() {
+                    throw CancellationError()
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, session: session)
+                }
+                guard let result = readViewportROIResult(session: session) else {
+                    throw ProcessorError.invalidDimensions
+                }
+                let normalX3f = isNormalX3f(url, settings: settings)
+                guard let cgImage = makeNativeBGRADisplayCGImage(consuming: &buffer, semantic: normalX3f ? .display : .legacy) else {
+                    throw ProcessorError.bufferCopyFailed
+                }
+                return ViewportROIRenderOutput(image: UIImage(cgImage: cgImage, scale: 1, orientation: .up), roi: result)
+            }
+        }
+    }
+
     func processBuffer(
         buffer: Buffer,
         settings: RawSettings,
@@ -609,6 +870,128 @@ struct Sony2FujiProcessor {
                 output.lensInfo = try readLens(session, url: metadata.sourceURL, metadata: metadata.overriding(settings.lensSettings))
             }
             return output
+        }
+    }
+
+    func processBufferDisplayBacking(
+        buffer: Buffer,
+        settings: RawSettings,
+        lutURL: URL?,
+        longEdge: Int,
+        cancelled: () -> Bool = { false }
+    ) throws -> (cgImage: CGImage, nativeSize: CGSize) {
+        guard !buffer.isProxy else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                                 reason: UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),
+                                 field: UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+        }
+        if cancelled() { throw CancellationError() }
+        let inputType = semanticInputType(for: buffer)
+        return try withRawSession(reuse: true, inputType: inputType) { session in
+            try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
+                if isCancelled() { throw CancellationError() }
+                let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+                try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                let roiStatus = applyViewportROI(session: session, roi: nil)
+                guard roiStatus == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(roiStatus, session: session)
+                }
+
+                var request = makeBaseRequest(settings: settings, inputType: inputType)
+                request.input_type = inputType
+                request.input_width = UInt32(buffer.width)
+                request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat
+                request.input_color_space = SONY2FUJI_COLOR_SRGB
+                request.input_is_linear = 0
+                applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                          previewLongEdge: CGFloat(max(1, longEdge)), exportLongEdge: nil)
+                request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+
+                var outBuffer = sony2fuji_buffer()
+                defer { sony2fuji_release_buffer(&outBuffer) }
+                let status = processBuffer(
+                    session: session,
+                    request: &request,
+                    buffer: buffer,
+                    lutPath: lutURL?.path,
+                    outBuffer: &outBuffer
+                )
+                if status == SONY2FUJI_STATUS_CANCELLED || isCancelled() {
+                    throw CancellationError()
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, session: session)
+                }
+                guard let cgImage = makeNativeBGRADisplayCGImage(consuming: &outBuffer, semantic: buffer.semantic) else {
+                    throw ProcessorError.bufferCopyFailed
+                }
+                let nativeSize = geometrySize(session) ?? CGSize(width: buffer.width, height: buffer.height)
+                return (cgImage, nativeSize)
+            }
+        }
+    }
+
+    func processBufferROI(
+        buffer: Buffer,
+        settings: RawSettings,
+        lutURL: URL?,
+        roi: ViewportROI,
+        cancelled: () -> Bool = { false }
+    ) throws -> ViewportROIRenderOutput {
+        guard !buffer.isProxy else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                                 reason: UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE),
+                                 field: UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+        }
+        if cancelled() { throw CancellationError() }
+        let inputType = semanticInputType(for: buffer)
+        return try withRawSession(reuse: true, inputType: inputType) { session in
+            try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
+                let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+                try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                let roiStatus = applyViewportROI(session: session, roi: roi)
+                guard roiStatus == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(roiStatus, session: session)
+                }
+                defer { _ = applyViewportROI(session: session, roi: nil) }
+
+                var request = makeBaseRequest(settings: settings, inputType: inputType)
+                request.input_type = inputType
+                request.input_width = UInt32(buffer.width)
+                request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat
+                request.input_color_space = SONY2FUJI_COLOR_SRGB
+                request.input_is_linear = 0
+                applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                          previewLongEdge: 1280, exportLongEdge: nil)
+                request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+
+                var outBuffer = sony2fuji_buffer()
+                defer { sony2fuji_release_buffer(&outBuffer) }
+                let status = processBuffer(
+                    session: session,
+                    request: &request,
+                    buffer: buffer,
+                    lutPath: lutURL?.path,
+                    outBuffer: &outBuffer
+                )
+                if status == SONY2FUJI_STATUS_CANCELLED || isCancelled() {
+                    throw CancellationError()
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw processingFailure(status, session: session)
+                }
+                guard let result = readViewportROIResult(session: session) else {
+                    throw ProcessorError.invalidDimensions
+                }
+                guard let cgImage = makeNativeBGRADisplayCGImage(consuming: &outBuffer, semantic: buffer.semantic) else {
+                    throw ProcessorError.bufferCopyFailed
+                }
+                return ViewportROIRenderOutput(image: UIImage(cgImage: cgImage, scale: 1, orientation: .up), roi: result)
+            }
         }
     }
 
