@@ -1,5 +1,8 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -9,55 +12,239 @@ public partial class MainWindow
 {
     private EditStore? editStore;
     private bool editDirty;
+    private bool pendingMigrationReceiptClear;
+    internal Func<string, Exception, bool>? confirmUnusableRecordReset;
     private bool updateJournalLoadFailed;
     private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer editNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
-    private readonly BatchJournal batchJournal = new(BatchJournal.DefaultDirectory);
+    private readonly EditSaveQueue editSaveQueue = new();
+    private readonly EditSaveCommitQueue pendingEditSaves = new();
+    private BatchJournal batchJournal;
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
-    private bool LookAvailable => settings.IsHDREditing || lut == null || File.Exists(lut);
+    private bool LookAvailable => lookAvailability.IsAvailable(settings.IsHDREditing, lut);
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
+
+    private RenderEngine CreateRenderEngine(int gpuMode = 1, int? aiBackend = null, string aiDeviceID = "") =>
+        new(gpuMode: gpuMode, aiBackend: aiBackend, aiDeviceID: aiDeviceID, aiDiagnostics: aiDiagnostics, appPaths: appPaths);
 
     private void InitializeEditWorkflow()
     {
-        editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); SaveEdits(); };
+        editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); EnqueueSaveEdits(); };
         editNoticeTimer.Tick += (_, _) => { editNoticeTimer.Stop(); if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;} };
         Deactivated += (_, _) => {
             if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
             if(preservingUpdateNavigation)return;
             // 浏览预设不结束参数输入；其他窗口失活仍按原规则取消半输入。
             if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
-            CancelEditGesture();SaveEdits();
+            CancelEditGesture();EnqueueSaveEdits();
         };
-        try { editStore = new EditStore(EditStore.DefaultDirectory); }
+        try { editStore ??= new EditStore(appPaths.EditsDirectory); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", AdjustmentTransferPresentation.Detail(error)), error)); }
+        if (batchJournal.LastQuarantinedPath is { } quarantinedBatch) Report(new IOException(Loc.Format("已将损坏的上次批量任务记录移出为：{0}", Path.GetFileName(quarantinedBatch))));
         RefreshBatchNotice(); UpdateBusy();
         InitializeAdjustmentHistory();
     }
 
-    private void MarkEdited()
+    private void MarkEdited() => MarkEditedCore(false);
+
+    private void MarkEditedCore(bool clearMigrationReceipt)
     {
+        CancelProcessingMigration();
         if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
         ++editRevision;
         if (!ready || syncing || file == null) return;
+        ClearTransferNoticesOnUserEdit();
         editDirty = true;
+        if (clearMigrationReceipt) pendingMigrationReceiptClear = true;
         if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
         editSaveTimer.Stop();
-        if(!interacting)SaveEdits();
+        if(!interacting)EnqueueSaveEditsCore(clearMigrationReceipt);
     }
 
-    private bool SaveEdits()
+    private void EnqueueSaveEdits() => _ = EnqueueSaveEditsCore(false);
+
+    private Task<bool> EnqueueSaveEditsCore(bool clearMigrationReceipt)
+    {
+        editSaveTimer.Stop();
+        if (editGesture != null && interacting) return pendingEditSaves.LastPending?.CompletionTask ?? Task.FromResult(true);
+        if (!editDirty || file == null) return pendingEditSaves.LastPending?.CompletionTask ?? Task.FromResult(true);
+
+        var capturedPath = file;
+        var capturedOpenRevision = Volatile.Read(ref openRevision);
+        var capturedRevision = editRevision;
+        var clearReceipt = clearMigrationReceipt || pendingMigrationReceiptClear;
+
+        if (pendingEditSaves.LastPending is { } existing &&
+            existing.Path == capturedPath &&
+            existing.OpenRevision == capturedOpenRevision &&
+            existing.Revision == capturedRevision &&
+            !existing.CompletionTask!.IsCompleted &&
+            (!clearReceipt || Volatile.Read(ref existing.ClearReceipt)))
+        {
+            return existing.CompletionTask;
+        }
+
+        editGesture = null;
+        try
+        {
+            var capturedStore = editStore ?? new EditStore(appPaths.EditsDirectory);
+            editStore = capturedStore;
+            var capturedSession = TransferSession;
+            var candidate = new SavedEdit(CurrentOrReadViewSource(), settings.Capture(), CurrentLookIdentity());
+            var before = currentEditRecord ?? new PhotoEditState(candidate.Identity, null);
+            SavedEdit? defaultEdit = null;
+            if (before.Edit == null)
+            {
+                var defaults = PhotoInput.PrepareDefaultSettings(capturedPath);
+                defaults.ResolveWhiteBalance(settings.AsShot);
+                defaultEdit = new(candidate.Identity, defaults.Capture(), null);
+            }
+            var (baseline, desired) = capturedSession.PrepareEditCommit(before, candidate, defaultEdit);
+            var previousLook = before.Edit?.Look;
+
+            var commit = new PendingEditSaveCommit
+            {
+                Revision = capturedRevision,
+                Path = capturedPath,
+                OpenRevision = capturedOpenRevision,
+                Session = capturedSession,
+                Baseline = baseline,
+                PreviousLook = previousLook,
+                ClearReceipt = clearReceipt
+            };
+            var queueTask = editSaveQueue.EnqueueSave(
+                capturedStore,
+                capturedPath,
+                capturedOpenRevision,
+                clearReceipt,
+                effectiveClear =>
+                {
+                    if (effectiveClear) Volatile.Write(ref commit.ClearReceipt, true);
+                    return capturedStore.SaveState(baseline.Identity, desired, effectiveClear);
+                });
+            commit.QueueTask = queueTask;
+            pendingEditSaves.Enqueue(commit);
+            commit.CompletionTask = CompleteQueuedSaveAsync(commit);
+            return commit.CompletionTask;
+        }
+        catch (Exception error)
+        {
+            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);
+            return Task.FromResult(false);
+        }
+    }
+
+    private async Task<bool> CompleteQueuedSaveAsync(PendingEditSaveCommit commit)
+    {
+        try
+        {
+            await commit.QueueTask;
+        }
+        catch
+        {
+            // ApplyEditSaveResult observes and handles QueueTask exceptions on the UI thread.
+        }
+        return ApplyEditSaveResult(commit);
+    }
+
+    private bool ApplyEditSaveResult(PendingEditSaveCommit commit) =>
+        pendingEditSaves.ApplyResult(
+            commit,
+            IsCurrentCommitPhoto,
+            IsCurrentCommitRevision,
+            OnEditSaveApplied,
+            OnEditSaveFailed);
+
+    private bool ApplyPendingEditSaves() =>
+        pendingEditSaves.ApplyPending(
+            IsCurrentCommitPhoto,
+            IsCurrentCommitRevision,
+            OnEditSaveApplied,
+            OnEditSaveFailed);
+
+    private bool IsCurrentCommitPhoto(PendingEditSaveCommit commit) =>
+        file == commit.Path && Volatile.Read(ref openRevision) == commit.OpenRevision;
+
+    private bool IsCurrentCommitRevision(PendingEditSaveCommit commit) =>
+        editRevision == commit.Revision;
+
+    private void OnEditSaveApplied(PendingEditSaveCommit commit, PhotoEditState saved, bool isCurrentRevision)
+    {
+        currentEditRecord = saved;
+        RecordRecentLook(commit.PreviousLook, saved.Edit?.Look);
+        if (acceptedPhotoPreviewResources is { } resources) CacheCurrentPhotoPreview(resources);
+        if (isCurrentRevision)
+        {
+            editDirty = false;
+            pendingMigrationReceiptClear = false;
+            if (Volatile.Read(ref commit.ClearReceipt)) ClearProcessingMigrationReceiptState();
+            SetSaveNotice("调整已保存", "", false);
+        }
+    }
+
+    private void OnEditSaveFailed(PendingEditSaveCommit commit, Exception error, bool shouldShowNotice)
+    {
+        if (shouldShowNotice)
+            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);
+    }
+
+    private async Task<bool> FlushSaveEditsAsync()
+    {
+        editSaveTimer.Stop();
+        while (true)
+        {
+            if (editGesture != null && interacting) return true;
+            if (editDirty && file != null)
+            {
+                var currentPending = pendingEditSaves.LastPending;
+                var alreadyQueued = currentPending != null &&
+                    currentPending.Path == file &&
+                    currentPending.OpenRevision == Volatile.Read(ref openRevision) &&
+                    currentPending.Revision == editRevision &&
+                    !currentPending.CompletionTask!.IsCompleted;
+                if (!alreadyQueued)
+                {
+                    if (!await EnqueueSaveEditsCore(false)) return false;
+                    continue;
+                }
+            }
+            if (pendingEditSaves.FirstPending is { CompletionTask: { } pending } firstCommit)
+            {
+                if (!await pending && !pendingEditSaves.HasNewerPendingOrSucceededCommit(firstCommit))
+                    return false;
+                continue;
+            }
+            await editSaveQueue.FlushAsync();
+            if (!ApplyPendingEditSaves()) return false;
+            if (editDirty && file != null) continue;
+            return true;
+        }
+    }
+
+    private bool SaveEdits() => SaveEditsCore(false);
+
+    private bool SaveEditsCore(bool clearMigrationReceipt)
     {
         editSaveTimer.Stop();
         if(editGesture!=null && interacting)return true;
+        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
+        {
+            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
+            if (!ApplyPendingEditSaves()) return false;
+        }
         if (!editDirty || file == null) return true;
+        var clearReceipt = clearMigrationReceipt || pendingMigrationReceiptClear;
         try
         {
-            CommitCurrentEdit(settings.Capture());
-            editGesture=null;editDirty = false; SetSaveNotice("调整已保存", "", false);
+            if (clearReceipt) CommitResetEdit(settings.Capture());
+            else CommitCurrentEdit(settings.Capture());
+            editGesture=null;editDirty = false;pendingMigrationReceiptClear = false;
+            if (clearReceipt) ClearProcessingMigrationReceiptState();
+            SetSaveNotice("调整已保存", "", false);
             return true;
         }
         catch (Exception error) {
@@ -65,7 +252,32 @@ public partial class MainWindow
         }
     }
 
-    private SavedEdit CaptureCurrentEdit() => new(OriginalIdentity.Read(file ?? throw new InvalidOperationException()),
+    // 重置全部调整经确认后显式清除该照片的处理迁移回执；随后撤销只恢复调整参数，不恢复已清除的迁移回执（回退仍保持已过期）。
+    private AdjustmentOutcome CommitResetEdit(AdjustmentSnapshot snapshot)
+    {
+        if(file==null)throw new InvalidOperationException("No photo is open.");
+        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
+        {
+            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
+            _ = ApplyPendingEditSaves();
+        }
+        var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
+        var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
+        SavedEdit? defaultEdit=null;
+        if(before.Edit==null) {
+            var defaults=PhotoInput.PrepareDefaultSettings(file);defaults.ResolveWhiteBalance(settings.AsShot);
+            defaultEdit=new(candidate.Identity,defaults.Capture(),null);
+        }
+        var result=TransferSession.CommitEdit(before,candidate,defaultEdit,clearMigrationReceipt:true);
+        if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new InvalidOperationException("Adjustment was not saved.");
+        var previousLook=before.Edit?.Look;
+        currentEditRecord=result.Saved;
+        RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
+        if(acceptedPhotoPreviewResources is {} resources)CacheCurrentPhotoPreview(resources);
+        return result;
+    }
+
+    private SavedEdit CaptureCurrentEdit() => new(CurrentOrReadViewSource(),
         settings.Capture(),CurrentLookIdentity());
     private EditorResetContext CurrentResetContext() => new(lut,transformGeneration,
         transform.Active ? new(transform.Tool,transform.Geometry,transform.Lens) : null,
@@ -104,7 +316,8 @@ public partial class MainWindow
                 if(lut?.StartsWith("builtin:",StringComparison.Ordinal)==true)
                     lut=Path.Combine(AppContext.BaseDirectory,"LUTs",Path.GetFileName(lut[8..]));
             }
-            MarkEdited();RefreshControls();Schedule();
+            interacting=false;
+            MarkEditedCore(EditorAdjustmentRules.ClearsMigrationReceipt(prepared.Scope));RefreshControls();Schedule();
         });
     }
 
@@ -125,19 +338,47 @@ public partial class MainWindow
 
     internal void SaveSettingsCopies(IEnumerable<string> inputs, AdjustmentSnapshot snapshot, string? look)
     {
-        editStore ??= new EditStore(EditStore.DefaultDirectory);
+        editStore ??= new EditStore(appPaths.EditsDirectory);
         editStore.Save(inputs, snapshot, look);
+    }
+
+    private (PhotoEditState Record, Adjustments Settings) LoadEditsForOpen(string input)
+    {
+        editStore ??= new EditStore(appPaths.EditsDirectory);
+        PhotoEditState nextRecord;
+        Adjustments nextSettings;
+        try
+        {
+            nextRecord = editStore.ReadState(input);
+            // New HDR sources start in HDR mode; an existing snapshot without HDR
+            // remains the legacy SDR record by construction.
+            nextSettings = nextRecord.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
+            if (nextRecord.Edit != null && nextSettings.IsHDREditing)
+            {
+                nextSettings.RequireActiveHDRDecodeVersion();
+                var proRAW = PhotoInput.IsRaw(input) &&
+                    PhotoInput.ProbeCameraRaw(input, out var info, nextSettings.Processing.Version) == HDRProbeState.Supported
+                    ? info?.IsProRAW
+                    : false;
+                if (nextSettings.ProRAWDecodeVersion != null) nextSettings.RequireHDRDecodeVersion(proRAW == true);
+                else if (proRAW == true) nextSettings.RequireActiveHDRDecodeVersion(true);
+            }
+        }
+        catch (Exception error) when (error is UnusableEditRecordException or HDRModeException { Failure: HDRModeFailure.InvalidSettings })
+        {
+            if (!ConfirmResetUnusableRecord(input, error)) throw;
+            nextRecord = TransferSession.ResetToUnmodified(input);
+            nextSettings = PhotoInput.PrepareDefaultSettings(input);
+        }
+        return (nextRecord, nextSettings);
     }
 
     private void RestoreEdits(string input)
     {
-        editStore ??= new EditStore(EditStore.DefaultDirectory);
-        var nextRecord = editStore.ReadState(input);
+        var (nextRecord, nextSettings) = TransferSession.RepairLegacyNormalX3fOnOpen(input, LoadEditsForOpen);
         var saved = nextRecord.Edit;
-        // New HDR sources start in HDR mode; an existing snapshot without HDR
-        // remains the legacy SDR record by construction.
-        var nextSettings = saved?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
-        currentEditRecord=nextRecord;editGesture=null;settings=nextSettings;
+        editStore ??= new EditStore(appPaths.EditsDirectory);
+        currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -148,6 +389,43 @@ public partial class MainWindow
         editDirty = false;
         if (saved != null) SetSaveNotice("已恢复上次调整", "", false);
         else if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
+    }
+
+    private bool ConfirmResetUnusableRecord(string input, Exception error)
+    {
+        if (confirmUnusableRecordReset != null) return confirmUnusableRecordReset(input, error);
+        if (!IsLoaded || !IsVisible) return false;
+        var message = Path.GetFileName(input) + "\n\n" + AdjustmentTransferPresentation.Detail(error) + "\n\n" +
+            Loc.Text("恢复当前照片的全部调整，不改写原始照片。");
+        var dialog = new Window {
+            Title = Loc.Text("无法读取调整记录"), Owner = this, Width = 520,
+            MaxHeight = Math.Max(240, ActualHeight - 80), SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        AutomationProperties.SetAutomationId(dialog, "editor.reset.unusable");
+        KeyboardNavigation.SetTabNavigation(dialog, KeyboardNavigationMode.Cycle);
+        var grid = new Grid { Margin = new Thickness(24) };
+        grid.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        grid.Children.Add(new ScrollViewer {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }
+        });
+        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var cancel = new Button { Content = Loc.Text("取消"), IsCancel = true, IsDefault = true };
+        cancel.Click += (_, _) => dialog.DialogResult = false;
+        var reset = new Button { Content = Loc.Text("重置全部调整"), Margin = new Thickness(8, 0, 0, 0) };
+        reset.Click += (_, _) => dialog.DialogResult = true;
+        actions.Children.Add(cancel);
+        actions.Children.Add(reset);
+        Grid.SetRow(actions, 1);
+        grid.Children.Add(actions);
+        dialog.Content = grid;
+        var focus = Keyboard.FocusedElement;
+        var confirmed = dialog.ShowDialog() == true;
+        if (focus is UIElement control && control.IsVisible) control.Focus();
+        return confirmed;
     }
 
     private void RefreshSaveNotice(){if(saveNoticeKey!=null)SaveState.Text=Loc.Text(saveNoticeKey);}
@@ -161,16 +439,20 @@ public partial class MainWindow
     private void RetrySaveClicked(object sender, RoutedEventArgs e)
     {
         try {
-            if(file!=null && currentEditRecord is {} record && !OriginalIdentity.Read(file).SameFile(record.Identity)) {
-                if(MessageBox.Show(this,Loc.Text("原始文件已被替换。是否放弃未保存的调整并重新打开照片？"),
-                    "RawLab",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
-                    ReloadCurrentAdjustments();
-                return;
+            if(file!=null && currentEditRecord is {} record) {
+                var diskIdentity=OriginalIdentity.Read(file);
+                viewSourceState.ApplyProbeResult(file,openRevision,diskIdentity);
+                if(!diskIdentity.SameFile(record.Identity)) {
+                    if(MessageBox.Show(this,Loc.Text("原始文件已被替换。是否放弃未保存的调整并重新打开照片？"),
+                        "RawLab",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
+                        ReloadCurrentAdjustments();
+                    return;
+                }
             }
         }catch(Exception error){ShowAdjustmentError(error);return;}
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
-        if (editDirty) { SaveEdits(); return; }
-        try { editStore = new EditStore(EditStore.DefaultDirectory); SetSaveNotice("调整记录可用", "", false); }
+        if (editDirty) { EnqueueSaveEdits(); return; }
+        try { editStore = new EditStore(appPaths.EditsDirectory); SetSaveNotice("调整记录可用", "", false); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
     }
 
@@ -208,9 +490,9 @@ public partial class MainWindow
     }
     private void ShowBatch(BatchJob job,bool autoStart=false)
     {
-        var window = new BatchExportWindow(job, batchJournal,backend=>new RenderEngine(aiBackend:backend,
-            aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics),aiDiagnostics,
-            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null) { Owner = this, IsEnabled = !UpdateInstallationActive };
+        var window = new BatchExportWindow(job, batchJournal,backend=>CreateRenderEngine(aiBackend:backend,
+            aiDeviceID:job.AIDeviceID),aiDiagnostics,
+            editStore is {} store ? new BatchHDRPreparation(store,ResolveLook) : null,appPaths) { Owner = this, IsEnabled = !UpdateInstallationActive };
         batchWindow = window;
         window.RunCompleted += (before, after, runFailedCount) =>
         {
@@ -237,7 +519,7 @@ public partial class MainWindow
     }
     private void RecoverFailedClose(BatchExportWindow window)
     {
-        closing=false;IsEnabled=true;
+        Volatile.Write(ref closing, false);IsEnabled=true;
         if(Application.Current is App app)app.SetSystemPhotoAdmission(true);
         ResumePreview();QueueThumbnailRefresh();
         RefreshControls();RefreshBatchNotice();

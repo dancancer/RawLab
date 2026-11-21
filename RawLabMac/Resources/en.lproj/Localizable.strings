@@ -92,6 +92,7 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次批量任务尚未完成" = "The last batch task has not been completed yet";
 "下次退出时安装" = "Install on next quit";
+"不可读外观" = "Unreadable looks";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
 "不支持此 X3F 显影模式。" = "This X3F rendering mode is not supported.";
 "不支持此处理版本，原有记录未被覆盖。" = "This processing version is not supported. Saved edits have not been overwritten.";
@@ -216,6 +217,7 @@
 "原始文件已被替换，请重新选择照片。" = "The original file has been replaced. Select the photo again.";
 "原始比例" = "Original Ratio";
 "原始照片已变化，请重新导入。" = "The original photo has changed. Import it again.";
+"原始预览" = "Original preview";
 "原尺寸" = "Original size";
 "去噪优先" = "Noise Reduction Priority";
 "去朦胧" = "Dehaze";
@@ -248,6 +250,7 @@
 "向左旋转 90°" = "Rotate left 90°";
 "向左滚动%@" = "Scroll %@ to the left";
 "四面体" = "Tetrahedral";
+"回到迁移前" = "Restore original settings";
 "圆度" = "Roundness";
 "在 Finder 中打开" = "Open in Finder";
 "在照片上取色并上下拖动" = "Sample the photo and drag up or down";
@@ -263,8 +266,10 @@
 "基础曝光偏移" = "Base exposure offset";
 "处理 v1（旧版）" = "Processing v1 (Legacy)";
 "处理 v2" = "Processing v2";
+"处理 v3" = "Processing v3";
 "处理失败：%@" = "Processing failed: %@";
 "处理版本" = "Processing version";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "Processing version differs from the source; the current photo's processing version is kept";
 "处理结果为空" = "The processing result is empty";
 "复制范围" = "Copy scope";
 "复制调整" = "Copy Adjustments";
@@ -314,6 +319,7 @@
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
 "将在下次正常退出时重新检查并安装" = "The update will be checked again and installed the next time you quit normally";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "All settings from before the update will be restored. Later changes will be replaced.";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Each photo uses its saved adjustments. Skipping only affects this export.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "This replaces the target photos’ local adjustments without modifying the original RAW.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "The target photos’ local adjustment records will be replaced. Original files will not be modified.";
@@ -345,6 +351,7 @@
 "已匹配配置 · 校正尚未开启" = "Matched Profile · Correction Off";
 "已匹配镜头" = "Lens Matched";
 "已启用" = "Enabled";
+"已回退，保留旧版本。" = "Restored. The previous version will be retained.";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
 "已导出" = "Exported";
 "已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
@@ -356,6 +363,9 @@
 "已应用" = "Applied";
 "已应用 AI 降噪；曝光和外观调整复用结果。" = "AI denoise applied. Exposure and look adjustments reuse the result.";
 "已开启" = "On";
+"已忽略旧版 RAW 降噪（FBDD）" = "Legacy RAW denoise (FBDD) ignored";
+"已忽略渲染后 RGB 降噪" = "Post-render RGB denoise ignored";
+"已忽略目标不支持的普通降噪设置" = "Standard denoise settings unsupported by the target were ignored";
 "已恢复上次调整" = "Previous Adjustments Restored";
 "已撤销" = "Undone";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Undone %@ · Incomplete %@";
@@ -367,6 +377,8 @@
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
+"已编辑" = "Edited";
+"已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
 "已选" = "Selected";
@@ -404,6 +416,7 @@
 "当前显示 SDR 兼容预览。" = "Showing the SDR-compatible preview.";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片" = "Current photo";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前通道 %@，修改仅作用于该颜色。" = "Current channel: %@. Changes apply only to this color.";
@@ -443,6 +456,8 @@
 "按实际生效值应用，已包含配方强度。" = "Applied at effective values, including recipe strength.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Compares downscaled sRGB pixels under the confirmed conditions; a smaller difference means closer to this reference, but the appearance remains unverified.";
 "按每张照片" = "Per Photo";
+"损坏的外观" = "Damaged look";
+"损坏的预设" = "Damaged preset";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "Order does not indicate accuracy. Unidentified color spaces, ranges, and base images remain hypotheses.";
 "控制点 %d" = "Point %d";
 "插值方式" = "Interpolation";
@@ -516,11 +531,13 @@
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "The HDR camera profile could not be read or does not match this camera.";
+"无法读取 X3F 显影模式：%@" = "Unable to read X3F rendering mode: %@";
 "无法读取上次批量任务：%@" = "Unable to read last batch task: %@";
 "无法读取基础曝光" = "Unable to read base exposure";
 "无法读取外观文件。" = "Unable to read the look file.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "The saved look library cannot be read; the original records were not overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
+"无法读取此条目，原文已保留" = "This entry could not be read; the original text is preserved.";
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
 "无法读取调整记录：%@" = "Unable to read adjustment record: %@";
@@ -551,6 +568,7 @@
 "暖调日系 · 漫射金光" = "Warm Japanese · diffused golden light";
 "暖金光影 · 质感人像" = "Warm golden light · textured portrait";
 "暗角" = "Vignette";
+"暗角校正" = "Vignetting correction";
 "暮色黄昏 · 相邻色过渡" = "Twilight dusk · adjacent-color transition";
 "曝光" = "Exposure";
 "曝光基准" = "Exposure reference";
@@ -626,6 +644,7 @@
 "正在准备 AI 降噪" = "Preparing AI denoise";
 "正在准备导出…" = "Preparing export…";
 "正在准备编辑画布…" = "Preparing Editing Canvas…";
+"正在匹配原画面…" = "Matching the original appearance…";
 "正在取色…" = "Sampling…";
 "正在处理 RAW 噪声" = "Processing RAW noise";
 "正在处理更新，编辑暂不可用。" = "An update is in progress. Editing is temporarily unavailable.";
@@ -655,6 +674,7 @@
 "此 X3F 显影模式不支持 AI 降噪。" = "AI denoising is not supported in this X3F rendering mode.";
 "此像素不可取样。" = "This pixel cannot be sampled.";
 "此外观已不在外观库中。" = "This look is no longer in the look library.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "This look cannot be read. It may be damaged or from an incompatible version.";
 "此安装暂不支持自动安装更新" = "This installation does not support automatic updates yet";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Only adjustments in the %@ group will be reset. Other groups will stay unchanged.";
 "此操作已过期，请重新操作。" = "This operation is out of date. Start it again.";
@@ -667,6 +687,7 @@
 "此照片没有可编辑的 HDR 增益图。" = "This photo has no editable HDR gain map.";
 "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "Editing this photo in HDR requires macOS 15. It will be exported in SDR.";
 "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "Editing this photo in HDR requires macOS 15. It was opened in SDR.";
+"此照片的调整保留原处理版本。" = "This photo keeps its previous processing version.";
 "此目录没有 RAW 照片。" = "This folder contains no RAW photos.";
 "此目录没有照片。" = "This folder contains no photos.";
 "此输入不支持镜头校正" = "Lens Correction Unsupported for This Input";
@@ -722,6 +743,7 @@
 "用户外观 · %@" = "User Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Cinematic widescreen narrative, hard-cut light and shadow, deep blacks and spotlight gold";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Cinematic night-film tones, red lights and deep cool cyan-green shadows";
+"画面差异较大，已保留旧版本。" = "The appearance differs too much. The previous version is retained.";
 "画面比例" = "Image Aspect Ratio";
 "畸变" = "Distortion";
 "畸变未应用" = "Distortion Correction Not Applied";
@@ -742,6 +764,7 @@
 "相对白平衡" = "Relative White Balance";
 "相机白平衡（按目标照片）" = "Camera white balance (per target photo)";
 "省略自动黑位" = "Omit automatic black rendering";
+"确定" = "OK";
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "移除" = "Remove";
@@ -797,6 +820,7 @@
 "自动下载并在退出时安装" = "Automatically download and install on quit";
 "自动匹配" = "Automatic Matching";
 "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。" = "Automatic installation is off by default. Before installing, committed edits are saved and the app waits for drafts and tasks to finish.";
+"自动更新不可用，请手动下载" = "Automatic updates are unavailable. Please download manually.";
 "自动检查更新" = "Automatically check for updates";
 "自动添加序号" = "Add sequence numbers automatically";
 "自动裁切" = "Automatic crop";
@@ -1007,6 +1031,7 @@
 "预览尚未就绪，请稍后重试。" = "The preview is not ready yet. Try again shortly.";
 "预览已变化，请重新取色。" = "The preview changed. Sample again.";
 "预览已更新" = "Preview updated";
+"预览待更新" = "Preview updating";
 "预览方式" = "Preview Mode";
 "预览方式不会改变编辑或导出。" = "Preview mode does not change edits or exports.";
 "预览未更新" = "Preview not updated";

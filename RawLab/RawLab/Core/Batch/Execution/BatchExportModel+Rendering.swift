@@ -1,3 +1,4 @@
+import RawLabKit
 import Photos
 import PhotosUI
 import SwiftUI
@@ -23,7 +24,7 @@ extension BatchOutputFormat {
 
 final class IOSHDRBatchPreparation {
     private let source: BatchSourceSnapshot
-    private let store: EditPersistence?
+    let store: EditPersistence?
     private let looks: [String:URL]
     init(source: BatchSourceSnapshot,editor: RawEditorViewModel) {
         self.source=source; store=editor.editPersistence
@@ -58,9 +59,9 @@ final class IOSHDRBatchPreparation {
         else if let id=settings.lutID,id.hasPrefix("recipe-lut:") { look=MasterRecipe.recipe(for:String(id.dropFirst("recipe-lut:".count)))?.lutURL() }
         else { look=settings.lutID.flatMap { looks[$0] } }
         guard !settings.hasLook || look != nil else { throw BatchExportError.target(L10n.text("目标所需的外观不可用，请先导入外观。")) }
-        let hash=try PhotoIdentity.fallback(for:target.sourceURL).contentIdentifier!
+        let hash=try PhotoIdentity.cachedFallback(for:target.sourceURL).contentIdentifier!
         return BatchFrozenSettings(ordinal:ordinal,settings:settings,inputSHA256:hash,lookURL:look,
-            lookSHA256:try look.flatMap { try PhotoIdentity.fallback(for:$0).contentIdentifier },
+            lookSHA256:try look.flatMap { try PhotoIdentity.cachedFallback(for:$0).contentIdentifier },
             lookName:settings.isHDREditing ? "HDR" : settings.masterRecipe?.name,outputFormat:format,longEdge:longEdge)
     }
 }
@@ -74,7 +75,7 @@ extension BatchExportModel {
                 let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).\(format.suffix)")
                 defer { try? FileManager.default.removeItem(at:output) }
                 try processor.exportHDR(url: target.sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                    proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                    processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
                     cancelled: { self.isCancellationRequested })
                 return try Data(contentsOf:output)
             }
@@ -106,9 +107,10 @@ extension BatchExportModel {
             _ = try BatchFileOutputStore.directory(for: jobID)
             do {
                 if let hdr=settings.hdr,settings.isHDREditing {
-                    let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,
-                        exportLongEdge:longEdge,proRAWDecodeVersion:settings.proRAWDecodeVersion)
-                    try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_DNG)
+                    try processor.exportHDRDNG(url: target.sourceURL, settings: hdr, output: output,
+                        longEdge: longEdge, processing: settings.processing,
+                        proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                        cancelled: { self.isCancellationRequested })
                 } else if target.sourceKind == .raw {
                     try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,
                                             outputURL: output, exportLongEdge: longEdge)
@@ -140,18 +142,27 @@ extension BatchExportModel {
     func prepareTarget(_ source: PhotoImportSource, identity: PhotoIdentity, jobID: UUID,
                                journalStore: BatchJournalStore) async throws -> BatchTarget {
         let processing = job.source.settings.processing
-        let x3fMode = job.source.settings.x3fMode
+        let sourceX3fMode = job.source.settings.x3fMode
+        let store = editPersistence
         return try await perform {
             let inputDirectory=try BatchInputStore.directory(for:jobID,root:journalStore.directory)
             let existing=Set(try FileManager.default.contentsOfDirectory(at:inputDirectory,includingPropertiesForKeys:nil))
             let owned = try BatchInputStore.copy(source.url, identity: identity, jobID: jobID,
-                                                 root: journalStore.directory)
+                                                 root: journalStore.directory, displayName: source.displayName)
             var accepted=false
             defer { if !accepted && !existing.contains(owned) { try? FileManager.default.removeItem(at:owned) } }
             let processor = Sony2FujiProcessor()
             var neutral = RawSettings.default
             neutral.processing = processing
-            neutral.x3fMode = x3fMode
+            if source.isRaw, owned.pathExtension.lowercased() == "x3f" ||
+                (source.displayName as NSString).pathExtension.lowercased() == "x3f" {
+                neutral.selectX3fMode(try BatchExportJob.x3fModeResolver(
+                    store: store,
+                    x3fDefaultMode: { try processor.x3fDefaultMode(for: $0) }
+                )(identity, owned))
+            } else {
+                neutral.x3fMode = sourceX3fMode
+            }
             if source.isRaw {
                 _ = try processor.processRaw(url: owned, settings: neutral,
                                              previewLongEdge: 160, lutURL: nil)

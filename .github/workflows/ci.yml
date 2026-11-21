@@ -2,7 +2,7 @@ name: Hosted CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches: [development, 'release/**', main]
   push:
     branches: [development]
@@ -24,7 +24,8 @@ permissions:
 
 concurrency:
   # Manual verification must not cancel, or be cancelled by, automatic PR/push checks.
-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Isolate manual runs by (platform, checks) and keep PR title/body edits from cancelling active checks.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'workflow_dispatch' && format('-{0}-{1}', inputs.platform, inputs.checks) || (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && '-noop' || '') }}
   cancel-in-progress: true
 
 env:
@@ -35,6 +36,7 @@ env:
 jobs:
   changes:
     name: Select affected platforms
+    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -81,7 +83,17 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
-      - name: Check verification boundary and static UI contracts
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
+      - name: Check verification policy and shared contracts
         shell: bash
         run: |
           mkdir -p build/ci
@@ -90,24 +102,37 @@ jobs:
           python --version
           python -m pip install -r scripts/ci/requirements.txt
           python -m pip install -r lutools/requirements-lutprep.txt
+          python -m pip install pytest==9.0.2
           lint_dir="$(mktemp -d)"
           trap 'rm -rf "$lint_dir"' EXIT
           curl -fL --retry 2 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
-          python -m unittest discover -s scripts/ci -p 'test_*.py' -v
+          python -m pytest -v
           python scripts/localization/generate.py --check
-          python tests/test_localization.py GeneratorFormatTests GeneratorSourceTests
-          python lutools/tests/test_cli_test_encoding.py
-          python lutools/tests/test_tiff_dependencies.py
-          python lutools/tests/test_hdr_sources.py
-          python RawLabMac/tests/test_single_preview.py
-          python RawLabMac/tests/test_tool_group_ui.py
-          python -m unittest Shared/tests/test_bundled_looks.py Shared/tests/test_lut_source_audit.py Shared/tests/test_prepare_bundled_looks.py -v
+          python scripts/version/generate.py --check
+          python scripts/specs/generate.py --check
           python -m pip install uv==0.9.5
           uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v
           git diff --check
+      - name: Check C ABI layout fixture freshness
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/abi-layout.log) 2>&1
+          clang++ --version
+          out_dir="$(mktemp -d)"
+          trap 'rm -rf "$out_dir"' EXIT
+          out="$out_dir/abi-layout-v1.json"
+          CXX=clang++ ABI_LAYOUT_OUT="$out" bash Shared/fixtures/generate-abi-layout.sh
+          diff -u Shared/fixtures/abi-layout-v1.json "$out"
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -136,17 +161,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: matrix.arch == 'x86_64'
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group all
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
-          if [[ "$RAWLAB_ARCH" == x86_64 ]]; then
-            brew install pkg-config autoconf automake libtool
-          fi
+          brew install pkg-config autoconf automake libtool
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
@@ -214,15 +246,14 @@ jobs:
           ci_timed app-build bash RawLabMac/build.sh
           lutprep_python="$(command -v python)"
           if in_suite core; then
-            ci_timed hdr-display bash Shared/tests/hdr-display.sh
+            ci_timed rawlabkit-tests swift test
             ci_timed hdr-bridge bash RawLabMac/tests/hdr-bridge.sh
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
-            ctest_exclude='native_dcp_metal|gpu_photo|metal_denoise|dualdn_onnx|dualdn_directml'
-            [[ "$RAWLAB_ARCH" != x86_64 ]] || ctest_exclude="$ctest_exclude|metal_workspace"
+            python scripts/ci/check_ctest_inventory.py --build-dir lutools/build-macos --ci-label "ci_macos_${RAWLAB_ARCH}" --platform macos
             ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
-              -E "^($ctest_exclude)$" \
+              -L "^ci_macos_${RAWLAB_ARCH}$" \
               --output-junit "$PWD/build/ci/macos-ctest.xml"
           fi
           raw="$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG"
@@ -237,7 +268,7 @@ jobs:
           fi
           if in_suite model; then
             ci_timed batch-export bash RawLabMac/tests/batch-export.sh
-            ci_timed batch-selection bash Shared/tests/batch-selection.sh
+            ci_timed batch-cancellation bash RawLabMac/tests/batch-cancellation.sh
             ci_timed batch-selection-model bash RawLabMac/tests/batch-selection-model.sh
             ci_timed edit-model bash RawLabMac/tests/edit-model.sh
             ci_timed adjustment-history-model bash RawLabMac/tests/adjustment-history-model.sh
@@ -246,13 +277,29 @@ jobs:
             ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
+      - name: Exercise real-package DualDn C API on Core ML
+        # native 门的 build-macos 无包（dualdn_api_disabled，RAWLAB_TEST_AI 断言块被编译掉）；
+        # 本步骤用专用 AI-ON 构建目录跑真包 dualdn_api，输入缺失由脚本硬失败。full 已由
+        # ai-inputs 注入的 build.sh 构建走 core ctest 覆盖同一断言，不在 full 重复执行。
+        if: success() && needs.changes.outputs.checks == 'native' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          mkdir -p build/ci
+          exec > >(tee build/ci/macos-dualdn-api.log) 2>&1
+          bash RawLabMac/tests/dualdn-api-package.sh
       - name: Save successful native dependencies
         # Intel shards share one key; the core shard alone saves it.
-        if: success() && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -285,26 +332,38 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:CI_RUNNER_ENVIRONMENT -notin @('github-hosted', 'self-hosted')) {
+          if ($env:CI_RUNNER_ENVIRONMENT -ne 'github-hosted') {
             throw 'Unknown Windows runner environment.'
           }
-          $dedicated = $env:CI_RUNNER_ENVIRONMENT -eq 'self-hosted'
-          if (!$dedicated -and !$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
-          $ciRoot = if ($dedicated) { 'E:\RawLabCI' } else { "$env:RUNNER_TEMP\rawlab-ci" }
-          $jobs = if ($dedicated) { 16 } else { 4 }
-          $compilerProcesses = if ($dedicated) { 24 } else { 4 }
+          if (!$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
+          $ciRoot = "$env:RUNNER_TEMP\rawlab-ci"
+          $jobs = 4
+          $compilerProcesses = 4
           @(
             "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
             "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
             "RAWLAB_AI_SHARED_CACHE=$ciRoot\cache"
+            "RAWLAB_SOURCE_ARCHIVE_CACHE=$ciRoot\cache\rawlab-deps"
+            "RAWLAB_HDR_SOURCE_CACHE=$ciRoot\cache"
             "JOBS=$jobs"
             "CMAKE_BUILD_PARALLEL_LEVEL=$jobs"
             "CL_MPCount=$compilerProcesses"
           ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: needs.changes.outputs.build == 'true'
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: pwsh
+        run: |
+          python scripts/assets/prepare.py --group all
+          if ($LASTEXITCODE -ne 0) { throw "Asset preparation failed: $LASTEXITCODE" }
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
@@ -320,15 +379,29 @@ jobs:
           $rustup = "$env:CARGO_HOME/bin/rustup.exe"
           if (!(Test-Path $rustup)) {
             $url = 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe'
-            Invoke-WebRequest $url -OutFile "$tools/rustup-init.exe"
-            Invoke-WebRequest "$url.sha256" -OutFile "$tools/rustup-init.sha256"
-            $expected = (Get-Content "$tools/rustup-init.sha256").Trim().Split(' ')[0]
-            if ((Get-FileHash "$tools/rustup-init.exe" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Rust installer checksum mismatch' }
-            & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-toolchain 1.99.1
-            if ($LASTEXITCODE) { throw 'Cannot install Rust' }
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest $url -OutFile "$tools/rustup-init.exe"
+                Invoke-WebRequest "$url.sha256" -OutFile "$tools/rustup-init.sha256"
+                $expected = (Get-Content "$tools/rustup-init.sha256").Trim().Split(' ')[0]
+                if ((Get-FileHash "$tools/rustup-init.exe" -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'Rust installer checksum mismatch' }
+                & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-toolchain 1.99.1
+                if ($LASTEXITCODE -eq 0) { break }
+                throw "rustup-init exited with $LASTEXITCODE"
+              } catch {
+                if ($attempt -eq 3) { throw }
+                Write-Warning "Rust bootstrap attempt $attempt failed: $_; retrying in 5s"
+                Start-Sleep -Seconds 5
+              }
+            }
           }
-          & $rustup toolchain install 1.99.1 --profile minimal --component rust-docs
-          if ($LASTEXITCODE) { throw 'Cannot prepare Rust runtime notices' }
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & $rustup toolchain install 1.99.1 --profile minimal --component rust-docs
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { throw 'Cannot prepare Rust runtime notices' }
+            Write-Warning "rustup toolchain install attempt $attempt failed (exit $LASTEXITCODE); retrying in 5s"
+            Start-Sleep -Seconds 5
+          }
           python -m pip install --target "$tools/libclang" libclang==18.1.1
           if ($LASTEXITCODE) { throw 'Cannot prepare libclang' }
           @("CARGO_HOME=$env:CARGO_HOME", "RUSTUP_HOME=$env:RUSTUP_HOME", 'RUSTUP_TOOLCHAIN=1.99.1', "LIBCLANG_PATH=$tools/libclang/clang/native") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
@@ -351,6 +424,39 @@ jobs:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      # 归档缓存与 toolchain 精确键解耦：键只随归档 URL/SHA256 pin 变化，宽松 restore-keys
+      # 让 pin 漂移也先取回全部旧归档；命中归档在 configure 期仍过 SHA256（损坏自动重下），
+      # 缓存服务不可用（continue-on-error）则回退为原下载路径。DNG SDK 出网抖动不再冷罚每次 run。
+      - name: Identify dependency archive cache
+        id: dep-archives-key
+        if: needs.changes.outputs.build == 'true'
+        shell: pwsh
+        run: |
+          python scripts/ci/native_cache.py archives --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify dependency archive cache.' }
+      - name: Restore dependency archives
+        id: dep-archives-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          restore-keys: |
+            rawlab-dep-archives-v1-windows-x86_64-
+            rawlab-dep-archives-v1-
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Run requested D3D11 software adapter regressions
+        if: github.event_name == 'workflow_dispatch' && inputs.platform == 'windows' && inputs.checks == 'models'
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          cmake -S RawLabWindows/tests/native/d3d11 -B build/d3d11-warp -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test configure failed.' }
+          cmake --build build/d3d11-warp --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
+          ctest --test-dir build/d3d11-warp -C Release --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 WARP regressions failed.' }
+          & ./RawLabWindows/tests/native/d3d11/check-mutations.ps1
       - name: Run standalone Windows models and runner checks
         if: needs.changes.outputs.models == 'true'
         shell: pwsh
@@ -363,6 +469,7 @@ jobs:
             & ./scripts/ci/windows-models.ps1
             & ./RawLabWindows/tests/CheckProcessChecks.ps1 -Output 'build/ci/process-checks'
             & ./RawLabWindows/tests/RunnerSelectionChecks.ps1 -Output 'build/ci/runner-checks'
+            & ./RawLabWindows/tests/BuildScriptChecks.ps1
           }
           finally { Stop-Transcript }
       - name: Prepare GPU AI inputs for full checks
@@ -395,18 +502,20 @@ jobs:
             $package = Join-Path $PWD 'build/RawLab-Windows'
             $env:PATH = "$package;$env:PATH"
             if ($env:RAWLAB_CI_NATIVE -eq 'true') {
-              $tests = '^(dcp_compiler|windows_display_image|raw_formats|sony_arw6|sony_arw6_bounds|display_render|edit_recipe|edit_recipe_raster|edit_recipe_geometry|geometry_cli|agent_preview|raw_info_cli|agent_commands|edit_recipe_cli|edit_recipe_schema|d3d11_shader|wavelet_restore|dualdn_.*|scene_rgb_adapter|raw_noise_estimate)$'
-              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-R', $tests, '-E', '^dualdn_onnx$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+              $aiArgs = if ($env:RAWLAB_DUALDN -eq '1') { @('--ai-enabled') } else { @() }
+              Invoke-Checked python (@('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows') + $aiArgs)
+              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-L', '^ci_windows$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
               $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
               $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
               $env:RAWLAB_TEST_DCP_FIXTURE_DIR = Join-Path $PWD 'build/ci/dcp-fixtures'
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
+              $env:RAWLAB_TEST_NATIVE_HDR_LIBRARY = Join-Path $package 'sony2fuji.dll'
+              Invoke-Checked dotnet @('test', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release', '--filter', 'Suite=hdr-look-import')
               & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'agent-recipe,raster,looks'
             }
             else {
               Invoke-Checked dotnet @('build', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release')
-              Invoke-Checked dotnet @('build', 'RawLabWindows/tests/localization-ui/LocalizationUiChecks.csproj', '-c', 'Release')
             }
             Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
@@ -417,11 +526,23 @@ jobs:
             Stop-Transcript
           }
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save dependency archives
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -437,6 +558,136 @@ jobs:
             build/ci/runner-checks/**/*.log
             build/ci/runner-checks/**/*.json
             build/ci/runner-checks/**/*.jsonl
+          retention-days: 7
+
+  windows-batch-selection:
+    name: Windows batch-selection
+    needs: changes
+    if: >-
+      needs.changes.outputs.windows == 'true' &&
+      needs.changes.outputs.mode == 'automatic' &&
+      needs.changes.outputs.checks == 'models'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      JOBS: '4'
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+      UseMultiToolTask: 'true'
+      EnforceProcessCountAcrossBuilds: 'true'
+      CL_MPCount: '4'
+      RUSTUP_TOOLCHAIN: '1.99.1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized assets
+        shell: pwsh
+        run: |
+          python scripts/assets/prepare.py --group all
+          if ($LASTEXITCODE -ne 0) { throw "Asset preparation failed: $LASTEXITCODE" }
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Identify dependency archive cache
+        id: dep-archives-key
+        shell: pwsh
+        run: |
+          $env:RAWLAB_SOURCE_ARCHIVE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/rawlab-deps'
+          $env:RAWLAB_LENS_SOURCE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/lens-sources'
+          @("RAWLAB_SOURCE_ARCHIVE_CACHE=$env:RAWLAB_SOURCE_ARCHIVE_CACHE", "RAWLAB_LENS_SOURCE_CACHE=$env:RAWLAB_LENS_SOURCE_CACHE") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          python -m pip install -r scripts/ci/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements.' }
+          python scripts/ci/native_cache.py archives --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify dependency archive cache.' }
+      - name: Restore dependency archives
+        id: dep-archives-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          restore-keys: |
+            rawlab-dep-archives-v1-windows-x86_64-
+            rawlab-dep-archives-v1-
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Build current-source native prerequisites for batch-selection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force build/ci, build/windows-batch-selection | Out-Null
+          Start-Transcript -Path build/ci/windows-batch-selection-build.log
+          function Invoke-Checked([string]$Command, [string[]]$Arguments) {
+            & $Command @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "$Command failed: $LASTEXITCODE" }
+          }
+          try {
+            Invoke-Checked git @('rev-parse', 'HEAD')
+            Invoke-Checked rustup @('toolchain', 'install', '1.99.1', '--profile', 'minimal', '--component', 'rust-docs')
+            Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
+            $clang = Join-Path $env:RUNNER_TEMP 'rawlab-batch-libclang'
+            Invoke-Checked python @('-m', 'pip', 'install', '--target', $clang, 'libclang==18.1.1')
+            $env:LIBCLANG_PATH = "$clang/clang/native"
+            $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if (!$vs) { throw 'Cannot locate the MSVC x64 toolchain.' }
+            $environment = & cmd.exe /d /s /c "`"$vs/VC/Auxiliary/Build/vcvars64.bat`" >nul && set"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot initialize the MSVC x64 environment.' }
+            foreach ($line in $environment) {
+              if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
+            }
+            $python = (Get-Command python).Source
+            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=ON', '-DSONY2FUJI_TEST_PORTABLE_HDR=ON', "-DPython3_EXECUTABLE=$python")
+            Invoke-Checked python @('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows', '--skip-orphan-check')
+            Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', 'windows_display_image_tests', 'edit_pixel_golden_tests', 'hdr_portable_tests', 'd3d11_shader_tests', '--parallel', '4')
+            $package = Join-Path $PWD 'build/windows-batch-selection'
+            Copy-Item build/windows-native/core/Release/sony2fuji.dll, build/windows-native/Release/raw.dll $package
+            $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object Name -Match '^\d+\.' | Sort-Object Name -Descending | Select-Object -First 1
+            foreach ($kind in @('*.CRT', '*.OpenMP')) {
+              $runtime = Get-ChildItem "$($redist.FullName)/x64" -Directory -Filter $kind | Select-Object -First 1
+              if (!$runtime) { throw "Cannot locate the MSVC runtime: $kind" }
+              Copy-Item "$($runtime.FullName)/*.dll" $package
+            }
+            & ./RawLabWindows/build-exiftool.ps1 -Output $package
+          }
+          finally { Stop-Transcript }
+      - name: Run only the batch-selection v08 suite
+        shell: pwsh
+        run: |
+          try {
+            & ./RawLabWindows/tests/run-v08.ps1 -RawPath "$PWD/lutools/examples/DJI_20250602164503_0444_D.DNG" -NativeArtifacts "$PWD/build/windows-batch-selection" -Only 'batch-selection'
+          }
+          finally {
+            Copy-Item build/windows-v08-results/*.log build/ci
+            Copy-Item build/windows-v08-results/summary.json build/ci/batch-selection-summary.json
+          }
+      - name: Save dependency archives
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.dep-archives-key.outputs.key }}
+          path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: windows-batch-selection-results
+          path: |
+            build/ci/*.log
+            build/ci/*.json
           retention-days: 7
 
   android:
@@ -456,6 +707,16 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
       - name: Prepare X3F Rust renderer toolchain
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -490,6 +751,9 @@ jobs:
           cd RawLabAndroid
           ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
+          cd ..
+          bash RawLabAndroid/tests/jni-session-lock.sh
+          bash RawLabAndroid/tests/ndk-compile.sh
       - name: Build both ABIs, lint and instrumentation test APK
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -510,11 +774,17 @@ jobs:
           fi
           python scripts/ci/native_cache.py inventory --platform android --arch arm64-x86_64
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -529,15 +799,30 @@ jobs:
     name: iOS ${{ needs.changes.outputs.checks }}
     needs: changes
     if: needs.changes.outputs.ios == 'true'
-    runs-on: [self-hosted, macOS, ARM64, rawlab-apple]
+    # macos-26 carries Xcode 26; this hosted image supplies the required iOS 27.1 SDK.
+    runs-on: xcode-27
     timeout-minutes: 180
     env:
-      JOBS: '6'
-      CMAKE_BUILD_PARALLEL_LEVEL: '6'
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Restore externalized asset cache
+        id: assets-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
+      - name: Prepare externalized LUT assets
+        shell: bash
+        run: python scripts/assets/prepare.py --group luts
       - name: Check iOS SDK for iPhone Duo
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -556,6 +841,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         run: |
+          brew install pkg-config autoconf automake libtool
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform ios --arch arm64-x86_64
@@ -596,16 +882,23 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ci-ios ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
+          python scripts/ci/test_ios_bundle_hygiene.py --app build/ci-ios/Build/Products/Debug-iphonesimulator/RawLab.app
           if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
             bash RawLab/tests/look-import.sh
           fi
           python scripts/ci/native_cache.py inventory --platform ios --arch arm64-x86_64
       - name: Save successful native dependencies
-        if: success() && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
+      - name: Save externalized asset cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
+          path: .cache/shared/assets
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -617,9 +910,9 @@ jobs:
 
   result:
     name: ${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}
-    needs: [changes, contracts, macos, windows, android, ios]
-    # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
-    if: ${{ !cancelled() && needs.changes.outputs.draft != 'true' }}
+    needs: [changes, contracts, macos, windows, windows-batch-selection, android, ios]
+    # Drafts and non-base PR edits defer/skip platform checks, so their result stays skipped instead of reporting a pass.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.draft != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

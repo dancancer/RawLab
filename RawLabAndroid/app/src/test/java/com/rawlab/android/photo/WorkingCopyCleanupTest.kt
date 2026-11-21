@@ -2,6 +2,7 @@ package com.rawlab.android.photo
 
 import com.rawlab.android.batch.*
 import com.rawlab.android.batch.journal.BatchJournal
+import com.rawlab.android.engine.exportStagingFile
 import com.rawlab.android.settings.*
 import java.io.File
 import java.nio.file.Files
@@ -29,6 +30,207 @@ class WorkingCopyCleanupTest {
             jobs.resolve("broken.properties").writeText("bad snapshot")
             WorkingCopyCleanup.atProcessStart(cache, jobs)
             assertTrue(retained.exists())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun orphanBatchJobDirectoriesAndLutPreviewsAreRemovedWhileJournaledJobsAndSymlinksStay() {
+        val root = Files.createTempDirectory("rawlab-orphans").toFile()
+        try {
+            val cache = File(root, "cache").apply { mkdirs() }; val jobs = File(root, "files/RawLab/BatchJobs").apply { mkdirs() }
+            val external = File(root, "external").apply { mkdirs(); resolve("keep.raw").writeText("user") }
+            fun jobDirectory(id: String = UUID.randomUUID().toString()) =
+                File(jobs, id).apply { resolve("inputs").mkdirs(); resolve("inputs/source.raw").writeText("raw") }
+            val orphanJob = jobDirectory()
+            val failed = jobDirectory()
+            val journal = BatchJournal(jobs)
+            val job = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), failed.resolve("inputs/source.raw"), EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("target"), failed.resolve("inputs/source.raw"), "photo.raw")), id = failed.name)
+            journal.save(job.withRows(job.rows.map { it.copy(status = BatchRowStatus.FAILED) }))
+            // 有快照即保留，即使快照引用的文件不在该目录内。
+            val cancelled = jobDirectory()
+            val elsewhere = external.resolve("keep.raw")
+            val cancelledJob = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), elsewhere, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("target"), elsewhere, "photo.raw")), id = cancelled.name)
+            journal.save(cancelledJob.withRows(cancelledJob.rows.map { it.copy(status = BatchRowStatus.CANCELLED) }))
+            val unreadable = jobDirectory().also { jobs.resolve("${it.name}.properties").writeText("bad snapshot") }
+            val unrelatedJobsEntry = File(jobs, "unavailable").apply { mkdirs(); resolve("keep").writeText("keep") }
+            val linkedJob = File(jobs, UUID.randomUUID().toString()).also { Files.createSymbolicLink(it.toPath(), external.toPath()) }
+            val siblingLinkedJob = File(jobs, UUID.randomUUID().toString()).also { Files.createSymbolicLink(it.toPath(), unrelatedJobsEntry.toPath()) }
+            val lutPreview = File(cache, "lut-preview-${UUID.randomUUID()}").apply { mkdirs(); resolve("preview.jpg").writeText("jpg") }
+            val lutLookalike = File(cache, "lut-preview-test-${UUID.randomUUID()}").apply { mkdirs(); resolve("keep").writeText("keep") }
+            val linkedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").also { Files.createSymbolicLink(it.toPath(), external.toPath()) }
+            val siblingLinkedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").also { Files.createSymbolicLink(it.toPath(), lutLookalike.toPath()) }
+
+            // 读不出的快照会让清理整体保守退出，先单独确认它保住了全部任务目录。
+            WorkingCopyCleanup.atProcessStart(cache, jobs)
+            assertFalse(lutPreview.exists()); assertTrue(orphanJob.exists()); assertTrue(unreadable.exists())
+
+            jobs.resolve("${unreadable.name}.properties").delete()
+            WorkingCopyCleanup.atProcessStart(cache, jobs)
+            assertFalse(orphanJob.exists()); assertFalse(unreadable.exists())
+            assertTrue(failed.resolve("inputs/source.raw").isFile)
+            assertEquals(BatchRowStatus.FAILED, BatchJournal(jobs).load(failed.name)!!.rows.single().status)
+            assertTrue(cancelled.resolve("inputs/source.raw").isFile)
+            assertTrue(unrelatedJobsEntry.resolve("keep").isFile); assertTrue(lutLookalike.resolve("keep").isFile)
+            assertTrue(Files.isSymbolicLink(linkedJob.toPath())); assertTrue(Files.isSymbolicLink(linkedPreview.toPath()))
+            assertTrue(Files.isSymbolicLink(siblingLinkedJob.toPath())); assertTrue(Files.isSymbolicLink(siblingLinkedPreview.toPath()))
+            assertEquals("user", external.resolve("keep.raw").readText())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun transientExportCleanupRemovesRenderAndPartFilesAcrossRootsWithoutTouchingUserOrAppFiles() {
+        val root = Files.createTempDirectory("rawlab-export-cleanup").toFile()
+        try {
+            val cache = File(root, "cache").apply { mkdirs() }
+            val files = File(root, "files").apply { mkdirs() }
+            val jobs = File(files, "RawLab/BatchJobs").apply { mkdirs() }
+            val external = File(root, "external").apply { mkdirs() }
+
+            val shouldDelete = setOf(
+                File.createTempFile("render-", ".jpg", files).apply { writeText("half-jpg") },
+                File(files, "render-abandoned-${UUID.randomUUID()}.png").apply { writeText("half-png") },
+                File(files, "render-987654.dng").apply { writeText("half-dng") },
+                exportStagingFile(files, "render-12345.jpg", ".jpg").apply { writeText("part-jpg") },
+                exportStagingFile(files, "render-987654.dng", ".dng").apply { writeText("part-dng") },
+                exportStagingFile(files, "custom-target", "").apply { writeText("part-no-ext") },
+                exportStagingFile(cache, "export-444.png", ".png").apply { writeText("cache-part") },
+                File(cache, "render-cache-111.jpg").apply { writeText("cache-render") },
+            )
+
+            val outsideUserPhoto = File(external, "user-original.jpg").apply { writeText("original-photo") }
+            val symlinkInFiles = File(files, "render-symlink.jpg").also {
+                Files.createSymbolicLink(it.toPath(), outsideUserPhoto.toPath())
+            }
+            val directoryNamedLikeRender = File(files, "render-dir.jpg").apply {
+                mkdirs()
+                resolve("keep.txt").writeText("keep-dir")
+            }
+            val nestedSystemPhoto = File(files, "system-photos/render-imported.jpg").apply {
+                parentFile!!.mkdirs()
+                writeText("managed-user-photo")
+            }
+            val shouldKeep = listOf(
+                File(files, "DSC00001.ARW").apply { writeText("raw") },
+                File(files, "family.jpg").apply { writeText("jpg") },
+                File(files, "render.jpg").apply { writeText("not-prefix") },
+                File(files, "render-notes.txt").apply { writeText("not-image-ext") },
+                File(files, "vacation.part.jpg").apply { writeText("user-part-name") },
+                File(files, ".hidden.part").apply { writeText("hidden-no-uuid") },
+                File(files, ".hidden.part.jpg").apply { writeText("hidden-no-uuid-jpg") },
+                File(files, "batch-gpu-test-cleanup.properties").apply { writeText("pid=1") },
+                File(files, ".import-${UUID.randomUUID()}.pending").apply { writeText("look-marker") },
+                File(files, ".${UUID.randomUUID()}.stage.rlook").apply { writeText("look-stage") },
+                nestedSystemPhoto,
+                outsideUserPhoto,
+            )
+
+            val discovered = WorkingCopyCleanup.transientExportFiles(listOf(cache, files, files))
+            assertEquals(
+                shouldDelete.map { it.canonicalFile }.toSet(),
+                discovered.map { it.canonicalFile }.toSet(),
+            )
+
+            WorkingCopyCleanup.atProcessStart(cache, jobs, listOf(cache, files))
+
+            for (deleted in shouldDelete) {
+                assertFalse("Expected transient file to be deleted: ${deleted.name}", deleted.exists())
+            }
+            for (kept in shouldKeep) {
+                assertTrue("Expected non-transient file to be preserved: ${kept.path}", kept.isFile)
+            }
+            assertTrue(directoryNamedLikeRender.isDirectory)
+            assertTrue(Files.isSymbolicLink(symlinkInFiles.toPath()))
+            assertEquals("original-photo", outsideUserPhoto.readText())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun p3_29_startupCleanupRunsOffCallingThreadAndProtectsActivePhotoStorage() {
+        val root = Files.createTempDirectory("rawlab-startup-cleanup").toFile()
+        try {
+            val files = File(root, "files").apply { mkdirs() }
+            val cache = File(root, "cache").apply { mkdirs() }
+            val orphan = File(cache, "rawlab-${UUID.randomUUID()}").apply { mkdirs(); resolve("orphan.raw").writeText("old") }
+            val active = File(cache, "rawlab-${UUID.randomUUID()}").apply { mkdirs(); resolve("active.raw").writeText("new") }
+            val queued = mutableListOf<Runnable>()
+            val callerThread = Thread.currentThread()
+
+            com.rawlab.android.scheduleStartupCleanup(files, cache) { task -> queued += task }
+
+            // 调度阶段不在调用线程（冷启动主线程）扫描或删除目录。
+            assertEquals(1, queued.size)
+            assertTrue(orphan.exists())
+            assertTrue(active.exists())
+
+            WorkingCopyCleanup.protect(active)
+            var workerThread: Thread? = null
+            val done = java.util.concurrent.CountDownLatch(1)
+            Thread({
+                workerThread = Thread.currentThread()
+                queued.single().run()
+                done.countDown()
+            }, "test-startup-bg").start()
+            assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertNotSame(callerThread, workerThread)
+            assertFalse(orphan.exists())
+            assertTrue(active.exists())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun r1_a2_reclaimBatchArtifactsAndBatchJournalPendingSerializeAndProtectedTempsSurvive() {
+        val root = Files.createTempDirectory("rawlab-a2-race").toFile()
+        try {
+            val cache = File(root, "cache").apply { mkdirs() }
+            val files = File(root, "files").apply { mkdirs() }
+            val jobs = File(files, "RawLab/BatchJobs").apply { mkdirs() }
+            val journal = BatchJournal(jobs)
+            val sourceFile = File(root, "src.raw").apply { writeText("raw") }
+            val recentJobs = (1..4).map { idx ->
+                val dir = File(jobs, UUID.randomUUID().toString()).apply { mkdirs() }
+                val input = File(dir, "input.raw").apply { writeText("raw-$idx") }
+                BatchJob(
+                    BatchSourceSnapshot(PhotoIdentity("src-$idx"), input, EditSettings()),
+                    listOf(BatchTarget(PhotoIdentity("t-$idx"), input, "out-$idx.jpg")),
+                    id = dir.name,
+                ).also(journal::save)
+            }
+
+            val protectedRender = File(files, "render-active-${UUID.randomUUID()}.jpg").apply { writeText("render") }
+            val protectedPart = exportStagingFile(files, "active.jpg", ".jpg").apply { writeText("part") }
+            val protectedPreview = File(cache, "lut-preview-${UUID.randomUUID()}").apply { mkdirs(); resolve("p.jpg").writeText("p") }
+            val protectedJobDir = File(jobs, UUID.randomUUID().toString()).apply { mkdirs(); resolve("input.raw").writeText("in-flight") }
+            WorkingCopyCleanup.protect(protectedRender)
+            WorkingCopyCleanup.protect(protectedPart)
+            WorkingCopyCleanup.protect(protectedPreview)
+            WorkingCopyCleanup.protect(protectedJobDir)
+
+            val errors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+            val t1 = Thread {
+                repeat(10) {
+                    try { RetentionPolicy.reclaimBatchArtifacts(jobs) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            val t2 = Thread {
+                repeat(10) {
+                    try { journal.pending().mapNotNull(journal::load) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            val t3 = Thread {
+                repeat(5) {
+                    try { WorkingCopyCleanup.atProcessStart(cache, jobs, listOf(cache, files)) }
+                    catch (t: Throwable) { errors += t }
+                }
+            }
+            t1.start(); t2.start(); t3.start()
+            t1.join(5_000); t2.join(5_000); t3.join(5_000)
+
+            assertTrue("Unexpected concurrency errors: $errors", errors.isEmpty())
+            assertEquals(recentJobs.map { it.id }.toSet(), journal.pending().toSet())
+            assertTrue(protectedRender.isFile)
+            assertTrue(protectedPart.isFile)
+            assertTrue(protectedPreview.isDirectory)
+            assertTrue(protectedJobDir.isDirectory)
         } finally { root.deleteRecursively() }
     }
 }

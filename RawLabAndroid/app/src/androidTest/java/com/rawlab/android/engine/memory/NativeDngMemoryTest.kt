@@ -172,28 +172,36 @@ class NativeDngMemoryTest {
                 assertEquals('I'.code, header[1].toInt())
                 val buffer = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
                 assertEquals(42, buffer.getShort(2).toInt())
-                input.seek(buffer.getInt(4).toLong() and 0xffffffffL)
-                val count = input.readUnsignedByte() or (input.readUnsignedByte() shl 8)
-                val fields = mutableMapOf<Int, ByteArray>()
-                repeat(count) {
-                    val entry = ByteArray(12).also { input.readFully(it) }
-                    fields[ByteBuffer.wrap(entry).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 65535] = entry
+                fun readFields(offset: Long): Map<Int, ByteArray> {
+                    input.seek(offset)
+                    val count = input.readUnsignedByte() or (input.readUnsignedByte() shl 8)
+                    val fields = mutableMapOf<Int, ByteArray>()
+                    repeat(count) {
+                        val entry = ByteArray(12).also { input.readFully(it) }
+                        fields[ByteBuffer.wrap(entry).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 65535] = entry
+                    }
+                    return fields
                 }
-                fun values(tag: Int): List<Int> {
+                fun values(fields: Map<Int, ByteArray>, tag: Int): List<Int> {
                     val entry = ByteBuffer.wrap(requireNotNull(fields[tag])).order(ByteOrder.LITTLE_ENDIAN)
                     val type = entry.getShort(2).toInt()
                     val size = entry.getInt(4)
-                    require(size in 1..3 && type in listOf(3, 4))
+                    require(size in 1..3 && type in listOf(3, 4, 13))
                     val bytes = ByteArray(size * if (type == 3) 2 else 4)
                     if (bytes.size <= 4) System.arraycopy(entry.array(), 8, bytes, 0, bytes.size)
                     else { input.seek(entry.getInt(8).toLong() and 0xffffffffL); input.readFully(bytes) }
                     val data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
                     return List(size) { if (type == 3) data.short.toInt() and 65535 else data.int }
                 }
-                width = values(256).single(); height = values(257).single()
-                assertTrue("DNG is float32 RGB", values(258).all { it == 32 } && values(339).all { it == 3 })
-                assertEquals(3, values(277).single())
-                assertTrue(file.length() > width.toLong() * height * 12)
+                val rootFields = readFields(buffer.getInt(4).toLong() and 0xffffffffL)
+                val subIfds = values(rootFields, 330)
+                val fields = readFields(subIfds.first().toLong() and 0xffffffffL)
+                width = values(fields, 256).single(); height = values(fields, 257).single()
+                assertTrue("DNG is 16-bit integer RGB", values(fields, 258).all { it == 16 } &&
+                    values(fields, 339).all { it == 1 })
+                assertEquals(3, values(fields, 277).single())
+                assertEquals("DNG main image uses LinearRaw", 34892, values(fields, 262).single())
+                assertTrue(file.length() > width.toLong() * height * 6)
             }
         } else {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

@@ -2,6 +2,7 @@ package com.rawlab.android.batch
 
 import com.rawlab.android.settings.legacyPipeSettings
 import com.rawlab.android.batch.journal.BatchJournal
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -13,27 +14,43 @@ import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.BatchGlobalFailure
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.SettingsCodec
+import com.rawlab.android.settings.X3fMode
 
 class BatchExportTest {
-    @Test fun cancellationAfterRenderingDisposesOutputWithoutPublishing() {
+    @Test fun cancelBeforeRowCommitCancelsRowAndLateCancelAfterRenderingPublishesRenderedRow() {
         val root = java.nio.file.Files.createTempDirectory("batch-cancel").toFile()
         try {
             val input = File(root, "input.raw").apply { writeText("source") }
             val target = BatchTarget(PhotoIdentity("target"), input, input.name)
             val job = BatchJob(BatchSourceSnapshot(PhotoIdentity("source"), input, EditSettings()), listOf(target))
+            fun runJob(render: (BatchTarget, EditSettings) -> String, shouldCancel: () -> Boolean): Triple<Boolean, Boolean, BatchRowStatus> {
+                var published = false
+                var disposed = false
+                val result = BatchRunner.run(job, render, { _, _, _ -> published = true }, shouldCancel,
+                    dispose = { disposed = true })
+                return Triple(published, disposed, result.rows.single().status)
+            }
+            // 提交点之前取消：native 导出在发布前检查点抛 CANCELLED → 本行 CANCELLED、不发布。
+            val (earlyPublished, earlyDisposed, earlyStatus) = runJob(
+                { _, _ -> throw com.rawlab.android.engine.NativeProcessingException(
+                    com.rawlab.android.engine.NativeProcessingException.CANCELLED, "cancelled in native") },
+                { false },
+            )
+            assertFalse(earlyPublished)
+            assertFalse(earlyDisposed)
+            assertEquals(BatchRowStatus.CANCELLED, earlyStatus)
+            // Q12：render 正常返回 ⇒ 本行已过提交点；迟到的取消不删已渲染文件，继续发布并释放临时载荷。
             var cancelled = false
-            var published = false
-            var disposed = false
-            val result = BatchRunner.run(job, { _, _ -> cancelled = true; "output" },
-                { _, _, _ -> published = true }, { cancelled }, dispose = { disposed = true })
-            assertFalse(published)
+            val (published, disposed, status) = runJob({ _, _ -> cancelled = true; "output" }, { cancelled })
+            assertTrue(published)
             assertTrue(disposed)
-            assertEquals(BatchRowStatus.CANCELLED, result.rows.single().status)
+            assertEquals(BatchRowStatus.SUCCESS, status)
         } finally { root.deleteRecursively() }
     }
     @Test fun perTargetJournalKeepsDifferencesThroughCancelResumeAndFailedOnlyRetry() {
@@ -56,13 +73,15 @@ class BatchExportTest {
             val restored = journal.load(job.id)!!
             assertEquals(BatchSettingsMode.PER_TARGET_FROZEN, restored.settingsMode)
             assertEquals(listOf(.5f), exposures)
-            assertTrue(restored.rows.all { it.status == BatchRowStatus.CANCELLED })
+            // Q12：第 0 行 render 正常返回（已过提交点）后取消才翻转 → 该行发布并按成功收尾；剩余行 CANCELLED。
+            assertEquals(listOf(BatchRowStatus.SUCCESS, BatchRowStatus.CANCELLED, BatchRowStatus.CANCELLED),
+                restored.rows.map { it.status })
             assertEquals(3, restored.rows.map { it.outputName }.distinct().size)
             val failed = BatchRunner.run(restored, render = { target, settings ->
                 exposures += settings.exposure
                 if (target.id == "1") error("Retry me")
             }, write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, .5f, 1f, 1.5f), exposures)
+            assertEquals(listOf(.5f, 1f, 1.5f), exposures)
             // 一个取消项不能混入“只重试失败”调度。
             val retry = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.CANCELLED) else it })
             val pending = failed.withRows(failed.rows.map { if (it.id == "2") it.copy(status = BatchRowStatus.PENDING) else it })
@@ -70,7 +89,7 @@ class BatchExportTest {
             assertEquals(BatchRowStatus.PENDING, cancelledRetry.rows[2].status)
             val done = BatchRunner.retryFailed(retry, render = { _, settings -> exposures += settings.exposure },
                 write = { _, _, _ -> }, journal = journal)
-            assertEquals(listOf(.5f, .5f, 1f, 1.5f, 1f), exposures)
+            assertEquals(listOf(.5f, 1f, 1.5f, 1f), exposures)
             assertEquals(BatchRowStatus.CANCELLED, done.rows[2].status)
             assertThrows(IllegalArgumentException::class.java) { journal.save(job.copy(outputLongEdge = 2048)) }
             assertThrows(IllegalArgumentException::class.java) {
@@ -404,4 +423,245 @@ class BatchExportTest {
             assertEquals(3000, journal.load(job.id)?.outputLongEdge)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun uniformBatchResolvesX3fTargetSavedModeBeforeFileDefaultAndClearsNormalLensFlags() {
+        val root = Files.createTempDirectory("rawlab-x3f-batch").toFile()
+        try {
+            val store = EditStore(File(root, "edits"))
+            val sourceLens = LensSettings(
+                distortion = true,
+                tca = true,
+                autoCrop = false,
+                manual = true,
+                profileId = "saved-lens-profile",
+                focalLength = 35f,
+                cropFactor = 1.5f,
+                vignetting = true,
+            )
+            val sourceSettings = EditSettings(
+                exposure = 0.75f,
+                x3fMode = X3fMode.LEGACY,
+                lens = sourceLens,
+            )
+            val source = BatchSourceSnapshot(
+                PhotoIdentity("source-x3f"),
+                File(root, "source.x3f"),
+                sourceSettings,
+                displayName = "source.x3f",
+                inputKind = PhotoInputKind.RAW,
+            )
+
+            val savedLegacyTarget = BatchTarget(PhotoIdentity("content://photo/saved-legacy"), File(root, "saved-legacy.X3F"), "saved-legacy.X3F")
+            val savedNormalTarget = BatchTarget(PhotoIdentity("content://photo/saved-normal"), File(root, "saved-normal.x3f"), "saved-normal.x3f")
+            val unsavedNormalTarget = BatchTarget(PhotoIdentity("content://photo/unsaved-normal"), File(root, "unsaved-normal.x3f"), "unsaved-normal.x3f")
+            val unsavedLegacyTarget = BatchTarget(PhotoIdentity("content://photo/unsaved-legacy"), File(root, "unsaved-legacy.x3f"), "unsaved-legacy.x3f")
+            val nonX3fTarget = BatchTarget(PhotoIdentity("content://photo/non-x3f"), File(root, "target.arw"), "target.arw")
+
+            store.save(savedLegacyTarget.identity, EditSettings(x3fMode = X3fMode.LEGACY))
+            store.save(savedNormalTarget.identity, EditSettings(x3fMode = X3fMode.NORMAL))
+
+            val defaultCalls = mutableListOf<String>()
+            val resolver = BatchJob.x3fModeResolver(store::readState) { file ->
+                defaultCalls += file.name
+                when (file.name) {
+                    savedLegacyTarget.sourceFile.name -> X3fMode.NORMAL
+                    savedNormalTarget.sourceFile.name -> X3fMode.LEGACY
+                    unsavedNormalTarget.sourceFile.name -> X3fMode.NORMAL
+                    unsavedLegacyTarget.sourceFile.name -> X3fMode.LEGACY
+                    else -> error("Unexpected default X3F probe: ${file.name}")
+                }
+            }
+
+            val targets = listOf(savedLegacyTarget, savedNormalTarget, unsavedNormalTarget, unsavedLegacyTarget, nonX3fTarget)
+            val job = BatchJob(source, targets)
+            val rendered = mutableMapOf<String, EditSettings>()
+            val finished = BatchRunner.run(
+                job,
+                render = { target, effective -> rendered[target.id] = effective; ByteArray(1) },
+                write = { _, _, _ -> },
+                resolveX3fMode = resolver,
+            )
+            assertTrue(finished.rows.all { it.status == BatchRowStatus.SUCCESS })
+
+            val resolvedSavedLegacy = rendered.getValue(savedLegacyTarget.id)
+            assertEquals(X3fMode.LEGACY, resolvedSavedLegacy.x3fMode)
+            assertEquals(sourceLens, resolvedSavedLegacy.lens)
+            assertEquals(0.75f, resolvedSavedLegacy.exposure)
+
+            val resolvedSavedNormal = rendered.getValue(savedNormalTarget.id)
+            assertEquals(X3fMode.NORMAL, resolvedSavedNormal.x3fMode)
+            assertFalse(resolvedSavedNormal.lens.distortion)
+            assertFalse(resolvedSavedNormal.lens.tca)
+            assertFalse(resolvedSavedNormal.lens.vignetting)
+            assertFalse(resolvedSavedNormal.lens.enabled)
+            assertFalse(resolvedSavedNormal.lens.autoCrop)
+            assertTrue(resolvedSavedNormal.lens.manual)
+            assertEquals("saved-lens-profile", resolvedSavedNormal.lens.profileId)
+            assertEquals(35f, resolvedSavedNormal.lens.focalLength)
+            assertEquals(1.5f, resolvedSavedNormal.lens.cropFactor)
+            assertEquals(0.75f, resolvedSavedNormal.exposure)
+
+            val resolvedUnsavedNormal = rendered.getValue(unsavedNormalTarget.id)
+            assertEquals(X3fMode.NORMAL, resolvedUnsavedNormal.x3fMode)
+            assertFalse(resolvedUnsavedNormal.lens.distortion)
+            assertFalse(resolvedUnsavedNormal.lens.tca)
+            assertFalse(resolvedUnsavedNormal.lens.vignetting)
+            assertFalse(resolvedUnsavedNormal.lens.enabled)
+
+            val normalSource = source.copy(settings = sourceSettings.copy(x3fMode = X3fMode.NORMAL))
+            val resolvedUnsavedLegacy = normalSource.settingsFor(unsavedLegacyTarget, resolver)
+            assertEquals(X3fMode.LEGACY, resolvedUnsavedLegacy.x3fMode)
+            assertEquals(sourceLens, resolvedUnsavedLegacy.lens)
+
+            assertEquals(sourceSettings, rendered.getValue(nonX3fTarget.id))
+            assertEquals(listOf("unsaved-normal.x3f", "unsaved-legacy.x3f", "unsaved-legacy.x3f"), defaultCalls)
+            assertEquals(sourceSettings, source.settings)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun p3_30_confirmAndDiscardJournalOperationsRunOnIoDispatcher() {
+        val root = Files.createTempDirectory("rawlab-batch-io").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val job = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            )
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot)
+            val needsConfirm = job.withRows(job.rows.map {
+                it.copy(status = BatchRowStatus.NEEDS_CONFIRMATION, outputUri = "content://test/out.jpg", outputReady = true)
+            })
+            journal.save(needsConfirm)
+
+            val callerThread = Thread.currentThread()
+            val updateThreads = mutableListOf<Thread>()
+            val ioSubmissions = java.util.concurrent.atomic.AtomicInteger(0)
+            val rawExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-batch-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioSubmissions.incrementAndGet()
+                    rawExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val lock = kotlinx.coroutines.sync.Mutex()
+                var current = needsConfirm
+                var updatedCount = 0
+                kotlinx.coroutines.runBlocking {
+                    confirmBatchOutput(
+                        lock = lock,
+                        journalRoot = journalRoot,
+                        id = "row-1",
+                        saved = true,
+                        currentJob = { current },
+                        updateJob = {
+                            updateThreads += Thread.currentThread()
+                            updatedCount++
+                        },
+                        onError = { throw it },
+                        ioDispatcher = ioDispatcher,
+                    )
+                }
+                assertEquals(1, updatedCount)
+                assertEquals(BatchRowStatus.SUCCESS, journal.load(job.id)!!.rows.single().status)
+
+                // 已全部 SUCCESS 的任务在 discardDraftOrCompleted 中于 ioScope 清理 journal，不阻塞调用线程。
+                val rootJob = kotlinx.coroutines.Job()
+                var closed = false
+                val completedDeferred = discardBatchDraftOrCompleted(
+                    currentJob = { journal.load(job.id)!! },
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { completedDeferred.await() }
+                assertTrue(closed)
+                assertFalse(journal.contains(job.id))
+
+                // 未持久化的草稿也会在 ioScope 异步清理目录。
+                val draftDir = File(journalRoot, "draft-job").apply { mkdirs() }
+                val draftRootJob = kotlinx.coroutines.Job()
+                val draftJob = BatchJob(
+                    BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                    listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+                    id = "draft-job",
+                )
+                val draftDeferred = discardBatchDraftOrCompleted(
+                    currentJob = { draftJob },
+                    initialJobId = draftJob.id,
+                    journalRoot = journalRoot,
+                    rootJob = draftRootJob,
+                    ioScope = ioScope,
+                    closeModel = { draftRootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { draftDeferred.await() }
+                assertFalse(draftDir.exists())
+                assertTrue(ioSubmissions.get() >= 3)
+                assertTrue(updateThreads.all { it === callerThread })
+            } finally {
+                rawExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun r1_a3_discardDraftOrCompletedDoesNotPoisonSubsequentDiscard() {
+        val root = Files.createTempDirectory("rawlab-a3-poison").toFile()
+        try {
+            val sourceFile = File(root, "source.raw").apply { writeText("src") }
+            val targetFile = File(root, "target.raw").apply { writeText("dst") }
+            val job = BatchJob(
+                BatchSourceSnapshot(PhotoIdentity("source"), sourceFile, EditSettings()),
+                listOf(BatchTarget(PhotoIdentity("row-1"), targetFile, "out.jpg")),
+            ).let { base ->
+                base.withRows(base.rows.map { it.copy(status = BatchRowStatus.FAILED, error = "io") })
+            }
+            val journalRoot = File(root, "jobs").apply { mkdirs() }
+            val journal = BatchJournal(journalRoot).also { it.save(job) }
+            val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "test-a3-io") }
+            val ioDispatcher = object : kotlinx.coroutines.CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    ioExecutor.execute(block)
+                }
+            }
+            try {
+                val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + ioDispatcher)
+                val rootJob = kotlinx.coroutines.Job()
+                var cachedCompletion: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+                var closed = false
+                val noop = discardBatchDraftOrCompleted(
+                    currentJob = { job },
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    onDiscarding = { cachedCompletion = it },
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { noop.await() }
+                assertNull("No-op must not poison discardCompletion", cachedCompletion)
+                assertFalse(closed)
+                assertTrue(journal.contains(job.id))
+
+                // 后续用户显式 discard() 仍能正常触发清理与关闭。
+                val explicit = discardBatchAfterWork(
+                    initialJobId = job.id,
+                    journalRoot = journalRoot,
+                    rootJob = rootJob,
+                    ioScope = ioScope,
+                    closeModel = { closed = true; rootJob.cancel() },
+                )
+                kotlinx.coroutines.runBlocking { explicit.await() }
+                assertTrue(closed)
+                assertFalse(journal.contains(job.id))
+            } finally {
+                ioExecutor.shutdownNow()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
 }

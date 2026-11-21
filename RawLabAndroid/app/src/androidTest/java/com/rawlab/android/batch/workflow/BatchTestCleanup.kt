@@ -16,6 +16,7 @@ import java.util.Properties
 import java.util.UUID
 import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.looks.LookLibrary
+import com.rawlab.android.photo.WorkingCopyCleanup
 
 /** 只清理本测试记录的资源；active native 必须先随进程退出，不能靠 cancel 假装已停止。 */
 @Suppress("DEPRECATION")
@@ -35,7 +36,7 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
             setProperty("fixture", id)
             setProperty("job", id)
             setProperty("originalLocales", originalLocales ?: appLocales())
-            setProperty("existingRenders", renderFiles().joinToString(",") { it.name })
+            setProperty("existingRenders", renderFiles().joinToString(File.pathSeparator) { it.absolutePath })
         }
         persist()
     }
@@ -127,8 +128,8 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
                 check(library.list().none { it.id == id })
             }
         }
-        val existing = owned.getProperty("existingRenders", "").split(',').toSet()
-        renderFiles().filterNot { it.name in existing }.forEach { check(it.delete()) }
+        val existing = owned.getProperty("existingRenders", "").split(File.pathSeparator).filter(String::isNotEmpty).toSet()
+        renderFiles().filterNot { it.absolutePath in existing }.forEach { check(it.delete()) }
         check(!File(journalRoot, job).exists() && !File(journalRoot, fixture).exists())
         check(!File(journalRoot, "$job.properties").exists() && !File(journalRoot, "$fixture.properties").exists())
         check(manifest.delete()) { "Cannot remove batch test cleanup manifest" }
@@ -141,7 +142,7 @@ internal class BatchTestCleanup(private val context: Context) : ExternalResource
         check(temporary.renameTo(manifest)) { "Cannot checkpoint batch test ownership" }
     }
 
-    private fun renderFiles() = context.filesDir.listFiles().orEmpty().filter { it.name.startsWith("render-") && it.isFile }
+    private fun renderFiles() = WorkingCopyCleanup.transientExportFiles(listOf(context.filesDir, context.cacheDir))
 
     private fun appLocales() = if (Build.VERSION.SDK_INT >= 33)
         context.getSystemService(LocaleManager::class.java).applicationLocales.toLanguageTags()

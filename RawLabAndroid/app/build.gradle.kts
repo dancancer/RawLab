@@ -84,7 +84,24 @@ val generatedAssets = layout.buildDirectory.dir("generated/rawlabAssets")
 val hdrCodecSources = providers.exec {
     commandLine("python3", repo.resolve("lutools/cmake/hdr_sources.py").path, "--portable")
 }.standardOutput.asText.map { text -> text.trim().split(';').map(::File) }
+val prepareExternalLuts by tasks.registering {
+    doLast {
+        val check = ProcessBuilder("python3", repo.resolve("scripts/assets/prepare.py").path, "--group", "luts", "--check", "--quiet")
+            .directory(repo)
+            .start()
+        if (check.waitFor() != 0) {
+            val fetch = ProcessBuilder("python3", repo.resolve("scripts/assets/prepare.py").path, "--group", "luts")
+                .directory(repo)
+                .inheritIO()
+                .start()
+            if (fetch.waitFor() != 0) {
+                throw GradleException("Missing externalized LUT assets; run `python3 scripts/assets/prepare.py --group luts`.")
+            }
+        }
+    }
+}
 val prepareAssets by tasks.registering(Sync::class) {
+    dependsOn(prepareExternalLuts)
     into(generatedAssets)
     from(repo.resolve("lutools/flog-2-new")) {
         into("films")
@@ -118,7 +135,8 @@ val prepareAssets by tasks.registering(Sync::class) {
     }
     from(repo.resolve("RawLabMac/Resources/Licenses")) {
         into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "LibRaw-X3F-BSD.txt",
-            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "stb-MIT-LICENSE.txt")
+            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "libspng-LICENSE.txt",
+            "stb-MIT-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
     from(hdrCodecSources.map { it[0] }) { into("licenses/libultrahdr"); include("LICENSE", "LICENSE_*") }
@@ -142,14 +160,21 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.10.0"
+        versionCode = 20
+        versionName = "0.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
         usageProfile(preferences = "usage_analytics", environment = "PROD", defaultEnabled = true)
     }
     buildFeatures { compose = true; buildConfig = true }
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
     if (rawlabRumLocal) buildTypes.getByName("debug") {
         applicationIdSuffix = ".rumlocal"
         usageProfile(preferences = "usage_analytics_rumlocal", environment = "LOCAL", defaultEnabled = false)
@@ -190,22 +215,23 @@ tasks.matching {
 dependencies {
     if (rawlabRumLocal) add("debugImplementation", files(verifiedRumSdk))
     if (rawlabRumRelease) add("releaseImplementation", files(verifiedRumSdk))
-    implementation(platform("androidx.compose:compose-bom:2025.04.01"))
+    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("com.fasterxml.jackson.core:jackson-core:2.18.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")
     testImplementation("junit:junit:4.13.2")
     // JVM 合同测试使用真实 JSON parser；设备端继续使用 Android 的 org.json。
     testImplementation("org.json:json:20240303")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.06.01"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

@@ -73,6 +73,7 @@ enum class AdjustmentField(val id: String) {
     PERSPECTIVE_VERTICAL("geometry.perspective.vertical"),
     LENS_DISTORTION("geometry.lens.distortion"),
     LENS_TCA("geometry.lens.tca"),
+    LENS_VIGNETTING("geometry.lens.vignetting"),
     LENS_AUTO_CROP("geometry.lens.auto_crop"),
     LENS_PROFILE("geometry.lens.profile_id"),
     HDR_PEAK_LIMIT("hdr.peak_limit_ev"),
@@ -82,16 +83,11 @@ enum class AdjustmentField(val id: String) {
     HDR_LOOK("hdr.look"),
     HDR_CAMERA_DEVELOPMENT("hdr.camera_development");
 
-    val isHDRRelative get() = this == HDR_TEMPERATURE || this == HDR_TINT
-    val isHDRRendition get() = this in HDR_PEAK_LIMIT..HDR_SDR_SATURATION
-    val isHDROnly get() = isHDRRelative || isHDRRendition || this == HDR_LOOK || this == HDR_CAMERA_DEVELOPMENT
-    val group get() = when {
-        this == HDR_LOOK -> "looks"
-        this == HDR_CAMERA_DEVELOPMENT -> "detail"
-        isHDRRelative -> "color"
-        this == BLACK_POINT || this == WHITE_POINT || isHDRRendition -> "light"
-        else -> id.substringBefore('.')
-    }
+    val spec: AdjustmentFieldDefinition get() = AdjustmentFieldSpec.requireById(id)
+    val isHDRRelative get() = spec.protocol.isHDRRelative
+    val isHDRRendition get() = spec.protocol.isHDRRendition
+    val isHDROnly get() = spec.protocol.isHDROnly
+    val group get() = spec.group
     val gradingZone: ColorGradingZone? get() = when (this) {
         GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
         GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
@@ -102,24 +98,11 @@ enum class AdjustmentField(val id: String) {
         return listOf("hue", "saturation", "lightness").indexOf(parts[2]) to
             listOf("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta").indexOf(parts[3])
     }
-    val scalarRange: ClosedFloatingPointRange<Double>? get() = when {
-        hslLocation != null -> -100.0..100.0
-        else -> when (this) {
-            STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
-            HDR_TEMPERATURE -> 2000.0..50000.0
-            HDR_TINT -> -150.0..150.0
-            HDR_PEAK_LIMIT -> 0.0..6.0
-            HDR_SDR_EXPOSURE -> -4.0..4.0
-            HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> -100.0..100.0
-            EXPOSURE -> -20.0..20.0
-            HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
-            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
-            VIGNETTE_MIDPOINT, VIGNETTE_FEATHER, VIGNETTE_HIGHLIGHTS, GRAIN_AMOUNT, GRAIN_SIZE, GRAIN_ROUGHNESS -> 0.0..100.0
-            QUARTER_TURNS -> 0.0..3.0
-            CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, POST_RGB_DENOISE -> 0.0..1.0
-            STRAIGHTEN -> -45.0..45.0
-            else -> null
-        }
+    val scalarRange: ClosedFloatingPointRange<Double>? get() {
+        val proto = spec.protocol
+        return if (!proto.nullable && (proto.valueType == AdjustmentProtocolValueType.NUMBER || this == QUARTER_TURNS)) {
+            proto.doubleRange
+        } else null
     }
 
     companion object {
@@ -148,11 +131,11 @@ enum class AdjustmentField(val id: String) {
             4 -> HDR_V4_SUPPORTED
             5 -> HDR_V5_SUPPORTED
             6 -> HDR_V6_SUPPORTED
-            7 -> HDR_SUPPORTED
+            7, 8 -> HDR_SUPPORTED
             else -> error("Unsupported HDR processing version")
         }
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)
-        val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_AUTO_CROP, LENS_PROFILE)
+        val LENS = setOf(LENS_DISTORTION, LENS_TCA, LENS_VIGNETTING, LENS_AUTO_CROP, LENS_PROFILE)
         val DENOISE = setOf(RAW_DENOISE, POST_RGB_DENOISE, CHROMA_DENOISE, WAVELET_DENOISE)
         val RECIPE_DEPENDENCIES = setOf(LOOK, STRENGTH, EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, SATURATION) +
             WHITE_BALANCE + entries.filter { it.hslLocation != null }

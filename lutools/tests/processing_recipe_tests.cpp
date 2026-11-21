@@ -22,11 +22,16 @@ int main() {
         require(Json::parse(serializeEditRecipe(recipe)).at("processing") == document.at("processing"),
                 "processing identity survives normalization");
         require(recipe.processingVersion == SONY2FUJI_PROCESSING_C5_V2, "v5 selects current core");
+        document["processing"]["version"] = 3;
+        require(parseEditRecipe(document.dump(), recipe, error) &&
+                recipe.processingVersion == SONY2FUJI_PROCESSING_BASIC_V3, "v5 selects basic controls v3");
+        require(Json::parse(serializeEditRecipe(recipe)).at("processing") == document.at("processing"),
+                "v3 identity survives normalization");
         const auto unchanged = serializeEditRecipe(recipe);
         for (const Json& invalid : std::vector<Json>{nullptr, Json::array(), 2,
                  {{"family", "other"}, {"version", 1}, {"quality", "standard"}},
                  {{"family", "rawlab"}, {"version", 0}, {"quality", "standard"}},
-                 {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}},
+                 {{"family", "rawlab"}, {"version", 4}, {"quality", "standard"}},
                  {{"family", "rawlab"}, {"version", true}, {"quality", "standard"}},
                  {{"family", "rawlab"}, {"version", 1.0}, {"quality", "standard"}},
                  {{"family", "rawlab"}, {"version", 1}, {"quality", "fast"}},

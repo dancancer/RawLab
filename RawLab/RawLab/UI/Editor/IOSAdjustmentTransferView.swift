@@ -1,8 +1,6 @@
+import RawLabKit
 import PhotosUI
 import SwiftUI
-
-enum IOSAdjustmentSheet: String, Identifiable { case copy, paste, history, presets, presetSave, presetApply; var id: String { rawValue } }
-enum IOSAdjustmentAction: Equatable { case copy, paste, history, undo, redo, presetSave, presetApply(AdjustmentPreset), presetApplyMultiple(AdjustmentPreset) }
 
 struct IOSAdjustmentTransferView: View {
     @ObservedObject var model: RawEditorViewModel
@@ -11,6 +9,7 @@ struct IOSAdjustmentTransferView: View {
     var preset: AdjustmentPreset?
     var synchronization: IOSCollectionSynchronization?
     var focusedHistory: UUID?
+    var editLegacyPhoto: ((String) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
     @State private var fields = AdjustmentTransferField.common
@@ -94,6 +93,8 @@ struct IOSAdjustmentTransferView: View {
             model.cancelAdjustmentPreparation()
             model.adjustmentHistoryRequest = nil
             model.adjustmentHistoryResults = []
+            // V-UIIOS #301：Sheet 内已展示过本批提示，关面板必须同时清掉共享属性，避免根视图再弹 4 秒重复横幅。
+            model.transferResultNotices = []
         }
     }
 
@@ -138,6 +139,14 @@ struct IOSAdjustmentTransferView: View {
                 }
             }
             Section {
+                // Q3/Q4：提示随实际生效的粘贴结果展示在 Sheet 内，模态层级不会吞掉它。
+                // V-UIIOS #301：提示属于当前批次，重新检查或重开后结果未产生前不得显示上一批旧提示。
+                if IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: model.transferResultNotices,
+                                                                hasPasteResults: !pasteResults.isEmpty) {
+                    Text(model.transferResultNotices.joined(separator: "；"))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("adjustment.paste.notices")
+                }
                 if let transaction = model.adjustmentSession?.transactions.first(where: { $0.id == prepared?.id }) {
                     transactionButtons(transaction)
                 }
@@ -170,6 +179,11 @@ struct IOSAdjustmentTransferView: View {
             }
             if let error = result?.error ?? target?.error ?? photo.error {
                 Text(model.adjustmentErrorMessage(error)).font(.callout).foregroundStyle(.secondary)
+                if let editLegacyPhoto, case .legacyAssetEditNeedsDecision? = error as? EditPersistenceError {
+                    Button(L10n.text("单张微调")) { editLegacyPhoto(photo.id) }
+                        .buttonStyle(.borderless).disabled(busy)
+                        .accessibilityIdentifier("adjustment.target.edit-legacy.\(photo.id)")
+                }
             }
             Toggle(L10n.text("跳过"), isOn: Binding(get: { skipped.contains(photo.id) }, set: {
                 if $0 { skipped.insert(photo.id) } else { skipped.remove(photo.id) }
@@ -248,6 +262,8 @@ struct IOSAdjustmentTransferView: View {
     private func invalidatePreparation() {
         model.cancelAdjustmentPreparation()
         prepared = nil; pasteResults = []; skipped = []; message = nil; model.adjustmentHistoryResults = []
+        // V-UIIOS #301：重备即作废上一批提示，共享属性不得带进新一轮检查。
+        model.transferResultNotices = []
     }
     private func prepare() {
         guard let payload, !photos.isEmpty else { return }

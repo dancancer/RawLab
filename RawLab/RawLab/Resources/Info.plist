@@ -11,9 +11,9 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
     <key>CFBundleShortVersionString</key>
-	<string>0.10.0</string>
+	<string>0.11.0</string>
 	<key>CFBundleVersion</key>
-	<string>19</string>
+	<string>20</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key><false/>
 <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>RAW/JPEG/PNG/TIFF/HEIF</string>
@@ -36,7 +36,11 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allows importing photos from your photo library.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Allows saving edited photos to your photo library.</string>
+	<string>Allows saving imported or edited photos to your photo library.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Find and pair with your Sony camera to connect its Wi-Fi.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to your camera to browse originals, receive photos and use remote shooting.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UTImportedTypeDeclarations</key>

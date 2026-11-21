@@ -1,0 +1,1271 @@
+import RawLabKit
+import Foundation
+import CryptoKit
+import ImageIO
+import CoreGraphics
+import Darwin
+
+@main struct CameraOriginalStoreTests {
+    static func check(_ value: Bool, _ message: String) throws {
+        guard value else { throw CameraProtocolError.invalid(message) }
+        print("PASS: \(message)")
+    }
+    static func main() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-camera-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "Other Sony", firmware: "9.99", serial: "fixture", operations: [0x923c, 0x923d])
+        let bytes = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4])
+        let snapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0, name: "DSC00001.JPG",
+            size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let job = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let item = job.items[0]
+        let destination = try store!.begin(job: job.id, item: item.id)
+        try destination.handle.write(contentsOf: bytes); try destination.handle.close()
+        let saved = try store!.complete(job: job.id, item: item.id, digest: digest)
+        try check(try Data(contentsOf: store!.verifiedURL(saved.id)) == bytes, "Only complete validated originals become editable")
+        let duplicate = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let second = try store!.begin(job: duplicate.id, item: duplicate.items[0].id)
+        try second.handle.write(contentsOf: bytes); try second.handle.close()
+        let reused = try store!.complete(job: duplicate.id, item: duplicate.items[0].id, digest: digest)
+        try check(reused.id == saved.id && store!.snapshot.originals.count == 1, "Content dedup retains the original source identity")
+        var prepared = store!.snapshot
+        prepared.jobs[0].items[0].phase = .prepared
+        prepared.originals[0].availability = .prepared
+        store = nil
+        try JSONEncoder().encode(prepared).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+        store = try CameraOriginalStore(directory: root)
+        try check(store!.snapshot.jobs[0].items[0].phase == .saved && store!.snapshot.originals[0].id == saved.id,
+                  "A crash after publishing reclaims the same original without downloading again")
+        let owner = UUID(), asset = CameraRemoteAsset(owner: UUID(), snapshot: snapshot)
+        try store!.beginTether(device: identity, connectionKey: "fixture", baseline: [asset])
+        try check(!store!.snapshot.canResumeTether, "A recorded camera without registered originals has no resume action")
+        try store!.markShutterRequested(owner: owner)
+        try store!.acknowledgeShutter(owner: owner)
+        try store!.finishConfirmedShutter(owner: UUID())
+        try check(store!.snapshot.tether?.shutterRequestedAt != nil, "A reconnected owner cannot complete or replay an old shutter request")
+        let extra = CameraRemoteAsset(owner: UUID(), snapshot: CameraAssetSnapshot(content: 2, file: 1, storage: 0, format: 0,
+            name: "DSC00002.JPG", size: 7, created: "1700000000001", modified: ""))
+        let remoteOnly = CameraDeviceIdentity(manufacturer: identity.manufacturer, model: identity.model,
+            firmware: identity.firmware, serial: identity.serial, operations: [])
+        func rejectUnprovenTether(_ device: CameraDeviceIdentity, _ card: [CameraRemoteAsset], _ message: String) throws {
+            do {
+                try store!.resumeTether(device: device, connectionKey: "fixture", assets: card, verifySaved: { _ in
+                    throw CameraProtocolError.invalid("Unproven tether must not download anything")
+                }, receivePending: { _, _ in
+                    throw CameraProtocolError.invalid("Unproven tether must not receive anything")
+                })
+                try check(false, message)
+            } catch CameraProtocolError.tetherRecoveryRequired { print("PASS: \(message)") }
+        }
+        try rejectUnprovenTether(remoteOnly, [asset], "A remote-only camera cannot resume a card transfer")
+        try rejectUnprovenTether(identity, [asset], "Unregistered baseline files do not prove that the card stayed the same")
+        try store!.beginTether(device: identity, connectionKey: "fixture", baseline: [])
+        try check(!store!.snapshot.canResumeTether, "An empty tether record has no resume action")
+        let jobsBeforeResume = store!.snapshot.jobs.count
+        for currentCard in [[], [extra]] {
+            try rejectUnprovenTether(identity, currentCard, "An empty baseline without registered originals requires manual import")
+            try check(store!.snapshot.jobs.count == jobsBeforeResume && store!.snapshot.tether!.baseline.isEmpty,
+                      "Rejected recovery does not enqueue offline photos")
+        }
+        let pending = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot], listingOwner: asset.owner)
+        let interrupted = try store!.begin(job: pending.id, item: pending.items[0].id)
+        try interrupted.handle.write(contentsOf: bytes.prefix(3)); try interrupted.handle.close()
+        store = nil
+        store = try CameraOriginalStore(directory: root)
+        try check(!FileManager.default.fileExists(atPath: interrupted.url.path), "Recovery removes only incomplete partial files")
+        let restored = store!.snapshot.jobs.first { $0.id == pending.id }!
+        let matching = try restored.pendingAssets(device: identity, connectionKey: "fixture",
+            assets: [asset], allowAlternateConnection: true)
+        try check(restored.items[0].phase == .interrupted && matching.first?.1 == asset, "An unfinished download can retry in its original listing session")
+        let unverifiedReplacement = CameraRemoteAsset(owner: UUID(), snapshot: snapshot)
+        do {
+            _ = try restored.pendingAssets(device: identity, connectionKey: "SSID:camera",
+                assets: [unverifiedReplacement], allowAlternateConnection: true)
+            try check(false, "A new connection cannot prove original identity from metadata alone")
+        } catch CameraProtocolError.importRecoveryRequired {
+            print("PASS: A new connection cannot prove original identity from metadata alone")
+        }
+        let otherCamera = CameraDeviceIdentity(manufacturer: identity.manufacturer, model: identity.model,
+            firmware: identity.firmware, serial: "different", operations: identity.operations)
+        let missingSerial = CameraDeviceIdentity(manufacturer: identity.manufacturer, model: identity.model,
+            firmware: identity.firmware, serial: "", operations: identity.operations)
+        let historical = try store!.enqueue(device: missingSerial, connectionKey: "fixture", assets: [snapshot])
+        try check(historical.matches(camera: missingSerial, connectionKey: "fixture") &&
+                  historical.bindToListing([asset]).isEmpty, "A historical import without source proof still needs a new selection")
+        let reusedHandle = CameraRemoteAsset(owner: asset.owner, snapshot: CameraAssetSnapshot(content: snapshot.content,
+            file: snapshot.file, storage: snapshot.storage, format: snapshot.format, name: snapshot.name,
+            size: snapshot.size, created: snapshot.created, modified: "changed"))
+        for (job, camera, card, allowAlternate) in [
+            (restored, otherCamera, [asset], true), (restored, identity, [], true),
+            (restored, identity, [reusedHandle], true), (restored, identity, [asset, asset], true),
+            (historical, missingSerial, [asset], true), (restored, identity, [asset], false)
+        ] {
+            var rejected = false
+            do {
+                _ = try job.pendingAssets(device: camera, connectionKey: "SSID:camera",
+                    assets: card, allowAlternateConnection: allowAlternate)
+            } catch CameraProtocolError.importRecoveryRequired { rejected = true }
+            catch CameraProtocolError.tetherRecoveryRequired { rejected = true }
+            try check(rejected, "Resume rejects unverifiable camera, changed or ambiguous file, and alternate tether connection")
+        }
+        try Data([0xff, 0xd8, 0xff, 9, 9, 9, 9]).write(to: store!.originalURL(saved))
+        do { _ = try store!.verifiedURL(saved.id); throw CameraProtocolError.invalid("Changed source must be rejected") }
+        catch CameraProtocolError.invalid(let message) where message == "Changed source must be rejected" { throw CameraProtocolError.invalid(message) }
+        catch { print("PASS: Modified saved original is not handed to the editor") }
+        try check(store!.snapshot.originals[0].availability == .changed, "Source changes retain the record and editing identity")
+        try resumeManualWithSourceDigest(identity: identity, asset: asset, bytes: bytes)
+        try tetherRecoveryChecksSavedOriginals(identity: identity, original: asset, bytes: bytes)
+        try manualOriginalsCleanup()
+        try incrementalRecovery()
+        try switchingFormatsFindsBothUnimportedJPEGs()
+        try adjustedJPEG()
+        try recoverPreservesNonemptyOrphans()
+        try recoverRetriesEmptyDirectoryRemoval()
+        try recoverOrdersReAdoptedOriginals()
+        try recoverSweepsOrphanDirectories()
+        try completeReusesStreamedDigestWithoutRehashingPartial()
+        try verifiedURLReusesDigestCacheAcrossOpens()
+        try samplingValidationAndReuseComputeDigestOnce()
+        try thumbnailURLSkipsFullHashAndRejectsInvalidStates()
+        try samplingCandidate10kHistoryLatencyAndIndexSync()
+        if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
+    }
+
+    private static func tetherRecoveryChecksSavedOriginals(identity: CameraDeviceIdentity, original: CameraRemoteAsset, bytes: Data) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-camera-tether-proof-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let connection = "SSID:fixture"
+        try store!.beginTether(device: identity, connectionKey: connection, baseline: [])
+        let job = try store!.registerTetherAssets([original.snapshot], listingOwner: original.owner)
+        try check(!store!.snapshot.canResumeTether, "A registered item without source bytes cannot resume")
+        let saved = try write(bytes, item: job.items[0], job: job, store: store!)
+        try check(store!.snapshot.canResumeTether, "A verified registered original still offers tether recovery")
+        var legacy = store!.snapshot
+        legacy.jobs[0].items[0].sourceDigest = nil
+        try check(legacy.canResumeTether, "A saved tether original can use its legacy original digest")
+        var broken = store!.snapshot
+        broken.jobs = []
+        try check(!broken.canResumeTether, "A dangling tether job reference cannot resume")
+        let owner = UUID()
+        let extra = CameraRemoteAsset(owner: owner, snapshot: .init(content: 2, file: 1, storage: 0, format: 0,
+            name: "DSC00002.JPG", size: UInt64(bytes.count), created: "1700000000001", modified: ""))
+        let current = CameraRemoteAsset(owner: owner, snapshot: original.snapshot)
+        var changed = bytes
+        changed[changed.count - 1] ^= 1
+        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        func noPending(_ id: UUID, _ bindings: [CameraTransferJob.BoundItem]) throws {
+            try check(false, "Already completed originals must not be published again")
+        }
+        do {
+            try store!.resumeTether(device: identity, connectionKey: connection, assets: [current, extra],
+                verifySaved: { _ in throw CameraProtocolError.response(0x923d, 0x2009) }, receivePending: noPending)
+            try check(false, "An unavailable camera object must require manual import")
+        } catch CameraProtocolError.tetherRecoveryRequired {
+            try check(store!.snapshot.tether?.baseline == [original.snapshot.key] &&
+                store!.snapshot.originals.map(\.id) == [saved.id],
+                "A missing camera object routes to manual import without changing the saved original or baseline")
+        }
+        do {
+            try store!.resumeTether(device: identity, connectionKey: connection, assets: [current],
+                verifySaved: { _ in throw CameraProtocolError.response(0x923d, 0x2019) }, receivePending: noPending)
+            try check(false, "A busy camera must still return its response")
+        } catch CameraProtocolError.response(0x923d, 0x2019) {
+            print("PASS: A busy camera is not classified as a missing original")
+        }
+        var checked: [CameraRemoteAsset] = []
+        do {
+            try store!.resumeTether(device: identity, connectionKey: connection, assets: [current, extra],
+                verifySaved: { checked.append($0.asset); return digest(changed) }, receivePending: noPending)
+            try check(false, "A completed original on a different card must block tether rebasing")
+        } catch CameraProtocolError.tetherRecoveryRequired {
+            try check(checked == [current] && store!.snapshot.tether?.baseline == [original.snapshot.key] &&
+                store!.snapshot.originals.map(\.id) == [saved.id],
+                "Mismatched completed bytes block rebasing and leave the extra file and saved original alone")
+        }
+        func remap(_ handle: UInt32, owner: UUID) -> CameraRemoteAsset {
+            let asset = original.snapshot
+            return CameraRemoteAsset(owner: owner, snapshot: .init(content: handle, file: asset.file, storage: asset.storage,
+                format: asset.format, name: asset.name, size: asset.size, created: asset.created, modified: asset.modified))
+        }
+        let rebound = remap(42, owner: owner)
+        try store!.resumeTether(device: identity, connectionKey: connection, assets: [rebound],
+            verifySaved: { bound in try check(bound.asset == rebound, "Digest verification follows the reassigned handle"); return digest(bytes) },
+            receivePending: noPending)
+        try check(store!.snapshot.tether?.baseline == [rebound.snapshot.key], "A verified original may rebind to the new listing")
+
+        store = nil
+        store = try CameraOriginalStore(directory: root)
+        let latest = remap(43, owner: owner)
+        try store!.resumeTether(device: identity, connectionKey: connection, assets: [latest, extra],
+            verifySaved: { bound in try check(bound.asset == latest, "A subsequent reconnect still checks the completed source"); return digest(bytes) },
+            receivePending: noPending)
+        try check(store!.snapshot.tether?.baseline == [latest.snapshot.key, extra.snapshot.key] &&
+            store!.snapshot.jobs.map(\.id) == [job.id] && store!.snapshot.originals.map(\.id) == [saved.id],
+            "Only a verified resume may use the offline listing as its baseline without importing extra files")
+        try check(!store!.snapshot.canResumeTether, "An offline file without verified bytes prevents another automatic recovery")
+        do {
+            try store!.resumeTether(device: identity, connectionKey: connection, assets: [latest, extra],
+                verifySaved: { _ in throw CameraProtocolError.invalid("Unknown baseline should fail before download") },
+                receivePending: noPending)
+            try check(false, "An untracked photo cannot act as verified evidence on the next reconnect")
+        } catch CameraProtocolError.tetherRecoveryRequired {
+            print("PASS: An untracked photo cannot act as verified evidence on the next reconnect")
+        }
+    }
+
+    private static func resumeManualWithSourceDigest(identity: CameraDeviceIdentity, asset: CameraRemoteAsset, bytes: Data) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-camera-source-digest-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let job = try store!.enqueue(device: identity, connectionKey: "BLE:camera", assets: [asset.snapshot], listingOwner: asset.owner)
+        let item = job.items[0], saved = try write(bytes, item: item, job: job, store: store!)
+        var prepared = store!.snapshot
+        prepared.jobs[0].items[0].phase = .prepared
+        prepared.originals[0].availability = .prepared
+        try FileManager.default.removeItem(at: store!.originalURL(saved))
+        store = nil
+        try JSONEncoder().encode(prepared).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+        store = try CameraOriginalStore(directory: root)
+        let restored = store!.snapshot.jobs[0]
+        let snapshot = asset.snapshot
+        let rebound = CameraRemoteAsset(owner: UUID(), snapshot: CameraAssetSnapshot(content: 93, file: 5,
+            storage: snapshot.storage, format: snapshot.format, name: snapshot.name, size: snapshot.size,
+            created: snapshot.created, modified: snapshot.modified))
+        let candidates = try restored.pendingAssets(device: identity, connectionKey: "SSID:camera", assets: [rebound],
+                                                     allowAlternateConnection: true)
+        try check(candidates.count == 1 && candidates[0].0.id == item.id && candidates[0].1 == rebound,
+                  "A manual import can use a reassigned handle when a source checksum was recorded")
+        try check(restored.bindToListing([rebound, CameraRemoteAsset(owner: rebound.owner, snapshot: snapshot)]).isEmpty,
+                  "Two metadata matches cannot identify a unique current handle")
+        var different = bytes
+        different[different.count - 1] ^= 1
+        do {
+            _ = try write(different, item: item, job: restored, store: store!)
+            try check(false, "A replacement with the same metadata cannot complete the old job")
+        } catch CameraProtocolError.importRecoveryRequired {
+            try check(store!.snapshot.originals.isEmpty && store!.snapshot.jobs[0].items[0].sourceDigest == saved.digest,
+                      "A replacement with the same metadata cannot complete the old job")
+            try store!.interrupt(job: job.id, item: item.id, error: nil, cancelled: false)
+        }
+        let recovered = try write(bytes, item: item, job: restored, store: store!)
+        try check(recovered.digest == saved.digest && store!.snapshot.jobs[0].complete,
+                  "Reassigned handle with verified bytes completes the original job")
+    }
+
+    // Q6：相机原件不自动删，手动清理只删「已导出且不再被引用」的任务与原件。
+    // Q6：相机原件不自动删，只提供手动清理。「已导出」必须有真实外部出口证据
+    // （最近打开的私有副本内容标识）；覆盖评审给出的三条失效序列。
+    private static func manualOriginalsCleanup() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-prune-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "prune", operations: [])
+        let jpegA = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4]), jpegB = Data([0xff, 0xd8, 0xff, 5, 6, 7, 8])
+        let jpegC = Data([0xff, 0xd8, 0xff, 9, 1, 1, 1]), jpegD = Data([0xff, 0xd8, 0xff, 7, 7, 7, 7])
+        let jpegE = Data([0xff, 0xd8, 0xff, 2, 2, 2, 2])
+        let tiff = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3]), tiff2 = Data([0x49, 0x49, 0x2a, 0, 9, 8, 7])
+        func digestOf(_ payload: Data) -> String { SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined() }
+        func snapshot(_ file: UInt32, _ ext: String) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: file, file: file, storage: 0, format: 0, name: "DSC000\(file).\(ext)",
+                size: 7, created: "1700000000000", modified: "")
+        }
+        let store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        func saved(_ job: CameraTransferJob, _ payload: Data) throws -> CameraStoredOriginal {
+            try write(payload, item: job.items[0], job: job, store: store!)
+        }
+        // 序列 1（评审主案）：导入 2 张未打开、未导出 → 再来一个新任务 → 点清理必须释放 0。
+        let jobOld = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(11, "JPG"), snapshot(12, "JPG")])
+        let oldOne = try saved(jobOld, jpegA)
+        let oldTwo = try write(jpegB, item: jobOld.items[1], job: jobOld, store: store!)
+        let jobNew = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(13, "JPG")])
+        let recentOriginal = try saved(jobNew, jpegC)
+        var pruned = try store!.pruneExportedOriginals()
+        try check(pruned.originals == 0 && store!.snapshot.jobs.count == 2 &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(oldOne).path),
+                  "Never-exported jobs are kept: cleanup without export evidence frees nothing (红→绿核心)")
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegA), digestOf(jpegB)])
+        try check(pruned.originals == 2 && pruned.freedBytes == UInt64(jpegA.count + jpegB.count),
+                  "Evidence of external copies unlocks the two originals")
+        try check(store!.snapshot.jobs.map(\.id) == [jobNew.id] && store!.snapshot.originals.map(\.id) == [recentOriginal.id] &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(oldOne).path) &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(oldTwo).path),
+                  "The exported job's records and files leave storage while the newest anchor stays")
+        pruned = try store!.pruneExportedOriginals()
+        try check(pruned.originals == 0 && store!.snapshot.jobs.count == 1, "Repeated cleanup is idempotent and never deletes the newest job")
+        // 共享原件：后任务复用同一内容，删旧任务不删共享文件。
+        let jobShared = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(14, "JPG")])
+        let sharedOriginal = try saved(jobShared, jpegC)
+        try check(sharedOriginal.id == recentOriginal.id, "The re-imported original reuses the saved source identity")
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegC)])
+        try check(pruned.originals == 0 && store!.snapshot.jobs.map(\.id) == [jobShared.id] &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(recentOriginal).path),
+                  "An original shared with the newest job survives cleanup of its earlier job")
+        // 联机任务保护：tether 引用优先于任何清理。
+        let tethered = CameraRemoteAsset(owner: UUID(), snapshot: snapshot(15, "JPG"))
+        try store!.beginTether(device: device, connectionKey: "prune", baseline: [tethered])
+        let jobTether = try store!.registerTetherAssets([tethered.snapshot], listingOwner: UUID())
+        let tetherOriginal = try saved(jobTether, jpegA)
+        let jobLatest = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(16, "JPG")])
+        _ = try saved(jobLatest, jpegB)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegA), digestOf(jpegB), digestOf(jpegC)])
+        try check(store!.snapshot.jobs.map(\.id) == [jobTether.id, jobLatest.id] &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(tetherOriginal).path),
+                  "A tether-referenced saved job is never removed even with export evidence")
+        // 序列 2+3：跨连接与同连接的增量检查点锚点——每台相机每个格式保留最近一条完整增量任务。
+        let owner1 = UUID()
+        let boundary = CameraImportBoundary(date: Date(timeIntervalSince1970: 1_699_999_000), storage: [], keys: [], anchors: [], owner: owner1)
+        let jobInc1 = try store!.enqueue(device: device, connectionKey: "k1", assets: [snapshot(17, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner1, boundaries: ["RAW": boundary]))
+        let inc1Original = try saved(jobInc1, tiff)
+        let jobInc2 = try store!.enqueue(device: device, connectionKey: "k2", assets: [snapshot(18, "JPG")],
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["JPEG": boundary]))
+        let inc2Original = try saved(jobInc2, jpegD)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff), digestOf(jpegD)])
+        try check(pruned.originals == 0 && store!.snapshot.jobs.contains { $0.id == jobInc1.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc2.id },
+                  "The latest complete job per format keeps the boundary chain across connections")
+        let jobInc3 = try store!.enqueue(device: device, connectionKey: "k3", assets: [snapshot(19, "ARW"), snapshot(20, "JPG")],
+            incremental: CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil, owner: owner1,
+                boundaries: ["RAW": boundary, "JPEG": boundary]))
+        _ = try write(tiff2, item: jobInc3.items[0], job: jobInc3, store: store!)
+        _ = try write(jpegE, item: jobInc3.items[1], job: jobInc3, store: store!)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff), digestOf(jpegD)])
+        try check(pruned.originals == 2 && !store!.snapshot.jobs.contains { $0.id == jobInc1.id } &&
+                      !store!.snapshot.jobs.contains { $0.id == jobInc2.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc3.id } &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(inc1Original).path) &&
+                      !FileManager.default.fileExists(atPath: store!.originalURL(inc2Original).path) &&
+                      store!.snapshot.jobs.map(\.id).contains(jobTether.id) &&
+                      FileManager.default.fileExists(atPath: store!.originalURL(tetherOriginal).path),
+                  "A newer complete job covering every format unlocks the cross-connection history")
+        try check(store!.snapshot.savedIncrementalKeys(owner: owner1, jpeg: CameraJPEGOptions()).contains(jobInc3.items[0].asset.key),
+                  "Dedup keys survive through the retained covering job")
+        // 序列 4（B3a）：全零序列号机身按 connectionKey 隔离——连接 B 的新任务
+        // 不得抢走连接 A 的检查点锚点（红：按 stableKey 粗归组会删掉 A 锚点）。
+        let tiff3 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 1]), tiff4 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 2])
+        let tiff5 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 3]), tiff6 = Data([0x49, 0x49, 0x2a, 0, 1, 1, 4])
+        let jpegF = Data([0xff, 0xd8, 0xff, 3, 3, 3, 3]), jpegG = Data([0xff, 0xd8, 0xff, 4, 4, 4, 4])
+        let jpegI = Data([0xff, 0xd8, 0xff, 5, 5, 5, 5]), jpegJ = Data([0xff, 0xd8, 0xff, 6, 6, 6, 6])
+        let twinDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "Twin", firmware: "1.0", serial: "0000000", operations: [])
+        let jobTwinA = try store!.enqueue(device: twinDevice, connectionKey: "camA", assets: [snapshot(21, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["RAW": boundary]))
+        _ = try write(tiff3, item: jobTwinA.items[0], job: jobTwinA, store: store!)
+        let jobTwinB = try store!.enqueue(device: twinDevice, connectionKey: "camB", assets: [snapshot(22, "ARW")],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(), boundaries: ["RAW": boundary]))
+        _ = try write(tiff4, item: jobTwinB.items[0], job: jobTwinB, store: store!)
+        let jobAfterTwin = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(23, "JPG")])
+        _ = try saved(jobAfterTwin, jpegF)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff3), digestOf(tiff4), digestOf(jpegF)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobTwinA.id } && store!.snapshot.jobs.contains { $0.id == jobTwinB.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobInc3.id },
+                  "An unverified-serial camera isolates checkpoints per connection: a new connection never unlocks the other anchor")
+        // 序列 5（B3b）：旧 plan.boundary 的无拍摄日期条目不得遮蔽更早的检查点——
+        // 读取方 CameraImportBoundary.latest 返回 nil 并继续回溯（红：无日期新任务遮蔽并删旧任务）。
+        let legacyDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "Legacy", firmware: "1.0", serial: "legacy1", operations: [])
+        let legacyOwner = UUID()
+        let legacyStart = CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_000), storage: [], keys: [], anchors: [], owner: legacyOwner)
+        let legacyDated = CameraAssetSnapshot(content: 24, file: 24, storage: 0x10001, format: 0x3801, name: "DSC00024.ARW", size: 7, created: "20231114T221320", modified: "")
+        let legacyUndated = CameraAssetSnapshot(content: 25, file: 25, storage: 0x10001, format: 0x3801, name: "DSC00025.ARW", size: 7, created: "garbage", modified: "")
+        let jobLegacyDated = try store!.enqueue(device: legacyDevice, connectionKey: "lk", assets: [legacyDated],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacyStart, owner: legacyOwner, boundaries: nil))
+        _ = try write(tiff5, item: jobLegacyDated.items[0], job: jobLegacyDated, store: store!)
+        let jobLegacyUndated = try store!.enqueue(device: legacyDevice, connectionKey: "lk", assets: [legacyUndated],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacyStart, owner: legacyOwner, boundaries: nil))
+        _ = try write(tiff6, item: jobLegacyUndated.items[0], job: jobLegacyUndated, store: store!)
+        let jobTail = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(26, "JPG")])
+        _ = try saved(jobTail, jpegG)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(tiff3), digestOf(tiff4), digestOf(tiff5),
+                                                                                digestOf(tiff6), digestOf(jpegF), digestOf(jpegG)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobLegacyDated.id } && store!.snapshot.jobs.contains { $0.id == jobLegacyUndated.id } &&
+                      store!.snapshot.jobs.contains { $0.id == jobTwinA.id } && store!.snapshot.jobs.contains { $0.id == jobTwinB.id },
+                  "A legacy boundary without capture dates does not shadow the dated checkpoint below it")
+        // 序列 6（B3c）：boundaries 空字典的增量任务也要保护——当前会话活跃时
+        // savedIncrementalKeys 仍会查询它（红：Set([]) 不入锚点，去重键丢失）。
+        let emptyDevice = CameraDeviceIdentity(manufacturer: "Sony", model: "EmptyB", firmware: "1.0", serial: "empty1", operations: [])
+        let jobEmptyPlan = try store!.enqueue(device: emptyDevice, connectionKey: "ek", assets: [snapshot(27, "JPG")],
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil, owner: legacyOwner, boundaries: [:]))
+        _ = try saved(jobEmptyPlan, jpegI)
+        let jobFinal = try store!.enqueue(device: device, connectionKey: "prune", assets: [snapshot(28, "JPG")])
+        _ = try saved(jobFinal, jpegJ)
+        pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [digestOf(jpegI), digestOf(jpegJ)])
+        try check(store!.snapshot.jobs.contains { $0.id == jobEmptyPlan.id } &&
+                      store!.snapshot.savedIncrementalKeys(owner: legacyOwner, jpeg: CameraJPEGOptions()).contains(jobEmptyPlan.items[0].asset.key),
+                  "The newest incremental job per bucket is protected even when its boundaries dictionary is empty")
+    }
+    private static func incrementalRecovery() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-incremental-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "camera", operations: [])
+        let owner = UUID(), cutoff = Date(timeIntervalSince1970: 1_699_999_999)
+        let raw = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3])
+        let jpeg = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4])
+        func asset(_ id: UInt32, _ ext: String, time: String = "1700000000000", session: UUID? = nil) -> CameraRemoteAsset {
+            CameraRemoteAsset(owner: session ?? owner, snapshot: CameraAssetSnapshot(content: id, file: 0, storage: 0, format: 0,
+                name: "DSC\(id).\(ext)", size: 7, created: time, modified: ""))
+        }
+        let first = asset(1, "ARW"), second = asset(2, "JPG")
+        let older = asset(3, "JPG", time: "1699999998000"), undated = asset(4, "ARW", time: "0")
+        let all = [first, second, older, undated]
+        let scan = CameraIncrementalScan(assets: all, boundaries: [:], cutoff: cutoff, customCutoff: nil,
+                                         format: .rawAndJPEG, includeUndated: false)
+        try check(Set(scan.assets.map(\.id)) == [first.id, second.id] && scan.undatedCount == 1,
+                  "Incremental planning selects RAW and JPEG by camera time and counts undated files separately")
+        let rawOnly = CameraIncrementalScan(assets: all, boundaries: [:], cutoff: cutoff, customCutoff: nil,
+                                            format: .raw, includeUndated: true)
+        try check(Set(rawOnly.assets.map(\.id)) == [first.id, undated.id], "RAW format and explicit undated inclusion build the queue")
+        let legacy = CameraAssetSnapshot(content: 42, file: 0, storage: 0x10001, format: 0x3801, name: "DSC00042.JPG",
+                                         size: 7, created: "20231114T221320", modified: "")
+        let malformed = CameraAssetSnapshot(content: 43, file: 0, storage: 0x10001, format: 0x3801, name: "DSC00043.JPG",
+                                            size: 7, created: "20260231T000000", modified: "")
+        try check(legacy.captureDate == Date(timeIntervalSince1970: 1_700_000_000) && malformed.captureDate == nil,
+                  "Legacy camera wall time is parsed consistently and invalid dates stay unknown")
+
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let plan = CameraIncrementalPlan(format: .rawAndJPEG, jpeg: CameraJPEGOptions(), boundary: nil,
+                                         owner: owner, boundaries: scan.nextBoundaries)
+        let job = try store!.enqueue(device: device, connectionKey: "fixture", assets: scan.assets.map(\.snapshot), incremental: plan)
+        let rawItem = job.items.first { $0.asset == first.snapshot }!
+        let jpgItem = job.items.first { $0.asset == second.snapshot }!
+        let saved = try write(raw, item: rawItem, job: job, store: store!)
+        let partial = try store!.begin(job: job.id, item: jpgItem.id)
+        try partial.handle.write(contentsOf: jpeg.prefix(3)); try partial.handle.close()
+        store = nil
+        store = try CameraOriginalStore(directory: root)
+        try check(store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture").isEmpty,
+                  "Interrupted incremental jobs cannot advance the checkpoint")
+        let resumed = store!.snapshot.jobs[0]
+        try check(resumed.pendingItems.map(\.id) == [jpgItem.id] && resumed.items.first { $0.id == rawItem.id }?.sourceID == saved.id,
+                  "Reconnect only queues the unfinished JPEG and retains the saved RAW")
+        let newOwner = UUID()
+        func rebound(_ locator: UInt32, slot: UInt32 = 0) -> CameraRemoteAsset {
+            CameraRemoteAsset(owner: newOwner, snapshot: CameraAssetSnapshot(content: locator, file: 5, storage: slot,
+                format: second.snapshot.format, name: second.snapshot.name, size: second.snapshot.size,
+                created: second.snapshot.created, modified: second.snapshot.modified))
+        }
+        let newJPEG = rebound(92)
+        try check(resumed.bindToListing([newJPEG])[jpgItem.id] == nil && resumed.bindToListing(all)[jpgItem.id] == second,
+                  "The original card slot does not prove the identity of an unfinished JPEG")
+        let savedJPEG = try write(jpeg, item: resumed.pendingItems[0], job: resumed, store: store!)
+        let boundaries = store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        try check(boundaries.count == 2 && boundaries.values.allSatisfy { $0.date == Date(timeIntervalSince1970: 1_700_000_000) }
+                  && store!.snapshot.originals.count == 2, "Saving the last item commits the two format checkpoints")
+        let repeated = CameraIncrementalScan(assets: all, boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
+                                             format: .rawAndJPEG, includeUndated: false)
+        try check(repeated.assets.isEmpty, "Scanning the same session again has no new files")
+        let sameSecond = asset(5, "ARW")
+        let continued = CameraIncrementalScan(assets: all + [sameSecond], boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
+                                              format: .rawAndJPEG, includeUndated: false)
+        try check(continued.assets.map(\.id) == [sameSecond.id], "An unseen file at the last capture time remains eligible")
+        let backfill = CameraIncrementalScan(assets: all, boundaries: boundaries, cutoff: cutoff,
+                                             customCutoff: Date(timeIntervalSince1970: 1_699_999_990),
+                                             format: .jpeg, includeUndated: false)
+        try check(backfill.nextBoundaries.isEmpty && Set(backfill.assets.map(\.id)) == [older.id, second.id],
+                  "Explicit backfill includes the earlier JPEG without replacing the normal checkpoint")
+        let changed = CameraIncrementalScan(assets: [sameSecond], boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
+                                            format: .raw, includeUndated: false)
+        try check(changed.needsCutoffConfirmation && changed.assets.isEmpty, "An unverified card requires a new cutoff")
+        let nextOwner = UUID()
+        let reconnected = [asset(1, "ARW", session: nextOwner), asset(2, "JPG", session: nextOwner)]
+        let savedKeys = store!.snapshot.savedIncrementalKeys(owner: nextOwner, jpeg: plan.jpeg)
+        let unconfirmed = CameraIncrementalScan(assets: reconnected, boundaries: boundaries, cutoff: cutoff, customCutoff: nil,
+                                                format: .jpeg, includeUndated: false, savedKeys: savedKeys)
+        try check(unconfirmed.needsCutoffConfirmation && unconfirmed.assets.isEmpty && unconfirmed.nextBoundaries.isEmpty,
+                  "Matching metadata on another listing cannot authorize the previous cutoff")
+        let checkAgain = CameraIncrementalScan(assets: reconnected, boundaries: boundaries, cutoff: cutoff, customCutoff: cutoff,
+                                              format: .jpeg, includeUndated: false)
+        try check(checkAgain.assets.map(\.snapshot) == [second.snapshot],
+                  "A matching JPEG from a new listing still needs its bytes checked")
+        let recheck = try store!.enqueue(device: device, connectionKey: "fixture", assets: checkAgain.assets.map(\.snapshot),
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(), boundary: nil,
+                                               owner: nextOwner, boundaries: checkAgain.nextBoundaries))
+        let reuse = try write(jpeg, item: recheck.items[0], job: recheck, store: store!)
+        try check(store!.snapshot.originals.count == 2 && reuse.id == savedJPEG.id && store!.snapshot.jobs.last?.items[0].reused == true,
+                  "Rechecking an uncertain boundary reuses the published file")
+        let otherOwner = UUID()
+        let replacement = asset(2, "JPG", session: otherOwner)
+        let olderReplacement = asset(3, "JPG", time: "1699999998000", session: otherOwner)
+        let newCard = [replacement, olderReplacement]
+        let previous = store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        let needsCutoff = CameraIncrementalScan(assets: newCard, boundaries: previous, cutoff: cutoff,
+            customCutoff: nil, format: .jpeg, includeUndated: false)
+        try check(needsCutoff.needsCutoffConfirmation && needsCutoff.assets.isEmpty,
+                  "A new card with a matching boundary pauses before omitting earlier photos")
+        let rescan = CameraIncrementalScan(assets: newCard, boundaries: previous, cutoff: cutoff,
+            customCutoff: olderReplacement.snapshot.captureDate, format: .jpeg, includeUndated: false)
+        try check(rescan.assets == [olderReplacement, replacement], "Confirming an earlier cutoff includes both photos on the new card")
+        let replacementJob = try store!.enqueue(device: device, connectionKey: "fixture", assets: rescan.assets.map(\.snapshot),
+            incremental: CameraIncrementalPlan(format: .jpeg, jpeg: plan.jpeg, boundary: nil, owner: otherOwner, boundaries: rescan.nextBoundaries))
+        let replacementBytes = Data([0xff, 0xd8, 0xff, 4, 3, 2, 1])
+        _ = try write(jpeg, item: replacementJob.items[0], job: replacementJob, store: store!)
+        let newOriginal = try write(replacementBytes, item: replacementJob.items[1], job: replacementJob, store: store!)
+        try check(newOriginal.id != reuse.id && Data(contentsOf: store!.verifiedURL(newOriginal.id)) == replacementBytes,
+                  "A same-metadata JPEG with different bytes is saved as a distinct original")
+        let after = store!.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        let sameListing = CameraIncrementalScan(assets: newCard, boundaries: after, cutoff: cutoff, customCutoff: nil,
+            format: .jpeg, includeUndated: false)
+        try check(after["JPEG"]?.owner == otherOwner && !sameListing.needsCutoffConfirmation && sameListing.assets.isEmpty,
+                  "The confirmed scan commits a checkpoint for the current listing")
+    }
+
+    private static func switchingFormatsFindsBothUnimportedJPEGs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-camera-format-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "camera", operations: [])
+        let store = try CameraOriginalStore(directory: root)
+        let owner = UUID()
+        let cutoff = Date(timeIntervalSince1970: 1_699_999_999)
+        let rawBytes = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3])
+        let raw = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0, name: "DSC001.ARW",
+                                      size: 7, created: "1700000000000", modified: "")
+        let pairedJPEG = CameraAssetSnapshot(content: 1, file: 2, storage: 0, format: 0, name: "DSC001.JPG",
+                                             size: 7, created: "1700000000000", modified: "")
+        let laterJPEG = CameraAssetSnapshot(content: 2, file: 1, storage: 0, format: 0, name: "DSC002.JPG",
+                                            size: 7, created: "1700003600000", modified: "")
+        let assets = [raw, pairedJPEG, laterJPEG].map { CameraRemoteAsset(owner: owner, snapshot: $0) }
+        let rawScan = CameraIncrementalScan(assets: assets, boundaries: [:], cutoff: cutoff, customCutoff: nil,
+                                            format: .raw, includeUndated: false)
+        try check(rawScan.nextBoundaries.count == 1 && rawScan.nextBoundaries["RAW"]?.date == raw.captureDate,
+                  "The scan advances only the kind and date of selected files")
+        let legacy = CameraImportBoundary(date: laterJPEG.captureDate!, storage: [0], keys: [laterJPEG.key],
+                                          anchors: [laterJPEG.anchorKey], owner: owner)
+        let job = try store.enqueue(device: device, connectionKey: "fixture", assets: rawScan.assets.map(\.snapshot),
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: legacy, owner: owner))
+        _ = try write(rawBytes, item: job.items[0], job: job, store: store)
+        let migrated = store.snapshot.incrementalBoundaries(device: device, connectionKey: "fixture")
+        try check(migrated["RAW"]?.date == raw.captureDate && migrated["JPEG"] == nil,
+                  "Legacy manifests rebuild the checkpoint from published items")
+        let jpegScan = CameraIncrementalScan(assets: assets, boundaries: migrated, cutoff: cutoff,
+                                            customCutoff: nil, format: .jpeg, includeUndated: false)
+        try check(jpegScan.assets.map(\.snapshot) == [pairedJPEG, laterJPEG],
+                  "A completed RAW import leaves both unimported JPEGs eligible")
+        let combined = CameraIncrementalScan(assets: assets, boundaries: migrated, cutoff: cutoff,
+                                            customCutoff: nil, format: .rawAndJPEG, includeUndated: false)
+        try check(combined.assets.map(\.snapshot) == [pairedJPEG, laterJPEG],
+                  "A combined scan applies the checkpoint of each format")
+    }
+
+    private static func adjustedJPEG() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-adjusted-jpeg-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "camera", operations: [])
+        let context = CGContext(data: nil, width: 80, height: 40, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(red: 0.7, green: 0.1, blue: 0.2, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 80, height: 40))
+        let source = NSMutableData()
+        let encoder = CGImageDestinationCreateWithData(source, "public.jpeg" as CFString, 1, nil)!
+        CGImageDestinationAddImage(encoder, context.makeImage()!, [
+            kCGImagePropertyOrientation: 6,
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:11:11 10:00:00"]
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(encoder) else { throw CameraProtocolError.invalid("JPEG fixture could not be written") }
+        let bytes = source as Data
+        let photo = CameraAssetSnapshot(content: 1, file: 0, storage: 0, format: 0, name: "DSC001.JPG",
+                                        size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let plan = CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72), boundary: nil)
+        let first = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo], incremental: plan)
+        let saved = try write(bytes, item: first.items[0], job: first, store: store)
+        let url = try store.verifiedURL(saved.id)
+        let output = CGImageSourceCreateWithURL(url as CFURL, nil)!
+        let props = CGImageSourceCopyPropertiesAtIndex(output, 0, nil) as? [CFString: Any]
+        let exif = props?[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        try check(props?[kCGImagePropertyPixelWidth] as? Int == 20 && props?[kCGImagePropertyPixelHeight] as? Int == 40
+                  && (props?[kCGImagePropertyOrientation] as? Int ?? 1) == 1
+                  && exif?[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:11:11 10:00:00",
+                  "Adjusted JPEG respects the long edge, orientation and original capture date")
+        let retry = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo], incremental: plan)
+        let reused = try write(bytes, item: retry.items[0], job: retry, store: store)
+        let plain = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo])
+        let original = try write(bytes, item: plain.items[0], job: plain, store: store)
+        try check(reused.id == saved.id && original.id != saved.id && store.snapshot.originals.count == 2,
+                  "Repeated JPEG settings reuse the derivative while original JPEG remains distinct")
+        try check(try Data(contentsOf: store.verifiedURL(original.id)) == bytes, "Original JPEG remains byte-for-byte intact")
+        let lowerQuality = CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(adjust: true, longEdge: 40, quality: 18), boundary: nil)
+        let low = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo], incremental: lowerQuality)
+        let compressed = try write(bytes, item: low.items[0], job: low, store: store)
+        try check(compressed.digest != saved.digest && compressed.id != saved.id, "Changing quality changes the encoded JPEG at the same size")
+        let noUpscale = CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(adjust: true, longEdge: 2048, quality: 90), boundary: nil)
+        let largerLimit = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo], incremental: noUpscale)
+        let kept = try write(bytes, item: largerLimit.items[0], job: largerLimit, store: store)
+        let keptSource = try CGImageSourceCreateWithURL(store.verifiedURL(kept.id) as CFURL, nil)!
+        let keptImage = CGImageSourceCreateImageAtIndex(keptSource, 0, nil)
+        try check(keptImage?.width == 40 && keptImage?.height == 80, "A long-edge ceiling never enlarges the camera JPEG")
+
+        let manualRawBytes = Data([0x49, 0x49, 0x2a, 0x00, 7, 8, 9, 10])
+        let manualRaw = CameraAssetSnapshot(content: 2, file: 0, storage: 0, format: 0, name: "DSC002.ARW",
+                                            size: UInt64(manualRawBytes.count), created: "1700000001000", modified: "")
+        let manualJpg = CameraAssetSnapshot(content: 3, file: 0, storage: 0, format: 0, name: "DSC002.JPG",
+                                            size: UInt64(bytes.count), created: "1700000001000", modified: "")
+        let manualAdjustedOptions = CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72)
+        let manualAdjustedJob = try store.enqueue(device: device, connectionKey: "fixture",
+                                                  assets: [manualRaw, manualJpg], jpeg: manualAdjustedOptions)
+        let manualSavedRaw = try write(manualRawBytes, item: manualAdjustedJob.items[0], job: manualAdjustedJob, store: store)
+        let manualSavedJpg = try write(bytes, item: manualAdjustedJob.items[1], job: manualAdjustedJob, store: store)
+        let manualOut = CGImageSourceCreateWithURL(try store.verifiedURL(manualSavedJpg.id) as CFURL, nil)!
+        let manualProps = CGImageSourceCopyPropertiesAtIndex(manualOut, 0, nil) as? [CFString: Any]
+        let manualRawData = try Data(contentsOf: store.verifiedURL(manualSavedRaw.id))
+        try check(manualSavedRaw.jpegSource == nil && manualRawData == manualRawBytes
+                  && manualSavedJpg.jpegSource?.options == manualAdjustedOptions
+                  && manualProps?[kCGImagePropertyPixelWidth] as? Int == 20
+                  && manualProps?[kCGImagePropertyPixelHeight] as? Int == 40,
+                  "Manual enqueue with jpeg options shrinks JPEG while leaving RAW byte-for-byte intact")
+
+        let manualPlainJob = try store.enqueue(device: device, connectionKey: "fixture", assets: [manualJpg],
+                                               jpeg: CameraJPEGOptions(adjust: false))
+        let manualPlainJpg = try write(bytes, item: manualPlainJob.items[0], job: manualPlainJob, store: store)
+        let manualPlainData = try Data(contentsOf: store.verifiedURL(manualPlainJpg.id))
+        try check(manualPlainJpg.id != manualSavedJpg.id && manualPlainJpg.jpegSource == nil
+                  && manualPlainData == bytes,
+                  "Manual enqueue with adjust=false stores full-resolution original distinct from adjusted JPEG")
+
+        var largeJpg = Data([0xff, 0xd8, 0xff, 0xe0, 0, 16]) + Data(repeating: 0x44, count: 220_000)
+        largeJpg[largeJpg.count - 2] = 0xff; largeJpg[largeJpg.count - 1] = 0xd9
+        let largeSnap = CameraAssetSnapshot(content: 4, file: 0, storage: 0, format: 0, name: "DSC003.JPG",
+                                            size: UInt64(largeJpg.count), created: "1700000002000", modified: "")
+        let largePlainJob = try store.enqueue(device: device, connectionKey: "fixture", assets: [largeSnap])
+        _ = try write(largeJpg, item: largePlainJob.items[0], job: largePlainJob, store: store)
+        let largeAdjustedProbe = try store.enqueue(device: device, connectionKey: "fixture", assets: [largeSnap],
+                                                   jpeg: manualAdjustedOptions)
+        try check(store.samplingCandidate(job: largeAdjustedProbe.id, item: largeAdjustedProbe.items[0].id) == nil,
+                  "Manual job with jpeg.adjust=true never reuses unadjusted local copy via sampling")
+    }
+
+    @available(macOS 15.0, iOS 18.0, *)
+    private static func isoGainMapJPEG() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-iso-camera-jpeg-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "camera", operations: [])
+        let bytes: Data
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_ISO_JPEG"] {
+            bytes = try Data(contentsOf: URL(fileURLWithPath: path))
+        } else {
+            bytes = try makeISOGainMapFixture()
+        }
+        let source = CGImageSourceCreateWithData(bytes as CFData, nil)!
+        try check(CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeISOGainMap) != nil &&
+                  CGImageSourceCopyAuxiliaryDataInfoAtIndex(source, 0, kCGImageAuxiliaryDataTypeHDRGainMap) == nil,
+                  "Fixture has an ISO gain map without an Apple HDR gain map")
+        let photo = CameraAssetSnapshot(content: 1, file: 0, storage: 0, format: 0, name: "DSCISO.JPG",
+            size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let plan = CameraIncrementalPlan(format: .jpeg, jpeg: CameraJPEGOptions(adjust: true, longEdge: 32), boundary: nil)
+        let adjusted = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo], incremental: plan)
+        do {
+            _ = try write(bytes, item: adjusted.items[0], job: adjusted, store: store)
+            try check(false, "JPEG adjustment must preserve the ISO gain map by declining re-encoding")
+        } catch CameraProtocolError.jpegGainMapAdjustment {
+            try check(store.snapshot.originals.isEmpty && !store.snapshot.jobs[0].complete,
+                      "JPEG adjustment must preserve the ISO gain map by declining re-encoding")
+        }
+        let original = try store.enqueue(device: device, connectionKey: "fixture", assets: [photo])
+        let saved = try write(bytes, item: original.items[0], job: original, store: store)
+        try check(try Data(contentsOf: store.verifiedURL(saved.id)) == bytes, "Saving the ISO JPEG as original preserves every byte")
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_GAIN_MAP_OUTPUT"] {
+            try bytes.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
+
+    @available(macOS 15.0, iOS 18.0, *)
+    private static func makeISOGainMapFixture() throws -> Data {
+        let edge = 64
+        let pixels = (0..<(edge * edge * 4)).map { $0 % 4 == 3 ? 1 : Float($0 % 64) / 16 }
+        let provider = pixels.withUnsafeBytes { CGDataProvider(data: Data($0) as CFData)! }
+        let flags = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union([.floatComponents, .byteOrder32Little])
+        let hdr = CGImage(width: edge, height: edge, bitsPerComponent: 32, bitsPerPixel: 128, bytesPerRow: edge * 16,
+            space: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!, bitmapInfo: flags, provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let input = NSMutableData()
+        let encoder = CGImageDestinationCreateWithData(input, "public.jpeg" as CFString, 1, nil)!
+        CGImageDestinationAddImage(encoder, CGImageCreateCopyWithContentHeadroom(4, hdr)!, [
+            kCGImageDestinationEncodeRequest: kCGImageDestinationEncodeToISOGainmap
+        ] as CFDictionary)
+        try check(CGImageDestinationFinalize(encoder), "Encode the ISO-only JPEG fixture")
+        return input as Data
+    }
+
+    private static func recoverPreservesNonemptyOrphans() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-preserve-\(UUID())")
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let raw = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3, 4])
+        func makeDirectory(_ name: String = UUID().uuidString.lowercased()) throws -> URL {
+            let url = originalsRoot.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            return url
+        }
+        let badHeader = try makeDirectory().appendingPathComponent("DSC_BAD.ARW")
+        let badBytes = Data([0, 1, 2, 3, 4, 5, 6, 7])
+        try badBytes.write(to: badHeader)
+        let oversized = try makeDirectory().appendingPathComponent("DSC_LARGE.ARW")
+        try raw.write(to: oversized)
+        let handle = try FileHandle(forWritingTo: oversized)
+        let oversizedSize = UInt64(1 << 30) + 1
+        let truncateResult = ftruncate(handle.fileDescriptor, off_t(oversizedSize))
+        try handle.close()
+        try check(truncateResult == 0, "Creates a sparse 1 GiB + 1 byte RAW with a valid header")
+        let multi = try makeDirectory()
+        let first = multi.appendingPathComponent("DSC_A.ARW"), second = multi.appendingPathComponent("DSC_B.ARW")
+        try raw.write(to: first); try raw.write(to: second)
+        let zero = try makeDirectory().appendingPathComponent("DSC_ZERO.ARW")
+        try Data().write(to: zero)
+        let residue = try makeDirectory().appendingPathComponent("DSC_TMP.ARW.partial")
+        try raw.write(to: residue)
+        let nested = try makeDirectory()
+        try FileManager.default.createDirectory(at: nested.appendingPathComponent("nested"), withIntermediateDirectories: true)
+        let mixedCase = try makeDirectory("aBcD0000-0000-0000-0000-000000000001")
+        let mixedFile = mixedCase.appendingPathComponent("DSC_CASE.ARW")
+        try raw.write(to: mixedFile)
+        let uppercaseEmpty = try makeDirectory("ABCD0000-0000-0000-0000-000000000002")
+        let unreadable = try makeDirectory().appendingPathComponent("DSC_UNREADABLE.ARW")
+        try raw.write(to: unreadable)
+        let inaccessible = try makeDirectory()
+        let inaccessibleFile = inaccessible.appendingPathComponent("DSC_BLOCKED.ARW")
+        try raw.write(to: inaccessibleFile)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: unreadable.path)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inaccessible.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: unreadable.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: inaccessible.path)
+        try check(access(unreadable.path, R_OK) != 0 && access(inaccessible.path, R_OK) != 0,
+                  "Permission fixtures really deny RAW reads and directory enumeration")
+
+        var writes = 0
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(store!.snapshot.originals.isEmpty && writes == 0,
+                  "recover() skips invalid nonempty and non-lowercase UUID directories without indexing or manifest writes")
+        try check(try Data(contentsOf: badHeader) == badBytes,
+                  "A compliant .ARW name with bad magic is preserved and never re-adopted")
+        let size = try oversized.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        try check(size == Int(oversizedSize), "An over-budget sparse RAW remains on disk without re-adoption")
+        try check(try Data(contentsOf: first) == raw && Data(contentsOf: second) == raw,
+                  "A two-original directory preserves both files and adopts neither")
+        for file in [zero, residue, nested, mixedFile, uppercaseEmpty, unreadable, inaccessible] {
+            try check(FileManager.default.fileExists(atPath: file.path), "Unadmitted entry is retained: \(file.lastPathComponent)")
+        }
+        let pruned = try store!.pruneExportedOriginals(exportedContentIdentifiers: [SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()])
+        try check(pruned.originals == 0 && FileManager.default.fileExists(atPath: first.path) &&
+                  FileManager.default.fileExists(atPath: second.path),
+                  "Export evidence cannot recursively prune an unadmitted multi-original directory")
+        store = nil
+        writes = 0
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(store!.snapshot.originals.isEmpty && writes == 0,
+                  "Repeated init preserves exceptional orphans without manifest uniqueness failures")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: unreadable.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: inaccessible.path)
+        try check(try Data(contentsOf: unreadable) == raw && Data(contentsOf: inaccessibleFile) == raw,
+                  "Transient read and enumeration failures preserve the only original bytes")
+        store = nil
+        writes = 0
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(Set(store!.snapshot.originals.map(\.name)) == ["DSC_UNREADABLE.ARW", "DSC_BLOCKED.ARW"] && writes == 1,
+                  "A later init re-adopts preserved originals after permissions recover")
+    }
+
+    private static func recoverRetriesEmptyDirectoryRemoval() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-remove-\(UUID())")
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: originalsRoot.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        do { _ = try CameraOriginalStore(directory: root) }
+        let empty = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: originalsRoot.path)
+        try check(access(originalsRoot.path, W_OK) != 0, "Empty-directory fixture really denies deletion")
+        var writes = 0
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(FileManager.default.fileExists(atPath: empty.path) && writes == 0,
+                  "A failed empty-directory removal preserves the directory and does not abort init")
+        store = nil
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: originalsRoot.path)
+        store = try CameraOriginalStore(directory: root) { writes += 1 }
+        try check(!FileManager.default.fileExists(atPath: empty.path) && writes == 0 && store!.snapshot.originals.isEmpty,
+                  "A later init retries empty-directory removal without manifest writes")
+    }
+
+    private static func recoverOrdersReAdoptedOriginals() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-order-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let fixtures = [("00000000-0000-0000-0000-000000000001", "DSC_Z.ARW"),
+                        ("00000000-0000-0000-0000-000000000003", "DSC_A.ARW"),
+                        ("00000000-0000-0000-0000-000000000002", "DSC_A.ARW")]
+        for (id, name) in fixtures {
+            let directory = originalsRoot.appendingPathComponent(id, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let file = directory.appendingPathComponent(name)
+            try Data([0x49, 0x49, 0x2a, 0, 1]).write(to: file)
+            try Data([1]).write(to: directory.appendingPathComponent(".DS_Store"))
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        }
+        let store = try CameraOriginalStore(directory: root)
+        try check(store.snapshot.originals.map(\.name) == ["DSC_A.ARW", "DSC_A.ARW", "DSC_Z.ARW"] &&
+                  store.snapshot.originals.map(\.id) == [fixtures[2].0, fixtures[1].0, fixtures[0].0].map { UUID(uuidString: $0)! },
+                  "Equal-mtime originals sort by name then UUID, ignoring .DS_Store")
+    }
+
+    private static func recoverSweepsOrphanDirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recover-orphan-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "Fixture", firmware: "1.00", serial: "orphan", operations: [])
+        let bytes1 = Data([0xff, 0xd8, 0xff, 1, 2, 3, 4])
+        let bytes2 = Data([0xff, 0xd8, 0xff, 5, 6, 7, 8])
+        let bytes3 = Data([0xff, 0xd8, 0xff, 9, 10, 11, 12])
+        func snap(_ content: UInt32, _ name: String, _ data: Data) -> CameraAssetSnapshot {
+            CameraAssetSnapshot(content: content, file: 1, storage: 0, format: 0, name: name,
+                                size: UInt64(data.count), created: "1700000000000", modified: "")
+        }
+
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let job = try store!.enqueue(device: device, connectionKey: "fixture", assets: [
+            snap(1, "DSC00001.JPG", bytes1),
+            snap(2, "DSC00002.JPG", bytes2),
+            snap(3, "DSC00003.JPG", bytes3)
+        ])
+        let kept = try write(bytes1, item: job.items[0], job: job, store: store!)
+        let preparedValid = try write(bytes2, item: job.items[1], job: job, store: store!)
+        let preparedMissing = try write(bytes3, item: job.items[2], job: job, store: store!)
+
+        // Simulate crash mid-publish for items 2 (file exists) and 3 (file missing, empty dir remains),
+        // plus a complete orphan UUID directory (re-adopted), empty orphan UUID dirs (deleted) and nonempty residues (preserved),
+        // a UUID symlink (preserved), and a non-UUID metadata file in originals/.
+        var manifest = store!.snapshot
+        manifest.jobs[0].items[1].phase = .prepared
+        manifest.originals[1].availability = .prepared
+        manifest.jobs[0].items[2].phase = .prepared
+        manifest.originals[2].availability = .prepared
+        try FileManager.default.removeItem(at: store!.originalURL(preparedMissing))
+
+        let originalsRoot = root.appendingPathComponent("originals", isDirectory: true)
+        let orphanCompleteID = UUID()
+        let orphanCompleteDir = originalsRoot.appendingPathComponent(orphanCompleteID.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanCompleteDir, withIntermediateDirectories: true)
+        let orphanBytes = Data([0x49, 0x49, 0x2a, 0, 1, 2, 3, 4])
+        let orphanFile = orphanCompleteDir.appendingPathComponent("DSC_ORPHAN.ARW")
+        try orphanBytes.write(to: orphanFile)
+        let expectedOrphanMtime = Date(timeIntervalSince1970: 1_700_000_123)
+        try FileManager.default.setAttributes([.modificationDate: expectedOrphanMtime], ofItemAtPath: orphanFile.path)
+
+        let orphanEmptyDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanEmptyDir, withIntermediateDirectories: true)
+        let orphanResidueDir = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: orphanResidueDir, withIntermediateDirectories: true)
+        try Data([0x49, 0x49, 0x2a, 0]).write(to: orphanResidueDir.appendingPathComponent("DSC_TMP.ARW.partial"))
+
+        let symlinkTargetDir = root.appendingPathComponent("external-symlink-target", isDirectory: true)
+        try FileManager.default.createDirectory(at: symlinkTargetDir, withIntermediateDirectories: true)
+        let symlinkTargetFile = symlinkTargetDir.appendingPathComponent("keep.txt")
+        try Data([7, 8]).write(to: symlinkTargetFile)
+        let uuidSymlink = originalsRoot.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: uuidSymlink, withDestinationURL: symlinkTargetDir)
+
+        let nonUUIDMarker = originalsRoot.appendingPathComponent(".keep")
+        try Data([1]).write(to: nonUUIDMarker)
+        store = nil
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+
+        var recoverWrites = 0
+        store = try CameraOriginalStore(directory: root) { recoverWrites += 1 }
+        try check(recoverWrites == 1,
+                  "recover() coalesces .prepared promotion/discard and orphan re-adoption into 1 manifest write (actual: \(recoverWrites))")
+        try check(!FileManager.default.fileExists(atPath: orphanEmptyDir.path) &&
+                  FileManager.default.fileExists(atPath: orphanResidueDir.path),
+                  "recover() removes only empty UUID orphan directories and preserves nonempty residues")
+        let missingDir = originalsRoot.appendingPathComponent(preparedMissing.id.uuidString.lowercased(), isDirectory: true)
+        try check(!FileManager.default.fileExists(atPath: missingDir.path),
+                  "recover() removes empty UUID directory after missing .prepared source is discarded")
+        let symlinkValues = try? uuidSymlink.resourceValues(forKeys: [.isSymbolicLinkKey])
+        try check(FileManager.default.fileExists(atPath: nonUUIDMarker.path) &&
+                  symlinkValues?.isSymbolicLink == true &&
+                  FileManager.default.fileExists(atPath: symlinkTargetFile.path),
+                  "recover() preserves non-UUID entries and UUID symlinks in originals/")
+
+        let expectedOrphanDigest = SHA256.hash(data: orphanBytes).map { String(format: "%02x", $0) }.joined()
+        let adoptedEntry = store!.snapshot.originals.first { $0.id == orphanCompleteID }
+        try check(store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id, orphanCompleteID] &&
+                  adoptedEntry?.name == "DSC_ORPHAN.ARW" &&
+                  adoptedEntry?.size == UInt64(orphanBytes.count) &&
+                  adoptedEntry?.digest == expectedOrphanDigest &&
+                  adoptedEntry?.availability == .available &&
+                  abs((adoptedEntry?.savedAt.timeIntervalSince1970 ?? 0) - expectedOrphanMtime.timeIntervalSince1970) < 2 &&
+                  store!.snapshot.jobs[0].items[0].phase == .saved &&
+                  store!.snapshot.jobs[0].items[1].phase == .saved &&
+                  store!.snapshot.jobs[0].items[2].phase == .interrupted,
+                  "recover() re-adopts complete orphan as .available and retains referenced .available/.prepared originals")
+        let keptData = try Data(contentsOf: store!.verifiedURL(kept.id))
+        let preparedData = try Data(contentsOf: store!.verifiedURL(preparedValid.id))
+        let adoptedData = try Data(contentsOf: store!.verifiedURL(orphanCompleteID))
+        try check(keptData == bytes1 && preparedData == bytes2 && adoptedData == orphanBytes,
+                  "recover() preserves file contents for .available, promoted .prepared, and re-adopted originals")
+
+        store = nil
+        var secondRecoverWrites = 0
+        store = try CameraOriginalStore(directory: root) { secondRecoverWrites += 1 }
+        try check(secondRecoverWrites == 0 && store!.snapshot.originals.count == 3,
+                  "recover() is idempotent and performs 0 manifest writes after re-adoption (actual: \(secondRecoverWrites))")
+
+        let noEvidencePrune = try store!.pruneExportedOriginals()
+        try check(noEvidencePrune.originals == 0 && store!.snapshot.originals.count == 3,
+                  "pruneExportedOriginals() never auto-deletes a re-adopted original without export evidence")
+        let exportedPrune = try store!.pruneExportedOriginals(exportedContentIdentifiers: [expectedOrphanDigest])
+        try check(exportedPrune.originals == 1 && exportedPrune.freedBytes == UInt64(orphanBytes.count) &&
+                  !FileManager.default.fileExists(atPath: orphanCompleteDir.path) &&
+                  store!.snapshot.originals.map(\.id) == [kept.id, preparedValid.id],
+                  "pruneExportedOriginals() reclaims exported re-adopted original and removes its directory")
+    }
+
+    /// 统一整摘要账目：直连 `Self.hash`（含 recover/jpeg 重编码）+ FileDigestCache 计算入口。
+    /// 断言读它，任何绕过缓存的直连整算都无法假绿。
+    private static func totalDigestWork() -> Int {
+        CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+    }
+
+    private static func completeReusesStreamedDigestWithoutRehashingPartial() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-complete-dedup-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0001", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 1, format: 0xb101,
+                                           name: "DSC00010.ARW", size: UInt64(bytes.count), created: "1700000000000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let beforeComplete = totalDigestWork()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let hashWork = totalDigestWork() - beforeComplete
+        try check(hashWork == 0 && saved.digest == digest && saved.size == UInt64(bytes.count),
+                  "complete() reuses streamed digest without re-hashing .partial (actual hashes: \(hashWork))")
+
+        let badJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [
+            CameraAssetSnapshot(content: 2, file: 2, storage: 1, format: 0xb101,
+                                name: "DSC00011.ARW", size: UInt64(bytes.count), created: "1700000001000", modified: "")
+        ])
+        let badTarget = try store.begin(job: badJob.id, item: badJob.items[0].id)
+        try badTarget.handle.write(contentsOf: Data(bytes.dropLast()))
+        try badTarget.handle.close()
+        var sizeRejected = false
+        do {
+            _ = try store.complete(job: badJob.id, item: badJob.items[0].id, digest: digest)
+        } catch CameraProtocolError.invalid(_) {
+            sizeRejected = true
+        }
+        try check(sizeRejected, "complete() still rejects .partial whose file size differs from asset size")
+    }
+
+    private static func verifiedURLReusesDigestCacheAcrossOpens() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-verified-digest-cache-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let bytes = Data([73, 73, 42, 0, 1, 2, 3, 4])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0002", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 3, file: 3, storage: 1, format: 0xb101,
+                                           name: "DSC00012.ARW", size: UInt64(bytes.count), created: "1700000002000", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let url = try store.verifiedURL(saved.id)
+        let openedOnce = FileDigestCache.shared.digestComputeCount(for: url)
+        _ = try store.verifiedURL(saved.id)
+        let openedTwice = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(openedOnce == 1 && openedTwice == openedOnce,
+                  "verifiedURL computes the digest once and reuses FileDigestCache across opens (actual: \(openedOnce), \(openedTwice))")
+        let writer = try FileHandle(forWritingTo: url)
+        defer { try? writer.close() }
+        try writer.seek(toOffset: 4)
+        try writer.write(contentsOf: Data([99]))
+        var changeRejected = false
+        do { _ = try store.verifiedURL(saved.id) } catch CameraProtocolError.invalid(_) { changeRejected = true }
+        let afterChange = FileDigestCache.shared.digestComputeCount(for: url)
+        try check(changeRejected && afterChange == openedOnce + 1,
+                  "verifiedURL recomputes through the cache and still rejects in-place same-size content changes")
+    }
+
+    private static func samplingValidationAndReuseComputeDigestOnce() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-digest-once-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        var bytes = Data(repeating: 71, count: 200_003)
+        bytes.replaceSubrange(0..<4, with: [73, 73, 42, 0])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0003", operations: [0x923c, 0x923d])
+        let savedSnapshot = CameraAssetSnapshot(content: 5, file: 5, storage: 0, format: 0,
+                                                name: "DSC00021.ARW", size: UInt64(bytes.count), created: "1700000021000", modified: "")
+        let savedJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [savedSnapshot])
+        let savedTarget = try store.begin(job: savedJob.id, item: savedJob.items[0].id)
+        try savedTarget.handle.write(contentsOf: bytes)
+        try savedTarget.handle.close()
+        let saved = try store.complete(job: savedJob.id, item: savedJob.items[0].id, digest: digest)
+        let pendingSnapshot = CameraAssetSnapshot(content: 6, file: 6, storage: 0, format: 0,
+                                                  name: "DSC00021.ARW", size: UInt64(bytes.count), created: "1700000021000", modified: "")
+        let pendingJob = try store.enqueue(device: identity, connectionKey: "fixture", assets: [pendingSnapshot])
+        let base = totalDigestWork()
+        guard let candidate = store.samplingCandidate(job: pendingJob.id, item: pendingJob.items[0].id) else {
+            try check(false, "samplingCandidate finds the matching saved original for reuse"); fatalError("unreachable")
+        }
+        let afterValidation = totalDigestWork()
+        try check(afterValidation == base + 1,
+                  "samplingCandidate validates the candidate with exactly one full digest (actual: \(afterValidation - base))")
+        let reused = try store.reuseSampledOriginal(job: pendingJob.id, item: pendingJob.items[0].id, sourceID: candidate.source.id)
+        let afterReuse = totalDigestWork()
+        try check(reused.id == saved.id && afterReuse == afterValidation,
+                  "reuseSampledOriginal re-validates through the fingerprint cache without a second full digest (actual delta: \(afterReuse - afterValidation))")
+    }
+
+    private static func thumbnailURLSkipsFullHashAndRejectsInvalidStates() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-thumbnail-url-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var manifestWrites = 0
+        let store = try CameraOriginalStore(directory: root) { manifestWrites += 1 }
+        var bytes = Data(repeating: 0x41, count: 200_003)
+        bytes.replaceSubrange(0..<4, with: [0x49, 0x49, 0x2a, 0x00])
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0508", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0,
+                                           name: "DSC00508.ARW", size: UInt64(bytes.count), created: "1700000050800", modified: "")
+        let job = try store.enqueue(device: identity, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let saved = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+
+        FileDigestCache.shared.invalidateAll()
+        let beforeWork = totalDigestWork()
+        let beforeWrites = manifestWrites
+        let thumbURL = try store.thumbnailURL(saved.id)
+        try check(thumbURL == store.originalURL(saved), "thumbnailURL returns expected original URL")
+        try check(totalDigestWork() - beforeWork == 0,
+                  "thumbnailURL performs 0 full-file SHA-256 computations (actual: \(totalDigestWork() - beforeWork))")
+        try check(manifestWrites == beforeWrites,
+                  "thumbnailURL is read-only and performs 0 manifest writes (actual: \(manifestWrites - beforeWrites))")
+
+        // Rejects unknown ID & .prepared
+        var threwUnknown = false
+        do { _ = try store.thumbnailURL(UUID()) } catch { threwUnknown = true }
+        try check(threwUnknown, "thumbnailURL rejects unknown sourceID")
+
+        // Rejects truncated size mismatch without mutating manifest
+        let originalData = try Data(contentsOf: thumbURL)
+        try Data(originalData.dropLast()).write(to: thumbURL)
+        var threwTruncated = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwTruncated = true }
+        try check(threwTruncated && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects size mismatch without writing manifest")
+
+        // Rejects symlink at original path
+        try FileManager.default.removeItem(at: thumbURL)
+        let externalFile = root.appendingPathComponent("external-target.arw")
+        try originalData.write(to: externalFile)
+        try FileManager.default.createSymbolicLink(at: thumbURL, withDestinationURL: externalFile)
+        var threwSymlink = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwSymlink = true }
+        try check(threwSymlink && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects symlinks via lstat without writing manifest")
+
+        // Rejects missing file without mutating manifest, then verifiedURL marks .changed/.missing and thumbnailURL still rejects
+        try FileManager.default.removeItem(at: thumbURL)
+        var threwMissing = false
+        do { _ = try store.thumbnailURL(saved.id) } catch { threwMissing = true }
+        try check(threwMissing && store.snapshot.originals[0].availability == .available && manifestWrites == beforeWrites,
+                  "thumbnailURL rejects missing file without mutating manifest availability")
+    }
+
+    private static func samplingCandidate10kHistoryLatencyAndIndexSync() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-10k-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0532", operations: [0x923c, 0x923d])
+        var rawBytes = Data(repeating: 0x52, count: 200_003)
+        rawBytes.replaceSubrange(0..<4, with: [0x49, 0x49, 0x2a, 0x00])
+        let rawDigest = SHA256.hash(data: rawBytes).map { String(format: "%02x", $0) }.joined()
+        let hitSnapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0,
+                                              name: "DSC_HIT.ARW", size: UInt64(rawBytes.count), created: "1700000100000", modified: "")
+        let missSnapshot = CameraAssetSnapshot(content: 2, file: 1, storage: 0x10001, format: 0x3801,
+                                               name: "DSC_MISS.ARW", size: UInt64(rawBytes.count), created: "20231114T221320", modified: "")
+
+        // Seed 1 real saved original + 200 jobs x 50 items = 10,000 historical saved items
+        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+        let seedJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot])
+        let savedHit = try write(rawBytes, item: seedJob.items[0], job: seedJob, store: store!)
+
+        var manifest = store!.snapshot
+        let dummySourceID = UUID()
+        let dummyOriginal = CameraStoredOriginal(
+            id: dummySourceID, name: "DSC_DUMMY.ARW", size: UInt64(rawBytes.count),
+            digest: rawDigest, savedAt: Date(), availability: .available, jpegSource: nil
+        )
+        manifest.originals.append(dummyOriginal)
+        for j in 0..<200 {
+            var items: [CameraTransferItem] = []
+            items.reserveCapacity(50)
+            for i in 0..<50 {
+                let snap = CameraAssetSnapshot(
+                    content: UInt32(j * 50 + i + 100), file: 1, storage: 0x10001, format: 0x3801,
+                    name: String(format: "DSC%03d%02d.ARW", j, i), size: UInt64(rawBytes.count),
+                    created: "20231114T221320", modified: ""
+                )
+                items.append(CameraTransferItem(id: UUID(), asset: snap, phase: .saved, sourceID: dummySourceID, digest: rawDigest, sourceDigest: rawDigest))
+            }
+            manifest.jobs.append(CameraTransferJob(
+                id: UUID(), camera: identity, connectionKey: "fixture",
+                createdAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(j)), items: items
+            ))
+        }
+        store = nil
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+        store = try CameraOriginalStore(directory: root)
+
+        let pendingJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot, missSnapshot])
+        let hitItemID = pendingJob.items[0].id
+        let missItemID = pendingJob.items[1].id
+
+        // Warm up FileDigestCache for the 1 real hit file so benchmark measures index lookup
+        let warm = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
+        try check(warm?.source.id == savedHit.id, "samplingCandidate finds hit original across 10,000-item history")
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        for round in 0..<500 {
+            if round % 2 == 0 {
+                let c = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
+                guard c?.source.id == savedHit.id else {
+                    try check(false, "samplingCandidate hit failed in round \(round)")
+                    return
+                }
+            } else {
+                let c = store!.samplingCandidate(job: pendingJob.id, item: missItemID)
+                guard c == nil else {
+                    try check(false, "samplingCandidate miss unexpectedly matched in round \(round)")
+                    return
+                }
+            }
+        }
+        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000.0
+        try check(elapsedMs < 150.0,
+                  String(format: "500 samplingCandidate lookups over 10,000 legacy items finish in O(1) < 150ms (actual: %.2f ms)", elapsedMs))
+
+        // Index synchronization across reuseSampledOriginal, prune (shared & last), rollback, and recover()
+        let syncRoot = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-sync-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: syncRoot.path)
+            try? FileManager.default.removeItem(at: syncRoot)
+        }
+        var syncStore: CameraOriginalStore? = try CameraOriginalStore(directory: syncRoot)
+        let jobA = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        let origA = try write(rawBytes, item: jobA.items[0], job: jobA, store: syncStore!)
+        let jobB = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        guard let candB = syncStore!.samplingCandidate(job: jobB.id, item: jobB.items[0].id) else {
+            try check(false, "sync index locates hit after complete()"); return
+        }
+        _ = try syncStore!.reuseSampledOriginal(job: jobB.id, item: jobB.items[0].id, sourceID: candB.source.id)
+
+        // Add newer anchor job so jobA becomes prunable while jobB still shares origA
+        let otherSnapshot = CameraAssetSnapshot(content: 9, file: 1, storage: 0, format: 0,
+                                                name: "DSC_ANCHOR.ARW", size: 8, created: "1700000200000", modified: "")
+        let anchorJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [otherSnapshot])
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 1, 2, 3, 4]), item: anchorJob.items[0], job: anchorJob, store: syncStore!)
+
+        // Persist-failure rollback must roll back samplingCandidate index
+        let rollbackSnap = CameraAssetSnapshot(content: 77, file: 1, storage: 0, format: 0,
+                                               name: "DSC_ROLLBACK.ARW", size: UInt64(rawBytes.count), created: "1700000300000", modified: "")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: syncRoot.path)
+        var rollbackThrew = false
+        do {
+            try syncStore!.performBatch {
+                let rbJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [rollbackSnap])
+                _ = try write(rawBytes, item: rbJob.items[0], job: rbJob, store: syncStore!)
+            }
+        } catch {
+            rollbackThrew = true
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: syncRoot.path)
+        let probeAfterRollback = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [rollbackSnap])
+        try check(rollbackThrew && syncStore!.samplingCandidate(job: probeAfterRollback.id, item: probeAfterRollback.items[0].id) == nil,
+                  "performBatch persist failure rolls back samplingCandidate indices")
+
+        // Prune jobA only? No, both jobA and jobB share origA; mark jobB as non-exported? Same digest.
+        // Instead verify when jobA & jobB are pruned vs retained: remove jobA by making jobB unprunable?
+        // Actually both jobA and jobB are complete and non-newest, so both prune if exportedContentIdentifiers has origA.digest.
+        // To test partial prune where jobA is pruned and jobB survives: make jobB an incremental anchor!
+        let incAnchor = try syncStore!.enqueue(
+            device: identity, connectionKey: "sync", assets: [hitSnapshot],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(),
+                                               boundaries: ["RAW": CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_100), storage: [], keys: [], anchors: [], owner: UUID())])
+        )
+        let candInc = syncStore!.samplingCandidate(job: incAnchor.id, item: incAnchor.items[0].id)!
+        _ = try syncStore!.reuseSampledOriginal(job: incAnchor.id, item: incAnchor.items[0].id, sourceID: candInc.source.id)
+
+        let anchorJob2 = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [otherSnapshot])
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 9, 8, 7, 6]), item: anchorJob2.items[0], job: anchorJob2, store: syncStore!)
+
+        _ = try syncStore!.pruneExportedOriginals(exportedContentIdentifiers: [origA.digest])
+        let probeAfterPartialPrune = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterPartialPrune.id, item: probeAfterPartialPrune.items[0].id)?.source.id == origA.id,
+                  "Pruning one sharing job keeps samplingCandidate refcount alive via surviving job")
+
+        // Cover RAW boundary with a newer incremental job so incAnchor becomes prunable, then prune last sharing job
+        let coverSnap = CameraAssetSnapshot(content: 88, file: 1, storage: 0, format: 0,
+                                            name: "DSC_COVER.ARW", size: 8, created: "1700000400000", modified: "")
+        let coverJob = try syncStore!.enqueue(
+            device: identity, connectionKey: "sync", assets: [coverSnap],
+            incremental: CameraIncrementalPlan(format: .raw, jpeg: CameraJPEGOptions(), boundary: nil, owner: UUID(),
+                                               boundaries: ["RAW": CameraImportBoundary(date: Date(timeIntervalSince1970: 1_700_000_400), storage: [], keys: [], anchors: [], owner: UUID())])
+        )
+        _ = try write(Data([0x49, 0x49, 0x2a, 0x00, 5, 5, 5, 5]), item: coverJob.items[0], job: coverJob, store: syncStore!)
+        _ = try syncStore!.pruneExportedOriginals(exportedContentIdentifiers: [origA.digest])
+        let probeAfterFullPrune = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterFullPrune.id, item: probeAfterFullPrune.items[0].id) == nil,
+                  "Pruning last sharing job removes samplingCandidate from index")
+
+        // recover() promotion & discard sync
+        let recJob = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        let recOrig = try write(rawBytes, item: recJob.items[0], job: recJob, store: syncStore!)
+        var recManifest = syncStore!.snapshot
+        let rIdx = recManifest.jobs.firstIndex { $0.id == recJob.id }!
+        let oIdx = recManifest.originals.firstIndex { $0.id == recOrig.id }!
+        recManifest.jobs[rIdx].items[0].phase = .prepared
+        recManifest.originals[oIdx].availability = .prepared
+        syncStore = nil
+        try JSONEncoder().encode(recManifest).write(to: syncRoot.appendingPathComponent("manifest.json"), options: .atomic)
+        syncStore = try CameraOriginalStore(directory: syncRoot)
+        let probeAfterPromote = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterPromote.id, item: probeAfterPromote.items[0].id)?.source.id == recOrig.id,
+                  "recover() promoting .prepared -> .saved updates samplingCandidate index")
+
+        // Missing .prepared file discarded by recover() must NOT remain in samplingCandidate index
+        try FileManager.default.removeItem(at: syncStore!.originalURL(recOrig))
+        var discManifest = syncStore!.snapshot
+        let drIdx = discManifest.jobs.firstIndex { $0.id == recJob.id }!
+        let doIdx = discManifest.originals.firstIndex { $0.id == recOrig.id }!
+        discManifest.jobs[drIdx].items[0].phase = .prepared
+        discManifest.originals[doIdx].availability = .prepared
+        syncStore = nil
+        try JSONEncoder().encode(discManifest).write(to: syncRoot.appendingPathComponent("manifest.json"), options: .atomic)
+        syncStore = try CameraOriginalStore(directory: syncRoot)
+        let probeAfterDiscard = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
+        try check(syncStore!.samplingCandidate(job: probeAfterDiscard.id, item: probeAfterDiscard.items[0].id) == nil,
+                  "recover() discarding missing .prepared removes candidate from samplingCandidate index")
+    }
+
+    private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {
+        let target = try store.begin(job: job.id, item: item.id)
+        try target.handle.write(contentsOf: bytes)
+        try target.handle.close()
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        return try store.complete(job: job.id, item: item.id, digest: digest)
+    }
+}

@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/photo_geometry.h"
 
 #include <algorithm>
@@ -11,13 +12,7 @@ using namespace sony2fuji;
 
 namespace {
 
-int checks = 0;
-
-void check(bool passed, const std::string& message) {
-    ++checks;
-    if (!passed) throw std::runtime_error(message);
-}
-
+using rawlab::test::require;
 bool same(const RGB& first, const RGB& second) {
     return first.r == second.r && first.g == second.g && first.b == second.b;
 }
@@ -64,11 +59,11 @@ ImageData flip(const ImageData& source, bool horizontal, bool vertical) {
 
 void integerTests() {
     GeometryOptions options;
-    check(options.valid() && !options.active(), "Default geometry must be valid identity");
+    require(options.valid() && !options.active(), "Default geometry must be valid identity");
     const auto source = grid();
     auto image = source;
     const auto* storage = image.pixels.data();
-    check(applyGeometry(image, options) == ErrorCode::Success && same(image, source) &&
+    require(applyGeometry(image, options) == ErrorCode::Success && same(image, source) &&
         image.pixels.data() == storage, "Identity must preserve pixels and storage");
     auto rotated = source;
     for (int turns = 0; turns < 4; ++turns) {
@@ -76,13 +71,13 @@ void integerTests() {
             options.quarter_turns = turns;
             options.flip_horizontal = horizontal; options.flip_vertical = vertical;
             image = source;
-            check(applyGeometry(image, options) == ErrorCode::Success &&
+            require(applyGeometry(image, options) == ErrorCode::Success &&
                 same(image, flip(rotated, horizontal, vertical)), "Quarter-turn/flip order or pixels differ");
         }
         rotated = clockwise(rotated);
     }
     image = grid(1, 1); options.quarter_turns = 1;
-    check(applyGeometry(image, options) == ErrorCode::Success && same(image, grid(1, 1)),
+    require(applyGeometry(image, options) == ErrorCode::Success && same(image, grid(1, 1)),
         "One-pixel integer geometry must preserve the pixel");
 }
 
@@ -92,37 +87,37 @@ void cropTests() {
     options.crop_x = .25f; options.crop_y = .5f;
     options.crop_width = .5f; options.crop_height = .25f;
     auto image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 4 && image.height == 2,
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 4 && image.height == 2,
         "Asymmetric crop dimensions must use floor start/ceil end");
     for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x)
-        check(same(image.at(x, y), source.at(x + 2, y + 3)), "Integer crop must copy exact pixels");
+        require(same(image.at(x, y), source.at(x + 2, y + 3)), "Integer crop must copy exact pixels");
     options = GeometryOptions{};
     options.crop_x = .9f; options.crop_y = .9f;
     options.crop_width = .1f; options.crop_height = .1f;
     image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
         same(image.at(0, 0), source.at(7, 5)), "Last-pixel crop must include the requested edge");
     options = GeometryOptions{};
     options.crop_x = .125f; options.crop_width = .000001f;
     options.crop_y = .5f; options.crop_height = .000001f;
     image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
         same(image.at(0, 0), source.at(1, 3)), "Subpixel crop must retain the covering pixel");
     options.crop_x = .5f; options.crop_y = .5f;
     options.crop_width = options.crop_height = std::numeric_limits<float>::denorm_min();
     image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 1 && image.height == 1 &&
         same(image.at(0, 0), source.at(4, 3)), "Positive crop too small for double addition must retain one pixel");
     options = GeometryOptions{};
     options.crop_x = .2f; options.crop_width = .8f;
     options.crop_y = .2f; options.crop_height = .8f;
     image = source;
-    check(options.valid() && applyGeometry(image, options) == ErrorCode::Success &&
+    require(options.valid() && applyGeometry(image, options) == ErrorCode::Success &&
         image.width == 7 && image.height == 5 && same(image.at(6, 4), source.at(7, 5)),
         "Float UI boundary sums must retain the right and bottom edges");
     options.crop_width = .8000005f; options.crop_height = .8000005f;
     image = source;
-    check(options.valid() && applyGeometry(image, options) == ErrorCode::Success &&
+    require(options.valid() && applyGeometry(image, options) == ErrorCode::Success &&
         image.width == 7 && image.height == 5 && same(image.at(6, 4), source.at(7, 5)),
         "Accepted edge tolerance must clamp into the image canvas");
     options = GeometryOptions{};
@@ -131,10 +126,10 @@ void cropTests() {
     options.crop_y = .25f; options.crop_height = .25f;
     const auto oriented = flip(clockwise(source), true, false);
     image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 3 && image.height == 2,
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 3 && image.height == 2,
         "Crop must refer to the rotated/flipped canvas");
     for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x)
-        check(same(image.at(x, y), oriented.at(x + 3, y + 2)), "Post-orientation crop coordinates differ");
+        require(same(image.at(x, y), oriented.at(x + 3, y + 2)), "Post-orientation crop coordinates differ");
 }
 
 void angleTests() {
@@ -142,7 +137,7 @@ void angleTests() {
     for (float angle : {-45.f, -30.f, -1.f, 1.f, 30.f, 45.f}) {
         GeometryOptions options; options.straighten_degrees = angle;
         auto image = source;
-        check(applyGeometry(image, options) == ErrorCode::Success && image.width <= source.width &&
+        require(applyGeometry(image, options) == ErrorCode::Success && image.width <= source.width &&
             image.height <= source.height && image.width > 0 && image.height > 0,
             "Straighten must produce a smaller valid canvas");
         const double radians = double(angle) * 3.14159265358979323846 / 180;
@@ -155,21 +150,21 @@ void angleTests() {
             const double sx = 8 + cosine * dx + sine * dy;
             const double sy = 5 - sine * dx + cosine * dy;
             const RGB pixel = image.at(x, y);
-            check(sx >= -.5 && sx <= 16.5 && sy >= -.5 && sy <= 10.5,
+            require(sx >= -.5 && sx <= 16.5 && sy >= -.5 && sy <= 10.5,
                 "Straightened pixel support must remain within the source edges");
-            check(std::abs(pixel.g - (std::clamp(sx, 0.0, 16.0) + 1)) < 2e-5 &&
+            require(std::abs(pixel.g - (std::clamp(sx, 0.0, 16.0) + 1)) < 2e-5 &&
                 std::abs(pixel.b - (std::clamp(sy, 0.0, 10.0) + 1)) < 2e-5,
                 "Straighten must sample clockwise inverse coordinates bilinearly");
-            check(pixel.r >= 1 && pixel.r <= 187 && std::isfinite(pixel.r),
+            require(pixel.r >= 1 && pixel.r <= 187 && std::isfinite(pixel.r),
                 "Straighten must not introduce black or out-of-range samples");
         }
         options.crop_x = .25f; options.crop_width = .5f;
         options.crop_y = .25f; options.crop_height = .5f;
         auto cropped = source;
-        check(applyGeometry(cropped, options) == ErrorCode::Success, "Straighten plus crop must succeed");
+        require(applyGeometry(cropped, options) == ErrorCode::Success, "Straighten plus crop must succeed");
         const int left = int(std::floor(.25 * image.width)), top = int(std::floor(.25 * image.height));
         for (int y = 0; y < cropped.height; ++y) for (int x = 0; x < cropped.width; ++x)
-            check(same(cropped.at(x, y), image.at(left + x, top + y)),
+            require(same(cropped.at(x, y), image.at(left + x, top + y)),
                 "Crop after straighten must select the same samples without a second interpolation");
     }
     for (int turns = 0; turns < 4; ++turns) for (bool horizontal : {false, true}) for (bool vertical : {false, true}) {
@@ -179,21 +174,21 @@ void angleTests() {
         auto combined = source, oriented = source;
         for (int i = 0; i < turns; ++i) oriented = clockwise(oriented);
         oriented = flip(oriented, horizontal, vertical);
-        check(applyGeometry(combined, options) == ErrorCode::Success, "Combined geometry must succeed");
+        require(applyGeometry(combined, options) == ErrorCode::Success, "Combined geometry must succeed");
         options.quarter_turns = 0; options.flip_horizontal = options.flip_vertical = false;
         // Reversing the interpolation direction changes float rounding, but
         // must not change the mapped coordinates or resample the image twice.
-        check(applyGeometry(oriented, options) == ErrorCode::Success && near(combined, oriented),
+        require(applyGeometry(oriented, options) == ErrorCode::Success && near(combined, oriented),
             "Composed inverse must match lossless orientation followed by a single straighten");
     }
     ImageData flat(31, 21);
     std::fill(flat.pixels.begin(), flat.pixels.end(), RGB(2, -.25f, .1845f));
     GeometryOptions options; options.straighten_degrees = -37;
-    check(applyGeometry(flat, options) == ErrorCode::Success, "Flat straighten must succeed");
+    require(applyGeometry(flat, options) == ErrorCode::Success, "Flat straighten must succeed");
     for (const auto& pixel : flat.pixels)
-        check(same(pixel, RGB(2, -.25f, .1845f)), "Geometry must not clip negative or super-white values");
+        require(same(pixel, RGB(2, -.25f, .1845f)), "Geometry must not clip negative or super-white values");
     auto tiny = grid(1, 1);
-    check(applyGeometry(tiny, options) == ErrorCode::Success && same(tiny, grid(1, 1)),
+    require(applyGeometry(tiny, options) == ErrorCode::Success && same(tiny, grid(1, 1)),
         "One-pixel straighten must preserve its edge support");
 }
 
@@ -201,7 +196,7 @@ void invalidTests() {
     const auto source = grid();
     auto rejected = [&](const GeometryOptions& options) {
         auto image = source;
-        check(!options.valid() && applyGeometry(image, options) == ErrorCode::InvalidFormat && same(image, source),
+        require(!options.valid() && applyGeometry(image, options) == ErrorCode::InvalidFormat && same(image, source),
             "Invalid geometry must reject atomically");
     };
     for (auto field : {&GeometryOptions::crop_x, &GeometryOptions::crop_y,
@@ -226,14 +221,14 @@ void invalidTests() {
     options = GeometryOptions{}; options.crop_x = .2f; options.crop_width = .8000011f; rejected(options);
     options = GeometryOptions{}; options.crop_y = .2f; options.crop_height = .8000011f; rejected(options);
     ImageData empty;
-    check(applyGeometry(empty, GeometryOptions{}) == ErrorCode::InvalidFormat && empty.pixels.empty(),
+    require(applyGeometry(empty, GeometryOptions{}) == ErrorCode::InvalidFormat && empty.pixels.empty(),
         "Empty image must reject without mutation");
     auto damaged = source; damaged.pixels.pop_back();
     const auto previous = damaged;
-    check(applyGeometry(damaged, GeometryOptions{}) == ErrorCode::InvalidFormat && same(damaged, previous),
+    require(applyGeometry(damaged, GeometryOptions{}) == ErrorCode::InvalidFormat && same(damaged, previous),
         "Mismatched pixel count must reject without mutation");
     damaged = source; damaged.width = -1;
-    check(applyGeometry(damaged, GeometryOptions{}) == ErrorCode::InvalidFormat && damaged.width == -1,
+    require(applyGeometry(damaged, GeometryOptions{}) == ErrorCode::InvalidFormat && damaged.width == -1,
         "Negative image dimensions must reject without mutation");
 }
 
@@ -242,10 +237,10 @@ void invalidTests() {
 int main() {
     try {
         integerTests(); cropTests(); angleTests(); invalidTests();
-        std::cout << "PASS: " << checks << " geometry checks (identity, orientation, crop, straighten, validation)\n";
+        std::cout << "PASS: " << rawlab::test::checkCount() << " geometry rawlab::test::checkCount() (identity, orientation, crop, straighten, validation)\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL after " << checks << " geometry checks: " << error.what() << '\n';
+        std::cerr << "FAIL after " << rawlab::test::checkCount() << " geometry rawlab::test::checkCount(): " << error.what() << '\n';
         return 1;
     }
 }

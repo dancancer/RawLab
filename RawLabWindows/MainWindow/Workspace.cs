@@ -33,8 +33,7 @@ public partial class MainWindow
         }
     }
     private readonly WorkspaceLayout workspaceLayout = new();
-    private string workspaceWidthsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RawLab", "workspace-widths.json");
+    private string workspaceWidthsPath = "";
     private sealed record WorkspaceWidths(double Library, double Inspector);
     private (EditorAdjustmentTool Tool, bool Perspective)? suspendedTransform;
     private bool histogramExpanded = true;
@@ -172,7 +171,7 @@ public partial class MainWindow
         if (!ShowsInspector || suspendedTransform is not { } suspended) return;
         suspendedTransform = null;
         SelectTool(suspended.Tool);
-        if (choosingGeometry) GeometryEditor.ShowPerspective = suspended.Perspective;
+        if (toolMode == EditorToolMode.Geometry) GeometryEditor.ShowPerspective = suspended.Perspective;
     }
 
     private void LibraryToggle(object sender, RoutedEventArgs e)

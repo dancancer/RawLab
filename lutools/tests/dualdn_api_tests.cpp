@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/processing_version.h"
 #include "sony2fuji/raw_processor.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
@@ -75,6 +76,13 @@ int main(int argc, char** argv) {
             require(sony2fuji_session_prepare_ai(session, &request, cancel, nullptr) == SONY2FUJI_STATUS_CANCELLED,
                     "cancelled AI preparation did not stop");
             require(!std::filesystem::exists(argv[3]), "cancelled AI preparation wrote cache");
+            struct ForeignProgressException {};
+            auto foreignProgress = [](void*, int32_t, uint64_t, uint64_t) -> int32_t {
+                throw ForeignProgressException{};
+            };
+            require(sony2fuji_session_prepare_ai(session, &request, foreignProgress, nullptr) == SONY2FUJI_STATUS_PROCESSING_ERROR &&
+                    sony2fuji_session_get_ai_error(session)[0] && !std::filesystem::exists(argv[3]),
+                    "non-std::exception in AI progress callback escaped or skipped AI failure diagnostics");
             auto cancelInference = [](void*,int32_t phase,uint64_t,uint64_t) -> int32_t { return phase < 2; };
             const auto preparation = sony2fuji_session_prepare_ai(session,&request,cancelInference,nullptr);
             require(gpuAvailable ? preparation == SONY2FUJI_STATUS_CANCELLED :
@@ -82,6 +90,35 @@ int main(int argc, char** argv) {
                     "model preparation neither cancelled nor rejected missing GPU hardware");
             if (!gpuAvailable) std::cout << "PASS unavailable GPU rejected; hardware inference NOT REACHED\n";
             require(!std::filesystem::exists(argv[3]), "cancelled inference wrote a partial cache");
+            // r3/①：保存期取消——progress 只在 Saving 的 1/1（Phase 枚举 Saving=4）返回 0，
+            // 等价 camera_raw_hdr_tests 的 `phase != 4 || done == 0` 提交点回归：最终
+            // .scenecache/.rgbcache 必须尚未 rename 发布（Bayer 第一阶段 .rawcache 可保留）。
+            auto cancelOnSaved = [](void*,int32_t phase,uint64_t completed,uint64_t) -> int32_t {
+                return !(phase == 4 && completed >= 1);
+            };
+            const auto savingStatus = sony2fuji_session_prepare_ai(session,&request,cancelOnSaved,nullptr);
+            if (gpuAvailable) {
+                require(savingStatus == SONY2FUJI_STATUS_CANCELLED,
+                        "Saving-phase cancellation did not stop AI preparation");
+                const std::filesystem::path cacheDirectory = std::filesystem::u8path(argv[3]);
+                std::error_code present;
+                bool finalCachePublished = false;
+                if (std::filesystem::is_directory(cacheDirectory, present))
+                    for (const auto& entry : std::filesystem::directory_iterator(cacheDirectory)) {
+                        const auto name = entry.path().filename().string();
+                        const auto tail = [&](const char* suffix) {
+                            const size_t length = std::string(suffix).size();
+                            return name.size() >= length && name.compare(name.size() - length, length, suffix) == 0;
+                        };
+                        if (tail(".rgbcache") || tail(".scenecache")) finalCachePublished = true;
+                    }
+                require(!finalCachePublished, "Saving-phase cancellation published the final AI cache before returning CANCELLED");
+                std::filesystem::remove_all(cacheDirectory);
+                std::cout << "PASS Saving-phase cancellation publishes no final AI cache\n";
+            } else {
+                require(savingStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
+                        "Saving-phase prepare without GPU hardware did not fail as model rejection");
+            }
             const auto missingModel = std::string(argv[2])+"-missing";
             config.model_directory = missingModel.c_str();
             require(sony2fuji_session_set_ai_denoise(session,&config) == SONY2FUJI_STATUS_OK, "missing package configuration");
@@ -126,7 +163,11 @@ int main(int argc, char** argv) {
             const auto package = loadModelPackage(argv[2]);
             const auto runtimeIdentity = package.digest + ":" + NetworkGraph::runtimeVersion(static_cast<Backend>(config.backend));
             const auto identity = sha256Bytes(runtimeIdentity.data(), runtimeIdentity.size());
-            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(config.backend));
+            // 手工缓存必须复刻会话的解码语义：默认 processing_version=Legacy（sony2fuji_c.cpp）
+            // 走 legacy Sony crop，raw key 契约包含该维度；漏掉它会算出另一张照片的 key，
+            // 渲染按契约拒绝越权缓存（AI_NOT_READY）而非消费 fixture。
+            const auto rawKey = rawCacheKey(argv[1], identity, static_cast<int>(config.backend),
+                sony2fuji::usesLegacySonyCrop(sony2fuji::ProcessingVersion::Legacy));
             DenoiseCache cache(argv[3]);
             const auto sceneKey = sceneRGBCacheKey(rawKey,options);
             std::vector<float> zero(source.pixels.size()*3,0);

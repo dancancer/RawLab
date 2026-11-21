@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main
@@ -18,8 +19,8 @@ struct AdjustmentTransferTests {
         do { try operation(); fatalError(message) } catch { print("PASS: \(message)") }
     }
 
-    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> PhotoEditState {
-        PhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
+    static func state(_ settings: Adjustments = Adjustments(), film: String = "") -> MacPhotoEditState {
+        MacPhotoEditState(settings: settings, filmID: film, masterRecipeID: settings.masterRecipeID)
     }
 
     static var raw: MacAdjustmentTransferContext {
@@ -27,7 +28,7 @@ struct AdjustmentTransferTests {
             availableLookIDs: ["builtin:PROVIA.cube", "recipe:hamada_daylight_v2"])
     }
 
-    static func request(_ state: PhotoEditState) -> sony2fuji_request {
+    static func request(_ state: MacPhotoEditState) -> sony2fuji_request {
         var request = sony2fuji_request()
         state.settings.apply(to: &request)
         return request
@@ -79,9 +80,9 @@ struct AdjustmentTransferTests {
         check(try MacAdjustmentTransfer.prepare(payload: recipe, target: state(target), context: raw).settings.atmosphereSettings == source.atmosphereSettings,
             "Atmosphere is independent of zero recipe strength")
         var effects = Adjustments(); effects.clarity = 31; effects.dehaze = -23; effects.vibrance = 19
-        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
-        check(EditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.effects), snapshot: state(effects), context: resetContext) {
+        let resetContext = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        check(MacEditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(effects), context: resetContext), "Atmosphere-only edits mark effects group modified")
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .group(.effects), snapshot: state(effects), context: resetContext) {
             check(reset.settings.atmosphereSettings.isIdentity && reset.settings.vibrance == 19, "Effects reset clears atmosphere and preserves color")
         } else { fatalError("Atmosphere reset must prepare a candidate") }
     }
@@ -124,12 +125,12 @@ struct AdjustmentTransferTests {
             "Tone controls remain independent of source and target recipe strength, including zero")
         var resetSource = source
         resetSource.setTransferRecipe(nil)
-        let resetContext = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let resetContext = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
         let snapshot = state(resetSource)
-        check(EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: snapshot, context: resetContext)
-            && EditorAdjustmentRules.isModified(scope: .tool(.vibrance), snapshot: snapshot, context: resetContext),
+        check(MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: snapshot, context: resetContext)
+            && MacEditorAdjustmentRules.isModified(scope: .tool(.vibrance), snapshot: snapshot, context: resetContext),
             "New controls participate in group and tool modified state")
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: snapshot, context: resetContext) {
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: snapshot, context: resetContext) {
             check(reset.settings.blackPoint == 0 && reset.settings.whitePoint == 0 && reset.settings.vibrance == 18.125,
                 "Light reset clears black and white point while preserving vibrance")
         } else { fatalError("Tone light reset must prepare a candidate") }
@@ -209,14 +210,14 @@ struct AdjustmentTransferTests {
         }
         var resetSource = Adjustments()
         resetSource.gradingSettings = source.gradingSettings
-        let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let context = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
         let snapshot = state(resetSource)
-        if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .gradingZone(.midtones), snapshot: snapshot, context: context) {
             check(reset.settings.gradingSettings.midtones.isDefault && reset.settings.gradingSettings.shadows == source.gradingSettings.shadows
                 && reset.settings.gradingSettings.highlights == source.gradingSettings.highlights, "Zone reset preserves sibling precision")
         } else { fatalError("Expected grading zone reset") }
         for scope in [EditorResetScope.allGrading, .group(.color), .tool(.colorGrading)] {
-            if case .candidate(let reset) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+            if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
                 check(reset.settings.gradingSettings.isDefault, "Tool and color-group resets clear every grading value")
             } else { fatalError("Expected grading reset") }
         }
@@ -250,6 +251,8 @@ struct AdjustmentTransferTests {
     }
 
     static func main() throws {
+        try sharedScenarioFixtures()
+        try decimalFixtures()
         try neutralRawRequestsOnRaster()
         try fullNeutralRecipeOnRaster()
         try builtinRawRecipesOnRaster()
@@ -265,14 +268,20 @@ struct AdjustmentTransferTests {
         try toneControls()
         try aiDenoiseBoundary()
         try postRGBCompatibility()
+        try ignoreNoticesAndVersion()
         try scopesAndFreeze()
         try recipeConversions()
+        try recipeSourceOnHDR()
+        try rasterExposureBaselineOnRaw()
         try whiteBalanceAndCompatibility()
         try preservationAndLegacy()
         try whiteBalanceGuards()
         try independentRequestFields()
         try serialization()
         try manualLensSelectionTransport()
+        try x3fModeReset()
+        try rasterPlaceholdersOnRaw()
+        try legacyDenoiseOverToggledTarget()
         try sharedFixtures()
     }
 
@@ -290,9 +299,8 @@ struct AdjustmentTransferTests {
         check(result.settings.aiDenoiseEnabled && result.settings.exposure == 0.5,
               "Explicit ordinary fields preserve unselected target AI state")
         let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.chromaDenoise]), snapshot: state(), context: raw)
-        rejects("Ordinary denoise cannot be reported as applied while target AI overrides it") {
-            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: state(target), context: raw)
-        }
+        check(try MacAdjustmentTransfer.prepare(payload: denoise, target: state(target), context: raw) == state(target),
+              "Neutral denoise paste preserves the AI target without creating a change")
         check(try MacAdjustmentTransfer.prepare(payload: denoise, target: state(), context: raw) == state(),
               "Existing AI-off denoise behavior remains unchanged")
     }
@@ -305,9 +313,13 @@ struct AdjustmentTransferTests {
         check(try MacAdjustmentTransfer.prepare(payload: zero, target: before, context: raw) == before,
             "Post-RGB zero is representable without changing Mac denoise")
         let legacy = try AdjustmentTransferPayload(source: source, values: [key: .number(0.25)])
-        rejects("Post-RGB denoise never maps to Mac RAW FBDD") {
-            _ = try MacAdjustmentTransfer.prepare(payload: legacy, target: before, context: raw)
-        }
+        var ignored: [AdjustmentTransferNotice] = []
+        var noticing = raw
+        noticing.transferNotices = { ignored.append($0) }
+        check(try MacAdjustmentTransfer.prepare(payload: legacy, target: before, context: noticing) == before,
+            "Post-RGB denoise is ignored on Mac SDR and never maps to RAW FBDD")
+        check(Set(ignored) == [.ignoredPostRGBDenoise, .retainedTargetProcessingVersion],
+            "Ignored post-RGB and retained processing version are each reported once")
         let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: before, context: raw)
         check(all.values[key] == .number(0), "Mac all scope explicitly captures supported post-RGB zero")
         rejects("Out-of-range post-RGB requests are rejected") {
@@ -319,8 +331,32 @@ struct AdjustmentTransferTests {
         }
     }
 
-    static func scopesAndFreeze() throws {
-        var source = Adjustments()
+    // Q3/Q4：本平台未建模的键收到非 0 值时忽略并提示；处理版本沿用目标，不拒绝粘贴。
+    static func ignoreNoticesAndVersion() throws {
+        var notices = [AdjustmentTransferNotice]()
+        var context = raw
+        context.transferNotices = { notices.append($0) }
+        var target = Adjustments()
+        target.resolveRawNoiseReductionSupport(true)
+        let oldSource = AdjustmentTransferSource(identifier: "old-photo", isRaw: true, processingVersion: 1, recipe: nil)
+        let payload = try AdjustmentTransferPayload(source: oldSource, values: [
+            "light.exposure": .number(0.33), "detail.denoise.raw_level": .number(1), "detail.denoise.post_rgb": .number(0.5)])
+        let result = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: context)
+        check(result.settings.exposure == 0.33 && result.settings.rawNoiseReduction == 1 &&
+            result.settings.processing.version == 3,
+            "Mac applies raw_level, ignores post_rgb and keeps the target processing version on mismatch")
+        check(notices == [.retainedTargetProcessingVersion, .ignoredPostRGBDenoise],
+            "Mac reports the retained processing version first and the ignored post-RGB key once")
+        var silentNotices = [AdjustmentTransferNotice]()
+        var quiet = raw
+        quiet.transferNotices = { silentNotices.append($0) }
+        let currentSource = AdjustmentTransferSource(identifier: "new-photo", isRaw: true, processingVersion: 3, recipe: nil)
+        let silent = try AdjustmentTransferPayload(source: currentSource, values: ["detail.denoise.post_rgb": .number(0)])
+        _ = try MacAdjustmentTransfer.prepare(payload: silent, target: state(target), context: quiet)
+        check(silentNotices.isEmpty, "Matching processing version and zero placeholders prompt nothing")
+    }
+
+    static func scopesAndFreeze() throws {        var source = Adjustments()
         source.exposure = 1.25
         source.contrast = 20
         source.geometry = GeometrySettings()
@@ -360,6 +396,40 @@ struct AdjustmentTransferTests {
         }
         rejects("Target draft requires preflight") {
             _ = try MacAdjustmentTransfer.prepare(payload: payload, target: before, context: draft)
+        }
+    }
+
+    static func recipeSourceOnHDR() throws {
+        var hdrContext = raw; hdrContext.isRaw = false; hdrContext.sourceIsHDR = true
+        var hdrTarget = Adjustments(); hdrTarget.hdr = HDRSettings()
+        for strength in [0.5, 1.0] {
+            var source = Adjustments()
+            source.applyMasterRecipe(.hamadaDaylightV2)
+            source.exposure = 1; source.contrast = 40; source.strength = strength
+            let payload = try MacAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast]), snapshot: state(source), context: raw)
+            let applied = try MacAdjustmentTransfer.prepare(payload: payload, target: state(hdrTarget), context: hdrContext).settings.hdr!
+            check(applied.exposure == strength && abs(applied.contrast - 40 * strength) < 1e-9,
+                  "Recipe source strength is applied once on an HDR target at \(strength)")
+        }
+    }
+
+    static func rasterExposureBaselineOnRaw() throws {
+        var raster = raw; raster.isRaw = false
+        var jpeg = Adjustments(); jpeg.exposureMode = .sensor; jpeg.exposure = 0.75
+        for mode in [ExposureMode.preview, .scene] {
+            var target = Adjustments(); target.exposureMode = mode
+            for scope in [AdjustmentTransferScope.all, .custom([.exposureMode, .exposure])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(jpeg), context: raster)
+                let applied = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(payload[.exposureMode] == .string("sensor") && applied.settings.exposureMode == mode && applied.settings.exposure == 0.75,
+                      "JPEG paste keeps the RAW exposure baseline \(mode)")
+            }
+        }
+        for mode in [ExposureMode.scene, .sensor] {
+            var source = Adjustments(); source.exposureMode = mode
+            let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+            check(try MacAdjustmentTransfer.prepare(payload: all, target: state(), context: raw).settings.exposureMode == mode,
+                  "RAW all paste still copies the exposure baseline \(mode)")
         }
     }
 
@@ -544,9 +614,11 @@ struct AdjustmentTransferTests {
         }
         source.rawNoiseReduction = 1
         let denoise = try MacAdjustmentTransfer.capture(scope: .custom([.rawDenoise]), snapshot: state(source), context: raw)
-        rejects("Nonzero RAW FBDD is still incompatible with JPEG") {
-            _ = try MacAdjustmentTransfer.prepare(payload: denoise, target: target, context: raster)
-        }
+        var notices = [AdjustmentTransferNotice]()
+        raster.transferNotices = { notices.append($0) }
+        check(try MacAdjustmentTransfer.prepare(payload: denoise, target: target, context: raster) == target,
+            "Unsupported RAW FBDD alone leaves the raster target unchanged")
+        check(notices == [.ignoredRawDenoise], "Unsupported raster FBDD is ignored with a notice")
     }
 
     static func whiteBalanceAndCompatibility() throws {
@@ -565,8 +637,8 @@ struct AdjustmentTransferTests {
               "Fixed white balance keeps absolute values")
         var raster = raw; raster.isRaw = false
         let rasterMode = try MacAdjustmentTransfer.capture(scope: .custom([.exposureMode]), snapshot: state(), context: raster)
-        check(try MacAdjustmentTransfer.prepare(payload: rasterMode, target: state(), context: raw).settings.exposureMode == .sensor,
-              "Explicit sensor mode from raster remains sensor on RAW instead of using a native default")
+        check(try MacAdjustmentTransfer.prepare(payload: rasterMode, target: state(), context: raw).settings.exposureMode == .preview,
+              "Raster sensor placeholder does not replace the RAW exposure baseline")
         rejects("RAW white balance is explicitly incompatible with raster target") {
             _ = try MacAdjustmentTransfer.prepare(payload: fixed, target: state(), context: raster)
         }
@@ -727,6 +799,15 @@ struct AdjustmentTransferTests {
         let corrected = try MacAdjustmentTransfer.prepare(payload: distortion, target: state(target), context: lensContext)
         expected = target; expected.lensCorrection?.distortion = true
         check(corrected == state(expected), "Lens distortion selection preserves TCA, auto crop and target profile request")
+        for enabled in [true, false] {
+            source = Adjustments(); source.lensCorrection = LensCorrectionSettings(vignetting: enabled)
+            target.lensCorrection = LensCorrectionSettings(tca: true, autoCrop: false, mode: .manual,
+                profileID: "target-profile", vignetting: !enabled)
+            let vignetting = try MacAdjustmentTransfer.capture(scope: .custom([.lensVignetting]), snapshot: state(source), context: raw)
+            let transferred = try MacAdjustmentTransfer.prepare(payload: vignetting, target: state(target), context: lensContext)
+            expected = target; expected.lensCorrection?.vignetting = enabled
+            check(transferred == state(expected), "Vignetting-only transfer writes \(enabled) and preserves the other lens fields")
+        }
         source.rawNoiseReduction = 1
         target.resolveRawNoiseReductionSupport(true); target.rawNoiseReduction = 2; target.chromaNoiseReduction = 2
         let rawDenoise = try MacAdjustmentTransfer.capture(scope: .custom([.rawDenoise]), snapshot: state(source), context: raw)
@@ -754,6 +835,169 @@ struct AdjustmentTransferTests {
                       "Shared accepted vector: \(id)")
             } else {
                 rejects("Shared rejected vector: \(id)") { _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes) }
+            }
+        }
+    }
+
+    private static func matchesValue(_ actual: AdjustmentTransferValue?, _ expected: AdjustmentTransferValue, tolerance: Double = 1e-6) -> Bool {
+        guard let actual else { return false }
+        switch (actual, expected) {
+        case (.null, .null): return true
+        case let (.boolean(a), .boolean(b)): return a == b
+        case let (.string(a), .string(b)): return a == b
+        case let (.number(a), .number(b)): return abs(a - b) <= tolerance
+        case let (.array(a), .array(b)):
+            return a.count == b.count && zip(a, b).allSatisfy { matchesValue($0, $1, tolerance: tolerance) }
+        case let (.object(a), .object(b)):
+            return a.keys == b.keys && b.allSatisfy { matchesValue(a[$0.key], $0.value, tolerance: tolerance) }
+        default: return false
+        }
+    }
+
+    private static func errorReason(_ error: Error) -> String {
+        switch error as? AdjustmentTransferError {
+        case .invalidPayload: return "invalid_payload"
+        case .incompatible: return "incompatible"
+        case .unrepresentable: return "unrepresentable"
+        case .missingLook: return "missing_look"
+        default: return "other"
+        }
+    }
+
+    static func rasterPlaceholdersOnRaw() throws {
+        var raster = raw; raster.identifier = "source.jpg"; raster.isRaw = false; raster.defaultExposureMode = .sensor
+        var rawLens = raw; rawLens.validateLensRequest = { _ in }
+        var target = Adjustments()
+        target.exposureMode = .scene
+        target.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
+        target.whiteBalanceMode = .custom; target.temperature = 5850; target.tint = -18
+        target.resolveRawNoiseReductionSupport(true); target.rawNoiseReduction = 2
+        target.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false, mode: .manual,
+            profileID: "fixture-profile", vignetting: true)
+        let before = state(target)
+
+        var jpeg = Adjustments().resolvedForRaster; jpeg.exposure = 0.75
+        let all = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(jpeg), context: raster)
+        let applied = try MacAdjustmentTransfer.prepare(payload: all, target: before, context: rawLens)
+        check(applied.settings.exposure == 0.75 && applied.settings.exposureMode == .scene
+            && applied.settings.whiteBalanceMode == .custom && applied.settings.temperature == 5850 && applied.settings.tint == -18
+            && applied.settings.rawNoiseReduction == 2 && applied.settings.lensCorrection == target.lensCorrection,
+            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, FBDD denoise and lens")
+
+        let placeholders = Set<AdjustmentTransferField>([.exposureMode, .whiteBalanceMode, .temperature, .tint, .rawDenoise, .postRGBDenoise])
+            .union(AdjustmentTransferField.lensFields)
+        let placeholderOnly = try MacAdjustmentTransfer.capture(scope: .custom(placeholders), snapshot: state(Adjustments().resolvedForRaster), context: raster)
+        check(try MacAdjustmentTransfer.prepare(payload: placeholderOnly, target: before, context: rawLens) == before,
+            "Explicitly selecting only raster placeholders is unchanged on RAW")
+
+        var recipeTarget = Adjustments()
+        recipeTarget.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
+        recipeTarget.applyMasterRecipe(.hamadaDaylightV2); recipeTarget.strength = 1
+        let lutRaster = try MacAdjustmentTransfer.capture(scope: .standard, snapshot: state(Adjustments().resolvedForRaster, film: "builtin:PROVIA.cube"), context: raster)
+        let detached = try MacAdjustmentTransfer.prepare(payload: lutRaster, target: state(recipeTarget), context: rawLens)
+        check(request(detached).temperature == 5200 && request(detached).tint == 13,
+            "Detaching RAW recipe with non-recipe raster paste preserves effective target WB instead of resetting to camera")
+    }
+
+    static func sharedScenarioFixtures(at path: String = "Shared/fixtures/adjustment-transfer-scenarios-v1.json") throws {
+        let url = URL(fileURLWithPath: path)
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+        check(root["fixture_version"] as? Int == 1, "Scenario fixture version is 1")
+        let scenarios = root["scenarios"] as! [[String: Any]]
+        var ids = Set<String>()
+        for scenario in scenarios {
+            let id = scenario["id"] as! String
+            check(ids.insert(id).inserted, "Unique scenario ID: \(id)")
+            if let platforms = scenario["platforms"] as? [String], !platforms.contains("macos") { continue }
+            let targetSpec = scenario["target"] as! [String: Any]
+            let kind = targetSpec["kind"] as! String
+            let asShot = (targetSpec["as_shot_wb"] as? [NSNumber])?.map(\.doubleValue)
+            let lensValid = targetSpec["lens_valid"] as! Bool
+            let supportsRawDenoise = targetSpec["supports_raw_denoise"] as! Bool
+            let availableLooks = Set(targetSpec["available_looks"] as! [String])
+
+            var initialSettings = kind == "sdr_raster" ? Adjustments().resolvedForRaster : Adjustments()
+            if kind == "hdr" { initialSettings.hdr = HDRSettings() }
+            if kind == "sdr_raw" {
+                initialSettings.resolveRawNoiseReductionSupport(supportsRawDenoise)
+                if let asShot { initialSettings.resolveWhiteBalance(WhiteBalance(temperature: asShot[0], tint: asShot[1])) }
+            }
+            let context = MacAdjustmentTransferContext(identifier: "scenario-target", isRaw: kind == "sdr_raw",
+                sourceIsHDR: kind == "hdr", availableLookIDs: availableLooks,
+                defaultExposureMode: kind == "sdr_raw" ? .preview : .sensor,
+                validateLensRequest: lensValid ? { _ in } : nil)
+            var targetState = state(initialSettings)
+            if let seedObj = targetSpec["seed_payload"], !(seedObj is NSNull) {
+                let seedPayload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: seedObj))
+                var seedContext = context
+                seedContext.validateLensRequest = { _ in }
+                targetState = try MacAdjustmentTransfer.prepare(payload: seedPayload, target: targetState, context: seedContext)
+            }
+
+            if targetSpec["ai_denoise_enabled"] as? Bool == true { targetState.settings.aiDenoiseEnabled = true }
+
+            let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONSerialization.data(withJSONObject: scenario["payload"]!))
+            // S3：场景提示断言——收集 prepare 期间的忽略/版本提示，与 fixture 声明按集合比较。
+            var scenarioNotices = [AdjustmentTransferNotice]()
+            var noticeContext = context
+            noticeContext.transferNotices = { scenarioNotices.append($0) }
+            let expectSpec = (scenario["platform_expect"] as? [String: [String: Any]])?["macos"] ?? (scenario["expect"] as! [String: Any])
+            let expectedStatus = expectSpec["status"] as! String
+            if expectedStatus == "rejected" {
+                do {
+                    _ = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: context)
+                    fatalError("Scenario \(id): expected rejected")
+                } catch {
+                    if let expectedReason = expectSpec["reason"] as? String {
+                        check(errorReason(error) == expectedReason, "Scenario \(id): rejected reason \(expectedReason)")
+                    } else {
+                        print("PASS: Scenario \(id): rejected")
+                    }
+                }
+                continue
+            }
+            let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: targetState, context: noticeContext)
+            check(candidate.settings.aiDenoiseEnabled == targetState.settings.aiDenoiseEnabled,
+                "Scenario \(id): target AI identity is preserved")
+            let actualStatus = candidate == targetState ? "unchanged" : "applied"
+            check(actualStatus == expectedStatus, "Scenario \(id): status \(expectedStatus)")
+            let noticesByPlatform = ((scenario["expect"] as? [String: Any])?["notices_by_platform"] as? [String: Any])?["macos"] as? [String]
+            if let expectedNotices = noticesByPlatform ?? (expectSpec["notices"] as? [String]) {
+                check(Set(scenarioNotices.map(\.fixtureId)) == Set(expectedNotices),
+                    "Scenario \(id): notices \(expectedNotices.sorted().joined(separator: ","))")
+            }
+            if let valuesObj = expectSpec["values"] {
+                let expectedValues = try JSONDecoder().decode([String: AdjustmentTransferValue].self, from: JSONSerialization.data(withJSONObject: valuesObj))
+                let captured = candidate.settings.aiDenoiseEnabled
+                    ? MacAdjustmentTransfer.values(candidate, isRaw: context.isRaw)
+                    : try MacAdjustmentTransfer.capture(scope: .all, snapshot: candidate, context: context).values
+                for key in expectedValues.keys.sorted() {
+                    check(matchesValue(captured[key], expectedValues[key]!), "Scenario \(id): value \(key)")
+                }
+            }
+            if let effectiveObj = expectSpec["effective"] as? [String: NSNumber] {
+                let actualEffective = MacAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                for key in effectiveObj.keys.sorted() {
+                    let field = AdjustmentTransferField(rawValue: key)!
+                    check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")
+                }
+            }
+        }
+    }
+
+    static func decimalFixtures() throws {
+        let path = "Shared/fixtures/adjustment-transfer-decimals-v1.json"
+        try sharedScenarioFixtures(at: path)
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path))) as! [String: Any]
+        for rejected in root["rejected_payloads"] as! [[String: Any]] {
+            let id = rejected["id"] as! String
+            let reason = rejected["reason"] as! String
+            let data = try JSONSerialization.data(withJSONObject: rejected["payload"]!)
+            do {
+                _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data)
+                fatalError("Decimal rejected payload \(id): expected \(reason)")
+            } catch {
+                check(errorReason(error) == reason, "Decimal rejected payload \(id): \(reason)")
             }
         }
     }
@@ -830,6 +1074,132 @@ struct AdjustmentTransferTests {
             _ = try MacAdjustmentTransfer.prepare(payload: enabled, target: state(), context: permissive)
         }
         check(!validated, "Missing manual profile rejects before target validation")
+    }
+
+    static func legacyDenoiseOverToggledTarget() throws {
+        var fbddSource = Adjustments()
+        fbddSource.resolveRawNoiseReductionSupport(true)
+        fbddSource.rawNoiseReduction = 2
+
+        var chromaSource = Adjustments()
+        chromaSource.resolveRawNoiseReductionSupport(true)
+        chromaSource.chromaNoiseReduction = 1
+
+        func toggledOffTarget() -> Adjustments {
+            var target = Adjustments()
+            target.resolveRawNoiseReductionSupport(true)
+            target.setDenoiseEnabled(true)
+            target.setDenoiseEnabled(false)
+            return target
+        }
+
+        func persistedOffTarget() -> Adjustments {
+            var target = Adjustments()
+            target.resolveRawNoiseReductionSupport(true)
+            target.waveletNoiseReduction = WaveletDenoiseSettings()
+            return target
+        }
+
+        let scopes: [AdjustmentTransferScope] = [
+            .all,
+            .custom(AdjustmentTransferField.denoiseFields),
+            .modified
+        ]
+
+        for (label, target) in [("toggled-off", toggledOffTarget()), ("persisted-off", persistedOffTarget())] {
+            for scope in scopes + [.custom([.rawDenoise])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(fbddSource), context: raw)
+                let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(pasted.settings.waveletNoiseReduction == nil &&
+                      pasted.settings.rawNoiseReduction == 2 &&
+                      pasted.settings.chromaNoiseReduction == nil &&
+                      pasted.settings.hasLegacyDenoise &&
+                      pasted.settings.isDenoiseEnabled &&
+                      pasted.settings.denoiseSummary == L10n.text("旧版 FBDD"),
+                      "Legacy FBDD paste activates on \(label) target (\(scope))")
+            }
+            for scope in scopes + [.custom([.chromaDenoise])] {
+                let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(chromaSource), context: raw)
+                let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
+                check(pasted.settings.waveletNoiseReduction == nil &&
+                      pasted.settings.chromaNoiseReduction == 1 &&
+                      pasted.settings.rawNoiseReduction == 0 &&
+                      pasted.settings.hasLegacyDenoise &&
+                      pasted.settings.isDenoiseEnabled,
+                      "Legacy chroma paste activates on \(label) target (\(scope))")
+            }
+        }
+
+        // Uncanonicalized target with matching wire values must not slip past previewCapture or prepare early-exit.
+        var staleTarget = Adjustments()
+        staleTarget.resolveRawNoiseReductionSupport(true)
+        staleTarget.rawNoiseReduction = 2
+        staleTarget.chromaNoiseReduction = 0
+        staleTarget.waveletNoiseReduction = WaveletDenoiseSettings()
+
+        let stalePreview = Result {
+            try MacAdjustmentTransfer.previewCapture(scope: .all, snapshot: state(staleTarget),
+                committed: state(fbddSource), context: raw)
+        }
+        if case .failure(let error) = stalePreview {
+            check(error as? AdjustmentTransferError == .draftRequiresPreflight,
+                  "previewCapture treats stored denoise nil-vs-default mismatch as uncommitted state")
+        } else {
+            check(false, "previewCapture must not accept uncanonicalized denoise storage mismatch")
+        }
+
+        let canonicalPayload = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(fbddSource), context: raw)
+        let repaired = try MacAdjustmentTransfer.prepare(payload: canonicalPayload, target: state(staleTarget), context: raw)
+        check(repaired.settings.waveletNoiseReduction == nil &&
+              repaired.settings.chromaNoiseReduction == nil &&
+              repaired.settings.rawNoiseReduction == 2 &&
+              repaired.settings.hasLegacyDenoise &&
+              repaired.settings.isDenoiseEnabled &&
+              MacAdjustmentTransfer.values(repaired, isRaw: true) == MacAdjustmentTransfer.values(state(fbddSource), isRaw: true),
+              "prepare does not early-return stale non-nil default denoise storage")
+    }
+
+    static func x3fModeReset() throws {
+        var withoutLens = Adjustments()
+        withoutLens.x3fMode = .legacy
+        withoutLens.aiDenoiseEnabled = true
+        withoutLens.selectX3fMode(.normal)
+        check(withoutLens.x3fMode == .normal && !withoutLens.aiDenoiseEnabled && withoutLens.lensCorrection == nil,
+            "Normal X3F switch disables AI denoise without materializing empty lens settings")
+
+        for (distortion, tca, vignetting) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, true, true),
+        ] {
+            var switched = Adjustments()
+            switched.x3fMode = .legacy
+            switched.exposure = 0.25
+            switched.aiDenoiseEnabled = true
+            switched.lensCorrection = LensCorrectionSettings(distortion: distortion, tca: tca,
+                autoCrop: false, mode: .manual, profileID: "saved-lens-profile",
+                focalLength: 35, cropFactor: 1.5, vignetting: vignetting)
+            switched.selectX3fMode(.normal)
+            check(switched.x3fMode == .normal && !switched.aiDenoiseEnabled &&
+                !switched.lensSettings.distortion && !switched.lensSettings.tca &&
+                !switched.lensSettings.vignetting && !switched.lensSettings.isEnabled,
+                "Normal X3F switch clears distortion, TCA, vignetting and AI denoise in one transaction")
+            check(switched.lensSettings.profileID == "saved-lens-profile" &&
+                switched.lensSettings.focalLength == 35 &&
+                switched.lensSettings.cropFactor == 1.5 &&
+                !switched.lensSettings.autoCrop &&
+                switched.lensSettings.mode == .manual &&
+                switched.exposure == 0.25,
+                "Normal X3F switch preserves non-flag lens preferences and unrelated edits")
+            let reopened = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(switched))
+            check(reopened == switched, "Normal X3F reset state survives persistence")
+            switched.selectX3fMode(.legacy)
+            check(switched.x3fMode == .legacy && !switched.aiDenoiseEnabled &&
+                !switched.lensSettings.distortion && !switched.lensSettings.tca &&
+                !switched.lensSettings.vignetting && !switched.lensSettings.isEnabled,
+                "Returning to legacy X3F does not re-enable lens correction or AI denoise")
+        }
     }
 
 }

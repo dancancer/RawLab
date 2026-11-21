@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace sony2fuji::ai {
@@ -19,4 +20,6 @@ struct ModelPackage {
 std::string sha256File(const std::string& path);
 std::string sha256Bytes(const void* data, size_t size);
 ModelPackage loadModelPackage(const std::string& directory);
+// 进程级校验计数：每次对包内容做全量 SHA-256 验证（缓存未命中）时递增；供测试证明重复加载不重算。
+std::uint64_t modelPackageValidationCount();
 } // namespace sony2fuji::ai

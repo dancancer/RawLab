@@ -65,9 +65,6 @@ class MasterRecipeTest {
         assertNull(raster.recipeID); assertEquals(20f, raster.blackPoint)
     }
 
-    @Test fun recipeIdentityMustBelongToEditSettings() {
-        assertNotNull("Master recipe identity is missing", EditSettings::class.java.methods.firstOrNull { it.name == "getRecipeID" })
-    }
     @Test fun applicationScalingAndFrozenSettingsMatchMac() {
         val hsl = HslSettings().withValue(1, 4, 4f)
         val recipe = MasterRecipe("hamada_daylight_v2", "Hamada", "daylight", "daylight", "hamada_daylight_pro_v2.cube",

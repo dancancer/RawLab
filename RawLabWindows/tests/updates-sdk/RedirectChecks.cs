@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class RedirectChecks
 {

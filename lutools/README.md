@@ -42,7 +42,7 @@ Mac / iOS / Android / CLI
 | `platform/` | 移动端集成 / Mobile integration |
 | `tests/` | 数值、RAW 和 GPU 回归 / Numerical, RAW and GPU regressions |
 | `lutprep/` | 可选的桌面 LUT 色彩适配工具 / Optional desktop LUT preparation |
-| `F-Log2/`, `flog-2-new/` | LUT 文件和说明 / LUT assets and documentation |
+| `F-Log2/`, `flog-2-new/` | LUT 文件和说明（`.cube` 由 `python3 scripts/assets/prepare.py --group luts` 从共享缓存校验准备） / LUT assets and documentation (`.cube` tables materialized from `.cache/shared/assets/` via `prepare.py`) |
 | `examples/`, `docs/` | 示例与文档 / Examples and documentation |
 
 ## 构建依赖 / Dependencies
@@ -58,11 +58,12 @@ Mac / iOS / Android / CLI
 
 ## 快速开始 / Quick Start
 
-以下命令在仓库根目录运行。构建 CLI：
+以下命令在仓库根目录运行。先准备校验后的 `.cube` / 示例 DNG 资源（缓存在主工作区 `.cache/shared/assets/`，所有 worktree 共用），再构建 CLI：
 
-Run these commands from the repository root to build the CLI:
+Run these commands from the repository root. Prepare the SHA-256-verified `.cube` / sample DNG assets into the shared `.cache/shared/assets/` cache, then build the CLI:
 
 ```bash
+python3 scripts/assets/prepare.py --group all
 cmake -S lutools -B lutools/build -DCMAKE_BUILD_TYPE=Release
 cmake --build lutools/build -j 6
 mkdir -p output
@@ -161,7 +162,7 @@ Tests requiring optional RAW fixtures are omitted when those files are absent. M
 - [Mac 客户端 / Mac editor](../RawLabMac/README.md)
 - [平台集成说明 / Platform integration](docs/platform-integration.md)
 - [iOS 指南 / iOS guide](platform/ios/README.md)
-- [Android 指南 / Android guide](platform/android/README.md)
+- [Android 指南 / Android guide](../RawLabAndroid/README.md)
 - [富士 F-Log2 LUT 说明 / Fujifilm F-Log2 LUT overview](F-Log2/F-Log2_LUT_overview_Ver.1.1E.pdf)
 - [LUTCalc 参考实现 / LUTCalc reference implementation](https://github.com/cameramanben/LUTCalc)
 

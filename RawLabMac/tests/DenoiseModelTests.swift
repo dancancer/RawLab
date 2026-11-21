@@ -18,7 +18,11 @@ import AppKit
         }
         model.open(URL(fileURLWithPath: CommandLine.arguments[1])); wait()
         let original = model.neutral!.image
-        check(model.neutral!.isFullResolution, "Original records native pixel geometry")
+        let nativeLongEdge = max(model.neutral!.nativeWidth ?? original.width,
+                                 model.neutral!.nativeHeight ?? original.height)
+        check(max(original.width, original.height) == min(nativeLongEdge, MacReferenceFramePolicy.longEdgeCap)
+              && model.neutral!.isFullResolution == (nativeLongEdge <= MacReferenceFramePolicy.longEdgeCap),
+              "Original records native pixel geometry up to the reference long-edge cap")
         model.settings.applyDenoisePreset(.clean); wait()
         check(model.neutral!.image === original, "Denoise never replaces the original")
         model.settings.exposure = 1; wait()

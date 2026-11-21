@@ -1,5 +1,6 @@
 #include "platform/hdr_metadata.h"
 #include "platform/hdr_image.h"
+#include "core/tiff_ifd.h"
 #include <lcms2.h>
 #include <algorithm>
 #include <array>
@@ -18,8 +19,8 @@
 namespace sony2fuji::hdr {
 namespace {
 [[noreturn]] void invalid() {
-    throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-        SONY2FUJI_HDR_FIELD_SOURCE,"Malformed image capture metadata");
+    throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux,
+        kHdrFieldSource, "Malformed image capture metadata");
 }
 struct Segment { uint8_t marker; const uint8_t* data; size_t size; };
 std::vector<Segment> segments(const void* data,size_t size) {
@@ -52,67 +53,61 @@ const std::set<uint16_t> exifCaptureTags{0x829a,0x829d,0x8822,0x8827,0x8830,0x88
     0x9286,0x9290,0x9291,0x9292,0xa20b,0xa215,0xa217,0xa402,0xa403,0xa404,0xa405,0xa406,
     0xa420,0xa430,0xa431,0xa432,0xa433,0xa434,0xa435};
 struct TIFF {
-    const uint8_t* data; size_t size; bool little=false;
+    size_t size; bool little=false;
     bool rawSource=false;
     size_t copiedBytes=0;
-    mutable std::ifstream input;
+    std::ifstream input;
+    tiff::Reader container;
     Directory primary,exif,gps;
-    std::set<uint32_t> visited;
-    TIFF(const void* bytes,size_t length,bool raw=false):data(static_cast<const uint8_t*>(bytes)),size(length),rawSource(raw) {
+    tiff::Traversal traversal;
+    TIFF(const void* bytes,size_t length,bool raw=false):size(length),rawSource(raw),container(bytes,length) {
         parse();
     }
-    explicit TIFF(const std::filesystem::path& path):data(nullptr),size(std::filesystem::file_size(path)),
-        rawSource(true),input(path,std::ios::binary) {
+    explicit TIFF(const std::filesystem::path& path):size(std::filesystem::file_size(path)),
+        rawSource(true),input(path,std::ios::binary),container(input,size) {
         if (!input) invalid();
         parse();
     }
     void parse() {
+        // 没有 EXIF 时保留默认值；共享读取器只负责非空 TIFF 的结构校验。
         if (!size) return;
-        if ((!data && !input.is_open()) || size<8 || size>(rawSource ? 512ull*1024*1024 : 1024*1024)) invalid();
-        uint8_t magic[2]; read(0,magic,2);
-        little=magic[0]=='I' && magic[1]=='I';
-        if ((!little && !(magic[0]=='M' && magic[1]=='M')) || u16(2)!=42) invalid();
-        directory(u32(4),&primary,0);
+        if (size<8 || size>(rawSource ? 512ull*1024*1024 : 1024*1024)) invalid();
+        uint32_t first=0;
+        if (!container.header(first)) invalid();
+        little=container.littleEndian();
+        directory(first,&primary,0);
     }
-    void range(size_t offset,size_t length) const { if (offset>size || length>size-offset) invalid(); }
     void read(size_t offset,void* target,size_t length) const {
-        range(offset,length);
-        if (data) std::memcpy(target,data+offset,length);
-        else {
-            input.seekg(std::streamoff(offset));
-            if (!input.read(static_cast<char*>(target),std::streamsize(length))) invalid();
-        }
-    }
-    uint16_t u16(size_t offset) const {
-        uint8_t bytes[2]; read(offset,bytes,2);
-        return little ? bytes[0]|uint16_t(bytes[1])<<8 : uint16_t(bytes[0])<<8|bytes[1];
+        if (!container.read(offset,target,length)) invalid();
     }
     uint32_t u32(size_t offset) const {
-        uint8_t bytes[4]; read(offset,bytes,4); uint32_t value=0;
-        for (int i=0;i<4;++i) value|=uint32_t(bytes[i])<<(8*(little ? i : 3-i));
-        return value;
+        uint64_t value=0;
+        if (!container.integer(offset,4,value)) invalid();
+        return uint32_t(value);
     }
     void directory(uint32_t offset,Directory* save,unsigned depth) {
         if (!offset) return;
-        if (depth>8 || visited.size()>=32 || !visited.insert(offset).second) invalid();
-        const uint16_t count=u16(offset);
-        if (count>4096) invalid();
-        range(offset,size_t(count)*12+6);
+        tiff::Directory ifd;
+        if (!traversal.open(container,offset,depth,ifd)) invalid();
         std::set<uint16_t> tags;
-        for (uint32_t i=0;i<count;++i) {
-            const size_t at=offset+2+size_t(i)*12;
-            const uint16_t tag=u16(at),type=u16(at+2); const uint32_t n=u32(at+4);
+        if (!container.entries(ifd,[&](const tiff::Entry& field) {
+            const uint16_t tag=field.tag,type=field.type; const uint32_t n=field.count;
             // DNG 像素、线性化表和增益表不属于拍摄 EXIF，也不能作为小元数据块复制。
             const bool capture = save==&primary ? primaryCaptureTags.count(tag)!=0 :
                 save==&exif ? exifCaptureTags.count(tag)!=0 : save==&gps && tag<=31;
-            if (rawSource && !capture && !(save==&primary && (tag==0x8769 || tag==0x8825))) continue;
-            static constexpr uint8_t widths[]={0,1,1,2,4,8,1,1,2,4,8,4,8,4};
-            if (!type || type>=sizeof(widths) || !tags.insert(tag).second) invalid();
-            const uint64_t length=uint64_t(n)*widths[type];
-            if (length>size) invalid();
-            if (rawSource && (length>16384 || length>1024*1024-copiedBytes)) invalid();
-            const size_t value=length<=4 ? at+8 : u32(at+8);
-            range(value,size_t(length));
+            if (rawSource && !capture && !(save==&primary && (tag==0x8769 || tag==0x8825))) return true;
+            tiff::Payload payload;
+            if (!tags.insert(tag).second || !container.payload(field,payload)) invalid();
+            const size_t length=payload.size,value=payload.offset;
+            // 累计复制预算：每个目录最多 4096 条、每条都可声明“值就是整块数据”，
+            // 不设总量时多个目录可把 1 MiB 的 HEIF EXIF 放大成 GB 级内存。
+            // RAW 只复制拍摄标签，沿用单条 16 KiB、合计 1 MiB。普通 EXIF 取 2×块大小：
+            // 合法 TIFF 的外置值互不重叠，<=4 字节的值内嵌在条目里，复制总量不超过块大小；
+            // 另一倍留给共享数据或计数偏大的 MakerNote。HEIF 最多 2 MiB，JPEG 最多 128 KiB。
+            // 在递归子目录前预留，子目录无法绕过父条目的额度，减法也不会下溢。
+            const uint64_t budget=rawSource ? 1024*1024 : 2*uint64_t(size);
+            if ((rawSource && length>16384) || length>budget-copiedBytes) invalid();
+            copiedBytes+=size_t(length);
             if (tag==0x8769 || tag==0x8825 || tag==0xa005 || tag==0x014a) {
                 if ((type!=4 && type!=13) || !n || n>32) invalid();
                 for (uint32_t child=0;child<n;++child) {
@@ -123,15 +118,16 @@ struct TIFF {
             }
             Entry entry{type,n,std::vector<uint8_t>(size_t(length))};
             read(value,entry.bytes.data(),size_t(length));
-            copiedBytes+=size_t(length);
-            if (!little && widths[type]>1) {
-                const size_t unit=(type==5 || type==10) ? 4 : widths[type];
+            if (!little && payload.width>1) {
+                const size_t unit=(type==5 || type==10) ? 4 : payload.width;
                 for (size_t byte=0;byte<entry.bytes.size();byte+=unit)
                     std::reverse(entry.bytes.begin()+byte,entry.bytes.begin()+byte+unit);
             }
             if (save) save->emplace(tag,std::move(entry));
-        }
-        if (!rawSource) directory(u32(offset+2+size_t(count)*12),nullptr,depth+1);
+            return true;
+        })) invalid();
+        // RAW 的后续图像目录不属于拍摄 EXIF，保留既有忽略行为。
+        if (!rawSource) directory(ifd.next,nullptr,depth+1);
     }
 };
 uint32_t scalar(const Entry& e) {
@@ -282,7 +278,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
     };
     if (handler.hasVersion) {
         if (numeric(handler.version)!=65536)
-            throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple gain-map version");
+            throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedVersion, kHdrFieldSource, "Unsupported Apple gain-map version");
         if (handler.hasHeadroom) result.headroom=ratio(numeric(handler.headroom));
         if (result.headroom && result.headroom<1) invalid();
         return result;
@@ -291,7 +287,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
     if (handler.auxiliary!="urn:com:apple:photo:2020:aux:hdrgainmap") invalid();
     auto value=[&](const char* name) {const auto at=handler.tone.find(name);if(at==handler.tone.end())invalid();return numeric(at->second);};
     if (value("Version")!=1)
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,SONY2FUJI_HDR_FIELD_SOURCE,"Unsupported Apple tone-map version");
+        throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedVersion, kHdrFieldSource, "Unsupported Apple tone-map version");
     if (value("BaseRenditionIsHDR")!=0 || value("BaseHeadroom")!=0) invalid();
     result.logarithmic=true;
     result.headroom=ratio(value("AlternateHeadroom"));result.minBoost=ratio(value("GainMapMin"));result.maxBoost=ratio(value("GainMapMax"));
@@ -303,7 +299,7 @@ AppleGainMapMetadata appleGainMapMetadata(const void* bytes,size_t size) {
 float appleXMPHeadroom(const void* bytes,size_t size) {
     const auto description=appleGainMapMetadata(bytes,size);
     if (description.logarithmic)
-        throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,SONY2FUJI_HDR_FIELD_SOURCE,"Apple HEIF tone-map variant is unsupported");
+        throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, kHdrFieldSource, "Apple HEIF tone-map variant is unsupported");
     return description.headroom;
 }
 
@@ -349,12 +345,12 @@ uint32_t jpegColorDescription(const void* jpeg,size_t size,bool allowExifSRGB) {
         total=s.data[13]; parts.emplace(s.data[12],std::vector<uint8_t>(s.data+14,s.data+s.size));
     }
     if (!total) {
-        if (!allowExifSRGB) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+        if (!allowExifSRGB) return kHdrColorUnknown;
         const auto bytes=jpegExif(jpeg,size);TIFF parsed(bytes.data(),bytes.size());
         const auto color=parsed.exif.find(0xa001);
         if (color!=parsed.exif.end() && color->second.type==3 && color->second.count==1 &&
-            color->second.bytes==std::vector<uint8_t>{1,0}) return SONY2FUJI_HDR_COLOR_SRGB;
-        return SONY2FUJI_HDR_COLOR_UNKNOWN;
+            color->second.bytes==std::vector<uint8_t>{1,0}) return kHdrColorSrgb;
+        return kHdrColorUnknown;
     }
     if (parts.size()!=total) invalid();
     std::vector<uint8_t> icc;
@@ -371,28 +367,28 @@ uint32_t iccColorDescription(const void* icc,size_t size,bool requireSRGBTransfe
         // JPEG 的 Ultra HDR 路径固定使用 sRGB inverse transfer，不能只比较原色。
         for (auto tag : {cmsSigRedTRCTag,cmsSigGreenTRCTag,cmsSigBlueTRCTag}) {
             const auto* curve=static_cast<const cmsToneCurve*>(cmsReadTag(profile,tag));
-            if (!curve) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+            if (!curve) return kHdrColorUnknown;
             for (unsigned i=0;i<=1024;++i) {
                 const float x=float(i)/1024;
                 const float expected=x<=.04045f ? x/12.92f : std::pow((x+.055f)/1.055f,2.4f);
                 const float actual=cmsEvalToneCurveFloat(curve,x);
                 if (!std::isfinite(actual) || std::abs(actual-expected)>.0025f)
-                    return SONY2FUJI_HDR_COLOR_UNKNOWN;
+                    return kHdrColorUnknown;
             }
         }
     }
     const auto* r=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigRedColorantTag));
     const auto* g=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigGreenColorantTag));
     const auto* b=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,cmsSigBlueColorantTag));
-    if (!r || !g || !b) return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    if (!r || !g || !b) return kHdrColorUnknown;
     const std::array<double,9> values={r->X,r->Y,r->Z,g->X,g->Y,g->Z,b->X,b->Y,b->Z};
     const std::array<std::array<double,9>,3> known={{{.436066,.222488,.013916,.385147,.716873,.097076,.143066,.060608,.714096},
         {.515102,.241182,-.001049,.291965,.692237,.041882,.157153,.066582,.784378},
         {.673459,.279033,-.001931,.165661,.675338,.029979,.125100,.045629,.797162}}};
     for (size_t gamut=0;gamut<known.size();++gamut) {
         bool same=true; for (size_t i=0;i<9;++i) same&=std::isfinite(values[i]) && std::abs(values[i]-known[gamut][i])<.003;
-        if (same) return uint32_t(gamut)+SONY2FUJI_HDR_COLOR_SRGB;
+        if (same) return uint32_t(gamut)+kHdrColorSrgb;
     }
-    return SONY2FUJI_HDR_COLOR_UNKNOWN;
+    return kHdrColorUnknown;
 }
 } // namespace sony2fuji::hdr

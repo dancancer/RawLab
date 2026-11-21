@@ -129,4 +129,126 @@ class SystemPhotoStoreTest {
             assertEquals(0, root.listFiles()!!.size)
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun clearRetainedCopiesDeletesAllOwnedCopiesWithExactCountsWhilePreservingOtherFilesAndSubdirectories() {
+        val workspace = Files.createTempDirectory("rawlab-system-clear").toFile()
+        try {
+            val store = File(workspace, "system-photos")
+            val missing = File(workspace, "never-created")
+            assertEquals(RetainedCopiesSummary(0, 0L), SystemPhotoStore.inspectRetainedCopies(missing))
+            assertEquals(RetainedCopiesSummary(0, 0L), SystemPhotoStore.clearRetainedCopies(missing))
+            assertFalse(missing.exists())
+
+            val jpeg = SystemPhotoStore.retain(store, ByteArrayInputStream(byteArrayOf(-1, -40, -1, 10, 20, 30, 40)), "first.jpg", "image/jpeg")
+            val png = SystemPhotoStore.retain(store, ByteArrayInputStream(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10, 5, 6)), "second.png", "image/png")
+            val x3f = SystemPhotoStore.retain(store, ByteArrayInputStream("FOVb-payload".toByteArray()), "third.x3f", "application/octet-stream")
+            val raw = SystemPhotoStore.retain(store, ByteArrayInputStream("FUJIFILMCCD-RAW-payload".toByteArray()), "fourth.RAF", "application/octet-stream")
+            val heicHeader = byteArrayOf(0, 0, 0, 16) + "ftypheic".toByteArray() + byteArrayOf(1, 2, 3, 4)
+            val heic = SystemPhotoStore.retain(store, ByteArrayInputStream(heicHeader), "fifth.heic", "image/heic")
+            val upperHash = "A1B2C3D4".repeat(8)
+            val upperCopy = File(store, "$upperHash.jpg").apply { writeBytes(byteArrayOf(-1, -40, -1, 99)) }
+            val upperName = File(store, "$upperHash.name").apply { writeText("upper.jpg") }
+
+            val ownedFiles = listOf(
+                jpeg, File(store, "${jpeg.nameWithoutExtension}.name"),
+                png, File(store, "${png.nameWithoutExtension}.name"),
+                x3f, File(store, "${x3f.nameWithoutExtension}.name"),
+                raw, File(store, "${raw.nameWithoutExtension}.name"),
+                heic, File(store, "${heic.nameWithoutExtension}.name"),
+                upperCopy, upperName,
+            )
+            ownedFiles.forEach { assertTrue("expected owned file: ${it.name}", it.isFile) }
+            val expectedBytes = ownedFiles.sumOf { it.length() }
+
+            val keepTxt = File(store, "keep.txt").apply { writeText("unrelated note") }
+            val rawTemp = File(store, "raw-staging.input").apply { writeText("staging") }
+            val partPhoto = File(store, ".${"a".repeat(64)}.jpg.part").apply { writeText("partial-photo") }
+            val partName = File(store, ".${"a".repeat(64)}.name.part").apply { writeText("partial-name") }
+            val hexWrongExt = File(store, "${"b".repeat(64)}.txt").apply { writeText("not-a-photo-copy") }
+            val shortHex = File(store, "${"c".repeat(63)}.jpg").apply { writeText("short-hash") }
+            val externalTarget = File(workspace, "external.jpg").apply { writeText("outside-store") }
+            val symlinkInStore = File(store, "${"d".repeat(64)}.jpg")
+            Files.createSymbolicLink(symlinkInStore.toPath(), externalTarget.toPath())
+
+            val nestedDir = File(store, "nested").apply { mkdirs() }
+            val nestedCopyNamedFile = File(nestedDir, "${"e".repeat(64)}.jpg").apply { writeText("nested-file") }
+            val nestedNameFile = File(nestedDir, "${"e".repeat(64)}.name").apply { writeText("nested.jpg") }
+            val copyNamedSubdir = File(store, "${"f".repeat(64)}.jpg").apply { mkdirs() }
+            val insideCopyNamedSubdir = File(copyNamedSubdir, "marker.txt").apply { writeText("dir-not-file") }
+
+            assertEquals(RetainedCopiesSummary(ownedFiles.size, expectedBytes), SystemPhotoStore.inspectRetainedCopies(store))
+
+            val cleared = SystemPhotoStore.clearRetainedCopies(store)
+            assertEquals(RetainedCopiesSummary(ownedFiles.size, expectedBytes), cleared)
+            ownedFiles.forEach { assertFalse("owned file should be deleted: ${it.name}", it.exists()) }
+            assertTrue(store.isDirectory)
+
+            assertTrue(keepTxt.isFile)
+            assertTrue(rawTemp.isFile)
+            assertTrue(partPhoto.isFile)
+            assertTrue(partName.isFile)
+            assertTrue(hexWrongExt.isFile)
+            assertTrue(shortHex.isFile)
+            assertTrue(Files.isSymbolicLink(symlinkInStore.toPath()))
+            assertEquals("outside-store", externalTarget.readText())
+            assertTrue(nestedDir.isDirectory)
+            assertEquals("nested-file", nestedCopyNamedFile.readText())
+            assertEquals("nested.jpg", nestedNameFile.readText())
+            assertTrue(copyNamedSubdir.isDirectory)
+            assertEquals("dir-not-file", insideCopyNamedSubdir.readText())
+
+            assertEquals(RetainedCopiesSummary(0, 0L), SystemPhotoStore.inspectRetainedCopies(store))
+            assertEquals(RetainedCopiesSummary(0, 0L), SystemPhotoStore.clearRetainedCopies(store))
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
+
+    @Test fun invalidStoreTargetReportsFailureInsteadOfReturningZero() {
+        val workspace = Files.createTempDirectory("rawlab-system-invalid-target").toFile()
+        try {
+            val notADirectory = File(workspace, "system-photos").apply { writeText("corrupt") }
+            assertThrows(IOException::class.java) { SystemPhotoStore.inspectRetainedCopies(notADirectory) }
+            assertThrows(IOException::class.java) { SystemPhotoStore.clearRetainedCopies(notADirectory) }
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
+
+    @Test fun r1_a1_concurrentRetain128KiBJpegAndRunStartupCleanupPreservesRetainedFile() {
+        val workspace = Files.createTempDirectory("rawlab-a1-repro").toFile()
+        try {
+            val files = File(workspace, "files").apply { mkdirs() }
+            val cache = File(workspace, "cache").apply { mkdirs() }
+            val storeDir = File(files, "system-photos").apply { mkdirs() }
+            val tempDir = File(cache, "system-photo-imports").apply { mkdirs() }
+            val jpeg128KiB = byteArrayOf(-1, -40, -1, -32) + ByteArray(128 * 1024 - 4) { (it % 251).toByte() }
+            val slowStream = object : ByteArrayInputStream(jpeg128KiB) {
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    Thread.sleep(1)
+                    return super.read(b, off, minOf(len, 8192))
+                }
+            }
+            val cleanupErrors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+            val stopCleanup = java.util.concurrent.atomic.AtomicBoolean(false)
+            val cleanupThread = Thread({
+                while (!stopCleanup.get()) {
+                    try { com.rawlab.android.runStartupCleanup(files, cache) }
+                    catch (t: Throwable) { cleanupErrors += t }
+                }
+            }, "test-a1-cleanup").apply { start() }
+            val retained = try {
+                SystemPhotoStore.retain(storeDir, slowStream, "coldstart.jpg", "image/jpeg", temporaryDirectory = tempDir)
+            } finally {
+                stopCleanup.set(true)
+                cleanupThread.join(5_000)
+            }
+            assertTrue("Unexpected cleanup error: $cleanupErrors", cleanupErrors.isEmpty())
+            assertTrue(retained.isFile)
+            assertEquals(jpeg128KiB.size.toLong(), retained.length())
+            SystemPhotoStore.validate(retained)
+        } finally {
+            workspace.deleteRecursively()
+        }
+    }
 }

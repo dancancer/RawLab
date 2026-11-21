@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/lut_compatibility.h"
 #include "sony2fuji/lut_parser.h"
 #include "nlohmann/json.hpp"
@@ -9,8 +10,7 @@
 using nlohmann::json;
 using namespace sony2fuji;
 namespace {
-int failures = 0;
-void check(bool ok, const char* label) { if (!ok) { ++failures; std::cerr << "FAIL " << label << '\n'; } }
+using rawlab::test::check;
 template<class F> void rejects(F operation, const char* label) { try { operation(); check(false,label); } catch (const std::exception&) {} }
 void write(const std::filesystem::path& path, const std::string& text) { std::ofstream(path, std::ios::binary) << text; }
 json config() { return {{"version",1},
@@ -94,5 +94,5 @@ int main() {
         rejects([&]{prepareLUTCompatibility(source.u8string(),request.dump());},"Complete original color parameters cannot be silently overridden");
     } catch(const std::exception& error) { check(false,error.what()); }
     std::filesystem::remove_all(dir);
-    std::cout<<"LUT compatibility failures: "<<failures<<'\n';return failures?1:0;
+    std::cout<<"LUT compatibility failures: "<<rawlab::test::failureCount()<<'\n';return rawlab::test::exitCode();
 }

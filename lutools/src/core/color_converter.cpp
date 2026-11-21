@@ -1,17 +1,12 @@
 #include "sony2fuji/color_converter.h"
-#include "processing_cancellation.h"
+#include "gpu/photo_log_shader.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <iostream>
 #include <limits>
 #include <vector>
-
-#ifdef _OPENMP
-namespace {
-constexpr size_t kParallelThreshold = 1u << 16;
-}
-#endif
 
 namespace sony2fuji {
 
@@ -39,17 +34,11 @@ ErrorCode ColorConverter::convertImage(ImageData& image, ColorSpace from, ColorS
 
     Matrix3x3 matrix = getConversionMatrix(from, to);
 
-    const size_t pixel_count = image.pixels.size();
-    const auto cancellation = processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
-#endif
-    for (size_t first = 0; first < pixel_count; first += 4096) {
-        if (cancellation.cancelled()) continue;
-        for (size_t i = first; i < std::min(pixel_count, first + 4096); ++i)
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
             image.pixels[i] = applyMatrix(image.pixels[i], matrix);
-    }
-    cancellation.check();
+        }
+    });
 
     return ErrorCode::Success;
 }
@@ -66,17 +55,11 @@ ErrorCode ColorConverter::convertImage(
 
     Matrix3x3 matrix = getConversionMatrix(fromToXYZ, fromWhitePoint, to);
 
-    const size_t pixel_count = image.pixels.size();
-    const auto cancellation = processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
-#endif
-    for (size_t first = 0; first < pixel_count; first += 4096) {
-        if (cancellation.cancelled()) continue;
-        for (size_t i = first; i < std::min(pixel_count, first + 4096); ++i)
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
             image.pixels[i] = applyMatrix(image.pixels[i], matrix);
-    }
-    cancellation.check();
+        }
+    });
 
     return ErrorCode::Success;
 }
@@ -388,22 +371,7 @@ float GammaConverter::removeSRGBGamma(float encoded) {
 }
 
 float GammaConverter::applyFLog2(float linear) {
-    const float a = 5.555556f;
-    const float b = 0.064829f;
-    const float c = 0.245281f;
-    const float d = 0.384316f;
-    const float e = 8.799461f;
-    const float f = 0.092864f;
-    const float cut = 0.00088899597f;
-
-    float lin = linear;
-
-    if (lin < cut) {
-        return std::max(0.0f, std::min(1.0f, e * lin + f));
-    }
-
-    float encoded = std::log10(lin * a + b) * c + d;
-    return std::max(0.0f, std::min(1.0f, encoded));
+    return detail::flog2(linear);
 }
 
 RGB GammaConverter::applyFLog2ToRGB(const RGB& rgb) {
@@ -420,10 +388,11 @@ GammaConverter::FLog2Diagnostics GammaConverter::applyFLog2ToImage(
 ) {
     FLog2Diagnostics result;
     if (!options.enableDiagnostics) {
-        for (size_t i = 0; i < image.pixels.size(); ++i) {
-            if (i % 4096 == 0) checkProcessingCancellation();
-            image.pixels[i] = applyFLog2ToRGB(image.pixels[i]);
-        }
+        parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                image.pixels[i] = applyFLog2ToRGB(image.pixels[i]);
+            }
+        });
         return result;
     }
     if (image.pixels.empty()) return result;

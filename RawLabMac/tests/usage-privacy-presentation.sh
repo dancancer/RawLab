@@ -1,12 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-usage-ui.XXXXXX")"
-trap 'rm -r "$OUT"' EXIT
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-swiftc -swift-version 5 -sdk "$SDK" -target "$(uname -m)-apple-macosx15.0" \
-  "$ROOT/Shared/Localization.swift" \
-  "$ROOT/Shared/UsageAnalytics.swift" "$ROOT/RawLabMac/Sources/System/UpdateRelease.swift" \
-  "$ROOT/RawLabMac/Sources/System/UpdateChecker.swift" "$ROOT/RawLabMac/Sources/Presentation/AboutView.swift" \
-  "$ROOT/RawLabMac/tests/UsagePrivacyPresentationTests.swift" -o "$OUT/test"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-usage-ui
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
+    "$ROOT/RawLabMac/Sources/Presentation/AboutView.swift" \
+    "$ROOT/RawLabMac/tests/UsagePrivacyPresentationTests.swift" -o "$OUT/test"
 "$OUT/test" "$@"

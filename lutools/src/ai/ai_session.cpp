@@ -3,12 +3,16 @@
 #include "core/photo_rendering.h"
 #include "core/processing_cancellation.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <sstream>
 
 namespace sony2fuji::ai {
 namespace {
+std::atomic<size_t> gTotalResidentBytes{0};
+
 void notify(const JobProgress& progress, Phase phase, size_t done, size_t total) {
     if (progress && !progress(phase, done, total)) throw Cancelled();
 }
@@ -22,16 +26,20 @@ constexpr const char* hdrBayerProducer = "CoreML";
 #endif
 }
 
+AISession::~AISession() {
+    releaseResult();
+}
+
 void AISession::configure(std::string modelDirectory, std::string cacheDirectory, Backend backend) {
     if (backend != Backend::Cpu && backend != Backend::CoreML && backend != Backend::Auto && backend != Backend::DirectML)
         throw std::invalid_argument("invalid AI backend");
     if (modelDirectory_ != modelDirectory || cacheDirectory_ != cacheDirectory || backend_ != backend) {
         modelDirectory_ = std::move(modelDirectory); cacheDirectory_ = std::move(cacheDirectory); backend_ = backend;
-        stamp_.clear(); runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); package_.reset(); loaded_ = {};
+        stamp_.clear(); runtimeDigest_.clear(); runtimeIdentity_.clear(); package_.reset(); releaseResult();
         selectedDevice_.reset(); diagnostics_.reset(deviceID_,static_cast<int>(backend_));
         lastBackend.clear();
     }
-    if (!enabled) { loaded_ = {}; loadedKey_.clear(); lastBackend.clear(); }
+    if (!enabled) { releaseResult(); lastBackend.clear(); }
     lastError.clear();
 }
 
@@ -39,7 +47,7 @@ void AISession::setDevice(std::string deviceID) {
     if (deviceID.size() > 256) throw std::invalid_argument("AI device identifier is too long");
     if (deviceID_ == deviceID) return;
     deviceID_ = std::move(deviceID); selectedDevice_.reset();
-    runtimeDigest_.clear(); runtimeIdentity_.clear(); loadedKey_.clear(); loaded_ = {}; lastBackend.clear();
+    runtimeDigest_.clear(); runtimeIdentity_.clear(); releaseResult(); lastBackend.clear();
     diagnostics_.reset(deviceID_,static_cast<int>(backend_));
 }
 
@@ -109,7 +117,7 @@ void AISession::ensurePackage() {
         if (!package_ || stamp != stamp_) {
             auto package = loadModelPackage(modelDirectory_);
             if (packageStamp() != stamp) throw std::runtime_error("AI model changed during validation");
-            package_ = std::move(package); stamp_ = stamp; runtimeDigest_.clear(); loadedKey_.clear(); loaded_ = {};
+            package_ = std::move(package); stamp_ = stamp; runtimeDigest_.clear(); releaseResult();
         }
     } catch (const std::bad_alloc&) { throw; }
     catch (const std::exception& error) {
@@ -129,30 +137,60 @@ std::string AISession::renderKey(const std::string& path, const RAWProcessOption
         throw Unsupported(lastError);
     }
     ensurePackage();
-    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity, runtimeDigest_, static_cast<int>(backend_));
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity,
+        runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     return rgbCacheKey(rawKey,options) + ":" + sceneRGBCacheKey(rawKey,options);
 }
 
-const PreparedDenoise& AISession::result(const std::string& path, const RAWProcessOptions& options,
-                                        const RAWBayerSource* metadata, const std::string& sourceIdentity) {
-    const auto identity = sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity;
+void AISession::syncResidentBytes() noexcept {
+    const size_t current = residentBytes();
+    if (current > trackedResidentBytes_) {
+        gTotalResidentBytes.fetch_add(current - trackedResidentBytes_, std::memory_order_relaxed);
+    } else if (current < trackedResidentBytes_) {
+        gTotalResidentBytes.fetch_sub(trackedResidentBytes_ - current, std::memory_order_relaxed);
+    }
+    trackedResidentBytes_ = current;
+}
+
+void AISession::releaseResult() noexcept {
+    loaded_ = {};
+    loadedKey_.clear();
+    syncResidentBytes();
+}
+
+size_t AISession::residentBytes() const noexcept {
+    return loaded_.bayer.normalizedMosaic.size() * sizeof(float) +
+        loaded_.bayer.cameraCorrection.size() * sizeof(RGB) +
+        loaded_.scene.values.size() * sizeof(float);
+}
+
+size_t AISession::totalResidentBytes() noexcept {
+    return gTotalResidentBytes.load(std::memory_order_relaxed);
+}
+
+PreparedDenoise AISession::loadPreparedResult(const std::string& path, const RAWProcessOptions& options,
+                                                const RAWBayerSource* metadata, const std::string& identity,
+                                                std::string& resolvedKey) {
+    releaseResult();
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto key = renderKey(path, options, identity);
-        if (loadedKey_ == key) return loaded_;
-        const auto rawKey = rawCacheKeyFromIdentity(identity, runtimeDigest_, static_cast<int>(backend_));
+        const auto rawKey = rawCacheKeyFromIdentity(identity, runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
         DenoiseCache cache(cacheDirectory_);
         std::string rawProducer, rgbProducer;
         // 只有 prepare 发布完整结果，渲染与导出不触发模型推理。
-        loaded_ = {}; loadedKey_.clear();
-        if (auto scene = cache.load(sceneRGBCacheKey(rawKey,options),CacheKind::SceneRGB,0,0,{},&rgbProducer)) {
-            loaded_.scene = std::move(*scene); loadedKey_ = key; lastError.clear();
+        if (auto scene = cache.load(sceneRGBCacheKey(rawKey, options), CacheKind::SceneRGB, 0, 0, {}, &rgbProducer)) {
+            PreparedDenoise loaded;
+            loaded.scene = std::move(*scene);
+            resolvedKey = key;
+            lastError.clear();
             lastBackend = "SceneRGB=" + rgbProducer;
-            return loaded_;
+            return loaded;
         }
-        auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer) : std::optional<Tensor>{};
-        auto rgb = raw ? cache.load(rgbCacheKey(rawKey,options), CacheKind::RGB, metadata->width, metadata->height,
-            sha256Bytes(raw->values.data(), raw->values.size() * sizeof(float)), &rgbProducer) : std::optional<Tensor>{};
-        if (!raw || !rgb) {
+        std::string rawPayload;
+        auto raw = metadata ? cache.load(rawKey, CacheKind::Raw, metadata->width, metadata->height, {}, &rawProducer, &rawPayload) : std::optional<Tensor>{};
+        auto cameraCorrection = raw ? cache.loadRGBCorrection(rgbCacheKey(rawKey, options), metadata->width, metadata->height,
+            rawPayload, &rgbProducer) : std::optional<std::vector<RGB>>{};
+        if (!raw || !cameraCorrection) {
             // 准备任务使用新会话；驱动/适配器身份变化或首次查询失败后，只刷新并重查一次。
             const auto runtime = package_->digest + ":" + runtimeVersion(true);
             const auto current = sha256Bytes(runtime.data(), runtime.size());
@@ -160,20 +198,36 @@ const PreparedDenoise& AISession::result(const std::string& path, const RAWProce
             lastError = "AI result is missing or invalid; prepare this photo before rendering or exporting";
             throw NotReady(lastError);
         }
-        const int width = metadata->width, height = metadata->height;
-        RAWBayerOverride replacement{width, height, std::move(raw->values), {}};
-        const size_t pixels = size_t(width) * height;
-        replacement.cameraCorrection.resize(pixels);
-        for (size_t i = 0; i < pixels; ++i)
-            replacement.cameraCorrection[i] = RGB(rgb->values[i], rgb->values[pixels+i], rgb->values[2*pixels+i]);
-        loaded_.bayer = std::move(replacement); loadedKey_ = key; lastError.clear();
+        PreparedDenoise loaded;
+        loaded.bayer = RAWBayerOverride{metadata->width, metadata->height, std::move(raw->values), std::move(*cameraCorrection)};
+        resolvedKey = key;
+        lastError.clear();
         lastBackend = producers(rawProducer, rgbProducer);
-        return loaded_;
+        return loaded;
     }
     throw NotReady("GPU AI result is unavailable");
 }
 
+const PreparedDenoise& AISession::result(const std::string& path, const RAWProcessOptions& options,
+                                        const RAWBayerSource* metadata, const std::string& sourceIdentity) {
+    const auto identity = sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity;
+    if (!loadedKey_.empty() && loadedKey_ == renderKey(path, options, identity)) return loaded_;
+    std::string resolvedKey;
+    loaded_ = loadPreparedResult(path, options, metadata, identity, resolvedKey);
+    loadedKey_ = std::move(resolvedKey);
+    syncResidentBytes();
+    return loaded_;
+}
+
+PreparedDenoise AISession::takeResult(const std::string& path, const RAWProcessOptions& options,
+                                      const RAWBayerSource* metadata, const std::string& sourceIdentity) {
+    const auto identity = sourceIdentity.empty() ? sourceIdentityKey(path) : sourceIdentity;
+    std::string resolvedKey;
+    return loadPreparedResult(path, options, metadata, identity, resolvedKey);
+}
+
 PrepareReport AISession::prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& callback) {
+    releaseResult();
     selectedDevice_.reset(); runtimeDigest_.clear();
     beginOperation("prepare");
     const JobProgress progress = [&](Phase phase, size_t done, size_t total) {
@@ -185,25 +239,27 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
     notify(progress, Phase::Loading, 0, 1);
     ensurePackage();
     const AIExecution execution{selectedDevice_ ? &*selectedDevice_ : nullptr,&diagnostics_};
-    const auto rawKey = rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_));
+    // 与 HDR prepare 同口径：身份哈希传入取消检查点，长文件哈希过程中也能取消。
+    const auto rawKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
     const auto rgbKey = rgbCacheKey(rawKey, options);
     const auto sceneKey = sceneRGBCacheKey(rawKey,options);
     const auto modelStamp = stamp_;
     auto validateSource = [&] {
-        if (rawCacheKey(path, runtimeDigest_, static_cast<int>(backend_)) != rawKey || packageStamp() != modelStamp)
+        const auto currentKey = rawCacheKeyFromIdentity(sourceIdentityKey(path, checkProcessingCancellation), runtimeDigest_, static_cast<int>(backend_), options.legacySonyCrop);
+        if (currentKey != rawKey || packageStamp() != modelStamp)
             throw std::runtime_error("RAW or model changed during AI processing; please retry");
     };
-    RAWProcessor processor;
-    const auto loadStatus = processor.loadFile(path);
+    auto processor = std::make_unique<RAWProcessor>(options.legacySonyCrop);
+    const auto loadStatus = processor->loadFile(path);
     if (loadStatus != ErrorCode::Success) throw DecodeError(loadStatus,"Cannot decode RAW for AI denoising");
     RAWBayerSource source;
     DenoiseCache cache(cacheDirectory_);
     PrepareReport report;
     NoiseParameters noise;
-    bool useBayer = processor.getBayerMetadata(source);
+    bool useBayer = processor->getBayerMetadata(source);
     report.routeReason = "non-Bayer or unsupported sensor geometry";
     if (useBayer) {
-        const auto sourceStatus = processor.readBayerSource(options,source);
+        const auto sourceStatus = processor->readBayerSource(options,source);
         if (sourceStatus != ErrorCode::Success)
             throw DecodeError(sourceStatus,"Cannot read Bayer RAW with the selected white balance");
         useBayer = supportsDualDnBridge(source);
@@ -218,8 +274,10 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
         source = {};
         report.route = "SceneRGB";
         if (package_->blindRGBPath.empty()) throw std::runtime_error("Scene RGB AI model is not installed");
-        if (cache.load(sceneKey,CacheKind::SceneRGB,0,0,{},&report.rgb.backend)) {
+        if (cache.verify(sceneKey,CacheKind::SceneRGB,0,0,{},&report.rgb.backend)) {
+            processor.reset();
             report.rgbCacheHit = true; notify(progress,Phase::RGB,1,1);
+            validateSource(); notify(progress,Phase::Saving,1,1);
         } else {
             auto decode = options;
             decode.halfSize = false; decode.rawNoiseReduction = 0; decode.bayerOverride = nullptr;
@@ -227,57 +285,93 @@ PrepareReport AISession::prepare(const std::string& path, const RAWProcessOption
             decode.applyBaselineExposure = false; decode.matchEmbeddedPreviewExposure = false;
             decode.exposure = 0; decode.brightness = 1;
             ImageData scene;
-            const auto decodeStatus = processor.process(decode,scene);
+            const auto decodeStatus = processor->process(decode,scene);
             if (decodeStatus != ErrorCode::Success) throw DecodeError(decodeStatus,"Cannot decode scene RGB for AI denoising");
-            const auto correction = denoiseSceneRGB(scene,std::exp2(sceneExposureEV(processor.getMetadataExposureEV())),
+            const float metadataExposureEV = processor->getMetadataExposureEV();
+            processor.reset();
+            auto correction = denoiseSceneRGB(scene,std::exp2(sceneExposureEV(metadataExposureEV)),
                 *package_,backend_,report.rgb,[&](size_t done,size_t total) { return !progress || progress(Phase::RGB,done,total); },execution);
             scene = {};
             validateSource(); notify(progress,Phase::Saving,0,1);
+            // 对齐 prepareHDRBayer：notify(Saving,1,1)、validateSource 与取消检查全部在
+            // beforePublish 内、rename 提交点之前执行；发布之后不再轮询取消。
             cache.store(sceneKey,CacheKind::SceneRGB,correction.width,correction.height,
-                correction.values.data(),correction.values.size(),{},report.rgb.backend);
+                correction.values.data(),correction.values.size(),{},report.rgb.backend,[&] {
+                    notify(progress,Phase::Saving,1,1); validateSource(); checkProcessingCancellation(); });
+            correction = {};
         }
-        validateSource(); notify(progress,Phase::Saving,1,1);
         try { cache.prune(uint64_t(8)*1024*1024*1024,{sceneKey}); }
         catch (const std::filesystem::filesystem_error&) {}
-        loadedKey_.clear(); loaded_ = {}; lastError.clear(); lastBackend = "SceneRGB=" + report.rgb.backend;
+        releaseResult(); lastError.clear(); lastBackend = "SceneRGB=" + report.rgb.backend;
         return report;
     }
+    processor.reset();
     report.route = "Bayer"; report.routeReason.clear(); report.noise = noise;
-    RAWBayerOverride denoised;
-    if (auto raw = cache.load(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend)) {
-        denoised = {source.width, source.height, std::move(raw->values), {}};
+    std::string rawPayload;
+    bool rawVerified = cache.verify(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend, &rawPayload);
+    const bool rgbVerified = rawVerified && cache.verify(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend);
+    if (rawVerified && rgbVerified) {
+        source = {};
         report.rawCacheHit = true;
-        notify(progress, Phase::Raw, 1, 1);
-    } else {
-        denoised = denoiseRaw(source, *package_, noise, backend_, report.raw,
-            [&](size_t done, size_t total) { return !progress || progress(Phase::Raw, done, total); },execution);
-        validateSource();
-        notify(progress, Phase::Saving, 0, 1);
-        cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
-                    denoised.normalizedMosaic.size(), {}, report.raw.backend);
-    }
-    const auto rawPayload = sha256Bytes(denoised.normalizedMosaic.data(), denoised.normalizedMosaic.size() * sizeof(float));
-    if (cache.load(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend)) {
         report.rgbCacheHit = true;
+        notify(progress, Phase::Raw, 1, 1);
         notify(progress, Phase::RGB, 1, 1);
-    } else {
-        const auto correction = denoiseRgb(source, denoised, *package_, noise, backend_, RGBOutput::CameraCorrection, report.rgb,
-            [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); },execution);
         validateSource();
-        notify(progress, Phase::Saving, 0, 1);
-        cache.store(rgbKey, CacheKind::RGB, source.width, source.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend);
+        notify(progress, Phase::Saving, 1, 1);
+    } else {
+        RAWBayerOverride denoised;
+        if (rawVerified) {
+            if (auto raw = cache.load(rawKey, CacheKind::Raw, source.width, source.height, {}, &report.raw.backend, &rawPayload)) {
+                denoised = {source.width, source.height, std::move(raw->values), {}};
+                report.rawCacheHit = true;
+                notify(progress, Phase::Raw, 1, 1);
+            } else {
+                rawVerified = false;
+            }
+        }
+        if (!rawVerified) {
+#ifdef __APPLE__
+            if (backend_ == Backend::Auto || backend_ == Backend::CoreML) {
+                CoreMLGraph::verifyGPUPlacement(package_->coreMLPaths[1], GraphKind::RGB);
+            }
+#endif
+            denoised = denoiseRaw(source, *package_, noise, backend_, report.raw,
+                [&](size_t done, size_t total) { return !progress || progress(Phase::Raw, done, total); },execution);
+            validateSource();
+            notify(progress, Phase::Saving, 0, 1);
+            // 第一阶段 RAW 缓存按阶段语义保留（可复用 .rawcache），只保留会话通道检查点。
+            cache.store(rawKey, CacheKind::Raw, source.width, source.height, denoised.normalizedMosaic.data(),
+                        denoised.normalizedMosaic.size(), {}, report.raw.backend,[&] { checkProcessingCancellation(); }, &rawPayload);
+        }
+        if (cache.verify(rgbKey, CacheKind::RGB, source.width, source.height, rawPayload, &report.rgb.backend)) {
+            denoised = {}; source = {};
+            report.rgbCacheHit = true;
+            notify(progress, Phase::RGB, 1, 1);
+            validateSource(); notify(progress, Phase::Saving, 1, 1);
+        } else {
+            auto correction = denoiseRgb(source, denoised, *package_, noise, backend_, RGBOutput::CameraCorrection, report.rgb,
+                [&](size_t done, size_t total) { return !progress || progress(Phase::RGB, done, total); },execution);
+            denoised = {}; source = {};
+            validateSource();
+            if (correction.width <= 0 || correction.height <= 0)
+                throw std::runtime_error("Invalid AI RGB correction dimensions");
+            notify(progress, Phase::Saving, 0, 1);
+            // 对齐 prepareHDRBayer：最终 RGB 缓存在 rename 提交点前完成 notify、校验与取消检查；
+            // 发布之后不再轮询取消，迟到的取消不撤销已完整保存的结果。
+            cache.store(rgbKey, CacheKind::RGB, correction.width, correction.height, correction.values.data(), correction.values.size(), rawPayload, report.rgb.backend,[&] {
+                notify(progress,Phase::Saving,1,1); validateSource(); checkProcessingCancellation(); });
+            correction = {};
+        }
     }
-    validateSource();
-    notify(progress, Phase::Saving, 1, 1);
     // 只清理本功能命名的可重建缓存；当前照片两阶段结果始终保留。
     try { cache.prune(uint64_t(8) * 1024 * 1024 * 1024, {rawKey, rgbKey}); }
     catch (const std::filesystem::filesystem_error&) { /* 并发缓存清理失败不撤销已完整保存的结果。 */ }
-    loadedKey_.clear(); loaded_ = {}; lastError.clear();
+    releaseResult(); lastError.clear();
     lastBackend = producers(report.raw.backend, report.rgb.backend);
     return report;
 }
 
-std::string AISession::hdrBayerKey(const std::string& path, const std::string& sourceIdentity) {
+std::string AISession::hdrBayerKey(const std::string& path, bool legacySonyCrop, const std::string& sourceIdentity) {
 #ifdef _WIN32
     const bool supported = backend_ == Backend::Auto || backend_ == Backend::DirectML;
 #else
@@ -286,13 +380,14 @@ std::string AISession::hdrBayerKey(const std::string& path, const std::string& s
     if (!supported) throw Unsupported("HDR Bayer AI requires the platform hardware GPU");
     ensurePackage();
     const auto rawKey = rawCacheKeyFromIdentity(sourceIdentity.empty() ? sourceIdentityKey(path, checkProcessingCancellation) : sourceIdentity,
-                                                runtimeDigest_, static_cast<int>(backend_));
+                                                runtimeDigest_, static_cast<int>(backend_), legacySonyCrop);
     const auto hdrKey = "rawlab-hdr-bayer-v1:" + rawKey;
     return sha256Bytes(hdrKey.data(), hdrKey.size());
 }
 
 void AISession::prepareHDRBayer(const std::string& path, const std::string& identity,
-                                const RAWBayerSource& source, const JobProgress& callback) {
+                                const RAWBayerSource& source, bool legacySonyCrop, const JobProgress& callback) {
+    releaseResult();
     lastBackend.clear();
     selectedDevice_.reset();
     runtimeDigest_.clear();
@@ -301,7 +396,7 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
         diagnostics_.progress(static_cast<int>(phase), done, total);
         return !callback || callback(phase, done, total);
     };
-    const auto key = hdrBayerKey(path, identity);
+    const auto key = hdrBayerKey(path, legacySonyCrop, identity);
     const auto modelStamp = stamp_;
     auto validateIdentity = [&] {
         if (sourceIdentityKey(path, checkProcessingCancellation) != identity || packageStamp() != modelStamp)
@@ -309,7 +404,7 @@ void AISession::prepareHDRBayer(const std::string& path, const std::string& iden
     };
     DenoiseCache cache(cacheDirectory_);
     std::string producer;
-    if (cache.load(key, CacheKind::Raw, source.width, source.height, {}, &producer) && producer == hdrBayerProducer) {
+    if (cache.verify(key, CacheKind::Raw, source.width, source.height, {}, &producer) && producer == hdrBayerProducer) {
         notify(progress, Phase::Raw, 1, 1);
         validateIdentity();
         notify(progress, Phase::Saving, 1, 1);

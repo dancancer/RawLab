@@ -4,17 +4,37 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
-    <!-- 统计 SDK 自带的权限在所有变体移除：电话状态用不到；网络状态只用于给事件标注连接类型，
-         SDK 先检查权限、拿不到就跳过（2.3.2 字节码核实），上报本身不依赖它 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <!-- 电话状态与照片编辑、相机传输无关。 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_BASIC_PHONE_STATE" tools:node="remove" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <!-- androidx.core 为 ContextCompat.registerReceiver 预先声明；应用与依赖都没有调用（release dex 核实） -->
     <permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" tools:node="remove" />
     <uses-permission android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" tools:node="remove" />
+    <!-- Sony 取景提供 HTTP；控制器限定相机地址并绑定所选 Network，禁止重定向。 -->
     <application android:name=".RawLabApplication" android:label="@string/app_name" android:theme="@style/Theme.RawLab" android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher" android:enableOnBackInvokedCallback="true"
-        android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:localeConfig="@xml/locales_config">
+        android:roundIcon="@mipmap/ic_launcher" android:appCategory="image" android:enableOnBackInvokedCallback="true"
+        android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:localeConfig="@xml/locales_config"
+        android:usesCleartextTraffic="true">
+        <!-- 使用系统字体，避免 EmojiCompat 自动发现字体提供者时触发应用列表查询。
+             这条 remove 只在 emoji2（androidx.startup）随某个依赖进入 classpath 时才有对象可删；
+             本项目没有显式依赖它，因此 lint 无法解析该类，按工具链惯例显式忽略。 -->
+        <provider android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false" tools:node="merge" tools:ignore="MissingClass">
+            <meta-data android:name="androidx.emoji2.text.EmojiCompatInitializer" tools:node="remove" />
+        </provider>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

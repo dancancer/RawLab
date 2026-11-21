@@ -1,5 +1,6 @@
 package com.rawlab.android.photo
 
+import com.rawlab.android.io.replaceFileAtomically
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -7,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Size
@@ -52,14 +54,16 @@ internal fun defaultEditSettingsFor(file: File, inputKind: PhotoInputKind, isHDR
 }
 
 data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
-    val width: Int = 0, val height: Int = 0, val orientation: Int = 0) {
+    val width: Int = 0, val height: Int = 0, val orientation: Int = 0,
+    val albumId: String = album, val relativePath: String? = null, val mimeType: String? = null, val sourceVersion: String = "") {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val identity: PhotoIdentity = PhotoIdentity(uri.toString()),
     val inputKind: PhotoInputKind = PhotoInputKind.RAW,
     val validateOriginal: (() -> Unit)? = null,
-    val hdrSource: HDRSourceInfo? = null) {
+    val hdrSource: HDRSourceInfo? = null,
+    val sourceFingerprint: String? = null) {
     val isHDRSource get() = hdrSource != null
     val isCameraRawHDR get() = hdrSource?.isCameraRaw == true
     val isX3f get() = inputKind == PhotoInputKind.RAW &&
@@ -78,14 +82,16 @@ class PhotoStorage(
     looksDirectory: File = File(context.filesDir, "looks"),
     lookValidator: LookValidator = NativeLookValidator,
     dcpCompiler: DcpCompiler = NativeDcpCompiler,
+    bundledFilms: List<Film>? = null,
 ) : AutoCloseable {
     private val resolver = context.contentResolver
-    private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}")
+    private val mediaLibrary = MediaPhotoLibrary(context)
+    private val directory = File(context.cacheDir, "rawlab-${UUID.randomUUID()}").also(WorkingCopyCleanup::protect)
     private val systemPhotos = File(context.filesDir, "system-photos")
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     internal val hdrLookDirectory = File(looksDirectory, "HDR")
     internal val hdrCameraProfileDirectory = File(context.filesDir, "HDRCameraProfiles")
-    private val films = Film.all + BundledLooks.load(context)
+    private val films = Film.all + (bundledFilms ?: BundledLooks.load(context))
     private var lensDirectory: File? = null
 
     @Synchronized
@@ -107,18 +113,40 @@ class PhotoStorage(
         return target
     }
 
-    fun album(): List<AlbumPhoto> {
+    fun album(ownOnly: Boolean = false): List<AlbumPhoto> {
+        if (ownOnly && Build.VERSION.SDK_INT < 29) return emptyList()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME,
+        val projection = mutableListOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.MIME_TYPE, MediaStore.Images.Media.BUCKET_DISPLAY_NAME,
-            MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION)
+            MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT, MediaStore.Images.Media.ORIENTATION,
+            MediaStore.Images.Media.BUCKET_ID)
+        var selection: String? = null
+        var arguments: Array<String>? = null
+        if (Build.VERSION.SDK_INT >= 29) {
+            projection += listOf(MediaStore.Images.Media.RELATIVE_PATH, MediaStore.Images.Media.VOLUME_NAME)
+            selection = "${MediaStore.Images.Media.IS_PENDING} = 0"
+            if (ownOnly) {
+                selection += " AND ${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?"
+                arguments = arrayOf(context.packageName)
+            }
+        }
+        projection += listOf(MediaStore.Images.Media.DATE_MODIFIED, MediaStore.Images.Media.SIZE)
+        if (Build.VERSION.SDK_INT >= 30) projection += MediaStore.Images.Media.GENERATION_MODIFIED
         val result = mutableListOf<AlbumPhoto>()
-        resolver.query(collection, projection, null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
+        resolver.query(collection, projection.toTypedArray(), selection, arguments, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
                 val name = cursor.getString(1) ?: "RAW"
                 if (PhotoFiles.accepts(name, cursor.getString(2))) {
-                    result += AlbumPhoto(ContentUris.withAppendedId(collection, cursor.getLong(0)), name, cursor.getString(3) ?: "RAW",
-                        cursor.getInt(4), cursor.getInt(5), cursor.getInt(6))
+                    val path = if (Build.VERSION.SDK_INT >= 29) cursor.getString(8) else null
+                    val volume = if (Build.VERSION.SDK_INT >= 29) cursor.getString(9) else null
+                    val uri = mediaLibrary.canonicalIfKnown(volume, cursor.getLong(0))
+                        ?: ContentUris.withAppendedId(collection, cursor.getLong(0))
+                    result += AlbumPhoto(uri, name, cursor.getString(3) ?: "RAW",
+                        cursor.getInt(4), cursor.getInt(5), cursor.getInt(6),
+                        path?.let { "$volume:$it" } ?: cursor.getString(7).orEmpty(), path, cursor.getString(2),
+                        listOf(MediaStore.Images.Media.DATE_MODIFIED, MediaStore.Images.Media.SIZE,
+                            if (Build.VERSION.SDK_INT >= 30) MediaStore.Images.Media.GENERATION_MODIFIED else MediaStore.Images.Media._ID)
+                            .joinToString(":") { cursor.getLong(cursor.getColumnIndexOrThrow(it)).toString() })
                 }
             }
         }
@@ -141,6 +169,7 @@ class PhotoStorage(
     } catch (_: Exception) { null }
 
     fun retainSystemPhoto(uri: Uri): Uri {
+        knownCameraSource(uri)?.let { return it }
         runCatching {
             resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -174,37 +203,61 @@ class PhotoStorage(
         }.getOrDefault(false)
     }
 
-    fun import(uri: Uri): ImportedPhoto {
-        runCatching {
-            resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    fun preflightImportSpace(uris: Iterable<Uri>) {
+        var totalBytes = 0L
+        for (uri in uris) {
+            val source = knownCameraSource(uri) ?: uri
+            val bytes = WorkingCopy.declaredBytes(resolver, source)
+            if (bytes > 0L) {
+                totalBytes = if (Long.MAX_VALUE - totalBytes < bytes) Long.MAX_VALUE else totalBytes + bytes
+            }
         }
-        val retained = uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf {
+        WorkingCopy.requireTotalSpace(directory, totalBytes)
+    }
+
+    fun import(uri: Uri): ImportedPhoto {
+        val source = knownCameraSource(uri) ?: uri
+        runCatching {
+            resolver.takePersistableUriPermission(source, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val retained = source.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf {
             it.parentFile?.canonicalFile == systemPhotos.canonicalFile
         }
         try { retained?.let(SystemPhotoStore::validate) }
         catch (_: ChangedSystemPhoto) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
-        val name = retained?.let(SystemPhotoStore::originalName) ?: runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
+        val name = retained?.let(SystemPhotoStore::originalName) ?: runCatching { resolver.query(source, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
             if (it.moveToFirst()) it.getString(0) else null
-        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "RAW"
-        val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(uri))
+        } ?: source.lastPathSegment?.substringAfterLast('/') ?: "RAW"
+        val inputKind = PhotoFiles.kind(retained?.name ?: name, resolver.getType(source))
             ?: throw IOException("Selected item is not a supported photo")
-        val validate = OriginalPhotoSource.capture(resolver, uri)
-        val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
+        val original = OriginalPhotoSource.snapshot(resolver, source)
+        val validate = original.validate
+        val expectedBytes = WorkingCopy.declaredBytes(resolver, source)
+        val stream = resolver.openInputStream(source) ?: throw IOException("Cannot open input")
+        val file = WorkingCopy.import(directory, stream, retained?.name ?: name, expectedBytes = expectedBytes)
         try {
             validate()
             val hdrSource = when (inputKind) {
-                PhotoInputKind.RASTER -> if (HDRSourceInfo.mayContainGainMap(name, resolver.getType(uri)))
+                PhotoInputKind.RASTER -> if (HDRSourceInfo.mayContainGainMap(name, resolver.getType(source)))
                     NativeHDRBridge.probe(file) else null
                 PhotoInputKind.RAW -> NativeHDRBridge.probeCameraRaw(file)
             }
-            return ImportedPhoto(uri, name, file, PhotoIdentity(uri.toString()), inputKind, validate, hdrSource)
+            return ImportedPhoto(source, name, file, PhotoIdentity(source.toString()), inputKind, validate, hdrSource, original.fingerprint)
         } catch (error: Throwable) { file.delete(); throw error }
     }
+
+    private fun knownCameraSource(uri: Uri): Uri? = try { mediaLibrary.resolveKnown(uri) }
+        catch (_: MediaPhotoChanged) { throw IOException(AppStrings.text(R.string.collection_source_changed)) }
 
     fun looks(): List<LookChoice> = films.map { LookChoice(it.id, it.name, managed = false) } + lookLibrary.list().map {
         LookChoice(it.id, it.name, managed = true, available = it.available, appearanceUnverified = it.appearanceUnverified, compatibilityMode = it.compatibilityMode)
     }
+    fun lookEntries() = com.rawlab.android.looks.LookLibraryEntries.load(lookLibrary,
+        films.map { LookChoice(it.id, it.name, managed = false) })
+    fun deleteUnreadableLook(entry: com.rawlab.android.looks.UnreadableLook) =
+        com.rawlab.android.looks.LookLibraryEntries.removeUnreadable(lookLibrary, entry,
+            films.map { LookChoice(it.id, it.name, managed = false) })
+
     fun builtinLookIDs(): Map<String, String> = films.mapNotNull { film -> film.fileName?.let { it to film.id } }.toMap()
 
     internal fun lookSourceName(uri: Uri): String = runCatching { resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null) }.getOrNull()?.use {
@@ -235,8 +288,7 @@ class PhotoStorage(
             val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
             input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
             val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
-            java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            replaceFileAtomically(staging, profile.asset(directory))
             return profile
         } finally { staging.delete() }
     }
@@ -277,16 +329,20 @@ class PhotoStorage(
         } finally { temporary.delete() }
     }
 
+    private fun openStream(uri: Uri): java.io.InputStream? =
+        resolver?.openInputStream(uri)
+            ?: uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf(File::isFile)?.inputStream()
+
     fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
             val curve = dcp?.toneCurve?.let { curveUri ->
-                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                val input = openStream(curveUri) ?: throw IOException("Cannot open tone curve")
                 input.use { readDcpInput(it, 1024 * 1024) }.also {
                     if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
                 }
             }
-            val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
+            val stream = openStream(uri) ?: throw IOException("Cannot open look")
             return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)
@@ -355,8 +411,28 @@ class PhotoStorage(
 
     fun saveDocument(file: File, destination: Uri, original: Uri) {
         require(destination != original) { "Cannot overwrite source photo" }
-        val stream = resolver.openOutputStream(destination, "wt") ?: throw IOException("Cannot open destination")
-        stream.use { output -> file.inputStream().use { it.copyTo(output) } }
+        try {
+            val stream = resolver.openOutputStream(destination, "wt") ?: throw IOException("Cannot open destination")
+            stream.use { output -> file.inputStream().use { it.copyTo(output) } }
+        } catch (error: Throwable) {
+            deleteIncompleteDocument(destination, original, written = true)
+            throw error
+        }
+    }
+
+    internal fun deleteIncompleteDocument(destination: Uri, original: Uri? = null, written: Boolean = false) {
+        if (destination == original) return
+        if (destination.scheme == "file") {
+            val target = destination.path?.let(::File) ?: return
+            val source = original?.takeIf { it.scheme == "file" }?.path?.let(::File)
+            if (source != null && runCatching { target.canonicalPath == source.canonicalPath }.getOrDefault(false)) return
+            if (written || (target.exists() && target.length() == 0L)) target.delete()
+            return
+        }
+        if (DocumentsContract.isDocumentUri(context, destination)) {
+            if (runCatching { DocumentsContract.deleteDocument(resolver, destination) }.getOrDefault(false)) return
+        }
+        runCatching { resolver.delete(destination, null, null) }
     }
 
     fun saveAlbum(file: File, format: ExportFormat, outputName: String? = null, onCreated: (Uri) -> Unit = {}): Uri {

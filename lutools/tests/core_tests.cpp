@@ -1,14 +1,31 @@
+#include "test_harness.h"
 #include "sony2fuji/sony2fuji.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
 #include "core/preview_exposure.h"
+#include "core/pipeline.h"
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
+#include "core/render_params.h"
+// WR-01 后核心不再编译 stb_image_write 实现；测试保留 stb 作旧实现参考编码器。
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#ifdef _WIN32
+#define STBIW_WINDOWS_UTF8
+#endif
+#include "stb_image_write.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "core/stb_image.h"
+#include "core/processing_cancellation.h"
+#include <cerrno>
 #include <cmath>
+#include <csetjmp>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <spng.h>
 #include <zlib.h>
 #include <limits>
 #include <array>
@@ -21,16 +38,25 @@
 #include <process.h>
 #define getpid _getpid
 #else
+#include <csignal>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <pthread.h>
 #endif
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+#include "ai/dualdn_cache.h"
+#include "ai/model_package.h"
+#include "ai/network_graph.h"
+#include "ai/directml_device.h"
+#include <nlohmann/json.hpp>
+#include <optional>
+#endif
 
 using namespace sony2fuji;
-int failures = 0;
-void check(bool ok, const char* name) {
-    std::cout << (ok ? "PASS " : "FAIL ") << name << '\n';
-    if (!ok) ++failures;
-}
+using rawlab::test::checkPass;
 bool near(float a, float b, float tolerance = 1e-5f) { return std::abs(a-b) < tolerance; }
 
 sony2fuji_request request(const unsigned char* pixels) {
@@ -54,17 +80,17 @@ sony2fuji_request request(const unsigned char* pixels) {
 }
 
 void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) {
-    check(near(encodePhotoLog(0, LUTTransfer::FLog) * 1023, 95, .001f) &&
+    checkPass(near(encodePhotoLog(0, LUTTransfer::FLog) * 1023, 95, .001f) &&
           near(encodePhotoLog(.18f, LUTTransfer::FLog) * 1023, 469.88278f, .002f) &&
           near(encodePhotoLog(.9f, LUTTransfer::FLog) * 1023, 705.36192f, .002f),
           "F-Log published black/gray/white anchors use its own curve");
     for (auto transfer : {LUTTransfer::FLog, LUTTransfer::FLog2, LUTTransfer::FLog2C}) {
         for (float value : {-.005f, 0.0f, .0005f, .001f, .18f, .9f, 2.0f})
-            check(near(decodePhotoLog(encodePhotoLog(value, transfer), transfer), value, 1e-5f),
+            checkPass(near(decodePhotoLog(encodePhotoLog(value, transfer), transfer), value, 1e-5f),
                   "Fuji curves round-trip low branch, pedestal, gray and super-white");
     }
     const auto redC = ColorConverter::applyMatrix(RGB(1,0,0), photoLUTInputMatrix(LUTTransfer::FLog2C));
-    check(near(redC.r,.51715127f) && near(redC.g,.08863135f) && near(redC.b,.01775287f),
+    checkPass(near(redC.r,.51715127f) && near(redC.g,.08863135f) && near(redC.b,.01775287f),
           "F-Gamut C matrix matches independently derived sRGB-red coordinates");
     const struct { const char* gamma; const char* gamut; LUTTransfer transfer; } inputs[] = {
         {"F-Log", "F-Gamut", LUTTransfer::FLog},
@@ -85,12 +111,12 @@ void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) 
         auto identityRequest = request(gamutC ? red : gray);
         identityRequest.lut_path = identityPath.c_str(); identityRequest.lut_strength = 1;
         sony2fuji_buffer encoded{};
-        check(sony2fuji_process(session, &identityRequest, &encoded) == SONY2FUJI_STATUS_OK,
+        checkPass(sony2fuji_process(session, &identityRequest, &encoded) == SONY2FUJI_STATUS_OK,
               "Photo input adapter renders an identity diagnostic LUT");
         const std::array<int,3> expected = gamutC ? std::array<int,3>{127,82,49} :
             (input.transfer == LUTTransfer::FLog ? std::array<int,3>{117,117,117} : std::array<int,3>{100,100,100});
         if (encoded.data) for (int c=0; c<3; ++c)
-            check(std::abs(static_cast<unsigned char*>(encoded.data)[c] - expected[c]) <= 1,
+            checkPass(std::abs(static_cast<unsigned char*>(encoded.data)[c] - expected[c]) <= 1,
                   "Photo API uses the declared input curve and F-Gamut C matrix");
         sony2fuji_release_buffer(&encoded);
         for (const auto& output : inputs) {
@@ -105,7 +131,7 @@ void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) 
                                                                      : "0.391007241 0.557245291 0.092864\n");
             }
             const auto lut = LUTParser::loadLUT(path);
-            check(lut && lut->inputTransfer() == input.transfer && lut->outputTransfer() == output.transfer,
+            checkPass(lut && lut->inputTransfer() == input.transfer && lut->outputTransfer() == output.transfer,
                   "Technical contract preserves input/output transfer independently");
             auto r = request(gray); r.lut_path = path.c_str(); r.lut_strength = 1;
             sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(sony2fuji_gpu_config), SONY2FUJI_GPU_OFF};
@@ -115,72 +141,587 @@ void testFujiLUTs(const std::filesystem::path& dir, sony2fuji_session* session) 
                 sony2fuji_buffer out{};
                 const auto status = sony2fuji_process(session, &r, &out);
                 const auto* pixels = static_cast<const unsigned char*>(out.data);
-                check(status == SONY2FUJI_STATUS_OK && pixels &&
+                checkPass(status == SONY2FUJI_STATUS_OK && pixels &&
                       std::abs(pixels[0] - std::round(neutralDisplay(.18f)*255)) <= 1 &&
                       std::abs(pixels[1] - std::round(neutralDisplay(.9f)*255)) <= 1 && pixels[2] == 0,
                       "Technical output is decoded and displayed, not treated as display RGB");
                 if (pixels) for (int c=0; c<3; ++c) {
                     if (mode == SONY2FUJI_GPU_OFF) cpu[c] = pixels[c];
-                    else check(std::abs(cpu[c] - pixels[c]) <= 1, "Technical Auto agrees with CPU");
+                    else checkPass(std::abs(cpu[c] - pixels[c]) <= 1, "Technical Auto agrees with CPU");
                 }
                 if (mode == SONY2FUJI_GPU_OFF)
-                    check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+                    checkPass(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
                           "Technical Off reports the CPU backend");
                 sony2fuji_release_buffer(&out);
             }
             config.mode = SONY2FUJI_GPU_OFF; sony2fuji_session_set_gpu_config(session, &config);
             r.lut_strength = .5f;
             sony2fuji_buffer blended{};
-            check(sony2fuji_process(session, &r, &blended) == SONY2FUJI_STATUS_OK, "Technical half-strength renders");
+            checkPass(sony2fuji_process(session, &r, &blended) == SONY2FUJI_STATUS_OK, "Technical half-strength renders");
             if (blended.data) for (int c=0; c<3; ++c)
-                check(std::abs(static_cast<unsigned char*>(blended.data)[c] -
+                checkPass(std::abs(static_cast<unsigned char*>(blended.data)[c] -
                     (neutralDisplay(46.0f/255)*255 + cpu[c])*.5f) <= 1, "Technical blend uses display endpoints");
             sony2fuji_release_buffer(&blended);
         }
     }
 }
 
-int main() {
-    std::cout << std::unitbuf;
-    const std::string thumbnailRaw=TEST_RAW_PATH;
-    if (!thumbnailRaw.empty()) {
-#ifdef _WIN32
-    HANDLE worker = CreateThread(nullptr, 512*1024, [](LPVOID path)->DWORD {
-        return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? 1 : 0;
-    }, const_cast<char*>(thumbnailRaw.c_str()), STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
-    DWORD result = 1;
-    if (worker) { WaitForSingleObject(worker, INFINITE); GetExitCodeThread(worker, &result); CloseHandle(worker); }
-    check(worker && result == 0,"Preview decode fits a desktop worker thread stack");
-#else
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setstacksize(&attr,512*1024);
-    pthread_t worker;
-    const int started=pthread_create(&worker,&attr,[](void* path)->void* {
-        return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? reinterpret_cast<void*>(1) : nullptr;
-    },const_cast<char*>(thumbnailRaw.c_str()));
-    pthread_attr_destroy(&attr);
-    void* result=nullptr;
-    if (!started) pthread_join(worker,&result);
-    check(!started && !result,"Preview decode fits a desktop worker thread stack");
+bool hasJpegStagingFile(const std::filesystem::path& directory) {
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        const std::string name = entry.path().filename().string();
+        if (name.find(".rawlab-jpeg-") == 0) return true;
+        if (name.size() >= 7 && name.rfind("rlj", 0) == 0 && entry.path().extension() == ".tmp") {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string readTextFile(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(file)), {});
+}
+
+void writeTextFile(const std::filesystem::path& path, const std::string& content) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(content.data(), static_cast<std::streamsize>(content.size()));
+}
+
+void testJpegExportWriteSafety(const std::filesystem::path& parentDir, sony2fuji_session* session) {
+    const auto jpegDir = parentDir / "jpeg-write-safety";
+    std::filesystem::create_directories(jpegDir);
+
+    // Keep pixel count below parallelPixelRanges's 65536 threshold so fork() children stay off libdispatch.
+    ImageData noisy(128, 128);
+    std::vector<unsigned char> noisyBytes(128 * 128 * 3);
+    uint32_t seed = 0x12345678u;
+    for (size_t i = 0; i < noisy.pixels.size(); ++i) {
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char r = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char g = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        seed = seed * 1664525u + 1013904223u;
+        const unsigned char b = static_cast<unsigned char>((seed >> 16) & 0xFFu);
+        noisy.pixels[i] = RGB(r / 255.0f, g / 255.0f, b / 255.0f);
+        noisyBytes[i * 3 + 0] = r;
+        noisyBytes[i * 3 + 1] = g;
+        noisyBytes[i * 3 + 2] = b;
+    }
+
+    const auto validTarget = jpegDir / "replace-existing.jpg";
+    writeTextFile(validTarget, "old target");
+    checkPass(ImageEncoder::saveJPEG(noisy, validTarget.string(), 95) == ErrorCode::Success,
+          "JPEG writes and atomically replaces an existing target");
+    const std::string encodedJpeg = readTextFile(validTarget);
+    checkPass(encodedJpeg.size() > 8192 &&
+          static_cast<unsigned char>(encodedJpeg[0]) == 0xFF &&
+          static_cast<unsigned char>(encodedJpeg[1]) == 0xD8 &&
+          static_cast<unsigned char>(encodedJpeg[encodedJpeg.size() - 2]) == 0xFF &&
+          static_cast<unsigned char>(encodedJpeg[encodedJpeg.size() - 1]) == 0xD9,
+          "JPEG output has valid SOI/EOI markers and exceeds stdio buffer size");
+    checkPass(!hasJpegStagingFile(jpegDir), "successful JPEG export leaves no staging file");
+
+    const auto invalidTarget = jpegDir / "invalid-preserves.jpg";
+    writeTextFile(invalidTarget, "preserve this target");
+    ImageData mismatched(2, 2);
+    mismatched.pixels.resize(1);
+    checkPass(ImageEncoder::saveJPEG(ImageData(), invalidTarget.string(), 95) == ErrorCode::ProcessingError &&
+          ImageEncoder::saveJPEG(mismatched, invalidTarget.string(), 95) == ErrorCode::ProcessingError,
+          "JPEG rejects invalid ImageData as a processing error");
+    checkPass(readTextFile(invalidTarget) == "preserve this target" && !hasJpegStagingFile(jpegDir),
+          "invalid JPEG input preserves existing target and creates no staging file");
+
+    const auto missingParentTarget = jpegDir / "absent" / "out.jpg";
+    checkPass(ImageEncoder::saveJPEG(noisy, missingParentTarget.string(), 95) == ErrorCode::IOError &&
+          !std::filesystem::exists(missingParentTarget),
+          "JPEG missing output directory returns IOError without creating target");
+
+    auto jpegRequest = request(noisyBytes.data());
+    jpegRequest.input_width = 128;
+    jpegRequest.input_height = 128;
+    jpegRequest.size_mode = SONY2FUJI_SIZE_EXACT;
+    jpegRequest.target_width = 128;
+    jpegRequest.target_height = 128;
+    jpegRequest.intent = SONY2FUJI_INTENT_FINAL;
+    jpegRequest.output_target = SONY2FUJI_TARGET_FILE;
+    jpegRequest.output_format = SONY2FUJI_OUTPUT_JPEG;
+    jpegRequest.jpeg_quality = 95;
+    const std::string missingJpegPath = missingParentTarget.string();
+    jpegRequest.output_path = missingJpegPath.c_str();
+    checkPass(sony2fuji_process(session, &jpegRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR &&
+          !std::filesystem::exists(missingParentTarget),
+          "C ABI JPEG storage failure maps to SONY2FUJI_STATUS_OUTPUT_IO_ERROR");
+
+    const auto blockedDir = jpegDir / "blocked-dir";
+    std::filesystem::create_directory(blockedDir);
+    const auto marker = blockedDir / "keep.txt";
+    writeTextFile(marker, "keep directory contents");
+    checkPass(ImageEncoder::saveJPEG(noisy, blockedDir.string(), 95) == ErrorCode::IOError &&
+          std::filesystem::is_directory(blockedDir) &&
+          readTextFile(marker) == "keep directory contents" &&
+          !hasJpegStagingFile(jpegDir),
+          "JPEG directory target fails cleanly without leaving staging files");
+
+#ifndef _WIN32
+    auto runLimitedWriteChild = [](rlim_t byteLimit, auto&& fn) -> int {
+        const pid_t child = fork();
+        if (child < 0) return -1;
+        if (child == 0) {
+            std::signal(SIGXFSZ, SIG_IGN);
+            const struct rlimit limit = {byteLimit, byteLimit};
+            if (setrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(2);
+            _exit(fn() ? 0 : 1);
+        }
+        int status = 0;
+        if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -2;
+        return WEXITSTATUS(status);
+    };
+    const auto midwriteMissingTarget = jpegDir / "midwrite-missing.jpg";
+    const int missingExit = runLimitedWriteChild(4096, [&]() {
+        return ImageEncoder::saveJPEG(noisy, midwriteMissingTarget.string(), 95) == ErrorCode::IOError;
+    });
+    checkPass(missingExit == 0, "mid-write JPEG fwrite failure returns ErrorCode::IOError");
+    checkPass(missingExit >= 0 && !std::filesystem::exists(midwriteMissingTarget) && !hasJpegStagingFile(jpegDir),
+          "mid-write JPEG failure leaves neither truncated target nor staging file");
+
+    const auto midwriteExistingTarget = jpegDir / "midwrite-existing.jpg";
+    writeTextFile(midwriteExistingTarget, "preserve existing jpeg");
+    const std::string existingPathString = midwriteExistingTarget.string();
+    jpegRequest.output_path = existingPathString.c_str();
+    const int existingExit = runLimitedWriteChild(4096, [&]() {
+        return sony2fuji_process(session, &jpegRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR;
+    });
+    checkPass(existingExit == 0,
+          "C ABI mid-write JPEG failure returns SONY2FUJI_STATUS_OUTPUT_IO_ERROR");
+    checkPass(existingExit >= 0 && readTextFile(midwriteExistingTarget) == "preserve existing jpeg" &&
+          !hasJpegStagingFile(jpegDir),
+          "mid-write JPEG failure preserves pre-existing target intact");
+
+    ImageData tiny(8, 8);
+    for (auto& pixel : tiny.pixels) pixel = RGB(0.4f, 0.6f, 0.2f);
+    const auto flushFailTarget = jpegDir / "flush-fail.jpg";
+    const int flushExit = runLimitedWriteChild(128, [&]() {
+        return ImageEncoder::saveJPEG(tiny, flushFailTarget.string(), 95) == ErrorCode::IOError;
+    });
+    checkPass(flushExit == 0 && !std::filesystem::exists(flushFailTarget) &&
+          !hasJpegStagingFile(jpegDir),
+          "stdio-buffered small JPEG flush failure returns IOError and leaves no partial file");
 #endif
-    } else std::cout << "SKIP worker thumbnail (set SONY2FUJI_TEST_RAW)\n";
-    check(!RAWProcessOptions().matchEmbeddedPreviewExposure, "Default exposure does not meter the embedded JPEG");
-    check(near(sceneExposureEV(.35f),1.05f) && near(sceneExposureEV(-.5f),.2f) &&
+}
+
+void testPngEncoderLibspng(const std::filesystem::path& parentDir) {
+    const auto pngDir = parentDir / "png-libspng";
+    std::filesystem::create_directories(pngDir);
+
+    auto writeTextFile = [](const std::filesystem::path& path, const std::string& content) {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(content.data(), static_cast<std::streamsize>(content.size()));
+    };
+    auto readTextFile = [](const std::filesystem::path& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    };
+    auto hasPngStagingFile = [](const std::filesystem::path& directory) {
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            const std::string name = entry.path().filename().string();
+            if (name.rfind(".rawlab-png-", 0) == 0 ||
+                (name.rfind("rl", 0) == 0 && entry.path().extension() == ".tmp")) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 1. 16-bit 渐变图：逐像素无损一致 + 自适应行滤波启用且体积严格优于 row[0]=0 基线
+    constexpr int kSize = 256;
+    ImageData gradient(kSize, kSize);
+    std::vector<uint16_t> expectedRgb(static_cast<size_t>(kSize) * kSize * 3u);
+    std::vector<unsigned char> unfilteredRaw(static_cast<size_t>(kSize) * (static_cast<size_t>(kSize) * 6u + 1u), 0);
+    for (int y = 0; y < kSize; ++y) {
+        const size_t rawRow = static_cast<size_t>(y) * (static_cast<size_t>(kSize) * 6u + 1u);
+        unfilteredRaw[rawRow] = 0;
+        for (int x = 0; x < kSize; ++x) {
+            const float r = static_cast<float>(x) / static_cast<float>(kSize - 1);
+            const float g = static_cast<float>(y) / static_cast<float>(kSize - 1);
+            const float b = 0.5f * (r + g);
+            gradient.at(x, y) = RGB(r, g, b);
+            const uint16_t qr = static_cast<uint16_t>(std::clamp(std::lround(r * 65535.0f), 0L, 65535L));
+            const uint16_t qg = static_cast<uint16_t>(std::clamp(std::lround(g * 65535.0f), 0L, 65535L));
+            const uint16_t qb = static_cast<uint16_t>(std::clamp(std::lround(b * 65535.0f), 0L, 65535L));
+            const size_t idx = (static_cast<size_t>(y) * kSize + static_cast<size_t>(x)) * 3u;
+            expectedRgb[idx + 0] = qr;
+            expectedRgb[idx + 1] = qg;
+            expectedRgb[idx + 2] = qb;
+            const size_t rawBase = rawRow + 1u + static_cast<size_t>(x) * 6u;
+            unfilteredRaw[rawBase + 0] = static_cast<unsigned char>(qr >> 8);
+            unfilteredRaw[rawBase + 1] = static_cast<unsigned char>(qr);
+            unfilteredRaw[rawBase + 2] = static_cast<unsigned char>(qg >> 8);
+            unfilteredRaw[rawBase + 3] = static_cast<unsigned char>(qg);
+            unfilteredRaw[rawBase + 4] = static_cast<unsigned char>(qb >> 8);
+            unfilteredRaw[rawBase + 5] = static_cast<unsigned char>(qb);
+        }
+    }
+
+    const auto gradientPng = pngDir / "gradient-16bit.png";
+    writeTextFile(gradientPng, "old png target");
+    checkPass(ImageEncoder::savePNG(gradient, gradientPng.string()) == ErrorCode::Success,
+          "PNG saves 16-bit gradient and atomically replaces existing target");
+    checkPass(!hasPngStagingFile(pngDir), "successful PNG export leaves no staging file");
+
+    const std::string pngBytes = readTextFile(gradientPng);
+    {
+        spng_ctx* dec = spng_ctx_new(0);
+        checkPass(dec != nullptr, "spng decoder context created");
+        spng_set_png_buffer(dec, pngBytes.data(), pngBytes.size());
+        spng_ihdr ihdr{};
+        uint8_t srgbIntent = 255;
+        std::vector<uint16_t> decodedRgb(expectedRgb.size());
+        const bool decodedOk = dec &&
+            spng_get_ihdr(dec, &ihdr) == 0 &&
+            ihdr.width == kSize && ihdr.height == kSize &&
+            ihdr.bit_depth == 16 && ihdr.color_type == SPNG_COLOR_TYPE_TRUECOLOR &&
+            spng_decode_image(dec, decodedRgb.data(), decodedRgb.size() * sizeof(uint16_t), SPNG_FMT_PNG, 0) == 0 &&
+            spng_get_srgb(dec, &srgbIntent) == 0 && srgbIntent == 0;
+        if (dec) spng_ctx_free(dec);
+        checkPass(decodedOk && decodedRgb == expectedRgb,
+              "16-bit PNG decoded pixels match source bit-for-bit with default sRGB intent");
+    }
+
+    // 撤修复锚点：检查 IDAT 行滤波分布与压缩后体积（去掉自适应滤波会直接变红）
+    auto read32 = [&](size_t offset) {
+        return (uint32_t(static_cast<unsigned char>(pngBytes[offset])) << 24) |
+               (uint32_t(static_cast<unsigned char>(pngBytes[offset + 1])) << 16) |
+               (uint32_t(static_cast<unsigned char>(pngBytes[offset + 2])) << 8) |
+               uint32_t(static_cast<unsigned char>(pngBytes[offset + 3]));
+    };
+    std::vector<unsigned char> idatBytes;
+    for (size_t offset = 8; offset + 12 <= pngBytes.size();) {
+        const uint32_t length = read32(offset);
+        if (offset + 12 + length > pngBytes.size()) break;
+        if (pngBytes.compare(offset + 4, 4, "IDAT") == 0) {
+            idatBytes.insert(idatBytes.end(),
+                             pngBytes.begin() + static_cast<std::ptrdiff_t>(offset + 8),
+                             pngBytes.begin() + static_cast<std::ptrdiff_t>(offset + 8 + length));
+        }
+        offset += 12 + length;
+    }
+    std::vector<unsigned char> rawScanlines(unfilteredRaw.size());
+    uLongf rawLen = static_cast<uLongf>(rawScanlines.size());
+    checkPass(uncompress(rawScanlines.data(), &rawLen, idatBytes.data(), static_cast<uLong>(idatBytes.size())) == Z_OK &&
+          rawLen == rawScanlines.size(),
+          "PNG IDAT decompresses to expected scanline byte count");
+    size_t nonZeroFilters = 0;
+    const size_t stride = static_cast<size_t>(kSize) * 6u + 1u;
+    for (int y = 0; y < kSize; ++y) {
+        const unsigned char f = rawScanlines[static_cast<size_t>(y) * stride];
+        if (f > 0 && f <= 4) ++nonZeroFilters;
+    }
+    uLongf baselineBound = compressBound(static_cast<uLong>(unfilteredRaw.size()));
+    std::vector<unsigned char> baselineDeflated(baselineBound);
+    checkPass(compress2(baselineDeflated.data(), &baselineBound, unfilteredRaw.data(),
+                    static_cast<uLong>(unfilteredRaw.size()), Z_DEFAULT_COMPRESSION) == Z_OK,
+          "baseline unfiltered deflate succeeds");
+    checkPass(nonZeroFilters > 0 && pngBytes.size() < baselineBound,
+          "PNG adaptive row filtering is active and beats unfiltered baseline size");
+
+    // 2. 编码期直写 eXIf 块并完整读回
+    ImageEncoder::PngMetadata exifMeta;
+    // 最小合法 little-endian TIFF/EXIF 头 + IFD0 (Make="RawLab\0", Orientation=1)
+    exifMeta.exif = {
+        'I', 'I', 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // TIFF header: II*, IFD0 offset=8
+        0x02, 0x00,                                     // 2 entries
+        0x0F, 0x01, 0x02, 0x00, 0x07, 0x00, 0x00, 0x00, 0x26, 0x00, 0x00, 0x00, // Make (ASCII, count=7, off=0x26)
+        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // Orientation (SHORT, count=1, val=1)
+        0x00, 0x00, 0x00, 0x00,                         // next IFD = 0
+        'R', 'a', 'w', 'L', 'a', 'b', '\0'              // value at offset 0x26
+    };
+    const auto exifPng = pngDir / "with-exif.png";
+    checkPass(ImageEncoder::savePNG(gradient, exifPng.string(), &exifMeta) == ErrorCode::Success,
+          "PNG writes with encoding-time eXIf chunk");
+    {
+        const std::string exifBytes = readTextFile(exifPng);
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, exifBytes.data(), exifBytes.size());
+        spng_exif decodedExif{};
+        const bool ok = dec && spng_decode_chunks(dec) == 0 &&
+            spng_get_exif(dec, &decodedExif) == 0 &&
+            decodedExif.length == exifMeta.exif.size() &&
+            std::memcmp(decodedExif.data, exifMeta.exif.data(), exifMeta.exif.size()) == 0;
+        if (dec) spng_ctx_free(dec);
+        checkPass(ok, "PNG encoding-time eXIf chunk roundtrips byte-for-byte");
+    }
+
+    // 3. 编码期直写 iCCP 块且与 sRGB 互斥
+    ImageEncoder::PngMetadata iccMeta;
+    iccMeta.iccProfileName = "RawLab Test ICC";
+    iccMeta.iccProfile.assign(128, 0);
+    iccMeta.iccProfile[3] = 128;
+    iccMeta.iccProfile[36] = 'a';
+    iccMeta.iccProfile[37] = 'c';
+    iccMeta.iccProfile[38] = 's';
+    iccMeta.iccProfile[39] = 'p';
+    const auto iccPng = pngDir / "with-icc.png";
+    checkPass(ImageEncoder::savePNG(gradient, iccPng.string(), &iccMeta) == ErrorCode::Success,
+          "PNG writes with encoding-time iCCP chunk");
+    {
+        const std::string iccBytes = readTextFile(iccPng);
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, iccBytes.data(), iccBytes.size());
+        spng_iccp decodedIccp{};
+        uint8_t srgbIntent = 0;
+        const bool ok = dec && spng_decode_chunks(dec) == 0 &&
+            spng_get_iccp(dec, &decodedIccp) == 0 &&
+            std::string(decodedIccp.profile_name) == iccMeta.iccProfileName &&
+            decodedIccp.profile_len == iccMeta.iccProfile.size() &&
+            std::memcmp(decodedIccp.profile, iccMeta.iccProfile.data(), iccMeta.iccProfile.size()) == 0 &&
+            spng_get_srgb(dec, &srgbIntent) == SPNG_ECHUNKAVAIL;
+        if (dec) spng_ctx_free(dec);
+        checkPass(ok, "PNG encoding-time iCCP chunk roundtrips and omits sRGB");
+    }
+
+    // 4. 失败路径不破坏既有目标、不留暂存文件
+    const auto invalidTarget = pngDir / "invalid-preserves.png";
+    writeTextFile(invalidTarget, "preserve this png");
+    ImageData mismatched(2, 2);
+    mismatched.pixels.resize(1);
+    checkPass(ImageEncoder::savePNG(ImageData(), invalidTarget.string()) == ErrorCode::ProcessingError &&
+          ImageEncoder::savePNG(mismatched, invalidTarget.string()) == ErrorCode::ProcessingError,
+          "PNG rejects invalid ImageData as a processing error");
+    checkPass(readTextFile(invalidTarget) == "preserve this png" && !hasPngStagingFile(pngDir),
+          "invalid PNG input preserves existing target and creates no staging file");
+
+    const auto missingParentTarget = pngDir / "absent" / "out.png";
+    checkPass(ImageEncoder::savePNG(gradient, missingParentTarget.string()) == ErrorCode::IOError &&
+          !std::filesystem::exists(missingParentTarget),
+          "PNG missing output directory returns IOError without creating target");
+
+    const auto blockedDir = pngDir / "blocked-dir";
+    std::filesystem::create_directory(blockedDir);
+    const auto marker = blockedDir / "keep.txt";
+    writeTextFile(marker, "keep png directory");
+    checkPass(ImageEncoder::savePNG(gradient, blockedDir.string()) == ErrorCode::IOError &&
+          std::filesystem::is_directory(blockedDir) &&
+          readTextFile(marker) == "keep png directory" &&
+          !hasPngStagingFile(pngDir),
+          "PNG directory target fails cleanly without leaving staging files");
+
+#ifndef _WIN32
+    ImageData noisyPng(128, 128);
+    uint32_t pngSeed = 0x51A7F00Du;
+    for (size_t i = 0; i < noisyPng.pixels.size(); ++i) {
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float r = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float g = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        pngSeed = pngSeed * 1664525u + 1013904223u;
+        const float b = static_cast<float>((pngSeed >> 16) & 0xFFFFu) / 65535.0f;
+        noisyPng.pixels[i] = RGB(r, g, b);
+    }
+    const auto midwriteTarget = pngDir / "midwrite-existing.png";
+    writeTextFile(midwriteTarget, "preserve existing png");
+    const pid_t child = fork();
+    int childExit = -1;
+    if (child == 0) {
+        std::signal(SIGXFSZ, SIG_IGN);
+        const struct rlimit limit = {4096, 4096};
+        if (setrlimit(RLIMIT_FSIZE, &limit) != 0) _exit(2);
+        const bool ok = ImageEncoder::savePNG(noisyPng, midwriteTarget.string()) == ErrorCode::IOError;
+        _exit(ok ? 0 : 1);
+    } else if (child > 0) {
+        int status = 0;
+        if (waitpid(child, &status, 0) == child && WIFEXITED(status)) {
+            childExit = WEXITSTATUS(status);
+        }
+    }
+    checkPass(childExit == 0 && readTextFile(midwriteTarget) == "preserve existing png" &&
+          !hasPngStagingFile(pngDir),
+          "mid-write PNG failure returns IOError, preserves target, and removes staging file");
+#endif
+}
+
+// WR-01: libjpeg-turbo 扫描线编码器替换 stb 后，同源内容对旧参考编码器的 PSNR 对齐锚
+// （覆盖 {85, 90, 91, 95}：q<=90 走 4:2:0，q>90 走 4:4:4，锁住 {90, 91} 子采样分界）。
+void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
+    const auto dir = parentDir / "jpeg-turbo-parity";
+    std::filesystem::create_directories(dir);
+
+    auto readSof0LumaSampling = [](const std::filesystem::path& jpegPath) -> int {
+        std::ifstream in(jpegPath, std::ios::binary);
+        const std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(in)),
+                                               std::istreambuf_iterator<char>());
+        if (bytes.size() < 4 || bytes[0] != 0xFFu || bytes[1] != 0xD8u) return -1;
+        size_t pos = 2;
+        while (pos + 4 <= bytes.size()) {
+            if (bytes[pos] != 0xFFu) return -1;
+            while (pos < bytes.size() && bytes[pos] == 0xFFu) ++pos;
+            if (pos >= bytes.size()) return -1;
+            const unsigned char marker = bytes[pos++];
+            if (marker == 0xD9u || marker == 0xDAu) break;
+            if (marker == 0x01u || (marker >= 0xD0u && marker <= 0xD7u)) continue;
+            if (pos + 2 > bytes.size()) return -1;
+            const size_t segLen = (static_cast<size_t>(bytes[pos]) << 8) | bytes[pos + 1];
+            if (segLen < 2 || pos + segLen > bytes.size()) return -1;
+            if (marker == 0xC0u && segLen >= 11) {
+                return static_cast<int>(bytes[pos + 9]);
+            }
+            pos += segLen;
+        }
+        return -1;
+    };
+
+    // 渐变 + 高频噪声 + 8x8 硬边棋盘 + 下半幅单像素色度棋盘（若 4:4:4 被误强制为 4:2:0 则 PSNR 跌破 40 dB）。
+    const int width = 320;
+    const int height = 240;
+    ImageData image(width, height);
+    std::vector<unsigned char> reference(static_cast<size_t>(width) * height * 3);
+    uint32_t seed = 0xBEEF1234u;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            const float spike = ((seed >> 16) & 0xFFu) > 230u ? 0.25f : 0.0f;
+            const float rawR = static_cast<float>(x) / static_cast<float>(width) + spike;
+            const float r = rawR > 1.0f ? 1.0f : rawR;
+            const float g = static_cast<float>(y) / static_cast<float>(height);
+            const bool checker = (y < height / 2) ? (((x / 8 + y / 8) % 2) != 0) : (((x + y) % 2) != 0);
+            const float b = checker ? 0.9f : 0.15f;
+            const size_t pixel = static_cast<size_t>(y) * width + x;
+            image.pixels[pixel] = RGB(r, g, b);
+            reference[pixel * 3 + 0] = static_cast<unsigned char>(std::lround(r * 255.0f));
+            reference[pixel * 3 + 1] = static_cast<unsigned char>(std::lround(g * 255.0f));
+            reference[pixel * 3 + 2] = static_cast<unsigned char>(std::lround(b * 255.0f));
+        }
+    }
+
+    for (const int quality : {85, 90, 91, 95}) {
+        const auto turboTarget = dir / ("turbo-q" + std::to_string(quality) + ".jpg");
+        const auto stbTarget = dir / ("stb-reference-q" + std::to_string(quality) + ".jpg");
+        checkPass(ImageEncoder::saveJPEG(image, turboTarget.string(), quality) == ErrorCode::Success,
+              "libjpeg-turbo JPEG export succeeds");
+        checkPass(stbi_write_jpg(stbTarget.string().c_str(), width, height, 3, reference.data(), quality) != 0,
+              "stb reference JPEG export succeeds");
+        const int expectedSampling = quality <= 90 ? 0x22 : 0x11;
+        checkPass(readSof0LumaSampling(turboTarget) == expectedSampling &&
+              readSof0LumaSampling(stbTarget) == expectedSampling,
+              "libjpeg-turbo SOF0 chroma subsampling matches stb across the {90, 91} threshold");
+
+        int turboWidth = 0;
+        int turboHeight = 0;
+        int stbWidth = 0;
+        int stbHeight = 0;
+        unsigned char* turboPixels = stbi_load(turboTarget.string().c_str(), &turboWidth, &turboHeight, nullptr, 3);
+        unsigned char* stbPixels = stbi_load(stbTarget.string().c_str(), &stbWidth, &stbHeight, nullptr, 3);
+        if (!turboPixels || !stbPixels) {
+            checkPass(false, "JPEG parity decode failed");
+            std::free(turboPixels);
+            std::free(stbPixels);
+            return;
+        }
+        checkPass(turboWidth == stbWidth && turboHeight == stbHeight, "JPEG parity decoders agree on dimensions");
+        double mse = 0.0;
+        const size_t samples = static_cast<size_t>(turboWidth) * turboHeight * 3;
+        for (size_t i = 0; i < samples; ++i) {
+            const double delta = static_cast<double>(turboPixels[i]) - static_cast<double>(stbPixels[i]);
+            mse += delta * delta;
+        }
+        mse /= static_cast<double>(samples);
+        const double psnr = mse == 0.0 ? 999.0 : 10.0 * std::log10(255.0 * 255.0 / mse);
+        checkPass(psnr >= 40.0, "libjpeg-turbo export stays within PSNR >= 40 dB of the stb reference");
+        std::cout << "  JPEG encoder parity q" << quality << ": PSNR=" << psnr << " dB, turbo="
+                  << std::filesystem::file_size(turboTarget) << " B, stb="
+                  << std::filesystem::file_size(stbTarget) << " B\n";
+        std::free(turboPixels);
+        std::free(stbPixels);
+    }
+}
+
+// WR-01: 取消在扫描线边界即时中止且不留 .tmp——旧逐 16KB 写出轮询在本尺寸下
+// 整个编码过程都不会轮询，只能在提交点观测到取消，撤掉修复本锚必红。
+void testJpegExportScanlineCancellation(const std::filesystem::path& parentDir) {
+    const auto dir = parentDir / "jpeg-scanline-cancel";
+    std::filesystem::create_directories(dir);
+    const auto target = dir / "cancelled.jpg";
+    writeTextFile(target, "existing target");
+
+    ImageData image(64, 256);  // 16K px：低于并行阈值，转换阶段不产生额外轮询
+    for (size_t i = 0; i < image.pixels.size(); ++i) {
+        image.pixels[i] = RGB(static_cast<float>(i % 64) / 63.0f,
+                              static_cast<float>(i / 64) / 255.0f,
+                              0.5f);
+    }
+
+    int polls = 0;
+    ProcessingCancellation cancellation{};
+    cancellation.callback = [](void* context) -> int {
+        int& count = *static_cast<int*>(context);
+        return (++count >= 9) ? 1 : 0;
+    };
+    cancellation.context = &polls;
+    ProcessingCancellationScope scope(cancellation);
+    bool cancelled = false;
+    try {
+        (void)ImageEncoder::saveJPEG(image, target.string(), 95);
+    } catch (const ProcessingCancelled&) {
+        cancelled = true;
+    }
+    checkPass(cancelled && polls == 9, "JPEG export cancels at the 9th scanline boundary");
+    checkPass(readTextFile(target) == "existing target" && !hasJpegStagingFile(dir),
+          "cancelled JPEG export keeps the old target and leaves no staging .tmp");
+}
+
+int main(int argc, char** argv) {
+    std::cout << std::unitbuf;
+    if (argc > 2) return 2;
+    if (argc == 2) {
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* thumbnailRaw = argRaw ? argRaw : envRaw;
+        if (!thumbnailRaw) {
+            std::cout << "SKIP color_contracts_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(thumbnailRaw))) {
+            std::cerr << "FAIL color_contracts_raw: RAW sample does not exist: " << thumbnailRaw << '\n';
+            return 1;
+        }
+#ifdef _WIN32
+        HANDLE worker = CreateThread(nullptr, 512*1024, [](LPVOID path)->DWORD {
+            return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? 1 : 0;
+        }, const_cast<char*>(thumbnailRaw), STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+        DWORD result = 1;
+        if (worker) { WaitForSingleObject(worker, INFINITE); GetExitCodeThread(worker, &result); CloseHandle(worker); }
+        checkPass(worker && result == 0,"Preview decode fits a desktop worker thread stack");
+#else
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr,512*1024);
+        pthread_t worker;
+        const int started=pthread_create(&worker,&attr,[](void* path)->void* {
+            return loadPreviewLuminance(static_cast<const char*>(path)).empty() ? reinterpret_cast<void*>(1) : nullptr;
+        },const_cast<char*>(thumbnailRaw));
+        pthread_attr_destroy(&attr);
+        void* result=nullptr;
+        if (!started) pthread_join(worker,&result);
+        checkPass(!started && !result,"Preview decode fits a desktop worker thread stack");
+#endif
+        return rawlab::test::exitCode();
+    }
+    checkPass(!RAWProcessOptions().matchEmbeddedPreviewExposure, "Default exposure does not meter the embedded JPEG");
+    checkPass(near(sceneExposureEV(.35f),1.05f) && near(sceneExposureEV(-.5f),.2f) &&
         near(sceneExposureEV(-999),.7f), "DNG baseline offsets are independent of scene content");
-    check(near(neutralDisplay(.1845f),GammaConverter::applySRGBGamma(.1845f)) &&
+    checkPass(near(neutralDisplay(.1845f),GammaConverter::applySRGBGamma(.1845f)) &&
         near(neutralDisplay(0),0), "Neutral view anchors middle gray and black");
     std::vector<float> source(100,.045f), preview(100,.18f);
-    check(near(estimatePreviewExposureEV(source,preview),2), "Preview supplies default +2 EV");
+    checkPass(near(estimatePreviewExposureEV(source,preview),2), "Preview supplies default +2 EV");
     std::fill(preview.begin(),preview.end(),.01125f);
-    check(near(estimatePreviewExposureEV(source,preview),-2), "Dark camera preview stays dark, not middle gray");
+    checkPass(near(estimatePreviewExposureEV(source,preview),-2), "Dark camera preview stays dark, not middle gray");
     preview=source;
     std::fill_n(preview.begin(),10,1.0f);
-    check(near(estimatePreviewExposureEV(source,preview),0), "Specular highlights do not drive default exposure");
-    check(near(estimatePreviewExposureEV({},preview),0) &&
+    checkPass(near(estimatePreviewExposureEV(source,preview),0), "Specular highlights do not drive default exposure");
+    checkPass(near(estimatePreviewExposureEV({},preview),0) &&
           near(estimatePreviewExposureEV(source,std::vector<float>(100,0)),0) &&
           near(estimatePreviewExposureEV(source,std::vector<float>(100,1)),0), "Missing/black/clipped preview leaves sensor baseline");
-    check(loadPreviewLuminance("/missing-rawtools-exposure.raw").empty(), "Unreadable preview is optional");
+    checkPass(loadPreviewLuminance("/missing-rawtools-exposure.raw").empty(), "Unreadable preview is optional");
     const auto dir = std::filesystem::temp_directory_path() / ("rawtools-tests-" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
     auto cube = dir / "swap.cube";
@@ -191,26 +732,26 @@ int main() {
             f << 2*b << ' ' << g << ' ' << r << '\n';
     }
     auto lut = LUTParser::loadLUTCached(cube.string());
-    check(lut && lut->isValid(), "CUBE loads");
+    checkPass(lut && lut->isValid(), "CUBE loads");
     sony2fuji_look_format importedFormat = SONY2FUJI_LOOK_RLOOK;
     uint32_t importedVersion = 99;
-    check(sony2fuji_validate_look(cube.u8string().c_str(), &importedFormat, &importedVersion) == SONY2FUJI_STATUS_UNSUPPORTED &&
+    checkPass(sony2fuji_validate_look(cube.u8string().c_str(), &importedFormat, &importedVersion) == SONY2FUJI_STATUS_UNSUPPORTED &&
           importedFormat == SONY2FUJI_LOOK_UNKNOWN && importedVersion == 0,
           "look import rejects an untagged CUBE and clears output information");
-    check(sony2fuji_validate_look(nullptr, &importedFormat, &importedVersion) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+    checkPass(sony2fuji_validate_look(nullptr, &importedFormat, &importedVersion) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
           sony2fuji_validate_look("", nullptr, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "look import rejects an absent path without creating a session");
-    check(sony2fuji_validate_look((dir / "missing.cube").u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_IO_ERROR &&
+    checkPass(sony2fuji_validate_look((dir / "missing.cube").u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_IO_ERROR &&
           sony2fuji_validate_look(dir.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
           "look import distinguishes missing files and directories");
     if (lut) {
         LUTApplicator apply(lut);
         auto red = apply.apply(RGB(.75f,.25f,.25f));
-        check(near(red.r,0) && near(red.b,1), "CUBE standard R-fast channel swap");
+        checkPass(near(red.r,0) && near(red.b,1), "CUBE standard R-fast channel swap");
         auto blue = apply.apply(RGB(.25f,.25f,.75f));
-        check(near(blue.r,2), "CUBE preserves table values above one");
+        checkPass(near(blue.r,2), "CUBE preserves table values above one");
         auto middle = apply.apply(RGB(.375f,.375f,.375f));
-        check(near(middle.r,.5f) && near(middle.g,.25f), "CUBE domain coordinates");
+        checkPass(near(middle.r,.5f) && near(middle.g,.25f), "CUBE domain coordinates");
         if (std::getenv("SONY2FUJI_TEST_GPU")) {
             ImageData gpu(3,1);
             gpu.pixels={RGB(.75f,.25f,.25f),RGB(.25f,.25f,.75f),RGB(.375f,.375f,.375f)};
@@ -221,94 +762,1529 @@ int main() {
             for (size_t i=0;i<gpu.pixels.size();++i)
                 same=same && near(gpu.pixels[i].r,cpu.pixels[i].r,.001f) &&
                     near(gpu.pixels[i].g,cpu.pixels[i].g,.001f) && near(gpu.pixels[i].b,cpu.pixels[i].b,.001f);
-            check(same,"Metal/CPU parity including non-unit domain and tiny buffer");
+            checkPass(same,"Metal/CPU parity including non-unit domain and tiny buffer");
         }
     }
-    check(near(GammaConverter::applyFLog2(.18f)*1023,400,.001f), "F-Log2 reference gray");
+    checkPass(near(GammaConverter::applyFLog2(.18f)*1023,400,.001f), "F-Log2 reference gray");
     ImageData ramp(3,1);
     ramp.pixels = {RGB(1,1,1),RGB(2,2,2),RGB(4,4,4)};
     GammaConverter::FLog2Options options;
     GammaConverter::applyFLog2ToImage(ramp,options);
-    check(near(ramp.pixels[1].r,.64144017f), "F-Log2 preserves super-white exposure");
-    check(near(ramp.pixels[2].r,.71496770f), "F-Log2 is not histogram normalized");
+    checkPass(near(ramp.pixels[1].r,.64144017f), "F-Log2 preserves super-white exposure");
+    checkPass(near(ramp.pixels[2].r,.71496770f), "F-Log2 is not histogram normalized");
 
     ImageData red(1,1); red.pixels[0] = RGB(1,0,0);
     auto png = dir / "red.png";
-    check(ImageEncoder::savePNG(red,png.string()) == ErrorCode::Success, "PNG writes");
+    checkPass(ImageEncoder::savePNG(red,png.string()) == ErrorCode::Success, "PNG writes");
     std::ifstream pf(png,std::ios::binary);
     std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(pf)),{});
     pf.close(); // Windows cannot remove the temporary directory while this file is open.
-    check(bytes.size()>25 && bytes[24]==16, "PNG IHDR declares sixteen bits");
-    auto read32 = [&](size_t offset) { return (uint32_t(bytes[offset])<<24) |
-        (uint32_t(bytes[offset+1])<<16) | (uint32_t(bytes[offset+2])<<8) | bytes[offset+3]; };
-    std::vector<unsigned char> compressed;
-    for (size_t offset=8; offset+12<=bytes.size();) {
-        uint32_t size=read32(offset);
-        if (offset+size+12>bytes.size()) break;
-        if (std::string(reinterpret_cast<const char*>(bytes.data()+offset+4),4)=="IDAT")
-            compressed.insert(compressed.end(),bytes.begin()+offset+8,bytes.begin()+offset+8+size);
-        offset+=size+12;
+    checkPass(bytes.size()>25 && bytes[24]==16, "PNG IHDR declares sixteen bits");
+    {
+        spng_ctx* dec = spng_ctx_new(0);
+        spng_set_png_buffer(dec, bytes.data(), bytes.size());
+        spng_ihdr ihdr{};
+        uint16_t rgb[3] = {};
+        const bool ok = dec &&
+            spng_get_ihdr(dec, &ihdr) == 0 &&
+            ihdr.width == 1 && ihdr.height == 1 && ihdr.bit_depth == 16 &&
+            ihdr.color_type == SPNG_COLOR_TYPE_TRUECOLOR &&
+            spng_decode_image(dec, rgb, sizeof(rgb), SPNG_FMT_PNG, 0) == 0 &&
+            rgb[0] == 65535 && rgb[1] == 0 && rgb[2] == 0;
+        if (dec) spng_ctx_free(dec);
+        checkPass(ok, "PNG sixteen-bit red survives decompression");
     }
-    unsigned char decoded[7]={}; uLongf length=sizeof(decoded);
-    check(uncompress(decoded,&length,compressed.data(),compressed.size())==Z_OK && length==7 &&
-        decoded[0]==0 && decoded[1]==255 && decoded[2]==255 && decoded[3]==0 && decoded[5]==0,
-        "PNG sixteen-bit red survives decompression");
     bool nativeRejected=false;
     try { ColorConverter().convert(RGB(1,0,0),ColorSpace::SonyNative,ColorSpace::FujiFilm_FGamut); }
     catch (const std::invalid_argument&) { nativeRejected=true; }
-    check(nativeRejected,"Uncalibrated native matrix is rejected");
+    checkPass(nativeRejected,"Uncalibrated native matrix is rejected");
+
+    {
+        ImageData negW(-4, 5), negH(5, -4), zeroW(0, 5);
+        checkPass(negW.width == 0 && negW.height == 0 && negW.pixels.empty() &&
+              negH.width == 0 && negH.height == 0 && negH.pixels.empty() &&
+              zeroW.width == 0 && zeroW.height == 0 && zeroW.pixels.empty(),
+              "ImageData clamps non-positive dimensions consistently across members and buffer");
+        bool overflowRejected = false;
+        try { ImageData hugeImage(2000000000, 2000000000); (void)hugeImage; }
+        catch (const std::bad_alloc&) { overflowRejected = true; }
+        checkPass(overflowRejected, "ImageData rejects unrepresentable pixel byte counts");
+    }
 
     sony2fuji_session* session=nullptr;
     sony2fuji_session_create(&session);
     const unsigned char dngPixels[3] = {128, 70, 220};
+    const std::string linearDngFixture = std::string(TEST_SOURCE_DIR) + "/tests/fixtures/linear-uncompressed.dng";
+    {
+        const unsigned char widePixels[6] = {128, 70, 220, 64, 120, 180};
+        auto expectRejected = [&](const sony2fuji_request& req, const char* label, sony2fuji_session* target = nullptr) {
+            sony2fuji_buffer hugeOut{};
+            const sony2fuji_buffer* outPtr = req.output_target == SONY2FUJI_TARGET_BUFFER ? &hugeOut : nullptr;
+            const auto st = sony2fuji_process(target ? target : session, &req, const_cast<sony2fuji_buffer*>(outPtr));
+            const bool rejected = st == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+                std::string(sony2fuji_status_message(st)) == "invalid argument" && !hugeOut.data;
+            sony2fuji_release_buffer(&hugeOut);
+            checkPass(rejected, label);
+        };
+
+        auto exactCap = request(dngPixels);
+        exactCap.size_mode = SONY2FUJI_SIZE_EXACT;
+        exactCap.target_width = exactCap.target_height = 46341u; // 46341^2 = 2,147,488,281 > INT32_MAX
+        expectRejected(exactCap, "EXACT output above 2.1G pixels is rejected with valid out_buffer");
+        exactCap.target_width = exactCap.target_height = 2000000000u;
+        expectRejected(exactCap, "EXACT int-overflow output size is rejected with valid out_buffer");
+
+        auto fitLong = request(widePixels);
+        fitLong.input_width = 2; fitLong.input_height = 1;
+        fitLong.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        fitLong.long_edge = 65537u; // 65537 * 32769 = 2,147,581,953 > INT32_MAX
+        expectRejected(fitLong, "FIT_LONG_EDGE output above 2.1G pixels is rejected");
+        fitLong.long_edge = 2000000000u;
+        expectRejected(fitLong, "FIT_LONG_EDGE extreme long_edge is rejected without UB");
+
+        auto previewLong = request(dngPixels);
+        previewLong.size_mode = SONY2FUJI_SIZE_NATIVE;
+        previewLong.intent = SONY2FUJI_INTENT_PREVIEW;
+        previewLong.preview_long_edge = 46341u;
+        expectRejected(previewLong, "PREVIEW preview_long_edge override above 2.1G pixels is rejected");
+
+        auto fitShort = request(widePixels);
+        fitShort.input_width = 2; fitShort.input_height = 1;
+        fitShort.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+        fitShort.short_edge = 32769u; // 65538 * 32769 = 2,147,614,722 > INT32_MAX
+        expectRejected(fitShort, "FIT_SHORT_EDGE output above 2.1G pixels is rejected");
+        fitShort.short_edge = 2000000000u;
+        expectRejected(fitShort, "FIT_SHORT_EDGE extreme short_edge is rejected without UB");
+
+        const std::string absentRaw = (dir / "missing-size-cap.ARW").string();
+        const std::string absentLut = (dir / "missing-size-cap.cube").string();
+        auto rawEarly = request(nullptr);
+        rawEarly.input_type = SONY2FUJI_INPUT_RAW;
+        rawEarly.input_path = absentRaw.c_str();
+        rawEarly.intent = SONY2FUJI_INTENT_FINAL;
+        rawEarly.size_mode = SONY2FUJI_SIZE_EXACT;
+        rawEarly.target_width = rawEarly.target_height = 46341u;
+        expectRejected(rawEarly, "Oversized RAW request is rejected during request validation before RAW decode");
+
+        sony2fuji_session* geomSession = nullptr;
+        sony2fuji_session_create(&geomSession);
+        sony2fuji_geometry_config geom{};
+        geom.version = SONY2FUJI_GEOMETRY_CONFIG_VERSION;
+        geom.struct_size = sizeof(geom);
+        geom.crop_width = geom.crop_height = 1.0f;
+        geom.quarter_turns = 1;
+        sony2fuji_session_set_geometry(geomSession, &geom);
+        auto finalGeom = fitLong;
+        finalGeom.long_edge = 65537u;
+        finalGeom.intent = SONY2FUJI_INTENT_FINAL;
+        finalGeom.lut_path = absentLut.c_str();
+        finalGeom.lut_strength = 1.0f;
+        expectRejected(finalGeom, "FINAL+geometry oversized FIT_LONG_EDGE is rejected before LUT/pixel work", geomSession);
+        sony2fuji_session_destroy(geomSession);
+
+        // JPEG 65535 single-edge limit lifted to request validation vs PNG/DNG parity at 100000x100 (10MP <= 2.1G).
+        const std::string wideJpegOut = (dir / "wide-100000x100.jpg").string();
+        const std::string widePngOut = (dir / "wide-100000x100.png").string();
+        const std::string wideDngOut = (dir / "wide-100000x100.dng").string();
+        auto wideJpegEarly = request(nullptr);
+        wideJpegEarly.input_type = SONY2FUJI_INPUT_RAW;
+        wideJpegEarly.input_path = absentRaw.c_str();
+        wideJpegEarly.lut_path = absentLut.c_str();
+        wideJpegEarly.lut_strength = 1.0f;
+        wideJpegEarly.intent = SONY2FUJI_INTENT_FINAL;
+        wideJpegEarly.output_target = SONY2FUJI_TARGET_FILE;
+        wideJpegEarly.output_format = SONY2FUJI_OUTPUT_JPEG;
+        wideJpegEarly.output_path = wideJpegOut.c_str();
+        wideJpegEarly.size_mode = SONY2FUJI_SIZE_EXACT;
+        wideJpegEarly.target_width = 100000u;
+        wideJpegEarly.target_height = 100u;
+        expectRejected(wideJpegEarly, "EXACT 100000x100 JPEG is rejected at request validation before decode/LUT");
+        checkPass(!std::filesystem::exists(wideJpegOut), "Rejected EXACT 100000x100 JPEG creates no output file");
+
+        auto wideJpegBufferSrc = request(dngPixels);
+        wideJpegBufferSrc.intent = SONY2FUJI_INTENT_FINAL;
+        wideJpegBufferSrc.output_target = SONY2FUJI_TARGET_FILE;
+        wideJpegBufferSrc.output_format = SONY2FUJI_OUTPUT_JPEG;
+        wideJpegBufferSrc.output_path = wideJpegOut.c_str();
+        wideJpegBufferSrc.size_mode = SONY2FUJI_SIZE_EXACT;
+        wideJpegBufferSrc.target_width = 100000u;
+        wideJpegBufferSrc.target_height = 100u;
+        expectRejected(wideJpegBufferSrc, "EXACT 100000x100 JPEG from buffer returns INVALID_ARGUMENT instead of ProcessingError");
+
+        auto wideFitLongJpeg = wideJpegEarly;
+        wideFitLongJpeg.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        wideFitLongJpeg.long_edge = 70000u;
+        expectRejected(wideFitLongJpeg, "FIT_LONG_EDGE >65535 JPEG is rejected at request validation");
+
+        auto widePngCheck = wideJpegEarly;
+        widePngCheck.lut_path = nullptr;
+        widePngCheck.lut_strength = 0.0f;
+        widePngCheck.output_format = SONY2FUJI_OUTPUT_PNG;
+        widePngCheck.output_path = widePngOut.c_str();
+        checkPass(sony2fuji_process(session, &widePngCheck, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
+              "EXACT 100000x100 PNG passes request validation and reaches input open");
+        auto wideDngCheck = widePngCheck;
+        wideDngCheck.output_format = SONY2FUJI_OUTPUT_DNG;
+        wideDngCheck.output_path = wideDngOut.c_str();
+        checkPass(sony2fuji_process(session, &wideDngCheck, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
+              "EXACT 100000x100 DNG passes request validation and reaches input open");
+
+        auto widePngExport = wideJpegBufferSrc;
+        widePngExport.output_format = SONY2FUJI_OUTPUT_PNG;
+        widePngExport.output_path = widePngOut.c_str();
+        checkPass(sony2fuji_process(session, &widePngExport, nullptr) == SONY2FUJI_STATUS_OK &&
+              std::filesystem::exists(widePngOut) && std::filesystem::file_size(widePngOut) > 24,
+              "EXACT 100000x100 PNG exports cleanly within 2.1G cap");
+        std::filesystem::remove(widePngOut);
+
+        auto wideDngExport = wideJpegBufferSrc;
+        wideDngExport.output_format = SONY2FUJI_OUTPUT_DNG;
+        wideDngExport.output_path = wideDngOut.c_str();
+        checkPass(sony2fuji_process(session, &wideDngExport, nullptr) == SONY2FUJI_STATUS_OK &&
+              std::filesystem::exists(wideDngOut) && std::filesystem::file_size(wideDngOut) > 64,
+              "EXACT 100000x100 DNG exports cleanly within 2.1G cap");
+        std::filesystem::remove(wideDngOut);
+
+        // Header-only / corrupt-payload fixtures for NATIVE pre-decode preflight.
+        auto writePngHeaderOnly = [](const std::filesystem::path& target, uint32_t w, uint32_t h) {
+            std::ofstream out(target, std::ios::binary);
+            const unsigned char sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+            out.write(reinterpret_cast<const char*>(sig), 8);
+            const unsigned char len[4] = {0, 0, 0, 13};
+            out.write(reinterpret_cast<const char*>(len), 4);
+            unsigned char ihdr[17] = {'I', 'H', 'D', 'R',
+                static_cast<unsigned char>(w >> 24), static_cast<unsigned char>(w >> 16),
+                static_cast<unsigned char>(w >> 8), static_cast<unsigned char>(w),
+                static_cast<unsigned char>(h >> 24), static_cast<unsigned char>(h >> 16),
+                static_cast<unsigned char>(h >> 8), static_cast<unsigned char>(h),
+                8, 2, 0, 0, 0};
+            out.write(reinterpret_cast<const char*>(ihdr), sizeof(ihdr));
+            const uLong crc = crc32(0, reinterpret_cast<const Bytef*>(ihdr), sizeof(ihdr));
+            const unsigned char crcBytes[4] = {
+                static_cast<unsigned char>(crc >> 24), static_cast<unsigned char>(crc >> 16),
+                static_cast<unsigned char>(crc >> 8), static_cast<unsigned char>(crc)};
+            out.write(reinterpret_cast<const char*>(crcBytes), 4);
+            const std::string corruptIdat(64, 'X');
+            out.write(corruptIdat.data(), static_cast<std::streamsize>(corruptIdat.size()));
+        };
+        auto writeJpegHeaderOnly = [](const std::filesystem::path& target, uint16_t w, uint16_t h) {
+            std::ofstream out(target, std::ios::binary);
+            const unsigned char bytes[] = {
+                0xFF, 0xD8,
+                0xFF, 0xC0, 0x00, 0x0B, 0x08,
+                static_cast<unsigned char>(h >> 8), static_cast<unsigned char>(h),
+                static_cast<unsigned char>(w >> 8), static_cast<unsigned char>(w),
+                0x01, 0x11, 0x00,
+                0xFF, 0xDA, 0x00, 0x02
+            };
+            out.write(reinterpret_cast<const char*>(bytes), sizeof(bytes));
+        };
+        std::ifstream dngIn(linearDngFixture, std::ios::binary);
+        const std::vector<uint8_t> dngTemplate((std::istreambuf_iterator<char>(dngIn)), {});
+        dngIn.close();
+        auto writeTruncatedDngHeader = [&](const std::filesystem::path& target, uint32_t w, uint32_t h) {
+            std::vector<uint8_t> buf(dngTemplate.begin(), dngTemplate.begin() + 450);
+            auto put32 = [&](size_t off, uint32_t v) {
+                buf[off] = static_cast<uint8_t>(v & 0xFFu);
+                buf[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+                buf[off + 2] = static_cast<uint8_t>((v >> 16) & 0xFFu);
+                buf[off + 3] = static_cast<uint8_t>((v >> 24) & 0xFFu);
+            };
+            const uint16_t entries = static_cast<uint16_t>(buf[8] | (uint16_t(buf[9]) << 8));
+            for (uint16_t i = 0; i < entries; ++i) {
+                const size_t off = 10 + static_cast<size_t>(i) * 12;
+                const uint16_t tag = static_cast<uint16_t>(buf[off] | (uint16_t(buf[off + 1]) << 8));
+                if (tag == 256) put32(off + 8, w);
+                else if (tag == 257 || tag == 278) put32(off + 8, h);
+                else if (tag == 279) {
+                    const uint64_t bytes = std::min<uint64_t>(uint64_t(w) * uint64_t(h) * 6u, 0xFFFFFFFFull);
+                    put32(off + 8, static_cast<uint32_t>(bytes));
+                } else if (tag == 50829) {
+                    const uint32_t areaOff = uint32_t(buf[off + 8]) | (uint32_t(buf[off + 9]) << 8) |
+                        (uint32_t(buf[off + 10]) << 16) | (uint32_t(buf[off + 11]) << 24);
+                    put32(areaOff + 8, h);
+                    put32(areaOff + 12, w);
+                }
+            }
+            std::ofstream out(target, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+        };
+
+        // Control: truncated 32x24 DNG passes preflight and fails in decode (not INVALID_ARGUMENT).
+        const auto corruptSmallDng = dir / "corrupt-small-32x24.dng";
+        writeTruncatedDngHeader(corruptSmallDng, 32, 24);
+        const std::string corruptSmallDngStr = corruptSmallDng.string();
+        auto makeNativeRawReq = [&](const std::string& path) {
+            auto req = request(nullptr);
+            req.input_type = SONY2FUJI_INPUT_RAW;
+            req.input_path = path.c_str();
+            req.intent = SONY2FUJI_INTENT_FINAL;
+            req.size_mode = SONY2FUJI_SIZE_NATIVE;
+            return req;
+        };
+        {
+            const auto smallReq = makeNativeRawReq(corruptSmallDngStr);
+            sony2fuji_buffer out{};
+            const auto st = sony2fuji_process(session, &smallReq, &out);
+            sony2fuji_release_buffer(&out);
+            checkPass(st != SONY2FUJI_STATUS_OK && st != SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "Control truncated small DNG fails in RAW decode rather than size validation");
+        }
+
+        // NATIVE >2.1G (50000x50000 = 2.5GP) rejected BEFORE decode across DNG/RAW, PNG, and JPEG headers.
+        const auto hugeDng = dir / "corrupt-huge-50000x50000.dng";
+        writeTruncatedDngHeader(hugeDng, 50000u, 50000u);
+        const std::string hugeDngStr = hugeDng.string();
+        auto hugeDngReq = makeNativeRawReq(hugeDngStr);
+        hugeDngReq.lut_path = absentLut.c_str();
+        hugeDngReq.lut_strength = 1.0f;
+        expectRejected(hugeDngReq, "NATIVE 50000x50000 truncated DNG fails pre-decode size preflight before unpack/LUT");
+
+        const auto hugePng = dir / "corrupt-huge-50000x50000.png";
+        writePngHeaderOnly(hugePng, 50000u, 50000u);
+        const std::string hugePngStr = hugePng.string();
+        auto hugePngReq = makeNativeRawReq(hugePngStr);
+        hugePngReq.lut_path = absentLut.c_str();
+        hugePngReq.lut_strength = 1.0f;
+        expectRejected(hugePngReq, "NATIVE 50000x50000 corrupt PNG fails pre-decode size preflight before decode/LUT");
+
+        const auto hugeJpg = dir / "corrupt-huge-50000x50000.jpg";
+        writeJpegHeaderOnly(hugeJpg, 50000u, 50000u);
+        const std::string hugeJpgStr = hugeJpg.string();
+        auto hugeJpgReq = makeNativeRawReq(hugeJpgStr);
+        hugeJpgReq.lut_path = absentLut.c_str();
+        hugeJpgReq.lut_strength = 1.0f;
+        expectRejected(hugeJpgReq, "NATIVE 50000x50000 corrupt JPEG fails pre-decode size preflight before decode/LUT");
+
+        // NATIVE JPEG >65535 single-edge (70000x100) rejected BEFORE decode on both PNG and TIFF/DNG headers.
+        const auto widePngHdr = dir / "corrupt-wide-70000x100.png";
+        writePngHeaderOnly(widePngHdr, 70000u, 100u);
+        const std::string widePngHdrStr = widePngHdr.string();
+        auto nativeWideJpegPng = makeNativeRawReq(widePngHdrStr);
+        nativeWideJpegPng.lut_path = absentLut.c_str();
+        nativeWideJpegPng.lut_strength = 1.0f;
+        nativeWideJpegPng.output_target = SONY2FUJI_TARGET_FILE;
+        nativeWideJpegPng.output_format = SONY2FUJI_OUTPUT_JPEG;
+        nativeWideJpegPng.output_path = wideJpegOut.c_str();
+        expectRejected(nativeWideJpegPng, "NATIVE 70000x100 PNG->JPEG fails pre-decode single-edge preflight");
+
+        const auto wideTiffDng = dir / "corrupt-wide-100x70000-orient6.dng";
+        writeTruncatedDngHeader(wideTiffDng, 100u, 70000u); // Orientation=6 transposes to 70000x100
+        const std::string wideTiffDngStr = wideTiffDng.string();
+        auto nativeWideJpegDng = nativeWideJpegPng;
+        nativeWideJpegDng.input_path = wideTiffDngStr.c_str();
+        expectRejected(nativeWideJpegDng, "NATIVE 70000x100 TIFF/DNG->JPEG fails pre-decode single-edge preflight");
+
+        // Within-cap >128MP NATIVE (15000x10000 = 150MP and 20000x10000 = 200MP) passes request validation & preflight.
+        for (uint32_t w : {15000u, 20000u}) {
+            const auto medFmtPng = dir / ("header-" + std::to_string(w) + "x10000.png");
+            writePngHeaderOnly(medFmtPng, w, 10000u);
+            const std::string medFmtPngStr = medFmtPng.string();
+            auto medFmtRawReq = makeNativeRawReq(medFmtPngStr);
+            sony2fuji_buffer out{};
+            const auto bufSt = sony2fuji_process(session, &medFmtRawReq, &out);
+            sony2fuji_release_buffer(&out);
+            checkPass(bufSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  w == 15000u ? "NATIVE 15000x10000 (150MP) PNG passes size validation and reaches RAW decoder"
+                              : "NATIVE 20000x10000 (200MP) PNG passes size validation and reaches RAW decoder");
+
+            auto medFmtJpegReq = medFmtRawReq;
+            medFmtJpegReq.output_target = SONY2FUJI_TARGET_FILE;
+            medFmtJpegReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            medFmtJpegReq.output_path = wideJpegOut.c_str();
+            checkPass(sony2fuji_process(session, &medFmtJpegReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  w == 15000u ? "NATIVE 15000x10000 (150MP) JPEG export passes size validation"
+                              : "NATIVE 20000x10000 (200MP) JPEG export passes size validation");
+        }
+
+        // Also verify 15000x10000 (150MP) NATIVE INPUT_BUFFER passes validateRequest + preflight without 128M rejection.
+        sony2fuji_session* cancelProbeSession = nullptr;
+        sony2fuji_session_create(&cancelProbeSession);
+        int cancelPolls = 0;
+        sony2fuji_session_set_cancellation_callback(cancelProbeSession, [](void* ctx) -> int {
+            int& count = *static_cast<int*>(ctx);
+            return (++count >= 2) ? 1 : 0; // Poll #1 is before validateRequest; Poll #2 is after validation & preflight.
+        }, &cancelPolls);
+        auto buf150mp = request(dngPixels);
+        buf150mp.input_width = 15000u;
+        buf150mp.input_height = 10000u;
+        buf150mp.size_mode = SONY2FUJI_SIZE_NATIVE;
+        buf150mp.intent = SONY2FUJI_INTENT_FINAL;
+        sony2fuji_buffer probeOut{};
+        const auto probeSt = sony2fuji_process(cancelProbeSession, &buf150mp, &probeOut);
+        sony2fuji_release_buffer(&probeOut);
+        sony2fuji_session_destroy(cancelProbeSession);
+        checkPass(probeSt == SONY2FUJI_STATUS_CANCELLED && cancelPolls == 2,
+              "NATIVE 15000x10000 (150MP) INPUT_BUFFER passes validation and preflight before pixel allocation");
+
+        // Blocking 1 regression anchor: JXL DNG (Compression=52546, IFD 9000x3000, ActiveArea 3000x3000)
+        // with FIT_SHORT_EDGE=22000 JPEG must defer size preflight to post-decode rather than falling back
+        // to probeTiffHeaderSize on uncropped 9000x3000 (which would compute 66000x22000 > 65535 -> INVALID_ARGUMENT).
+        const auto jxlCroppedDng = dir / "jxl-ifd-9000x3000-active-3000x3000.dng";
+        {
+            std::vector<uint8_t> buf(dngTemplate.begin(), dngTemplate.begin() + 450);
+            auto put16 = [&](size_t off, uint16_t v) {
+                buf[off] = static_cast<uint8_t>(v & 0xFFu);
+                buf[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+            };
+            auto put32 = [&](size_t off, uint32_t v) {
+                buf[off] = static_cast<uint8_t>(v & 0xFFu);
+                buf[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+                buf[off + 2] = static_cast<uint8_t>((v >> 16) & 0xFFu);
+                buf[off + 3] = static_cast<uint8_t>((v >> 24) & 0xFFu);
+            };
+            const uint16_t entries = static_cast<uint16_t>(buf[8] | (uint16_t(buf[9]) << 8));
+            for (uint16_t i = 0; i < entries; ++i) {
+                const size_t off = 10 + static_cast<size_t>(i) * 12;
+                const uint16_t tag = static_cast<uint16_t>(buf[off] | (uint16_t(buf[off + 1]) << 8));
+                if (tag == 256) put32(off + 8, 9000u);
+                else if (tag == 257 || tag == 278) put32(off + 8, 3000u);
+                else if (tag == 259) put16(off + 8, 52546u);
+                else if (tag == 274) put16(off + 8, 1u);
+                else if (tag == 279) put32(off + 8, 64u);
+                else if (tag == 50829) {
+                    const uint32_t areaOff = uint32_t(buf[off + 8]) | (uint32_t(buf[off + 9]) << 8) |
+                        (uint32_t(buf[off + 10]) << 16) | (uint32_t(buf[off + 11]) << 24);
+                    put32(areaOff + 0, 0u);
+                    put32(areaOff + 4, 0u);
+                    put32(areaOff + 8, 3000u);
+                    put32(areaOff + 12, 3000u);
+                }
+            }
+            std::ofstream out(jxlCroppedDng, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+        }
+        const std::string jxlCroppedDngStr = jxlCroppedDng.string();
+        auto jxlShortEdgeReq = makeNativeRawReq(jxlCroppedDngStr);
+        jxlShortEdgeReq.output_target = SONY2FUJI_TARGET_FILE;
+        jxlShortEdgeReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+        jxlShortEdgeReq.output_path = wideJpegOut.c_str();
+        jxlShortEdgeReq.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+        jxlShortEdgeReq.short_edge = 22000u;
+        const auto jxlShortEdgeSt = sony2fuji_process(session, &jxlShortEdgeReq, nullptr);
+        checkPass(jxlShortEdgeSt != SONY2FUJI_STATUS_OK && jxlShortEdgeSt != SONY2FUJI_STATUS_INVALID_ARGUMENT,
+              "JXL DNG 9000x3000 IFD with 3000x3000 ActiveArea defers preflight instead of false TIFF rejection");
+
+        const std::string linearJxlFixture = std::string(TEST_SOURCE_DIR) + "/tests/fixtures/linear-jxl.dng";
+        uint32_t probedW = 99u, probedH = 99u;
+        checkPass(RAWProcessor::probeOutputSize(linearJxlFixture, false, probedW, probedH) == ProbeSizeResult::DeferredPostDecode &&
+              probedW == 0u && probedH == 0u,
+              "RAWProcessor::probeOutputSize returns DeferredPostDecode on JXL DNG fixture");
+        RAWProcessor refProc;
+        const bool refLoaded = refProc.loadFile(linearDngFixture, X3fMode::Legacy) == ErrorCode::Success;
+        const auto refNative = refProc.getNativeOutputSize();
+        checkPass(refLoaded &&
+              RAWProcessor::probeOutputSize(linearDngFixture, false, probedW, probedH) == ProbeSizeResult::Probed &&
+              probedW == static_cast<uint32_t>(refNative.first) && probedH == static_cast<uint32_t>(refNative.second),
+              "RAWProcessor::probeOutputSize matches decoded native output size on uncompressed DNG fixture");
+
+        // Blocking 1b: normalX3f defers preflight (KeepImageArea differs from LibRaw foveon_data),
+        // whereas legacyX3f probes via LibRaw.
+        const auto synthX3f = dir / "synthetic-quattro-5888x3672.x3f";
+        {
+            std::vector<uint8_t> x3fBytes(104, 0);
+            auto put32le = [&](size_t off, uint32_t v) {
+                x3fBytes[off + 0] = static_cast<uint8_t>(v & 0xFFu);
+                x3fBytes[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+                x3fBytes[off + 2] = static_cast<uint8_t>((v >> 16) & 0xFFu);
+                x3fBytes[off + 3] = static_cast<uint8_t>((v >> 24) & 0xFFu);
+            };
+            put32le(0, 0x62564F46u);  // "FOVb"
+            put32le(4, 0x00040000u);  // v4.0 (Quattro)
+            put32le(36, 5888u);       // columns
+            put32le(40, 3672u);       // rows
+            put32le(44, 0u);          // rotation
+            // SECi raw image header at offset 48 (28 bytes)
+            put32le(48, 0x69434553u); // "SECi"
+            put32le(52, 0x00020000u); // v2.0
+            put32le(56, 1u);          // image type: RAW
+            put32le(60, 0x23u);       // format: X3F_IMAGE_RAW_QUATTRO (0x00010023)
+            put32le(64, 5888u);
+            put32le(68, 3672u);
+            put32le(72, 0u);
+            // SECd directory at offset 76 (24 bytes) + 4-byte footer at offset 100
+            put32le(76, 0x64434553u); // "SECd"
+            put32le(80, 0x00020000u); // v2.0
+            put32le(84, 1u);          // 1 directory entry
+            put32le(88, 48u);         // entry offset
+            put32le(92, 28u);         // entry size
+            put32le(96, 0x46414D49u); // "IMAG"
+            put32le(100, 76u);        // directory offset at EOF-4
+            std::ofstream out(synthX3f, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(x3fBytes.data()), static_cast<std::streamsize>(x3fBytes.size()));
+        }
+        const std::string synthX3fStr = synthX3f.string();
+        uint32_t x3fW = 0, x3fH = 0;
+        checkPass(RAWProcessor::probeOutputSize(synthX3fStr, false, x3fW, x3fH, X3fMode::Normal) == ProbeSizeResult::DeferredPostDecode,
+              "RAWProcessor::probeOutputSize defers normalX3f header preflight");
+        checkPass(RAWProcessor::probeOutputSize(synthX3fStr, false, x3fW, x3fH, X3fMode::Legacy) == ProbeSizeResult::Probed &&
+              x3fW > 0u && x3fH > 0u,
+              "RAWProcessor::probeOutputSize probes legacyX3f dimensions via LibRaw");
+        {
+            sony2fuji_session* x3fSession = nullptr;
+            sony2fuji_session_create(&x3fSession);
+            sony2fuji_session_set_x3f_mode(x3fSession, SONY2FUJI_X3F_NORMAL);
+            auto x3fShortReq = makeNativeRawReq(synthX3fStr);
+            x3fShortReq.output_target = SONY2FUJI_TARGET_FILE;
+            x3fShortReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            x3fShortReq.output_path = wideJpegOut.c_str();
+            x3fShortReq.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            x3fShortReq.short_edge = 43640u; // 5424x3616 -> 65460 <= 65535, vs LibRaw -> >65535
+            const auto normalX3fSt = sony2fuji_process(x3fSession, &x3fShortReq, nullptr);
+            checkPass(normalX3fSt != SONY2FUJI_STATUS_OK && normalX3fSt != SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "normalX3f FIT_SHORT_EDGE=43640 JPEG skips LibRaw preflight without false rejection");
+
+            sony2fuji_session_set_x3f_mode(x3fSession, SONY2FUJI_X3F_LEGACY);
+            x3fShortReq.lut_path = absentLut.c_str();
+            x3fShortReq.lut_strength = 1.0f;
+            expectRejected(x3fShortReq, "legacyX3f FIT_SHORT_EDGE=43640 JPEG still rejects pre-decode via LibRaw probe", x3fSession);
+            sony2fuji_session_destroy(x3fSession);
+        }
+
+        // SHOULD-FIX 3: Plain TIFF header probing (BigTIFF=43, big-endian MM, SubIFDs, DefaultCropSize + den==0, OOB offsets).
+        auto append16 = [](std::vector<uint8_t>& b, uint16_t v, bool le) {
+            if (le) { b.push_back(uint8_t(v & 0xFFu)); b.push_back(uint8_t((v >> 8) & 0xFFu)); }
+            else { b.push_back(uint8_t((v >> 8) & 0xFFu)); b.push_back(uint8_t(v & 0xFFu)); }
+        };
+        auto append32 = [](std::vector<uint8_t>& b, uint32_t v, bool le) {
+            for (int i = 0; i < 4; ++i) {
+                const int shift = le ? (i * 8) : ((3 - i) * 8);
+                b.push_back(static_cast<uint8_t>((v >> shift) & 0xFFu));
+            }
+        };
+        auto append64 = [](std::vector<uint8_t>& b, uint64_t v, bool le) {
+            for (int i = 0; i < 8; ++i) {
+                const int shift = le ? (i * 8) : ((7 - i) * 8);
+                b.push_back(static_cast<uint8_t>((v >> shift) & 0xFFu));
+            }
+        };
+        auto writeBytesFile = [](const std::filesystem::path& p, const std::vector<uint8_t>& b) {
+            std::ofstream out(p, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
+        };
+
+        // BigTIFF (magic=43, 8-byte offsets, 20-byte IFD entries): 50000x50000 rejected pre-decode.
+        const auto bigTiffPath = dir / "bigtiff-50000x50000.tiff";
+        {
+            std::vector<uint8_t> b = {'I', 'I'};
+            append16(b, 43u, true);
+            append16(b, 8u, true);
+            append16(b, 0u, true);
+            append64(b, 16ull, true); // IFD0 offset
+            append64(b, 2ull, true);  // 2 entries
+            append16(b, 256u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+            append16(b, 257u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+            append64(b, 0ull, true);
+            writeBytesFile(bigTiffPath, b);
+        }
+        const std::string bigTiffStr = bigTiffPath.string();
+        auto bigTiffReq = makeNativeRawReq(bigTiffStr);
+        bigTiffReq.lut_path = absentLut.c_str();
+        bigTiffReq.lut_strength = 1.0f;
+        expectRejected(bigTiffReq, "BigTIFF (magic=43) 50000x50000 fails pre-decode size preflight");
+
+        // Big-endian MM classic TIFF (100x70000 with Orientation=6 -> 70000x100) rejected pre-decode for JPEG.
+        const auto mmTiffPath = dir / "mm-100x70000-orient6.tiff";
+        {
+            std::vector<uint8_t> b = {'M', 'M'};
+            append16(b, 42u, false);
+            append32(b, 8u, false);
+            append16(b, 3u, false);
+            append16(b, 256u, false); append16(b, 4u, false); append32(b, 1u, false); append32(b, 100u, false);
+            append16(b, 257u, false); append16(b, 4u, false); append32(b, 1u, false); append32(b, 70000u, false);
+            append16(b, 274u, false); append16(b, 3u, false); append32(b, 1u, false);
+            append16(b, 6u, false); append16(b, 0u, false); // Big-endian inline SHORT sits in upper 2 bytes
+            append32(b, 0u, false);
+            writeBytesFile(mmTiffPath, b);
+        }
+        const std::string mmTiffStr = mmTiffPath.string();
+        auto mmJpegReq = nativeWideJpegPng;
+        mmJpegReq.input_path = mmTiffStr.c_str();
+        expectRejected(mmJpegReq, "Big-endian MM TIFF (100x70000, Orientation=6) fails pre-decode JPEG single-edge preflight");
+
+        // SubIFDs (tag=330): IFD0 is 160x120 thumbnail (NewSubfileType=1), SubIFD0 is 50000x50000 primary (NewSubfileType=0).
+        const auto subIfdTiffPath = dir / "subifds-primary-50000x50000.tiff";
+        {
+            std::vector<uint8_t> b = {'I', 'I'};
+            append16(b, 42u, true);
+            append32(b, 8u, true);
+            append16(b, 4u, true); // IFD0: 8 + 2 + 4*12 + 4 = 62 -> SubIFD0 at offset 62
+            append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 1u, true); // reduced-res
+            append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 160u, true);
+            append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 120u, true);
+            append16(b, 330u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 62u, true);
+            append32(b, 0u, true);
+            // SubIFD0 at offset 62
+            append16(b, 3u, true);
+            append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 0u, true); // full-res
+            append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 50000u, true);
+            append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 50000u, true);
+            append32(b, 0u, true);
+            writeBytesFile(subIfdTiffPath, b);
+        }
+        const std::string subIfdTiffStr = subIfdTiffPath.string();
+        auto subIfdReq = bigTiffReq;
+        subIfdReq.input_path = subIfdTiffStr.c_str();
+        expectRejected(subIfdReq, "SubIFDs primary IFD (50000x50000) overrides IFD0 thumbnail and fails pre-decode preflight");
+
+        // DefaultCropSize (tag=50720, RATIONAL): valid {60000/1, 100/1} overrides 70000x100 IFD; den==0 falls back safely.
+        auto writeCropRationalTiff = [&](const std::filesystem::path& target, uint32_t denH) {
+            std::vector<uint8_t> b = {'I', 'I'};
+            append16(b, 42u, true);
+            append32(b, 8u, true);
+            append16(b, 3u, true); // IFD0 ends at 8 + 2 + 3*12 + 4 = 50
+            append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 70000u, true);
+            append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 100u, true);
+            append16(b, 50720u, true); append16(b, 5u, true); append32(b, 2u, true); append32(b, 50u, true);
+            append32(b, 0u, true);
+            // Two RATIONALs at offset 50: width = 60000/1, height = 100/denH
+            append32(b, 60000u, true); append32(b, 1u, true);
+            append32(b, 100u, true); append32(b, denH, true);
+            writeBytesFile(target, b);
+        };
+        const auto validCropTiff = dir / "tiff-default-crop-valid.tiff";
+        writeCropRationalTiff(validCropTiff, 1u);
+        const std::string validCropTiffStr = validCropTiff.string();
+        auto validCropJpegReq = makeNativeRawReq(validCropTiffStr);
+        validCropJpegReq.output_target = SONY2FUJI_TARGET_FILE;
+        validCropJpegReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+        validCropJpegReq.output_path = wideJpegOut.c_str();
+        checkPass(sony2fuji_process(session, &validCropJpegReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+              "DefaultCropSize RATIONAL 60000x100 overrides 70000x100 IFD and passes JPEG preflight");
+
+        const auto zeroDenCropTiff = dir / "tiff-default-crop-den0.tiff";
+        writeCropRationalTiff(zeroDenCropTiff, 0u);
+        const std::string zeroDenCropTiffStr = zeroDenCropTiff.string();
+        auto zeroDenJpegReq = nativeWideJpegPng;
+        zeroDenJpegReq.input_path = zeroDenCropTiffStr.c_str();
+        expectRejected(zeroDenJpegReq, "DefaultCropSize RATIONAL with den==0 safely falls back to 70000x100 IFD and rejects");
+
+        // Out-of-bounds TIFF offsets degrade/fall back safely without crash or huge allocation.
+        const auto oobRootTiff = dir / "tiff-oob-root.tiff";
+        {
+            std::vector<uint8_t> b = {'I', 'I'};
+            append16(b, 42u, true);
+            append32(b, 0x7FFFFFF0u, true);
+            writeBytesFile(oobRootTiff, b);
+        }
+        const std::string oobRootTiffStr = oobRootTiff.string();
+        auto oobRootReq = makeNativeRawReq(oobRootTiffStr);
+        sony2fuji_buffer oobOut{};
+        const auto oobRootSt = sony2fuji_process(session, &oobRootReq, &oobOut);
+        sony2fuji_release_buffer(&oobOut);
+        checkPass(oobRootSt != SONY2FUJI_STATUS_OK && oobRootSt != SONY2FUJI_STATUS_INVALID_ARGUMENT,
+              "TIFF with OOB IFD0 offset safely falls back without crash");
+
+        const auto oobChildTiff = dir / "tiff-oob-child-offsets.tiff";
+        {
+            std::vector<uint8_t> b = {'I', 'I'};
+            append16(b, 42u, true);
+            append32(b, 8u, true);
+            append16(b, 4u, true);
+            append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 50000u, true);
+            append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, 50000u, true);
+            append16(b, 330u, true); append16(b, 4u, true); append32(b, 4u, true); append32(b, 0x7FFFFFF0u, true);
+            append16(b, 50720u, true); append16(b, 5u, true); append32(b, 2u, true); append32(b, 0x7FFFFFF0u, true);
+            append32(b, 0x7FFFFFF0u, true); // OOB nextIfd as well
+            writeBytesFile(oobChildTiff, b);
+        }
+        const std::string oobChildTiffStr = oobChildTiff.string();
+        auto oobChildReq = bigTiffReq;
+        oobChildReq.input_path = oobChildTiffStr.c_str();
+        expectRejected(oobChildReq, "TIFF with OOB SubIFDs/DefaultCropSize/nextIfd offsets preserves valid IFD0 preflight");
+
+        // WP-03 (3b): Plain TIFF fallback traverses nextIfdOffset chain across dual-IFD TIFFs (IFD0 thumbnail + IFD1 primary and vice versa).
+        {
+            auto writeDualMainIfdTiff = [&](const std::filesystem::path& target,
+                                            uint32_t subfile0, uint32_t w0, uint32_t h0,
+                                            uint32_t subfile1, uint32_t w1, uint32_t h1,
+                                            bool cyclic = false) {
+                std::vector<uint8_t> b = {'I', 'I'};
+                append16(b, 42u, true);
+                append32(b, 8u, true);
+                // IFD0 at offset 8: 2 + 3*12 + 4 = 42 bytes -> IFD1 at offset 50
+                append16(b, 3u, true);
+                append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, subfile0, true);
+                append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, w0, true);
+                append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, h0, true);
+                append32(b, 50u, true); // nextIfdOffset -> IFD1
+                // IFD1 at offset 50
+                append16(b, 3u, true);
+                append16(b, 254u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, subfile1, true);
+                append16(b, 256u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, w1, true);
+                append16(b, 257u, true); append16(b, 4u, true); append32(b, 1u, true); append32(b, h1, true);
+                append32(b, cyclic ? 8u : 0u, true);
+                writeBytesFile(target, b);
+            };
+
+            const auto thumbThenHugeTiff = dir / "tiff-ifd0-thumb-ifd1-huge.tiff";
+            writeDualMainIfdTiff(thumbThenHugeTiff, 1u, 160u, 120u, 0u, 50000u, 50000u);
+            const std::string thumbThenHugeStr = thumbThenHugeTiff.string();
+            auto thumbThenHugeReq = bigTiffReq;
+            thumbThenHugeReq.input_path = thumbThenHugeStr.c_str();
+            expectRejected(thumbThenHugeReq, "Dual-IFD TIFF (IFD0 160x120 thumbnail + IFD1 50000x50000 primary) rejects via nextIfdOffset");
+
+            const auto wideThumbSquareMainTiff = dir / "tiff-ifd0-160x40-thumb-ifd1-3000x3000-main.tiff";
+            writeDualMainIfdTiff(wideThumbSquareMainTiff, 1u, 160u, 40u, 0u, 3000u, 3000u);
+            const std::string wideThumbSquareMainStr = wideThumbSquareMainTiff.string();
+            auto wideThumbSquareReq = makeNativeRawReq(wideThumbSquareMainStr);
+            wideThumbSquareReq.output_target = SONY2FUJI_TARGET_FILE;
+            wideThumbSquareReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            wideThumbSquareReq.output_path = wideJpegOut.c_str();
+            wideThumbSquareReq.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            wideThumbSquareReq.short_edge = 20000u; // IFD0 160x40 -> 80000x20000 (reject); IFD1 3000x3000 -> 20000x20000 (OK)
+            checkPass(sony2fuji_process(session, &wideThumbSquareReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Dual-IFD TIFF (IFD0 160x40 thumbnail + IFD1 3000x3000 primary) probes IFD1 aspect instead of false rejection");
+
+            const auto hugeThenThumbTiff = dir / "tiff-ifd0-huge-ifd1-thumb.tiff";
+            writeDualMainIfdTiff(hugeThenThumbTiff, 0u, 50000u, 50000u, 1u, 160u, 120u);
+            const std::string hugeThenThumbStr = hugeThenThumbTiff.string();
+            auto hugeThenThumbReq = bigTiffReq;
+            hugeThenThumbReq.input_path = hugeThenThumbStr.c_str();
+            expectRejected(hugeThenThumbReq, "Dual-IFD TIFF (IFD0 50000x50000 primary + IFD1 160x120 thumbnail) retains IFD0 primary");
+
+            const auto squareMainWideThumbTiff = dir / "tiff-ifd0-3000x3000-main-ifd1-160x40-thumb.tiff";
+            writeDualMainIfdTiff(squareMainWideThumbTiff, 0u, 3000u, 3000u, 1u, 160u, 40u);
+            const std::string squareMainWideThumbStr = squareMainWideThumbTiff.string();
+            auto squareMainWideThumbReq = wideThumbSquareReq;
+            squareMainWideThumbReq.input_path = squareMainWideThumbStr.c_str();
+            checkPass(sony2fuji_process(session, &squareMainWideThumbReq, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Dual-IFD TIFF (IFD0 3000x3000 primary + IFD1 160x40 thumbnail) retains IFD0 primary dimensions");
+
+            const auto cyclicDualTiff = dir / "tiff-cyclic-nextifd.tiff";
+            writeDualMainIfdTiff(cyclicDualTiff, 1u, 160u, 120u, 0u, 50000u, 50000u, true);
+            const std::string cyclicDualStr = cyclicDualTiff.string();
+            auto cyclicDualReq = bigTiffReq;
+            cyclicDualReq.input_path = cyclicDualStr.c_str();
+            expectRejected(cyclicDualReq, "Dual-IFD TIFF with cyclic nextIfdOffset terminates and probes IFD1 primary");
+
+            const auto dualBigTiff = dir / "dual-ifd-bigtiff-thumb-then-huge.tiff";
+            {
+                std::vector<uint8_t> b = {'I', 'I'};
+                append16(b, 43u, true);
+                append16(b, 8u, true);
+                append16(b, 0u, true);
+                append64(b, 16ull, true); // IFD0 offset = 16; IFD0 size = 8 + 3*20 + 8 = 76 -> IFD1 offset = 92
+                append64(b, 3ull, true);
+                append16(b, 254u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 1ull, true);
+                append16(b, 256u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 160ull, true);
+                append16(b, 257u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 120ull, true);
+                append64(b, 92ull, true); // 8-byte nextIfdOffset -> IFD1
+                append64(b, 3ull, true);
+                append16(b, 254u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 0ull, true);
+                append16(b, 256u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+                append16(b, 257u, true); append16(b, 4u, true); append64(b, 1ull, true); append64(b, 50000ull, true);
+                append64(b, 0ull, true);
+                writeBytesFile(dualBigTiff, b);
+            }
+            const std::string dualBigTiffStr = dualBigTiff.string();
+            auto dualBigReq = bigTiffReq;
+            dualBigReq.input_path = dualBigTiffStr.c_str();
+            expectRejected(dualBigReq, "Dual-IFD BigTIFF traverses 8-byte nextIfdOffset to IFD1 primary");
+        }
+
+        // SHOULD-FIX 1: parseExifOrientation must require count == 1 (count=3 with valueOffset=8 must not transpose as Orientation=8).
+        auto writeExifOrientJpg = [&](const std::filesystem::path& target, uint32_t orientCount, uint32_t orientValOrOffset) {
+            std::vector<uint8_t> b = {0xFF, 0xD8, 0xFF, 0xE1};
+            std::vector<uint8_t> app1 = {'E', 'x', 'i', 'f', 0x00, 0x00, 'I', 'I'};
+            append16(app1, 42u, true);
+            append32(app1, 8u, true);
+            append16(app1, 1u, true);
+            append16(app1, 0x0112u, true); // Orientation tag
+            append16(app1, 3u, true);      // SHORT
+            append32(app1, orientCount, true);
+            append32(app1, orientValOrOffset, true);
+            append32(app1, 0u, true);
+            const uint16_t app1Len = static_cast<uint16_t>(app1.size() + 2u);
+            append16(b, app1Len, false);
+            b.insert(b.end(), app1.begin(), app1.end());
+            const uint8_t sofAndSos[] = {
+                0xFF, 0xC0, 0x00, 0x0B, 0x08,
+                static_cast<uint8_t>(1000u >> 8), static_cast<uint8_t>(1000u & 0xFFu), // height = 1000
+                static_cast<uint8_t>(2000u >> 8), static_cast<uint8_t>(2000u & 0xFFu), // width = 2000
+                0x01, 0x11, 0x00,
+                0xFF, 0xDA, 0x00, 0x02
+            };
+            b.insert(b.end(), std::begin(sofAndSos), std::end(sofAndSos));
+            writeBytesFile(target, b);
+        };
+        const auto exifCount3Jpg = dir / "jpeg-exif-orient-count3-2000x1000.jpg";
+        const auto exifCount1Jpg = dir / "jpeg-exif-orient-count1-2000x1000.jpg";
+        writeExifOrientJpg(exifCount3Jpg, 3u, 8u); // count=3, valueOffset=8 -> must NOT be read as Orientation=8
+        writeExifOrientJpg(exifCount1Jpg, 1u, 8u); // count=1, inline value=8 -> true Orientation=8 transpose
+        {
+            sony2fuji_session* orientSession = nullptr;
+            sony2fuji_session_create(&orientSession);
+            sony2fuji_geometry_config halfW{};
+            halfW.version = SONY2FUJI_GEOMETRY_CONFIG_VERSION;
+            halfW.struct_size = sizeof(halfW);
+            halfW.crop_width = 0.5f;
+            halfW.crop_height = 1.0f;
+            sony2fuji_session_set_geometry(orientSession, &halfW);
+            const std::string exifCount3JpgStr = exifCount3Jpg.string();
+            auto exifReq = makeNativeRawReq(exifCount3JpgStr);
+            exifReq.output_target = SONY2FUJI_TARGET_FILE;
+            exifReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            exifReq.output_path = wideJpegOut.c_str();
+            exifReq.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            exifReq.short_edge = 40000u; // 2000x1000 -> crop 1000x1000 -> 40000x40000 (OK); transpose -> 500x2000 -> 40000x160000 (INVALID_ARGUMENT)
+            const auto exifCount3St = sony2fuji_process(orientSession, &exifReq, nullptr);
+            checkPass(exifCount3St != SONY2FUJI_STATUS_OK && exifCount3St != SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "Exif Orientation with count=3 and offset=8 is ignored instead of transposing 2000x1000");
+
+            const std::string exifCount1JpgStr = exifCount1Jpg.string();
+            exifReq.input_path = exifCount1JpgStr.c_str();
+            exifReq.lut_path = absentLut.c_str();
+            exifReq.lut_strength = 1.0f;
+            expectRejected(exifReq, "Exif Orientation with count=1 and value=8 still transposes 2000x1000 in preflight", orientSession);
+            sony2fuji_session_destroy(orientSession);
+        }
+
+        // SHOULD-FIX 2: EXACT and bounded FIT_LONG_EDGE skip source preflight; hot raw_cache session reuses cached size without reopening file;
+        // transient open failures must not poison session->probed_header_* cache.
+        {
+            const auto oversizeSkipPng = dir / "header-3000000000x100.png";
+            writePngHeaderOnly(oversizeSkipPng, 3000000000u, 100u);
+            const std::string oversizeSkipPngStr = oversizeSkipPng.string();
+
+            sony2fuji_session* coldControlSession = nullptr;
+            sony2fuji_session_create(&coldControlSession);
+            auto coldNative = makeNativeRawReq(oversizeSkipPngStr);
+            coldNative.lut_path = absentLut.c_str();
+            coldNative.lut_strength = 1.0f;
+            expectRejected(coldNative, "Readable 3000000000x100 PNG header fails preflight when NATIVE probes source size", coldControlSession);
+            sony2fuji_session_destroy(coldControlSession);
+
+            sony2fuji_session* coldSkipSession = nullptr;
+            sony2fuji_session_create(&coldSkipSession);
+            auto coldExact = coldNative;
+            coldExact.size_mode = SONY2FUJI_SIZE_EXACT;
+            coldExact.target_width = 16u;
+            coldExact.target_height = 12u;
+            sony2fuji_buffer coldExactOut{};
+            const auto coldExactSt = sony2fuji_process(coldSkipSession, &coldExact, &coldExactOut);
+            sony2fuji_release_buffer(&coldExactOut);
+
+            auto coldFitLong = coldNative;
+            coldFitLong.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            coldFitLong.long_edge = 64u;
+            sony2fuji_buffer coldFitOut{};
+            const auto coldFitSt = sony2fuji_process(coldSkipSession, &coldFitLong, &coldFitOut);
+            sony2fuji_release_buffer(&coldFitOut);
+            sony2fuji_session_destroy(coldSkipSession);
+            checkPass(coldExactSt == SONY2FUJI_STATUS_UNSUPPORTED && coldFitSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Bounded EXACT and FIT_LONG_EDGE skip header preflight on oversized readable header and reach loadLUT");
+        }
+#ifndef _WIN32
+        if (geteuid() != 0) {
+            const auto hotDng = dir / "hot-cache-32x24.dng";
+            std::filesystem::copy_file(linearDngFixture, hotDng, std::filesystem::copy_options::overwrite_existing);
+            const std::string hotDngStr = hotDng.string();
+            sony2fuji_session* hotSession = nullptr;
+            sony2fuji_session_create(&hotSession);
+            auto warmReq = makeNativeRawReq(hotDngStr);
+            sony2fuji_buffer warmOut{};
+            const auto warmSt = sony2fuji_process(hotSession, &warmReq, &warmOut);
+            sony2fuji_release_buffer(&warmOut);
+            chmod(hotDngStr.c_str(), 0);
+
+            auto hotExact = warmReq;
+            hotExact.size_mode = SONY2FUJI_SIZE_EXACT;
+            hotExact.target_width = 16u;
+            hotExact.target_height = 12u;
+            hotExact.exposure_ev = 0.1f;
+            sony2fuji_buffer hotOut1{};
+            const auto hotExactSt = sony2fuji_process(hotSession, &hotExact, &hotOut1);
+            sony2fuji_release_buffer(&hotOut1);
+
+            auto hotFitLong = warmReq;
+            hotFitLong.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            hotFitLong.long_edge = 64u;
+            hotFitLong.exposure_ev = 0.2f;
+            sony2fuji_buffer hotOut2{};
+            const auto hotFitLongSt = sony2fuji_process(hotSession, &hotFitLong, &hotOut2);
+            sony2fuji_release_buffer(&hotOut2);
+
+            auto hotNative = warmReq;
+            hotNative.exposure_ev = 0.3f;
+            sony2fuji_buffer hotOut3{};
+            const auto hotNativeSt = sony2fuji_process(hotSession, &hotNative, &hotOut3);
+            sony2fuji_release_buffer(&hotOut3);
+
+            auto hotShortOversize = warmReq;
+            hotShortOversize.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            hotShortOversize.short_edge = 45000u; // 32x24 -> 60000x45000 = 2.7GP > INT32_MAX (caught from cached header size)
+            hotShortOversize.lut_path = absentLut.c_str();
+            hotShortOversize.lut_strength = 1.0f;
+            sony2fuji_buffer hotOut4{};
+            const auto hotShortSt = sony2fuji_process(hotSession, &hotShortOversize, &hotOut4);
+            sony2fuji_release_buffer(&hotOut4);
+
+            chmod(hotDngStr.c_str(), 0600);
+            sony2fuji_session_destroy(hotSession);
+            checkPass(warmSt == SONY2FUJI_STATUS_OK && hotExactSt == SONY2FUJI_STATUS_OK &&
+                  hotFitLongSt == SONY2FUJI_STATUS_OK && hotNativeSt == SONY2FUJI_STATUS_OK &&
+                  hotShortSt == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "Hot raw_cache session reuses cached size without reopening unreadable RAW input");
+
+            // SF-2(a): chmod 0000 transient open failure must NOT poison session->probed_header_key;
+            // after chmod 0644, oversized NATIVE on the same session must still reject pre-decode with INVALID_ARGUMENT.
+            const auto transientHugeDng = dir / "transient-unreadable-50000x50000.dng";
+            writeTruncatedDngHeader(transientHugeDng, 50000u, 50000u);
+            const std::string transientHugeDngStr = transientHugeDng.string();
+            sony2fuji_session* poisonGuardSession = nullptr;
+            sony2fuji_session_create(&poisonGuardSession);
+            chmod(transientHugeDngStr.c_str(), 0);
+            auto transientReq = makeNativeRawReq(transientHugeDngStr);
+            sony2fuji_buffer transientOut{};
+            const auto unreadableSt = sony2fuji_process(poisonGuardSession, &transientReq, &transientOut);
+            sony2fuji_release_buffer(&transientOut);
+            chmod(transientHugeDngStr.c_str(), 0644);
+            checkPass(unreadableSt == SONY2FUJI_STATUS_IO_ERROR,
+                  "Unreadable chmod 0000 RAW returns IO_ERROR during transient failure");
+            transientReq.lut_path = absentLut.c_str();
+            transientReq.lut_strength = 1.0f;
+            expectRejected(transientReq,
+                           "Restored chmod 0644 oversized NATIVE RAW still fails pre-decode preflight without cache poisoning",
+                           poisonGuardSession);
+            sony2fuji_session_destroy(poisonGuardSession);
+        }
+#endif
+
+        // SF-1: Rendered DNG deterministic Classic TIFF bound (pixelBytes + stripTableBytes + metadataBytes <= 2^32 - 1)
+        // is enforced at request validation and header preflight before decode/rendering.
+        {
+            const std::string overCapDngOut = (dir / "over-cap-40000x20000.dng").string();
+            auto exact800DngRaw = request(nullptr);
+            exact800DngRaw.input_type = SONY2FUJI_INPUT_RAW;
+            exact800DngRaw.input_path = absentRaw.c_str();
+            exact800DngRaw.lut_path = absentLut.c_str();
+            exact800DngRaw.lut_strength = 1.0f;
+            exact800DngRaw.intent = SONY2FUJI_INTENT_FINAL;
+            exact800DngRaw.output_target = SONY2FUJI_TARGET_FILE;
+            exact800DngRaw.output_format = SONY2FUJI_OUTPUT_DNG;
+            exact800DngRaw.output_path = overCapDngOut.c_str();
+            exact800DngRaw.size_mode = SONY2FUJI_SIZE_EXACT;
+            exact800DngRaw.target_width = 40000u;
+            exact800DngRaw.target_height = 20000u;
+            expectRejected(exact800DngRaw, "EXACT 40000x20000 DNG is rejected before RAW decode via Classic TIFF capacity bound");
+
+            auto exact800DngBuf = request(dngPixels);
+            exact800DngBuf.lut_path = absentLut.c_str();
+            exact800DngBuf.lut_strength = 1.0f;
+            exact800DngBuf.intent = SONY2FUJI_INTENT_FINAL;
+            exact800DngBuf.output_target = SONY2FUJI_TARGET_FILE;
+            exact800DngBuf.output_format = SONY2FUJI_OUTPUT_DNG;
+            exact800DngBuf.output_path = overCapDngOut.c_str();
+            exact800DngBuf.size_mode = SONY2FUJI_SIZE_EXACT;
+            exact800DngBuf.target_width = 40000u;
+            exact800DngBuf.target_height = 20000u;
+            expectRejected(exact800DngBuf, "EXACT 40000x20000 DNG from buffer returns INVALID_ARGUMENT before rendering");
+
+            auto fitLongImpossibleDng = exact800DngRaw;
+            fitLongImpossibleDng.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            fitLongImpossibleDng.long_edge = 720000000u; // 720M * 1 * 6 > 4.29GB in both orientations
+            expectRejected(fitLongImpossibleDng, "FIT_LONG_EDGE >715.82M DNG is rejected at request validation");
+
+            const auto square3kPng = dir / "header-3000x3000.png";
+            writePngHeaderOnly(square3kPng, 3000u, 3000u);
+            const std::string square3kPngStr = square3kPng.string();
+            auto fitLong30kSquareDng = exact800DngRaw;
+            fitLong30kSquareDng.input_path = square3kPngStr.c_str();
+            fitLong30kSquareDng.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            fitLong30kSquareDng.long_edge = 30000u; // 30000x30000 * 6 = 5.4GB > Classic TIFF 4.29GB
+            expectRejected(fitLong30kSquareDng, "FIT_LONG_EDGE=30000 DNG on 1:1 header fails pre-decode header preflight");
+
+            const auto pano3kPng = dir / "header-3000x1000.png";
+            writePngHeaderOnly(pano3kPng, 3000u, 1000u);
+            const std::string pano3kPngStr = pano3kPng.string();
+            auto fitLong30kPanoDng = fitLong30kSquareDng;
+            fitLong30kPanoDng.input_path = pano3kPngStr.c_str();
+            fitLong30kPanoDng.lut_path = nullptr;
+            fitLong30kPanoDng.lut_strength = 0.0f;
+            checkPass(sony2fuji_process(session, &fitLong30kPanoDng, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "FIT_LONG_EDGE=30000 DNG on 3:1 header (30000x10000 = 1.8GB) passes Classic TIFF preflight");
+        }
+
+        // Blocking 2: 715.8M-2.14G JPEG (40000x20000 = 800MP, rgbBytes = 2.4GB > INT32_MAX, edges <= 65535)
+        // passes validation/preflight and stb_image_write indexes >2GB RGB offsets via size_t without int overflow.
+        const auto png800mp = dir / "header-40000x20000.png";
+        writePngHeaderOnly(png800mp, 40000u, 20000u);
+        const std::string png800mpStr = png800mp.string();
+        auto jpeg800mpNative = makeNativeRawReq(png800mpStr);
+        jpeg800mpNative.output_target = SONY2FUJI_TARGET_FILE;
+        jpeg800mpNative.output_format = SONY2FUJI_OUTPUT_JPEG;
+        jpeg800mpNative.output_path = wideJpegOut.c_str();
+        checkPass(sony2fuji_process(session, &jpeg800mpNative, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+              "NATIVE 40000x20000 (800MP > 715.8MP) JPEG export passes size preflight");
+        {
+            sony2fuji_session* jpeg800CancelSession = nullptr;
+            sony2fuji_session_create(&jpeg800CancelSession);
+            int polls800 = 0;
+            sony2fuji_session_set_cancellation_callback(jpeg800CancelSession, [](void* ctx) -> int {
+                int& c = *static_cast<int*>(ctx);
+                return (++c >= 2) ? 1 : 0;
+            }, &polls800);
+            auto exact800Jpeg = request(dngPixels);
+            exact800Jpeg.intent = SONY2FUJI_INTENT_FINAL;
+            exact800Jpeg.output_target = SONY2FUJI_TARGET_FILE;
+            exact800Jpeg.output_format = SONY2FUJI_OUTPUT_JPEG;
+            exact800Jpeg.output_path = wideJpegOut.c_str();
+            exact800Jpeg.size_mode = SONY2FUJI_SIZE_EXACT;
+            exact800Jpeg.target_width = 40000u;
+            exact800Jpeg.target_height = 20000u;
+            const auto exact800St = sony2fuji_process(jpeg800CancelSession, &exact800Jpeg, nullptr);
+            sony2fuji_session_destroy(jpeg800CancelSession);
+            checkPass(exact800St == SONY2FUJI_STATUS_CANCELLED && polls800 == 2,
+                  "EXACT 40000x20000 (800MP) JPEG passes validation and preflight");
+        }
+#if !defined(_WIN32) && INTPTR_MAX == INT64_MAX
+        {
+#ifndef MAP_ANON
+#define MAP_ANON MAP_ANONYMOUS
+#endif
+            constexpr int kBigW = 40000;
+            constexpr int kBigH = 20000;
+            constexpr size_t kBigBytes = static_cast<size_t>(kBigW) * static_cast<size_t>(kBigH) * 3u; // 2.4 GB > INT32_MAX
+            const long sysPage = sysconf(_SC_PAGESIZE);
+            const size_t pageSize = sysPage > 0 ? static_cast<size_t>(sysPage) : 4096u;
+            const size_t kMapLen = ((kBigBytes + pageSize - 1u) / pageSize) * pageSize;
+            const size_t tailStartByte = static_cast<size_t>(kBigH - 16) * static_cast<size_t>(kBigW) * 3u;
+            const size_t alignedTailStart = (tailStartByte / pageSize) * pageSize;
+
+            // Reserve 2.4 GB with PROT_NONE (zero commit charge; <2 GB index wrap-around faults immediately),
+            // and mprotect only the page-aligned tail covering the bottom 16 rows as RW.
+            errno = 0;
+            void* mapped = mmap(nullptr, kMapLen, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+            if (mapped == MAP_FAILED) {
+                const int err = errno;
+                if (err == ENOMEM) {
+                    std::cout << "SKIP 800MP stb_image_write mmap probe: ENOMEM reserving 2.4GB PROT_NONE region\n";
+                } else {
+                    checkPass(false, "800MP stb_image_write PROT_NONE mmap failed with unexpected errno");
+                }
+            } else {
+                auto* rgb = static_cast<unsigned char*>(mapped);
+                errno = 0;
+                if (mprotect(rgb + alignedTailStart, kMapLen - alignedTailStart, PROT_READ | PROT_WRITE) != 0) {
+                    const int err = errno;
+                    munmap(mapped, kMapLen);
+                    if (err == ENOMEM) {
+                        std::cout << "SKIP 800MP stb_image_write mmap probe: ENOMEM committing 16-row tail pages\n";
+                    } else {
+                        checkPass(false, "800MP stb_image_write tail mprotect failed with unexpected errno");
+                    }
+                } else {
+                    // Populate bottom 16 rows (accessed first when flip_vertically_on_write == 1, where base_p > INT32_MAX).
+                    for (int r = kBigH - 16; r < kBigH; ++r) {
+                        const size_t rowBase = static_cast<size_t>(r) * static_cast<size_t>(kBigW) * 3u;
+                        for (int c = 0; c < 512; ++c) {
+                            const size_t p = rowBase + static_cast<size_t>(c) * 3u;
+                            rgb[p + 0] = static_cast<unsigned char>((r * 37 + c * 73) & 0xFF);
+                            rgb[p + 1] = static_cast<unsigned char>((r * 53 + c * 29) & 0xFF);
+                            rgb[p + 2] = static_cast<unsigned char>((r * 97 + c * 11) & 0xFF);
+                        }
+                    }
+                    struct JpegStreamProbe {
+                        std::jmp_buf env{};
+                        size_t totalBytes = 0;
+                        unsigned char firstTwo[2] = {0, 0};
+                    };
+                    struct FlipResetGuard {
+                        ~FlipResetGuard() { stbi_flip_vertically_on_write(0); }
+                    } flipGuard;
+                    stbi_flip_vertically_on_write(1);
+
+                    bool q85Ok = false, q95Ok = false;
+                    for (int quality : {85, 95}) {
+                        JpegStreamProbe probe{};
+                        if (setjmp(probe.env) == 0) {
+                            stbi_write_jpg_to_func([](void* ctx, void* data, int size) {
+                                auto& st = *static_cast<JpegStreamProbe*>(ctx);
+                                const auto* bytes = static_cast<const unsigned char*>(data);
+                                for (int i = 0; i < size && st.totalBytes + static_cast<size_t>(i) < 2u; ++i) {
+                                    st.firstTwo[st.totalBytes + static_cast<size_t>(i)] = bytes[i];
+                                }
+                                st.totalBytes += static_cast<size_t>(size > 0 ? size : 0);
+                                if (st.totalBytes >= 1024u) {
+                                    std::longjmp(st.env, 1);
+                                }
+                            }, &probe, kBigW, kBigH, 3, rgb, quality);
+                        }
+                        const bool ok = probe.totalBytes >= 1024u && probe.firstTwo[0] == 0xFFu && probe.firstTwo[1] == 0xD8u;
+                        if (quality == 85) q85Ok = ok;
+                        else q95Ok = ok;
+                    }
+                    munmap(mapped, kMapLen);
+                    checkPass(q85Ok && q95Ok,
+                          "stb_image_write encodes 40000x20000 (>2GB base_p) macroblocks with <2GB PROT_NONE wrap-around guard");
+                }
+            }
+        }
+#endif
+
+        // NOTE: resizeBilinear/sampleBilinear double precision + clamp for single edge > 2^24 (16,777,216).
+        {
+            constexpr uint32_t kWide24A = 16777222u; // srcWidth - 1 = 16777221 (float rounds down to 16777220)
+            constexpr uint32_t kWide24B = 16777220u; // srcWidth - 1 = 16777219 (float rounds up to 16777220 == srcWidth OOB)
+            std::vector<unsigned char> linePixels(static_cast<size_t>(kWide24A) * 3u, 0u);
+            linePixels[(kWide24A - 1u) * 3u + 0u] = 255u;
+            linePixels[(kWide24A - 1u) * 3u + 1u] = 255u;
+            linePixels[(kWide24A - 1u) * 3u + 2u] = 255u;
+
+            auto makeWideResizeReq = [&](uint32_t srcW, uint32_t dstW) {
+                auto r = request(linePixels.data());
+                r.input_width = srcW;
+                r.input_height = 1u;
+                r.input_is_linear = 0;
+                r.intent = SONY2FUJI_INTENT_FINAL;
+                r.size_mode = SONY2FUJI_SIZE_EXACT;
+                r.target_width = dstW;
+                r.target_height = 1u;
+                return r;
+            };
+            sony2fuji_buffer outA{};
+            const auto reqA = makeWideResizeReq(kWide24A, 2u);
+            const auto stA = sony2fuji_process(session, &reqA, &outA);
+            const auto* bytesA = static_cast<const unsigned char*>(outA.data);
+            const bool okA = stA == SONY2FUJI_STATUS_OK && outA.width == 2u && outA.height == 1u &&
+                bytesA && bytesA[0] < 32u && bytesA[3] > 200u;
+            sony2fuji_release_buffer(&outA);
+
+            std::fill(linePixels.begin(), linePixels.end(), 0u);
+            linePixels[(kWide24B - 1u) * 3u + 0u] = 255u;
+            linePixels[(kWide24B - 1u) * 3u + 1u] = 255u;
+            linePixels[(kWide24B - 1u) * 3u + 2u] = 255u;
+            sony2fuji_buffer outB{};
+            const auto reqB = makeWideResizeReq(kWide24B, 3u);
+            const auto stB = sony2fuji_process(session, &reqB, &outB);
+            const auto* bytesB = static_cast<const unsigned char*>(outB.data);
+            const bool okB = stB == SONY2FUJI_STATUS_OK && outB.width == 3u && outB.height == 1u &&
+                bytesB && bytesB[0] < 32u && bytesB[6] > 200u;
+            sony2fuji_release_buffer(&outB);
+
+            checkPass(okA && okB,
+                  "resizeBilinear/sampleBilinear preserves exact endpoint indexing and bounds above 2^24 width");
+        }
+
+        // B2 + WP-03 (2): Real JPEG encode anchor at the 65500 libjpeg-turbo ceiling, plus exact
+        // integer half-up scaling at 65500 (127x93467 with FIT_SHORT_EDGE=89 has exact long edge
+        // 93467 * 89 / 127 = 65500 + 63/127 -> 65500, whereas 32-bit float scale 89.0f/127.0f rounds
+        // up to 65500.5 -> 65501 and falsely rejects).
+        {
+            const auto ceilingDir = dir / "jpeg-65500-ceiling";
+            std::filesystem::create_directories(ceilingDir);
+            const auto maxWPath = ceilingDir / "exact-65500x1.jpg";
+            const auto maxHPath = ceilingDir / "exact-1x65500.jpg";
+            const std::string maxWStr = maxWPath.string();
+            const std::string maxHStr = maxHPath.string();
+
+            auto exactMaxW = request(dngPixels);
+            exactMaxW.intent = SONY2FUJI_INTENT_FINAL;
+            exactMaxW.output_target = SONY2FUJI_TARGET_FILE;
+            exactMaxW.output_format = SONY2FUJI_OUTPUT_JPEG;
+            exactMaxW.output_path = maxWStr.c_str();
+            exactMaxW.size_mode = SONY2FUJI_SIZE_EXACT;
+            exactMaxW.target_width = 65500u;
+            exactMaxW.target_height = 1u;
+            int infoW = 0, infoH = 0, infoComp = 0;
+            checkPass(sony2fuji_process(session, &exactMaxW, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(maxWStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 65500 && infoH == 1 && infoComp == 3 && !hasJpegStagingFile(ceilingDir),
+                  "EXACT 65500x1 JPEG truly encodes and decodes header cleanly at JPEG_MAX_DIMENSION");
+
+            auto exactMaxH = exactMaxW;
+            exactMaxH.output_path = maxHStr.c_str();
+            exactMaxH.target_width = 1u;
+            exactMaxH.target_height = 65500u;
+            infoW = infoH = infoComp = 0;
+            checkPass(sony2fuji_process(session, &exactMaxH, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(maxHStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 1 && infoH == 65500 && infoComp == 3 && !hasJpegStagingFile(ceilingDir),
+                  "EXACT 1x65500 JPEG truly encodes and decodes header cleanly at JPEG_MAX_DIMENSION");
+
+            std::filesystem::remove(maxWPath);
+            std::filesystem::remove(maxHPath);
+
+            const auto rejectOutPath = ceilingDir / "rejected-65501.jpg";
+            const std::string rejectOutStr = rejectOutPath.string();
+            for (const uint32_t overEdge : {65501u, 65535u}) {
+                for (const bool wideOrientation : {true, false}) {
+                    sony2fuji_session* preflightSession = nullptr;
+                    sony2fuji_session_create(&preflightSession);
+                    int preflightPolls = 0;
+                    sony2fuji_session_set_cancellation_callback(preflightSession, [](void* ctx) -> int {
+                        ++(*static_cast<int*>(ctx));
+                        return 0;
+                    }, &preflightPolls);
+                    auto overReq = exactMaxW;
+                    overReq.output_path = rejectOutStr.c_str();
+                    overReq.lut_path = absentLut.c_str();
+                    overReq.lut_strength = 1.0f;
+                    overReq.target_width = wideOrientation ? overEdge : 1u;
+                    overReq.target_height = wideOrientation ? 1u : overEdge;
+                    const auto overSt = sony2fuji_process(preflightSession, &overReq, nullptr);
+                    sony2fuji_session_destroy(preflightSession);
+                    // Poll #1 is at processImpl entry before validateRequest; Poll #2 is after preflight,
+                    // right before buffer/RAW unpack. preflightPolls == 1 proves rejection preceded render.
+                    checkPass(overSt == SONY2FUJI_STATUS_INVALID_ARGUMENT && preflightPolls == 1 &&
+                          !std::filesystem::exists(rejectOutPath) && !hasJpegStagingFile(ceilingDir),
+                          "JPEG >65500 single edge is rejected with INVALID_ARGUMENT before render and leaves no .tmp");
+                }
+            }
+
+            const auto over65501Hdr = ceilingDir / "header-65501x1.png";
+            writePngHeaderOnly(over65501Hdr, 65501u, 1u);
+            const std::string over65501HdrStr = over65501Hdr.string();
+            auto native65501Req = makeNativeRawReq(over65501HdrStr);
+            native65501Req.output_target = SONY2FUJI_TARGET_FILE;
+            native65501Req.output_format = SONY2FUJI_OUTPUT_JPEG;
+            native65501Req.output_path = rejectOutStr.c_str();
+            native65501Req.lut_path = absentLut.c_str();
+            native65501Req.lut_strength = 1.0f;
+            expectRejected(native65501Req, "NATIVE 65501x1 JPEG rejects in pre-decode header preflight");
+            checkPass(!std::filesystem::exists(rejectOutPath) && !hasJpegStagingFile(ceilingDir),
+                  "Rejected NATIVE 65501x1 JPEG creates neither output nor staging .tmp");
+
+            ImageData directOk(65500, 1);
+            ImageData directOver(65501, 1);
+            const auto directOkPath = ceilingDir / "direct-65500x1.jpg";
+            const auto directOverPath = ceilingDir / "direct-65501x1.jpg";
+            checkPass(ImageEncoder::saveJPEG(directOk, directOkPath.string(), 90) == ErrorCode::Success &&
+                  std::filesystem::exists(directOkPath) && !hasJpegStagingFile(ceilingDir),
+                  "ImageEncoder::saveJPEG accepts 65500x1");
+            checkPass(ImageEncoder::saveJPEG(directOver, directOverPath.string(), 90) == ErrorCode::ProcessingError &&
+                  !std::filesystem::exists(directOverPath) && !hasJpegStagingFile(ceilingDir),
+                  "ImageEncoder::saveJPEG rejects 65501x1 before creating staging .tmp");
+            std::filesystem::remove(directOkPath);
+
+            const auto exact65500Png = dir / "header-127x93467.png";
+            writePngHeaderOnly(exact65500Png, 127u, 93467u);
+            const std::string exact65500PngStr = exact65500Png.string();
+            auto short89Jpeg = makeNativeRawReq(exact65500PngStr);
+            short89Jpeg.output_target = SONY2FUJI_TARGET_FILE;
+            short89Jpeg.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short89Jpeg.output_path = wideJpegOut.c_str();
+            short89Jpeg.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short89Jpeg.short_edge = 89u;
+            checkPass(sony2fuji_process(session, &short89Jpeg, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "127x93467 FIT_SHORT_EDGE=89 JPEG computes exact 65500 long edge and passes preflight");
+
+            const std::vector<unsigned char> exactBufPixels(127u * 93467u * 3u, 120u);
+            const auto exactScaledOut = ceilingDir / "scaled-89x65500.jpg";
+            const std::string exactScaledOutStr = exactScaledOut.string();
+            auto short89Buf = request(exactBufPixels.data());
+            short89Buf.input_width = 127u;
+            short89Buf.input_height = 93467u;
+            short89Buf.input_is_linear = 0;
+            short89Buf.intent = SONY2FUJI_INTENT_FINAL;
+            short89Buf.output_target = SONY2FUJI_TARGET_FILE;
+            short89Buf.output_format = SONY2FUJI_OUTPUT_JPEG;
+            short89Buf.output_path = exactScaledOutStr.c_str();
+            short89Buf.size_mode = SONY2FUJI_SIZE_FIT_SHORT_EDGE;
+            short89Buf.short_edge = 89u;
+            infoW = infoH = infoComp = 0;
+            checkPass(sony2fuji_process(session, &short89Buf, nullptr) == SONY2FUJI_STATUS_OK &&
+                  stbi_info(exactScaledOutStr.c_str(), &infoW, &infoH, &infoComp) == 1 &&
+                  infoW == 89 && infoH == 65500 && !hasJpegStagingFile(ceilingDir),
+                  "127x93467 INPUT_BUFFER FIT_SHORT_EDGE=89 truly encodes 89x65500 JPEG without float-rounding rejection");
+            std::filesystem::remove(exactScaledOut);
+
+            const auto over65501Png = dir / "header-127x93468.png";
+            writePngHeaderOnly(over65501Png, 127u, 93468u);
+            const std::string over65501PngStr = over65501Png.string();
+            auto short89Over = short89Jpeg;
+            short89Over.input_path = over65501PngStr.c_str();
+            short89Over.lut_path = absentLut.c_str();
+            short89Over.lut_strength = 1.0f;
+            expectRejected(short89Over, "127x93468 FIT_SHORT_EDGE=89 JPEG (65501.19 -> 65501) rejects in preflight");
+
+            const auto halfUp65501Png = dir / "header-4x131001.png";
+            writePngHeaderOnly(halfUp65501Png, 4u, 131001u);
+            const std::string halfUp65501PngStr = halfUp65501Png.string();
+            auto halfUpOver = short89Over;
+            halfUpOver.input_path = halfUp65501PngStr.c_str();
+            halfUpOver.short_edge = 2u; // 131001 * 2 / 4 = 65500.5 -> half-up rounds to 65501 -> reject
+            expectRejected(halfUpOver, "Exact .5 boundary (4x131001 FIT_SHORT_EDGE=2 -> 65500.5) rounds half-up to 65501 and rejects");
+        }
+
+        // WP-03 (3a): JPEG header preflight scans markers under a 4 MiB byte budget instead of a fixed
+        // 4096-marker cap: SOFn behind more than 4096 COM/TEM segments is still hit during preflight,
+        // and only padding beyond the byte budget defers the size check to post-decode.
+        {
+            auto writePaddedJpeg = [&](const std::filesystem::path& target, size_t paddingMarkers,
+                                       bool useTemMarker, uint16_t w, uint16_t h) {
+                std::vector<uint8_t> b = {0xFF, 0xD8};
+                b.reserve(2u + paddingMarkers * (useTemMarker ? 2u : 4u) + 16u);
+                for (size_t i = 0; i < paddingMarkers; ++i) {
+                    if (useTemMarker) {
+                        b.push_back(0xFFu);
+                        b.push_back(0x01u); // TEM standalone marker
+                    } else {
+                        b.push_back(0xFFu);
+                        b.push_back(0xFEu); // COM marker with empty 2-byte length
+                        b.push_back(0x00u);
+                        b.push_back(0x02u);
+                    }
+                }
+                const uint8_t sofAndSos[] = {
+                    0xFFu, 0xC0u, 0x00u, 0x0Bu, 0x08u,
+                    static_cast<uint8_t>(h >> 8), static_cast<uint8_t>(h & 0xFFu),
+                    static_cast<uint8_t>(w >> 8), static_cast<uint8_t>(w & 0xFFu),
+                    0x01u, 0x11u, 0x00u,
+                    0xFFu, 0xDAu, 0x00u, 0x02u
+                };
+                b.insert(b.end(), std::begin(sofAndSos), std::end(sofAndSos));
+                writeBytesFile(target, b);
+            };
+
+            const auto jpg4096ValidCom = dir / "jpeg-4096-com-then-64x48.jpg";
+            const auto jpg4096ValidTem = dir / "jpeg-4096-tem-then-64x48.jpg";
+            writePaddedJpeg(jpg4096ValidCom, 4096u, false, 64u, 48u);
+            writePaddedJpeg(jpg4096ValidTem, 4096u, true, 64u, 48u);
+            const std::string jpg4096ValidComStr = jpg4096ValidCom.string();
+            const std::string jpg4096ValidTemStr = jpg4096ValidTem.string();
+            auto padComReq = makeNativeRawReq(jpg4096ValidComStr);
+            padComReq.output_target = SONY2FUJI_TARGET_FILE;
+            padComReq.output_format = SONY2FUJI_OUTPUT_JPEG;
+            padComReq.output_path = wideJpegOut.c_str();
+            auto padTemReq = padComReq;
+            padTemReq.input_path = jpg4096ValidTemStr.c_str();
+            const auto padComSt = sony2fuji_process(session, &padComReq, nullptr);
+            const auto padTemSt = sony2fuji_process(session, &padTemReq, nullptr);
+            checkPass(padComSt == SONY2FUJI_STATUS_UNSUPPORTED && padTemSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "JPEG with 4096 COM/TEM padding markers hits SOF0 in preflight within the byte budget and is rejected only at RAW decode");
+
+            const auto jpg4095Huge = dir / "jpeg-4095-com-then-50000x50000.jpg";
+            const auto jpg4096Huge = dir / "jpeg-4096-com-then-50000x50000.jpg";
+            const auto jpg4097Huge = dir / "jpeg-4097-com-then-50000x50000.jpg";
+            writePaddedJpeg(jpg4095Huge, 4095u, false, 50000u, 50000u);
+            writePaddedJpeg(jpg4096Huge, 4096u, false, 50000u, 50000u);
+            writePaddedJpeg(jpg4097Huge, 4097u, false, 50000u, 50000u);
+            const std::string jpg4095HugeStr = jpg4095Huge.string();
+            const std::string jpg4096HugeStr = jpg4096Huge.string();
+            const std::string jpg4097HugeStr = jpg4097Huge.string();
+            auto huge4095Req = makeNativeRawReq(jpg4095HugeStr);
+            huge4095Req.lut_path = absentLut.c_str();
+            huge4095Req.lut_strength = 1.0f;
+            expectRejected(huge4095Req, "JPEG with 4095 COM segments reaches SOF0 at marker #4096 and rejects in preflight");
+
+            auto huge4096Req = huge4095Req;
+            huge4096Req.input_path = jpg4096HugeStr.c_str();
+            expectRejected(huge4096Req, "JPEG with 4096 COM segments reaches SOF0 within the byte budget and rejects in preflight");
+
+            // WP-03 验收：>4096 COM 段的 JPEG 预检必须命中真实主图尺寸（50000x50000 在预检即拒，
+            // 而非延后到 load 才报 UNSUPPORTED）。撤回字节预算改为 4096 标记封顶即红。
+            auto huge4097Req = huge4095Req;
+            huge4097Req.input_path = jpg4097HugeStr.c_str();
+            expectRejected(huge4097Req, "JPEG with >4096 COM segments still hits the real SOFn size in preflight and rejects in preflight");
+
+            // COM padding beyond the 4 MiB scan budget defers the size check instead of scanning forever:
+            // the 50000x50000 SOFn stays unpreflighted and the request reaches load (UNSUPPORTED, not INVALID_ARGUMENT).
+            const auto jpgBudgetHuge = dir / "jpeg-1048577-com-then-50000x50000.jpg";
+            writePaddedJpeg(jpgBudgetHuge, 1048577u, false, 50000u, 50000u);
+            const std::string jpgBudgetHugeStr = jpgBudgetHuge.string();
+            auto budgetHugeReq = huge4095Req;
+            budgetHugeReq.input_path = jpgBudgetHugeStr.c_str();
+            sony2fuji_buffer budgetHugeOut{};
+            const auto budgetHugeSt = sony2fuji_process(session, &budgetHugeReq, &budgetHugeOut);
+            sony2fuji_release_buffer(&budgetHugeOut);
+            checkPass(budgetHugeSt == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "JPEG with COM padding beyond the 4 MiB header budget defers preflight and reaches load");
+        }
+    }
     auto dngRequest = request(dngPixels);
     const std::string dngPath = (dir / "rendered.dng").string();
     dngRequest.output_target = SONY2FUJI_TARGET_FILE;
     dngRequest.output_format = static_cast<sony2fuji_output_format>(4);
     dngRequest.output_path = dngPath.c_str();
     dngRequest.intent = SONY2FUJI_INTENT_FINAL;
-    check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OK &&
           std::filesystem::file_size(dngPath) > 8, "C ABI writes rendered DNG as a file");
+    {
+        sony2fuji_session* aeSession = nullptr;
+        sony2fuji_session_create(&aeSession);
+
+        sony2fuji_request aeRaw{};
+        aeRaw.version = SONY2FUJI_REQUEST_VERSION;
+        aeRaw.struct_size = sizeof(aeRaw);
+        aeRaw.input_type = SONY2FUJI_INPUT_RAW;
+        aeRaw.input_path = linearDngFixture.c_str();
+        aeRaw.wb_mode = SONY2FUJI_WB_CAMERA;
+        aeRaw.wb_mul[0] = aeRaw.wb_mul[1] = aeRaw.wb_mul[2] = aeRaw.wb_mul[3] = 1.0f;
+        aeRaw.brightness = aeRaw.contrast = aeRaw.saturation = 1.0f;
+        aeRaw.temperature = 6500.0f;
+        float rawEv = 999.0f;
+        const auto rawAeStatus = sony2fuji_session_estimate_auto_exposure(aeSession, &aeRaw, &rawEv);
+
+        sony2fuji_request aePreviewBuf{};
+        aePreviewBuf.version = SONY2FUJI_REQUEST_VERSION;
+        aePreviewBuf.struct_size = sizeof(aePreviewBuf);
+        aePreviewBuf.input_type = SONY2FUJI_INPUT_BUFFER;
+        aePreviewBuf.input_pixels = dngPixels;
+        aePreviewBuf.input_width = aePreviewBuf.input_height = 1;
+        aePreviewBuf.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+        aePreviewBuf.input_color_space = SONY2FUJI_COLOR_SRGB;
+        aePreviewBuf.input_is_linear = 1;
+        aePreviewBuf.wb_mode = SONY2FUJI_WB_CAMERA;
+        aePreviewBuf.brightness = aePreviewBuf.contrast = aePreviewBuf.saturation = 1.0f;
+        aePreviewBuf.temperature = 6500.0f;
+        aePreviewBuf.intent = SONY2FUJI_INTENT_PREVIEW;
+        aePreviewBuf.preview_long_edge = 1280;
+        float bufEv = 999.0f;
+        const auto bufAeStatus = sony2fuji_session_estimate_auto_exposure(aeSession, &aePreviewBuf, &bufEv);
+
+        sony2fuji_session_destroy(aeSession);
+        checkPass(aeRaw.size_mode == SONY2FUJI_SIZE_EXACT && aeRaw.target_width == 0 && aeRaw.target_height == 0 &&
+              rawAeStatus == SONY2FUJI_STATUS_OK && std::isfinite(rawEv) && rawEv >= -4.0f && rawEv <= 4.0f &&
+              aePreviewBuf.size_mode == SONY2FUJI_SIZE_EXACT && aePreviewBuf.target_width == 0 && aePreviewBuf.target_height == 0 &&
+              bufAeStatus == SONY2FUJI_STATUS_OK && std::isfinite(bufEv) && bufEv >= -4.0f && bufEv <= 4.0f,
+              "Auto exposure succeeds with zero-initialized size fields");
+    }
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    {
+        bool aiRuntimeAvailable = true;
+#ifdef _WIN32
+        std::optional<ai::DirectMLAdapter> aiAdapter;
+        try { aiAdapter = ai::findDirectMLAdapter(); } catch (const std::runtime_error&) { aiRuntimeAvailable = false; }
+#endif
+        if (aiRuntimeAvailable) {
+            const auto aiModelDir = dir / "ai-model";
+            const auto aiCacheDir = dir / "ai-cache";
+            std::filesystem::create_directories(aiModelDir);
+            nlohmann::json manifest = {
+                {"format_version", 1}, {"protocol", "rawlab-dualdn-v1"},
+                {"model_id", "dualdn-big-restormer-v1"}, {"source_revision", ai::dualdnSourceRevision},
+                {"weights_sha256", ai::dualdnWeightsSHA256}, {"tile_size", 640}, {"production_geometry", true},
+                {"raw_core", 384}, {"raw_halo", 128}, {"rgb_core", 512}, {"rgb_halo", 64},
+                {"packed_order", {"R", "G_top", "G_bottom", "B"}},
+                {"input_floor", 1e-8}, {"variance_floor", 1e-7}, {"sigma_semantics", "variance"},
+                {"isp", {{"demosaic", "AHD"}, {"gamma", "Rec709"}, {"reference", "D65"}, {"alpha", 0}, {"bgu", false}}}
+            };
+            for (const char* name : {"raw", "isp", "rgb"}) {
+                const auto file = aiModelDir / (std::string(name) + ".onnx");
+                { std::ofstream(file, std::ios::binary) << "test package integrity"; }
+                manifest["graphs"][name] = {
+                    {"file", file.filename().u8string()},
+                    {"sha256", ai::sha256File(file.u8string())},
+                    {"bytes", std::filesystem::file_size(file)}
+                };
+            }
+            const auto blindFile = aiModelDir / "blind_rgb.onnx";
+            const auto licenseFile = aiModelDir / "Restormer-LICENSE.txt";
+            { std::ofstream(blindFile, std::ios::binary) << "RGB model package integrity fixture"; }
+            std::filesystem::copy_file(
+                std::filesystem::u8path(std::string(TEST_SOURCE_DIR) + "/tests/fixtures/restormer-v1-LICENSE.txt"),
+                licenseFile);
+            manifest["blind_rgb"] = {
+                {"model_id", "restormer-real-srgb-v1"}, {"protocol", "rawlab-scene-rgb-v1"},
+                {"source_revision", ai::restormerSourceRevision}, {"weights_sha256", ai::restormerWeightsSHA256},
+                {"tile_size", 640}, {"core", 512}, {"halo", 64}, {"input", "encoded_rgb"}, {"output", "denoised_rgb"},
+                {"file", "blind_rgb.onnx"}, {"bytes", std::filesystem::file_size(blindFile)},
+                {"sha256", ai::sha256File(blindFile.u8string())},
+                {"license_file", "Restormer-LICENSE.txt"}, {"license_sha256", ai::restormerLicenseSHA256}
+            };
+            { std::ofstream(aiModelDir / "manifest.json", std::ios::binary) << manifest.dump(); }
+
+#ifdef _WIN32
+            constexpr auto aiBackend = SONY2FUJI_AI_DIRECTML;
+            constexpr auto coreBackend = ai::Backend::DirectML;
+            const std::string runtimeIdentity = ai::NetworkGraph::runtimeVersion(coreBackend, aiAdapter ? &*aiAdapter : nullptr);
+#else
+            constexpr auto aiBackend = SONY2FUJI_AI_COREML;
+            constexpr auto coreBackend = ai::Backend::CoreML;
+            const std::string runtimeIdentity = ai::NetworkGraph::runtimeVersion(coreBackend);
+#endif
+            const auto package = ai::loadModelPackage(aiModelDir.u8string());
+            const auto fullIdentity = package.digest + ":" + runtimeIdentity;
+            const auto digest = ai::sha256Bytes(fullIdentity.data(), fullIdentity.size());
+            RAWProcessOptions aiOptions;
+            aiOptions.legacySonyCrop = true;
+            const auto rawKey = ai::rawCacheKey(linearDngFixture, digest, static_cast<int>(coreBackend), aiOptions.legacySonyCrop);
+            const float zeroScene[3] = {0.0f, 0.0f, 0.0f};
+            ai::DenoiseCache(aiCacheDir.u8string()).store(
+                ai::sceneRGBCacheKey(rawKey, aiOptions), ai::CacheKind::SceneRGB, 1, 1, zeroScene, 3, {}, "test-identity");
+
+            sony2fuji_session* aiSession = nullptr;
+            sony2fuji_session_create(&aiSession);
+            const std::string modelDirUtf8 = aiModelDir.u8string();
+            const std::string cacheDirUtf8 = aiCacheDir.u8string();
+            sony2fuji_ai_denoise_config aiConfig{};
+            aiConfig.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION;
+            aiConfig.struct_size = sizeof(aiConfig);
+            aiConfig.enabled = 1;
+            aiConfig.backend = aiBackend;
+            aiConfig.model_directory = modelDirUtf8.c_str();
+            aiConfig.cache_directory = cacheDirUtf8.c_str();
+            const auto setAiStatus = sony2fuji_session_set_ai_denoise(aiSession, &aiConfig);
+
+            sony2fuji_request aiReq{};
+            aiReq.version = SONY2FUJI_REQUEST_VERSION;
+            aiReq.struct_size = sizeof(aiReq);
+            aiReq.input_type = SONY2FUJI_INPUT_RAW;
+            aiReq.input_path = linearDngFixture.c_str();
+            aiReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            aiReq.wb_mul[0] = aiReq.wb_mul[1] = aiReq.wb_mul[2] = aiReq.wb_mul[3] = 1.0f;
+            aiReq.brightness = aiReq.contrast = aiReq.saturation = 1.0f;
+            aiReq.temperature = 6500.0f;
+            const auto prepStatus = sony2fuji_session_prepare_ai(aiSession, &aiReq, nullptr, nullptr);
+            sony2fuji_session_destroy(aiSession);
+
+            checkPass(setAiStatus == SONY2FUJI_STATUS_OK &&
+                  aiReq.size_mode == SONY2FUJI_SIZE_EXACT && aiReq.target_width == 0 && aiReq.target_height == 0 &&
+                  prepStatus == SONY2FUJI_STATUS_OK,
+                  "AI preparation succeeds with zero-initialized size fields");
+        } else {
+            std::cout << "SKIP AI preparation zero-init checkPass(no hardware AI adapter)\n";
+        }
+    }
+#else
+    std::cout << "SKIP AI preparation zero-init checkPass(enable SONY2FUJI_ENABLE_AI_DENOISE)\n";
+#endif
     const std::string missingDngPath = (dir / "absent" / "out.dng").string();
     dngRequest.output_path = missingDngPath.c_str();
-    check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR,
+    checkPass(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_OUTPUT_IO_ERROR,
           "DNG storage failures have a distinct output IO status for batch cancellation");
     dngRequest.output_path = dngPath.c_str();
     dngRequest.intent = SONY2FUJI_INTENT_PREVIEW;
-    check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
+    checkPass(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_UNSUPPORTED,
           "DNG rejects preview intent instead of exporting a proxy");
     dngRequest.intent = SONY2FUJI_INTENT_FINAL;
     dngRequest.output_target = SONY2FUJI_TARGET_BUFFER;
     sony2fuji_buffer dngBuffer{};
-    check(sony2fuji_process(session, &dngRequest, &dngBuffer) == SONY2FUJI_STATUS_UNSUPPORTED,
+    checkPass(sony2fuji_process(session, &dngRequest, &dngBuffer) == SONY2FUJI_STATUS_UNSUPPORTED,
           "Rendered DNG is not a preview buffer format");
     dngRequest.output_target = SONY2FUJI_TARGET_FILE;
     dngRequest.input_type = SONY2FUJI_INPUT_RAW;
     const std::string missingInputPath = (dir / "missing-input.ARW").string();
     dngRequest.input_path = missingInputPath.c_str();
-    check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
+    checkPass(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_IO_ERROR,
           "Missing RAW input remains a source IO error, not an output storage error");
     dngRequest.input_path = dngPath.c_str();
-    check(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+    checkPass(sony2fuji_process(session, &dngRequest, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "DNG output cannot overwrite the original input");
     {
         const auto unsupported = cube.u8string();
         const auto missing = (dir / "missing.dng").u8string();
         RAWProcessor raw;
-        check(raw.loadFile(unsupported) == ErrorCode::InvalidFormat,
+        checkPass(raw.loadFile(unsupported) == ErrorCode::InvalidFormat,
               "Existing non-RAW input is unsupported, not a missing file");
-        check(raw.loadFile(missing) == ErrorCode::FileNotFound,
+        checkPass(raw.loadFile(missing) == ErrorCode::FileNotFound,
               "Missing RAW input remains a file error");
         auto rawRequest = request(nullptr);
         rawRequest.input_type = SONY2FUJI_INPUT_RAW;
         sony2fuji_buffer rawOutput{};
         rawRequest.input_path = unsupported.c_str();
-        check(sony2fuji_process(session, &rawRequest, &rawOutput) == SONY2FUJI_STATUS_UNSUPPORTED &&
+        checkPass(sony2fuji_process(session, &rawRequest, &rawOutput) == SONY2FUJI_STATUS_UNSUPPORTED &&
               !rawOutput.data, "RAW C ABI distinguishes unsupported input from IO failure");
         rawRequest.input_path = missing.c_str();
-        check(sony2fuji_process(session, &rawRequest, &rawOutput) == SONY2FUJI_STATUS_IO_ERROR &&
+        checkPass(sony2fuji_process(session, &rawRequest, &rawOutput) == SONY2FUJI_STATUS_IO_ERROR &&
               !rawOutput.data, "RAW C ABI preserves missing-path IO failure");
     }
+    testJpegExportWriteSafety(dir, session);
+    testJpegEncoderTurboParity(dir);
+    testJpegExportScanlineCancellation(dir);
+    testPngEncoderLibspng(dir);
     testFujiLUTs(dir, session);
     const unsigned char black[3]={0,0,0};
     auto r=request(black);
@@ -316,16 +2292,16 @@ int main() {
     r.lut_path=provia.c_str(); r.lut_strength=.01f;
     sony2fuji_buffer out{};
     auto status=sony2fuji_process(session,&r,&out);
-    check(status==SONY2FUJI_STATUS_OK && static_cast<unsigned char*>(out.data)[0]<=1, "LUT near-zero strength preserves black");
+    checkPass(status==SONY2FUJI_STATUS_OK && static_cast<unsigned char*>(out.data)[0]<=1, "LUT near-zero strength preserves black");
     sony2fuji_release_buffer(&out);
     for (const auto& file : std::filesystem::directory_iterator(std::string(TEST_SOURCE_DIR)+"/flog-2-new")) {
         if (file.path().extension()!=".cube") continue;
         const auto film=LUTParser::loadLUT(file.path().string());
-        check(film && film->isPhotoLUT(), file.path().filename().string().c_str());
+        checkPass(film && film->isPhotoLUT(), file.path().filename().string().c_str());
     }
     std::string log = std::string(TEST_SOURCE_DIR)+"/flog-2-new/FLog2_to_FLog2-709_65grid_V.1.00.cube";
     r.lut_path=log.c_str(); r.lut_strength=1;
-    check(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_OK, "Photo pipeline displays technical Log output");
+    checkPass(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_OK, "Photo pipeline displays technical Log output");
     sony2fuji_release_buffer(&out);
     const struct { const char* gamma; const char* gamut; bool accepted; } contracts[] = {
         {"F-Log2 to EKTAR 100 Phuket", "F-Gamut to ITU-R BT.709", true},
@@ -351,27 +2327,27 @@ int main() {
             for (int point=0; point<8; ++point) file << "0.25 0.5 0.75\n";
         }
         const auto custom = LUTParser::loadLUT(path);
-        check(custom && custom->isPhotoLUT()==contract.accepted,
+        checkPass(custom && custom->isPhotoLUT()==contract.accepted,
               ("Photo contract without film-name allowlist: " + std::to_string(i)).c_str());
         std::ifstream beforeStream(path, std::ios::binary);
         const std::string before((std::istreambuf_iterator<char>(beforeStream)), {});
         beforeStream.close();
         importedFormat = SONY2FUJI_LOOK_UNKNOWN; importedVersion = 99;
         const auto validated = sony2fuji_validate_look(path.c_str(), &importedFormat, &importedVersion);
-        check(validated == (contract.accepted ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_UNSUPPORTED) &&
+        checkPass(validated == (contract.accepted ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_UNSUPPORTED) &&
               importedFormat == (contract.accepted ? SONY2FUJI_LOOK_CUBE : SONY2FUJI_LOOK_UNKNOWN) && importedVersion == 0,
               "look import uses the real PHOTO contract and reports unversioned CUBE");
         std::ifstream afterStream(path, std::ios::binary);
         const std::string after((std::istreambuf_iterator<char>(afterStream)), {});
-        check(after == before, "look validation preserves source bytes");
+        checkPass(after == before, "look validation preserves source bytes");
         r=request(black); r.lut_path=path.c_str(); r.lut_strength=1;
         const auto code = sony2fuji_process(session,&r,&out);
         if (contract.accepted) {
             const auto* pixels = static_cast<const unsigned char*>(out.data);
-            check(code==SONY2FUJI_STATUS_OK && pixels && pixels[0]==64 && pixels[1]==128 && pixels[2]==191,
+            checkPass(code==SONY2FUJI_STATUS_OK && pixels && pixels[0]==64 && pixels[1]==128 && pixels[2]==191,
                   "Arbitrary display look renders through the photo API");
         } else {
-            check(code==SONY2FUJI_STATUS_UNSUPPORTED, "Incompatible color contract remains unsupported");
+            checkPass(code==SONY2FUJI_STATUS_UNSUPPORTED, "Incompatible color contract remains unsupported");
         }
         sony2fuji_release_buffer(&out);
     }
@@ -379,7 +2355,7 @@ int main() {
         auto input=request(pixel); input.lut_path=provia.c_str(); input.lut_strength=strength; input.exposure_ev=exposure;
         sony2fuji_buffer result{};
         const auto code=sony2fuji_process(session,&input,&result);
-        check(code==SONY2FUJI_STATUS_OK,"Render comparison fixture");
+        checkPass(code==SONY2FUJI_STATUS_OK,"Render comparison fixture");
         std::array<int,3> rgb{};
         if (code==SONY2FUJI_STATUS_OK) for (int c=0;c<3;++c) rgb[c]=static_cast<unsigned char*>(result.data)[c];
         sony2fuji_release_buffer(&result);
@@ -397,8 +2373,8 @@ int main() {
     };
     const auto cool = whiteBalancePixel(4000,0), warm = whiteBalancePixel(9000,0);
     const auto green = whiteBalancePixel(6500,-80), magenta = whiteBalancePixel(6500,80);
-    check(warm[0]/warm[2] > cool[0]/cool[2], "Increasing temperature warms instead of cooling");
-    check(magenta[1]/(magenta[0]+magenta[2]) < green[1]/(green[0]+green[2]),
+    checkPass(warm[0]/warm[2] > cool[0]/cool[2], "Increasing temperature warms instead of cooling");
+    checkPass(magenta[1]/(magenta[0]+magenta[2]) < green[1]/(green[0]+green[2]),
           "Positive tint adds magenta instead of green");
     const auto neutral=render(gray,0,0), film=render(gray,1,0), half=render(gray,.5f,0);
     auto directInput=ColorConverter().convert(RGB(46.0f/255,46.0f/255,46.0f/255),
@@ -406,26 +2382,26 @@ int main() {
     directInput=RGB(GammaConverter::applyFLog2(directInput.r),GammaConverter::applyFLog2(directInput.g),
         GammaConverter::applyFLog2(directInput.b));
     const auto directFilm=LUTApplicator(LUTParser::loadLUTCached(provia)).apply(directInput);
-    check(std::abs(film[0]-std::round(directFilm.r*255))<=1 &&
+    checkPass(std::abs(film[0]-std::round(directFilm.r*255))<=1 &&
         std::abs(film[1]-std::round(directFilm.g*255))<=1 &&
         std::abs(film[2]-std::round(directFilm.b*255))<=1, "Full-strength film bypasses the neutral view transform");
     bool midpoint=true;
     for (int c=0;c<3;++c) midpoint=midpoint && std::abs(half[c]-(neutral[c]+film[c])/2.0)<=1;
-    check(midpoint,"Half strength blends the two display endpoints");
-    check(render(gray,1,1)==render(doubled,1,0),"Exposure doubles linear input before film LUT");
+    checkPass(midpoint,"Half strength blends the two display endpoints");
+    checkPass(render(gray,1,1)==render(doubled,1,0),"Exposure doubles linear input before film LUT");
     const unsigned char white[3]={255,255,255};
     const auto one=render(white,0,0), two=render(white,0,1), four=render(white,0,2);
-    check(one[0]<two[0] && two[0]<four[0] && four[0]<255,
+    checkPass(one[0]<two[0] && two[0]<four[0] && four[0]<255,
         "Neutral display transform rolls off super-white instead of clipping at one");
     r=request(gray); r.wb_mode=SONY2FUJI_WB_CUSTOM;
     r.wb_mul[0]=2; r.wb_mul[1]=1; r.wb_mul[2]=1; r.wb_mul[3]=1;
     const auto wbStatus=sony2fuji_process(session,&r,&out);
-    check(wbStatus==SONY2FUJI_STATUS_OK && std::abs(static_cast<unsigned char*>(out.data)[0] -
+    checkPass(wbStatus==SONY2FUJI_STATUS_OK && std::abs(static_cast<unsigned char*>(out.data)[0] -
         std::round(neutralDisplay(92.0f/255)*255))<=1,
         "Custom buffer white balance is applied in linear RGB");
     sony2fuji_release_buffer(&out);
     r=request(black); r.exposure_ev=std::numeric_limits<float>::quiet_NaN();
-    check(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_INVALID_ARGUMENT,"Non-finite exposure is rejected");
+    checkPass(sony2fuji_process(session,&r,&out)==SONY2FUJI_STATUS_INVALID_ARGUMENT,"Non-finite exposure is rejected");
     sony2fuji_release_buffer(&out);
     sony2fuji_session_destroy(session);
     sony2fuji_session_create(&session);
@@ -441,7 +2417,7 @@ int main() {
     const auto fullStatus=sony2fuji_process(session,&detailRequest,&fullDetail);
     detailRequest.intent=SONY2FUJI_INTENT_PREVIEW; detailRequest.preview_long_edge=8;
     const auto previewStatus=sony2fuji_process(session,&detailRequest,&previewDetail);
-    check(fullStatus==SONY2FUJI_STATUS_OK && previewStatus==SONY2FUJI_STATUS_OK &&
+    checkPass(fullStatus==SONY2FUJI_STATUS_OK && previewStatus==SONY2FUJI_STATUS_OK &&
         fullDetail.size_bytes==previewDetail.size_bytes &&
         std::equal(static_cast<unsigned char*>(fullDetail.data),
             static_cast<unsigned char*>(fullDetail.data)+fullDetail.size_bytes,
@@ -450,13 +2426,51 @@ int main() {
     sony2fuji_buffer unsharpened{};
     detailRequest.intent=SONY2FUJI_INTENT_FINAL; detailRequest.sharpening=0;
     const auto unsharpStatus=sony2fuji_process(session,&detailRequest,&unsharpened);
-    check(unsharpStatus==SONY2FUJI_STATUS_OK && fullStatus==SONY2FUJI_STATUS_OK &&
+    checkPass(unsharpStatus==SONY2FUJI_STATUS_OK && fullStatus==SONY2FUJI_STATUS_OK &&
         !std::equal(static_cast<unsigned char*>(fullDetail.data),
             static_cast<unsigned char*>(fullDetail.data)+fullDetail.size_bytes,
             static_cast<unsigned char*>(unsharpened.data)),
         "Sharpening changes real edges rather than only preview resizing");
     sony2fuji_release_buffer(&unsharpened);
     sony2fuji_release_buffer(&fullDetail); sony2fuji_release_buffer(&previewDetail);
+    {
+        auto bytesOf = [](const sony2fuji_buffer& b) {
+            const auto* p = static_cast<const unsigned char*>(b.data);
+            return p ? std::vector<unsigned char>(p, p + b.size_bytes) : std::vector<unsigned char>{};
+        };
+        auto denoiseRequest = request(detail.data());
+        denoiseRequest.input_width = denoiseRequest.input_height = 16;
+        denoiseRequest.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE; denoiseRequest.long_edge = 8;
+        denoiseRequest.noise_reduction = 1.0f;
+        denoiseRequest.intent = SONY2FUJI_INTENT_FINAL;
+        sony2fuji_buffer exported{}, preview{}, plain{}, sharpened{}, viewport{};
+        const auto exportStatus = sony2fuji_process(session, &denoiseRequest, &exported);
+        auto previewRequest = denoiseRequest;
+        previewRequest.intent = SONY2FUJI_INTENT_PREVIEW; previewRequest.preview_long_edge = 8;
+        const auto previewStatus = sony2fuji_process(session, &previewRequest, &preview);
+        auto plainRequest = denoiseRequest; plainRequest.noise_reduction = 0;
+        const auto plainStatus = sony2fuji_process(session, &plainRequest, &plain);
+        checkPass(exportStatus == SONY2FUJI_STATUS_OK && previewStatus == SONY2FUJI_STATUS_OK &&
+            exported.width == 8 && exported.height == 8 && bytesOf(exported) == bytesOf(preview),
+            "Legacy noise reduction uses original pixel scale in preview and final output");
+        checkPass(plainStatus == SONY2FUJI_STATUS_OK && bytesOf(exported) != bytesOf(plain),
+            "Legacy noise reduction changes pixels rather than only preview resizing");
+        auto sharpenRequest = previewRequest; sharpenRequest.sharpening = 1e-4f;
+        const auto sharpenStatus = sony2fuji_process(session, &sharpenRequest, &sharpened);
+        const auto base = bytesOf(preview), nudged = bytesOf(sharpened);
+        int maxDelta = base.size() == nudged.size() && !base.empty() ? 0 : 256;
+        for (size_t i = 0; maxDelta <= 255 && i < base.size(); ++i)
+            maxDelta = std::max(maxDelta, std::abs(int(base[i]) - int(nudged[i])));
+        checkPass(sharpenStatus == SONY2FUJI_STATUS_OK && maxDelta <= 1,
+            "Denoised preview stays continuous when sharpening leaves zero");
+        sony2fuji_session_set_viewport_preview(session, 1);
+        const auto viewportStatus = sony2fuji_process(session, &previewRequest, &viewport);
+        sony2fuji_session_set_viewport_preview(session, 0);
+        checkPass(viewportStatus == SONY2FUJI_STATUS_OK && viewport.width == 8 && viewport.height == 8 &&
+            viewport.size_bytes == 8 * 8 * 3,
+            "Viewport preview keeps the reduced approximation for legacy noise reduction");
+        for (auto* b : {&exported, &preview, &plain, &sharpened, &viewport}) sony2fuji_release_buffer(b);
+    }
     std::vector<unsigned char> sizingPixels(18 * 12 * 3, 80);
     auto sizingRequest = request(sizingPixels.data());
     sizingRequest.input_width = 18; sizingRequest.input_height = 12;
@@ -466,20 +2480,75 @@ int main() {
         sizingRequest.long_edge = edge;
         sony2fuji_buffer resized{};
         const auto code = sony2fuji_process(session, &sizingRequest, &resized);
-        check(code == SONY2FUJI_STATUS_OK && resized.width == (edge == 9 ? 9u : 18u) &&
+        checkPass(code == SONY2FUJI_STATUS_OK && resized.width == (edge == 9 ? 9u : 18u) &&
               resized.height == (edge == 9 ? 6u : 12u),
               "Export long-edge limit preserves aspect ratio without enlarging small inputs");
         sony2fuji_release_buffer(&resized);
     }
     sizingRequest.input_width = 12; sizingRequest.input_height = 18; sizingRequest.long_edge = 9;
     sony2fuji_buffer portrait{};
-    check(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_OK &&
           portrait.width == 6 && portrait.height == 9, "Export sizing uses the oriented portrait long edge");
     sony2fuji_release_buffer(&portrait);
     sizingRequest.long_edge = 0;
-    check(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+    checkPass(sony2fuji_process(session, &sizingRequest, &portrait) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "Export sizing rejects an empty pixel limit");
     sony2fuji_session_destroy(session);
+
+    // Direct Core Pipeline + RenderParams verification (without C ABI).
+    {
+        RenderParams defaultParams;
+        checkPass(defaultParams.validForGpu() && !defaultParams.needsToneAdjustments(),
+            "Default RenderParams are GPU-valid and need no tone pass");
+        RenderParams nanParams = defaultParams;
+        nanParams.exposureEV = std::numeric_limits<float>::quiet_NaN();
+        checkPass(!nanParams.validForGpu(), "RenderParams::validForGpu rejects non-finite exposureEV");
+
+        Pipeline pipeline;
+        pipeline.setGpuConfig(GpuMode::Off);
+        std::vector<uint8_t> srcRgb(8 * 8 * 3, 96);
+        RenderParams bufParams;
+        bufParams.inputType = RenderInputType::Buffer;
+        bufParams.inputPixels = srcRgb.data();
+        bufParams.inputWidth = 8;
+        bufParams.inputHeight = 8;
+        bufParams.inputPixelFormat = PixelBufferFormat::RGB8;
+        bufParams.inputColorSpace = ColorSpace::sRGB;
+        bufParams.inputIsLinear = false;
+        bufParams.outputTarget = RenderOutputTarget::Buffer;
+        bufParams.outputFormat = RenderOutputFormat::RGB8;
+        bufParams.sizeMode = RenderSizeMode::Native;
+        bufParams.intent = RenderIntent::Final;
+
+        OwnedPixelBuffer neutralOut;
+        checkPass(pipeline.process(bufParams, &neutralOut) == RenderStatus::Ok &&
+            neutralOut.data != nullptr && neutralOut.width == 8 && neutralOut.height == 8,
+            "Core Pipeline::process renders RGB8 buffer directly");
+
+        RenderParams brightParams = bufParams;
+        brightParams.exposureEV = 1.0f;
+        OwnedPixelBuffer brightOut;
+        checkPass(pipeline.process(brightParams, &brightOut) == RenderStatus::Ok &&
+            brightOut.sizeBytes == neutralOut.sizeBytes &&
+            static_cast<const uint8_t*>(brightOut.data)[0] >
+                static_cast<const uint8_t*>(neutralOut.data)[0],
+            "Core Pipeline::process exposureEV changes rendered pixels");
+
+        checkPass(pipeline.setPerspective(0.25f, -0.15f) == RenderStatus::Ok,
+            "Core Pipeline::setPerspective accepts valid perspective");
+        GeometryOptions geom;
+        geom.crop_x = 0.1f;
+        geom.crop_y = 0.1f;
+        geom.crop_width = 0.8f;
+        geom.crop_height = 0.8f;
+        checkPass(pipeline.setGeometry(geom) == RenderStatus::Ok,
+            "Core Pipeline::setGeometry succeeds after perspective");
+        OwnedPixelBuffer geomOut;
+        checkPass(pipeline.process(bufParams, &geomOut) == RenderStatus::Ok &&
+            geomOut.width < 8 && geomOut.height < 8,
+            "Core Pipeline::setGeometry preserves perspective and crops output");
+    }
+
     std::filesystem::remove_all(dir);
-    return failures ? 1 : 0;
+    return rawlab::test::exitCode();
 }

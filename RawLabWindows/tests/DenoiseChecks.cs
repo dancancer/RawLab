@@ -61,7 +61,8 @@ internal static class DenoiseChecks
         settings.Set(Parameter.Temperature,8000);
         var balanced=engine.RenderPreview(raw,settings,null,appliedEdge,false,true,false);
         Check(ReferenceEquals(off.Neutral,balanced.Neutral),"White balance leaves the original frame unchanged");
-        settings.ResetAll();settings.Denoise=DenoiseSettings.Clean;
+        settings=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(raw),settings.Capture(),null)).Candidate!.Settings.Restore();
+        settings.Denoise=DenoiseSettings.Clean;
         using(var fresh=new RenderEngine(0)) {
             var proxy=fresh.RenderPreview(raw,settings,null,1000,true,true,false);
             var exact=fresh.RenderPreview(raw,settings,null,appliedEdge,false,true,false);

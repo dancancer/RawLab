@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import com.rawlab.android.R
+import com.rawlab.android.testing.localizedTestContext
 import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.looks.MasterRecipe
@@ -43,9 +44,7 @@ class LanguageResourcesTest {
             "de" to "Nutzungsanalyse erlauben", "fr" to "Autoriser l’analyse d’utilisation",
             "ja" to "利用状況の分析を許可", "es" to "Permitir análisis de uso")
         expected.forEach { (language, value) ->
-            val config = Configuration(context.resources.configuration)
-            config.setLocale(Locale.forLanguageTag(language))
-            val localized = context.createConfigurationContext(config)
+            val localized = localizedTestContext(context, language)
             assertEquals(value, localized.getString(R.string.language))
             assertEquals(hue[language], localized.getString(R.string.hsl_hue))
             assertEquals(recipes[language], localized.getString(R.string.master_recipes))
@@ -54,12 +53,12 @@ class LanguageResourcesTest {
             assertEquals(perspectiveVertical[language], localized.getString(R.string.geometry_perspective_vertical))
             assertEquals(usage[language], localized.getString(R.string.usage_analytics))
             assertFalse(localized.getString(R.string.geometry_perspective_hint).isBlank())
+            assertFalse(localized.getString(R.string.force_gpu_unsupported).isBlank())
             localized.getString(R.string.vignette_summary, 1.0, 50.0, 0.0, 50.0, 0.0)
             localized.getString(R.string.grain_summary, 1.0, 25.0, 50.0)
         }
-        val config = Configuration(context.resources.configuration)
-        config.setLocale(Locale.forLanguageTag(LanguageChoice.resolve("system", listOf("pt-BR"))))
-        assertEquals("Language", context.createConfigurationContext(config).getString(R.string.language))
+        val fallback = localizedTestContext(context, LanguageChoice.resolve("system", listOf("pt-BR")))
+        assertEquals("Language", fallback.getString(R.string.language))
     }
 
     @Test fun lensStatesAndEditSnapshotStayStableAcrossAllSixLanguages() {

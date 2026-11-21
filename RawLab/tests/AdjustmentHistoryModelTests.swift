@@ -1,5 +1,22 @@
+import RawLabKit
 import Foundation
+import ImageIO
 import UIKit
+
+@_silgen_name("rawlab_preflight_counter_reset")
+func rawlabPreflightCounterReset()
+@_silgen_name("rawlab_preflight_counter_process")
+func rawlabPreflightCounterProcess() -> Int32
+@_silgen_name("rawlab_preflight_counter_load_display_image")
+func rawlabPreflightCounterLoadDisplayImage() -> Int32
+@_silgen_name("rawlab_preflight_counter_cg_full_image")
+func rawlabPreflightCounterCGFullImage() -> Int32
+@_silgen_name("rawlab_preflight_counter_inspect_lens")
+func rawlabPreflightCounterInspectLens() -> Int32
+@_silgen_name("rawlab_preflight_counter_inspect_lens_metadata")
+func rawlabPreflightCounterInspectLensMetadata() -> Int32
+@_silgen_name("rawlab_preflight_counter_look_access")
+func rawlabPreflightCounterLookAccess() -> Int32
 
 @main
 struct AdjustmentHistoryModelTests {
@@ -109,6 +126,7 @@ struct AdjustmentHistoryModelTests {
         try IOSBatchFlowModelChecks.preparedSourceChange(directory: directory)
         try IOSBatchFlowModelChecks.launchRequests(directory: directory)
         try recentLookHistory(directory: directory)
+        try processingMigrationReset(directory: directory)
         print("PASS: native adjustment history model (\(checks) assertions)")
     }
 
@@ -414,11 +432,337 @@ struct AdjustmentHistoryModelTests {
         while pendingLens == nil && Date() < lensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
         guard let lensResult = pendingLens else { throw NSError(domain: "lens preflight timed out", code: 1) }
         let lensOperation = try lensResult.get()
-        try check(lensOperation.targets.first?.error != nil, "actual raster target blocks an inactive explicit lens profile")
+        // #203 起栅格图允许保留未启用校正的手动镜头资料，只在请求校正时才要求真实标定。
+        try check(lensOperation.targets.first?.error == nil,
+                  "an inactive manual lens profile does not block a raster target")
         let lensOutcome = model.applyAdjustmentPaste(lensOperation, skipping: [])
         let afterLens = try store.readState(for: goodID)
-        try check(lensOutcome.first?.status == .blocked && afterLens.hasSameAdjustments(as: saved),
-                  "blocked inactive lens request preserves the raster receipt")
+        try check(lensOutcome.first?.status == .applied &&
+                  afterLens.state?.settings.lensSettings.profileID == "fixture-profile" &&
+                  afterLens.state?.settings.lensSettings.isEnabled == false,
+                  "raster keeps an inactive manual profile without claiming correction")
 
+        // #510: Metadata-only preflight (0 full pixel decodes) + hoisted O(looks) look checks.
+        let largeJPEG = directory.appendingPathComponent("preflight-large.jpg")
+        let largeImage = UIGraphicsImageRenderer(size: CGSize(width: 1600, height: 1200), format: format).image { ctx in
+            UIColor.red.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        }
+        try largeImage.jpegData(compressionQuality: 0.85)!.write(to: largeJPEG)
+        let corruptRAW = directory.appendingPathComponent("corrupt-target.arw")
+        try Data("not a raw file".utf8).write(to: corruptRAW)
+
+        let lookCount = 5
+        for i in 0..<lookCount {
+            let lookURL = directory.appendingPathComponent("preflight-look-\(i).cube")
+            try Data("TITLE \"Test\"\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".utf8).write(to: lookURL)
+            model.lutMap["preflight-look-\(i)"] = LUTReference(id: "preflight-look-\(i)", name: "Look \(i)", sourceURL: lookURL, isCustom: true)
+        }
+
+        let targetIDs = (0..<4).map { PhotoIdentity(resourceIdentifier: "preflight-zero-decode-\($0)") }
+        let targetPhotos = targetIDs.enumerated().map { idx, id in
+            IOSAdjustmentPhoto(identity: id, displayName: "target-\(idx)",
+                               file: .externallyManaged(idx.isMultiple(of: 2) ? png : largeJPEG), isRaw: false)
+        }
+        rawlabPreflightCounterReset()
+        var batchResult: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(payload, photos: targetPhotos) { batchResult = $0 }
+        let batchDeadline = Date().addingTimeInterval(30)
+        while batchResult == nil && Date() < batchDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let batchOp = try batchResult!.get()
+        try check(batchOp.targets.allSatisfy { $0.error == nil },
+                  "metadata-only preflight accepts valid PNG and large JPEG targets")
+        try check(rawlabPreflightCounterProcess() == 0 &&
+                  rawlabPreflightCounterLoadDisplayImage() == 0 &&
+                  rawlabPreflightCounterCGFullImage() == 0,
+                  "raster non-WB preflight performs 0 pixel decodes (process=\(rawlabPreflightCounterProcess()) loadDisplay=\(rawlabPreflightCounterLoadDisplayImage()) cgFull=\(rawlabPreflightCounterCGFullImage()))")
+        try check(rawlabPreflightCounterLookAccess() == Int32(lookCount),
+                  "look readability is hoisted O(looks)=\(lookCount) across \(targetPhotos.count) targets (got \(rawlabPreflightCounterLookAccess()))")
+
+        // Active lens request on raster targets uses inspect_lens_metadata_v2 with 0 pixel decodes.
+        let activeLensPayload = try AdjustmentTransferPayload(
+            source: .init(identifier: "raw-source", isRaw: true, processingVersion: 2, recipe: nil),
+            values: ["geometry.lens.distortion": .boolean(true)])
+        rawlabPreflightCounterReset()
+        var activeLensRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(activeLensPayload, photos: [targetPhotos[0], targetPhotos[1]]) { activeLensRes = $0 }
+        let activeLensDeadline = Date().addingTimeInterval(30)
+        while activeLensRes == nil && Date() < activeLensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let activeLensOp = try activeLensRes!.get()
+        try check(activeLensOp.targets.allSatisfy { $0.error != nil },
+                  "active lens request rejects raster targets lacking EXIF/lens match")
+        try check(rawlabPreflightCounterProcess() == 0 &&
+                  rawlabPreflightCounterLoadDisplayImage() == 0 &&
+                  rawlabPreflightCounterCGFullImage() == 0 &&
+                  rawlabPreflightCounterInspectLensMetadata() == 2,
+                  "raster lens preflight uses inspect_lens_metadata_v2 with 0 pixel decodes (process=\(rawlabPreflightCounterProcess()) loadDisplay=\(rawlabPreflightCounterLoadDisplayImage()) inspectMeta=\(rawlabPreflightCounterInspectLensMetadata()))")
+
+        // Corrupt RAW fails preflight with 0 full decodes.
+        let corruptID = PhotoIdentity(resourceIdentifier: "corrupt-raw-target")
+        rawlabPreflightCounterReset()
+        var corruptRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+        model.prepareAdjustmentPaste(payload, photos: [.init(identity: corruptID, displayName: "corrupt.arw", file: .externallyManaged(corruptRAW), isRaw: true)]) { corruptRes = $0 }
+        let corruptDeadline = Date().addingTimeInterval(30)
+        while corruptRes == nil && Date() < corruptDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        let corruptOp = try corruptRes!.get()
+        try check(corruptOp.targets.first?.error != nil && rawlabPreflightCounterProcess() == 0,
+                  "corrupt RAW target fails preflight with 0 pixel decodes")
+
+        if let rawPath = ProcessInfo.processInfo.environment["RAWLAB_TEST_RAW"], !rawPath.isEmpty {
+            let rawURL = URL(fileURLWithPath: rawPath)
+            let rawID = PhotoIdentity(resourceIdentifier: "preflight-real-raw-\(UUID().uuidString)")
+            rawlabPreflightCounterReset()
+            var rawRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+            model.prepareAdjustmentPaste(payload, photos: [.init(identity: rawID, displayName: rawURL.lastPathComponent, file: .externallyManaged(rawURL), isRaw: true)]) { rawRes = $0 }
+            let rawDeadline = Date().addingTimeInterval(30)
+            while rawRes == nil && Date() < rawDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            let rawOp = try rawRes!.get()
+            try check(rawOp.targets.first?.error == nil && rawlabPreflightCounterProcess() == 0 &&
+                      rawlabPreflightCounterInspectLens() >= 1,
+                      "real RAW non-WB preflight succeeds via inspect_lens_v2 with 0 sony2fuji_process decodes")
+
+            rawlabPreflightCounterReset()
+            var rawLensRes: Result<IOSPreparedAdjustmentTransfer, Error>?
+            model.prepareAdjustmentPaste(activeLensPayload, photos: [.init(identity: rawID, displayName: rawURL.lastPathComponent, file: .externallyManaged(rawURL), isRaw: true)]) { rawLensRes = $0 }
+            let rawLensDeadline = Date().addingTimeInterval(30)
+            while rawLensRes == nil && Date() < rawLensDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            _ = try rawLensRes!.get()
+            try check(rawlabPreflightCounterProcess() == 0 && rawlabPreflightCounterInspectLens() >= 1,
+                      "real RAW lens preflight runs inspect_lens_v2 with 0 sony2fuji_process decodes")
+        }
+
+    }
+
+    private static func processingMigrationReset(directory: URL) throws {
+        let storeRoot = directory.appendingPathComponent("migration-reset-model")
+        var rejectResetWrite = false
+        let store = try EditPersistence(directory: storeRoot, writeData: { data, url in
+            if rejectResetWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let model = RawEditorViewModel(editPersistence: store)
+        let source = directory.appendingPathComponent("migration-reset.png")
+        try Data([1, 2, 3, 4]).write(to: source)
+        let identity = PhotoIdentity(resourceIdentifier: "model-reset-asset", contentIdentifier: "model-reset-bytes")
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.6; old.contrast = 1.15
+        let original = PhotoEditState(settings: old, filmID: "legacy-film", updatedAt: Date(timeIntervalSince1970: 20))
+        try store.save(identity, state: original)
+        var newer = old; newer.processing = .current
+        let migrated = original.replacing(settings: newer, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002,
+                                                 detailRMSE: 0.001, evaluations: 20)
+        let accepted = try store.commitProcessingMigration(expected: store.readState(for: identity),
+                                                           candidate: migrated, quality: quality)
+        model.sourceFile = .externallyManaged(source)
+        model.sourceIdentity = identity
+        model.sourceKind = .raw
+        model.sourceDisplayName = "MigrationReset"
+        model.hasImage = true
+        model.acceptImportedEditRecord(accepted, settings: newer)
+        model.adjustmentSession?.adoptProcessingMigration(accepted)
+        model.processingMigrationReceipt = try store.processingMigration(for: identity)
+        try check(model.processingMigrationReceipt?.status == .migrated && model.processingMigrationStatus != nil,
+                  "imported migrated photo exposes processingMigrationReceipt in RawEditorViewModel")
+
+        let draft = EditorDraftSnapshot(geometry: nil, lens: nil, tool: .film)
+        let partialRev = UUID()
+        guard case .prepared(let partial) = model.prepareReset(.group(.light), settings: newer, revision: partialRev, draft: draft),
+              let partialCandidate = model.commitReset(partial, settings: newer, revision: partialRev, draft: draft) else {
+            throw NSError(domain: "partial reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(partialCandidate.settings)
+        try check(model.saveCurrentSettings(partialCandidate.settings) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "partial group reset keeps processingMigrationReceipt in memory and on disk")
+
+        // Active interaction cancelled after a pending full-reset intent must clear pendingResetMigrationClear and not leak to manual zeroing.
+        try check(model.beginAdjustmentInteraction(settings: partialCandidate.settings), "interaction begins before cancel-leak check")
+        let cancelRev = UUID()
+        guard case .prepared(let cancelledReset) = model.prepareReset(.all, settings: partialCandidate.settings, revision: cancelRev, draft: draft),
+              let cancelledCandidate = model.commitReset(cancelledReset, settings: partialCandidate.settings, revision: cancelRev, draft: draft) else {
+            throw NSError(domain: "cancel-leak reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(cancelledCandidate.settings)
+        try check(model.pendingResetMigrationClear != nil, "reset-all queues pendingResetMigrationClear before interaction cancel")
+        let restoredFromCancel = model.cancelAdjustmentInteraction()
+        try check(restoredFromCancel == partialCandidate.settings && model.pendingResetMigrationClear == nil,
+                  "cancelAdjustmentInteraction clears pendingResetMigrationClear")
+        var manualNeutral = cancelledCandidate.settings
+        manualNeutral.lutID = nil
+        model.queueSettingsSave(manualNeutral)
+        try check(model.saveCurrentSettings(manualNeutral) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "manual zeroing after cancelAdjustmentInteraction does not clear processingMigrationReceipt")
+
+        // Failed full reset -> restoreCommittedSettings (discard) -> partial reset must also preserve the receipt.
+        var lightOnly = manualNeutral; lightOnly.exposure = 0.45
+        model.queueSettingsSave(lightOnly)
+        try check(model.saveCurrentSettings(lightOnly), "re-apply single-group edit before failed-reset discard check")
+        rejectResetWrite = true
+        let failedRev = UUID()
+        guard case .prepared(let failedFull) = model.prepareReset(.all, settings: lightOnly, revision: failedRev, draft: draft),
+              let failedCandidate = model.commitReset(failedFull, settings: lightOnly, revision: failedRev, draft: draft) else {
+            throw NSError(domain: "failed full reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(failedCandidate.settings)
+        try check(!model.saveCurrentSettings(failedCandidate.settings) && model.pendingResetMigrationClear != nil,
+                  "failed full reset retains pendingResetMigrationClear for retry until discarded")
+        let discarded = try model.restoreCommittedSettings()
+        try check(discarded == lightOnly && model.pendingResetMigrationClear == nil,
+                  "restoreCommittedSettings clears pendingResetMigrationClear on discard")
+        rejectResetWrite = false
+        let postDiscardRev = UUID()
+        guard case .prepared(let postDiscardPartial) = model.prepareReset(.group(.light), settings: discarded, revision: postDiscardRev, draft: draft),
+              let postDiscardCandidate = model.commitReset(postDiscardPartial, settings: discarded, revision: postDiscardRev, draft: draft) else {
+            throw NSError(domain: "post-discard partial reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(postDiscardCandidate.settings)
+        try check(model.saveCurrentSettings(postDiscardCandidate.settings) &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try store.processingMigration(for: identity)?.status) == .migrated,
+                  "partial reset after failed-reset discard preserves processingMigrationReceipt")
+
+        var beforeFinalReset = postDiscardCandidate.settings; beforeFinalReset.exposure = 0.5
+        model.queueSettingsSave(beforeFinalReset)
+        try check(model.saveCurrentSettings(beforeFinalReset), "re-apply edit before final full reset")
+        let allRev = UUID()
+        guard case .prepared(let full) = model.prepareReset(.all, settings: beforeFinalReset, revision: allRev, draft: draft),
+              let fullCandidate = model.commitReset(full, settings: beforeFinalReset, revision: allRev, draft: draft) else {
+            throw NSError(domain: "full reset preparation failed", code: 1)
+        }
+        model.queueSettingsSave(fullCandidate.settings)
+        try check(model.saveCurrentSettings(fullCandidate.settings) &&
+                  model.processingMigrationReceipt == nil && model.processingMigrationStatus == nil &&
+                  store.state(for: identity)?.settings == fullCandidate.settings &&
+                  fullCandidate.settings.processing == .current &&
+                  (try store.processingMigration(for: identity)) == nil,
+                  "full reset persists neutral current record and clears processingMigrationReceipt in RawEditorViewModel memory and on disk")
+        try check(try EditPersistence(directory: storeRoot).processingMigration(for: identity) == nil,
+                  "reopened EditPersistence still reports nil receipt after ViewModel reset-all")
+        let undone = model.performAdjustmentHistory(undo: true)
+        try check(undone.first?.status == .applied &&
+                  model.currentPreviewSettings.exposure == 0.5 &&
+                  model.processingMigrationReceipt == nil && model.processingMigrationStatus == nil &&
+                  (try store.processingMigration(for: identity)) == nil,
+                  "undoing full reset restores pre-reset adjustments while keeping processingMigrationReceipt nil")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: identity))
+            throw NSError(domain: "rollback after undoing full reset must stay expired", code: 1)
+        } catch AdjustmentCommitError.expired { }
+        try unusableRecordImportRecovery(directory: directory.appendingPathComponent("unusable-record-import"))
+    }
+
+    private static func unusableRecordImportRecovery(directory: URL) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let png = directory.appendingPathComponent("collection-photo.png")
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 24), format: format).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 32, height: 24))
+        }
+        try image.pngData()!.write(to: png)
+
+        let storeDir = directory.appendingPathComponent("edits")
+        let store = try EditPersistence(directory: storeDir)
+        let legacyAsset = PhotoIdentity(resourceIdentifier: "collection-legacy-broken")
+        let collectionIdentity = try PhotoIdentity.fallback(for: png, resourceIdentifier: legacyAsset.resourceIdentifier)
+        let recentStore = try RecentPhotoStore(directory: directory.appendingPathComponent("recents"))
+        let healthyRecent = try recentStore.recordOpened(url: png,
+                                                         identity: PhotoIdentity(resourceIdentifier: "healthy-recent"),
+                                                         displayName: "Healthy.png", isRaw: false)
+        let uneditedRecent = try recentStore.recordOpened(url: png,
+                                                          identity: PhotoIdentity(resourceIdentifier: "unedited-recent"),
+                                                          displayName: "Unedited.png", isRaw: false)
+        let brokenRecent = try recentStore.recordOpened(url: png,
+                                                        identity: PhotoIdentity(resourceIdentifier: "recent-broken"),
+                                                        displayName: "Broken.png", isRaw: false)
+        var healthySettings = RawSettings.default; healthySettings.exposure = 0.8
+        try store.save(healthyRecent.identity, state: PhotoEditState(settings: healthySettings))
+
+        let editsFile = storeDir.appendingPathComponent("edits.json")
+        let healthyKeys = Set(((try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any])["records"] as! [String: Any]).keys)
+        try store.save(brokenRecent.identity, state: PhotoEditState(settings: .default))
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
+        var records = object["records"] as! [String: Any]
+        guard let brokenRecentRecordKey = Set(records.keys).subtracting(healthyKeys).first else {
+            throw NSError(domain: "missing saved key for brokenRecent.identity", code: 1)
+        }
+        records[legacyAsset.key] = ["settings": ["exposure": 999], "updatedAt": 0]
+        records[brokenRecentRecordKey] = ["settings": ["exposure": 999], "updatedAt": 0]
+        object["records"] = records
+        try JSONSerialization.data(withJSONObject: object).write(to: editsFile)
+
+        let queue = DispatchQueue(label: "unusable-record-import")
+        var deliveries: [() -> Void] = []
+        let model = RawEditorViewModel(editPersistence: store, importQueue: queue, resultDelivery: { deliveries.append($0) })
+        model.batchSelection.append(.init(identity: collectionIdentity, displayName: "CollectionBroken.png",
+                                          file: .externallyManaged(png), isRaw: false))
+        var callerRestored: RawSettings?
+        var alertRestored: RawSettings?
+        model.importImage(from: .raster(png), identity: collectionIdentity, onSettingsRestored: { restored in
+            callerRestored = restored
+            model.sourceDisplayName = "CollectionBroken.png"
+            _ = model.batchSelection.selection.beginEditing(collectionIdentity.key)
+        })
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(!model.hasImage && model.statusMessage != nil && model.resetUnusableImportRecord != nil,
+                  "broken legacy asset record enters importImage recovery with resetUnusableImportRecord")
+
+        let recover = model.resetUnusableImportRecord
+        model.statusMessage = nil
+        recover? { restored in alertRestored = restored }
+        queue.sync {}
+        deliveries.forEach { $0() }; deliveries.removeAll()
+        try check(model.hasImage && model.sourceIdentity == collectionIdentity &&
+                  model.sourceDisplayName == "CollectionBroken.png" &&
+                  model.batchSelection.selection.current == collectionIdentity.key &&
+                  callerRestored != nil && alertRestored == callerRestored,
+                  "confirming resetUnusableImportRecord preserves caller onSettingsRestored and collection context")
+
+        var recentBrokenThrew = false
+        do {
+            _ = try EditPersistence(directory: storeDir).readState(for: brokenRecent.identity)
+        } catch is UnusableEditRecordError {
+            recentBrokenThrew = true
+        }
+        try check(recentBrokenThrew, "brokenRecent.identity hits UnusableEditRecordError on readState")
+
+        var reloadedLibrary: IOSPhotoPreviewLibrary?
+        Task { @MainActor in
+            let library = IOSPhotoPreviewLibrary(recentStore: recentStore,
+                                                 cacheDirectory: directory.appendingPathComponent("preview-cache"))
+            await library.reload(editDirectory: storeDir)
+            reloadedLibrary = library
+        }
+        let reloadDeadline = Date().addingTimeInterval(10)
+        while reloadedLibrary == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        var editedFlags: [String: Bool]?
+        var libraryError: String?
+        Task { @MainActor in
+            editedFlags = reloadedLibrary?.edited
+            libraryError = reloadedLibrary?.error
+        }
+        while editedFlags == nil && Date() < reloadDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        try check(reloadedLibrary != nil && libraryError == nil &&
+                  editedFlags?[healthyRecent.id] == true &&
+                  editedFlags?[uneditedRecent.id] == false &&
+                  editedFlags?[brokenRecent.id] == nil,
+                  "recentStates omits unusable record instead of misclassifying it as unedited")
+
+        let quarantineDir = directory.appendingPathComponent("quarantine-vm-edits")
+        try FileManager.default.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+        try Data("{corrupt-vm-root".utf8).write(to: quarantineDir.appendingPathComponent("edits.json"))
+        let healedStore = try EditPersistence(directory: quarantineDir)
+        let vm = RawEditorViewModel(editPersistence: healedStore)
+        try check(vm.editSaveState == .idle && healedStore.consumeQuarantinedError() == nil,
+                  "RawEditorViewModel opens healed store without failing and consumes quarantine diagnostic")
+        let diagText = String(decoding: (try ErrorDiagnostics.app.reportData()) ?? Data(), as: UTF8.self)
+        try check(diagText.contains("\"stage\" : \"quarantineStore\""),
+                  "RawEditorViewModel records quarantineStore diagnostic in ErrorDiagnostics")
     }
 }

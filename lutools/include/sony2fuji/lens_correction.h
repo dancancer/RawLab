@@ -16,7 +16,8 @@ struct LensMetadata {
 struct LensCorrectionOptions {
     bool distortion = false, tca = false, autoCrop = true;
     std::string profileID;
-    bool active() const { return distortion || tca; }
+    bool vignetting = false;
+    bool active() const { return distortion || tca || vignetting; }
 };
 
 enum class LensCorrectionState {
@@ -26,14 +27,14 @@ enum class LensCorrectionState {
 
 struct LensProfile {
     std::string id, maker, model;
-    bool hasDistortion = false, hasTCA = false, isMatch = false;
+    bool hasDistortion = false, hasTCA = false, isMatch = false, hasVignetting = false;
 };
 
 struct LensCorrectionReport {
     LensCorrectionState state = LensCorrectionState::Off;
     LensMetadata metadata;
     LensProfile profile;
-    bool appliedDistortion = false, appliedTCA = false;
+    bool appliedDistortion = false, appliedTCA = false, appliedVignetting = false;
     float cropScale = 1;
 };
 
@@ -41,6 +42,8 @@ class LensCorrectionDatabase {
 public:
     static bool available();
     static std::shared_ptr<LensCorrectionDatabase> load(const std::string& path = {});
+    /// Total number of underlying Lensfun database loads performed in this process.
+    static uint64_t parseCount();
     ~LensCorrectionDatabase();
     std::vector<LensProfile> profiles(const LensMetadata& metadata) const;
     LensCorrectionReport inspect(const LensMetadata& metadata, const LensCorrectionOptions& options) const;
@@ -60,6 +63,8 @@ public:
         int width, int height, int channels);
     ~LensCorrectionTransform();
     bool active() const;
+    bool hasGeometry() const;
+    float gainAt(float x, float y) const;
     const LensCorrectionReport& report() const;
     // Coordinates are in the unrotated active image, with six floats per pixel.
     void map(int x, int y, int width, int height, float* coordinates) const;

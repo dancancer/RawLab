@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import Foundation
 import ImageIO
@@ -11,9 +12,9 @@ import ImageIO
         defer { try? FileManager.default.removeItem(at:directory) }
         let legacy=directory.appendingPathComponent("legacy.jpg")
         try FileManager.default.copyItem(at:input,to:legacy)
-        let store=try EditPersistence(directory:directory.appendingPathComponent("edits"))
+        let store=try MacEditPersistence(directory:directory.appendingPathComponent("edits"))
         var old=Adjustments(); old.exposure = -0.5
-        try store.save(legacy,state:PhotoEditState(settings:old,filmID:""))
+        try store.save(legacy,state:MacPhotoEditState(settings:old,filmID:""))
         let before=try store.readState(for:legacy)
         var source=Adjustments(); source.hdr=HDRSettings(); source.hdr?.exposure=1
         let preparer=MacHDRBatchPreparation(source:input,settings:source,store:store,films:[])
@@ -21,26 +22,26 @@ import ImageIO
             let raw = URL(fileURLWithPath: path)
             let info = try HDRSourceInfo.probeRAW(raw)
             check(info?.proRAW != nil, "ProRAW fixture was not recognized")
-            let item = try BatchExportItem(url: raw)
+            let item = try MacBatchExportItem(url: raw)
             let fresh = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
             check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
                   "fresh ProRAW batch target was silently upgraded to HDR")
             var saved = Adjustments(); saved.exposure = -2; saved.hdr = HDRSettings()
             saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
-            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            try store.save(raw, state: MacPhotoEditState(settings: saved, filmID: ""))
             do {
                 _ = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
                 fatalError("Incompatible ProRAW version passed HDR preflight")
             } catch HDRSettings.ModeError.invalidSettings {}
             saved.hdr?.mode = .sdr
-            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            try store.save(raw, state: MacPhotoEditState(settings: saved, filmID: ""))
             let sdr = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
             check(!sdr.settings.isHDREditing && sdr.settings.proRAWDecodeVersion == saved.proRAWDecodeVersion,
                   "ProRAW preflight rejected or rewrote the dormant decoder version in SDR mode")
             saved.hdr?.mode = .hdr
             saved.proRAWDecodeVersion = nil
             saved.masterRecipeID = "unavailable-dormant-recipe"
-            try store.save(raw, state: PhotoEditState(settings: saved, filmID: ""))
+            try store.save(raw, state: MacPhotoEditState(settings: saved, filmID: ""))
             let beforeRaw = try store.readState(for: raw)
             let hdr = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
             try hdr.validate()
@@ -58,12 +59,12 @@ import ImageIO
             editedSource.hdr?.effectsSettings.grainAmount = 40
             let streamPreparation = MacHDRBatchPreparation(source: input, settings: editedSource, store: store, films: [])
             for format in [ExportFormat.hdrJPEG, .jpeg] {
-                var streamJob = BatchExportJob(source: input, settings: editedSource, look: nil, lookName: "HDR")
+                var streamJob = MacBatchExportJob(source: input, settings: editedSource, look: nil, lookName: "HDR")
                 var target = item; target.selected = true
                 streamJob.items = [target]; streamJob.outputDirectory = directory
                 streamJob.longEdge = 512; streamJob.format = format
                 let streamModel = BatchExportModel(job: streamJob,
-                    journal: BatchJournal(directory: directory.appendingPathComponent(UUID().uuidString)),
+                    journal: MacBatchJournal(directory: directory.appendingPathComponent(UUID().uuidString)),
                     hdrPreparation: streamPreparation)
                 streamModel.start()
                 let deadline = Date().addingTimeInterval(90)
@@ -85,19 +86,19 @@ import ImageIO
         let camera = directory.appendingPathComponent("camera.dng")
         let cameraFixture = URL(fileURLWithPath: ProcessInfo.processInfo.environment["RAWLAB_TEST_CAMERA_RAW"]!)
         try FileManager.default.copyItem(at: cameraFixture, to: camera)
-        var cameraItem = try BatchExportItem(url: camera); cameraItem.selected = true
+        var cameraItem = try MacBatchExportItem(url: camera); cameraItem.selected = true
         let freshCamera = try preparer.prepare(cameraItem, ordinal: 0, format: .jpeg, longEdge: 64)
         check(!freshCamera.settings.isHDREditing && freshCamera.settings.exposure == 1,
               "New camera RAW should remain in SDR editing")
         var cameraEdit = Adjustments(); cameraEdit.exposure = -2; cameraEdit.hdr = HDRSettings()
         cameraEdit.proRAWDecodeVersion = ProRAWSource.decodeVersion
-        try store.save(camera, state: PhotoEditState(settings: cameraEdit, filmID: ""))
+        try store.save(camera, state: MacPhotoEditState(settings: cameraEdit, filmID: ""))
         do {
             _ = try preparer.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
             fatalError("Camera RAW accepted a ProRAW decode version")
         } catch HDRSettings.ModeError.invalidSettings {}
         cameraEdit.proRAWDecodeVersion = nil
-        try store.save(camera, state: PhotoEditState(settings: cameraEdit, filmID: ""))
+        try store.save(camera, state: MacPhotoEditState(settings: cameraEdit, filmID: ""))
         var cameraSource = source; cameraSource.hdr?.renditionSettings.sdrExposureEV = -0.75
         let cameraPreparation = MacHDRBatchPreparation(source: input, settings: cameraSource, store: store, films: [])
         let cameraFrozen = try cameraPreparation.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)
@@ -124,11 +125,11 @@ import ImageIO
                   "Mac HDR batch preparation copied source camera development over the target")
         }
         let savedCamera = try store.readState(for: camera)
-        var cameraJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
+        var cameraJob = MacBatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
         cameraJob.items = [cameraItem]; cameraJob.outputDirectory = directory
         cameraJob.longEdge = 64; cameraJob.format = .hdrJPEG
         let cameraModel = BatchExportModel(job: cameraJob,
-            journal: BatchJournal(directory: directory.appendingPathComponent("camera-job")), hdrPreparation: cameraPreparation)
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("camera-job")), hdrPreparation: cameraPreparation)
         cameraModel.start()
         let cameraDeadline = Date().addingTimeInterval(30)
         while cameraModel.running && Date() < cameraDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
@@ -138,11 +139,11 @@ import ImageIO
               "Camera RAW batch failed gain-map readback or wrote the target record")
         print("PASS Mac camera RAW HDR batch preflight, v4 export and record isolation")
         if HDRImage.heifExportAvailable {
-            var heifJob = BatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
+            var heifJob = MacBatchExportJob(source: input, settings: cameraSource, look: nil, lookName: "HDR")
             heifJob.items = [cameraItem]; heifJob.outputDirectory = directory
             heifJob.longEdge = 64; heifJob.format = .hdrHEIF
             let heifModel = BatchExportModel(job: heifJob,
-                journal: BatchJournal(directory: directory.appendingPathComponent("camera-heif-job")), hdrPreparation: cameraPreparation)
+                journal: MacBatchJournal(directory: directory.appendingPathComponent("camera-heif-job")), hdrPreparation: cameraPreparation)
             heifModel.start()
             let deadline = Date().addingTimeInterval(30)
             while heifModel.running && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
@@ -154,7 +155,7 @@ import ImageIO
             print("PASS Mac camera RAW HDR HEIF batch file publication and readback")
         }
 
-        var first=try BatchExportItem(url:input),second=try BatchExportItem(url:legacy)
+        var first=try MacBatchExportItem(url:input),second=try MacBatchExportItem(url:legacy)
         first.selected=true; second.selected=true
         let a=try preparer.prepare(first,ordinal:0,format:.jpeg,longEdge:32)
         let b=try preparer.prepare(second,ordinal:1,format:.jpeg,longEdge:32)
@@ -166,9 +167,9 @@ import ImageIO
         let incompatible=MacHDRBatchPreparation(source:input,settings:wb,store:store,films:[])
         do { _ = try incompatible.prepare(second,ordinal:1,format:.jpeg,longEdge:32); fatalError("relative HDR WB partially applied to SDR target") }
         catch AdjustmentTransferError.incompatible {}
-        var job=BatchExportJob(source:input,settings:source,look:nil,lookName:"HDR")
+        var job=MacBatchExportJob(source:input,settings:source,look:nil,lookName:"HDR")
         job.items=[first,second]; job.outputDirectory=directory; job.longEdge=32; job.format = .jpeg
-        let journal=BatchJournal(directory:directory.appendingPathComponent("job"))
+        let journal=MacBatchJournal(directory:directory.appendingPathComponent("job"))
         let model=BatchExportModel(job:job,journal:journal,hdrPreparation:preparer)
         model.inspect(first)
         let previewDeadline=Date().addingTimeInterval(30)
@@ -183,7 +184,7 @@ import ImageIO
         check(model.job.mode == .perTargetFrozen && model.job.version==3,"mixed batch did not persist per-target snapshots")
         check(model.job.items[0].frozen?.settings.isHDREditing==true && model.job.items[1].frozen?.settings.isHDREditing==false,"frozen modes leaked between targets")
         var external=source; external.hdr?.mode = .sdr; external.exposure=3
-        try store.save(input,state:PhotoEditState(settings:external,filmID:""))
+        try store.save(input,state:MacPhotoEditState(settings:external,filmID:""))
         model.inspect(model.job.items[0])
         let frozenPreviewDeadline=Date().addingTimeInterval(30)
         while model.previewing && Date()<frozenPreviewDeadline { RunLoop.main.run(until:Date().addingTimeInterval(0.01)) }

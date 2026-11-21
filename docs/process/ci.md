@@ -12,7 +12,13 @@ deploy, sign, notarize or create releases. Verification is not release authoriza
 
 Full macOS and Windows checks compile with the pinned GPU AI models and inference
 runtimes. Model provisioning and shared-cache paths are specified in
-[desktop release packaging](desktop-release.md). No signing keys are used in CI.
+[desktop release packaging](desktop-release.md). `ai-inputs.py` validates an
+already-provisioned licensed model package; it does not download that package.
+A fresh hosted VM has no such local package: macOS arm64 `native` and desktop
+`full` remain hard-failing until an authorized cloud provisioning path supplies
+it. Do not drop those steps, upload private models, add secrets, or call a
+model-free `build` run a full pass. Windows `build/native`, macOS `build`, and
+iOS/Android groups do not require that model package. No signing keys are used in CI.
 Native checks include direct HLSL compilation without a hardware adapter and
 GLES source validation with glslang. CPU neural-inference validation is excluded;
 ordinary CPU photo processing and deterministic ISP tests remain applicable.
@@ -28,8 +34,9 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 
 | Event or request | Automatic coverage |
 | --- | --- |
-| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; no product/native dependency build |
+| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
+| External fork PR | Contracts and affected-platform models on GitHub-hosted runners, including macOS/iOS; external branch names never request a full cold gate (see [External fork pull requests](#external-fork-pull-requests)) |
 | Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
 | Manual run | Exactly the requested platform and check group; a separately named result |
 
@@ -37,6 +44,11 @@ A release/hotfix PR means base `main` or `release/**`, or source `release/*` or
 `hotfix/*`. Full verification is reserved for these important gates or an explicit
 manual `full` request. UI changes must pass affected local UI checks before commit;
 release acceptance also requires the applicable local UI/device matrix.
+
+Apple model runs include shared HDR adjustment-transfer regressions. The iOS model
+route also runs the camera protocol, durable original-store and scoped editor-draft
+suites; these use local responders and temporary files, without Bluetooth/Wi-Fi
+hardware or an iOS signing identity. They do not replace device acceptance.
 
 The manual **Run workflow** form has two selectors:
 
@@ -55,6 +67,19 @@ For example, choose `windows` + `models` for an edit-state regression, `macos` +
 `native` for native render/CLI parity, or `all` + `full` for a pre-release run.
 A build prerequisite is retained when a selected test needs its native artifacts;
 this is not reuse of an unverified product binary.
+
+An explicitly requested `platform=windows`, `checks=models` run also builds and
+runs the isolated WARP regressions under `RawLabWindows/tests/native/d3d11` on
+hosted Windows. This narrow native exception exercises production renderer/filter
+sources with a compile-time test device factory and software adapter. Ordinary
+PR model checks retain their existing scope. WARP does not establish hardware GPU
+behavior; production builds continue to reject software adapters.
+The same run uses `RawLabWindows/tests/native/d3d11/check-mutations.ps1`
+(tracked in the manual WARP script inventory) to check test sensitivity by removing
+buffer reuse and idle trimming
+in generated test-only source copies. Each mutation must fail at its corresponding
+resource assertion; compile errors or unrelated test failures are rejected. The
+normal backend is restored and the reuse test must pass again before the step ends.
 
 ## Execution Procedure
 
@@ -77,6 +102,8 @@ this is not reuse of an unverified product binary.
 5. Before merge, check the current source/base, required automatic result and any
    requested specialized results. A failed, cancelled or unfinished check is not a
    pass. A manual partial result does not satisfy the automatic aggregate gate.
+   Fork model results also do not establish build/native coverage; see
+   [External fork pull requests](#external-fork-pull-requests).
 6. After a change, rerun only checks whose source, configuration or integration
    assumptions changed. Documentation-only updates require content, link and diff
    checks; preserve earlier native/UI evidence with its actual tested SHA and
@@ -84,14 +111,41 @@ this is not reuse of an unverified product binary.
 
 ## Checks and Evidence
 
+### Choosing and Maintaining Tests
+
+A test earns its maintenance and execution cost by detecting a plausible regression
+with a meaningful effect on users or delivery. Keep an independent expected result:
+pixels or numerical tolerances, persisted data, observable state transitions, public
+protocols, resource validity, and build/test failure propagation.
+
+- Prefer the smallest test that exercises the real behavior. Keep native/UI coverage
+  when the regression depends on rendering, framework behavior or user interaction.
+- Remove exact duplicates and superseded migration checklists. A test for an old PR's
+  list of renamed strings is not an enduring localization contract; generation,
+  missing-key, placeholder and language-switching checks are.
+- Do not freeze private function names, source snippets, call counts or control layout
+  in text searches. Those assertions cannot establish that the behavior works and
+  make harmless refactoring fail. Review wording and visual layout in their context.
+- Static checks remain useful for declarative contracts such as workflow permissions,
+  package metadata, asset hashes, schemas and resource completeness. Preserve those
+  boundaries rather than reproducing every configuration value in a second file.
+- Screenshot generators and benchmarks can support manual inspection and measurement.
+  Without an asserted result or threshold, their successful execution is not a
+  regression-test pass.
+- Before removing a test, identify its failure mode and any retained coverage. A
+  failing test, slow test or short test is not by itself a deletion candidate. Record
+  pre-existing failures and unavailable native/device coverage separately.
+
+### Execution Evidence
+
 | Check | Runner | Model route / heavier route |
 | --- | --- | --- |
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
-| macOS | Dedicated arm64 Mac; hosted Intel for heavier groups | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
-| Windows | Hosted Server 2022 for models; dedicated Windows 11 for explicit builds and cold gates | Seven managed model projects and runner checks / self-contained package, CTest, DCP and RAW/raster CLI parity |
-| Android | Hosted Ubuntu 24.04 / JDK 17 (dedicated guest paused) | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
-| iOS | Apple Silicon / Xcode | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
+| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
+| Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
+| Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
+| iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
 
@@ -102,8 +156,9 @@ package fixture and native update UI remain local checks; they do not replace si
 seed-to-release installation and recovery acceptance.
 
 **CI result** must succeed on the current PR head/test merge for its automatic
-scope. An ordinary model-only result is not evidence of a product build or native
-regression run. Release/hotfix acceptance requires the full result. A missing,
+scope, including the isolated Windows WPF subset when selected. An ordinary result
+does not establish a complete product package build or the full native regression
+run. Release/hotfix acceptance requires the full result. A missing,
 cancelled or stale-head run is not a pass. After merge, inspect the exact
 `development` push SHA. Record event, source head, checked-out SHA and base; a PR
 can test GitHub's synthetic merge. A later source/base change invalidates the
@@ -122,8 +177,9 @@ manual result to satisfy it.
 Preview paths with `git diff --name-only origin/development... | python3 scripts/ci/affected_platforms.py classify`.
 
 - Client directories select their own platform. `RawLabMac/Resources/` is packaged
-  by every client; `RawLabMac/tests/DCPTestFixtures.swift` also selects iOS.
-- `docs/` except packaged licensing, `reviews/`, `.impeccable/`, AGENTS/CLAUDE files
+  by every client; `RawLabMac/tests/DCPTestFixtures.swift` and the shared AX gate
+  `RawLabMac/tests/ax-gate.sh` (sourced by the mixed iOS model suite) also select iOS.
+- `docs/` except packaged licensing, `.impeccable/`, AGENTS/CLAUDE files
   and root README/CHANGELOG/DESIGN/PRODUCT/.gitignore select no platform.
 - Shared core/resources, CI/tooling, licensing and unknown paths select all platforms.
 
@@ -131,24 +187,79 @@ PRs compare the test merge against its base. Pushes compare with the last
 successful `development` push run, so a cancelled run cannot conceal unverified
 changes. Missing history selects all platforms at the event's level: ordinary
 changes still run models; release/hotfix PRs run everything cold. Manual selection
-is explicit and does not infer its scope from the branch diff.
+is explicit and does not infer its scope from the branch diff. External forks use
+the same affected selection on ephemeral hosted runners; they retain the ordinary
+`models` group even when an external branch is named `release/*` or `hotfix/*`.
+
+## External Fork Pull Requests
+
+Ready-for-review fork PRs run contracts and all affected platform models on
+GitHub-hosted runners, including macOS/iOS. Drafts retain the normal deferral.
+External fork PRs restore base-branch caches read-only and never execute
+`actions/cache/save` steps, so unprivileged PR runs do not occupy or evict the
+repository's cache quota.
+There are no self-hosted routes in this workflow. The selector and aggregate
+still require every selected job to succeed; an Apple job skipped merely because
+it came from a fork no longer satisfies the gate.
+
+The workflow uses `pull_request`, not `pull_request_target`, read-only token
+permissions, no secrets, and checkout with `persist-credentials: false`.
+GitHub's fork approval policy remains applicable. Review workflow edits as
+security-sensitive; do not route untrusted code to a persistent machine or add
+signing/publication credentials to verification jobs.
+
+### Verifying a Fork Pull Request Before Merge
+
+Fork PRs, like ordinary internal PRs, do not automatically build products or run
+the complete native gate. A maintainer should verify relevant build/native
+changes on a reviewed same-repository ref using the explicit platform/group
+selectors. `native` omits independent models; choose `full` when both are needed.
+Confirm the logged checkout SHA and keep the manual result separate from
+`CI result`. No dispatch, local build or green model result authorizes signing,
+release publication or deployment.
 
 ## Local and Targeted Entry Points
 
 Run affected UI tests locally before committing UI changes. Record source version,
 commands, results and limits in the PR; keep logs/screenshots outside tracked source.
 CI never repeats runtime UI checks. UI-test target compilation is not a UI-test pass.
+When running the UI suites pre-release, carry `RAWLAB_REQUIRE_AX=1` so the accessibility-gated
+scripts (`hdr-rendition-ui.sh`, `color-grading-input-ui.sh`, `system-menu-language.sh`) fail
+with an explicit reason instead of returning 0 with a `SKIP` for checks that did not run. The
+mixed suite `ios-reset-entry-ui.sh` is different: its 30 AX-free presentation/model assertions
+always run (in CI and locally), and after they finish the suite's trailing gate check fails the
+run (FAIL, no skip) when accessibility is missing with `RAWLAB_REQUIRE_AX=1`, or logs the
+gate's honest skip pair otherwise.
 
 - Apple fast models: `bash scripts/ci/apple-models.sh macos` or `ios`; no prebuilt
   C++ core or simulator is required.
+  Multi-file Swift model runners use whole-module compilation to avoid repeated
+  per-file work, retaining their existing optimization levels and assertions.
+  Each invocation shares one temporary compiler-module cache between the adjustment
+  transfer suites, then removes it on success or failure. Test executables and
+  results are always rebuilt; no compiled product or test result is reused.
+  The standalone `RawLabMac/tests/chroma-settings.sh` and `wavelet-settings.sh`
+  likewise need only the Swift models and C ABI declarations, not native libraries.
 - iOS Files/LUT UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/document-import-ui.sh <build-for-testing-products> <new-output-directory>`.
   The runner stages generated PNG/CUBE fixtures in a test app copy and executes
   picker opening, selection, cancellation and reopening. Run on each required
   iPadOS runtime; `RAWLAB_DOCUMENT_IMPORT_TEST` selects a narrower XCTest case.
-- Windows fast models: `./scripts/ci/windows-models.ps1`; no WPF window, native
-  rendering DLL, RAW fixture or self-contained app build is required.
-- Android models: `./gradlew :app:testDebugUnitTest`; the task graph excludes native
-  compilation and APK assembly. Instrumentation remains a separate local entry.
+- iOS Recently Opened UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/recent-photo-ui.sh <build-for-testing-products> <new-output-directory>`. Seed one photo with `simctl addmedia` first. The runner grants Photos access only on that simulator and verifies edit filters, reopening across process restart, reset and removal. It rejects skipped tests.
+- Edited-preview cache and iOS recent-source retention checks run in the fast Apple model groups; `RawLabMac/tests/thumbnail-cache.sh` likewise runs in the standalone macOS model route. Mac rendered-preview and resource-watcher checks use `bash RawLabMac/tests/edited-photo-previews.sh` after building the native core; `edited-photo-ui.sh <output-directory>` builds an isolated native editor harness for marker, selection and reset inspection. `RawLabMac/tests/batch-cancellation.sh` delegates to `batch-render.sh` (requiring the prebuilt C++ core and native dependencies), `RawLab/tests/ios-photo-previews.sh` requires a booted iOS Simulator, and `RawLab/tests/raw-unpack-export.sh` and `RawLab/tests/subtool-menu-draft.sh` require both a built simulator `RawLab.app` and a booted iOS Simulator, so these four remain local/native-gate suites rather than `apple-models.sh` entries. Within that gate the iOS items split by drive mode: `ios-photo-previews.sh` (built-in harness app, headless `simctl spawn`, needs only a booted Simulator beyond the Xcode toolchain) and `raw-unpack-export.sh` (reuses the `RawLab.app` framework, headless `simctl spawn` with interpose counters, third argument is an absolute-path real RAW fixture) are latent-runnable without a GUI session or permission grant; `subtool-menu-draft.sh` launches the full `UIWindowScene` app through `simctl launch --console-pty`, so it stays a manual local UI gate: `bash RawLab/tests/subtool-menu-draft.sh <simulator RawLab.app> <booted simulator UDID>` and expect `VERIFIED: <N> checks passed` with exit 0.
+- iOS `RawLab/tests/hdr-batch.sh` is not simulator-applicable (real device plus an HDR-capable
+  environment required): the mixed HDR-JPEG collection assertions fail on the simulator even on a
+  pristine `development` base with the same framework and harness, so a simulator failure is not
+  a product delta and the suite stays a real-device HDR gate.
+- Windows fast models: `./scripts/ci/windows-models.ps1` runs
+  `dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --list-tests`
+  and `--filter Category=Model`; no WPF window, native rendering DLL, RAW fixture
+  or self-contained app build is required.
+- Android models: `./gradlew :app:testDebugUnitTest` plus
+  `RawLabAndroid/tests/jni-session-lock.sh` and
+  `ndk-compile.sh` (arm64 NDK CMake compile check for GLES/test targets without
+  building full native dependencies or running on device); the task graph
+  excludes full native compilation and APK assembly. Instrumentation remains a
+  separate local entry.
 - Mac UI checks remain independent scripts: `horizontal-picker-native.sh`,
   `parameter-value.sh`, `mac-straighten-preview.sh`, `mac-canvas-input.sh`.
   `presentation.sh --models-only` skips canvas UI but still needs the native core,
@@ -157,6 +268,16 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
   or native suites. Examples include `ui-details`, `transform-ui`, `editor-shell`,
   `editor-review`, `tool-groups`, `localization-ui`, `profile-isolation` and
   `comparison-default`. Its required test-host builds remain explicit.
+- Windows `native` and `full` include the `rendered_dng` and
+  `processing_migration_api` CTest results. For release acceptance, run the
+  client DNG suite on Windows with the package built from the same source.
+
+  ```powershell
+  ./RawLabWindows/tests/run-v08.ps1 -Only rendered-dng -RawPath ./lutools/examples/DJI_20250602164503_0444_D.DNG -NativeArtifacts ./build/RawLab-Windows
+  ```
+
+  Record the `rendered-dng` entry in `build/windows-v08-results/summary.json`
+  and the corresponding `rendered-dng.log` for the actual WPF batch export.
 - iOS UI and Android connected-device tests run locally for affected work; the
   full applicable UI/device matrix belongs to release acceptance.
 
@@ -171,11 +292,44 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 - macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
   from the CI CTest invocation. Other tests may exercise an available GPU
   opportunistically; this is not a guaranteed physical GPU gate.
+- The fast macOS CTest selects `dualdn_api` only in its no-package
+  `dualdn_api_disabled` form, because `RAWLAB_DUALDN_TEST_PACKAGE` is unset
+  there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. The
+  arm64 `native` gate retains that check through
+  `RawLabMac/tests/dualdn-api-package.sh`, which configures a dedicated
+  AI-enabled build against the pinned ONNX Runtime and the validated DualDn
+  package and runs the real `dualdn_api` test. In `full`, `ai-inputs.py` injects
+  the package into `build.sh`, so its `build-macos` CTest runs the real-package
+  tests. A missing model or runtime is a hard failure, not a skip; hosted routing
+  does not provide a license or silently manufacture a model package.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
   already-public tracked DJI DNG and explicitly selected CPU-safe cases.
+  Windows `native/full` includes `raw_active_area_metadata` in that selection.
+  It also selects `raw_active_area_sony` when an existing external photo is
+  configured through `SONY2FUJI_TEST_SONY_ASPECT_RAW`; the private Sony fixture
+  is not provided by CI by default.
 - The iOS job compiles UI tests with `build-for-testing`; it does **not** execute
   XCTest, import Photos fixtures, sign a device app or validate installation.
+- UI tests are not a CI gate. Hosted macOS has no project accessibility
+  grant, so `hdr-rendition-ui.sh` (`AXUIElement`) runs locally and pre-release
+  instead of in the model suites; `RAWLAB_REQUIRE_AX=1` turns its skip into a
+  failure. The same contract stays gated by the AX-free presentation-layer suite
+  `hdr-rendition-reset.sh`. Host-executed suites with "UI" in the name, such as
+  `ios-reset-entry-ui.sh`, are presentation-layer model assertions, not XCUITest.
+  A `SKIP` reason in a CI suite log counts as a failed gate, never as a pass;
+  the gate matches a line-leading `SKIP` marker, so paths, identifiers and
+  `PASS:` wording that merely contain "SKIP" stay green. The one exception: in a
+  mixed AX model suite registered in `scripts/ci/apple-models.sh` (currently
+  `ios-reset-entry-ui.sh`) the model checks run unconditionally and the suite's
+  second-layer AX guard may pass through the gate's fixed `SKIP: accessibility ...`
+  line only when its `::warning::` annotation is logged alongside it; every other
+  `SKIP` stays red, and `RAWLAB_REQUIRE_AX=1` keeps the guard on its FAIL exit with
+  no skip at all. This is distinct from
+  CTest `SKIP_RETURN_CODE 77`, which registers an explicit visible skip for
+  optional external models or private samples (such as `dualdn_skip` and
+  `dualdn_onnx_skip`); the `full` gate still hard-fails a missing AI model
+  earlier through `scripts/ci/ai-inputs.py`.
 - Android compiles instrumentation tests but does **not** run connected-device
   tests. GLES, SAF, OEM locale and physical interaction evidence stays separate.
 - Building both architectures with a 14.0 minimum on a newer macOS does not establish
@@ -191,144 +345,95 @@ CI never repeats runtime UI checks. UI-test target compilation is not a UI-test 
 
 Actions are pinned to full commit SHAs. Workflow permission is `contents: read`;
 only the selection job adds `actions: read` to look up earlier runs. Checkout
-credentials are not persisted, and no `pull_request_target` is used. The workflow
-has bounded jobs and cancels obsolete runs for the same PR/ref; manual
-runs use their own concurrency groups so a push neither cancels nor is cancelled
-by a manual verification.
+credentials are not persisted, and no `pull_request_target` is used. Workflow
+edits in a fork PR require security review
+([External fork pull requests](#external-fork-pull-requests)).
+The workflow has bounded jobs and cancels obsolete runs for the same PR/ref;
+manual runs include `inputs.platform` and `inputs.checks` in their concurrency
+group so concurrent manual runs for different targets/suites on the same branch
+do not cancel one another or automatic PR/push checks. Pull request `edited`
+events re-evaluate checks only when `base` changes; title/body edits use an
+isolated `-noop` concurrency group and skip job execution without cancelling
+active checks.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
-workflow runs when a same-repository PR closes. With `actions: write` and no
+workflow runs when a same-repository PR closes (external fork PRs never save
+caches, so no `pull_request_target` cleanup is needed). With `actions: write` and no
 checkout, it deletes only the caches stored under that PR's merge ref, which no
 other PR or branch can use.
 
-## Local Android Runner
+## Hosted Android Runner
 
-The Android job currently runs on GitHub's hosted `ubuntu-24.04` runner with two
-Gradle workers, and the dedicated guest below is paused. From that guest, the
-Android SDK's CMake 3.22 download client fails the TLS handshake to github.com,
-libraw.org and other upstream hosts, while the system `curl` succeeds.
-Prefetching LibRaw alone was not enough, because the native build fetches more
-archives from GitHub. Return the job to the guest only after its CMake client can
-download them: restore the runner label, the environment and eight-worker limit
-described below, and the LibRaw prefetch step, then update the workflow-policy test.
-
-GitHub Actions still owns triggers, check results, logs and dependency caches.
-When enabled, the Android job selects `[self-hosted, linux, x64, rawlab-android]`. This label
-belongs only to a dedicated Ubuntu
-24.04 KVM guest with 32 vCPUs, 32 GiB memory and a 160 GiB disk. The physical
-Proxmox host must not carry a runner, JDK or Android toolchain.
-
-Run `sudo bash scripts/ci/provision-android-runner.sh` inside the new guest to
-install the Android toolchain. The script rejects a non-KVM/non-Ubuntu guest,
-verifies the pinned command-line tools archive, and installs the SDK under
-`/opt/android-sdk`. Register the official GitHub runner separately as the
-unprivileged `runner` account with the `rawlab-android` label. Do not copy an
-administrator's SSH keys or long-lived GitHub token into that account. The job
-sets `ANDROID_HOME=/opt/android-sdk`; keep SDK and Gradle
-download caches outside its checkout. No Docker socket, host filesystem mount,
-GPU passthrough or nested virtualization is needed for the current suite.
-
-`RAWLAB_LENS_SOURCE_CACHE=/var/cache/rawlab-ci/lens-sources` holds source archives
-from `lutools/cmake/lens-dependencies.json`, not compiled libraries. Pre-seed
-checksum-matching archives there when an upstream endpoint is unavailable;
-the existing builder verifies every archive again before use. Missing archives
-still download from their pinned upstream URL and failures remain fatal.
-`RAWLAB_ANDROID_SOURCE_CACHE=/var/cache/rawlab-ci/android-sources` holds the
-LibRaw source archive. On this guest the job prefetched the archive with the
-system `curl` and checked its SHA-256. The Android build uses a local copy there
-first when the variable is set; `URL_HASH` verifies it again.
-
-This is a persistent, trusted-contributor runner: SDKs, download caches and the
-runner installation survive jobs. Checkout cleanup is not a security boundary
-against malicious workflow code. Review external contributions before allowing
-them onto this runner; do not treat it as an untrusted-code sandbox.
-
-Only one job runs in this runner workspace at a time. Checkout retains its
-default clean behavior, so product output and previous test results cannot
-make another job pass. Native dependencies still use the exact-key restore/save
-policy below; a persistent VM is not permission to bypass an explicitly selected cold build.
-On this guest, the Android job caps Gradle workers at eight. Native tools can use their own
-limits: AGP invokes Ninja directly, while Lensfun's builder retains four jobs;
-the guest's CPU and memory allocation is the overall resource boundary.
-This does not change parallelism or coverage on another platform.
-
-While the job uses the guest, the runner must be online for required Android
-checks to finish. GitHub does not automatically fall back to hosted execution
-when a self-hosted runner is offline. The hosted route above, with two Gradle
-workers, is the rollback. Do not skip the check or weaken branch protection. Keep device/GLES acceptance separate from this
-build-only runner.
+All Android groups run on GitHub-hosted `ubuntu-24.04` with Temurin JDK 17,
+Python 3.12, and Gradle capped at `--max-workers=2`. Build jobs install the
+pinned Android SDK/NDK/CMake components (`platforms;android-35`,
+`build-tools;35.0.0`, `ndk;27.2.12479018`, `cmake;3.22.1`) via `sdkmanager`,
+build both arm64 and x86_64 ABIs, run `lintDebug`, and compile the app and
+instrumentation APKs without running connected-device or GLES tests.
 
 ## Windows Runner Scheduling
 
-Model checks, including ordinary non-draft PRs targeting `development`, use the
-standard hosted `windows-2022` runner. They can run concurrently without occupying the dedicated
-integration runner. Release/hotfix PRs and manual build/native/full runs select `[self-hosted, windows, x64, rawlab-windows]` in the dedicated
-Windows 11 KVM guest with 32 vCPUs, 32 GiB memory, VS 2022 C++ Build Tools and the
-Windows SDK. Drafts still skip all platform jobs. This is event-based routing,
-not a busy-runner probe or an automatic fallback when the dedicated runner is
-offline. Hosted jobs remain subject to GitHub's account concurrency limits.
+All Windows groups, including release/hotfix cold builds and manual
+`build/native/full`, select GitHub-hosted `windows-2022`. Forks use
+the same affected model route with read-only permissions. Drafts still defer
+platform jobs; hosted concurrency limits still apply.
 
-The selected group determines coverage on either runner. Model runs do not build
-the app or native core; build/native/full groups retain the complete product build
-and their requested non-UI suites. Manual runs have a separate result name. A PR's
-Windows Server model result does not replace a requested Windows 11 build/native
-run or the automatic check on the resulting `development` push SHA.
-Neither route establishes physical GPU or interactive-desktop acceptance.
+The selected group, not the host, determines coverage. Model runs do not build
+the app or native core; build/native/full retain the complete self-contained
+product build and their requested non-UI suites. Manual results stay separate
+from `CI result`; Windows Server execution does not establish physical GPU or
+interactive Windows 11 desktop acceptance.
 
-The first Windows setup step uses `runner.environment` to select paths and limits.
-Hosted jobs keep .NET and lens source downloads under `RUNNER_TEMP\rawlab-ci`,
-with four CMake workers and a four-process cross-project MSVC cap for the standard
-four-core, 16 GiB runner. Dedicated jobs keep `E:\RawLabCI` and the existing
-16-worker/24-process limits. The native dependency key includes workspace, host,
-image and compiler identities, so these hosts cannot restore each other's build
-trees. Product outputs and test results are always rebuilt.
+For ordinary automatic PR/push events selecting Windows, **Windows batch-selection**
+runs independently on `windows-2022`, alongside the unchanged models job. It builds
+the current checkout's `sony2fuji` target and its `raw.dll` dependency, retaining the
+production rendering features while omitting native test executables and CLI builds.
+`run-v08.ps1 -Only 'batch-selection'` compiles the unified xUnit test project
+`RawLabWindows.Tests.csproj` (referencing `RawLab.Windows.Core` and the WPF app),
+resolves its real `TargetDir`, and copies the native DLLs, MSVC CRT/OpenMP and
+complete pinned ExifTool 13.59 distribution there. The suite uses the tracked DJI
+DNG, CPU editing and ordinary Auto export with CPU fallback; it does not require
+AI models or a physical GPU. Only the `Suite=batch-selection` xUnit test executes:
+the default/legacy suite and all other UI subsets stay outside this automatic job. Native products are rebuilt
+from source on every run; only checksum-verified source archives are shared by cache.
+The aggregate result requires this job to succeed when selected, so a skipped,
+failed or cancelled suite cannot produce a green automatic gate. Its v08 logs and
+summary are retained in `windows-batch-selection-results` for seven days. Manual
+groups and release/hotfix full gates retain their existing scope. This narrow WPF
+exception does not replace local UI, physical DPI, Narrator, Snap or hardware checks.
 
-### Dedicated Windows Runner
+The Windows setup step configures download and tool caches under
+`RUNNER_TEMP\rawlab-ci`, with four CMake workers and a four-process
+cross-project MSVC cap (`CL_MPCount`) for the standard four-core, 16 GiB
+hosted runner. The native dependency key includes workspace, host, image
+and compiler identities, and product outputs and test results are always
+rebuilt.
 
-Use a separate 120 GiB NTFS data volume for `E:\RawLabCI`: runner installation, `_work`,
-toolcache, SDK downloads, NuGet/Python caches, temporary files and build output
-belong there, not on the existing system drive or developer build workspace.
-`provision-windows-runner.ps1` rejects system-drive and relative roots. Supply
-the pinned PowerShell 7.6.7, runner 2.338.0 and actions/python-versions 3.12.10
-ZIPs from their official GitHub releases plus the source-archive bundle and `lens-dependencies.json`; the
-script verifies all SHA-256 values before use. Run
-`test_windows_runner_provisioning.ps1` as an administrator in the guest to
-exercise the no-install safety guards; add `-VerifyToolchain` after provisioning
-to verify the completed Python cache and a GNU tar/gzip cache round-trip. The
-administrator seeds the official Python tool cache once because setup-python invokes Windows PowerShell without
-an execution-policy override and the installer needs administrator privileges.
-The bootstrap overrides policy only in that installer process, not on the
-machine or service account. It refuses to replace an existing Python 3.12
-installation outside this cache. Keep the runner service unprivileged.
+## GitHub-Hosted Apple Runners
 
-Register the runner separately with the `rawlab-windows` label, `_work` on the
-data volume, and `NT AUTHORITY\NETWORK SERVICE`, not LocalSystem or the
-developer's interactive account. The provisioning script restricts its root
-ACL to that service account, SYSTEM and administrators, and prepares its
-environment/tool paths. Keep `cmake` and `ctest` discoverable on the runner
-PATH before cache identification. `setup-python` and `setup-dotnet` still
-select the workflow's Python 3.12 and .NET 8 SDK; their caches/install directory
-are on the data volume. No registration token or service credentials belong
-in source control or uploaded logs.
+The active macOS matrix uses `macos-26` arm64 (two build workers) and the existing
+`macos-26-intel` x86_64 shards (four). iOS uses the official `xcode-27` arm64
+preview image, explicitly selecting `/Applications/Xcode_27.1.app/Contents/Developer`.
+The stable `macos-26` image carries Xcode 26, which cannot satisfy the retained
+iOS SDK 27.1+ guard. Both Apple jobs select Python 3.12 through `setup-python` and
+prepare Homebrew build tools instead of assuming a provisioned local venv.
+The iOS SDK guard still runs before Rust/native work, all framework slices are
+built, and simulator app/test compilation remains unsigned.
 
-Include Git for Windows' `usr\bin` in the runner-only PATH, not just its `cmd`
-directory. The cache action selects Git's GNU tar, which must also find `gzip`;
-a missing compressor can leave the job green while silently losing its cache.
+Official [labels](https://github.com/actions/runner-images/blob/main/README.md),
+[runner resources](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [Xcode 27 image](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+currently document three-core/7 GB arm64 VMs, four-core/14 GB Intel VMs and Xcode
+27.1 default plus 27.2 installed on `xcode-27`. The preview label is deliberate,
+not a claim of GA availability. Logs and the SDK guard determine the actual
+image/toolchain. No larger paid runner, signing identity or persistent Mac is
+required by this route. Hosted VMs do not establish physical Metal/Core ML or
+iPhone acceptance; retained hardware-dependent tests may fail without a device,
+and that is not permission to skip them or claim a hardware pass.
 
-The dedicated Windows job builds 16 projects at once and enables MSBuild's multi-tool task,
-which otherwise leaves each project's sources compiling one at a time. A single
-cross-project cap of 24 `cl.exe` processes (`CL_MPCount` with
-`EnforceProcessCountAcrossBuilds`) keeps memory within the guest's 32 GiB. These
-are CI environment settings; `build.ps1` and local builds are unchanged.
-
-Keep the complete CPU-safe suite, tracked DNG fixture, artifact allowlist and
-exact dependency-cache policy. Do not replace it with `build.ps1 -Test`, which
-requires physical GPU/external-RAW evidence. Service-session results do not
-cover real Explorer/UIA interaction. To route every event back to the dedicated
-runner, change `windows_runner` in `affected_platforms.py` and its scheduling
-regressions; do not skip required checks or remove the runner environment setup.
-
-## Local Apple Runners
+The Intel shards and arm64 `all` coverage, cache cold/warm rules and bounded
+CTest parallelism stay unchanged. Moving hosts does not authorize model uploads;
+see the model prerequisites above.
 
 The macOS, iOS and Android build jobs use `scripts/ci/prepare-rust.sh` to select
 Rust 1.99.1, its standard-library notices and the required target slices. If
@@ -336,15 +441,6 @@ Rust 1.99.1, its standard-library notices and the required target slices. If
 checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job's
 Cargo/Rustup paths. It does not require an administrator or change the runner's
 login profile. Windows prepares the same pinned toolchain in its own job directory.
-
-macOS arm64 and iOS both select `[self-hosted, macOS, ARM64, rawlab-apple]`.
-Each Mac runs one runner, so Apple jobs can execute concurrently without
-sharing memory or build directories. When the developer laptop is offline, the
-always-on Mac can execute both jobs sequentially instead of waiting indefinitely
-for a role-specific runner. Either host must have both complete toolchains.
-Their initial build parallelism is six. Heavier Intel matrix
-entries remain on `macos-26-intel` with four workers each; neither cross-compilation
-nor Rosetta substitutes for its native x86_64 runtime checks.
 
 The Intel `agent` shard isolates Agent recipe rendering from the remaining
 `render` checks. Every Intel shard still builds the complete app and executes
@@ -361,77 +457,6 @@ Intel's portable FP16 conversion. The default Swift app uses whole-module optimi
 `-O` and all sources. The full-source straighten UI harness runs locally. No app or test executable is cached. Each Mac regression
 stage records elapsed seconds and its exit code in `build/ci/macos-timings.log`; command failures
 still fail the job rather than being hidden by the timing wrapper.
-
-These two runners run directly on user-approved physical Macs, unlike the
-Android/Windows KVM guests. Prefer the dedicated non-administrator `rawlab-ci`
-account. An owner-approved personal account may opt in by appending
-`--allow-current-user` to the provisioning command; this is not isolation and
-CI inherits that user's access to personal files and credentials. Root is
-always refused, and CI jobs must not use sudo. Prepare full Xcode and Homebrew
-`pkgconf`, `autoconf`, `automake`, `libtool` and `python@3.12` as an
-administrator. Use `DEVELOPER_DIR` rather than changing another user's selected
-developer tools.
-
-For iOS builds, both pool Macs need Xcode 27.1+ with device and simulator SDKs
-at least 27.1. This enables iPhone Duo's full display without raising RawLab's
-iOS 18.0 deployment target. `bash scripts/ci/check-ios-sdk.sh` checks the selected
-toolchain during runner provisioning and before the iOS build job prepares Rust
-or native caches. The app target checks its actual SDK for local and release
-builds too. Model-only jobs retain their standalone macOS-SDK route. Upgrade
-the prepared Xcode copy on each pool host before running iOS build/native/full
-checks; CI does not install Xcode or change global toolchain selection.
-
-Native dependency outputs embed the workspace, Xcode SDK and Python paths, so the
-cache key includes them. Both pool Macs therefore use one identical layout on a
-case-sensitive APFS volume named `RawLabCI`, mounted at `/Volumes/RawLabCI`
-(an administrator adds it with `diskutil apfs addVolume <container> APFSX RawLabCI`;
-it shares the container's free space): the runner workspace `_work`, a CI-only
-Xcode copy at `tools/Xcode.app` and the Python venv `venv`, which pins CMake via
-[`requirements-apple-runner.txt`](../../scripts/ci/requirements-apple-runner.txt).
-A key computed on one Mac then matches the other, and either Mac reuses the
-other's dependencies. The pool Macs must also keep the same macOS build, Xcode
-build, Homebrew `pkgconf`/autotools and Python 3.12 patch release. A mismatch does
-not break builds; it only gives each Mac separate cache keys again. Compare
-`build/ci/native-cache.json` from each Mac's artifacts to find the differing field.
-
-Keep the CI root with runner startup files and credentials inside the CI user's
-home on the internal disk. A LaunchAgent can be denied access to an external
-volume even when SSH under the same user works; allow only the necessary
-external-storage access when macOS prompts in the CI desktop session. Do not
-grant system-wide shells Full Disk Access to work around this restriction.
-After installing or updating Xcode, an administrator must accept that version's
-license and run its first-launch initialization with the same `DEVELOPER_DIR`.
-The CI account must pass `xcodebuild -checkFirstLaunchStatus` and SDK discovery
-without sudo before runner registration; an older Xcode license is not sufficient.
-The iOS simulator SDK alone is not enough: both pool hosts need an available iOS
-simulator runtime for the look-import regression. Prepare one with the selected
-Xcode's `xcodebuild -downloadPlatform iOS -architectureVariant arm64`, or export
-and import an official runtime using `-exportPath` and `-importPlatform`.
-Provisioning checks `xcrun simctl list runtimes available -j` as the runner user
-before creating runner files; it never installs system components from a CI job.
-`provision-macos-runner.sh <ci-root> /Volumes/RawLabCI/tools/Xcode.app <runner-archive>`
-checks the account, pool volume and SDKs, verifies the pinned official arm64
-runner archive, creates the shared-path Python 3.12 venv with pinned CMake and
-dedicated cache/temp directories, and names the `--work` directory to register. Do not
-copy private SSH keys, personal Keychains or signing credentials into this account.
-
-Local Apple jobs use that prepared Python instead of setup-python's macOS
-installer, whose fixed framework installation requires elevated privileges.
-CI installs its pinned requirements only in the venv. Keep the complete PATH in
-the runner's `.path` and literal SDK/cache variables in `.env`. PATH is also
-stored in `.env` because `config.sh` rewrites `.path` during registration.
-Configure each runner separately with its shared pool label and own workspace, then install its
-official user LaunchAgent while the selected runner user is logged in. A user LaunchAgent
-depends on that login session: fast user switching is fine, logout or machine
-sleep makes the runner unavailable. Do not grant the CI account sudo or change
-sleep/security settings silently on a developer's laptop.
-
-This remains trusted-code execution, not a security sandbox. Use separate
-workspaces per machine and keep persistent source/download caches separate from
-the exact dependency-output cache. Logs record the actual macOS/Xcode versions;
-moving hosts is not evidence for minimum-OS, physical GPU or device acceptance.
-To roll back, restore hosted `macos-26` for the relevant job and its Python setup
-step, parallelism, policy tests and actionlint declarations. Keep every platform check.
 
 ## Native Dependency Caches
 
@@ -485,10 +510,8 @@ cold/restore regression also verifies that changed JNI code is rebuilt.
 `build/ci/native-cache.json` records the key and its inputs; `native-cache-size.json`
 records the selected file count and bytes. Compare cold and warm hosted runs on
 the same source, separating queue time from job time. A successful restore alone
-does not demonstrate a speedup. Hosted Intel uses four build workers and two
-CTest processes; local Android and Windows jobs use the bounded settings
-documented above;
-measure changes on their own guests rather than extrapolating from hosted timings.
+does not demonstrate a speedup. Hosted Intel uses four build workers and two CTest processes; hosted Android
+and Windows jobs use the bounded worker settings documented above.
 
 ### Hosted Measurement: 2026-10-18
 
@@ -540,6 +563,62 @@ python3 -m venv /tmp/rawlab-ci-venv
 These guards supplement, not replace, workflow syntax linting and actual hosted
 execution. Platform jobs stop on command/test failures; they are not allowed to
 silently skip a required suite or mark a failing native process successful.
+
+### Apple Shell Harness Ownership
+
+Pure-Swift shared model tests reside in `tests/RawLabKitTests/` (`Package.swift`)
+and run automatically via `swift test` (invoked by `scripts/ci/apple-models.sh`
+and `.github/workflows/ci.yml`). Remaining `.sh` scripts under `Shared/tests/`,
+`RawLab/tests/`, and `RawLabMac/tests/` that are not already invoked by
+`apple-models.sh`, `ci.yml`, or `RawLabMac/build.sh` are explicitly owned as
+local/pre-release integration harnesses:
+
+- **Shared SwiftPM & source-list helpers** (sourced by Apple test harnesses; guarded by `scripts/ci/test_mac_native_sources.py` and `scripts/ci/test_apple_shell_ownership.py`):
+  `Shared/tests/hdr-native-sources.sh`, `Shared/tests/mac-native-sources.sh`,
+  `RawLabMac/tests/native-env.sh`, `RawLabMac/tests/core-link.sh`,
+  `RawLabMac/tests/sparkle-bundle.sh`.
+- **iOS core/native/simulator/UI harnesses** (owned by iOS build/simulator gates in `RawLab/AGENTS.md` and release acceptance):
+  `RawLab/tests/adjustment-history-model.sh`, `RawLab/tests/adjustment-ruler-enabled.sh`,
+  `RawLab/tests/batch-publication.sh`,
+  `RawLab/tests/bundled-look-artwork.sh`, `RawLab/tests/bundled-luts.sh`,
+  `RawLab/tests/camera-import-fault-tolerance.sh`,
+  `RawLab/tests/camera-skip-and-limit.sh`,
+  `RawLab/tests/geometry-processing.sh`,
+  `RawLab/tests/hdr-history.sh`, `RawLab/tests/hdr-missing-resources.sh`,
+  `RawLab/tests/hdr-processing.sh`,
+  `RawLab/tests/hdr-sdr-preview.sh`,
+  `RawLab/tests/import-state.sh`, `RawLab/tests/lens-dng-export.sh`,
+  `RawLab/tests/native-value-wheel-layout.sh`,
+  `RawLab/tests/photo-entry.sh`,
+  `RawLab/tests/preview-performance.sh`, `RawLab/tests/processor-export.sh`,
+  `RawLab/tests/raster-export.sh`, `RawLab/tests/raw-import-history.sh`,
+  `RawLab/tests/seed-sim-ui-fixtures.sh`, `RawLab/tests/viewing-canvas.sh`,
+  `RawLab/tests/viewing-render.sh`, `RawLab/tests/viewport-state.sh`.
+- **Mac native/AppKit/UI/Sparkle harnesses** (owned by Mac local native/UI/release acceptance in `RawLabMac/README.md` and `docs/process/desktop-release.md`):
+  `RawLabMac/tests/agent-sdr-fallback.sh`, `RawLabMac/tests/atmosphere-render.sh`,
+  `RawLabMac/tests/batch-import-presentation.sh`,
+  `RawLabMac/tests/batch-render.sh`, `RawLabMac/tests/chroma-render.sh`,
+  `RawLabMac/tests/compact-controls-presentation.sh`, `RawLabMac/tests/denoise-model.sh`,
+  `RawLabMac/tests/edit-memory.sh`,
+  `RawLabMac/tests/file-browser.sh`, `RawLabMac/tests/folder-drop.sh`,
+  `RawLabMac/tests/fuji-compatibility.sh`, `RawLabMac/tests/geometry-render.sh`,
+  `RawLabMac/tests/geometry-viewport.sh`, `RawLabMac/tests/hdr-agent.sh`,
+  `RawLabMac/tests/hdr-batch.sh`, `RawLabMac/tests/hdr-history.sh`,
+  `RawLabMac/tests/hdr-sdr-preview.sh`, `RawLabMac/tests/horizontal-picker-native.sh`,
+  `RawLabMac/tests/hsl-target-render.sh`, `RawLabMac/tests/lens-render.sh`,
+  `RawLabMac/tests/lens-settings.sh`, `RawLabMac/tests/lut-preview.sh`,
+  `RawLabMac/tests/mac-canvas-input.sh`, `RawLabMac/tests/mac-crop-presentation.sh`,
+  `RawLabMac/tests/mac-lens-draft-controls.sh`, `RawLabMac/tests/mac-lens-draft-presentation.sh`,
+  `RawLabMac/tests/mac-perspective-integration.sh`, `RawLabMac/tests/mac-rotation-ruler.sh`,
+  `RawLabMac/tests/mac-straighten-preview.sh`, `RawLabMac/tests/mac-ui-smoke.sh`,
+  `RawLabMac/tests/mac-viewing-model.sh`,
+  `RawLabMac/tests/master-recipe-render.sh`, `RawLabMac/tests/parameter-value.sh`,
+  `RawLabMac/tests/processing-migration-input.sh`, `RawLabMac/tests/proraw-stream.sh`,
+  `RawLabMac/tests/rendered-dng.sh`,
+  `RawLabMac/tests/sparkle-signature.sh`,
+  `RawLabMac/tests/text-fit.sh`, `RawLabMac/tests/tone-curve-input.sh`,
+  `RawLabMac/tests/tone-curve-render.sh`, `RawLabMac/tests/update-ui.sh`,
+  `RawLabMac/tests/wavelet-render.sh`, `RawLabMac/tests/x3f-workflow.sh`.
 
 The [archived 0.8 preparation ledger](../archive/releases/v0.8/preparation.md)
 retains its original candidate scope. Use [release notes](../releases/v0.8/v0.8.1.md)

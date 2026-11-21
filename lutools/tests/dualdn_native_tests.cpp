@@ -52,6 +52,9 @@ int main(int argc, char** argv) {
         }
         for (const auto kind : {GraphKind::Raw, GraphKind::RGB, GraphKind::BlindRGB}) {
             if (kind == GraphKind::BlindRGB && package.blindRGBPath.empty()) continue;
+            const std::string& modelPath = kind == GraphKind::BlindRGB ? package.blindRGBCoreMLPath :
+                kind == GraphKind::Raw ? package.coreMLPaths[0] : package.coreMLPaths[1];
+            CoreMLGraph::verifyGPUPlacement(modelPath, kind);
             const std::string name = kind == GraphKind::Raw ? "raw" : kind == GraphKind::RGB ? "rgb" : "blind_rgb";
             const auto signature = graphSignature(kind, 640);
             std::vector<std::vector<float>> inputs;

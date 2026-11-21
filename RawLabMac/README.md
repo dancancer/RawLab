@@ -13,23 +13,25 @@ Apple Silicon release builds require packaged DualDn/Restormer models and a GPU 
 Development builds keep AI optional. The linked guides cover inputs, packaging and validation limits.
 
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
-降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 浮点 RGB 写入 DNG 1.4。
-支持原尺寸及长边限制，不导出低分辨率预览。调整固化在像素中，不是可逐项撤销的
+降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 16 位整数 RGB 写入 DNG 1.4。
+支持原尺寸及长边限制，并内嵌 JPEG 缩略图和预览。调整固化在像素中，不是可逐项撤销的
 Lightroom 调整，也不恢复原始 RAW 动态范围。初版不复制相机拍摄 EXIF、旧预览或
 传感器专属标签；虚拟相机和中性色彩配置描述已渲染像素。JPEG/PNG 的拍摄元数据
-保留行为不变。未压缩 DNG 约需每像素 12 字节。
+保留行为不变。未压缩主图约需每像素 6 字节，另有 JPEG 预览和元数据的空间开销。
 
 Single and batch export now include rendered DNG. The FINAL pipeline bakes all
-current adjustments before writing output-referred linear-sRGB float RGB in DNG
-1.4. Native and limited-long-edge sizes are supported. This preserves the look,
-not reversible Lightroom controls or original RAW latitude. This initial format
+current adjustments before writing output-referred 16-bit integer linear sRGB in DNG
+1.4. Native and limited-long-edge sizes are supported, with an embedded JPEG
+thumbnail and preview. This preserves the look, not reversible Lightroom controls
+or original RAW latitude. This initial format
 does not copy capture EXIF, old previews or sensor-only tags; its virtual camera
 profile describes rendered pixels. JPEG/PNG capture metadata remains unchanged.
-Uncompressed DNG uses approximately 12 bytes per pixel.
+The uncompressed main image uses approximately 6 bytes per pixel, plus JPEG
+previews and metadata.
 
 v0.5.0 新增逐照片本机调整记忆和“使用当前调整批量导出”。任务固定来源参数、降噪设置和外观，可多选 RAW、检查目标效果、选择 JPEG/16-bit PNG 与输出目录，支持取消、继续、失败重试和中断恢复；不覆盖原片或目标编辑记录。迁移到 `development` 后的验证见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
-![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.png)
+![RawLab Mac：中性与 Velvia 效果对比 / Neutral and Velvia comparison](../docs/images/rawlab-mac-velvia.webp)
 
 左侧为中性渲染，右侧为 Velvia 胶片效果；底部集中提供胶片选择及曝光、明暗、色彩、白平衡和锐化调整。
 
@@ -39,11 +41,11 @@ The left pane is the neutral render and the right pane is Velvia. Film selection
 镜头工具提供独立的畸变矫正、横向色差校正、自动/手动匹配和自动裁边，默认关闭校正。配置随逐照片编辑保存，批量自动模式逐张匹配；中性对照不校正。离线数据库、依赖和功能边界见[跨平台说明](../docs/reference/platforms/lens-correction.md)。紫绿去边暂未实现。
 
 
-v0.10.0 构建 19 扩展 HDR 曲线、色彩、细节、效果和外观，增加桌面工作区、系统打开与多文件集合入口，并支持 16 位整数 RGB PNG/TIFF 输入。HDR HEIF 导出取决于系统能力；macOS 14 可将受支持的 ISO/Adobe 增益图照片作为 SDR 打开。功能与限制见 [v0.10.0 发布说明](../docs/releases/v0.10/v0.10.0.md)。
+v0.11.0 构建 20 引入 Processing v3（±5 EV SDR 曝光、局部明暗高光阴影及校验后可回滚升级）、浏览器的已编辑铅笔标记与效果缩略图、Sony RAW `4:3 / 16:9 / 1:1` 全传感器画幅显影、16 位渲染型 DNG 内嵌预览图、移动端 RGB 分通道曲线与镜头暗角开关的跨端保留，以及自动/手动存储清理、损坏存储隔离和编辑/更新可靠性修复。功能与限制见 [v0.11.0 发布说明](../docs/releases/v0.11/v0.11.0.md)。
 
-预编译版本：[GitHub Release v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Mac-0.10.0-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
+预编译版本：[GitHub Release v0.11.0](https://github.com/dancancer/RawLab/releases/tag/v0.11.0)。下载 [Apple Silicon arm64](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Mac-0.11.0-arm64.zip) 或 [Intel x86_64](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Mac-0.11.0-x86_64.zip)，解压后将 `RawLab Mac.app` 放入当前用户可写的位置。最低部署目标为 macOS 14，HDR 编辑需要 macOS 15+。发行包使用固定自签名证书与 Sparkle EdDSA 更新签名，没有 Apple 公证；首次运行可能需要在“隐私与安全性”选择“仍要打开”。新版系统上的构建不等于物理 macOS 14 验收。
 
-Prebuilt apps: [v0.10.0](https://github.com/dancancer/RawLab/releases/tag/v0.10.0), build 19, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.10/v0.10.0.md) and package provenance for actual runtime coverage.
+Prebuilt apps: [v0.11.0](https://github.com/dancancer/RawLab/releases/tag/v0.11.0), build 20, for Apple Silicon and Intel. Both target macOS 14; HDR editing requires macOS 15+. Packages use the fixed self-signed certificate and Sparkle EdDSA without notarization. See the [release notes](../docs/releases/v0.11/v0.11.0.md) and package provenance for actual runtime coverage.
 
 “关于 RawLab”和“检查更新”提供仓库、作者主页及更新设置。默认自动检查更新；自动下载和退出时安装需要用户开启，随后由 Sparkle 校验并替换应用。应用目录必须对当前用户可写；从 0.8.2 升级需要手动安装一次受信任的 0.9.0 或更新版本。
 
@@ -54,6 +56,7 @@ About RawLab and Check for Updates include repository/author links and update se
 Run from the repository root:
 
 ```bash
+python3 scripts/assets/prepare.py --group luts   # build.sh 也会自动校验并准备到主工作区 .cache/shared/assets/
 bash RawLabMac/build.sh
 open "build/RawLab Mac.app"
 ```
@@ -216,14 +219,15 @@ run effects at source resolution on Metal; ordinary previews use reduced input. 
 and display-chroma guided filtering, retaining CPU estimation/calibration and
 OpenCV color/resampling semantics. Auto has CPU fallback; Force does not hide GPU
 failure. Legacy FBDD, RAW decoding and file encoding remain CPU operations.
-新处理版本 2 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
+处理版本 2、3 使用 C5，亮度、色度和粗色斑强度均可调。提高强度会减少噪声，也可能压低弱纹理；
 低强度更适合保留细节。C5 在 CPU 上分块滤波，Auto 可继续使用 Metal 显示渲染；Force 不支持需要执行 C5 的请求。
-旧记录保留版本 1，新编辑采用版本 2；重置调整不自动升级处理版本。
+旧记录保留原版本，新编辑采用版本 3；重置调整不自动升级处理版本。
+版本 3 的基础调节和普通曝光 ±5 EV 见[基础调节契约](../lutools/docs/basic-controls-v3.md)。
 
-Processing version 2 uses tiled CPU C5 with adjustable luma, chroma and coarse strengths.
+Processing versions 2 and 3 use tiled CPU C5 with adjustable luma, chroma and coarse strengths.
 Lower strengths retain more detail; stronger denoising may suppress weak texture. Auto can
 continue Metal display rendering, while Force rejects an active C5 filter request.
-Existing records retain version 1; new edits use version 2.
+Existing records retain their saved version; new edits use version 3.
 
 See the [shared contract](../lutools/docs/color-contract.md#gpu-denoising).
 
@@ -269,6 +273,10 @@ Smoke mode checks Sony ARW and, when present, DJI DNG; it writes native-resoluti
 `presentation.sh` 验证原生图标、正负进度环计算、连续缩放与 Retina 实际像素比例、逐照片参数隔离，以及包含 ARW/ARQ/DNG 的目录筛选。
 
 `presentation.sh` checks native symbols, signed adjustment rings, continuous zoom and Retina actual-pixel scale, per-photo isolation, and directory filtering for ARW/ARQ/DNG.
+
+Agent 配方回归（`agent-recipe-render.sh` 等）经 `RawLabMac/tests/AgentRecipe.swift` 复用生产渲染映射。按整改决策 Q9，该配方生成器定位为测试工具：不编译进应用，界面没有独立的复制配方入口。
+
+The Agent recipe regressions (`agent-recipe-render.sh` and friends) reuse the production render mapping through `RawLabMac/tests/AgentRecipe.swift`. Per remediation decision Q9, this recipe generator is a test tool: it is not compiled into the app, and the UI has no copy-recipe entry.
 
 加速回归由 `ctest --test-dir lutools/build-macos --output-on-failure` 执行，包含真实 Sony/DJI RAW 的 CPU/Metal 一致性、交互/精确/导出隔离，以及直方图和裁切蒙版逐值一致性。`render_benchmark` 是显式运行的性能工具，不对机器速度设置 CI 阈值：
 

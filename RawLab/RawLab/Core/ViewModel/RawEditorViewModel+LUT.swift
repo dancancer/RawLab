@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 struct LUTOption: Identifiable, Hashable {
@@ -53,8 +54,9 @@ extension RawEditorViewModel {
             self.lookImportCoordinator.load { result in
                 self.resultDelivery {
                     switch result {
-                    case .success(let managedLooks):
-                        let custom = self.customLUTs(from: managedLooks)
+                    case .success(let snapshot):
+                        self.unreadableLooks = snapshot.unreadableLooks
+                        let custom = self.customLUTs(from: snapshot.looks)
                         self.availableLUTs = bundled.options + custom.options
                         self.lutMap = bundled.map.merging(custom.map) { _, custom in custom }
                         for id in self.recentLooks.ids where id.hasPrefix("recipe-lut:") {
@@ -121,6 +123,22 @@ extension RawEditorViewModel {
                     self.lutMap[id] = LUTReference(id: id, name: look.record.name, sourceURL: look.url, isCustom: true)
                 case .failure(let error):
                     self.reportError(error, operation: .lookImport, stage: "saveLook", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func removeUnreadableLook(_ entry: LookLibrary.UnreadableLook) {
+        guard !isImportingLooks, !isLoadingLUTs else { return }
+        isImportingLooks = true
+        lookImportCoordinator.removeUnreadable(entry) { [weak self] result in
+            guard let self else { return }
+            self.resultDelivery {
+                self.isImportingLooks = false
+                switch result {
+                case .success(let remaining): self.unreadableLooks = remaining
+                case .failure(let error):
+                    self.reportError(error, operation: .lookImport, stage: "removeUnreadableLook", message: error.localizedDescription)
                 }
             }
         }

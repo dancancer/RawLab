@@ -107,7 +107,7 @@ int main() {
     assert(applyWaveletDenoise(noReport, settings) == ErrorCode::Success);
     assert(std::memcmp(output.pixels.data(), noReport.pixels.data(), output.pixels.size() * sizeof(RGB)) == 0);
     auto forced = image;
-    assert(applyWaveletDenoise(forced, settings, &info, GpuMode::Force, &cache, "noise") == ErrorCode::ProcessingError);
+    assert(applyWaveletDenoise(forced, settings, &info, GpuMode::Force, &cache, "noise") == ErrorCode::Unsupported);
     assert(info.outcome == WaveletDenoiseOutcome::GpuFailure && !info.applied && !info.gpuUsed);
     assert(info.estimate.fitAvailable && info.analysisReused);
     assert(std::memcmp(image.pixels.data(), forced.pixels.data(), image.pixels.size() * sizeof(RGB)) == 0);

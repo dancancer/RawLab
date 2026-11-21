@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import ImageIO
 import UIKit
@@ -10,9 +11,18 @@ extension RawEditorViewModel {
     }
 
     func queueSettingsSave(_ settings: RawSettings) {
+        cancelProcessingMigration()
         if quickPresetState.isPreparing { cancelQuickPreset() }
         guard let source = editorEditSource else { return }
-        retainEditMetadata(currentEditState(settings: settings))
+        let candidate = currentEditState(settings: settings)
+        if let pending = pendingResetMigrationClear {
+            if !pending.queued, pending.source == source, pending.state.hasSameAdjustments(as: candidate) {
+                pendingResetMigrationClear = (pending.source, pending.state, true)
+            } else {
+                pendingResetMigrationClear = nil
+            }
+        }
+        retainEditMetadata(candidate)
         pendingSettings = settings
         cancelQueuedSettingsSave()
         guard adjustmentInteraction == nil else { return }
@@ -30,7 +40,12 @@ extension RawEditorViewModel {
         guard adjustmentInteraction == nil else { return false }
         guard !hasFailedDraftSave else { return false }
         guard let source = editorEditSource, pendingSettings != nil else { return true }
-        return persistEditCandidate(currentEditState(settings: settings), source: source)
+        let candidate = currentEditState(settings: settings)
+        let clearsMigration = pendingResetMigrationClear.map {
+            $0.source == source && $0.state.hasSameAdjustments(as: candidate)
+        } == true
+        if !clearsMigration { pendingResetMigrationClear = nil }
+        return persistEditCandidate(candidate, source: source, clearsProcessingMigration: clearsMigration)
     }
 
     func cancelQueuedSettingsSave() {
@@ -39,22 +54,31 @@ extension RawEditorViewModel {
         settingsSaveRevision = UUID()
     }
 
-    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource) -> Bool {
+    func persistEditCandidate(_ candidate: PhotoEditState, source: EditorEditSource,
+                              clearsProcessingMigration: Bool = false) -> Bool {
         guard editorEditSource == source else { return false }
         let expected: PhotoEditRecord
         let defaults: PhotoEditState?
         do {
             let store = try requireEditPersistence()
             expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            if let quarantined = store.consumeQuarantinedError() {
+                ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+            }
             guard expected.identity == source.identity else { return false }
             loadedEditRecord = expected
             defaults = try expected.state == nil ? PhotoEditState(settings:sourceDefaultSettings) : nil
         } catch { editSaveState = .failed(adjustmentErrorMessage(error)); return false }
         guard let session = adjustmentSession else { return false }
         let outcome = session.commitEdit(expected: expected, state: candidate, displayName: sourceDisplayName,
-            defaultState:defaults,isCurrent:{ self.editorEditSource==source },
+            defaultState:defaults, clearsProcessingMigration: clearsProcessingMigration,
+            isCurrent:{ self.editorEditSource==source },
             validateSource: adjustmentSourceValidator)
         if let saved = outcome.saved {
+            if clearsProcessingMigration {
+                pendingResetMigrationClear = nil
+                processingMigrationReceipt = nil
+            }
             if let state = saved.state { recordSavedLookChange(from: expected.state, to: state) }
             loadedEditRecord = saved
             retainEditMetadata(saved.state ?? candidate)
@@ -81,6 +105,9 @@ extension RawEditorViewModel {
     private func requireEditPersistence() throws -> EditPersistence {
         if editPersistence == nil { editPersistence = try openEditPersistence() }
         guard let store = editPersistence else { throw EditPersistenceError.corruptStore }
+        if let quarantined = store.consumeQuarantinedError() {
+            ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+        }
         if adjustmentSession == nil { adjustmentSession = IOSAdjustmentTransferSession(store: store) }
         return store
     }
@@ -89,10 +116,14 @@ extension RawEditorViewModel {
         guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
         let store = try requireEditPersistence()
         let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        if let quarantined = store.consumeQuarantinedError() {
+            ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+        }
         guard record.identity == source.identity else { throw AdjustmentCommitError.photoChanged }
         let restored = try record.state?.settings ?? sourceDefaultSettings
         cancelQueuedSettingsSave()
         pendingSettings = nil
+        pendingResetMigrationClear = nil
         failedDraftSource = nil
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
@@ -128,6 +159,8 @@ extension RawEditorViewModel {
         guard let sourceIdentity else { return }
         guard let editPersistence else { throw EditPersistenceError.corruptStore }
         try editPersistence.reset(sourceIdentity)
+        pendingResetMigrationClear = nil
+        processingMigrationReceipt = nil
         setEditNotice(.saved)
     }
 
@@ -167,7 +200,13 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
+        let source = (
+            file: sourceFile,
+            kind: sourceKind,
+            hasBuffer: draftBuffer != nil,
+            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            orientation: sourceOrientation
+        )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -178,9 +217,16 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        clearDetailState(releaseRaster: true, keepRequest: true)
+        renderQueue.async { [weak self] in
+            self?.processor.clearHDRSessionCache()
+        }
         let cancellation = ExportCancellation()
-        if settings.isHDREditing && sourceProRAW != nil {
-            hdrExportCancellation = cancellation; isExportingHDR = true
+        if settings.isHDREditing {
+            hdrExportCancellation = cancellation
+            isExportingHDR = true
+            isStoppingHDRExport = false
+            hdrExportProgress = 0
         }
         exportQueue.async {
             sourceFile.withReadAccess { sourceURL in
@@ -191,8 +237,23 @@ extension RawEditorViewModel {
                     if let hdr=settings.hdr,settings.isHDREditing {
                         let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
+                        var lastPercent = -1
+                        let progressLock = NSLock()
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
-                            proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            progress: { [weak self] fraction in
+                                let clamped = min(1.0, max(0.0, fraction))
+                                let bucket = Int((clamped * 100.0).rounded())
+                                progressLock.lock()
+                                let shouldEmit = bucket != lastPercent
+                                if shouldEmit { lastPercent = bucket }
+                                progressLock.unlock()
+                                guard shouldEmit else { return }
+                                self?.resultDelivery {
+                                    guard let self, self.hdrExportCancellation === cancellation else { return }
+                                    self.hdrExportProgress = max(self.hdrExportProgress ?? 0, clamped)
+                                }
+                            },
                             cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
@@ -212,33 +273,45 @@ extension RawEditorViewModel {
                         )
                         data = output
                     } else {
-                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
-                        let outputBuffer = try self.processor.processBuffer(
-                            buffer: sourceBuffer,
-                            settings: settings,
-                            previewLongEdge: nil,
-                            lutURL: lutURL,
-                            exportLongEdge: longEdge
-                        )
-                        let output = try self.processor.makeJPEGData(
-                            from: outputBuffer,
-                            sourceURL: sourceURL,
-                            orientation: source.orientation,
-                            quality: 0.92
-                        )
-                        data = output
+                        guard source.hasBuffer else { throw EditorError.noImageLoaded }
+                        data = try autoreleasepool {
+                            let sourceBuffer = try source.fullBuffer ?? self.processor.loadRasterBuffer(url: sourceURL).buffer
+                            let outputBuffer = try self.processor.processBuffer(
+                                buffer: sourceBuffer,
+                                settings: settings,
+                                previewLongEdge: nil,
+                                lutURL: lutURL,
+                                exportLongEdge: longEdge
+                            )
+                            return try self.processor.makeJPEGData(
+                                from: outputBuffer,
+                                sourceURL: sourceURL,
+                                orientation: source.orientation,
+                                quality: 0.92
+                            )
+                        }
                     }
 
-                    DispatchQueue.main.async {
-                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
+                    self.resultDelivery {
+                        self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(cancellation.isCancelled ? .failure(CancellationError()) : .success(data))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
+                    self.resultDelivery {
+                        self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 }
             }
@@ -252,7 +325,13 @@ extension RawEditorViewModel {
             completion(.failure(BatchExportError.global(L10n.text("所选外观不可用，请重新选择外观。"))))
             return
         }
-        let source = (file: sourceFile, kind: sourceKind, orientation: sourceOrientation)
+        let source = (
+            file: sourceFile,
+            kind: sourceKind,
+            hasBuffer: draftBuffer != nil,
+            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            orientation: sourceOrientation
+        )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
             completion(.failure(EditorError.noImageLoaded))
             return
@@ -263,6 +342,17 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        clearDetailState(releaseRaster: true, keepRequest: true)
+        renderQueue.async { [weak self] in
+            self?.processor.clearHDRSessionCache()
+        }
+        let cancellation = ExportCancellation()
+        if settings.isHDREditing {
+            hdrExportCancellation = cancellation
+            isExportingHDR = true
+            isStoppingHDRExport = false
+            hdrExportProgress = 0
+        }
         let name = sourceFile.withReadAccess { $0.deletingPathExtension().lastPathComponent }
         let base = name.isEmpty ? "RawLab" : name
         let outputURL = FileManager.default.temporaryDirectory
@@ -272,126 +362,57 @@ extension RawEditorViewModel {
                 do {
                     let lutURL = self.lutURL(for: settings)
                     if let hdr=settings.hdr,settings.isHDREditing {
-                        let pair=try self.processor.processHDR(url:sourceURL,settings:hdr,previewLongEdge:nil,exportLongEdge:longEdge)
-                        try pair.exportSDR(to:outputURL,format:SONY2FUJI_OUTPUT_DNG)
+                        var lastPercent = -1
+                        let progressLock = NSLock()
+                        try self.processor.exportHDRDNG(url: sourceURL, settings: hdr, output: outputURL, longEdge: longEdge,
+                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                            progress: { [weak self] fraction in
+                                let clamped = min(1.0, max(0.0, fraction))
+                                let bucket = Int((clamped * 100.0).rounded())
+                                progressLock.lock()
+                                let shouldEmit = bucket != lastPercent
+                                if shouldEmit { lastPercent = bucket }
+                                progressLock.unlock()
+                                guard shouldEmit else { return }
+                                self?.resultDelivery {
+                                    guard let self, self.hdrExportCancellation === cancellation else { return }
+                                    self.hdrExportProgress = max(self.hdrExportProgress ?? 0, clamped)
+                                }
+                            },
+                            cancelled: { cancellation.isCancelled })
+                        if cancellation.isCancelled { throw CancellationError() }
                     } else if sourceKind == .raw {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
                     } else {
-                        let sourceBuffer = try self.processor.loadRasterBuffer(url:sourceURL).buffer
-                        try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
-                                                     outputURL: outputURL, exportLongEdge: longEdge)
+                        guard source.hasBuffer else { throw EditorError.noImageLoaded }
+                        try autoreleasepool {
+                            let sourceBuffer = try source.fullBuffer ?? self.processor.loadRasterBuffer(url: sourceURL).buffer
+                            try self.processor.exportDNG(buffer: sourceBuffer, settings: settings, lutURL: lutURL,
+                                                         outputURL: outputURL, exportLongEdge: longEdge)
+                        }
                     }
                     self.resultDelivery {
                         self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.success(outputURL))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 } catch {
                     try? FileManager.default.removeItem(at: outputURL)
                     self.resultDelivery {
                         self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
-                    }
-                }
-            }
-        }
-    }
-
-    func runBundledSampleSmokeTest(settings: RawSettings) {
-        guard let url = Bundle.main.url(forResource: sampleResourceName, withExtension: sampleResourceExtension) else {
-            statusMessage = "Sample RAW not found in app bundle."
-            return
-        }
-
-        statusMessage = nil
-        isBusy = true
-        sourceRevision = UUID()
-        let lutURL = lutURL(for: settings)
-        let sourceFile = PhotoSourceFile.externallyManaged(url)
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            sourceFile.withReadAccess { url in
-                do {
-                    let rawPreview = try self.buildRawPreviewBase(url: url, geometry: settings.geometry, processing: settings.processing, x3fMode: settings.x3fMode, lens: settings.lensSettings)
-                    let previewResult = try self.processor.processRaw(
-                        url: url,
-                        settings: settings,
-                        previewLongEdge: self.previewMaxDimension,
-                        lutURL: lutURL
-                    )
-                    let previewImage = self.processor.makeUIImage(
-                        from: previewResult.buffer,
-                        orientation: previewResult.orientation ?? rawPreview.orientation
-                    )
-                    let previewHistogram = self.processor.computeRGBHistogram(from: previewResult.buffer)
-
-                    let fullResult = try self.processor.processRaw(
-                        url: url,
-                        settings: settings,
-                        previewLongEdge: nil,
-                        lutURL: lutURL
-                    )
-                    let data = try self.processor.makeJPEGData(
-                        from: fullResult.buffer,
-                        sourceURL: url,
-                        orientation: fullResult.orientation,
-                        quality: 0.92,
-                        sourceIsRaw: true
-                    )
-
-                    DispatchQueue.main.async {
-                        self.sourceFile = sourceFile
-                        self.sourceKind = .raw
-                        self.sourceIsHDR = false
-                        self.rawHDRSource = nil
-                        self.sourceDisplayName = url.lastPathComponent
-                        self.sourceOrientation = previewResult.orientation ?? rawPreview.orientation
-                        self.draftBuffer = rawPreview.buffer
-                        self.draftPreviewBuffer = rawPreview.previewBuffer
-                        self.basePreviewImage = rawPreview.basePreviewImage
-                        self.baseHistogram = rawPreview.baseHistogram
-                        self.basePreviewGeometry = settings.geometry
-                        self.basePreviewProcessing = settings.processing
-                        self.lensInfo = previewResult.lensInfo
-                        self.rawLUTID = settings.lutID
-                        self.rawLUTApplied = settings.lutID != nil && settings.lutStrength > 0
-                        self.previewImage = previewImage
-                        self.nativeImageSize = previewResult.buffer.nativeSize
-                        self.histogram = previewHistogram
-                        self.hasImage = rawPreview.basePreviewImage != nil || previewImage != nil
-                        self.isBusy = false
-                        self.sourceRevision = UUID()
-                        self.recordImportedComparison(settings: settings)
-                        let sizeKB = Double(data.count) / 1024.0
-                        let message = String(format: "Sample decode OK: %.1f KB JPEG", sizeKB)
-                        self.statusMessage = message
-                        self.writeSmokeTestResult("OK: \(message)")
-                    }
-                } catch {
-                    DispatchQueue.main.async {
-                        self.statusMessage = error.localizedDescription
-                        self.isBusy = false
-                        self.previewImage = nil
-                        self.basePreviewImage = nil
-                        self.nativeImageSize = nil
-                        self.draftPreviewBuffer = nil
-                        self.draftBuffer = nil
-                        self.sourceFile = nil
-                        self.sourceKind = nil
-                        self.sourceIsHDR = false
-                        self.rawHDRSource = nil
-                        self.sourceDisplayName = nil
-                        self.sourceOrientation = nil
-                        self.rawLUTID = nil
-                        self.rawLUTApplied = false
-                        self.hasImage = false
-                        self.lensInfo = nil
-                        self.histogram = nil
-                        self.baseHistogram = nil
-                        self.sourceRevision = UUID()
-                        self.writeSmokeTestResult("FAIL: \(error.localizedDescription)")
+                        if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
                     }
                 }
             }

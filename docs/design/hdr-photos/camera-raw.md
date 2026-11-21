@@ -54,9 +54,10 @@ SDR 底图对线性亮度应用现有中性 sigmoid，再围绕映射后的亮�
 
 - 共享核心通过 `sony2fuji_hdr_probe_camera_raw` 和 `sony2fuji_hdr_decode_camera_raw` 显式识别
   和显影相机 RAW。探测只读头，返回应用方向与相机内裁剪后的画布。解码时再次验证源，返回
-  已定向双呈现及源文件 SHA-256。调用方用现有 HDR render、export 和 release 处理结果。
+  已定向双呈现；以解码前后的文件 stamp 复核来源，`source_sha256` 保持全零，不计算整文件摘要。
+  调用方用现有 HDR render、export 和 release 处理结果。
   预览必须提供长边。默认采用 LibRaw 半尺寸处理，仍需解包全尺寸传感器数据。仅 FINAL 测量原片
-  headroom。首个切片的 JPEG 导出使用空 `metadata_source_path`，保留增益图元数据；
+  headroom。相机 RAW 导出使用空 `metadata_source_path`，保留增益图元数据；
   从 RAW 复制拍摄 EXIF 属于独立的元数据适配。
 - `sony2fuji_hdr_decode_camera_raw_with_development` 接受独立的版本 1 显影配置。可选相机白平衡、
   元数据／传感器曝光基准、FBDD 和带标定的镜头畸变／横向色差校正。启用 FBDD 的预览先完整插值再缩图。

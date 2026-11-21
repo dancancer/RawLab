@@ -37,6 +37,13 @@ int main() {
             auto old=doc;old["schema_version"]=version;old.erase("processing");
             require(!parseEditRecipe(old.dump(),recipe,error),"old schemas reject custom curve");
         }
+        auto channels=doc;
+        channels["edits"]["tone"]["curve"]["channels"]={{"red",doc["edits"]["tone"]["curve"]}};
+        require(parseEditRecipe(channels.dump(),recipe,error),"independent channel recipe: "+error);
+        require(recipe.channelCurves[0].count==4 && recipe.channelCurves[1].mode==SONY2FUJI_CURVE_LEGACY,"channel defaults");
+        require(Json::parse(serializeEditRecipe(recipe))["edits"]["tone"]["curve"]["channels"]["red"]==doc["edits"]["tone"]["curve"],"channel recipe roundtrip");
+        channels["edits"]["tone"]["curve"]["channels"]["red"]["channels"]=Json::object();
+        require(!parseEditRecipe(channels.dump(),recipe,error),"recursive channel rejected");
         doc["edits"]["tone"].erase("curve");
         require(parseEditRecipe(doc.dump(),recipe,error),"absent curve defaults legacy");
         require(recipe.toneCurve.mode==SONY2FUJI_CURVE_LEGACY,"old scalar mode retained");

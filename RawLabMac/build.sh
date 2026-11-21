@@ -3,6 +3,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 source "$ROOT/RawLabMac/build-env.sh"
+# 对齐 RawLabWindows/build.ps1：在任何下载或编译之前解析并向 CMake 透传解释器绝对路径，
+# 避免 CMake 自动抓到缺 jsonschema 的 Homebrew Python，导致 edit_recipe_schema 等
+# Python 驱动 ctest 静默降级为 Skipped；相对路径先转为绝对路径，避免 FindPython3 按
+# build 目录解析失败后静默忽略 -DPython3_EXECUTABLE。默认取 PATH 上的 python3（与 CI
+# 安装 scripts/ci/requirements.txt 并跑 ctest 的解释器一致），可用 PYTHON 覆盖。
+PYTHON_EXECUTABLE="$(command -v "${PYTHON:-python3}" || true)"
+if [ -n "$PYTHON_EXECUTABLE" ]; then
+    case "$PYTHON_EXECUTABLE" in
+        /*) ;;
+        *) PYTHON_EXECUTABLE="$(cd "$(dirname "$PYTHON_EXECUTABLE")" && pwd -P)/$(basename "$PYTHON_EXECUTABLE")" ;;
+    esac
+    test -x "$PYTHON_EXECUTABLE" || PYTHON_EXECUTABLE=""
+fi
+test -n "$PYTHON_EXECUTABLE" || { echo "Python interpreter not found: ${PYTHON:-python3}" >&2; exit 2; }
 source "$ROOT/RawLabMac/release-config.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 APP="${RAWLAB_APP_PATH:-$ROOT/build/RawLab Mac.app}"
@@ -55,8 +69,12 @@ if [ "${RAWLAB_RUM:-1}" = 1 ] || [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 CHROMA_PREFIX="$RAWLAB_DEPENDENCY_PREFIX"
 LENS_PREFIX="$RAWLAB_LENS_PREFIX"
+LIBRAW_PYTHON="$(command -v python3 || true)"
+if [ -z "$LIBRAW_PYTHON" ]; then LIBRAW_PYTHON="$PYTHON_EXECUTABLE"; fi
+libraw_env="$("$LIBRAW_PYTHON" "$ROOT/lutools/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
 if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
-    if ! pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
+    if ! pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
     if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
@@ -65,10 +83,10 @@ if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-tiff-dependency.sh"
 fi
-RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
-pkg-config --exists 'libraw >= 0.22.2' 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
+RAWLAB_ARCH="$ARCH" MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" PYTHON="$PYTHON_EXECUTABLE" bash "$ROOT/RawLabMac/build-lens-dependency.sh"
+pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' 'opencv4 = 4.12.0' \
     'wavelib >= 1.0.0' 'lensfun >= 0.3.4' 'libtiff-4 >= 4.7.1'
-cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "${AI_CMAKE_FLAGS[@]}"
+cmake -S "$ROOT/lutools" -B "$BUILD" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" -DSONY2FUJI_ENABLE_GPU=ON -DSONY2FUJI_ENABLE_CHROMA_DENOISE=ON -DSONY2FUJI_ENABLE_OPENMP=OFF -DSONY2FUJI_ENABLE_LENSFUN=ON -DSONY2FUJI_ENABLE_DNGSDK=ON -DBUILD_SHARED_LIB=OFF -DBUILD_TESTING=ON "-DPython3_EXECUTABLE=$PYTHON_EXECUTABLE" "${AI_CMAKE_FLAGS[@]}"
 cmake --build "$BUILD" -j "${JOBS:-$(sysctl -n hw.ncpu)}"
 X3F_LINK_FLAGS=()
 if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
@@ -76,6 +94,10 @@ if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
     X3F_LINK_FLAGS=("$BUILD/x3f-rust/$X3F_TARGET/release/librawlab_x3f.a" -liconv)
 fi
 "$BUILD/dng_jxl_tests"
+if [ "${RAWLAB_RELEASE:-0}" != 1 ]; then
+    test -n "$APP" && test "$APP" != "/"
+    rm -rf "$APP"
+fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/LUTs" "$APP/Contents/Resources/MasterRecipes" "$APP/Contents/Resources/MasterRecipeIcons" "$APP/Contents/Resources/FilmIcons" "$APP/Contents/Frameworks"
 mkdir -p "$APP/Contents/Resources/Licenses"
 if [ "${#X3F_LINK_FLAGS[@]}" -gt 0 ]; then
@@ -131,27 +153,48 @@ mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"
 cp "$CHROMA_PREFIX/share/licenses/rawlab-dng-sdk/"*.txt "$APP/Contents/Resources/Licenses/dng-sdk/"
 cp -R "$BUILD/licenses/libultrahdr" "$APP/Contents/Resources/Licenses/"
 cp -R "$BUILD/licenses/libjpeg-turbo" "$APP/Contents/Resources/Licenses/"
-SDK="${SDKROOT:-$(xcrun --show-sdk-path)}"
-# The CLT 27 SDK exposes SwiftUI macros without shipping their compiler plugin.
-if [ -z "${SDKROOT:-}" ] && [ -d /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ]; then
-    SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
+cp -R "$BUILD/licenses/libspng" "$APP/Contents/Resources/Licenses/"
+SDK="$(rawlab_mac_sdk_path)"
+RAW_LIB="$(pkg-config --variable=libdir libraw_r)"
+SWIFTPM_FLAGS=(--package-path "$ROOT" --scratch-path "$BUILD/swiftpm" -c release --arch "$ARCH"
+    -Xswiftc -sdk -Xswiftc "$SDK" -Xswiftc -target -Xswiftc "$ARCH-apple-macosx$DEPLOYMENT_TARGET")
+if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+    SWIFTPM_FLAGS+=(-Xswiftc -DRAWLAB_RUM_LOCAL)
 fi
-RAW_LIB="$(pkg-config --variable=libdir libraw)"
+SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}"
+SWIFTPM_BIN="$(SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --show-bin-path)"
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --target RawLabKit
+fi
+if [ ! -e "$SWIFTPM_BIN/RawLabKit.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/RawLabKit.swiftmodule" ]; then
+    echo "error: RawLabKit.swiftmodule not found under $SWIFTPM_BIN" >&2
+    exit 1
+fi
+test -f "$SWIFTPM_BIN/libRawLabKit.a" || {
+    echo "error: libRawLabKit.a not found under $SWIFTPM_BIN" >&2
+    exit 1
+}
+SWIFTPM_INCLUDE_FLAGS=(-I "$SWIFTPM_BIN")
+if [ -d "$SWIFTPM_BIN/Modules" ]; then
+    SWIFTPM_INCLUDE_FLAGS+=(-I "$SWIFTPM_BIN/Modules")
+fi
 APP_SOURCES=()
 while IFS= read -r -d '' source; do APP_SOURCES+=("$source"); done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
     -sdk "$SDK" -target "$ARCH-apple-macosx$DEPLOYMENT_TARGET" \
+    "${SWIFTPM_INCLUDE_FLAGS[@]}" \
     "${RUM_FLAGS[@]}" \
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
+    "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift \
+    "$SWIFTPM_BIN/libRawLabKit.a" "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
     "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
-    $(pkg-config --libs libraw rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
+    $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/RawLabMac"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"
 if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
-    python3 "$ROOT/scripts/release/macos_config.py" configure "$APP/Contents/Info.plist" "$ARCH"
+    "$PYTHON_EXECUTABLE" "$ROOT/scripts/release/macos_config.py" configure "$APP/Contents/Info.plist" "$ARCH"
 fi
 ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
 cp "$(dirname "$(dirname "$(dirname "$SPARKLE_FRAMEWORK")")")/LICENSE" "$APP/Contents/Resources/Licenses/Sparkle-LICENSE.txt"
@@ -165,6 +208,7 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 bash "$ROOT/RawLabMac/build-icon.sh" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $DEPLOYMENT_TARGET" "$APP/Contents/Info.plist"
+"$PYTHON_EXECUTABLE" "$ROOT/scripts/assets/prepare.py" --group luts
 for lut in "$ROOT"/lutools/flog-2-new/*.cube; do
     case "$lut" in *FLog2-709*|*to_WDR*) continue ;; esac
     cp "$lut" "$APP/Contents/Resources/LUTs/"

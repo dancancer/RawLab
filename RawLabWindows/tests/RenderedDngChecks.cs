@@ -26,9 +26,13 @@ internal static class RenderedDngChecks
         return SHA256.HashData(stream);
     }
 
+    internal static bool IsExpectedForceGpuRejectionMessage(string message) =>
+        message == Native.FormatErrorMessage(2, null, Native.UnsupportedReason.ForceGpu) ||
+        message == StatusMessage(4);
+
     private static string StatusMessage(int status)
     {
-        try { Native.Check(status); }
+        try { Native.CheckWithoutSession(status); }
         catch (InvalidOperationException error) { return error.Message; }
         throw new ArgumentOutOfRangeException(nameof(status));
     }
@@ -154,7 +158,7 @@ internal static class RenderedDngChecks
             auto.SetGpuMode(2);
             var rejected = false; var forced = Path.Combine(output, "force.dng");
             try { auto.Render(source, settings, look, 0, output: forced, longEdge: 128); }
-            catch (InvalidOperationException error) when (error.Message == StatusMessage(2) || error.Message == StatusMessage(4))
+            catch (InvalidOperationException error) when (IsExpectedForceGpuRejectionMessage(error.Message))
             { rejected = true; Console.WriteLine("FORCE rejection=" + error.Message); }
             Check(rejected && !File.Exists(forced), "Force cannot publish CPU C5 as GPU output");
         }
@@ -217,6 +221,6 @@ internal static class RenderedDngChecks
             Console.WriteLine("PASS Windows rendered DNG runtime regression");
             Console.WriteLine("NOT REACHED MainWindow SaveFileDialog and Explorer desktop integration");
         }
-        finally { batch.Close(); app.Shutdown(); }
+        finally { batch.Close(); }
     }
 }

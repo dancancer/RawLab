@@ -1,5 +1,6 @@
 #include "sony2fuji/gpu/lut_gpu.h"
 
+#include "../core/parallel_pixels.h"
 #include "gpu/lut_gpu_internal.h"
 #include "sony2fuji/lut_applicator.h"
 #include <algorithm>
@@ -37,37 +38,47 @@ GpuConfig defaultGpuConfig() {
 }
 
 #if defined(SONY2FUJI_ENABLE_METAL)
-bool applyLutMetal(const LUT3D& lut, ImageData& image);
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels);
 #endif
 
 #if defined(SONY2FUJI_ENABLE_GLES)
-bool applyLutGles(const LUT3D& lut, ImageData& image);
+bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels);
+#endif
+
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
+namespace {
+ErrorCode tryGpuStatus(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+#if defined(SONY2FUJI_ENABLE_METAL)
+    return applyLutMetal(lut, image, completedPixels)
+        ? ErrorCode::Success
+        : ErrorCode::ProcessingError;
+#elif defined(SONY2FUJI_ENABLE_GLES)
+    return applyLutGlesStatus(lut, image, completedPixels);
+#else
+    (void)lut;
+    (void)image;
+    (void)completedPixels;
+    return ErrorCode::Unsupported;
+#endif
+}
+}
 #endif
 
 namespace {
-bool tryMetal(const LUT3D& lut, ImageData& image) {
-#if defined(SONY2FUJI_ENABLE_METAL)
-    return applyLutMetal(lut, image);
-#else
-    (void)lut;
-    (void)image;
-    return false;
-#endif
-}
-
-bool tryGles(const LUT3D& lut, ImageData& image) {
-#if defined(SONY2FUJI_ENABLE_GLES)
-    return applyLutGles(lut, image);
-#else
-    (void)lut;
-    (void)image;
-    return false;
-#endif
-}
-
-ErrorCode applyLutCpu(const std::shared_ptr<LUT3D>& lut, ImageData& image) {
+ErrorCode applyLutCpu(const std::shared_ptr<LUT3D>& lut, ImageData& image, size_t begin = 0) {
     LUTApplicator applicator(lut);
-    return applicator.applyToImage(image);
+    if (begin == 0) {
+        return applicator.applyToImage(image);
+    }
+    if (begin >= image.pixels.size()) {
+        return ErrorCode::Success;
+    }
+    parallelPixelRanges(image.pixels.size() - begin, [&](size_t first, size_t last) {
+        for (size_t i = begin + first; i < begin + last; ++i) {
+            image.pixels[i] = applicator.apply(image.pixels[i]);
+        }
+    });
+    return ErrorCode::Success;
 }
 
 }
@@ -85,26 +96,61 @@ ErrorCode applyLUTWithConfig(
         return ErrorCode::ProcessingError;
     }
     if (lut->requiresCPU()) {
-        if (config.mode == GpuMode::Force) return ErrorCode::ProcessingError;
+        if (config.mode == GpuMode::Force) return ErrorCode::Unsupported;
         return applyLutCpu(lut,image);
     }
 
     if (config.mode != GpuMode::Off) {
-        ImageData staged = image;
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
         const auto low = lut->domainMin();
         const auto high = lut->domainMax();
-        for (auto& p : staged.pixels) {
-            p.r = std::clamp((p.r-low.r)/(high.r-low.r), 0.0f, 1.0f);
-            p.g = std::clamp((p.g-low.g)/(high.g-low.g), 0.0f, 1.0f);
-            p.b = std::clamp((p.b-low.b)/(high.b-low.b), 0.0f, 1.0f);
+        const bool unitDomain = low.r == 0.0f && low.g == 0.0f && low.b == 0.0f &&
+            high.r == 1.0f && high.g == 1.0f && high.b == 1.0f;
+        // 单位域输入原样交给后端：着色器自带 clamp(0,1)（与旧暂存路径的同值钳制逐位一致），
+        // 失败回退时 CPU 第一步也做同值钳制；提交任何瓦片之前调用方像素保持原样。
+        ImageData staged;
+        ImageData* working = &image;
+        if (!unitDomain) {
+            // 自定义域归一化有损，CPU 回退必须看到原始像素，保持旧行为。
+            staged = image;
+            parallelPixelRanges(staged.pixels.size(), [&](size_t first, size_t last) {
+                for (size_t i = first; i < last; ++i) {
+                    auto& p = staged.pixels[i];
+                    p.r = std::clamp((p.r - low.r) / (high.r - low.r), 0.0f, 1.0f);
+                    p.g = std::clamp((p.g - low.g) / (high.g - low.g), 0.0f, 1.0f);
+                    p.b = std::clamp((p.b - low.b) / (high.b - low.b), 0.0f, 1.0f);
+                }
+            });
+            working = &staged;
         }
-        if (tryMetal(*lut, staged) || tryGles(*lut, staged)) {
-            image = std::move(staged);
+        size_t completedPixels = 0;
+        const auto gpuStatus = tryGpuStatus(
+            *lut,
+            *working,
+#if defined(SONY2FUJI_ENABLE_METAL)
+            &completedPixels
+#else
+            unitDomain ? &completedPixels : nullptr
+#endif
+        );
+        if (gpuStatus == ErrorCode::Success) {
+            if (working != &image) image = std::move(staged);
             return ErrorCode::Success;
         }
         if (config.mode == GpuMode::Force) {
-            return ErrorCode::ProcessingError;
+            return gpuStatus;
         }
+        // Auto：单位域下失败点之前已有整块瓦片提交进 image（后端仅在瓦片完整成功后回写），
+        // 回退只补未提交的尾部 [completedPixels, end)，避免对已提交像素二次套 LUT；
+        // 自定义域的暂存在失败时整体丢弃，image 未动，照旧全量 CPU。
+        if (unitDomain) {
+            return applyLutCpu(lut, image, completedPixels);
+        }
+#else
+        if (config.mode == GpuMode::Force) {
+            return ErrorCode::Unsupported;
+        }
+#endif
     }
 
     return applyLutCpu(lut, image);

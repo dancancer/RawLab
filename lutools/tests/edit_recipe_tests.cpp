@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/edit_recipe.h"
 #include <iostream>
 #include <limits>
@@ -9,22 +10,19 @@
 namespace {
 
 using sony2fuji::EditRecipe;
-int failures = 0;
-int checks = 0;
-
-void check(bool condition, const std::string& message) {
-    ++checks;
-    if (!condition) {
-        ++failures;
-        std::cerr << "FAIL: " << message << '\n';
-    }
-}
-
+using rawlab::test::check;
 std::string document(const std::string& exposure = R"({"mode":"scene"})",
                      const std::string& edits = "", const std::string& output = "",
                      const std::string& format = "jpeg") {
     return R"({"schema_version":1,"input":{"path":"in.ARW"},"edits":{"exposure":)" +
         exposure + edits + R"(},"output":{"path":"out.jpg","format":")" + format + '"' + output + "}}";
+}
+
+std::string hdrDocument(const std::string& cameraDevelopment) {
+    return R"({"schema_version":14,"processing":{"family":"rawlab_hdr","version":7,"quality":"standard"},)"
+        R"("input":{"path":"photo.ARW","type":"raw","camera_development":{)" + cameraDevelopment + R"(}},)"
+        R"("edits":{"exposure":{"ev":0.5},"white_balance":{"mode":"relative"}},)"
+        R"("output":{"path":"out.jpg","format":"hdr_jpeg","base_color":"srgb"}})";
 }
 
 std::string replaceOnce(std::string value, const std::string& from, const std::string& to) {
@@ -234,9 +232,34 @@ void completeEdits() {
     for (int version = 1; version <= 3; ++version)
         reject(replaceOnce(v4(R"(,"tone":{})"), "\"schema_version\":4", "\"schema_version\":" + std::to_string(version)),
                "old versions reject new controls", "edits.tone");
+    // profile_id 与 HDR 的 lens_profile 使用同一套约束：长度上限与控制字符。
+    // '\n' 是目录 id 的合成分隔符（maker/model/mount/crop factor），必须放行；其余控制字符拒绝。
+    reject(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1025, 'a') + R"("})"),
+           "overlong lens profile id", "edits.lens_correction.profile_id");
+    reject(v4(R"(,"lens_correction":{"profile_id":"a\u0001b"})"),
+           "control character in lens profile id", "edits.lens_correction.profile_id");
+    reject(v4(R"(,"lens_correction":{"profile_id":"a\rb"})"),
+           "carriage return in lens profile id", "edits.lens_correction.profile_id");
+    parse(v4(R"(,"lens_correction":{"profile_id":")" + std::string(1024, 'a') + R"("})"));
+    // 合成目录 id 必须能通过解析并往返，且解码值逐字保留分隔符（fixture lenses.xml 中匹配镜头的真实 id 形态）。
+    const auto composite = parse(v4(R"(,"lens_correction":{"profile_id":"RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000"})"));
+    check(composite.lensProfileId == "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000",
+          "composite catalog id parses with its newline separators intact");
+    check(sameRecipe(parse(sony2fuji::serializeEditRecipe(composite)), composite), "composite catalog id round trips");
     parse(v4(R"(,"tone":{"contrast":0,"saturation":2,"highlights":-1,"shadows":1,"s_curve":-1},"detail":{"sharpening":2},"hsl":{"hue":[-100,100,0,0,0,0,0,0]},"look":{"path":null,"strength":2})"));
 }
 
+
+// HDR lens_profile 与 SDR profile_id 共用 validProfileId：'\n' 是目录 id 的分隔符必须放行，其余控制字符照旧拒绝。
+void hdrLensProfileBounds() {
+    const auto parsed = parse(hdrDocument(R"("lens_distortion":true,"lens_profile":"RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000")"));
+    check(parsed.hdr && parsed.hdr->lensProfile == "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000",
+          "HDR lens_profile accepts newline-separated catalog ids");
+    reject(hdrDocument(R"("lens_distortion":true,"lens_profile":"a\rb")"),
+           "HDR carriage return lens profile", "lens_profile");
+    reject(hdrDocument(R"("lens_distortion":true,"lens_profile":"a\u0001b")"),
+           "HDR control character lens profile", "lens_profile");
+}
 
 void invalidFields() {
     const auto minimal = document();
@@ -370,41 +393,36 @@ void atmosphereCompatibility() {
 
 } // namespace
 
-int main() {
-    try {
-        {
-            sony2fuji::EditRecipe x3f;
-            x3f.inputPath = "photo.X3F"; x3f.outputPath = "photo.png";
-            x3f.schemaVersion = 7; x3f.x3fMode = SONY2FUJI_X3F_NORMAL;
-            const auto serialized = sony2fuji::serializeEditRecipe(x3f);
-            sony2fuji::EditRecipe restored; std::string error;
-            check(sony2fuji::parseEditRecipe(serialized, restored, error) && restored.x3fMode == SONY2FUJI_X3F_NORMAL,
-                "v7 preserves normal X3F identity");
-            check(!sony2fuji::parseEditRecipe(replaceOnce(serialized,"normal-v1","future"), restored, error),
-                "unknown X3F mode rejected");
-            check(x3f.toRequest().input_type == SONY2FUJI_INPUT_RAW, "v7 maps to the RAW request rather than HDR");
-            x3f.schemaVersion = 5;
-            bool rejected = false;
-            try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
-            check(rejected,"old schemas cannot silently discard normal X3F identity");
-        }
-        defaultsAndExposure();
-        whiteBalanceAndLook();
-        outputAndRoundTrip();
-        legacyRequestParity();
-        completeEdits();
-        invalidFields();
-        unknownAndDuplicateKeys();
-        malformedAndUnicode();
-        atmosphereCompatibility();
-    } catch (const std::exception& error) {
-        std::cerr << "FAIL: " << error.what() << '\n';
-        return 1;
+TEST_MAIN(
+    {
+        sony2fuji::EditRecipe x3f;
+        x3f.inputPath = "photo.X3F"; x3f.outputPath = "photo.png";
+        x3f.schemaVersion = 7; x3f.x3fMode = SONY2FUJI_X3F_NORMAL;
+        const auto serialized = sony2fuji::serializeEditRecipe(x3f);
+        sony2fuji::EditRecipe restored; std::string error;
+        RAWLAB_CHECK(sony2fuji::parseEditRecipe(serialized, restored, error) && restored.x3fMode == SONY2FUJI_X3F_NORMAL,
+            "v7 preserves normal X3F identity");
+        RAWLAB_CHECK(!sony2fuji::parseEditRecipe(replaceOnce(serialized,"normal-v1","future"), restored, error),
+            "unknown X3F mode rejected");
+        RAWLAB_CHECK(x3f.toRequest().input_type == SONY2FUJI_INPUT_RAW, "v7 maps to the RAW request rather than HDR");
+        x3f.schemaVersion = 5;
+        bool rejected = false;
+        try { sony2fuji::serializeEditRecipe(x3f); } catch (const std::invalid_argument&) { rejected = true; }
+        RAWLAB_CHECK(rejected,"old schemas cannot silently discard normal X3F identity");
     }
-    if (failures) {
-        std::cerr << failures << " of " << checks << " checks failed\n";
-        return 1;
+    defaultsAndExposure();
+    whiteBalanceAndLook();
+    outputAndRoundTrip();
+    legacyRequestParity();
+    completeEdits();
+    hdrLensProfileBounds();
+    invalidFields();
+    unknownAndDuplicateKeys();
+    malformedAndUnicode();
+    atmosphereCompatibility();
+    if (rawlab::test::failureCount() != 0) {
+        std::cerr << rawlab::test::failureCount() << " of " << rawlab::test::checkCount() << " rawlab::test::checkCount() failed\n";
+    } else {
+        std::cout << rawlab::test::checkCount() << " edit recipe parsing, normalization and legacy request mapping rawlab::test::checkCount() passed\n";
     }
-    std::cout << checks << " edit recipe parsing, normalization and legacy request mapping checks passed\n";
-    return 0;
-}
+)

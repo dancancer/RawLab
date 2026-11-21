@@ -3,6 +3,7 @@ import argparse
 import errno
 import itertools
 import json
+import os
 import pathlib
 import platform
 import struct
@@ -102,7 +103,7 @@ class AgentCommands(unittest.TestCase):
         declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15] if hdr else []),
             "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
@@ -117,10 +118,11 @@ class AgentCommands(unittest.TestCase):
                 if hdr:
                     capabilities = result["result"]["hdr"]
                     self.assertEqual(capabilities["source_recipe_version"], 14)
+                    self.assertEqual(capabilities["channel_curve_recipe_version"], 15)
                     self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
                     self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
-                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7])
+                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
                     self.assertEqual(capabilities["tone_adjustments"], ["black_point", "white_point", "s_curve", "curve"])
                     self.assertEqual(capabilities["color_recipe_version"], 9)
@@ -147,7 +149,7 @@ class AgentCommands(unittest.TestCase):
                 })
                 self.assertEqual(result["result"]["tone_curve"], {
                     "version": 1, "recipe_min_version": 5, "modes": ["legacy", "custom"],
-                    "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
+                    "channels": ["red", "green", "blue"], "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
                 })
                 self.assertEqual(result["result"]["atmosphere"], {
                     "version": 1, "recipe_min_version": 5, "range": [-1, 1],
@@ -373,7 +375,7 @@ class AgentCommands(unittest.TestCase):
             raise
 
     def use_raw_fixture(self):
-        if RAW is None or not RAW.is_file():
+        if RAW is None:
             self.skipTest("real RAW fixture not provided")
         # A symlink exercises recipe-relative input without copying or modifying RAWs.
         self.create_link(self.root / "photo.DNG", RAW, "symlink")
@@ -403,8 +405,8 @@ class AgentCommands(unittest.TestCase):
         self.document["output"]["path"] = target.name
         self.document["output"]["format"] = "png"
         self.write_recipe()
-        result = self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export", "processing_error")
-        self.assertEqual(result["error"]["status"], 4)
+        result = self.envelope(self.run_cli("--recipe", self.recipe, "--json"), "export", "output_io_error")
+        self.assertEqual(result["error"]["status"], 6)
         self.assertTrue(target.is_dir())
         self.assertEqual(list(target.iterdir()), [])
 
@@ -447,8 +449,29 @@ class AgentCommands(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=pathlib.Path, required=True)
-    parser.add_argument("--raw", type=pathlib.Path)
+    parser.add_argument("--raw", type=str)
+    parser.add_argument("--default-raw", type=str)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    RAW = arguments.raw.resolve() if arguments.raw else None
-    unittest.main(argv=[__file__, *remaining])
+    if arguments.raw:
+        if not pathlib.Path(arguments.raw).is_file():
+            print(f"FAIL agent_commands: --raw does not exist: {arguments.raw}", file=sys.stderr)
+            sys.exit(1)
+        RAW = pathlib.Path(arguments.raw).resolve()
+    else:
+        env_raw = os.environ.get("RAWLAB_TEST_RAW", "")
+        if env_raw and not pathlib.Path(env_raw).is_file():
+            print(f"FAIL agent_commands: RAWLAB_TEST_RAW does not exist: {env_raw}", file=sys.stderr)
+            sys.exit(1)
+        if arguments.default_raw and pathlib.Path(arguments.default_raw).is_file():
+            RAW = pathlib.Path(arguments.default_raw).resolve()
+        elif env_raw:
+            RAW = pathlib.Path(env_raw).resolve()
+        else:
+            RAW = None
+    program = unittest.main(argv=[__file__, *remaining], exit=False)
+    if not program.result.wasSuccessful():
+        sys.exit(1)
+    if RAW is None:
+        print("SKIP agent_commands: default RAW sample not present and RAWLAB_TEST_RAW not set")
+        sys.exit(77)

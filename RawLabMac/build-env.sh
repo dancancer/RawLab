@@ -1,18 +1,16 @@
 #!/bin/bash
 # Isolate dependency binaries by minimum OS and architecture; share verified archives only.
-ARCH="${RAWLAB_ARCH:-$(uname -m)}"
-case "$ARCH" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture: $ARCH" >&2; return 2 ;; esac
-MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
-if [[ ! "$MACOSX_DEPLOYMENT_TARGET" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-    echo "Invalid macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" >&2
-    return 2
-fi
+_RAWLAB_BUILD_ENV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$_RAWLAB_BUILD_ENV_ROOT/scripts/ci/apple-sdk-env.sh" || return $?
 RAWLAB_DEPS_BASE="$ROOT/build/macos-deps/$MACOSX_DEPLOYMENT_TARGET"
 RAWLAB_DEPENDENCY_PREFIX="${RAWLAB_DEPENDENCY_PREFIX:-$RAWLAB_DEPS_BASE/$ARCH/install}"
 RAWLAB_LENS_BASE="$ROOT/build/lensfun/$MACOSX_DEPLOYMENT_TARGET"
 RAWLAB_LENS_PREFIX="${RAWLAB_LENS_PREFIX:-$RAWLAB_LENS_BASE/$ARCH/install}"
 if [ -z "${RAWLAB_SOURCE_CACHE:-}" ]; then
-    COMMON_GIT_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    COMMON_GIT_DIR=""
+    if [ -e "$ROOT/.git" ]; then
+        COMMON_GIT_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    fi
     SHARED_ROOT="$ROOT"
     if [ -n "$COMMON_GIT_DIR" ]; then SHARED_ROOT="$(dirname "$COMMON_GIT_DIR")"; fi
     RAWLAB_SOURCE_CACHE="$SHARED_ROOT/.cache/shared/macos-sources"
@@ -26,7 +24,9 @@ rawlab_libraw_patch_fingerprint() {
     (
         cd "$ROOT"
         shasum -a 256 RawLabMac/build-env.sh RawLabMac/build-dependencies.sh \
-            lutools/cmake/libraw/CMakeLists.txt lutools/cmake/patch-libraw.cmake \
+            lutools/cmake/libraw/CMakeLists.txt lutools/cmake/libraw/libraw.cmake \
+            lutools/cmake/libraw/manifest.json lutools/cmake/libraw/manifest.py \
+            lutools/cmake/patch-libraw.cmake \
             lutools/cmake/libraw-*.cmake \
             lutools/third_party/rawspeed-camera-calibration.inc \
             lutools/third_party/libraw/* \

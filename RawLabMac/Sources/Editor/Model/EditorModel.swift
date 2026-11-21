@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -51,8 +52,8 @@ final class EditorModel: ObservableObject {
         let source: URL
         let identity: OriginalFileIdentity
         let revision: UUID
-        let original: PhotoEditState
-        let candidate: PhotoEditState
+        let original: MacPhotoEditState
+        let candidate: MacPhotoEditState
         let selectedFilmID: String
         let draft: MacGeometryDraft?
     }
@@ -177,6 +178,10 @@ final class EditorModel: ObservableObject {
     var hslAcceptedSettings: Adjustments?
     var hslSourceRevision: UInt64 = 1
     @Published var sourceRevision = UUID() { didSet {
+        cancelProcessingMigration()
+        processingMigrationReceipt = nil
+        pendingAllResetRevision = nil
+        pendingMigrationClearToken = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -193,6 +198,7 @@ final class EditorModel: ObservableObject {
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
     var editRevision = UUID() { didSet {
+        cancelProcessingMigration()
         exactPreviewCache.useScope(nil)
         if quickPresetState.isPreparing { cancelQuickPreset() }
         if collectionExportPreparing { cancelCollectionExportPreparation() }
@@ -227,6 +233,7 @@ final class EditorModel: ObservableObject {
             !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
     }
+    @Published var unreadableLooks: [LookLibrary.UnreadableLook] = []
     @Published var lookLibraryBusy = false
     @Published var previewOutdated = false
     @Published var error: String?
@@ -248,6 +255,8 @@ final class EditorModel: ObservableObject {
         }
     }
     @Published var saveStatusKey = ""
+    // Q3/Q4：粘贴面板内嵌的一次性提示（按实际应用结果过滤），不随状态条 3 秒超时消失。
+    @Published var adjustmentPasteNotices: [AdjustmentTransferNotice] = []
     var pendingSDRFallbackNotice = false
     var sourceUsesSDRFallback = false
     var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
@@ -277,18 +286,36 @@ final class EditorModel: ObservableObject {
     var acceptedOriginalSource: MacReferenceSource?
     var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var geometryReferenceCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
-    var editStore: EditPersistence? {
+    var editStore: MacEditPersistence? {
         didSet {
             if editStore !== oldValue {
                 adjustmentSession = editStore.map(AdjustmentTransferSession.init)
                 committedEdit = nil
+                unsettledAsyncCommitTokens.removeAll()
             }
         }
     }
     var adjustmentSession: AdjustmentTransferSession?
-    var committedEdit: PhotoEditRecord?
-    var interactionEntry: PhotoEditState?
+    var committedEdit: MacPhotoEditRecord?
+    var unsettledAsyncCommitTokens: [UUID] = []
+    var hasPendingEditCommits: Bool {
+        editStore?.hasPendingCommits == true || adjustmentSession?.hasPendingCommits == true
+    }
+    private(set) var lookInvalidationDiagnostics: [String] = []
+    func recordLookInvalidationDiagnostics(_ messages: [String]) {
+        guard !messages.isEmpty else { return }
+        lookInvalidationDiagnostics = messages
+    }
+    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<MacPhotoEditState>?
+    @Published var matchingProcessing = false
+    var processingMigrationCancellation: ProcessingMigrationCancellation?
+    var processingMigrationAttemptSource: UUID?
+    var pendingAllResetRevision: UUID?
+    var pendingMigrationClearToken: UUID?
+    static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
+    var interactionEntry: MacPhotoEditState?
     var interactionWasDirty = false
+    @Published var completedEditPreview: (record: MacPhotoEditRecord, image: CGImage)?
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?
@@ -311,8 +338,9 @@ final class EditorModel: ObservableObject {
     var prepareQuickPresetOperation: (AdjustmentTransferSession, AdjustmentTransferPayload, [AdjustmentTransferTarget]) throws -> PreparedAdjustmentTransfer = {
         try $0.prepare(payload: $1, targets: $2, action: .preset)
     }
+    var confirmUnusableRecordReset: ((URL, String) -> Bool)?
     let editDirectory: URL
-    let batchJournal: BatchJournal
+    let batchJournal: MacBatchJournal
     var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
@@ -341,30 +369,35 @@ final class EditorModel: ObservableObject {
 
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
-         editDirectory: URL = EditPersistence.defaultDirectory,
-         batchDirectory: URL = BatchJournal.defaultDirectory,
+         editDirectory: URL = MacEditPersistence.defaultDirectory,
+         batchDirectory: URL = MacBatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
-        batchJournal = BatchJournal(directory: batchDirectory)
+        batchJournal = MacBatchJournal(directory: batchDirectory)
         recentLooks = RecentLooks.load(from: recentLooksURL)
         independentRecipeLookIDs.formUnion(recentLooks.ids.filter { $0.hasPrefix("recipe-lut:") })
         do {
             let library = try LookLibrary(directory: lookDirectory)
             lookLibrary = library
+            unreadableLooks = library.unreadableLooks
             films += library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
             pruneRecentLooks()
         } catch {
             self.error = error.localizedDescription
         }
         selectedFilmID = ""
-        do { editStore = try EditPersistence(directory: editDirectory) }
+        do { editStore = try MacEditPersistence(directory: editDirectory) }
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
-            if let job = try batchJournal.load() { attachBatch(job) }
+            if let job = try batchJournal.load() {
+                attachBatch(job)
+            } else if let quarantined = batchJournal.consumeQuarantinedError() {
+                self.error = L10n.format("无法读取上次批量任务：%@", String(describing: quarantined.localizedDescription))
+            }
         } catch { updateJournalLoadFailed = true; self.error = L10n.format("无法读取上次批量任务：%@", String(describing: error.localizedDescription)) }
         let timer = DispatchSource.makeTimerSource(queue: debounceQueue)
         timer.setEventHandler { [weak self] in

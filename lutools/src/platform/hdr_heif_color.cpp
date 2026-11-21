@@ -8,10 +8,10 @@
 
 namespace sony2fuji::hdr {
 namespace {
-[[noreturn]] void unsupported() { throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,
-    SONY2FUJI_HDR_FIELD_SOURCE,"HEIF requires supported RGB colorimetry"); }
-[[noreturn]] void malformed() { throw Error(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_MALFORMED_AUX,
-    SONY2FUJI_HDR_FIELD_SOURCE,"Invalid HEIF property association"); }
+[[noreturn]] void unsupported() { throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedColor,
+    kHdrFieldSource, "HEIF requires supported RGB colorimetry"); }
+[[noreturn]] void malformed() { throw Error(RenderStatus::ProcessingError, kHdrReasonMalformedAux,
+    kHdrFieldSource, "Invalid HEIF property association"); }
 std::vector<uint8_t> nclx(uint16_t primaries,uint16_t transfer) {
     cmsCIExyYTRIPLE rgb;
     if(primaries==1)rgb={{.64,.33,1},{.3,.6,1},{.15,.06,1}};

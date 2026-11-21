@@ -10,6 +10,7 @@ public sealed class ColorGradingPanel : StackPanel
     internal static readonly string[] ZoneKeys = ["阴影", "中间调", "高光"];
     private readonly ColorGradingWheelControl wheel = new();
     private readonly ParameterRow hue = new() { Compact = true }, saturation = new() { Compact = true };
+    internal ParameterRow SaturationRow => saturation;
     private readonly Button[] zones = new Button[3];
     private readonly Button resetZone = new(), resetAll = new();
     private readonly Grid content = new();

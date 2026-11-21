@@ -1,0 +1,842 @@
+import Foundation
+#if os(iOS)
+import RawLabKit
+import Photos
+import UniformTypeIdentifiers
+#endif
+
+enum CameraPhotoLibraryError: Error, Equatable {
+    case permissionDenied
+    case saveFailed(String)
+}
+
+protocol CameraPhotoLibrarySaving: AnyObject {
+    func requestAddAuthorization() -> Bool
+    func assetExists(_ identifier: String) -> Bool?
+    func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String
+}
+
+extension CameraPhotoLibrarySaving {
+    func assetExists(_ identifier: String) -> Bool? { nil }
+}
+
+#if os(iOS)
+final class IOSCameraPhotoLibrarySaver: CameraPhotoLibrarySaving {
+    private let onSavedContentIdentifier: ((String) -> Void)?
+
+    init(onSavedContentIdentifier: ((String) -> Void)? = nil) {
+        self.onSavedContentIdentifier = onSavedContentIdentifier
+    }
+
+    func requestAddAuthorization() -> Bool {
+        var status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        if status == .notDetermined {
+            let semaphore = DispatchSemaphore(value: 0)
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { resolved in
+                status = resolved
+                semaphore.signal()
+            }
+            semaphore.wait()
+        }
+        return status == .authorized || status == .limited
+    }
+
+    func assetExists(_ identifier: String) -> Bool? {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { return nil }
+        if PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).count > 0 { return true }
+        return status == .authorized ? false : nil
+    }
+
+    func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+        guard requestAddAuthorization() else {
+            throw CameraPhotoLibraryError.permissionDenied
+        }
+        let ext = (filename as NSString).pathExtension.lowercased()
+        let uti: String? = (ext == "jpg" || ext == "jpeg")
+            ? UTType.jpeg.identifier
+            : UTType(filenameExtension: ext)?.identifier
+        let semaphore = DispatchSemaphore(value: 0)
+        var didSucceed = false
+        var writeError: Error?
+        var createdIdentifier: String?
+        PHPhotoLibrary.shared().performChanges({
+            let request = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            options.originalFilename = filename
+            options.shouldMoveFile = false
+            if let uti { options.uniformTypeIdentifier = uti }
+            request.addResource(with: .photo, fileURL: fileURL, options: options)
+            createdIdentifier = request.placeholderForCreatedAsset?.localIdentifier
+        }) { success, error in
+            didSucceed = success
+            writeError = error
+            semaphore.signal()
+        }
+        semaphore.wait()
+        guard didSucceed else {
+            throw CameraPhotoLibraryError.saveFailed(writeError?.localizedDescription ?? "Photo library save failed")
+        }
+        onSavedContentIdentifier?(digest)
+        if let createdIdentifier, !createdIdentifier.isEmpty {
+            return createdIdentifier
+        }
+        return "saved"
+    }
+}
+#endif
+
+enum IOSCameraMode { case importing, tethering }
+enum IOSCameraPhase { case idle, connecting, browsing, ready, receiving, capturing, waiting, paused }
+enum IOSCameraEvent {
+    case phase(IOSCameraPhase)
+    case device(CameraDeviceIdentity, CameraContentsFamily?)
+    case assets([CameraRemoteAsset])
+    case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool, canCancelTouchFocus: Bool)
+    case manifest(CameraOriginalManifest)
+    case incrementalJob(UUID)
+    case progress(UUID, UInt64, UInt64)
+    case thumbnail(String, Data)
+    case preview(Data)
+    case previewUnavailable
+    case parameterFinished(Bool)
+    case focusFinished(error: Error?, focusLocked: Bool)
+    case frame(Data, [CameraLiveViewFrame], Date, UUID)
+    case saved(CameraStoredOriginal)
+    case failure(Error)
+    case listingLimitCleared
+    case notice(String)
+}
+
+final class IOSCameraRun {
+    let id = UUID(), endpoint: IOSCameraEndpoint
+    let mode: IOSCameraMode
+    let cardConfirmed: Bool
+    let emit: (IOSCameraEvent) -> Void
+    private let lock = NSLock()
+    private var stopping = false
+    private var session: SonyCameraSession?
+    private var openingClient: CameraPTPClient?
+    private var live: CameraLiveStream?
+    private var frameTime: Date?
+    private var liveToken = UUID()
+    private var liveBeganAt: Date?
+    // 下列调度状态只在 CameraWorkspaceBackend.queue 上访问。
+    var knownAssets: [CameraRemoteAsset] = []
+    var nextCardCheck: Date = .distantPast
+    var lastHostHint: Int64 = 0
+    var receiving = false
+    var listingLimitExceeded = false
+    var needsTetherBaseline = false
+    var needsTetherResume = false
+    init(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, emit: @escaping (IOSCameraEvent) -> Void) {
+        self.endpoint = endpoint; self.mode = mode; self.cardConfirmed = cardConfirmed; self.emit = emit
+    }
+    var stopped: Bool { lock.lock(); defer { lock.unlock() }; return stopping }
+    var lastFrame: Date? { lock.lock(); defer { lock.unlock() }; return frameTime }
+    func markFrame(_ date: Date) { lock.lock(); frameTime = date; lock.unlock() }
+    func installing(_ client: CameraPTPClient) {
+        lock.lock(); openingClient = client; let stopped = stopping; lock.unlock()
+        if stopped { client.close() }
+    }
+    func install(_ value: SonyCameraSession) {
+        lock.lock(); session = value; openingClient = nil; let stopped = stopping; lock.unlock()
+        if stopped { value.requestStop() }
+    }
+    func currentSession() throws -> SonyCameraSession {
+        lock.lock(); defer { lock.unlock() }
+        guard !stopping, let session else { throw CameraProtocolError.cancelled }
+        return session
+    }
+    var liveStarted: Date? { lock.lock(); defer { lock.unlock() }; return liveBeganAt }
+    func isLiveCurrent(_ token: UUID) -> Bool { lock.lock(); defer { lock.unlock() }; return liveToken == token && !stopping }
+    func beginLive() -> UUID {
+        pauseLive()
+        lock.lock(); defer { lock.unlock() }
+        liveBeganAt = Date(); return liveToken
+    }
+    func installLive(_ value: CameraLiveStream, token: UUID) {
+        lock.lock()
+        let accepted = !stopping && liveToken == token
+        if accepted { live = value }
+        lock.unlock()
+        if !accepted { value.close() }
+    }
+    func pauseLive() {
+        lock.lock(); let old = live; live = nil; liveToken = UUID(); liveBeganAt = nil; frameTime = nil; lock.unlock()
+        old?.close()
+    }
+    func stop() {
+        lock.lock(); stopping = true
+        let session = session, client = openingClient, live = live
+        lock.unlock()
+        session?.requestStop(); client?.close(); live?.close()
+    }
+    func finishSession() {
+        lock.lock(); let current = session; session = nil; lock.unlock()
+        current?.finish()
+    }
+}
+
+final class CameraWorkspaceBackend {
+    #if os(iOS)
+    static let shared = CameraWorkspaceBackend(photoLibrarySaver: IOSCameraPhotoLibrarySaver(onSavedContentIdentifier: {
+        ExportEvidenceStore.shared.record(contentIdentifier: $0)
+    }))
+    #else
+    static let shared = CameraWorkspaceBackend()
+    #endif
+    private static let sessionFailureCodes: Set<UInt16> = [0x2003, 0x2004, 0x2013, 0x201e]
+    let queue = DispatchQueue(label: "rawlab.camera.owner", qos: .userInitiated)
+    private let thumbnailQueue = DispatchQueue(label: "rawlab.camera.thumbnails", qos: .userInitiated)
+    private let storageLock = NSLock()
+    private var storage: CameraOriginalStore?
+    private let ownerLock = NSLock()
+    private var active: IOSCameraRun?
+    private let clientID: UUID
+    private let shutterTimeout: TimeInterval
+    private let photoLibrarySaver: CameraPhotoLibrarySaving?
+    private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
+
+    init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil, shutterTimeout: TimeInterval = 35,
+         photoLibrarySaver: CameraPhotoLibrarySaving? = nil,
+         openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil) {
+        self.storage = storage
+        self.shutterTimeout = shutterTimeout
+        self.photoLibrarySaver = photoLibrarySaver
+        self.sessionOpener = openSession
+        if let clientID {
+            self.clientID = clientID
+        } else {
+            let defaults = UserDefaults.standard, key = "camera.ptpip.clientID"
+            let resolved = defaults.string(forKey: key).flatMap(UUID.init(uuidString:)) ?? UUID()
+            defaults.set(resolved.uuidString, forKey: key)
+            self.clientID = resolved
+        }
+    }
+    private func store() throws -> CameraOriginalStore {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        if let storage { return storage }
+        let created = try CameraOriginalStore(directory: CameraOriginalStore.applicationDirectory())
+        storage = created; return created
+    }
+    private var currentStorage: CameraOriginalStore? {
+        storageLock.lock()
+        defer { storageLock.unlock() }
+        return storage
+    }
+    func loadHistory(_ result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async { result(Result { try self.store().snapshot }) }
+    }
+    func dismissIncrementalJob(_ id: UUID, result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async {
+            result(Result {
+                let store = try self.store()
+                try store.dismissIncrementalJob(id)
+                return store.snapshot
+            })
+        }
+    }
+    func skipFailedIncrementalItems(_ id: UUID, result: @escaping (Result<CameraOriginalManifest, Error>) -> Void) {
+        queue.async {
+            result(Result {
+                let store = try self.store()
+                try store.skipFailedIncrementalItems(id)
+                return store.snapshot
+            })
+        }
+    }
+    // Q6：手动清理已导出的相机原件（无自动回收）；回传清理结果与最新快照。
+    func pruneExportedOriginals(exportedContentIdentifiers: @escaping () -> Set<String>,
+                                _ result: @escaping (Result<(originals: Int, freedBytes: UInt64, manifest: CameraOriginalManifest), Error>) -> Void) {
+        queue.async {
+            let identifiers = exportedContentIdentifiers()
+            result(Result {
+                let store = try self.store()
+                let pruned = try store.pruneExportedOriginals(exportedContentIdentifiers: identifiers)
+                return (pruned.originals, pruned.freedBytes, store.snapshot)
+            })
+        }
+    }
+    private func owns(_ run: IOSCameraRun) -> Bool { ownerLock.lock(); defer { ownerLock.unlock() }; return active === run && !run.stopped }
+    private func publishManifest(_ run: IOSCameraRun) { if let storage = currentStorage { run.emit(.manifest(storage.snapshot)) } }
+    private func failure(_ error: Error, run: IOSCameraRun) {
+        guard owns(run) else { return }
+        run.stop(); run.emit(.phase(.paused)); run.emit(.failure(error)); publishManifest(run)
+    }
+    private func perform(_ run: IOSCameraRun, _ body: @escaping () throws -> Void) {
+        queue.async {
+            guard self.owns(run) else { return }
+            do { try body() } catch {
+                guard self.owns(run) else { return }
+                switch error {
+                case CameraProtocolError.importRecoveryRequired, CameraProtocolError.jpegGainMapAdjustment:
+                    run.emit(.phase(.browsing)); run.emit(.failure(error))
+                case CameraProtocolError.transientTransfer where run.mode == .importing,
+                     CameraProtocolError.response(_, 0x2019) where run.mode == .importing:
+                    run.emit(.phase(.browsing)); run.emit(.failure(error))
+                case CameraProtocolError.photoLimitExceeded where run.mode == .importing:
+                    run.knownAssets = []
+                    run.emit(.assets([]))
+                    run.emit(.phase(.browsing))
+                    run.emit(.failure(error))
+                default: self.failure(error, run: run)
+                }
+            }
+        }
+    }
+    private func open(_ run: IOSCameraRun, purpose: CameraSessionPurpose) throws -> SonyCameraSession {
+        guard owns(run) else { throw CameraProtocolError.cancelled }
+        let session = try sessionOpener?(run, purpose, clientID) ??
+            SonyCameraSession.open(host: run.endpoint.host, purpose: purpose, clientID: clientID, register: run.installing)
+        run.install(session)
+        guard owns(run) else { session.close(); throw CameraProtocolError.cancelled }
+        return session
+    }
+
+    func connect(_ run: IOSCameraRun, resumeTether: Bool) {
+        ownerLock.lock(); let previous = active; active = run; ownerLock.unlock()
+        previous?.stop()
+        perform(run) {
+            previous?.finishSession()
+            let store = try self.store()
+            try store.recover()
+            self.publishManifest(run)
+            if run.mode == .tethering && resumeTether && !store.snapshot.canResumeTether {
+                throw CameraProtocolError.tetherRecoveryRequired
+            }
+            run.emit(.phase(.connecting))
+            var session = try self.open(run, purpose: run.mode == .importing ? .importing : .tethering)
+            run.emit(.device(session.device, session.family))
+            if run.mode == .importing {
+                let assets = try session.listAssets()
+                run.knownAssets = assets; run.emit(.assets(assets)); run.emit(.phase(.browsing))
+                return
+            }
+            guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
+            if session.family != nil {
+                _ = self.photoLibrarySaver?.requestAddAuthorization()
+                do {
+                    let assets = try self.readCard(run)
+                    session = try run.currentSession()
+                    run.knownAssets = assets
+                    if resumeTether {
+                        try self.finishTetherResume(run: run, store: store, session: session, assets: assets)
+                    } else {
+                        try store.beginTether(device: session.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                    }
+                    session = try self.remoteSession(run)
+                } catch CameraProtocolError.photoLimitExceeded {
+                    run.listingLimitExceeded = true
+                    run.knownAssets = []
+                    run.needsTetherResume = resumeTether
+                    run.needsTetherBaseline = !resumeTether
+                    session = try self.remoteSession(run)
+                    self.publishManifest(run)
+                    try self.startRemoteDisplay(run, session: session)
+                    run.emit(.failure(CameraProtocolError.photoLimitExceeded))
+                    self.schedulePoll(run)
+                    return
+                }
+            }
+            self.publishManifest(run)
+            try self.startRemoteDisplay(run, session: session)
+            self.schedulePoll(run)
+        }
+    }
+    private func finishTetherResume(run: IOSCameraRun, store: CameraOriginalStore,
+                                    session: SonyCameraSession, assets: [CameraRemoteAsset]) throws {
+        run.emit(.phase(.receiving))
+        try store.resumeTether(device: session.device, connectionKey: run.endpoint.connectionKey, assets: assets,
+            verifySaved: { bound in
+                do {
+                    return try session.originalDigest(bound.asset) {
+                        run.emit(.progress(bound.item.id, $0, bound.item.asset.size))
+                    }
+                } catch CameraProtocolError.invalid, CameraProtocolError.invalidOriginalHeader {
+                    throw CameraProtocolError.tetherRecoveryRequired
+                }
+            }, receivePending: { id, pending in
+                try self.receive(jobID: id, pending: pending, run: run)
+            }, checkCurrent: {
+                guard self.owns(run) else { throw CameraProtocolError.cancelled }
+            })
+        run.emit(.notice("Resumed registered transfers; import offline photos manually"))
+    }
+    func stop(_ run: IOSCameraRun?, completion: @escaping () -> Void = {}) {
+        guard let run else { queue.async(execute: completion); return }
+        ownerLock.lock(); if active === run { active = nil }; ownerLock.unlock()
+        run.stop()
+        queue.async {
+            run.finishSession()
+            completion()
+        }
+    }
+
+    private func readCard(_ run: IOSCameraRun) throws -> [CameraRemoteAsset] {
+        var session = try run.currentSession()
+        if session.family == .legacy, !session.contentsEntered {
+            run.pauseLive(); run.emit(.phase(.receiving)); run.finishSession()
+            session = try open(run, purpose: .importing)
+        }
+        return try session.listAssets()
+    }
+    private func remoteSession(_ run: IOSCameraRun) throws -> SonyCameraSession {
+        let session = try run.currentSession()
+        if session.contentsEntered {
+            run.pauseLive(); run.finishSession()
+            return try open(run, purpose: .tethering)
+        }
+        return session
+    }
+    private func startRemoteDisplay(_ run: IOSCameraRun, session: SonyCameraSession) throws {
+        let values = try session.properties()
+        publishProperties(run, values: values, session: session)
+        if let raw = values[0xd278]?.text {
+            let url = try CameraWire.liveURL(raw, camera: run.endpoint.host)
+            startLive(run, url: url)
+        } else { run.emit(.notice("Camera live view is unavailable")) }
+        let shutterRequested = try store().snapshot.tether?.shutterRequestedAt != nil
+        let pending = !run.listingLimitExceeded && shutterRequested
+        run.emit(.phase(session.family == nil || !pending ? .ready : .waiting))
+        run.nextCardCheck = Date().addingTimeInterval(session.family == .legacy ? 120 : 1.5)
+    }
+    private func publishProperties(_ run: IOSCameraRun, values: [UInt16: CameraProperty], session: SonyCameraSession) {
+        let pending = currentStorage?.snapshot.tether?.shutterRequestedAt != nil
+        let blocked = pending || run.receiving || run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume
+        run.emit(.properties(values, writable: session.canWriteParameters,
+            shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !blocked,
+            canCancelTouchFocus: session.canCancelTouchFocus(values)))
+    }
+    private func startLive(_ run: IOSCameraRun, url: URL) {
+        let token = run.beginLive()
+        DispatchQueue(label: "rawlab.camera.liveview", qos: .userInitiated).async { [weak self] in
+            guard let self, self.owns(run) else { return }
+            var stream: CameraLiveStream?
+            do {
+                let opened = try CameraLiveStream(host: run.endpoint.host, url: url); stream = opened; run.installLive(opened, token: token)
+                var lastDelivered = Date.distantPast
+                while self.owns(run), run.isLiveCurrent(token) {
+                    let liveFrame = try opened.frameWithMetadata(), now = Date()
+                    if run.isLiveCurrent(token), now.timeIntervalSince(lastDelivered) >= 0.1 {
+                        let overlays = CameraWire.liveViewFrames(liveFrame.metadata)
+                        run.emit(.frame(liveFrame.jpeg, overlays, now, token)); lastDelivered = now
+                    }
+                }
+            } catch {
+                // 主命令队列决定是否仍为当前取景；切换 legacy 卡模式的主动关闭不算连接失败。
+                self.queue.async {
+                    guard self.owns(run), run.isLiveCurrent(token) else { return }
+                    self.failure(error, run: run)
+                }
+            }
+            stream?.close()
+        }
+    }
+
+    private func schedulePoll(_ run: IOSCameraRun) {
+        queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.owns(run) else { return }
+            do { try self.poll(run); self.schedulePoll(run) }
+            catch CameraProtocolError.response(let op, let code) where op == 0x923c && code == 0x2005 {
+                // 完整远端忙响应已对齐；只重读卡，不重发快门。
+                self.schedulePoll(run)
+            } catch { self.failure(error, run: run) }
+        }
+    }
+    private func poll(_ run: IOSCameraRun) throws {
+        let session = try run.currentSession()
+        let properties = try session.properties()
+        publishProperties(run, values: properties, session: session)
+        if let began = run.liveStarted {
+            if let frame = run.lastFrame {
+                if Date().timeIntervalSince(frame) > 5 { throw CameraProtocolError.timeout }
+            } else if Date().timeIntervalSince(began) > 8 { throw CameraProtocolError.timeout }
+        }
+        guard session.family != nil else { return }
+        let store = try store(), record = store.snapshot.tether
+        let pending = record?.shutterRequestedAt != nil
+        let hostHint = properties[0xd215]?.number ?? 0
+        let newHostHint = hostHint & 0x8000 != 0 && hostHint != run.lastHostHint
+        run.lastHostHint = hostHint
+        if Date() >= run.nextCardCheck || newHostHint || pending && session.family == .legacy {
+            let wasLegacy = session.family == .legacy
+            run.receiving = true
+            defer { run.receiving = false }
+            do {
+                let assets = try readCard(run)
+                let sessionNow = try run.currentSession()
+                if run.listingLimitExceeded {
+                    run.listingLimitExceeded = false
+                    run.emit(.listingLimitCleared)
+                }
+                if run.needsTetherResume {
+                    try finishTetherResume(run: run, store: store, session: sessionNow, assets: assets)
+                    run.needsTetherResume = false
+                    run.knownAssets = assets
+                } else if run.needsTetherBaseline {
+                    try store.beginTether(device: sessionNow.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                    run.needsTetherBaseline = false
+                    run.knownAssets = assets
+                } else {
+                    try receivePendingTether(run, assets: assets)
+                    run.knownAssets = assets
+                    let baseline = store.snapshot.tether?.baseline ?? []
+                    let newAssets = assets.filter { !baseline.contains($0.snapshot.key) }
+                    if !newAssets.isEmpty {
+                        var batch: [CameraAssetSnapshot] = [], bytes: UInt64 = 0
+                        for asset in newAssets {
+                            guard asset.snapshot.transferable else { throw CameraProtocolError.unsupported("A new camera original exceeds the transfer budget") }
+                            if batch.count == CameraTetherRecord.maximumFilesPerTransfer ||
+                                bytes + asset.snapshot.size > CameraTetherRecord.maximumBytesPerTransfer { break }
+                            batch.append(asset.snapshot); bytes += asset.snapshot.size
+                        }
+                        let job = try store.registerTetherAssets(batch, listingOwner: sessionNow.id)
+                        publishManifest(run)
+                        try receive(job, assets: assets, run: run)
+                    }
+                    try store.finishConfirmedShutter(owner: run.id)
+                }
+                run.receiving = false
+                publishManifest(run)
+                if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
+                else {
+                    publishProperties(run, values: properties, session: sessionNow)
+                    run.emit(.phase(store.snapshot.tether?.shutterRequestedAt == nil ? .ready : .waiting))
+                }
+                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
+            } catch CameraProtocolError.photoLimitExceeded {
+                run.listingLimitExceeded = true
+                run.knownAssets = []
+                run.receiving = false
+                if wasLegacy { try startRemoteDisplay(run, session: remoteSession(run)) }
+                else {
+                    publishProperties(run, values: properties, session: session)
+                    run.emit(.phase(.ready))
+                }
+                run.emit(.failure(CameraProtocolError.photoLimitExceeded))
+                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
+            }
+        }
+        if !run.listingLimitExceeded,
+           let record = store.snapshot.tether, record.shutterOwner == run.id, let requested = record.shutterRequestedAt,
+           Date().timeIntervalSince(requested) > shutterTimeout { throw CameraProtocolError.captureUnknown }
+    }
+
+    private func receivePendingTether(_ run: IOSCameraRun, assets: [CameraRemoteAsset]) throws {
+        let snapshot = try store().snapshot
+        let ids = Set(snapshot.tether?.jobIDs ?? [])
+        for job in snapshot.jobs where ids.contains(job.id) && !job.complete {
+            try receive(job, assets: assets, run: run)
+        }
+    }
+    private func receive(_ job: CameraTransferJob, assets: [CameraRemoteAsset], run: IOSCameraRun) throws {
+        let session = try run.currentSession()
+        let pending = try job.pendingAssets(device: session.device, connectionKey: run.endpoint.connectionKey,
+            assets: assets, allowAlternateConnection: run.mode == .importing)
+        try receive(jobID: job.id, pending: pending, run: run)
+    }
+    private func isItemFailure(_ error: Error, session: SonyCameraSession, run: IOSCameraRun) -> Bool {
+        guard run.mode == .importing, owns(run), !session.stopped else { return false }
+        switch error {
+        case CameraProtocolError.jpegProcessing,
+             CameraProtocolError.jpegGainMapAdjustment,
+             CameraProtocolError.importRecoveryRequired,
+             CameraProtocolError.invalidOriginalHeader:
+            return true
+        case CameraProtocolError.response(let op, let code):
+            return [UInt16(0x1008), 0x1009, 0x923d].contains(op) &&
+                !Self.sessionFailureCodes.contains(code) &&
+                code != 0x2019
+        default:
+            return false
+        }
+    }
+    private func transferFailureKind(_ error: Error) -> CameraTransferFailureKind {
+        switch error {
+        case CameraProtocolError.transientTransfer,
+             CameraProtocolError.disconnected,
+             CameraProtocolError.cancelled,
+             CameraProtocolError.timeout:
+            return .transient
+        case CameraProtocolError.invalidOriginalHeader:
+            return .headerInvalid
+        case CameraProtocolError.jpegProcessing:
+            return .jpegProcessing
+        case CameraProtocolError.jpegGainMapAdjustment:
+            return .jpegGainMapAdjustment
+        case CameraProtocolError.importRecoveryRequired:
+            return .importRecoveryRequired
+        case CameraProtocolError.response(_, let code):
+            return (Self.sessionFailureCodes.contains(code) || code == 0x2019) ? .transient : .ptpObjectError
+        default:
+            return .other
+        }
+    }
+    private func itemNoticeError(_ error: Error, asset: CameraRemoteAsset) -> Error {
+        switch error {
+        case CameraProtocolError.jpegProcessing,
+             CameraProtocolError.jpegGainMapAdjustment,
+             CameraProtocolError.importRecoveryRequired:
+            return error
+        default:
+            return CameraProtocolError.itemFailed(asset.snapshot.name, error.localizedDescription)
+        }
+    }
+    private enum ReceiveItemOutcome {
+        case saved(CameraStoredOriginal)
+        case itemFailed(Error)
+    }
+    private func receive(jobID: UUID, pending: [CameraTransferJob.BoundItem], run: IOSCameraRun) throws {
+        let store = try store(), session = try run.currentSession()
+        run.emit(.phase(.receiving))
+        var firstItemError: Error?
+        var photoLibraryAuthorized = true
+        var photoLibraryPermissionDenied = false
+        var photoLibrarySaveFailed = false
+        if let photoLibrarySaver, !pending.isEmpty {
+            photoLibraryAuthorized = photoLibrarySaver.requestAddAuthorization()
+        }
+        for (item, asset) in pending {
+            guard owns(run) else { throw CameraProtocolError.cancelled }
+            var outcome: ReceiveItemOutcome?
+            do {
+                try store.performBatch {
+                    if let reused = try reuseByMobileSampling(jobID: jobID, item: item, asset: asset,
+                                                              store: store, session: session, run: run) {
+                        outcome = .saved(reused)
+                        return
+                    }
+                    let target = try store.begin(job: jobID, item: item.id)
+                    do {
+                        let digest = try session.download(asset, to: target.handle) { bytes in
+                            run.emit(.progress(item.id, bytes, item.asset.size))
+                        }
+                        try target.handle.close()
+                        let original = try store.complete(job: jobID, item: item.id, digest: digest)
+                        outcome = .saved(original)
+                    } catch {
+                        try? target.handle.close()
+                        let itemFailed = isItemFailure(error, session: session, run: run)
+                        let kind = transferFailureKind(error)
+                        try? store.interrupt(job: jobID, item: item.id, error: error.localizedDescription,
+                                             cancelled: !itemFailed, failureKind: kind)
+                        if itemFailed {
+                            outcome = .itemFailed(itemNoticeError(error, asset: asset))
+                            return
+                        }
+                        if run.mode == .tethering, case CameraProtocolError.importRecoveryRequired = error {
+                            throw CameraProtocolError.tetherRecoveryRequired
+                        }
+                        throw error
+                    }
+                }
+            } catch {
+                publishManifest(run)
+                throw error
+            }
+            switch outcome {
+            case .saved(var original):
+                if let saver = photoLibrarySaver {
+                    let needsPhotoLibrarySave: Bool
+                    if let existingID = original.photoLibraryAssetID {
+                        needsPhotoLibrarySave = saver.assetExists(existingID) == false
+                    } else {
+                        needsPhotoLibrarySave = true
+                    }
+                    if needsPhotoLibrarySave {
+                        if photoLibraryAuthorized {
+                            do {
+                                let assetID = try saver.saveOriginal(
+                                    at: store.originalURL(original),
+                                    filename: original.name,
+                                    digest: original.digest
+                                )
+                                if let updated = try? store.markSavedToPhotoLibrary(originalID: original.id, assetID: assetID) {
+                                    original = updated
+                                }
+                            } catch CameraPhotoLibraryError.permissionDenied {
+                                photoLibraryAuthorized = false
+                                photoLibraryPermissionDenied = true
+                            } catch {
+                                photoLibrarySaveFailed = true
+                            }
+                        } else {
+                            photoLibraryPermissionDenied = true
+                        }
+                    }
+                }
+                publishManifest(run); run.emit(.saved(original))
+            case .itemFailed(let itemError):
+                publishManifest(run)
+                if firstItemError == nil { firstItemError = itemError }
+            case nil:
+                break
+            }
+        }
+        if let firstItemError {
+            run.emit(.failure(firstItemError))
+        } else if photoLibraryPermissionDenied {
+            run.emit(.failure(CameraProtocolError.photoLibraryDenied))
+        } else if photoLibrarySaveFailed {
+            run.emit(.failure(CameraProtocolError.photoLibrarySaveFailed))
+        }
+    }
+    private func reuseByMobileSampling(jobID: UUID, item: CameraTransferItem, asset: CameraRemoteAsset,
+                                       store: CameraOriginalStore, session: SonyCameraSession,
+                                       run: IOSCameraRun) throws -> CameraStoredOriginal? {
+        guard run.mode == .importing, session.family == .mobile,
+              let offsets = CameraOriginalStore.sampleOffsets(forSize: asset.snapshot.size),
+              let candidate = store.samplingCandidate(job: jobID, item: item.id) else {
+            return nil
+        }
+        do {
+            let localHandle = try FileHandle(forReadingFrom: candidate.url)
+            defer { try? localHandle.close() }
+            let length = CameraOriginalStore.sampleSegmentBytes
+            for offset in offsets {
+                guard owns(run) else { throw CameraProtocolError.cancelled }
+                try localHandle.seek(toOffset: offset)
+                guard let localBytes = try localHandle.read(upToCount: length), localBytes.count == length else {
+                    return nil
+                }
+                if offset == 0 {
+                    try CameraWire.validateHeader(name: asset.snapshot.name, data: localBytes.prefix(4))
+                }
+                let remoteBytes = try session.readMobileRange(asset, offset: offset, length: length)
+                guard remoteBytes == localBytes else { return nil }
+            }
+            return try store.reuseSampledOriginal(job: jobID, item: item.id, sourceID: candidate.source.id)
+        } catch {
+            guard owns(run) else { throw CameraProtocolError.cancelled }
+            if session.stopped { throw error }
+            if case CameraProtocolError.response(_, let code) = error, Self.sessionFailureCodes.contains(code) {
+                throw error
+            }
+            return nil
+        }
+    }
+    func importAssets(_ assets: [CameraRemoteAsset], incremental: CameraIncrementalPlan? = nil,
+                      jpeg: CameraJPEGOptions? = nil, run: IOSCameraRun) {
+        perform(run) {
+            guard run.mode == .importing, !run.receiving else { throw CameraProtocolError.invalid("Camera import is busy") }
+            run.receiving = true; defer { run.receiving = false }
+            let session = try run.currentSession()
+            guard assets.allSatisfy({ $0.owner == session.id }) else { throw CameraProtocolError.invalid("Camera selection belongs to an old session") }
+            let store = try self.store()
+            let job = try store.enqueue(device: session.device, connectionKey: run.endpoint.connectionKey,
+                                        assets: assets.map(\.snapshot), listingOwner: session.id,
+                                        incremental: incremental, jpeg: jpeg)
+            self.publishManifest(run)
+            if incremental != nil { run.emit(.incrementalJob(job.id)) }
+            try self.receive(job, assets: run.knownAssets, run: run)
+            run.emit(.phase(.browsing))
+        }
+    }
+    func resumeImport(jobID: UUID, run: IOSCameraRun) {
+        perform(run) {
+            guard run.mode == .importing, !run.receiving else { return }
+            run.receiving = true; defer { run.receiving = false }
+            let store = try self.store()
+            try store.recover()
+            self.publishManifest(run)
+            guard let job = store.snapshot.jobs.first(where: { $0.id == jobID }) else {
+                throw CameraProtocolError.invalid("Camera transfer job is missing")
+            }
+            if job.incremental != nil { run.emit(.incrementalJob(job.id)) }
+            guard !job.pendingItems.isEmpty else {
+                run.emit(.phase(.browsing))
+                return
+            }
+            let assets = try run.currentSession().listAssets()
+            run.knownAssets = assets; run.emit(.assets(assets))
+            try self.receive(job, assets: assets, run: run)
+            run.emit(.phase(.browsing))
+        }
+    }
+    func refreshImport(_ run: IOSCameraRun) {
+        perform(run) {
+            guard run.mode == .importing, !run.receiving else { return }
+            let assets = try run.currentSession().listAssets()
+            run.knownAssets = assets
+            run.emit(.assets(assets))
+        }
+    }
+    func thumbnail(_ asset: CameraRemoteAsset, run: IOSCameraRun, large: Bool) {
+        queue.async {
+            guard self.owns(run), !run.receiving else { return }
+            do {
+                let data = try run.currentSession().preview(asset, large: large)
+                run.emit(large ? .preview(data) : .thumbnail(asset.id, data))
+            } catch CameraProtocolError.response { run.emit(large ? .previewUnavailable : .thumbnail(asset.id, Data())) }
+            catch CameraProtocolError.unsupported { run.emit(large ? .previewUnavailable : .thumbnail(asset.id, Data())) }
+            catch { self.failure(error, run: run) }
+        }
+    }
+    func setParameter(_ code: UInt16, value: Int64, run: IOSCameraRun) {
+        perform(run) {
+            guard !run.receiving, run.mode == .tethering else { return }
+            let session = try run.currentSession(), result = try session.setParameter(code, value: value)
+            self.publishProperties(run, values: result.values, session: session)
+            run.emit(.parameterFinished(result.confirmed))
+        }
+    }
+    func setFocusPoint(x: Int, y: Int, run: IOSCameraRun) {
+        performFocus(run) { session in try session.setFocusPoint(x: x, y: y) }
+    }
+    func cancelTouchFocus(_ run: IOSCameraRun) {
+        performFocus(run) { session in
+            CameraFocusPointResult(properties: try session.cancelTouchFocus(), focusLocked: false)
+        }
+    }
+    private func performFocus(_ run: IOSCameraRun,
+                              _ action: @escaping (SonyCameraSession) throws -> CameraFocusPointResult) {
+        perform(run) {
+            guard !run.receiving, run.mode == .tethering else {
+                run.emit(.focusFinished(error: nil, focusLocked: false))
+                return
+            }
+            let session = try run.currentSession()
+            do {
+                let result = try action(session)
+                self.publishProperties(run, values: result.properties, session: session)
+                run.emit(.focusFinished(error: nil, focusLocked: result.focusLocked))
+            } catch let error as CameraProtocolError where error.isNonFatalFocusError {
+                if !session.stopped, let values = try? session.properties() {
+                    self.publishProperties(run, values: values, session: session)
+                }
+                run.emit(.focusFinished(error: error, focusLocked: false))
+            }
+        }
+    }
+    func capture(_ run: IOSCameraRun) {
+        perform(run) {
+            guard !run.receiving, run.mode == .tethering else { return }
+            if run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume {
+                run.emit(.phase(.ready))
+                return
+            }
+            let store = try self.store(), session = try run.currentSession()
+            guard store.snapshot.tether?.shutterRequestedAt == nil else { throw CameraProtocolError.captureUnknown }
+            run.emit(.phase(.capturing))
+            do {
+                try session.capture(cardConfirmed: run.cardConfirmed) { try store.markShutterRequested(owner: run.id) }
+                try store.acknowledgeShutter(owner: run.id)
+                self.publishManifest(run); run.nextCardCheck = Date().addingTimeInterval(3)
+                run.emit(.phase(.waiting))
+            } catch CameraProtocolError.captureNotSent(let reason) {
+                try store.clearUnsentShutter(owner: run.id)
+                self.publishManifest(run); run.emit(.notice(reason)); run.emit(.phase(.ready))
+            } catch {
+                self.publishManifest(run); throw CameraProtocolError.captureUnknown
+            }
+        }
+    }
+    func original(_ sourceID: UUID, result: @escaping (Result<URL, Error>) -> Void) {
+        queue.async { result(Result { try self.store().verifiedURL(sourceID) }) }
+    }
+    func originalThumbnailURL(_ sourceID: UUID, result: @escaping (Result<URL, Error>) -> Void) {
+        thumbnailQueue.async { result(Result { try self.store().thumbnailURL(sourceID) }) }
+    }
+}

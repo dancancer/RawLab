@@ -1,6 +1,7 @@
 #include "coreml_graph.h"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <numeric>
 #include <stdexcept>
 #import <CoreML/CoreML.h>
@@ -36,19 +37,33 @@ MLModelConfiguration* gpuConfiguration() {
     return configuration;
 }
 
+const char* kindLabel(GraphKind kind) {
+    switch (kind) {
+        case GraphKind::Raw: return "RAW";
+        case GraphKind::RGB: return "RGB";
+        case GraphKind::BlindRGB: return "Scene RGB";
+        case GraphKind::ISP: throw std::invalid_argument("Official ISP must use ONNX CPU");
+    }
+    throw std::invalid_argument("Invalid Core ML graph kind");
+}
+
 API_AVAILABLE(macos(14.4))
-bool verifyGPUBlock(MLComputePlan* plan, MLModelStructureProgramBlock* block) {
+bool verifyGPUBlock(MLComputePlan* plan, MLModelStructureProgramBlock* block, const char* label) {
     bool hasGPU = false;
     for (MLModelStructureProgramOperation* operation in block.operations) {
         const auto cost = [plan estimatedCostOfMLProgramOperation:operation];
         if (cost && cost.weight > 0) {
             const auto usage = [plan computeDeviceUsageForMLProgramOperation:operation];
-            if (![usage.preferredComputeDevice isKindOfClass:MLGPUComputeDevice.class])
-                throw std::runtime_error("Core ML scheduled an HDR RAW model operation outside the GPU");
+            if (![usage.preferredComputeDevice isKindOfClass:MLGPUComputeDevice.class]) {
+                const char* opName = operation.operatorName.UTF8String;
+                throw std::runtime_error(
+                    std::string("Core ML scheduled a ") + label + " model operation (" +
+                    (opName ? opName : "unknown") + ") outside the GPU");
+            }
             hasGPU = true;
         }
         for (MLModelStructureProgramBlock* child in operation.blocks)
-            hasGPU = verifyGPUBlock(plan, child) || hasGPU;
+            hasGPU = verifyGPUBlock(plan, child, label) || hasGPU;
     }
     return hasGPU;
 }
@@ -59,7 +74,8 @@ struct CoreMLGraph::Impl {
     GraphSignature signature;
     Impl(const std::string& path, GraphKind kind, int size) : signature(graphSignature(kind, size)) {
         if (kind == GraphKind::ISP) throw std::invalid_argument("Official ISP must use ONNX CPU");
-        if (!CoreMLGraph::available()) throw std::runtime_error("Native Core ML requires an Apple Silicon GPU and macOS 14");
+        if (!CoreMLGraph::available())
+            throw std::runtime_error("Native Core ML requires an Apple Silicon GPU and macOS 14.4 or newer");
         @autoreleasepool {
             NSError* error = nil;
             model = [MLModel modelWithContentsOfURL:[NSURL fileURLWithPath:name(path)] configuration:gpuConfiguration() error:&error];
@@ -71,6 +87,7 @@ struct CoreMLGraph::Impl {
                 validate(description.inputDescriptionsByName[name(signature.inputNames[i])], signature.inputShapes[i]);
             validate(description.outputDescriptionsByName[name(signature.outputName)], signature.outputShape);
         }
+        CoreMLGraph::verifyGPUPlacement(path, kind);
     }
 };
 
@@ -82,10 +99,14 @@ CoreMLGraph::~CoreMLGraph() = default;
 
 bool CoreMLGraph::available() {
 #if defined(__aarch64__)
-    if (@available(macOS 14.0, *)) {
+    if (@available(macOS 14.4, *)) {
         @autoreleasepool {
-            for (id<MLComputeDeviceProtocol> device in MLModel.availableComputeDevices)
-                if ([device isKindOfClass:MLGPUComputeDevice.class]) return true;
+            @try {
+                for (id<MLComputeDeviceProtocol> device in MLModel.availableComputeDevices)
+                    if ([device isKindOfClass:MLGPUComputeDevice.class]) return true;
+            } @catch (NSException*) {
+                return false;
+            }
         }
     }
 #endif
@@ -93,14 +114,21 @@ bool CoreMLGraph::available() {
 }
 
 bool CoreMLGraph::gpuPlanAvailable() {
-    if (@available(macOS 14.4, *)) return available();
-    return false;
+    return available();
 }
 
-void CoreMLGraph::verifyRawGPUPlacement(const std::string& path) {
+void CoreMLGraph::verifyGPUPlacement(const std::string& path, GraphKind kind) {
+    const char* label = kindLabel(kind);
     if (@available(macOS 14.4, *)) {
         @try { @autoreleasepool {
-            if (path.empty()) throw std::runtime_error("Native Core ML RAW model is not installed");
+            if (!CoreMLGraph::available())
+                throw std::runtime_error("Native Core ML requires an Apple Silicon GPU and macOS 14.4 or newer");
+            if (path.empty())
+                throw std::runtime_error(std::string("Native Core ML ") + label + " model is not installed");
+            namespace fs = std::filesystem;
+            std::error_code fileError;
+            if (!fs::is_regular_file(fs::u8path(path) / "coremldata.bin", fileError) || fileError)
+                throw std::runtime_error(std::string("Cannot verify Core ML ") + label + " GPU placement: missing coremldata.bin");
             __block MLComputePlan* plan = nil;
             __block NSError* failure = nil;
             const auto ready = dispatch_semaphore_create(0);
@@ -111,17 +139,22 @@ void CoreMLGraph::verifyRawGPUPlacement(const std::string& path) {
                     dispatch_semaphore_signal(ready);
                 }];
             if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) != 0)
-                throw std::runtime_error("Core ML RAW GPU compute plan timed out");
-            if (!plan) throw std::runtime_error("Cannot verify Core ML RAW GPU placement: " + message(failure));
+                throw std::runtime_error(std::string("Core ML ") + label + " GPU compute plan timed out");
+            if (!plan)
+                throw std::runtime_error(std::string("Cannot verify Core ML ") + label + " GPU placement: " + message(failure));
             const auto main = plan.modelStructure.program.functions[@"main"];
-            if (!main || !verifyGPUBlock(plan, main.block))
-                throw std::runtime_error("Core ML RAW model has no verified GPU placement");
+            if (!main || !verifyGPUBlock(plan, main.block, label))
+                throw std::runtime_error(std::string("Core ML ") + label + " model has no verified GPU placement");
             return;
         }} @catch (NSException* error) {
-            throw std::runtime_error(std::string("Core ML RAW GPU plan failed: ") + (error.reason ?: error.name).UTF8String);
+            throw std::runtime_error(std::string("Core ML ") + label + " GPU plan failed: " + (error.reason ?: error.name).UTF8String);
         }
     }
-    throw std::runtime_error("HDR RAW GPU placement requires macOS 14.4 or newer");
+    throw std::runtime_error(std::string("Core ML ") + label + " GPU placement verification requires macOS 14.4 or newer");
+}
+
+void CoreMLGraph::verifyRawGPUPlacement(const std::string& path) {
+    verifyGPUPlacement(path, GraphKind::Raw);
 }
 
 std::string CoreMLGraph::runtimeVersion() {

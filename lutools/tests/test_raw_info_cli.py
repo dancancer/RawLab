@@ -2,10 +2,12 @@
 import argparse
 import json
 import math
+import os
 import pathlib
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -192,21 +194,26 @@ class RawInfoCLI(unittest.TestCase):
         self.assertEqual(result["capture"]["baseline_exposure_ev"], 0)
 
     def test_real_raw_metadata_and_flag_order(self):
-        if RAW is None or not RAW.is_file():
+        if not RAW_SAMPLES:
             self.skipTest("real RAW fixture not provided")
-        baseline = None
-        for arguments in (("--info", RAW, "--json"), ("--json", "--info", RAW), ("--info", RAW)):
-            with self.subTest(arguments=arguments):
-                result = self.envelope(self.run_cli(*arguments))["result"]
-                self.assert_metadata(result, RAW)
-                self.assertTrue(result["camera"]["make"])
-                self.assertTrue(result["camera"]["model"])
-                if baseline is None:
-                    baseline = result
-                self.assertEqual(result, baseline)
-        if RAW.name == "DJI_20250602164503_0444_D.DNG":
-            self.assertIsNotNone(baseline["capture"]["baseline_exposure_ev"], "known DJI BaselineExposure tag must be reported")
-            self.assertAlmostEqual(baseline["capture"]["baseline_exposure_ev"], .35, places=5)
+        for raw_path in RAW_SAMPLES:
+            baseline = None
+            for arguments in (("--info", raw_path, "--json"), ("--json", "--info", raw_path), ("--info", raw_path)):
+                with self.subTest(raw=raw_path.name, arguments=arguments):
+                    result = self.envelope(self.run_cli(*arguments))["result"]
+                    self.assert_metadata(result, raw_path)
+                    self.assertTrue(result["camera"]["make"])
+                    self.assertTrue(result["camera"]["model"])
+                    if baseline is None:
+                        baseline = result
+                    self.assertEqual(result, baseline)
+            if raw_path.name == "DJI_20250602164503_0444_D.DNG":
+                self.assertIsNotNone(baseline["capture"]["baseline_exposure_ev"], "known DJI BaselineExposure tag must be reported")
+                self.assertAlmostEqual(baseline["capture"]["baseline_exposure_ev"], .35, places=5)
+                print(
+                    f"Verified DJI BaselineExposure: {raw_path.name} baseline_exposure_ev={baseline['capture']['baseline_exposure_ev']}",
+                    flush=True,
+                )
 
     def test_relative_unicode_input_path(self):
         source = self.fixture("linear-uncompressed.dng")
@@ -220,10 +227,37 @@ class RawInfoCLI(unittest.TestCase):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", type=pathlib.Path, required=True)
-    parser.add_argument("--raw", type=pathlib.Path)
+    parser.add_argument("--raw", type=str)
+    parser.add_argument("--default-raw", type=str)
     parser.add_argument("--fixtures", type=pathlib.Path)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    RAW = arguments.raw.resolve() if arguments.raw else None
+    RAW_SAMPLES = []
+    if arguments.raw:
+        explicit_raw = pathlib.Path(arguments.raw)
+        if not explicit_raw.is_file():
+            print(f"FAIL raw_info_cli: --raw does not exist: {arguments.raw}", file=sys.stderr)
+            sys.exit(1)
+        RAW_SAMPLES.append(explicit_raw.resolve())
+        if arguments.default_raw:
+            default_raw = pathlib.Path(arguments.default_raw)
+            if default_raw.is_file() and default_raw.resolve() not in RAW_SAMPLES:
+                RAW_SAMPLES.append(default_raw.resolve())
+    else:
+        env_raw = os.environ.get("RAWLAB_TEST_RAW", "")
+        if env_raw and not pathlib.Path(env_raw).is_file():
+            print(f"FAIL raw_info_cli: RAWLAB_TEST_RAW does not exist: {env_raw}", file=sys.stderr)
+            sys.exit(1)
+        if arguments.default_raw and pathlib.Path(arguments.default_raw).is_file():
+            RAW_SAMPLES.append(pathlib.Path(arguments.default_raw).resolve())
+        if env_raw:
+            env_path = pathlib.Path(env_raw).resolve()
+            if env_path not in RAW_SAMPLES:
+                RAW_SAMPLES.append(env_path)
     FIXTURES = arguments.fixtures.resolve() if arguments.fixtures else None
-    unittest.main(argv=[__file__, *remaining])
+    program = unittest.main(argv=[__file__, *remaining], exit=False)
+    if not program.result.wasSuccessful():
+        sys.exit(1)
+    if not RAW_SAMPLES:
+        print("SKIP raw_info_cli: default RAW sample not present and RAWLAB_TEST_RAW not set")
+        sys.exit(77)

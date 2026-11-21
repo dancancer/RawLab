@@ -1,13 +1,24 @@
 #include "rendered_dng.h"
 
+#include "output_file_mode.h"
+#include "processing_cancellation.h"
+
+#include <cstddef>
+#include <cstdio>
+#include <jpeglib.h>
+#include <jerror.h>
 #include <tiffio.h>
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
+#include <csetjmp>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <new>
 #include <string_view>
 #include <system_error>
@@ -24,8 +35,11 @@ namespace sony2fuji {
 namespace {
 
 constexpr uint16_t kLinearRaw = 34892;
+constexpr uint32_t kWhiteLevel = std::numeric_limits<uint16_t>::max();
 constexpr uint32_t kRowsPerStrip = 64;
 constexpr uint64_t kMaxClassicTiffBytes = (uint64_t{1} << 32) - 1;
+constexpr uint32_t kThumbnailLongEdge = 160;
+constexpr int kPreviewJpegQuality = 95;
 
 // The reservation covers the classic TIFF header/IFD, DNG value arrays, and
 // the neutral XMP packet. It is deliberately conservative so libtiff never
@@ -84,6 +98,10 @@ constexpr TIFFFieldInfo kCustomFields[] = {
      const_cast<char*>("BaselineExposureOffset")},
     {TIFFTAG_DEFAULTBLACKRENDER, 1, 1, TIFF_LONG, FIELD_CUSTOM, 1, 0,
      const_cast<char*>("DefaultBlackRender")},
+    {TIFFTAG_PREVIEWAPPLICATIONNAME, TIFF_VARIABLE, TIFF_VARIABLE, TIFF_ASCII, FIELD_CUSTOM, 1, 0,
+     const_cast<char*>("PreviewApplicationName")},
+    {TIFFTAG_PREVIEWCOLORSPACE, 1, 1, TIFF_LONG, FIELD_CUSTOM, 1, 0,
+     const_cast<char*>("PreviewColorSpace")},
 };
 
 bool registerCustomFields(TIFF* tif) {
@@ -118,22 +136,31 @@ public:
 
     bool create(const std::filesystem::path& destination) {
 #ifdef _WIN32
-        wchar_t temporaryName[MAX_PATH] = {};
+        // Mirror of the POSIX branch below: CREATE_NEW with a bounded retry instead
+        // of GetTempFileNameW. A collided name is never opened or deleted by us
+        // (foreign-name protection); GetTempFileNameW could return an
+        // already-existing name that libtiff would then rewrite.
+        std::wstring temporaryName;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = L".";
-            const std::wstring parentString = parent.wstring();
-            if (GetTempFileNameW(parentString.c_str(), L"rld", 0, temporaryName) == 0)
-                return false;
+            std::wstring basename = destination.filename().wstring();
+            if (basename.empty()) basename = L"rendered";
+            for (int attempt = 0; attempt < 64 && handle_ == INVALID_HANDLE_VALUE; ++attempt) {
+                const std::string suffix = stagingSuffix();
+                temporaryName = (parent / (basename + L".rawlab-rendered-dng-" +
+                                           std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
+                handle_ = ::CreateFileW(
+                    temporaryName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                    CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+                if (handle_ == INVALID_HANDLE_VALUE) {
+                    if (GetLastError() != ERROR_FILE_EXISTS) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never delete it
+                }
+            }
+            if (handle_ == INVALID_HANDLE_VALUE) return false;
 
             path_ = std::filesystem::path(temporaryName);
-            handle_ = CreateFileW(
-                path_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
-                FILE_ATTRIBUTE_TEMPORARY, nullptr);
-            if (handle_ == INVALID_HANDLE_VALUE) {
-                DeleteFileW(temporaryName);
-                return false;
-            }
 
             // Win32 libtiff expects the native HANDLE's significant 32 bits,
             // not a CRT descriptor produced by _open_osfhandle.
@@ -144,25 +171,30 @@ public:
             return true;
         } catch (...) {
             cleanup();
-            if (temporaryName[0] != L'\0') DeleteFileW(temporaryName);
+            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
             throw;
         }
 #else
-        std::vector<char> temporaryName;
+        std::string temporaryName;
         int createdFd = -1;
         try {
             std::filesystem::path parent = destination.parent_path();
             if (parent.empty()) parent = ".";
             std::string basename = destination.filename().string();
             if (basename.empty()) basename = "rendered";
-            const std::string pattern =
-                (parent / (basename + ".rawlab-rendered-dng-XXXXXX")).string();
-            temporaryName.assign(pattern.begin(), pattern.end());
-            temporaryName.push_back('\0');
-            createdFd = ::mkstemp(temporaryName.data());
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                temporaryName = (parent / (basename + ".rawlab-rendered-dng-" + stagingSuffix() + ".tmp")).string();
+                // libtiff opens the descriptor for read/write even in "w" mode.
+                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never unlink it
+                }
+            }
             if (createdFd < 0) return false;
+            preserveDestinationMode(createdFd, destination);
 
-            path_ = std::filesystem::path(temporaryName.data());
+            path_ = std::filesystem::path(temporaryName);
             fd_ = createdFd;
             createdFd = -1;
             tif_ = TIFFFdOpen(fd_, path_.c_str(), "w");
@@ -172,7 +204,7 @@ public:
         } catch (...) {
             closeFileDescriptor(createdFd);
             cleanup();
-            if (!temporaryName.empty()) ::unlink(temporaryName.data());
+            if (!temporaryName.empty()) ::unlink(temporaryName.c_str());
             throw;
         }
 #endif
@@ -239,6 +271,10 @@ float inverseSrgb(float encoded) {
     return static_cast<float>(linear);
 }
 
+uint16_t linear16(float encoded) {
+    return static_cast<uint16_t>(std::lround(static_cast<double>(inverseSrgb(encoded)) * kWhiteLevel));
+}
+
 bool validImage(const ImageData& image) {
     if (image.width <= 0 || image.height <= 0) return false;
     const uint64_t pixelCount = static_cast<uint64_t>(image.width) *
@@ -251,35 +287,270 @@ bool validImage(const ImageData& image) {
     return true;
 }
 
+struct PreviewSize {
+    uint32_t width;
+    uint32_t height;
+};
+
+PreviewSize previewSize(uint32_t width, uint32_t height, uint32_t maxLongEdge) {
+    const uint32_t longEdge = std::max(width, height);
+    if (longEdge <= maxLongEdge) return {width, height};
+    return {
+        std::max(1u, static_cast<uint32_t>(static_cast<uint64_t>(width) * maxLongEdge / longEdge)),
+        std::max(1u, static_cast<uint32_t>(static_cast<uint64_t>(height) * maxLongEdge / longEdge)),
+    };
+}
+
+bool setPreviewFields(TIFF* tif, PreviewSize size, bool orientation) {
+    bool ok = registerCustomFields(tif);
+    ok = ok && TIFFSetField(tif, TIFFTAG_SUBFILETYPE, uint32_t{1});
+    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, size.width);
+    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGELENGTH, size.height);
+    ok = ok && TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, uint16_t{8});
+    ok = ok && TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, uint16_t{3});
+    ok = ok && TIFFSetField(tif, TIFFTAG_COMPRESSION, uint16_t{COMPRESSION_JPEG});
+    ok = ok && TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, uint16_t{PHOTOMETRIC_YCBCR});
+    ok = ok && TIFFSetField(tif, TIFFTAG_PLANARCONFIG, uint16_t{PLANARCONFIG_CONTIG});
+    ok = ok && TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, size.height);
+    ok = ok && TIFFSetField(tif, TIFFTAG_YCBCRSUBSAMPLING, uint16_t{2}, uint16_t{2});
+    ok = ok && TIFFSetField(tif, TIFFTAG_YCBCRPOSITIONING, uint16_t{YCBCRPOSITION_CENTERED});
+    float referenceBlackWhite[6] = {0, 255, 128, 255, 128, 255};
+    ok = ok && TIFFSetField(tif, TIFFTAG_REFERENCEBLACKWHITE, referenceBlackWhite);
+    if (orientation) ok = ok && TIFFSetField(tif, TIFFTAG_ORIENTATION, uint16_t{ORIENTATION_TOPLEFT});
+    ok = ok && TIFFSetField(tif, TIFFTAG_XRESOLUTION, 1.0f);
+    ok = ok && TIFFSetField(tif, TIFFTAG_YRESOLUTION, 1.0f);
+    ok = ok && TIFFSetField(tif, TIFFTAG_RESOLUTIONUNIT, uint16_t{RESUNIT_NONE});
+    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGEDESCRIPTION, "Baked display-sRGB render; not sensor RAW.");
+    ok = ok && TIFFSetField(tif, TIFFTAG_MAKE, "RawLab");
+    ok = ok && TIFFSetField(tif, TIFFTAG_MODEL, "Rendered sRGB");
+    ok = ok && TIFFSetField(tif, TIFFTAG_SOFTWARE, "RawLab rendered DNG");
+    ok = ok && TIFFSetField(tif, TIFFTAG_PREVIEWAPPLICATIONNAME, "RawLab");
+    ok = ok && TIFFSetField(tif, TIFFTAG_PREVIEWCOLORSPACE, uint32_t{2});
+    return ok;
+}
+
+struct JpegError {
+    jpeg_error_mgr manager{};
+    std::jmp_buf jump;
+};
+
+struct JpegDestination {
+    jpeg_destination_mgr manager{};
+    TIFF* tif = nullptr;
+    uint64_t* remaining = nullptr;
+    bool tooLarge = false;
+    bool ioError = false;
+    std::array<JOCTET, 65536> buffer{};
+
+    bool write(size_t count) {
+        if (count > *remaining) {
+            tooLarge = true;
+            return false;
+        }
+        if (count && TIFFWriteRawStrip(tif, 0, buffer.data(), static_cast<tmsize_t>(count)) !=
+                         static_cast<tmsize_t>(count)) {
+            ioError = true;
+            return false;
+        }
+        *remaining -= count;
+        return true;
+    }
+
+    static void init(j_compress_ptr codec) {
+        auto& dest = *reinterpret_cast<JpegDestination*>(codec->dest);
+        dest.manager.next_output_byte = dest.buffer.data();
+        dest.manager.free_in_buffer = dest.buffer.size();
+    }
+
+    static boolean flush(j_compress_ptr codec) {
+        auto& dest = *reinterpret_cast<JpegDestination*>(codec->dest);
+        if (!dest.write(dest.buffer.size())) ERREXIT(codec, JERR_FILE_WRITE);
+        dest.manager.next_output_byte = dest.buffer.data();
+        dest.manager.free_in_buffer = dest.buffer.size();
+        return TRUE;
+    }
+
+    static void finish(j_compress_ptr codec) {
+        auto& dest = *reinterpret_cast<JpegDestination*>(codec->dest);
+        if (!dest.write(dest.buffer.size() - dest.manager.free_in_buffer))
+            ERREXIT(codec, JERR_FILE_WRITE);
+    }
+};
+
+class RowReader {
+    const RenderedDNGRows& source_;
+    uint32_t previous_ = UINT32_MAX;
+    const RGB* pixels_ = nullptr;
+public:
+    const uint32_t width, height;
+    explicit RowReader(const RenderedDNGRows& source) : source_(source), width(source.width), height(source.height) {}
+    const RGB* row(uint32_t y) {
+        if (y >= height) throw std::invalid_argument("DNG row is outside the rendered image");
+        if (previous_ != y) {
+            const RGB* pixels = source_.read(y);
+            if (!pixels) throw std::invalid_argument("Missing rendered DNG row");
+            for (uint32_t x = 0; x < width; ++x)
+                if (!std::isfinite(pixels[x].r) || !std::isfinite(pixels[x].g) || !std::isfinite(pixels[x].b))
+                    throw std::invalid_argument("Nonfinite rendered DNG row");
+            pixels_ = pixels; previous_ = y;
+        }
+        return pixels_;
+    }
+};
+
+void makePreviewRow(RowReader& image, PreviewSize size, uint32_t y, std::vector<uint8_t>& row) {
+    const uint64_t sourceWidth = static_cast<uint64_t>(image.width);
+    const uint64_t sourceHeight = static_cast<uint64_t>(image.height);
+    if (sourceWidth == size.width && sourceHeight == size.height) {
+        const RGB* pixels = image.row(y);
+        for (uint32_t x = 0; x < size.width; ++x) {
+            const RGB& pixel = pixels[x];
+            const size_t offset = static_cast<size_t>(x) * 3;
+            row[offset] = static_cast<uint8_t>(std::lround(std::clamp(pixel.r, 0.0f, 1.0f) * 255));
+            row[offset + 1] = static_cast<uint8_t>(std::lround(std::clamp(pixel.g, 0.0f, 1.0f) * 255));
+            row[offset + 2] = static_cast<uint8_t>(std::lround(std::clamp(pixel.b, 0.0f, 1.0f) * 255));
+        }
+        return;
+    }
+
+    // Integrate each output pixel's source area to avoid aliasing fine detail.
+    // Coordinates use integer units of the destination dimensions, so partial
+    // edge pixels receive their exact proportional weight.
+    const uint64_t top = static_cast<uint64_t>(y) * sourceHeight;
+    const uint64_t bottom = static_cast<uint64_t>(y + 1) * sourceHeight;
+    const uint64_t firstY = top / size.height;
+    const uint64_t endY = (bottom - 1) / size.height + 1;
+    const double scale = 255.0 / static_cast<double>(sourceWidth * sourceHeight);
+    std::vector<double> sums(size_t(size.width) * 3, 0);
+    for (uint64_t sourceY = firstY; sourceY < endY; ++sourceY) {
+        const RGB* pixels = image.row(uint32_t(sourceY));
+        const uint64_t weightY = std::min(bottom, (sourceY + 1) * size.height) -
+            std::max(top, sourceY * size.height);
+        for (uint32_t x = 0; x < size.width; ++x) {
+            const uint64_t left = static_cast<uint64_t>(x) * sourceWidth;
+            const uint64_t right = static_cast<uint64_t>(x + 1) * sourceWidth;
+            const uint64_t firstX = left / size.width;
+            const uint64_t endX = (right - 1) / size.width + 1;
+            for (uint64_t sourceX = firstX; sourceX < endX; ++sourceX) {
+                const uint64_t weightX = std::min(right, (sourceX + 1) * size.width) -
+                    std::max(left, sourceX * size.width);
+                const double weight = static_cast<double>(weightX * weightY);
+                const RGB& pixel = pixels[sourceX];
+                sums[size_t(x) * 3] += std::clamp(pixel.r, 0.0f, 1.0f) * weight;
+                sums[size_t(x) * 3 + 1] += std::clamp(pixel.g, 0.0f, 1.0f) * weight;
+                sums[size_t(x) * 3 + 2] += std::clamp(pixel.b, 0.0f, 1.0f) * weight;
+            }
+        }
+    }
+    for (uint32_t x = 0; x < size.width; ++x) {
+        const size_t offset = static_cast<size_t>(x) * 3;
+        row[offset] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset] * scale, 0.0, 255.0)));
+        row[offset + 1] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset + 1] * scale, 0.0, 255.0)));
+        row[offset + 2] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset + 2] * scale, 0.0, 255.0)));
+    }
+}
+
+ErrorCode writeJpegPreview(TIFF* tif, RowReader& image, PreviewSize size, uint64_t& remaining) {
+    struct State {
+        jpeg_compress_struct codec{};
+        JpegError error{};
+        JpegDestination destination{};
+        std::vector<uint8_t> row;
+        ~State() { jpeg_destroy_compress(&codec); }
+    };
+    auto state = std::make_unique<State>();
+    state->row.resize(static_cast<size_t>(size.width) * 3);
+    state->codec.err = jpeg_std_error(&state->error.manager);
+    state->error.manager.error_exit = [](j_common_ptr codec) {
+        std::longjmp(reinterpret_cast<JpegError*>(codec->err)->jump, 1);
+    };
+    if (setjmp(state->error.jump)) {
+        if (state->destination.tooLarge) return ErrorCode::ProcessingError;
+        if (state->destination.ioError) return ErrorCode::IOError;
+        return state->error.manager.msg_code == JERR_OUT_OF_MEMORY ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError;
+    }
+    jpeg_create_compress(&state->codec);
+    auto& dest = state->destination;
+    dest.tif = tif;
+    dest.remaining = &remaining;
+    dest.manager.init_destination = JpegDestination::init;
+    dest.manager.empty_output_buffer = JpegDestination::flush;
+    dest.manager.term_destination = JpegDestination::finish;
+    state->codec.dest = &dest.manager;
+    state->codec.image_width = size.width;
+    state->codec.image_height = size.height;
+    state->codec.input_components = 3;
+    state->codec.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&state->codec);
+    jpeg_set_quality(&state->codec, kPreviewJpegQuality, TRUE);
+    jpeg_start_compress(&state->codec, TRUE);
+    constexpr size_t kCancelCheckPixels = 65536;
+    size_t pixelsSinceCheck = 0;
+    while (state->codec.next_scanline < size.height) {
+        pixelsSinceCheck += static_cast<size_t>(size.width);
+        if (pixelsSinceCheck >= kCancelCheckPixels) {
+            pixelsSinceCheck = 0;
+            checkProcessingCancellation();
+        }
+        makePreviewRow(image, size, state->codec.next_scanline, state->row);
+        JSAMPROW row = state->row.data();
+        jpeg_write_scanlines(&state->codec, &row, 1);
+    }
+    jpeg_finish_compress(&state->codec);
+    return ErrorCode::Success;
+}
+
 } // namespace
+
+bool exceedsRenderedDngCapacity(uint32_t width, uint32_t height, uint64_t* remainingPreviewBytes) {
+    if (remainingPreviewBytes) *remainingPreviewBytes = 0;
+    const uint64_t rowSampleCount = static_cast<uint64_t>(width) * 3u;
+    const uint64_t rowBytes = rowSampleCount * sizeof(uint16_t);
+    if (rowSampleCount > std::numeric_limits<size_t>::max() ||
+        rowSampleCount > std::vector<uint16_t>().max_size() ||
+        rowBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+        rowBytes > static_cast<uint64_t>(std::numeric_limits<tmsize_t>::max())) {
+        return true;
+    }
+    if (rowBytes != 0 && static_cast<uint64_t>(height) >
+            std::numeric_limits<uint64_t>::max() / rowBytes) {
+        return true;
+    }
+    const uint64_t pixelBytes = rowBytes * static_cast<uint64_t>(height);
+    const uint64_t stripCount =
+        (static_cast<uint64_t>(height) + kRowsPerStrip - 1u) / kRowsPerStrip;
+    const uint64_t stripTableBytes = stripCount * sizeof(uint32_t) * 2u;
+    const uint64_t metadataBytes = kMetadataReservation + (sizeof(kNeutralXmp) - 1u);
+    if (pixelBytes > kMaxClassicTiffBytes ||
+        stripTableBytes > kMaxClassicTiffBytes - pixelBytes ||
+        metadataBytes > kMaxClassicTiffBytes - pixelBytes - stripTableBytes) {
+        return true;
+    }
+    if (remainingPreviewBytes) {
+        *remainingPreviewBytes = kMaxClassicTiffBytes - pixelBytes - stripTableBytes - metadataBytes;
+    }
+    return false;
+}
 
 ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     if (filepath.empty() || !validImage(image)) return ErrorCode::ProcessingError;
+    return saveRenderedDNGRows({uint32_t(image.width), uint32_t(image.height), [&](uint32_t row) {
+        return image.pixels.data() + size_t(row) * image.width;
+    }}, filepath);
+}
+
+ErrorCode saveRenderedDNGRows(const RenderedDNGRows& source, const std::string& filepath,
+    const std::function<void()>& beforePublish) {
+    if (filepath.empty() || !source.width || !source.height || !source.read) return ErrorCode::ProcessingError;
+    RowReader image(source);
 
     const uint32_t width = static_cast<uint32_t>(image.width);
     const uint32_t height = static_cast<uint32_t>(image.height);
-    const uint64_t rowSampleCount = static_cast<uint64_t>(image.width) * 3;
-    const uint64_t rowBytes = rowSampleCount * sizeof(float);
-    if (rowSampleCount > std::numeric_limits<size_t>::max() ||
-        rowSampleCount > std::vector<float>().max_size() ||
-        rowBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
-        rowBytes > static_cast<uint64_t>(std::numeric_limits<tmsize_t>::max()))
+    uint64_t previewBytesRemaining = 0;
+    if (exceedsRenderedDngCapacity(width, height, &previewBytesRemaining))
         return ErrorCode::ProcessingError;
 
-    if (rowBytes != 0 && static_cast<uint64_t>(height) >
-            std::numeric_limits<uint64_t>::max() / rowBytes)
-        return ErrorCode::ProcessingError;
-    const uint64_t pixelBytes = rowBytes * height;
-    const uint64_t stripCount =
-        (static_cast<uint64_t>(height) + kRowsPerStrip - 1) / kRowsPerStrip;
-    const uint64_t stripTableBytes = stripCount * sizeof(uint32_t) * 2;
-    const uint64_t metadataBytes = kMetadataReservation + (sizeof(kNeutralXmp) - 1);
-    if (pixelBytes > kMaxClassicTiffBytes ||
-        stripTableBytes > kMaxClassicTiffBytes - pixelBytes ||
-        metadataBytes > kMaxClassicTiffBytes - pixelBytes - stripTableBytes)
-        return ErrorCode::ProcessingError;
-
-    const size_t rowSamples = static_cast<size_t>(rowSampleCount);
+    const size_t rowSamples = static_cast<size_t>(width) * 3u;
 
     std::filesystem::path outputPath;
     try {
@@ -302,42 +573,16 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     }
     TIFF* tif = staging.tif();
 
-    bool ok = registerCustomFields(tif);
-    const uint16_t bitsPerSample = 32;
-    const uint16_t samplesPerPixel = 3;
-    const uint16_t compression = COMPRESSION_NONE;
-    const uint16_t photometric = kLinearRaw;
-    const uint16_t planar = PLANARCONFIG_CONTIG;
-    const uint16_t sampleFormat = SAMPLEFORMAT_IEEEFP;
-    const uint32_t rowsPerStrip = kRowsPerStrip;
-    const uint16_t orientation = ORIENTATION_TOPLEFT;
-    const uint16_t resolutionUnit = RESUNIT_NONE;
-    const uint32_t subfileType = 0;
-
-    ok = ok && TIFFSetField(tif, TIFFTAG_SUBFILETYPE, subfileType);
-    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
-    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
-    ok = ok && TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, bitsPerSample);
-    ok = ok && TIFFSetField(tif, TIFFTAG_COMPRESSION, compression);
-    ok = ok && TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, photometric);
-    ok = ok && TIFFSetField(tif, TIFFTAG_ORIENTATION, orientation);
-    ok = ok && TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, samplesPerPixel);
-    ok = ok && TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsPerStrip);
-    ok = ok && TIFFSetField(tif, TIFFTAG_PLANARCONFIG, planar);
-    ok = ok && TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, sampleFormat);
-    ok = ok && TIFFSetField(tif, TIFFTAG_XRESOLUTION, 1.0f);
-    ok = ok && TIFFSetField(tif, TIFFTAG_YRESOLUTION, 1.0f);
-    ok = ok && TIFFSetField(tif, TIFFTAG_RESOLUTIONUNIT, resolutionUnit);
-    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGEDESCRIPTION,
-                            "Baked display-sRGB render; not sensor RAW.");
-    ok = ok && TIFFSetField(tif, TIFFTAG_MAKE, "RawLab");
-    ok = ok && TIFFSetField(tif, TIFFTAG_MODEL, "Rendered sRGB");
-    ok = ok && TIFFSetField(tif, TIFFTAG_SOFTWARE, "RawLab rendered DNG");
+    const PreviewSize thumbnail = previewSize(width, height, kThumbnailLongEdge);
+    const PreviewSize fullPreview = previewSize(width, height, static_cast<uint32_t>(JPEG_MAX_DIMENSION));
+    uint64_t subIfdOffsets[2] = {0, 0};
+    bool ok = setPreviewFields(tif, thumbnail, true);
+    ok = ok && TIFFSetField(tif, TIFFTAG_SUBIFD, uint16_t{2}, subIfdOffsets);
 
     uint8_t dngVersion[4] = {1, 4, 0, 0};
     uint16_t blackLevelRepeatDim[2] = {1, 1};
     float blackLevel[3] = {0, 0, 0};
-    uint32_t whiteLevel[3] = {1, 1, 1};
+    uint32_t whiteLevel[3] = {kWhiteLevel, kWhiteLevel, kWhiteLevel};
     float defaultScale[2] = {1, 1};
     float defaultCropOrigin[2] = {0, 0};
     float defaultCropSize[2] = {static_cast<float>(width), static_cast<float>(height)};
@@ -358,12 +603,6 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     ok = ok && TIFFSetField(tif, TIFFTAG_DNGVERSION, dngVersion);
     ok = ok && TIFFSetField(tif, TIFFTAG_DNGBACKWARDVERSION, dngVersion);
     ok = ok && TIFFSetField(tif, TIFFTAG_UNIQUECAMERAMODEL, "RawLab Rendered sRGB");
-    ok = ok && TIFFSetField(tif, TIFFTAG_BLACKLEVELREPEATDIM, blackLevelRepeatDim);
-    ok = ok && TIFFSetField(tif, TIFFTAG_BLACKLEVEL, count3, blackLevel);
-    ok = ok && TIFFSetField(tif, TIFFTAG_WHITELEVEL, count3, whiteLevel);
-    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTSCALE, defaultScale);
-    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTCROPORIGIN, defaultCropOrigin);
-    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTCROPSIZE, defaultCropSize);
     ok = ok && TIFFSetField(tif, TIFFTAG_COLORMATRIX1, count9, kColorMatrix);
     ok = ok && TIFFSetField(tif, TIFFTAG_ANALOGBALANCE, count3, analogBalance);
     ok = ok && TIFFSetField(tif, TIFFTAG_ASSHOTWHITEXY, asShotWhiteXY);
@@ -371,7 +610,6 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     ok = ok && TIFFSetField(tif, TIFFTAG_BASELINENOISE, baselineNoise);
     ok = ok && TIFFSetField(tif, TIFFTAG_BASELINESHARPNESS, baselineSharpness);
     ok = ok && TIFFSetField(tif, TIFFTAG_CALIBRATIONILLUMINANT1, calibrationIlluminant);
-    ok = ok && TIFFSetField(tif, TIFFTAG_ACTIVEAREA, activeArea);
     ok = ok && TIFFSetField(tif, TIFFTAG_COLORIMETRICREFERENCE, colorimetricReference);
     ok = ok && TIFFSetField(tif, TIFFTAG_PROFILENAME, "RawLab Baked sRGB");
     ok = ok && TIFFSetField(tif, TIFFTAG_PROFILETONECURVE, count3 + 1, profileToneCurve);
@@ -383,30 +621,90 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     ok = ok && TIFFSetField(tif, TIFFTAG_XMLPACKET,
                             static_cast<uint32_t>(xmp.size()),
                             const_cast<char*>(xmp.data()));
+    if (!ok) return ErrorCode::IOError;
 
-    std::vector<float> row;
+    try {
+        const ErrorCode result = writeJpegPreview(tif, image, thumbnail, previewBytesRemaining);
+        if (result != ErrorCode::Success) return result;
+    } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::ProcessingError;
+    }
+    if (!TIFFWriteDirectory(tif)) return ErrorCode::IOError;
+
+    ok = TIFFSetField(tif, TIFFTAG_SUBFILETYPE, uint32_t{0});
+    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
+    ok = ok && TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
+    ok = ok && TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, uint16_t{16});
+    ok = ok && TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, uint16_t{3});
+    ok = ok && TIFFSetField(tif, TIFFTAG_COMPRESSION, uint16_t{COMPRESSION_NONE});
+    ok = ok && TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, uint16_t{kLinearRaw});
+    ok = ok && TIFFSetField(tif, TIFFTAG_PLANARCONFIG, uint16_t{PLANARCONFIG_CONTIG});
+    ok = ok && TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, uint16_t{SAMPLEFORMAT_UINT});
+    ok = ok && TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, kRowsPerStrip);
+    ok = ok && TIFFSetField(tif, TIFFTAG_BLACKLEVELREPEATDIM, blackLevelRepeatDim);
+    ok = ok && TIFFSetField(tif, TIFFTAG_BLACKLEVEL, count3, blackLevel);
+    ok = ok && TIFFSetField(tif, TIFFTAG_WHITELEVEL, count3, whiteLevel);
+    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTSCALE, defaultScale);
+    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTCROPORIGIN, defaultCropOrigin);
+    ok = ok && TIFFSetField(tif, TIFFTAG_DEFAULTCROPSIZE, defaultCropSize);
+    ok = ok && TIFFSetField(tif, TIFFTAG_ACTIVEAREA, activeArea);
+
+    std::vector<uint16_t> row;
     try {
         row.resize(rowSamples);
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     }
-    if (ok) {
+    try { if (ok) {
+        constexpr size_t kCancelCheckPixels = 65536;
+        size_t pixelsSinceCheck = 0;
         for (uint32_t y = 0; y < height && ok; ++y) {
+            pixelsSinceCheck += static_cast<size_t>(width);
+            if (pixelsSinceCheck >= kCancelCheckPixels) {
+                pixelsSinceCheck = 0;
+                checkProcessingCancellation();
+            }
+            const RGB* pixels = image.row(y);
             for (uint32_t x = 0; x < width; ++x) {
-                const RGB& pixel = image.at(static_cast<int>(x), static_cast<int>(y));
+                const RGB& pixel = pixels[x];
                 const size_t offset = static_cast<size_t>(x) * 3;
-                row[offset] = inverseSrgb(pixel.r);
-                row[offset + 1] = inverseSrgb(pixel.g);
-                row[offset + 2] = inverseSrgb(pixel.b);
+                row[offset] = linear16(pixel.r);
+                row[offset + 1] = linear16(pixel.g);
+                row[offset + 2] = linear16(pixel.b);
             }
             ok = TIFFWriteScanline(tif, row.data(), y, 0) >= 0;
         }
+    } } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::ProcessingError;
     }
 
     if (ok) ok = TIFFFlushData(tif) == 1;
     if (ok) ok = TIFFWriteDirectory(tif) == 1;
-    if (ok) ok = TIFFFlush(tif) == 1;
     if (!ok) return ErrorCode::IOError;
+
+    if (!setPreviewFields(tif, fullPreview, false)) return ErrorCode::IOError;
+    try {
+        const ErrorCode result = writeJpegPreview(tif, image, fullPreview, previewBytesRemaining);
+        if (result != ErrorCode::Success) return result;
+    } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::ProcessingError;
+    }
+    if (!TIFFWriteDirectory(tif) || !TIFFFlush(tif)) return ErrorCode::IOError;
+    // 提交点：编码完成后、替换目标文件之前再看一次取消。
+    checkProcessingCancellation();
+    if (beforePublish) beforePublish();
     try {
         if (!staging.publish(outputPath)) return ErrorCode::IOError;
     } catch (const std::bad_alloc&) {

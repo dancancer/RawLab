@@ -3,6 +3,66 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.11.0]
+
+### Added
+
+- Sony Wi-Fi camera import on Android with media-library storage, one-tap
+  incremental import, resumable transfers, duplicate-download skipping, and
+  JPEG resize in both manual and incremental import. Camera import on iOS is a
+  preview with newest-first sorting and optional Photos auto-save.
+- Sony wireless tethering with live view, phone shutter, tap-to-focus, live-view
+  focus frames, focus area controls, and automatic transfer of new photos; iOS
+  tethering is a preview.
+- Mobile 1:1 native viewport ROI tiling and progressive zoom on iOS and
+  Android, plus cancellable progress UI for mobile HDR export.
+- Edited-photo markers and rendered thumbnails on all four clients, Edited and
+  Unedited filters on iOS and Android, and Recently Opened on iOS.
+- Separate red, green and blue tone-curve channels and a vignetting-correction
+  switch in the mobile editor.
+- Automatic cleanup of old batch exports and tethering records, plus manual
+  cleanup of camera originals and Android copies of photos opened from other
+  apps.
+
+### Changed
+
+- Processing version 3 retunes highlights, shadows, contrast, black and white
+  points, vibrance, clarity and dehaze, and widens SDR exposure to ±5 EV.
+  Existing edits are upgraded only after validation and can be rolled back.
+- The mobile editor uses compact tool workspaces with Apply and Cancel for each
+  tool.
+- Rendered DNG uses 16-bit integer data with embedded previews.
+- Pasting skips noise-reduction settings the target can't use and keeps the
+  target's processing version, with a notice in each case.
+- PNG exports stage their output before replacing an existing file.
+  Native-size processing is no longer stopped at 128 MP.
+- Downgrading to 0.10.x or earlier is not supported.
+
+### Fixed
+
+- Full-frame development of Sony RAW shot in 4:3, 16:9 or 1:1.
+- One unreadable edit record, batch journal, preset or look making the whole
+  library unusable, plus quarantine for corrupt root edit stores and cleanup
+  of temporary atomic-write files on iOS.
+- Resetting SDR or HDR adjustments affecting the other rendition; HDR rendition
+  controls gain group and per-slider resets on all clients.
+- Pasting into RAW photos with ordinary-image placeholders, and recipes pasted
+  onto HDR photos.
+- Choice of X3F batch mode, lens-correction reset in X3F Normal mode, and
+  older Windows X3F records.
+- Windows and macOS update failures locking the editor, Windows manual installs
+  not detecting updates, and Windows HDR display, cache lock, preview
+  cancellation, UI save blocking, Reset All and frozen collection export
+  commit/rollback.
+- Aligned Force GPU unsupported diagnostics and D3D11 bounds, clean AI
+  initialization failure rollback, hardened X3F panic/buffer bounds, and
+  reliability/R8/export fixes across Android, iOS and macOS.
+- Camera import recovery after disconnects, BLE/Wi-Fi connection fallbacks, and
+  per-photo import failures stopping the whole batch.
+
+Version `0.11.0`, build `20`. See the
+[release notes](docs/releases/v0.11/v0.11.0.md) for compatibility and coverage.
+
 ## [0.10.0]
 
 ### Added

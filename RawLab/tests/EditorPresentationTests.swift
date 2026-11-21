@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main
@@ -144,10 +145,15 @@ struct EditorPresentationTests {
         check(effects.vignetteAmount == 100 && effects.vignetteRoundness == -100 &&
               effects.vignetteMidpoint == 100 && effects.grainSize == 0 && effects.grainRoughness == 100,
               "Photo effect controls clamp each parameter to its canonical range")
-        effects.vignetteAmount = 0.5
-        effects.vignetteRoundness = -0.5
-        check(effects.vignetteAmount == 1 && effects.vignetteRoundness == -1,
-              "Photo effect values use the shared nearest-integer rounding contract")
+        effects.vignetteAmount = 12.5
+        effects.vignetteRoundness = -12.25
+        check(effects.vignetteAmount == 12.5 && effects.vignetteRoundness == -12.25,
+              "Photo effects model preserves decimal precision for transfer and persistence")
+        var uiRounded = RawSettings.default
+        uiRounded.setEditingEffect(.vignetteAmount, to: 0.5)
+        uiRounded.setEditingEffect(.vignetteRoundness, to: -0.5)
+        check(uiRounded.photoEffects.vignetteAmount == 1 && uiRounded.photoEffects.vignetteRoundness == -1,
+              "Photo effect UI setters use the shared nearest-integer rounding contract")
         effects.vignetteAmount = 0
         effects.vignetteMidpoint = 62
         settings.photoEffects = effects
@@ -193,8 +199,8 @@ struct EditorPresentationTests {
               AdjustmentKind.temperature.progress(in: settings) < 0.1,
               "Positive progress uses the upper half of the expanded temperature range")
         settings.exposure = -1
-        check(AdjustmentKind.exposure.progress(in: settings) == -0.25,
-              "Negative exposure travels counterclockwise")
+        check(AdjustmentKind.exposure.progress(in: settings) == -0.2,
+              "Negative exposure uses the five-stop counterclockwise range")
         settings.lutStrength = 0
         check(AdjustmentKind.strength.progress(in: settings) == -1,
               "Strength is anchored at its existing 100 percent default")

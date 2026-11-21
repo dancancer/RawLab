@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main
@@ -44,9 +45,9 @@ struct ControlGroupTests {
     }
 
     private static func currentTools() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"], "Six stable group IDs keep their order")
-        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry], "Each group opens its declared default tool")
-        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 23 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-three tools")
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"], "Seven stable group IDs keep their order")
+        check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry, .hdrPeakLimit], "Each group opens its declared default tool")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 27 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-seven tools")
         var navigation = EditorAdjustmentNavigation()
         navigation.selectedHSLChannel = 6
         navigation.selectGroup(.color)
@@ -55,6 +56,35 @@ struct ControlGroupTests {
         check(navigation.selectedHSLChannel == 6, "HSL session channel survives group and tool changes")
         navigation.selectGroup(.color)
         check(navigation.expandedGroup == nil && navigation.tool == .hsl, "Repeated group click collapses without clearing tool")
+        check(EditorAdjustmentGroup.visibleGroups(isHDREditing: false) == [.looks, .light, .color, .effects, .detail, .geometry] &&
+              !EditorAdjustmentGroup.visibleGroups(isHDREditing: false).contains(.hdrRendition),
+              "SDR mode exposes six visible groups and excludes hdrRendition")
+        check(EditorAdjustmentGroup.visibleGroups(isHDREditing: true) == EditorAdjustmentGroup.allCases,
+              "HDR mode exposes all seven groups including hdrRendition")
+        navigation.selectedGradingZone = .highlights
+        for hdrTool in EditorAdjustmentGroup.hdrRendition.tools {
+            navigation.selectTool(hdrTool)
+            check(navigation.normalized(isHDREditing: true) == navigation,
+                  "HDR mode retains \(hdrTool.rawValue) navigation")
+            let sdrNormalized = navigation.normalized(isHDREditing: false)
+            check(sdrNormalized.tool.group != .hdrRendition &&
+                  sdrNormalized.expandedGroup != .hdrRendition &&
+                  sdrNormalized.tool == .exposure &&
+                  sdrNormalized.expandedGroup == .light &&
+                  sdrNormalized.selectedHSLChannel == 6 &&
+                  sdrNormalized.selectedGradingZone == .highlights,
+                  "SDR normalization exits hdrRendition from \(hdrTool.rawValue) while preserving session channels")
+        }
+        navigation.selectTool(.hdrPeakLimit)
+        navigation.selectGroup(.hdrRendition)
+        let collapsedNormalized = navigation.normalized(isHDREditing: false)
+        check(collapsedNormalized.expandedGroup == nil &&
+              collapsedNormalized.tool == .exposure &&
+              collapsedNormalized.tool.group != .hdrRendition,
+              "SDR normalization clears collapsed hdrRendition tool without forcing expansion")
+        navigation.selectTool(.hsl)
+        check(navigation.normalized(isHDREditing: false) == navigation,
+              "SDR normalization leaves visible SDR tools untouched")
         var source = Adjustments()
         source.exposure = 1; source.highlights = 22; source.sharpening = 15
         source.photoEffects = PhotoEffectsSettings(vignetteMidpoint: 12, grainSize: 62)
@@ -68,7 +98,7 @@ struct ControlGroupTests {
         let denoise = candidate(.tool(.denoise), state(source))
         expected = source; expected.rawNoiseReduction = 0; expected.chromaNoiseReduction = nil; expected.waveletNoiseReduction = nil
         check(denoise.settings == expected && denoise.settings.sharpening == 15, "Disabled denoise tool reset clears the complete object and preserves sharpening")
-        check(EditorAdjustmentRules.prepareReset(scope: .tool(.recipe), snapshot: state(source), context: rawContext) == .unchanged, "Unselected recipe reset is NoChange")
+        check(MacEditorAdjustmentRules.prepareReset(scope: .tool(.recipe), snapshot: state(source), context: rawContext) == .unchanged, "Unselected recipe reset is NoChange")
         source.strength = 0.2
         var selected = state(source); selected.filmID = "film"
         let film = candidate(.tool(.film), selected)
@@ -80,7 +110,7 @@ struct ControlGroupTests {
         check(wb.settings == expected, "Current WB reset restores mode and both camera parameters while preserving color peers")
         source.processing = .legacy
         let legacy = candidate(.all, state(source))
-        check(legacy.settings.processing == .legacy && EditorAdjustmentRules.prepareReset(scope: .all, snapshot: legacy, context: rawContext) == .unchanged, "All reset retains legacy processing identity and is idempotent")
+        check(legacy.settings.processing == .legacy && MacEditorAdjustmentRules.prepareReset(scope: .all, snapshot: legacy, context: rawContext) == .unchanged, "All reset retains legacy processing identity and is idempotent")
     }
 
     private static func hsl() throws {
@@ -186,15 +216,15 @@ struct ControlGroupTests {
         check(settings.photoEffects == nil && settings.isEffectDefault(.grainAmount), "Whole grain reset restores canonical effect defaults")
     }
 
-    private static let rawContext = EditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview, neutralFilmID: "neutral")
+    private static let rawContext = MacEditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview, neutralFilmID: "neutral")
 
-    private static func state(_ settings: Adjustments = Adjustments()) -> PhotoEditState {
-        PhotoEditState(settings: settings, filmID: "neutral", masterRecipeID: settings.masterRecipeID)
+    private static func state(_ settings: Adjustments = Adjustments()) -> MacPhotoEditState {
+        MacPhotoEditState(settings: settings, filmID: "neutral", masterRecipeID: settings.masterRecipeID)
     }
 
-    private static func candidate(_ scope: EditorResetScope, _ snapshot: PhotoEditState,
-                                  context: EditorAdjustmentContext = rawContext) -> PhotoEditState {
-        guard case .candidate(let result) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) else {
+    private static func candidate(_ scope: EditorResetScope, _ snapshot: MacPhotoEditState,
+                                  context: MacEditorAdjustmentContext = rawContext) -> MacPhotoEditState {
+        guard case .candidate(let result) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) else {
             fatalError("Expected reset candidate for \(scope)")
         }
         return result
@@ -210,13 +240,13 @@ struct ControlGroupTests {
     }
 
     private static func editorGroups() throws {
-        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry"],
+        check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"],
               "Editor group IDs are stable and independent of the old eight groups")
         let neutral = state()
         check(EditorAdjustmentGroup.allCases.allSatisfy {
-            !EditorAdjustmentRules.isModified(scope: .group($0), snapshot: neutral, context: rawContext)
+            !MacEditorAdjustmentRules.isModified(scope: .group($0), snapshot: neutral, context: rawContext)
         }, "Neutral RAW settings have no group markers")
-        if case .unchanged = EditorAdjustmentRules.prepareReset(scope: .all, snapshot: neutral, context: rawContext) {
+        if case .unchanged = MacEditorAdjustmentRules.prepareReset(scope: .all, snapshot: neutral, context: rawContext) {
             check(true, "No-op reset creates no candidate")
         } else { check(false, "No-op reset creates no candidate") }
         var source = neutral
@@ -229,7 +259,7 @@ struct ControlGroupTests {
         source.settings.hsl = MacHSLPrecision.setting(12.4, axis: .hue, channel: 0, in: HSLSettings())
         source.settings.hsl = MacHSLPrecision.setting(-8.7, axis: .saturation, channel: 1, in: source.settings.hslSettings)
         for group in [EditorAdjustmentGroup.light, .color, .effects, .detail, .geometry] {
-            check(EditorAdjustmentRules.isModified(scope: .group(group), snapshot: source, context: rawContext),
+            check(MacEditorAdjustmentRules.isModified(scope: .group(group), snapshot: source, context: rawContext),
                   "\(group) includes stored auxiliary values even when disabled")
         }
         let light = candidate(.group(.light), source)
@@ -252,13 +282,13 @@ struct ControlGroupTests {
         expected = source; expected.settings.hsl = nil
         check(hsl == expected, "Whole HSL reset preserves white balance and saturation")
         var legacy = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
-        check(legacy.exposureMode == .scene && EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: state(legacy), context: rawContext),
+        check(legacy.exposureMode == .scene && MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: state(legacy), context: rawContext),
               "Legacy missing exposure mode keeps scene instead of silently adopting the new-photo default")
         legacy.rawNoiseReduction = 2
         let resetLegacy = candidate(.group(.detail), state(legacy))
         check(resetLegacy.settings.rawNoiseReduction == 0 && resetLegacy.settings.waveletNoiseReduction == nil,
               "Reset legacy denoise does not enable a different algorithm")
-        let raster = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "neutral")
+        let raster = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "neutral")
         let resetRaster = candidate(.all, source, context: raster)
         check(resetRaster.settings.exposureMode == .sensor && resetRaster.filmID == "neutral",
               "Full raster reset uses the existing sensor default")
@@ -274,15 +304,15 @@ struct ControlGroupTests {
             settings.hsl = MacHSLPrecision.setting(65.3, axis: .hue, channel: 0, in: settings.hslSettings)
             settings.strength = strength
             var source = state(settings); source.filmID = "recipe-film"
-            check(EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: source, context: rawContext) &&
-                  EditorAdjustmentRules.isModified(scope: .group(.color), snapshot: source, context: rawContext),
+            check(MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: source, context: rawContext) &&
+                  MacEditorAdjustmentRules.isModified(scope: .group(.color), snapshot: source, context: rawContext),
                   "Recipe logical light/color markers remain visible at strength \(strength)")
             let result = candidate(.group(.looks), source)
             check(coreValues(result.settings) == coreValues(source.settings) && result.settings.exposureMode == source.settings.exposureMode,
                   "Appearance reset preserves every non-look core Float and HSL at strength \(strength)")
             check(result.filmID == "neutral" && result.masterRecipeID == nil && result.settings.masterRecipeID == nil && result.settings.strength == 1,
                   "Appearance reset clears all appearance identities together")
-            check(try JSONDecoder().decode(PhotoEditState.self, from: JSONEncoder().encode(result)) == result,
+            check(try JSONDecoder().decode(MacPhotoEditState.self, from: JSONEncoder().encode(result)) == result,
                   "Detached recipe candidate survives existing persistence")
             var versionTwo = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
             versionTwo["masterRecipeSettingsVersion"] = 2
@@ -292,21 +322,21 @@ struct ControlGroupTests {
         }
         var settings = Adjustments()
         settings.applyMasterRecipe(.hamadaDaylightV2)
-        if case .blocked(.missingAsShotWhiteBalance) = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
+        if case .blocked(.missingAsShotWhiteBalance) = MacEditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
             check(true, "Missing RAW as-shot calibration blocks relative-tint materialization")
         } else { check(false, "Missing RAW as-shot calibration blocks relative-tint materialization") }
         settings.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8.2))
         settings.exposure = 4; settings.strength = 2
-        if case .blocked = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
+        if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
             check(true, "Unrepresentable 8 EV materialization is blocked instead of clamped")
         } else { check(false, "Unrepresentable 8 EV materialization is blocked instead of clamped") }
         settings.exposure = .nan
-        if case .blocked = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
+        if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(settings), context: rawContext) {
             check(true, "Nonfinite source values are rejected before conversion")
         } else { check(false, "Nonfinite source values are rejected before conversion") }
 
-        let raster = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "neutral")
-        check(!EditorAdjustmentRules.isModified(scope: .group(.light), snapshot: state(), context: raster),
+        let raster = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "neutral")
+        check(!MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: state(), context: raster),
               "Raster effective sensor mode does not mark untouched stored preview mode")
         var rgb = Adjustments()
         rgb.exposureMode = .scene
@@ -324,7 +354,7 @@ struct ControlGroupTests {
         customWithoutCamera.applyMasterRecipe(.hamadaDaylightV2)
         customWithoutCamera.whiteBalanceMode = .custom
         customWithoutCamera.tint = 0
-        if case .blocked(.missingAsShotWhiteBalance) = EditorAdjustmentRules.prepareReset(
+        if case .blocked(.missingAsShotWhiteBalance) = MacEditorAdjustmentRules.prepareReset(
             scope: .group(.looks), snapshot: state(customWithoutCamera), context: rawContext) {
             check(true, "Custom RAW white balance with zero relative tint blocks without as-shot calibration")
         } else {
@@ -332,7 +362,7 @@ struct ControlGroupTests {
         }
 
         customWithoutCamera.strength = 0
-        if case .blocked(.missingAsShotWhiteBalance) = EditorAdjustmentRules.prepareReset(
+        if case .blocked(.missingAsShotWhiteBalance) = MacEditorAdjustmentRules.prepareReset(
             scope: .group(.looks), snapshot: state(customWithoutCamera), context: rawContext) {
             check(true, "Custom RAW white balance with zero strength blocks without as-shot calibration")
         } else {
@@ -354,7 +384,7 @@ struct ControlGroupTests {
 
         var futureSettings = rgb
         futureSettings.setTransferRecipe(rgb.masterRecipeID, settingsVersion: 5)
-        if case .blocked(.invalidSnapshot("masterRecipe")) = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(futureSettings), context: rawContext) {
+        if case .blocked(.invalidSnapshot("masterRecipe")) = MacEditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(futureSettings), context: rawContext) {
             check(true, "Unknown recipe settings versions are blocked without migration")
         } else { check(false, "Unknown recipe settings versions are blocked without migration") }
         let refinedRecipe = try JSONDecoder().decode(MasterRecipe.self,
@@ -368,7 +398,7 @@ struct ControlGroupTests {
               refinedDetached.gradingSettings == refined.renderGradingSettings && refinedDetached.curveSettings == refined.renderCurveSettings,
               "Looks reset bakes v4 refinements once while preserving their rendered effect")
         rgb.masterRecipeID = "missing-recipe"
-        if case .blocked = EditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(rgb), context: rawContext) {
+        if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .group(.looks), snapshot: state(rgb), context: rawContext) {
             check(true, "Unknown recipe identity is not guessed")
         } else { check(false, "Unknown recipe identity is not guessed") }
 
@@ -402,7 +432,7 @@ struct ControlGroupTests {
         let all = candidate(.all, selected)
         check(all.filmID == "neutral" && all.masterRecipeID == nil && all.settings.masterRecipeID == nil &&
               all.settings.asShotWhiteBalance == coupled.asShotWhiteBalance &&
-              !EditorAdjustmentRules.isModified(scope: .all, snapshot: all, context: rawContext),
+              !MacEditorAdjustmentRules.isModified(scope: .all, snapshot: all, context: rawContext),
               "Full reset clears external and internal identities while retaining genuine input metadata")
     }
 
@@ -410,13 +440,13 @@ struct ControlGroupTests {
         var invalid = Adjustments()
         invalid.exposure = 9
         for scope in [EditorResetScope.group(.light), .all] {
-            if case .blocked(.invalidSnapshot("exposure")) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: state(invalid), context: rawContext) {
+            if case .blocked(.invalidSnapshot("exposure")) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: state(invalid), context: rawContext) {
                 check(true, "\(scope) rejects an invalid source instead of silently repairing it")
             } else { check(false, "\(scope) rejects an invalid source instead of silently repairing it") }
         }
         invalid = Adjustments()
         invalid.hsl = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[1],\"saturation\":[0],\"lightness\":[0]}".utf8))
-        if case .blocked = EditorAdjustmentRules.prepareReset(scope: .hslColor(7), snapshot: state(invalid), context: rawContext) {
+        if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .hslColor(7), snapshot: state(invalid), context: rawContext) {
             check(true, "Malformed HSL source is blocked before indexing a color")
         } else { check(false, "Malformed HSL source is blocked before indexing a color") }
     }

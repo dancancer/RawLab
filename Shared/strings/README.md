@@ -31,7 +31,16 @@ python3 scripts/localization/generate.py --check
 `Localizable.strings`、Windows JSON、Android 字符串/复数/数组资源文件。
 添加原生文件中的手写词条、丢失文件或仅改变空白都会失败。
 来源还会检查六语完整性、唯一/共享归属、孤立来源、覆盖理由和参数类型。
-Linux CI 同时运行无需 Apple 工具的 `GeneratorFormatTests` 和 `GeneratorSourceTests`。
+Linux CI 运行完整的 `tests/test_localization.py`，包括 `LocalizationTests`：
+`.strings` 解析不再依赖 `plutil`，非 macOS 环境改用 `scripts/localization/formats.py`
+的纯 Python 解析器，两条路径的结果必须一致。解析器可用环境变量
+`RAWLAB_APPLE_STRINGS_PARSER` 显式指定：
+
+- `plutil`：强制调用系统 `plutil`；
+- `python`：强制使用纯 Python 解析器；
+- 留空时 macOS 且存在 `plutil` 用它，其余情况用 Python；
+- 其它取值直接报错，不会静默回退。
+
 测试临时目录遵循 Python 的 `TMPDIR`，可在本地设为任务专用目录。
 
 修改文案只改来源，再运行生成与检查。新增条目时，同时维护实际使用平台的

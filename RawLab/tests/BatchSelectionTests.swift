@@ -1,7 +1,10 @@
+import RawLabKit
 import Foundation
 
 func checkBatchSelection(_ root: URL) throws {
+    try checkUnconfirmedAssetEdits(root)
     try checkCollectionHDRJPEG(root)
+    try checkCollectionLookDedupe(root)
     func check(_ value: Bool, _ message: String) throws { try BatchExportTests.require(value, message) }
     func rejected(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
     let store = try EditPersistence(directory: root.appendingPathComponent("collection-edits"))
@@ -54,7 +57,7 @@ func checkBatchSelection(_ root: URL) throws {
     drafts = []
     let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 2048, x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: active, resolveLook: look)
     try check(review.ready && review.rows.map { $0.settings?.exposure } == [0.5, 1, 1.5], "confirmation displays each photo's final committed settings")
-    var changed = store.state(for: identities[1])!.settings
+    var changed = try store.state(for: identities[1])!.settings
     changed.exposure = 1.2
     try store.save(identities[1], state: PhotoEditState(settings: changed))
     let confirmed = try collection.freeze(review, store: store, journal: journal, validateActive: active)
@@ -107,6 +110,49 @@ func checkBatchSelection(_ root: URL) throws {
     try check(true, "original file deletion does not invalidate task-owned frozen inputs")
 }
 
+private func checkUnconfirmedAssetEdits(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("collection-legacy-edits"))
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-legacy-jobs"))
+    let legacyIdentity = PhotoIdentity(resourceIdentifier: "legacy-asset")
+    var oldSettings = RawSettings.default
+    oldSettings.exposure = 2
+    let oldEdit = PhotoEditState(settings: oldSettings)
+
+    func source(_ bytes: Data, name: String) throws -> (IOSBatchSelection, PhotoIdentity) {
+        let file = root.appendingPathComponent(name)
+        try bytes.write(to: file)
+        let identity = try PhotoIdentity.fallback(for: file, resourceIdentifier: legacyIdentity.resourceIdentifier)
+        let collection = IOSBatchSelection()
+        collection.append(.init(identity: identity, displayName: name, file: .externallyManaged(file), isRaw: false))
+        return (collection, identity)
+    }
+    func prepare(_ collection: IOSBatchSelection) -> IOSCollectionExportReview {
+        collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: nil, x3fDefaultMode: { _ in .legacy },
+            probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    }
+    let (collection, identity) = try source(Data("original".utf8), name: "legacy-original.jpg")
+    let reviewedBeforeLegacyEdit = prepare(collection)
+    try store.save(legacyIdentity, state: oldEdit)
+    let blocked = prepare(collection)
+    try BatchExportTests.require(!blocked.ready && blocked.rows.first?.settings == nil && blocked.rows.first?.error != nil,
+        "A pending legacy asset edit blocks batch export before default exposure is used")
+    let late = try? collection.freeze(reviewedBeforeLegacyEdit, store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(late == nil, "A new pending legacy edit invalidates a previously reviewed default")
+    let pending = try journal.pendingJobs()
+    try BatchExportTests.require(pending.isEmpty, "No task is saved before the legacy decision")
+
+    try store.resolveUnverifiedAssetEdit(for: identity, expected: oldEdit, restore: true)
+    let restored = try collection.freeze(prepare(collection), store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(restored.targets.first?.frozen?.settings.exposure == 2, "Restoring the old edit freezes the original +2 EV")
+    let (replacement, replacementIdentity) = try source(Data("replacement".utf8), name: "legacy-replacement.jpg")
+    try BatchExportTests.require(!prepare(replacement).ready, "A different source with the same asset ID needs its own decision")
+    try store.resolveUnverifiedAssetEdit(for: replacementIdentity, expected: oldEdit, restore: false)
+    let original = try replacement.freeze(prepare(replacement), store: store, journal: journal, validateActive: { _ in })
+    let preservedState = try store.state(for: identity)
+    try BatchExportTests.require(original.targets.first?.frozen?.settings.exposure == 0 && preservedState == oldEdit,
+        "Starting from the replacement original freezes defaults and preserves the first original's edit")
+}
+
 private func checkCollectionHDRJPEG(_ root: URL) throws {
     let store = try EditPersistence(directory: root.appendingPathComponent("collection-hdr-edits"))
     let journal = try BatchJournalStore(directory: root.appendingPathComponent("collection-hdr-jobs"))
@@ -135,4 +181,77 @@ private func checkCollectionHDRJPEG(_ root: URL) throws {
                                 job.targets[0].frozen?.outputFormat == .hdrJPEG &&
                                 job.targets[0].frozen?.settings.isHDREditing == true,
                                 "Skipping SDR photos freezes HDR JPEG without downgrading the saved HDR mode")
+
+    // Verify batch digest cache reuse across shared look + repeated validation, and invalidation on replacement.
+    let cacheRoot = root.appendingPathComponent("digest-cache-batch")
+    try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+    let sharedCube = cacheRoot.appendingPathComponent("shared.cube")
+    let cubeData = Data("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n".utf8)
+    try cubeData.write(to: sharedCube)
+    FileDigestCache.shared.invalidateAll()
+    let cachedStore = try EditPersistence(directory: cacheRoot.appendingPathComponent("edits"))
+    let cachedJournal = try BatchJournalStore(directory: cacheRoot.appendingPathComponent("jobs"))
+    let cachedCollection = IOSBatchSelection()
+    for idx in 0..<3 {
+        let img = cacheRoot.appendingPathComponent("p-\(idx).png")
+        try Data([UInt8(idx + 10), 20, 30]).write(to: img)
+        let id = PhotoIdentity(resourceIdentifier: "cache-p-\(idx)")
+        var settings = RawSettings.default
+        settings.lutID = "shared-cube"
+        try cachedStore.save(id, state: PhotoEditState(settings: settings))
+        cachedCollection.append(IOSAdjustmentPhoto(identity: id, displayName: "p-\(idx).png",
+            file: .externallyManaged(img), isRaw: false))
+    }
+    let lookBefore = FileDigestCache.shared.digestComputeCount(for: sharedCube)
+    let cachedReview = cachedCollection.prepareExport(store: cachedStore, skipping: [], format: .jpeg, longEdge: nil,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in },
+        resolveLook: { _ in (sharedCube, "shared") })
+    try BatchExportTests.require(cachedReview.ready &&
+        FileDigestCache.shared.digestComputeCount(for: sharedCube) == lookBefore + 1,
+        "prepareExport hashes shared look once across 3 targets via FileDigestCache")
+    let cachedJob = try cachedCollection.freeze(cachedReview, store: cachedStore, journal: cachedJournal, validateActive: { _ in })
+    try BatchExportTests.require(FileDigestCache.shared.digestComputeCount(for: sharedCube) == lookBefore + 1,
+        "freeze reuses FileDigestCache for unchanged shared look across pre/post validation")
+    try cachedJob.targets[0].frozen!.verifyFiles(input: cachedJob.targets[0].sourceURL)
+    let inputCountBefore = FileDigestCache.shared.digestComputeCount(for: cachedJob.targets[0].sourceURL)
+    try cachedJob.targets[0].frozen!.verifyFiles(input: cachedJob.targets[0].sourceURL)
+    try BatchExportTests.require(FileDigestCache.shared.digestComputeCount(for: cachedJob.targets[0].sourceURL) == inputCountBefore,
+        "verifyFiles reuses FileDigestCache for unchanged input")
+    try (cubeData + Data("# tampered\n".utf8)).write(to: sharedCube)
+    var rejectedTampered = false
+    do { _ = try cachedCollection.freeze(cachedReview, store: cachedStore, journal: cachedJournal, validateActive: { _ in }) }
+    catch { rejectedTampered = true }
+    try BatchExportTests.require(rejectedTampered, "freeze detects replaced look even when FileDigestCache is warm")
+}
+
+private func checkCollectionLookDedupe(_ root: URL) throws {
+    // C-03/B2：同一 look 的两个目标在任务目录里只存一份内容寻址副本（撤去复用/命名本用例必红）。
+    let store = try EditPersistence(directory: root.appendingPathComponent("look-dedupe-edits"))
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("look-dedupe-jobs"))
+    let collection = IOSBatchSelection()
+    let sharedLook = root.appendingPathComponent("look-dedupe-shared.cube")
+    try Data("shared-look".utf8).write(to: sharedLook)
+    for index in 0..<3 {
+        let file = root.appendingPathComponent("look-dedupe-\(index).png")
+        try Data([UInt8(index), 2, 3]).write(to: file)
+        let identity = PhotoIdentity(resourceIdentifier: "look-dedupe-\(index)")
+        var settings = RawSettings.default
+        if index < 2 { settings.lutID = "custom-look" }
+        try store.save(identity, state: PhotoEditState(settings: settings))
+        collection.append(IOSAdjustmentPhoto(identity: identity, displayName: file.lastPathComponent,
+            file: .externallyManaged(file), isRaw: false))
+    }
+    let resolveLook: (RawSettings) throws -> (URL?, String?) = { $0.hasLook ? (sharedLook, "Own look") : (nil, nil) }
+    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 1024,
+        x3fDefaultMode: { _ in .legacy }, probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: resolveLook)
+    try BatchExportTests.require(review.ready, "look dedupe review should be ready")
+    let job = try collection.freeze(review, store: store, journal: journal, validateActive: { _ in })
+    let folder = try BatchInputStore.directory(for: job.id, root: journal.directory).deletingLastPathComponent()
+    let copies = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("look-") && $0.pathExtension == "cube" }
+    try BatchExportTests.require(copies.count == 1, "collection targets sharing one look must store exactly one copy per task")
+    try BatchExportTests.require(job.targets[0].frozen?.lookURL == job.targets[1].frozen?.lookURL
+        && job.targets[0].frozen?.lookURL?.deletingPathExtension().lastPathComponent == "look-\(job.targets[0].frozen!.lookSHA256!)"
+        && job.targets[2].frozen?.lookURL == nil, "the shared copy must be content addressed and only the look rows reference it")
+    try job.targets.forEach { try $0.frozen!.verifyFiles(input: $0.sourceURL) }
 }

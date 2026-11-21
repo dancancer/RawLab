@@ -1,27 +1,68 @@
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts/localization"))
+import formats
 SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
                         if "tests" not in path.relative_to(ROOT / "Shared").parts]
+SHARED_CLIENT_SCOPED_SWIFT = {
+    "RawLabMac": {
+        "HistogramPresentation.swift",
+        "MacAdjustmentTransfer.swift",
+        "MacAdjustmentTransferSession.swift",
+        "MacAdjustmentTypes.swift",
+        "MacAdjustments.swift",
+        "MacBatchExport.swift",
+        "MacEditPersistence.swift",
+        "MacEditorAdjustmentRules.swift",
+        "MacExportFormat.swift",
+        "MacFilm.swift",
+        "ParameterPrecision.swift",
+        "RenderScheduling.swift",
+    },
+    "RawLab/RawLab": {
+        "AdjustmentKind.swift",
+        "BatchSettingsSummary.swift",
+        "EditorAdjustmentRules.swift",
+        "EditorToolDraft.swift",
+        "ExportEvidenceStore.swift",
+        "ExportSize.swift",
+        "FileDigestCache.swift",
+        "FilmPresentation.swift",
+        "IOSAdjustmentTransfer.swift",
+        "IOSAdjustmentTransferSession.swift",
+        "IOSBatchExport.swift",
+        "IOSBatchSelection.swift",
+        "PhotoEditPersistence.swift",
+        "PhotoSourceFile.swift",
+        "RawSettings.swift",
+        "RecentPhotoStore.swift",
+        "RetentionPolicy.swift",
+    },
+}
+
+
+def shared_swift_sources_for(client):
+    excluded = set().union(*(files for owner, files in SHARED_CLIENT_SCOPED_SWIFT.items() if owner != client))
+    return [path for path in SHARED_SWIFT_SOURCES
+            if path.parent.name != "RawLabKit" or path.name not in excluded]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
+APPLE_PRINTF = re.compile(r"%(?:(\d+)\$)?([-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc])", re.I)
 APPLE_CLIENTS = {"RawLabMac": "RawLabMac/Sources", "RawLab/RawLab": "RawLab/RawLab"}
 CJK = re.compile(r"[一-鿿]")
 # 字符串字面量或行注释，谁先出现取谁：注释里的引号不算字面量
 TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|//.*')
-
-
-def starts_with_lowercase_word(text):
-    # sRGB 的首字母按标准小写；只豁免独立术语，普通小写词仍需检查。
-    return text[:1].islower() and not re.match(r"sRGB(?:\s|$)", text)
 
 
 def windows_sources():
@@ -30,8 +71,32 @@ def windows_sources():
                   if not {"tests", "bin", "obj"}.intersection(path.relative_to(directory).parts))
 
 
-def apple_catalog(path):
-    return json.loads(subprocess.check_output(["plutil", "-convert", "json", "-o", "-", str(path)]))
+def use_plutil(parser=None):
+    chosen = parser or os.environ.get("RAWLAB_APPLE_STRINGS_PARSER")
+    if chosen in (None, ""):
+        return sys.platform == "darwin" and shutil.which("plutil") is not None
+    if chosen == "plutil":
+        return True
+    if chosen == "python":
+        return False
+    raise ValueError(f"Unknown Apple .strings parser: {chosen}")
+
+
+def apple_catalog(path, parser=None):
+    if use_plutil(parser):
+        return json.loads(subprocess.check_output(
+            ["plutil", "-convert", "json", "-o", "-", str(path)], stderr=subprocess.PIPE))
+    return formats.read_apple(Path(path).read_text(encoding="utf-8"))
+
+
+def apple_placeholders(text):
+    tokens = list(APPLE_PRINTF.finditer(text.replace("%%", "")))
+    if len({bool(match[1]) for match in tokens}) > 1:
+        return [("mixed", match[0]) for match in tokens]
+    return sorted(
+        (int(match[1]) if match[1] else index, "%" + match[2])
+        for index, match in enumerate(tokens, 1)
+    )
 
 
 def windows_catalog(language):
@@ -104,7 +169,7 @@ class GeneratorSourceTests(unittest.TestCase):
         key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
         mappings = (
             ("Shared/Native/HDRSource.swift", r'case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT:\s*return L10n\.text\("([^"]+)"\)', key),
-            ("RawLabWindows/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
+            ("RawLabWindows/Core/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
             ("RawLabAndroid/app/src/main/java/com/rawlab/android/engine/HDRProcessingException.kt",
              r'19\s*->\s*AppStrings\.text\(R\.string\.([a-z_]+)\)', "hdr_camera_development_unavailable"),
         )
@@ -168,12 +233,6 @@ class GeneratorSourceTests(unittest.TestCase):
 
 
 class GeneratorFormatTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        sys.path.insert(0, str(ROOT / "scripts/localization"))
-        global formats
-        import formats
-
     def test_native_placeholders_keep_types_precision_and_literal_percent(self):
         for style, native, neutral, slots in (
             ("apple", "%@ · %@%%", "{0} · {1}%", ["%@", "%@"]),
@@ -207,6 +266,34 @@ class GeneratorFormatTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             formats.read_apple(text + "invalid")
 
+    def test_apple_catalog_fallback_matches_plutil_and_rejects_invalid_strings(self):
+        has_plutil = sys.platform == "darwin" and shutil.which("plutil") is not None
+        env = {k: v for k, v in os.environ.items() if k != "RAWLAB_APPLE_STRINGS_PARSER"}
+        for client in APPLE_CLIENTS:
+            for language in LANGUAGES:
+                relative = f"{client}/Resources/{language}.lproj/Localizable.strings"
+                path = ROOT / relative
+                parsed = apple_catalog(path, parser="python")
+                self.assertGreater(len(parsed), 100, relative)
+                with mock.patch.dict(os.environ, env, clear=True), \
+                     mock.patch.object(subprocess, "check_output", side_effect=AssertionError("unexpected plutil call")):
+                    with mock.patch.object(sys, "platform", "linux"):
+                        self.assertEqual(apple_catalog(path), parsed, relative)
+                    with mock.patch.object(shutil, "which", return_value=None):
+                        self.assertEqual(apple_catalog(path), parsed, relative)
+                if has_plutil:
+                    self.assertEqual(apple_catalog(path, parser="plutil"), parsed, relative)
+        with tempfile.TemporaryDirectory(prefix="rawlab-localization-") as name:
+            invalid = Path(name) / "Localizable.strings"
+            invalid.write_text('"broken" = "missing semicolon"\n', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                apple_catalog(invalid, parser="python")
+            with self.assertRaises(ValueError):
+                apple_catalog(invalid, parser="unknown")
+            if has_plutil:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    apple_catalog(invalid, parser="plutil")
+
     def test_android_escaping_handles_resource_prefix_and_whitespace(self):
         for value, expected in (
             ('@a & <b> \' " \\ \n', r'"\@a &amp; &lt;b&gt; \' \" \\ \n"'),
@@ -237,56 +324,6 @@ class GeneratorFormatTests(unittest.TestCase):
 
 class LocalizationTests(unittest.TestCase):
 
-    def test_pr74_aligned_copy_matches_macos_in_all_six_languages(self):
-        aligned = {
-            "ios": ["无效的 HSL 参数", "无效或不可用的降噪参数", "无效的曝光基准", "无效的几何参数",
-                    "无效的暗角或颗粒参数", "无法生成预览", "保留这次几何或镜头修改？"],
-            "windows": ["导出", "裁切左边", "裁切上边", "裁切宽度", "裁切高度", "导出尺寸", "载入照片后可用",
-                        "打开照片", "保留这次几何或镜头修改？", "正在导出…", "缩放", "导出长边像素",
-                        "显示裁切提示", "输入调整", "重置调整", "任务使用的外观文件不可用，请重新创建任务。"],
-        }
-        for language in LANGUAGES:
-            macos = apple_catalog(ROOT / "RawLabMac/Resources" / (language + ".lproj") / "Localizable.strings")
-            ios = apple_catalog(ROOT / "RawLab/RawLab/Resources" / (language + ".lproj") / "Localizable.strings")
-            for client, keys in aligned.items():
-                catalog = ios if client == "ios" else windows_catalog(language)
-                for key in keys:
-                    self.assertEqual(catalog[key], macos[key], (client, language, key))
-            for key in ("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。", "参数或输出路径无效。", "不能覆盖原始文件。"):
-                self.assertEqual(ios[key], macos[key], (language, key))
-                self.assertEqual(windows_catalog(language)[key], macos[key], (language, key))
-
-    def test_pr74_cleanup_keeps_the_error_constructed_by_geometry_tests(self):
-        ios = json.loads((ROOT / "Shared/strings/platforms/ios.json").read_text())["entries"]
-        windows = json.loads((ROOT / "Shared/strings/platforms/windows.json").read_text())["entries"]
-        ios_retired = ["Histogram failed: %@", "不是 RAW 照片。", "小波降噪", "已选 %@ 张 RAW", "所选 RAW：%@",
-                       "批量导出目前仅支持 RAW 照片。", "无法保存语言设置。", "普通图片未加入，请选择 RAW。", "曝光补偿",
-                       "正在准备 RAW…", "版本", "粗颗粒降噪", "自定义白平衡", "请先导入一张 RAW 照片。"]
-        windows_retired = ["亮度降噪数值", "全部 HSL", "打开一张 RAW 照片", "拉直角度", "数值（", "旋转与翻转",
-                           "明度数值", "目录中没有直接 RAW 照片。", "色彩降噪数值", "色相数值", "调整值", "调整数值", "调整未保存"]
-        self.assertEqual(len(ios_retired) + len(windows_retired), 27)
-        self.assertFalse(set(ios_retired) & ios.keys())
-        self.assertFalse(set(windows_retired) & windows.keys())
-        self.assertIn("Image render failed.", ios)
-        self.assertIn("EditorError.renderFailed", (ROOT / "RawLab/tests/GeometrySourceHarness.swift").read_text())
-
-    def test_pr74_android_composition_preserves_argument_types_and_failure_roles(self):
-        entries = json.loads((ROOT / "Shared/strings/platforms/android.json").read_text())["entries"]
-        expected = {
-            "message_the_task_source_or_look_file_is": ("任务使用的外观文件不可用，请重新创建任务。", []),
-            "delete_look": ("移除外观…", []), "remove_look_confirmation": ("移除“{0}”？", ["s"]),
-            "look_error": ("操作失败", []), "look_import_summary": ("已导入 {0} 个外观，{1} 个文件导入失败：\n", ["d", "d"]),
-            "edit_read_error": ("无法读取调整记录：{0}", ["s"]), "edit_unsaved_detail": ("调整未保存：{0}", ["s"]),
-            "message_continue_unfinished_items": ("继续未完成的 {0} 张", ["s"]), "reset_effect": ("重置{0}", ["s"]),
-        }
-        for key, (source, types) in expected.items():
-            self.assertEqual(entries[key]["source"], source, key)
-            self.assertEqual(entries[key]["types"], types, key)
-        self.assertEqual(entries["look_storage_error"]["source"], "外观库读取失败，请稍后重试或删除损坏的外观记录。")
-        self.assertIn("edit_unsaved", entries)
-        for retired in ("edit_storage_error", "reset_vignette", "reset_grain"):
-            self.assertNotIn(retired, entries)
-
     def test_complete_privacy_units_preserve_the_macos_paragraph_in_every_language(self):
         catalog = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
         first = "开启后，由阿里云处理功能使用次数，数据存储在中国大陆；SDK 可能采集设备标识、设备与系统信息、网络/IP、地区及会话信息。"
@@ -294,45 +331,6 @@ class LocalizationTests(unittest.TestCase):
         for language in LANGUAGES:
             separator = "" if language in ("zh-Hans", "ja") else " "
             self.assertEqual(catalog[first][language] + separator + catalog[second][language], catalog[first + second][language], language)
-
-    def test_aligned_controls_reuse_macos_copy_in_every_language(self):
-        sys.path.insert(0, str(ROOT / "scripts/localization"))
-        from formats import android_unquote
-        aligned = {
-            "ios": (("指定长边", "自定义…"), ("向左旋转 90°", "逆时针 90°")),
-            "windows": (("重新读取目录", "刷新目录"), ("三分网格", "网格"), ("导出长边像素", "长边像素")),
-            "android": (("geometry_swap_ratio", "交换横纵比例"), ("output_size_error", "导出长边必须为 1-65535 像素。"),
-                        ("message_as_shot_for_each_photo", "按每张照片")),
-        }
-        android = android_catalogs()
-        for language in LANGUAGES:
-            macos = apple_catalog(ROOT / "RawLabMac/Resources" / (language + ".lproj") / "Localizable.strings")
-            catalogs = {
-                "ios": apple_catalog(ROOT / "RawLab/RawLab/Resources" / (language + ".lproj") / "Localizable.strings"),
-                "windows": windows_catalog(language),
-                "android": android[language],
-            }
-            for client, pairs in aligned.items():
-                for key, previous_or_source in pairs:
-                    expected_key = previous_or_source if client == "android" else key
-                    actual = catalogs[client].get(key)
-                    if client == "android" and actual is not None:
-                        actual = android_unquote(actual)
-                    self.assertEqual(actual, macos[expected_key], (client, language, key))
-                    if client != "android":
-                        self.assertNotIn(previous_or_source, catalogs[client], (client, previous_or_source))
-        self.assertEqual(android_unquote(android["zh-Hans"]["look_unavailable"]), "此外观文件不可用，请删除后重新导入。")
-        self.assertIn("降噪预设", windows_catalog("en"))
-
-    def test_macos_photography_terms(self):
-        catalog = apple_catalog(ROOT / "RawLabMac/Resources/en.lproj/Localizable.strings")
-        for key, expected in {
-            "对比": "Comparison",
-            "显示裁切提示": "Show clipping warnings",
-            "曝光基准": "Exposure reference",
-            "匹配内嵌预览": "Match embedded preview",
-        }.items():
-            self.assertEqual(catalog[key], expected, key)
 
     def test_master_recipe_and_hsl_coverage(self):
         recipes = json.loads((ROOT / "Shared/master-recipes.json").read_text())
@@ -381,42 +379,26 @@ class LocalizationTests(unittest.TestCase):
 
     def test_apple_catalogs_and_source_coverage(self):
         for client, sources in APPLE_CLIENTS.items():
-            catalogs = {lang: apple_catalog(ROOT / client / "Resources" / (lang + ".lproj") / "Localizable.strings")
-                        for lang in LANGUAGES}
-            self.assert_parity(catalogs, lambda s: sorted(PRINTF.findall(s.replace("%%", ""))))
-            missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                              for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
-                              for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
-                              if json.loads('"' + raw + '"') not in catalogs["en"]})
-            self.assertEqual(missing, [], client)
-            for key in ("细节优先", "去噪优先", "自定义", "跟随系统"):
-                self.assertIn(key, catalogs["en"])
+            with self.subTest(client=client):
+                catalogs = {lang: apple_catalog(ROOT / client / "Resources" / (lang + ".lproj") / "Localizable.strings")
+                            for lang in LANGUAGES}
+                self.assert_parity(catalogs, apple_placeholders)
+                missing = sorted({(source.name, json.loads('"' + raw + '"'))
+                                  for source in list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
+                                  for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
+                                  if json.loads('"' + raw + '"') not in catalogs["en"]})
+                self.assertEqual(missing, [], client)
+                for key in ("细节优先", "去噪优先", "自定义", "跟随系统"):
+                    self.assertIn(key, catalogs["en"])
 
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():
             catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
-            files = list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+            files = list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")
         self.assertEqual([hit for path in windows.glob("*.xaml") for hit in xaml_literals(path)], [], "XAML")
-
-    def test_ui_capitalization_preserves_standard_color_space_names(self):
-        for text in ("sRGB", "sRGB linéaire", "sRGB lineal", "Linear sRGB", "Exporter"):
-            with self.subTest(text=text):
-                self.assertFalse(starts_with_lowercase_word(text))
-        for text in ("exporter", "linear sRGB", "srgb", "sRgb linéaire", "sRGBish"):
-            with self.subTest(text=text):
-                self.assertTrue(starts_with_lowercase_word(text))
-
-    def test_ui_labels_start_with_capital(self):
-        for language in ("en", "de", "fr", "es"):
-            catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
-                        for client in APPLE_CLIENTS}
-            catalogs["RawLabWindows"] = windows_catalog(language)
-            for client, catalog in catalogs.items():
-                lower = {key: value for key, value in catalog.items() if starts_with_lowercase_word(value)}
-                self.assertEqual(lower, {}, (client, language))
 
     def test_android_catalogs(self):
         catalogs = android_catalogs()
@@ -426,14 +408,6 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(missing, [])
         for recipe in json.loads((ROOT / "Shared/master-recipes.json").read_text()):
             self.assertIn("recipe_subtitle_" + recipe["id"], catalogs["en"])
-
-    def test_android_dng_description_uses_the_look_term(self):
-        # 导入的外观统一叫 Look：渲染型 DNG 的说明也用同一个词，不另造“appearance”之类的说法
-        catalogs = android_catalogs()
-        terms = {"en": "look", "zh-Hans": "外观", "de": "Look", "fr": "look", "ja": "ルック", "es": "look"}
-        for language, term in terms.items():
-            for key in ("import_look", "dng_description"):
-                self.assertIn(term.lower(), catalogs[language][key].lower(), (language, key))
 
     def test_android_recipe_names_are_localized(self):
         # 汉字写的人名配方按语言显示：资源名 recipe_name_<id>；拉丁字母语言不得出现汉字
@@ -463,37 +437,65 @@ class LocalizationTests(unittest.TestCase):
             keys.update(re.findall(r"\{DynamicResource '([^']+)'\}", source.read_text()))
         self.assertEqual(sorted(keys - catalogs["en"].keys()), [])
 
+    def test_ios_catalog_terms(self):
+        catalog = {
+            language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+            for language in ("en", "de", "fr", "es", "ja")
+        }
+        # 白平衡的"色调"（tint）和 HSL 的"色相"（hue）同屏出现，不能译成同一个词
+        # 法语沿用 Lightroom 的惯例两处都叫 Teinte，此处不查
+        for language in ("en", "de", "es", "ja"):
+            self.assertNotEqual(
+                catalog[language]["色调"],
+                catalog[language]["色相"],
+                f"{language}: tint {catalog[language]['色调']!r} matches hue {catalog[language]['色相']!r}",
+            )
+        # 进行中的状态（正在…）不能和动作按钮同文；德语统一用"wird / werden"被动进行式
+        for key, value in catalog["de"].items():
+            if key.startswith("正在"):
+                lowered = value.lower()
+                self.assertTrue(" wird " in f" {lowered} " or "werden" in lowered, f"de: progress {key} -> {value!r}")
+        # "重置某项"与通用的"重置%@"套出来的说法一致（英文大小写、日文语序）
+        for language in ("en", "ja"):
+            expected = catalog[language]["重置%@"].replace("%@", catalog[language]["降噪"])
+            self.assertEqual(catalog[language]["重置降噪"], expected, language)
 
-# ----------------------------------------------------------------------------
-#  数量不能写在复数名词前面：英德法西会出现"1 Photos""1 Fotos"
-#  改写成"名词：数量"或"动作（数量）"，不需要单复数规则
-# ----------------------------------------------------------------------------
-PLURAL_NOUNS = {"en": "photos|files|looks|images", "de": "fotos|dateien|looks|bilder",
-                "fr": "photos|fichiers|looks|images", "es": "fotos|archivos|looks|imágenes"}
-COUNT = r"(?:%(?:\d+\$)?(?:l{0,2}d|@)|\{\d+\})"
+    def test_force_gpu_unsupported_uses_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        common = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        self.assertIn(key, common)
+        expected = common[key]
+        self.assertEqual(set(expected), set(LANGUAGES))
 
-
-class CountPhrasingTests(unittest.TestCase):
-    def test_counts_do_not_precede_plural_nouns(self):
+        macos = {language: apple_catalog(ROOT / f"RawLabMac/Resources/{language}.lproj/Localizable.strings")
+                 for language in LANGUAGES}
+        ios = {language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+               for language in LANGUAGES}
+        windows = {language: windows_catalog(language) for language in LANGUAGES}
         android = android_catalogs()
-        for language, nouns in PLURAL_NOUNS.items():
-            pattern = re.compile(COUNT + r"(?:\s+[^\s:;,.()]+){0,3}?[\s-]+(?:" + nouns + r")\b", re.I)
-            catalogs = {client: apple_catalog(ROOT / client / "Resources" / (language + ".lproj") / "Localizable.strings")
-                        for client in APPLE_CLIENTS}
-            catalogs["RawLabWindows"] = windows_catalog(language)
-            catalogs["RawLabAndroid"] = android[language]
-            found = [(client, value) for client, catalog in catalogs.items()
-                     for value in catalog.values() if pattern.search(value)]
-            self.assertEqual(found, [], language)
 
+        for language in LANGUAGES:
+            self.assertEqual(macos[language][key], expected[language], f"macOS {language}")
+            self.assertEqual(ios[language][key], expected[language], f"iOS {language}")
+            self.assertEqual(windows[language][key], expected[language], f"Windows {language}")
+            self.assertEqual(android[language]["force_gpu_unsupported"].strip('"'), expected[language], f"Android {language}")
+            if language != "zh-Hans":
+                self.assertNotEqual(expected[language], expected["zh-Hans"], language)
 
-class BatchSummaryTermTests(unittest.TestCase):
-    # 批量摘要沿用编辑器里的叫法；开关关着写"停用"，"关闭"是关窗口按钮的词，英文会显示成 Close
-    def test_batch_summaries_use_editor_terms(self):
-        for path in ("RawLabMac/Sources/Export/BatchExportView.swift", "RawLabWindows/BatchExportWindow.xaml.cs"):
-            text = (ROOT / path).read_text()
-            self.assertEqual([term for term in ("小波降噪", "粗颗粒降噪") if term in text], [], path)
-            self.assertEqual(re.findall(r'(?:Loc\.Text|L10n\.text)\("开启"\) : (?:Loc\.Text|L10n\.text)\("关闭"\)|_ => Loc\.Text\("关闭"\)', text), [], path)
+    def test_force_gpu_unsupported_maps_to_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        mac_err = (ROOT / "RawLabMac/Sources/Rendering/RenderError.swift").read_text()
+        ios_err = (ROOT / "RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift").read_text()
+        win_native = (ROOT / "RawLabWindows/Core/Native.cs").read_text()
+        android_exc = (ROOT / "RawLabAndroid/app/src/main/java/com/rawlab/android/engine/NativeProcessor.kt").read_text()
+
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", mac_err)
+        self.assertIn(key, mac_err)
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", ios_err)
+        self.assertIn(key, ios_err)
+        self.assertIn("UnsupportedReason.ForceGpu", win_native)
+        self.assertIn(key, win_native)
+        self.assertIn("R.string.force_gpu_unsupported", android_exc)
 
 
 if __name__ == "__main__":

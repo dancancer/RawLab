@@ -38,10 +38,9 @@ double endTangent(double h0, double h1, double dy0, double dy1) {
 
 } // namespace
 
-bool validToneCurve(const sony2fuji_tone_curve_config& config) {
-    if (config.version != SONY2FUJI_TONE_CURVE_CONFIG_VERSION || config.struct_size != sizeof(config)) return false;
-    if (config.mode == SONY2FUJI_CURVE_LEGACY) return config.count == 0;
-    if (config.mode != SONY2FUJI_CURVE_CUSTOM || config.count < 2 || config.count > SONY2FUJI_TONE_CURVE_MAX_POINTS) return false;
+bool validToneCurve(const ToneCurveConfig& config) {
+    if (config.mode == ToneCurveMode::Legacy) return config.count == 0;
+    if (config.mode != ToneCurveMode::Custom || config.count < 2 || config.count > kToneCurveMaxPoints) return false;
     for (uint32_t i = 0; i < config.count; ++i) {
         const auto p = config.points[i];
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return false;
@@ -51,9 +50,9 @@ bool validToneCurve(const sony2fuji_tone_curve_config& config) {
     return first.x == 0 && first.y == 0 && last.x == 1 && last.y == 1;
 }
 
-ToneCurve::ToneCurve(const sony2fuji_tone_curve_config& config) {
+ToneCurve::ToneCurve(const ToneCurveConfig& config) {
     if (!validToneCurve(config)) throw std::invalid_argument("invalid tone curve");
-    custom_ = config.mode == SONY2FUJI_CURVE_CUSTOM;
+    custom_ = config.mode == ToneCurveMode::Custom;
     if (!custom_) return;
     count_ = config.count - 1;
     double h[32]{}, dy[32]{};

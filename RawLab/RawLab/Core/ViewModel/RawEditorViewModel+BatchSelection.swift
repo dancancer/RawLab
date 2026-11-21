@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 struct IOSCollectionSynchronization {
@@ -64,6 +65,8 @@ extension RawEditorViewModel {
                     }
                     try info.validateEditDecodeVersion(version)
                     try format.validateHDRHEIF()
+                }, validateCameraProfile: {
+                    _ = try HDRCameraProfileAssetStore.url(for: $0)
                 }, editGeneration: { session?.editGeneration(forKey: $0) ?? 0 })
             self.resultDelivery { completion(.success(review)) }
         }

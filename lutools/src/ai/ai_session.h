@@ -31,6 +31,9 @@ class AISession {
 public:
     explicit AISession(std::function<std::string(Backend)> runtimeVersion = {})
         : runtimeVersion_(std::move(runtimeVersion)) {}
+    ~AISession();
+    AISession(const AISession&) = delete;
+    AISession& operator=(const AISession&) = delete;
     bool enabled = false;
     std::string lastError, lastBackend;
     void configure(std::string modelDirectory, std::string cacheDirectory, Backend backend);
@@ -40,12 +43,20 @@ public:
     void recordFailure(int status, const std::string& error) noexcept { diagnostics_.failure(status,error); }
     std::string renderKey(const std::string& path, const RAWProcessOptions& options, const std::string& sourceIdentity = {});
     const PreparedDenoise& result(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata, const std::string& sourceIdentity = {});
+    PreparedDenoise takeResult(const std::string& path, const RAWProcessOptions& options, const RAWBayerSource* metadata, const std::string& sourceIdentity = {});
+    void releaseResult() noexcept;
+    size_t residentBytes() const noexcept;
+    static size_t totalResidentBytes() noexcept;
     PrepareReport prepare(const std::string& path, const RAWProcessOptions& options, const JobProgress& progress);
-    std::string hdrBayerKey(const std::string& path, const std::string& sourceIdentity = {});
+    std::string hdrBayerKey(const std::string& path, bool legacySonyCrop, const std::string& sourceIdentity = {});
     void prepareHDRBayer(const std::string& path, const std::string& sourceIdentity,
-                         const RAWBayerSource& source, const JobProgress& progress);
+                         const RAWBayerSource& source, bool legacySonyCrop, const JobProgress& progress);
     RAWBayerOverride loadHDRBayer(const std::string& key, const RAWBayerSource& metadata);
 private:
+    void syncResidentBytes() noexcept;
+    PreparedDenoise loadPreparedResult(const std::string& path, const RAWProcessOptions& options,
+                                       const RAWBayerSource* metadata, const std::string& sourceIdentity,
+                                       std::string& resolvedKey);
     void ensurePackage();
     std::string runtimeVersion(bool refreshDevice = false);
     std::string packageStamp() const;
@@ -58,5 +69,6 @@ private:
     Backend backend_ = Backend::Auto;
     std::optional<ModelPackage> package_;
     PreparedDenoise loaded_;
+    size_t trackedResidentBytes_ = 0;
 };
 } // namespace sony2fuji::ai

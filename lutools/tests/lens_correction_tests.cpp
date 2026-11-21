@@ -40,6 +40,18 @@ int main() {
     const auto matched = db->inspect(metadata, options);
     assert(matched.state == LensCorrectionState::Matched && !matched.profile.id.empty());
     assert(matched.profile.hasDistortion && matched.profile.hasTCA);
+    // 守卫：合成 id 只用 '\n' 作分隔符，其余字节必须可打印且非 DEL(0x7F)。CLI 配方校验
+    // （edit_recipe.cpp validProfileId）依赖这一约定放行换行、拒绝其他控制字节；
+    // fixture 若混入新的不可见字符，这里必须在 CI 变红。检查库内全部合成 id，不止匹配到的那条。
+    std::vector<std::string> compositeIds{matched.profile.id};
+    for (const auto& profile : profiles) compositeIds.push_back(profile.id);
+    for (const auto& id : compositeIds) {
+        assert(std::count(id.begin(), id.end(), '\n') == 3);
+        for (const char ch : id) {
+            const auto byte = static_cast<unsigned char>(ch);
+            assert(ch == '\n' || (byte >= 32 && byte != 127));
+        }
+    }
     auto unknownCamera = metadata;
     unknownCamera.cameraModel = "Unknown Camera";
     unknownCamera.cropFactor = 1;
@@ -98,6 +110,19 @@ int main() {
     assert(!disabled.active() && disabled.report().state == LensCorrectionState::Off);
     disabled.map(0, 0, 129, 1, coordinates.data());
     assert(coordinates[0] == 0 && coordinates[6] == 1 && coordinates[128 * 6] == 128);
+
+    LensCorrectionOptions vignette; vignette.vignetting = true;
+    LensCorrectionTransform color(db, metadata, vignette, 129, 97, 3);
+    assert(color.active() && !color.hasGeometry() && color.report().appliedVignetting);
+    assert(color.report().profile.hasVignetting && color.report().cropScale == 1);
+    assert(std::abs(color.gainAt(64, 48) - 1) < 0.001f);
+    assert(color.gainAt(0, 0) > 1.1f);
+    assert(2.f * color.gainAt(0, 0) > 2.f); // F32 gain preserves highlights above display white.
+    auto noAperture = metadata; noAperture.aperture = 0;
+    LensCorrectionTransform missingAperture(db, noAperture, vignette, 129, 97, 3);
+    assert(!missingAperture.active() && missingAperture.report().state == LensCorrectionState::NoCalibration);
+    LensCorrectionTransform half(db, metadata, vignette, 65, 49, 3);
+    assert(std::abs(half.gainAt(0, 0) - color.gainAt(0, 0)) < 0.001f);
 
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);

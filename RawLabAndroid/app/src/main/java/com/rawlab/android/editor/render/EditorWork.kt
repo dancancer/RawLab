@@ -2,15 +2,25 @@ package com.rawlab.android.editor.render
 
 import android.graphics.Bitmap
 import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.geometry.uncropped
+import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.editor.PendingDcpImport
 import com.rawlab.android.editor.PendingLookImport
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.ViewportRoiRequest
+import com.rawlab.android.editor.canvas.detailOverlayCovers
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
@@ -42,7 +52,12 @@ data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature:
     val comparisonHeight: Float = neutral.height.toFloat(),
     val originalAspect: Float = neutral.width.toFloat() / neutral.height,
     val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null,
-    val hdr: HDRPreview? = null)
+    val hdr: HDRPreview? = null, val renderedGeometry: GeometrySettings = GeometrySettings(),
+    val nativeWidth: Int = result.width, val nativeHeight: Int = result.height)
+
+/** 内接画布由共享渲染核心测量，供 SDR 和 HDR 的几何编辑使用。 */
+internal fun PreviewPair.uncroppedGeometrySize(geometry: GeometrySettings): IntArray =
+    NativeHDRBridge.geometrySize(nativeWidth, nativeHeight, geometry.uncropped())
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
@@ -61,6 +76,26 @@ internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
     return width * scale to height * scale
 }
 
+data class PreviewDetailOverlay(
+    val neutral: Bitmap?,
+    val result: Bitmap?,
+    val hdrNeutral: HDRPreviewFrame?,
+    val hdrResult: HDRPreviewFrame?,
+    val normalizedRect: NormalizedRect,
+    val pixelWidth: Int,
+    val pixelHeight: Int,
+    val fullNativeWidth: Int,
+    val fullNativeHeight: Int,
+    val sourceRevision: Long,
+    val editRevision: Long,
+    val tileKey: DetailTileKey? = null,
+) {
+    fun covers(visibleRect: NormalizedRect, requiredZoomScale: Float, maxOutputLongEdge: Int = 0): Boolean =
+        detailOverlayCovers(
+            normalizedRect, pixelWidth, pixelHeight, fullNativeWidth, fullNativeHeight,
+            visibleRect, requiredZoomScale, maxOutputLongEdge,
+        )
+}
 
 internal sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null,
@@ -68,18 +103,26 @@ internal sealed interface Work {
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
-        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : Work
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
+        val includeNeutral: Boolean = true) : Work
+    data class DetailPreview(val photo: ImportedPhoto, val edits: EditSettings, val roi: ViewportRoiRequest,
+        val gpuMode: Int, val sourceRevision: Long, val editRevision: Long,
+        val baseResultHeadroom: Float = 0f, val baseNeutralHeadroom: Float = 0f,
+        val includeNeutral: Boolean = true, val tileKey: DetailTileKey? = null) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,
         val gpuMode: Int, val sourceRevision: Long, val edge: Int = 1600) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
         val longEdge: Int?, val gpuMode: Int) : Work
-    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings, val gpuMode: Int) : Work
+    data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings, val gpuMode: Int,
+        val sourceRevision: Long = 0, val draftRevision: Long = 0, val activationRevision: Long = 0) : Work
 }
 internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
+    data class UnusableEditImportFailure(val retry: Work.Import, val identity: PhotoIdentity, val error: Throwable) : WorkResult
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
+    data class DetailPreview(val request: Work.DetailPreview, val overlay: PreviewDetailOverlay?) : WorkResult
     data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
@@ -87,12 +130,45 @@ internal sealed interface WorkResult {
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }
+
+internal fun Work.canFinishPreviewBefore(next: Work): Boolean =
+    this is Work.Preview && next is Work.Preview && interactive && next.interactive &&
+        !importing && !next.importing && photo == next.photo && draft == next.draft && gpuMode == next.gpuMode
+
+internal fun interface ExportDestinationDeleter {
+    fun deleteIncomplete(destination: Uri, original: Uri?)
+}
+
+internal class ExportDestinationCleanup(
+    private val scope: CoroutineScope = APPLICATION_SCOPE,
+    private val deleter: ExportDestinationDeleter,
+) {
+    fun scheduleDelete(destination: Uri?, original: Uri?) {
+        if (destination == null || destination == original) return
+        scope.launch {
+            deleter.deleteIncomplete(destination, original)
+        }
+    }
+
+    companion object {
+        private val APPLICATION_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
+}
+
 internal fun Work.discardOwnedInput() {
     if (this is Work.Import && ownsRetained) retained?.file?.delete()
+}
+
+internal fun Work.discardPendingWork(cleanup: ExportDestinationCleanup) {
+    discardOwnedInput()
+    if (this is Work.Export && destination != null) {
+        cleanup.scheduleDelete(destination, photo.uri)
+    }
 }
 internal fun WorkResult.discardOwnedInput() {
     when (this) {
         is WorkResult.X3fImportFailure -> retry.discardOwnedInput()
+        is WorkResult.UnusableEditImportFailure -> retry.discardOwnedInput()
         is WorkResult.Preview -> if (request.importing && request.ownsImportedInput) request.photo.file.delete()
         is WorkResult.MissingLook -> if (ownsImportedInput) photo.file.delete()
         else -> Unit
@@ -107,12 +183,14 @@ internal sealed interface LookWork {
     ) : LookWork
     data class Rename(val id: String, val name: String) : LookWork
     data class Delete(val id: String) : LookWork
+    data class DeleteUnreadable(val entry: com.rawlab.android.looks.UnreadableLook) : LookWork
 }
 internal data class LookImportFailure(val message: String, val invalid: Boolean,
     val dcpReason: DcpFailureReason? = null, val colorReason: Int? = null)
 
 internal sealed interface LookResult {
-    data class Loaded(val looks: List<LookChoice>) : LookResult
+    data class Loaded(val entries: com.rawlab.android.looks.LookLibraryEntries) : LookResult
+    data class UnreadableDeleted(val entries: com.rawlab.android.looks.LookLibraryEntries) : LookResult
     data class Imported(val imported: List<ManagedLook>, val failures: List<LookImportFailure>, val looks: List<LookChoice>,
         val pending: List<PendingLookImport> = emptyList()) : LookResult
     data class Renamed(val look: ManagedLook, val looks: List<LookChoice>) : LookResult
@@ -123,7 +201,8 @@ internal sealed interface LookResult {
 /** 外观库操作在外观队列线程上执行；失败时只有用户发起的操作需要重新加载列表 */
 internal fun runLookWork(storage: PhotoStorage, work: LookWork): LookResult = synchronized(storage) { try {
     when (work) {
-        LookWork.Load -> LookResult.Loaded(storage.looks())
+        LookWork.Load -> LookResult.Loaded(storage.lookEntries())
+        is LookWork.DeleteUnreadable -> LookResult.UnreadableDeleted(storage.deleteUnreadableLook(work.entry))
         is LookWork.Import -> {
             val imported = mutableListOf<ManagedLook>()
             val failures = mutableListOf<LookImportFailure>()

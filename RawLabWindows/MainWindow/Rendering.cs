@@ -31,7 +31,8 @@ public partial class MainWindow
             else if (PhotoInput.IsRaw(path)) PhotoInput.ProbeCameraRaw(path, out openedHDR);
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
-            ResetAITask();RestoreEdits(path); hdrSource = openedHDR;
+            ClearTransferNoticesOnSourceChange();
+            ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
@@ -48,20 +49,30 @@ public partial class MainWindow
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;
             syncing=false;
             RefreshPhotoInfo();
-            BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BaselineLabel.Text="";
+            BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BackendLabel.ToolTip=BackendLabel.Text;BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
-            embeddedScheduler.Submit(new(path,++openRevision));PumpEmbedded();
+            var nextOpenRevision = Interlocked.Increment(ref openRevision);
+            embeddedScheduler.Submit(new(path, nextOpenRevision));PumpEmbedded();
+            TrackOpenViewSource(path, nextOpenRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));
+            EnsureLookWatch(lut);
             _ = LoadPhotoInfo(path, photoInfoRevision);
-            RefreshControls(); Schedule(initialPreview:true);QueueThumbnailRefresh();
+            RefreshControls(); Schedule(initialPreview:true);BeginProcessingMigration(path);QueueThumbnailRefresh();
         }
         catch(Exception ex) { if(sourceChanged){syncing=false;exactReady=false;renderFailed=true;RefreshRenderLabels();UpdateBusy();}Report(ex); }
     }
     private async Task LoadPhotoInfo(string path, long revision)
     {
-        var info = await Task.Run(() => PhotoInfoReader.Read(path));
-        if (closing || revision != photoInfoRevision || !StringComparer.OrdinalIgnoreCase.Equals(path, file)) return;
-        photoInfo = info;
-        RefreshPhotoInfo();
+        try
+        {
+            var info = await Task.Run(() => PhotoInfoReader.Read(path));
+            if (closing || revision != photoInfoRevision || !StringComparer.OrdinalIgnoreCase.Equals(path, file)) return;
+            photoInfo = info;
+            RefreshPhotoInfo();
+        }
+        catch (Exception ex) when (PreviewFallback.ShouldDegrade(ex))
+        {
+            Trace.WriteLine($"Photo info read skipped for {path}: {ex.Message}");
+        }
     }
     private void RefreshPhotoInfo()
     {
@@ -87,22 +98,40 @@ public partial class MainWindow
         photoInfoMode = photoInfoMode.Next();
         RefreshPhotoInfo(); RefreshControls();
     }
+    internal Func<string, EmbeddedPreview> ReadEmbeddedPreviewHook { get; set; } = path => RenderEngine.ReadEmbeddedPreview(path);
+    internal Func<string, Adjustments, string?, int, bool, bool, Action?, PreviewFrame>? RenderPreviewHook { get; set; }
+
     private async void PumpEmbedded()
     {
         var ticket=embeddedScheduler.Start();if(ticket==null)return;
         EmbeddedPreview? preview=null;
-        try{preview=await Task.Run(()=>RenderEngine.ReadEmbeddedPreview(ticket.Value.Path));}
-        catch(Exception ex) when(ex is IOException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException) { }
-        var current=embeddedScheduler.Finish(ticket);
-        if(closing)return;
-        if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
+        var current=false;
+        try
         {
-            if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
-            if(result==null && !renderFailed && preview.Image!=null)
+            try{preview=await Task.Run(()=>ReadEmbeddedPreviewHook(ticket.Value.Path));}
+            catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex))
             {
-                openingPreview=preview.Image;RefreshViewingFrames();
-                SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
+                Trace.WriteLine($"Embedded preview fallback for {ticket.Value.Path}: {ex.Message}");
+                preview=null;
             }
+        }
+        finally { current=embeddedScheduler.Finish(ticket); }
+        if(closing)return;
+        try
+        {
+            if(current && ticket.Value.Revision==openRevision && ticket.Value.Path==file && preview!=null && settings.Geometry.IsIdentity)
+            {
+                if(viewport.SourceSize.Width==0)viewport.SetSourceSize(preview.Width,preview.Height);
+                if(result==null && !renderFailed && preview.Image!=null)
+                {
+                    openingPreview=preview.Image;RefreshViewingFrames();
+                    SetStatus(() => Loc.Text("相机内嵌预览 · 正在显影…"));
+                }
+            }
+        }
+        catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex))
+        {
+            Trace.WriteLine($"Embedded preview update error for {ticket.Value.Path}: {ex.Message}");
         }
         PumpEmbedded();
     }
@@ -133,19 +162,25 @@ public partial class MainWindow
         if(!ready || file==null || closing)return;
         if(exporting){previewDeferred=true;return;}
         ReconcileAI();
-        if(settings.ActiveAIDenoise && !AIResultReady) { exactReady=false;UpdateBusy();return; }
+        if(settings.ActiveAIDenoise && !AIResultReady) {
+            if(CurrentViewSource==null && !aiJob.State.IsRunning) RefreshOpenViewSourceAsync(file,openRevision,scheduleOnRecovery:true);
+            exactReady=false;UpdateBusy();return;
+        }
         previewDeferred=false;
         if(transform.Active){transformPreviewReady=false;RefreshCropDraft();}
         if(!settings.Denoise.Enabled && previewResize.IsEnabled){previewResize.Stop();previewLongEdge=requestedPreviewLongEdge;}
+        EnsureLookWatch(settings.IsHDREditing ? null : lut);
         if(!LookAvailable){exactReady=false;renderFailed=true;RefreshRenderLabels();SetStatus(() => Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"),true);UpdateBusy();return;}
+        var lookGeneration = lookAvailability.Generation;
         renderFailed=false;
         var proxy=interacting || initialPreview;
         var previewSettings=settings.Clone();previewSettings.Geometry=PreviewGeometry;previewSettings.Lens=PreviewLens;
-        if(CurrentViewSource is not {} source) {exactReady=false;renderFailed=true;RefreshRenderLabels();SetStatus(()=>Loc.Text("预览未更新"),true);UpdateBusy();return;}
-        var referenceKey=new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
-        if(acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
+        var source = CurrentViewSource;
+        var sourceGeneration = viewSourceState.Generation;
+        var referenceKey = source == null ? null : new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
+        if(referenceKey == null ? acceptedReference != null : acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         var quiet=viewportOnly && exactReady && !scheduler.Busy && !proxy && !transform.Active;
-        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null));
+        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
         quietViewportRevision=quiet ? scheduler.Revision : -1;
         exactReady=false;
         if(!quiet)SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…"));
@@ -156,6 +191,10 @@ public partial class MainWindow
     {
         var ticket=scheduler.Start(); if(ticket==null)return;
         RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null;Exception? failure=null;
+        string? thumbnailResources=null;var thumbnailAIBackend=RequestedAIBackend;var thumbnailAIDevice=aiPreference.DeviceID;
+        OriginalIdentity? beforeRenderSource = null, afterRenderSource = null;
+        var workerLookAvailable = true;
+        var current=false;
         try
         {
             Action? renderStarted=ticket.Id==quietViewportRevision ? () => Dispatcher.BeginInvoke(new Action(() => {
@@ -164,17 +203,38 @@ public partial class MainWindow
                 SetStatus(()=>Loc.Text("正在显影…"));UpdateBusy();
             })) : null;
             (neutral,rendered)=await Task.Run(()=> {
-                engine ??= new(aiDiagnostics:aiDiagnostics); var w=ticket.Value;engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                var w=ticket.Value;
+                Func<bool> shouldCancel = () =>
+                    Volatile.Read(ref closing) ||
+                    ticket.Id != scheduler.Revision ||
+                    Volatile.Read(ref openRevision) != w.OpenRevision;
                 if(w.Probe is {} probe) {
+                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
-                var frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted);
-                return(frame.Neutral,frame.Result);
+                beforeRenderSource = ViewSourceState.TryReadIdentity(w.File);
+                workerLookAvailable = LookAvailabilityTracker.ProbeExists(w.Settings.IsHDREditing, w.Lut);
+                try
+                {
+                    try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice,appPaths.HdrLooksDirectory,appPaths.HdrCameraProfilesDirectory);}catch { }
+                    PreviewFrame frame;
+                    if (RenderPreviewHook != null)
+                        frame=RenderPreviewHook(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,renderStarted);
+                    else {
+                        engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                        frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted,shouldCancel:shouldCancel);
+                    }
+                    return(frame.Neutral,frame.Result);
+                }
+                finally
+                {
+                    afterRenderSource = ViewSourceState.TryReadIdentity(w.File);
+                }
             });
         }
-        catch(Exception ex) { failure=ex; }
-        var current=scheduler.Finish(ticket);
+        catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex)) { failure=ex; }
+        finally { current=scheduler.Finish(ticket); }
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         if(work.Probe is {} probeWork) {
@@ -183,69 +243,188 @@ public partial class MainWindow
                 HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;
         }
-        // A current-file proxy may publish while dragging; stale exact work never publishes.
-        if(CurrentViewSource is {} currentSource && work.Source.SameFile(currentSource) && work.OpenRevision==openRevision && work.File==file && work.Lut==lut &&
-            work.Settings.IsHDREditing==settings.IsHDREditing && work.Settings.ActiveAIDenoise==settings.ActiveAIDenoise && work.Settings.X3fMode==settings.X3fMode &&
-            (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity==aiJob.Identity) && work.Settings.Geometry==PreviewGeometry && work.Settings.Lens==PreviewLens && work.TransformGeneration==transformGeneration && (!view.NeedsReference || work.Compare) && (current || (work.Interactive && interacting && work.Edge==RenderEdge(true))))
+        try
         {
-            if(failure!=null) { if(current){ClearPendingAllReset();exactReady=false;transformPreviewReady=false;renderFailed=true;RefreshCropDraft();RefreshRenderLabels();if(!HandleAIFailure(failure))SetStatus(()=>Loc.Text("预览未更新")+" · "+failure.Message,true);} }
-            else if(rendered!=null && neutral!=null)
+            var sameOpenFile = work.OpenRevision == openRevision && work.File == file;
+            if (sameOpenFile)
             {
-                if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
-                result=rendered;acceptedAfter=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));
-                // HDR camera rendering has no legacy RAW WB result. Keep the
-                // dormant SDR AsShot calibration intact across HDR previews.
-                if(!transform.Active && rendered.WhiteBalance is { } whiteBalance)
-                    settings.ResolveWhiteBalance(whiteBalance);
-                hslAcceptedWork=work;
-                var acceptedSettings=work.Settings.Clone();
-                if (rendered.WhiteBalance is { } acceptedWhiteBalance)
-                    acceptedSettings.ResolveWhiteBalance(acceptedWhiteBalance);
-                hslAcceptedSettings=acceptedSettings.Capture();
-                hslAcceptedRevision=new((ulong)openRevision,(ulong)ticket.Id);
-                // The core supplies the post-geometry canvas before preview/export resizing.
-                syncing=true;
-                try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
-                finally { syncing=false; }
-                renderedGpuMode=work.GpuMode;
-                if(work.Compare) {
-                    neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(work.Source,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));
-                }
-                RefreshViewingFrames();
-                RefreshRenderLabels();
-                exactReady=current && !work.Interactive && !transform.Active;
-                if(transform.Active)
-                {
-                    transformPreviewReady=current && !work.Interactive;
-                    if(transform.Tool==TransformTool.Geometry)GeometryEditor.SetCanvasSize(rendered.NativeWidth,rendered.NativeHeight);
-                    RefreshCropDraft();
-                }
-                SetStatus(() => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}");
-                if (current && openRevision != photoImportReportedRevision)
-                {
-                    photoImportReportedRevision = openRevision;
-                    usageAnalytics.Record(new PhotoImportedEvent());
-                }
-                RefreshControls();
-                UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
+                if (!work.Settings.IsHDREditing && work.Lut == lut)
+                    lookAvailability.ApplyWorkerCheck(work.Lut, workerLookAvailable, work.LookGeneration);
+                viewSourceState.ApplyProbeResult(work.File, work.OpenRevision, afterRenderSource, work.SourceGeneration);
             }
+            if (sameOpenFile && !work.Settings.IsHDREditing && !workerLookAvailable && work.Lut == lut && failure == null)
+                failure = new FileNotFoundException(Loc.Text("上次使用的外观不可用，请重新选择或导入外观。"), work.Lut);
+            var effectiveSource = ViewSourceState.ResolveWorkerFrameSource(
+                work.Source, beforeRenderSource, afterRenderSource, sameOpenFile ? CurrentViewSource : null, sameOpenFile);
+            var sameSource = effectiveSource != null;
+            var sameRenderInputs = work.Lut == lut &&
+                work.Settings.IsHDREditing == settings.IsHDREditing &&
+                work.Settings.ActiveAIDenoise == settings.ActiveAIDenoise &&
+                work.Settings.X3fMode == settings.X3fMode &&
+                (!work.Settings.ActiveAIDenoise || AIResultReady && work.AIIdentity == aiJob.Identity) &&
+                work.Settings.Geometry == PreviewGeometry &&
+                work.Settings.Lens == PreviewLens &&
+                work.TransformGeneration == transformGeneration &&
+                (!view.NeedsReference || work.Compare) &&
+                (current || (work.Interactive && interacting && work.Edge == RenderEdge(true)));
+            var aiRunning = settings.ActiveAIDenoise && aiJob.State.IsRunning;
+            var disposition = PreviewFallback.ResolveMainPreviewDisposition(
+                current, sameOpenFile, sameRenderInputs, sameSource, previewDeferred, aiRunning, renderFailed, failure != null);
+
+            if (disposition == MainPreviewDisposition.DegradeWithError)
+            {
+                ApplyMainPreviewFailure(failure!);
+            }
+            else if (disposition == MainPreviewDisposition.DegradeSourceUnavailable)
+            {
+                ApplyMainPreviewFailure(null);
+            }
+            else if (disposition == MainPreviewDisposition.PublishFrame)
+            {
+                if(rendered!=null && neutral!=null)
+                {
+                    if(work.Settings.ActiveAIDenoise) { aiNotReadyIdentity=null;aiNotReadyAttempts=0; }
+                    var previousResult = result;
+                    var previousAcceptedAfter = acceptedAfter;
+                    var previousNeutral = neutralResult;
+                    var previousNeutralRevision = neutralRevision;
+                    var previousAcceptedReference = acceptedReference;
+                    var previousHslWork = hslAcceptedWork;
+                    var previousHslSettings = hslAcceptedSettings;
+                    var previousHslRevision = hslAcceptedRevision;
+                    var previousGpuMode = renderedGpuMode;
+                    try
+                    {
+                        var frameSource = effectiveSource!;
+                        result=rendered;acceptedAfter=new(frameSource,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));
+                        // HDR camera rendering has no legacy RAW WB result. Keep the
+                        // dormant SDR AsShot calibration intact across HDR previews.
+                        if(!transform.Active && rendered.WhiteBalance is { } whiteBalance)
+                            settings.ResolveWhiteBalance(whiteBalance);
+                        hslAcceptedWork=work with { Source = frameSource };
+                        var acceptedSettings=work.Settings.Clone();
+                        if (rendered.WhiteBalance is { } acceptedWhiteBalance)
+                            acceptedSettings.ResolveWhiteBalance(acceptedWhiteBalance);
+                        hslAcceptedSettings=acceptedSettings.Capture();
+                        hslAcceptedRevision=new((ulong)openRevision,(ulong)ticket.Id);
+                        // The core supplies the post-geometry canvas before preview/export resizing.
+                        syncing=true;
+                        try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
+                        finally { syncing=false; }
+                        renderedGpuMode=work.GpuMode;
+                        if(work.Compare) {
+                            neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(frameSource,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));
+                        } else if (work.Source == null || !work.Source.SameFile(frameSource)) {
+                            neutralResult=null;acceptedReference=null;
+                        }
+                        RefreshViewingFrames();
+                        RefreshRenderLabels();
+                    }
+                    catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex))
+                    {
+                        result = previousResult;
+                        acceptedAfter = previousAcceptedAfter;
+                        neutralResult = previousNeutral;
+                        neutralRevision = previousNeutralRevision;
+                        acceptedReference = previousAcceptedReference;
+                        hslAcceptedWork = previousHslWork;
+                        hslAcceptedSettings = previousHslSettings;
+                        hslAcceptedRevision = previousHslRevision;
+                        renderedGpuMode = previousGpuMode;
+                        throw;
+                    }
+                    exactReady=current && !work.Interactive && !transform.Active;
+                    if(exactReady && thumbnailResources!=null) {
+                        acceptedPhotoPreviewResources=thumbnailResources;
+                        CacheCurrentPhotoPreview(thumbnailResources);
+                    }
+                    if(transform.Active)
+                    {
+                        transformPreviewReady=current && !work.Interactive;
+                        if(transform.Tool==TransformTool.Geometry)GeometryEditor.SetCanvasSize(rendered.NativeWidth,rendered.NativeHeight);
+                        RefreshCropDraft();
+                    }
+                    // W1（#301 收口）：仅在当前帧满足 OpenRevision/EditRevision 时绑定提示，
+                    // Refine 或待执行缩放预览先保留，直到最终稳态帧消费一次并保持活跃横幅引用待清理。
+                    var isSettledFrame = !WillScheduleNextPreview(work, current, failure);
+                    Func<string> cleanPreviewStatus = () => $"{(work.Interactive ? Loc.Text("交互预览") : work.Edge==0 ? Loc.Text("原尺寸") : Loc.Text("预览"))} {rendered.Image.PixelWidth} × {rendered.Image.PixelHeight} · {Path.GetFileName(work.File)}";
+                    var (nextBannerState, status) = transferNoticeBanner.DeliverRender(
+                        work.OpenRevision,
+                        editRevision,
+                        isSettledFrame,
+                        cleanPreviewStatus,
+                        transferNotices => () => cleanPreviewStatus() + "；" + FormatTransferNotices(transferNotices));
+                    transferNoticeBanner = nextBannerState;
+                    SetStatus(status);
+                    if (current && openRevision != photoImportReportedRevision)
+                    {
+                        photoImportReportedRevision = openRevision;
+                        usageAnalytics.Record(new PhotoImportedEvent());
+                    }
+                    RefreshControls();
+                    UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
+                }
+                else if (current && !previewDeferred && !aiRunning && !renderFailed)
+                {
+                    ApplyMainPreviewFailure(null);
+                }
+            }
+            // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
+            if(current && work.Refine && failure==null && !renderFailed && work.File==file && !interacting)Schedule();
         }
-        // A quick RAW proxy shortens the blank wait. Only its exact successor enables export.
-        if(current && work.Refine && failure==null && work.File==file && !interacting)Schedule();
-        UpdateBusy(); Pump();QueuePendingReset();
+        catch(Exception ex) when(PreviewFallback.ShouldDegrade(ex))
+        {
+            failure=ex;
+            if(current)ApplyMainPreviewFailure(ex);
+        }
+        UpdateBusy(); TryFinishPendingProcessingMigration(); Pump();QueuePendingReset();
+    }
+
+    private void ApplyMainPreviewFailure(Exception? failure)
+    {
+        Trace.WriteLine($"Main preview fallback for {file}: {failure?.Message ?? "Source unavailable"}");
+        var outcome = failure != null
+            ? PreviewFallback.DegradeMainPreview(failure, result != null, openingPreview != null)
+            : PreviewFallback.DegradeUnavailableSource(result != null, openingPreview != null);
+        ClearPendingAllReset();
+        transferNoticeBanner = transferNoticeBanner.AfterRenderFailure();
+        exactReady = outcome.ExactReady;
+        transformPreviewReady = outcome.TransformPreviewReady;
+        renderFailed = outcome.RenderFailed;
+        RefreshCropDraft();
+        RefreshRenderLabels();
+        CancelProcessingMigration();
+        if (failure == null)
+        {
+            SetStatus(() => Loc.Text("预览未更新"), true);
+            return;
+        }
+        if (!HandleAIFailure(failure))
+            SetStatus(() => Loc.Text("预览未更新") + " · " + outcome.StatusError, true);
+    }
+
+    private bool WillScheduleNextPreview(Work work, bool current, Exception? failure)
+    {
+        if (!current || work.Interactive) return true;
+        if (work.Refine && failure == null && work.File == file && !interacting) return true;
+        if (scheduler.Busy || previewResize.IsEnabled) return true;
+        return !syncing && !closing && !exporting && file != null && ResultCanvas.PreviewLongEdge != previewLongEdge;
     }
     private void ExposureModeChanged(object sender,SelectionChangedEventArgs e) { if(!ready || syncing || exporting || transform.Active)return;settings.ExposureMode=ExposureMode.SelectedIndex;MarkEdited();Schedule(); }
     private void X3fRenderingChanged(object sender,SelectionChangedEventArgs e)
     {
         if(!ready || syncing || exporting || transform.Active || !PhotoInput.IsX3f(file) || X3fRendering.SelectedIndex is < 0 or > 1)return;
-        settings.X3fMode=(X3fMode)X3fRendering.SelectedIndex;
-        if(settings.X3fMode==X3fMode.Normal) { ResetAITask();settings.AIDenoiseEnabled=false; }
+        var mode=(X3fMode)X3fRendering.SelectedIndex;
+        if(mode==X3fMode.Normal)ResetAITask();
+        settings.SelectX3fMode(mode);
         MarkEdited();RefreshControls();Schedule();
     }
     private void ProcessingVersionChanged(object sender,SelectionChangedEventArgs e)
     {
-        if(!ready || syncing || exporting || transform.Active || file==null || ProcessingVersion.SelectedIndex is < 0 or > 1)return;
-        settings.Processing=ProcessingVersion.SelectedIndex==0 ? ProcessingIdentity.Legacy : ProcessingIdentity.Current;
+        if(!ready || syncing || exporting || transform.Active || file==null || ProcessingVersion.SelectedIndex is < 0 or > 2)return;
+        settings.Processing=ProcessingVersion.SelectedIndex switch {
+            0 => ProcessingIdentity.Legacy, 1 => ProcessingIdentity.C5, _ => ProcessingIdentity.Current
+        };
         MarkEdited();Schedule();
     }
     private void GpuModeChanged(object sender,SelectionChangedEventArgs e) { if(ready && !syncing && !exporting) {RefreshAIControls();Schedule();} }
@@ -264,7 +443,7 @@ public partial class MainWindow
         autoExposing=true;RefreshControls();
         try
         {
-            var ev=await Task.Run(()=>{using var meter=new RenderEngine(gpuMode:gpuMode,aiBackend:aiBackend,aiDeviceID:aiDevice,aiDiagnostics:aiDiagnostics);return meter.AutoExposure(path,snapshot);});
+            var ev=await Task.Run(()=>{using var meter=CreateRenderEngine(gpuMode:gpuMode,aiBackend:aiBackend,aiDeviceID:aiDevice);return meter.AutoExposure(path,snapshot);});
             if(closing || file!=path || openRevision!=photoRevision || editRevision!=revision || !snapshot.Capture().SameAs(settings.Capture()) ||
                 snapshot.IsHDREditing && RequestedGpuMode!=gpuMode)return;
             var exposure=settings.IsHDREditing ? ev : NumericRange.For(ParameterSpec.All[(int)Parameter.Exposure]).Clamp(ev);

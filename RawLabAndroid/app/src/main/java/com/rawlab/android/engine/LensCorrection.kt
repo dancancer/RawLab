@@ -4,20 +4,21 @@ import com.rawlab.android.R
 import com.rawlab.android.i18n.AppStrings
 
 data class LensCandidate(val id: String, val maker: String, val model: String,
-    val hasDistortion: Boolean, val hasTca: Boolean, val isMatch: Boolean) {
+    val hasDistortion: Boolean, val hasTca: Boolean, val isMatch: Boolean, val hasVignetting: Boolean = false) {
     val title: String get() = if (model.contains(maker, ignoreCase = true)) model else "$maker $model"
 }
 
 data class LensInfo(val state: Int, val detectedLens: String, val selectedLens: String,
     val appliedDistortion: Boolean, val appliedTca: Boolean, val cropScale: Float,
-    val candidates: List<LensCandidate>) {
+    val candidates: List<LensCandidate>, val camera: String? = null, val focalLength: Float? = null, val aperture: Float? = null, val appliedVignetting: Boolean = false) {
     /** Native status values are stable; keep them as integers at this boundary. */
     val message: String get() = when (state) {
         STATE_OFF -> AppStrings.text(R.string.lens_off)
-        STATE_APPLIED -> if (appliedDistortion || appliedTca) {
+        STATE_APPLIED -> if (appliedDistortion || appliedTca || appliedVignetting) {
             val corrections = listOfNotNull(
                 AppStrings.text(R.string.lens_distortion_short).takeIf { appliedDistortion },
                 AppStrings.text(R.string.lens_tca).takeIf { appliedTca },
+                AppStrings.text(R.string.lens_vignetting).takeIf { appliedVignetting },
             ).joinToString(" / ")
             AppStrings.format(R.string.lens_corrected, corrections)
         } else AppStrings.text(R.string.lens_matched)

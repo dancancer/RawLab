@@ -129,7 +129,7 @@ int main(int argc,char** argv) {
                 const auto finalLarge=render(session,enlarged);enlarged.intent=SONY2FUJI_INTENT_PREVIEW;
                 require(render(session,enlarged)==finalLarge,"enlarging viewport retains FINAL dimensions and bytes");
                 enlarged.size_mode=SONY2FUJI_SIZE_NATIVE;enlarged.preview_long_edge=width*2;
-                require(render(session,enlarged)==finalLarge,"legacy preview edge above native retains output bytes");
+                require(render(session,enlarged)==active,"legacy preview edge above native clamps to native dimensions without upscaling");
             }
             gpu.mode=SONY2FUJI_GPU_AUTO;
             require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"Auto mode");
@@ -179,8 +179,21 @@ int main(int argc,char** argv) {
         config.clarity=config.dehaze=0;
         require(sony2fuji_session_set_atmosphere(session,&config)==SONY2FUJI_STATUS_OK,"clear session");
         require(render(session,request)==original,"next photo does not inherit atmosphere");
-        const char* raw=argc>1 ? argv[1] : std::getenv("RAWLAB_TEST_RAW");
-        if(raw && *raw) {
+        const char* argRaw=(argc>1 && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+        if(envRaw && !*envRaw) envRaw=nullptr;
+        const char* raw=argRaw ? argRaw : envRaw;
+        if(argc>1 && !raw) {
+            sony2fuji_session_destroy(session);
+            std::cout<<"SKIP atmosphere_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if(raw && !std::filesystem::is_regular_file(std::filesystem::u8path(raw))) {
+            sony2fuji_session_destroy(session);
+            std::cerr<<"FAIL atmosphere_api: RAW sample does not exist: "<<raw<<'\n';
+            return 1;
+        }
+        if(raw) {
             request.input_type=SONY2FUJI_INPUT_RAW;request.input_path=raw;request.input_pixels=nullptr;
             request.input_width=request.input_height=0;request.size_mode=SONY2FUJI_SIZE_LIMIT_LONG_EDGE;request.long_edge=320;
             threadParity(request);

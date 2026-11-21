@@ -30,12 +30,11 @@
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" Columns="{Binding DataContext.Columns, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ItemsControl}}}"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Button Click="PhotoSelected" PreviewMouseLeftButtonDown="PhotoTilePressed" PreviewMouseRightButtonDown="PhotoTileContextPressed" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" Margin="2" Padding="3" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                  <Button Click="PhotoSelected" PreviewMouseLeftButtonDown="PhotoTilePressed" PreviewMouseRightButtonDown="PhotoTileContextPressed" ToolTip="{Binding Name}" AutomationProperties.Name="{Binding Name}" AutomationProperties.ItemStatus="{Binding PhotoStatus}" Margin="2" Padding="3" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
                     <Button.Style>
                       <Style TargetType="Button" BasedOn="{StaticResource QuietButton}">
                         <Style.Triggers>
-                          <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Tag" Value="selected"/><Setter Property="AutomationProperties.ItemStatus" Value="{DynamicResource '当前照片'}"/></DataTrigger>
-                          <DataTrigger Binding="{Binding IsMarked}" Value="True"><Setter Property="AutomationProperties.ItemStatus" Value="{DynamicResource '已选'}"/></DataTrigger>
+                          <DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Tag" Value="selected"/></DataTrigger>
                         </Style.Triggers>
                       </Style>
                     </Button.Style>
@@ -55,6 +54,14 @@
                       <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="3" Padding="5,1" Background="{DynamicResource Accent}" CornerRadius="3" IsHitTestVisible="False">
                         <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsMarked}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
                         <TextBlock Text="✓" Foreground="{DynamicResource AccentText}"/>
+                      </Border>
+                      <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="4" Padding="4" Background="#B8000000" CornerRadius="3" IsHitTestVisible="False" ToolTip="{DynamicResource '已编辑'}">
+                        <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsEdited}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                        <local:EditorIcon Kind="Pencil" Width="13" Height="13" TextElement.Foreground="White"/>
+                      </Border>
+                      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3" Padding="3" Background="#B8000000" CornerRadius="3" IsHitTestVisible="False">
+                        <Border.Style><Style TargetType="Border"><Style.Triggers><DataTrigger Binding="{Binding PreviewNotice}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                        <TextBlock Text="{Binding PreviewNotice}" Foreground="White" FontSize="9"/>
                       </Border>
                       <TextBlock Grid.Row="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontSize="{DynamicResource EditorCaptionSize}" TextAlignment="Center" Margin="1,4,1,1"/>
                     </Grid>
@@ -304,7 +311,9 @@
                     <TextBlock Text="{DynamicResource '照片处理设置'}" FontWeight="SemiBold" Margin="0,0,0,12" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ActiveFilm" Foreground="{DynamicResource Muted}" Margin="0,0,0,12" TextWrapping="Wrap"/>
                     <TextBlock Text="{DynamicResource '处理版本'}" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="ProcessingVersion" SelectedIndex="1" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/></ComboBox>
+                    <ComboBox x:Name="ProcessingVersion" SelectedIndex="2" SelectionChanged="ProcessingVersionChanged" AutomationProperties.Name="{DynamicResource '处理版本'}"><ComboBoxItem Content="{DynamicResource '处理 v1（旧版）'}"/><ComboBoxItem Content="{DynamicResource '处理 v2'}"/><ComboBoxItem Content="{DynamicResource '处理 v3'}"/></ComboBox>
+                    <TextBlock x:Name="ProcessingMigrationState" Foreground="{DynamicResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+                    <Button x:Name="RollbackProcessingMigrationButton" Content="{DynamicResource '回到迁移前'}" Click="RollbackProcessingMigrationClicked" Margin="0,8,0,0" Padding="8,3" Style="{StaticResource QuietButton}" Visibility="Collapsed"/>
                     <StackPanel x:Name="X3fSettingsPanel" Visibility="Collapsed">
                       <TextBlock Text="{DynamicResource 'X3F 显影'}" Margin="0,10,0,4"/>
                       <ComboBox x:Name="X3fRendering" SelectionChanged="X3fRenderingChanged" AutomationProperties.Name="{DynamicResource 'X3F 显影'}" AutomationProperties.AutomationId="x3f.mode">
@@ -371,14 +380,17 @@
                 </DockPanel>
                 <Button x:Name="LookImport" Content="{DynamicResource '导入外观'}" Click="ImportClicked" HorizontalAlignment="Left" Style="{StaticResource ToolButton}" AutomationProperties.AutomationId="looks.import"/>
               </StackPanel>
-              <UniformGrid x:Name="FilmStrip" Grid.Row="1" Columns="3" VerticalAlignment="Top"/>
+              <StackPanel Grid.Row="1">
+                <UniformGrid x:Name="FilmStrip" Columns="3" VerticalAlignment="Top"/>
+                <StackPanel x:Name="UnreadableLooksPanel" Visibility="Collapsed" Margin="0,10,0,0" AutomationProperties.AutomationId="looks.unreadable"/>
+              </StackPanel>
               <StackPanel x:Name="LookEmpty" Grid.Row="1" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.AutomationId="looks.empty">
                 <TextBlock Text="{DynamicResource '没有匹配的外观'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" TextAlignment="Center"/>
                 <Button x:Name="LookEmptyAction" Click="ClearLookSearch" Margin="0,6"/>
               </StackPanel>
             </Grid>
             <Border x:Name="MasterRecipePanel" Visibility="Collapsed">
-              <UniformGrid x:Name="RecipeStrip" Columns="2" VerticalAlignment="Top"/>
+              <UniformGrid x:Name="RecipeStrip" Columns="3" VerticalAlignment="Top"/>
             </Border>
             <Border x:Name="DenoiseSurface" Visibility="Collapsed"><local:DenoisePanel x:Name="DenoiseEditor"/></Border>
             <Border x:Name="LensSurface" Visibility="Collapsed"><local:LensPanel x:Name="LensEditor"/></Border>

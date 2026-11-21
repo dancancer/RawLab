@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main struct IOSAdjustmentSessionTests {
@@ -10,6 +11,8 @@ import Foundation
         return .init(settings: settings, updatedAt: Date(timeIntervalSince1970: 100))
     }
     static func main() throws {
+        try Self.effectiveNoticesFilter()
+        try Self.sheetNoticeDisplay()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
@@ -78,14 +81,64 @@ import Foundation
         try historyOrder(root.appendingPathComponent("lineage"))
         try saveFailure(root.appendingPathComponent("failures"))
         try synchronization(root.appendingPathComponent("collection-sync"))
+        try legacyAssetSynchronization(root.appendingPathComponent("legacy-asset-sync"))
         try presetApplication(root.appendingPathComponent("presets"))
         try fallbackHistory(root.appendingPathComponent("fallback-history"))
+        try processingMigrationReset(root.appendingPathComponent("migration-reset"))
         var invalid = context; invalid.hasUncommittedDraft = true
         do { _ = try session.copy(scope: .all, snapshot: state(2), context: invalid) } catch {}
         try check(session.clipboard == copy, "Failed copy preserves the frozen clipboard")
         let empty = try session.prepare(payload: copy, targets: [])
         try check(session.apply(empty).isEmpty, "Empty target operation reports no successes")
     }
+    static func legacyAssetSynchronization(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        let asset = PhotoIdentity(resourceIdentifier: "legacy-library-photo")
+        let photo = PhotoIdentity(resourceIdentifier: "legacy-library-photo", contentIdentifier: "verified-current-bytes")
+        let regular = PhotoIdentity(contentIdentifier: "ordinary-target")
+        let late = PhotoIdentity(resourceIdentifier: "late-library-photo", contentIdentifier: "verified-late-bytes")
+        let lateAsset = PhotoIdentity(resourceIdentifier: "late-library-photo")
+        let legacy = state(2)
+        var source = RawSettings.default; source.contrast = 1.35
+        let payload = try IOSAdjustmentTransfer.capture(scope: .custom([.contrast]), snapshot: .init(settings: source), context: context)
+        func prepare(_ identities: [PhotoIdentity]) throws -> IOSPreparedAdjustmentTransfer {
+            try session.prepare(payload: payload, targets: identities.map {
+                .init(identity: $0, displayName: "Photo", defaultState: state(0), context: context)
+            }, action: .synchronize)
+        }
+
+        try store.save(asset, state: legacy)
+        let pending = try prepare([photo, regular])
+        guard case .legacyAssetEditNeedsDecision? = pending.targets[0].error as? EditPersistenceError else {
+            try check(false, "Synchronization preflight must flag an unconfirmed Photos edit")
+            return
+        }
+        let rejected = session.apply(pending)
+        let preserved = try store.unverifiedAssetEdit(for: photo)
+        try check(rejected.allSatisfy { $0.status == .blocked } && store.state(for: regular) == nil && preserved == legacy,
+                  "An unresolved Photos edit blocks writes and preserves the restoration prompt")
+        try check(session.apply(pending, skipping: [photo.key]).map(\.status) == [.skipped, .applied] && store.state(for: photo) == nil,
+                  "Skipping the legacy target saves only the other photo")
+
+        try store.resolveUnverifiedAssetEdit(for: photo, expected: legacy, restore: true)
+        let confirmed = try prepare([photo])
+        try check(session.apply(confirmed).first?.status == .applied && store.state(for: photo)?.settings.exposure == 2 &&
+                  store.state(for: photo)?.settings.contrast == 1.35, "Synchronizing only contrast preserves the confirmed +2 EV")
+        try check(session.undoTransaction(confirmed.id).first?.status == .applied &&
+                  store.state(for: photo)?.settings.exposure == 2 && store.state(for: photo)?.settings.contrast == 1,
+                  "Undo restores the confirmed legacy edit without changing its exposure")
+
+        let stale = try prepare([late])
+        try store.save(lateAsset, state: legacy)
+        let lateResult = session.apply(stale).first
+        let unconfirmed = try store.unverifiedAssetEdit(for: late)
+        try check(lateResult?.status != .applied && store.state(for: late) == nil && unconfirmed == legacy,
+                  "A legacy record discovered after preflight cannot be shadowed on commit")
+        try store.resolveUnverifiedAssetEdit(for: late, expected: legacy, restore: true)
+        try check(session.apply(stale).first?.status == .conflict && store.state(for: late)?.settings.exposure == 2,
+                  "A preflight from before restoration cannot overwrite the restored exposure")
+    }
+
     static func fallbackHistory(_ root: URL) throws {
         let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
         let content = PhotoIdentity(contentIdentifier: "original-content")
@@ -262,5 +315,92 @@ import Foundation
         try check(session.undoPhoto(id).first?.status == .failed && !session.canRedoPhoto(id), "Failed inverse save does not move history state")
         fail = false
         try check(session.undoPhoto(id).first?.status == .applied && session.canRedoPhoto(id), "Inverse save can retry successfully")
+    }
+
+    static func processingMigrationReset(_ root: URL) throws {
+        let store = try EditPersistence(directory: root), session = IOSAdjustmentTransferSession(store: store)
+        var old = RawSettings.default; old.processing = .c5; old.exposure = 0.75
+        let original = PhotoEditState(settings: old, filmID: "legacy-look", updatedAt: Date(timeIntervalSince1970: 10))
+        var newer = old; newer.processing = .current
+        let migrated = original.replacing(settings: newer, preservingFilmID: original.filmID)
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002,
+                                                 detailRMSE: 0.001, evaluations: 20)
+        let id = PhotoIdentity(resourceIdentifier: "session-reset", contentIdentifier: "bytes-1")
+        let sibling = PhotoIdentity(resourceIdentifier: "session-reset", contentIdentifier: "bytes-2")
+        let content = PhotoIdentity(contentIdentifier: "bytes-1")
+        for target in [id, sibling, content] {
+            try store.save(target, state: original)
+            let accepted = try store.commitProcessingMigration(expected: store.readState(for: target), candidate: migrated, quality: quality)
+            session.adoptProcessingMigration(accepted)
+        }
+        var edited = newer; edited.exposure = 1.1
+        try check(session.commitEdit(expected: store.readState(for: id),
+                                     state: original.replacing(settings: edited, preservingFilmID: original.filmID)).status == .applied,
+                  "Ordinary session edit succeeds after migration")
+        try check(try store.processingMigration(for: id)?.status == .migrated,
+                  "Ordinary session edit preserves migration receipt")
+        var neutral = RawSettings.default; neutral.processing = .current
+        let resetOutcome = session.commitEdit(expected: try store.readState(for: id),
+                                              state: PhotoEditState(settings: neutral),
+                                              clearsProcessingMigration: true)
+        try check(resetOutcome.status == .applied && (try store.processingMigration(for: id)) == nil,
+                  "Session reset-all commit clears target migration receipt")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            try check(false, "Rollback after session reset must throw expired")
+        } catch AdjustmentCommitError.expired { print("PASS: Session reset expires rollback") }
+        let reopened = try EditPersistence(directory: root)
+        try check(try reopened.processingMigration(for: id) == nil &&
+                  reopened.processingMigration(for: sibling)?.status == .migrated &&
+                  reopened.processingMigration(for: content)?.status == .migrated,
+                  "Reopened store keeps reset target nil while preserving same-PHAsset-other-bytes and content:<id> receipts")
+        let undone = session.undoPhoto(id)
+        try check(undone.first?.status == .applied && store.state(for: id)?.settings.exposure == 1.1 &&
+                  (try store.processingMigration(for: id)) == nil,
+                  "Undoing session reset-all restores pre-reset adjustments while keeping migration receipt nil")
+        do {
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            try check(false, "Rollback after undoing session reset must stay expired")
+        } catch AdjustmentCommitError.expired { }
+
+        let clearedBroken = try session.resetToUnmodified(id)
+        try check(clearedBroken.state == nil && !session.canUndoPhoto(id) &&
+                  (try store.readState(for: id)).state == nil &&
+                  (try store.readState(for: sibling)).state?.settings.exposure == 0.75 &&
+                  (try store.readState(for: content)).state?.settings.exposure == 0.75,
+                  "Session resetToUnmodified clears target history and record while preserving same-PHAsset-other-bytes and content:<id>")
+    }
+
+    // Q3/S1 seam：粘贴提示只随实际应用或确认无关改动的目标呈现（修前提示走根 statusMessage，
+    // 被粘贴 Sheet 的模态层级吞掉，快捷预设路径又弹成阻塞 Alert）。
+    static func effectiveNoticesFilter() throws {
+        let payload = try AdjustmentTransferPayload(source: .init(identifier: "src", isRaw: true, processingVersion: 2,
+            recipe: nil, hdrProcessingVersion: nil), values: ["light.exposure": .number(0.5)])
+        func target(_ id: String, _ error: Error?, _ notices: [AdjustmentTransferNotice]) -> IOSPreparedAdjustmentTransfer.Target {
+            .init(id: id, displayName: id, original: nil, candidate: nil, unchanged: false, isCurrent: nil,
+                validateSource: nil, error: error, editGeneration: 0, notices: notices)
+        }
+        let prepared = IOSPreparedAdjustmentTransfer(id: UUID(), payload: payload, action: .paste, targets: [
+            target("a", nil, [.ignoredRawDenoise]), target("b", nil, [.ignoredPostRGBDenoise]),
+            target("c", nil, [.retainedTargetProcessingVersion]),
+            target("d", NSError(domain: "gone", code: 1), [.ignoredRawDenoise])], notices: [.ignoredRawDenoise])
+        let outcomes = [IOSAdjustmentTransferOutcome(targetID: "a", status: .applied, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "b", status: .skipped, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "c", status: .failed, saved: nil, error: nil),
+            IOSAdjustmentTransferOutcome(targetID: "d", status: .applied, saved: nil, error: nil)]
+        try check(prepared.effectiveNotices(outcomes) == [.ignoredRawDenoise],
+            "Paste notices surface only for targets that actually applied")
+        try check(prepared.effectiveNotices([]).isEmpty, "Prepared notices stay hidden until apply outcomes exist")
+    }
+
+    // V-UIIOS #301 seam：Sheet 内提示行只随当前粘贴批次的结果展示。提示属性留在共享
+    // ViewModel 上，重开面板或重新检查后 pasteResults 已清空，旧提示不得抢先显示。
+    static func sheetNoticeDisplay() throws {
+        try check(!IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: ["降噪已忽略"], hasPasteResults: false),
+            "Sheet hides stale notices before the new batch produces paste results")
+        try check(IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: ["降噪已忽略"], hasPasteResults: true),
+            "Sheet shows delivered notices next to the current paste results")
+        try check(!IOSAdjustmentPasteNoticeDisplay.showsInSheet(notices: [], hasPasteResults: true),
+            "No notices keep the sheet notice row closed")
     }
 }

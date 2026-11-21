@@ -1,5 +1,7 @@
 #include "compute_denoise.h"
+#include "gles_recovery.h"
 #include "compute_denoise_shader.h"
+#include "filter_buffer_pool.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <algorithm>
@@ -13,7 +15,7 @@ namespace {
 constexpr GLuint groupSize = 128;
 void checked() {
     const auto error = glGetError();
-    if (error != GL_NO_ERROR) throw std::runtime_error("GLES filter error " + std::to_string(error));
+    if (error != GL_NO_ERROR) throw GlesFailure(error);
 }
 struct Binding final : FilterContext {
     EGLDisplay previousDisplay = eglGetCurrentDisplay();
@@ -21,21 +23,30 @@ struct Binding final : FilterContext {
     EGLSurface previousRead = eglGetCurrentSurface(EGL_READ), previousDraw = eglGetCurrentSurface(EGL_DRAW);
     EGLenum previousApi = eglQueryAPI();
     EGLDisplay display;
-    Binding(EGLDisplay d, EGLSurface surface, EGLContext context) : display(d) {
+    void (*onUnbind)(void*) = nullptr;
+    void* unbindArg = nullptr;
+    Binding(EGLDisplay d, EGLSurface surface, EGLContext context,
+            void (*trim)(void*) = nullptr, void* arg = nullptr)
+        : display(d), onUnbind(trim), unbindArg(arg) {
         if (!eglBindAPI(EGL_OPENGL_ES_API) || !eglMakeCurrent(d, surface, surface, context)) {
-            eglBindAPI(previousApi);
-            throw std::runtime_error("GLES filter context unavailable");
+            const EGLint error = eglGetError();
+            if (previousApi != EGL_NONE) eglBindAPI(previousApi);
+            throw sony2fuji::EglFailure(error);
         }
     }
     ~Binding() override {
+        // 先在 GLES 上下文仍绑定时裁剪超额空闲缓冲，再解绑并恢复调用方上下文。
+        if (onUnbind) onUnbind(unbindArg);
+        eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         if (previousContext != EGL_NO_CONTEXT) eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
-        else eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglBindAPI(previousApi);
     }
 };
 struct Buffer final : FilterBuffer {
     GLuint name = 0;
-    ~Buffer() override { if (name) glDeleteBuffers(1, &name); }
+    ~Buffer() override {
+        if (name && eglGetCurrentContext() != EGL_NO_CONTEXT) glDeleteBuffers(1, &name);
+    }
 };
 
 const char* prefix = R"glsl(#version 310 es
@@ -67,35 +78,56 @@ class Device final : public FilterDevice {
     EGLSurface surface = EGL_NO_SURFACE;
     GLuint program = 0, constants = 0;
     FilterBufferPtr dummy;
+    FilterBufferPool pool;
     size_t blockLimit = 0;
     uint32_t dispatchLimit = 0;
+    FilterBufferPtr createBuffer(size_t count, const float* input) {
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
+        auto buffer = std::make_unique<Buffer>();
+        glGenBuffers(1, &buffer->name); glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer->name);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(count * sizeof(float)), input, GL_DYNAMIC_COPY);
+        checked();
+        return buffer;
+    }
 public:
     ~Device() override {
         if (context != EGL_NO_CONTEXT) {
             try {
                 auto scope = activate();
+                pool.clear();
                 dummy.reset();
-                if (constants) glDeleteBuffers(1, &constants);
-                if (program) glDeleteProgram(program);
+                if (constants) {
+                    glDeleteBuffers(1, &constants);
+                    constants = 0;
+                }
+                if (program) {
+                    glDeleteProgram(program);
+                    program = 0;
+                }
             } catch (...) { }
             eglDestroyContext(display, context);
+            context = EGL_NO_CONTEXT;
         }
-        if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
+        if (surface != EGL_NO_SURFACE) {
+            eglDestroySurface(display, surface);
+            surface = EGL_NO_SURFACE;
+        }
         // Never terminate Android's process-wide display, shared with HWUI.
     }
     void initialize() {
         display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) throw std::runtime_error("EGL filter display unavailable");
+        if (display == EGL_NO_DISPLAY || !eglInitialize(display, nullptr, nullptr)) throw GpuUnavailableError("EGL filter display unavailable");
         const EGLint attributes[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE};
         EGLConfig config{}; EGLint count = 0;
-        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count == 0) throw std::runtime_error("EGL filter config unavailable");
+        if (!eglChooseConfig(display, attributes, &config, 1, &count) || count == 0) throw GpuUnavailableError("EGL filter config unavailable");
         const EGLint surfaceAttributes[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         const EGLint contextAttributes[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
         const auto previousApi = eglQueryAPI();
-        eglBindAPI(EGL_OPENGL_ES_API);
-        context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
-        eglBindAPI(previousApi);
+        if (eglBindAPI(EGL_OPENGL_ES_API)) {
+            context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
+        }
+        if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         auto scope = activate();
         GLint major = 0, minor = 0, invocations = 0, size = 0, groups = 0, blocks = 0;
         GLint64 bytes = 0;
@@ -106,7 +138,7 @@ public:
         glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
         glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &bytes);
         if (major < 3 || (major == 3 && minor < 1) || invocations < int(groupSize) || size < int(groupSize) ||
-            groups <= 0 || blocks < 4 || bytes <= 0) throw std::runtime_error("GLES 3.1 filter limits unavailable");
+            groups <= 0 || blocks < 4 || bytes <= 0) throw GpuUnavailableError("GLES 3.1 filter limits unavailable");
         blockLimit = static_cast<size_t>(bytes);
         dispatchLimit = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(groups) * groupSize, UINT32_MAX));
         const std::string source = std::string(prefix) + kFilterShaderBody +
@@ -124,26 +156,36 @@ public:
         if (!ok) throw std::runtime_error("GLES filter shader link failed");
         glGenBuffers(1, &constants); glBindBuffer(GL_UNIFORM_BUFFER, constants);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(FilterParams), nullptr, GL_DYNAMIC_DRAW);
-        dummy = allocate(1);
+        dummy = createBuffer(1, nullptr);
         checked();
     }
     std::unique_ptr<FilterContext> activate() override {
         if (surface == EGL_NO_SURFACE || context == EGL_NO_CONTEXT) throw std::runtime_error("GLES filter initialization failed");
-        return std::make_unique<Binding>(display, surface, context);
+        return std::make_unique<Binding>(
+            display, surface, context,
+            [](void* ctx) { static_cast<FilterBufferPool*>(ctx)->trimIdleToBudget(); },
+            &pool);
     }
+    void trimPool() override { pool.trimIdleToBudget(); }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
-        if (!count || count > blockLimit / sizeof(float)) throw std::runtime_error("GLES filter buffer exceeds device limit");
-        auto buffer = std::make_unique<Buffer>();
-        glGenBuffers(1, &buffer->name); glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer->name);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(count * sizeof(float)), input, GL_DYNAMIC_COPY);
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
+        return pool.acquire(count, input,
+            [this](size_t n, const float* data) { return createBuffer(n, data); },
+            [this](FilterBuffer& buf, size_t n, const float* data) { write(buf, n, data); });
+    }
+    void write(FilterBuffer& buffer, size_t count, const float* input) override {
+        if (!count || count > blockLimit / sizeof(float)) throw GpuCapabilityLimitError("GLES filter buffer exceeds device limit");
+        if (!input) return;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer.underlying()).name);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(count * sizeof(float)), input);
         checked();
-        return buffer;
     }
     void dispatch(FilterParams params, FilterBuffer& source, FilterBuffer* other,
                   FilterBuffer& output, FilterBuffer* second = nullptr) override {
         glUseProgram(program);
         FilterBuffer* buffers[] = {&source, other ? other : dummy.get(), &output, second ? second : dummy.get()};
-        for (GLuint i = 0; i < 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, static_cast<Buffer*>(buffers[i])->name);
+        for (GLuint i = 0; i < 4; ++i)
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, static_cast<Buffer&>(buffers[i]->underlying()).name);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, constants);
         for (uint32_t offset = 0; offset < params.count;) {
             const uint32_t chunk = std::min(dispatchLimit, params.count - offset);
@@ -157,13 +199,25 @@ public:
         for (GLuint i = 0; i < 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
     void read(FilterBuffer& buffer, size_t count, float* output) override {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer).name);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, static_cast<Buffer&>(buffer.underlying()).name);
         const auto bytes = static_cast<GLsizeiptr>(count * sizeof(float));
         const auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bytes, GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GLES filter readback failed");
+        if (!mapped) {
+            checked();
+            throw std::runtime_error("GLES filter readback failed");
+        }
         std::memcpy(output, mapped, static_cast<size_t>(bytes));
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GLES filter buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checked();
+            throw std::runtime_error("GLES filter buffer contents lost");
+        }
         checked();
+    }
+    void clearErrors() override {
+        try {
+            auto scope = activate();
+            while (glGetError() != GL_NO_ERROR) {}
+        } catch (...) {}
     }
 };
 } // namespace

@@ -74,7 +74,11 @@ class RenderedDngInstrumentedTest {
                     NativeProcessor(mode).use { processor ->
                         val started = SystemClock.elapsedRealtime()
                         val preview = processor.preview(input, look, settings(), 128, false)
-                        assertEquals(if (mode == NativeProcessor.CPU) 0 else 2, preview.backend)
+                        if (mode == NativeProcessor.CPU) {
+                            assertEquals(0, preview.backend)
+                        } else {
+                            assertTrue("AUTO may use CPU or GLES: ${preview.backend}", preview.backend in setOf(0, 2))
+                        }
                         for (format in listOf(ExportFormat.DNG, ExportFormat.PNG)) {
                             val output = File(artifacts, "$name${format.suffix}")
                             processor.export(input, look, settings(), output, format, 128)

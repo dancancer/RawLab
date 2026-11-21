@@ -14,7 +14,7 @@ public partial class MainWindow
     private AdjustmentTransferSession TransferSession
     {
         get {
-            editStore ??=new(EditStore.DefaultDirectory);
+            editStore ??=new(appPaths.EditsDirectory);
             if(adjustmentSession==null || !ReferenceEquals(sessionStore,editStore)) {sessionStore=editStore;adjustmentSession=new(editStore);}
             return adjustmentSession;
         }
@@ -23,7 +23,12 @@ public partial class MainWindow
     {
         AdjustmentPanel.AddHandler(ParameterRow.GestureStartedEvent,new RoutedEventHandler((_,_)=>BeginEditGesture()));
         AdjustmentPanel.AddHandler(ParameterRow.GestureCancelledEvent,new RoutedEventHandler((_,_)=>CancelEditGesture()));
-        AdjustmentPanel.AddHandler(ParameterRow.GestureCompletedEvent,new RoutedEventHandler((_,_)=>{editGesture=null;if(!transform.Active)interacting=false;}));
+        AdjustmentPanel.AddHandler(ParameterRow.GestureCompletedEvent,new RoutedEventHandler((_,_)=>{
+            editGesture=null;
+            var wasInteracting=interacting;
+            if(!transform.Active)interacting=false;
+            if(wasInteracting && !interacting)RefreshControls();
+        }));
     }
     private void BeginEditGesture()
     {
@@ -34,19 +39,30 @@ public partial class MainWindow
     }
     private void CancelEditGesture()
     {
-        if(editGesture is not {} gesture)return;
-        editGesture=null;interacting=false;editSaveTimer.Stop();
+        var wasInteracting = interacting;
+        interacting = false;
+        if (editGesture is not {} gesture)
+        {
+            if (wasInteracting) RefreshControls();
+            return;
+        }
+        editGesture = null; editSaveTimer.Stop();
         if(file!=gesture.Path || openRevision!=gesture.OpenRevision)return;
         var aiEnabled=settings.ActiveAIDenoise;
         var aiChanged=aiEnabled!=gesture.Before.Settings.ActiveAIDenoise;
         settings=gesture.Before.Settings.Restore();settings.ActiveAIDenoise=aiEnabled;lut=ResolveLook(gesture.Before);
-        editDirty=gesture.WasDirty || aiChanged;++editRevision;RefreshControls();Schedule();
-        if(aiChanged && !closing)SaveEdits();
+        editDirty=gesture.WasDirty || aiChanged;++editRevision;ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
+        if(aiChanged && !closing)EnqueueSaveEdits();
     }
     private AdjustmentOutcome CommitCurrentEdit(AdjustmentSnapshot snapshot)
     {
         if(file==null)throw new InvalidOperationException("No photo is open.");
-        var candidate=new SavedEdit(OriginalIdentity.Read(file),snapshot,CurrentLookIdentity());
+        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
+        {
+            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
+            _ = ApplyPendingEditSaves();
+        }
+        var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
         var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
         SavedEdit? defaultEdit=null;
         if(before.Edit==null) {
@@ -58,6 +74,7 @@ public partial class MainWindow
         var previousLook=before.Edit?.Look;
         currentEditRecord=result.Saved;
         RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
+        if(acceptedPhotoPreviewResources is {} resources)CacheCurrentPhotoPreview(resources);
         return result;
     }
     private string? ResolveLook(SavedEdit saved)
@@ -100,6 +117,17 @@ public partial class MainWindow
         }
         if(editGesture!=null)return false;
         return ResolveTransformDraft() && SaveEdits();
+    }
+    private async Task<bool> PrepareAdjustmentCommandAsync()
+    {
+        CancelHslTarget();
+        if(file==null || exporting || closing || aiJob.State.IsRunning)return false;
+        foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
+            if(row.Commit())continue;
+            row.Number.Focus();return false;
+        }
+        if(editGesture!=null)return false;
+        return ResolveTransformDraft() && await FlushSaveEditsAsync();
     }
     private bool HistoryTargetIsCurrent(string path)=>!StringComparer.OrdinalIgnoreCase.Equals(path,file) ||
         !editDirty && !transform.Active && editGesture==null && !exporting && !closing && !aiJob.State.IsRunning;

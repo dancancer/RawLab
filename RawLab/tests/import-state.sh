@@ -1,24 +1,31 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 APP="${1:?Pass the built arm64-simulator RawLab.app path}"
 DEVICE="${2:?Pass the task simulator UUID}"
-OUT="${RAWLAB_IMPORT_STATE_OUT:-$(mktemp -d /tmp/rawlab-ios-import-state.XXXXXX)}"
+if [[ -n "${RAWLAB_IMPORT_STATE_OUT:-}" ]]; then
+    OUT="$RAWLAB_IMPORT_STATE_OUT"
+    mkdir -p "$OUT"
+else
+    rawlab_ios_make_temp_dir OUT rawlab-ios-import-state
+fi
+cleanup() {
+    if [[ "${RAWLAB_TEST_PHOTO_LIBRARY:-0}" == "1" ]]; then
+        xcrun simctl uninstall "$DEVICE" com.rawlab.tests.import-state >/dev/null 2>&1 || true
+    fi
+    rawlab_ios_cleanup_temp_dirs
+}
+trap cleanup EXIT
 HARNESS="$OUT/ImportStateTests.app"
-mkdir -p "$HARNESS/Frameworks"
-cp "$APP/Info.plist" "$HARNESS/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set CFBundleIdentifier com.rawlab.tests.import-state' \
-    -c 'Set CFBundleExecutable import-state' "$HARNESS/Info.plist"
-cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET=arm64-apple-ios18.0-simulator
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
-    -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
-SOURCES=()
-while IFS= read -r file; do SOURCES+=("$file"); done < <(rg --files "$ROOT/RawLab/RawLab/Core" "$ROOT/Shared" -g '*.swift' -g '!**/tests/**')
+rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.import-state import-state "$APP"
+rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
+rawlab_ios_core_shared_sources SOURCES
 TEST_SOURCES=("$ROOT/RawLab/tests/ImportState/"*.swift)
 if [[ -n "${RAWLAB_IMPORT_STATE_TEST_SOURCE:-}" ]]; then TEST_SOURCES=("$RAWLAB_IMPORT_STATE_TEST_SOURCE"); fi
-xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/RawLab/UI/EditorState/EditorCropOverlay.swift" \
@@ -28,9 +35,10 @@ xcrun --sdk iphonesimulator swiftc -swift-version 5 -O -sdk "$SDK" -target "$TAR
 codesign --force --deep --sign - "$HARNESS" >/dev/null
 if [[ "${RAWLAB_TEST_PHOTO_LIBRARY:-0}" == "1" ]]; then
     xcrun simctl install "$DEVICE" "$HARNESS"
-    trap 'xcrun simctl uninstall "$DEVICE" com.rawlab.tests.import-state >/dev/null 2>&1 || true' EXIT
     xcrun simctl privacy "$DEVICE" grant photos com.rawlab.tests.import-state
 fi
 SIMCTL_CHILD_RAWLAB_TEST_PHOTO_LIBRARY="${RAWLAB_TEST_PHOTO_LIBRARY:-0}" \
     xcrun simctl spawn "$DEVICE" "$HARNESS/import-state" "$OUT" "${3:-}"
-echo "Artifacts: $OUT"
+if [[ -n "${RAWLAB_IMPORT_STATE_OUT:-}" ]]; then
+    echo "Artifacts: $OUT"
+fi

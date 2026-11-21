@@ -30,14 +30,14 @@ bool checkedAdd(size_t left, size_t right, size_t& result) {
     return true;
 }
 
-bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
+bool validateBuffer(const sony2fuji::PixelBufferView& buffer, ImageLayout& layout) {
     if (!buffer.data || buffer.width == 0 || buffer.height == 0) {
         return false;
     }
 
-    if (buffer.pixel_format == SONY2FUJI_PIXEL_RGB8) {
+    if (buffer.format == sony2fuji::PixelBufferFormat::RGB8) {
         layout.channels = 3;
-    } else if (buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8) {
+    } else if (buffer.format == sony2fuji::PixelBufferFormat::RGBA8) {
         layout.channels = 4;
     } else {
         return false;
@@ -45,15 +45,15 @@ bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
 
     size_t widthBytes = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.width), layout.channels, widthBytes) ||
-        buffer.stride_bytes < widthBytes) {
+        buffer.strideBytes < widthBytes) {
         return false;
     }
 
     size_t lastRowOffset = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.height - 1),
-                         static_cast<size_t>(buffer.stride_bytes), lastRowOffset) ||
+                         static_cast<size_t>(buffer.strideBytes), lastRowOffset) ||
         !checkedAdd(lastRowOffset, widthBytes, layout.requiredBytes) ||
-        layout.requiredBytes > buffer.size_bytes) {
+        layout.requiredBytes > buffer.sizeBytes) {
         return false;
     }
 
@@ -72,7 +72,7 @@ bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
 
 namespace sony2fuji {
 
-bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bool includeClipping) {
+bool computeImageStatsCPU(const PixelBufferView& buffer, ImageStats& output, bool includeClipping) {
     ImageLayout layout;
     if (!validateBuffer(buffer, layout)) {
         return false;
@@ -84,7 +84,7 @@ bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bo
 
         for (uint32_t y = 0; y < buffer.height; ++y) {
             const uint8_t* row = layout.data +
-                static_cast<size_t>(y) * static_cast<size_t>(buffer.stride_bytes);
+                static_cast<size_t>(y) * static_cast<size_t>(buffer.strideBytes);
             for (uint32_t x = 0; x < buffer.width; ++x) {
                 const size_t pixelOffset = static_cast<size_t>(x) * layout.channels;
                 const uint8_t r = row[pixelOffset];
@@ -115,7 +115,7 @@ bool computeImageStatsCPU(const sony2fuji_buffer& buffer, ImageStats& output, bo
 }
 
 #if !defined(SONY2FUJI_ENABLE_METAL)
-bool computeImageStatsMetal(const sony2fuji_buffer&, ImageStats&) {
+bool computeImageStatsMetal(const PixelBufferView&, ImageStats&) {
     return false;
 }
 #endif

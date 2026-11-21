@@ -1,3 +1,4 @@
+import RawLabKit
 import ImageIO
 import Photos
 import PhotosUI
@@ -7,7 +8,7 @@ import UniformTypeIdentifiers
 
 extension ContentView {
     func supportsHDR(_ tool: EditorToolSelection) -> Bool {
-        if tool == .geometry { return true }
+        if tool == .geometry || tool.hdrRenditionKeyPath != nil { return true }
         if case .adjustment(let kind)=tool {
             return kind.hdrKeyPath != nil || kind == .hsl || kind == .colorGrading || kind == .vignette || kind == .grain
         }
@@ -17,7 +18,6 @@ extension ContentView {
     func toolUnavailableReason(_ tool: EditorToolSelection) -> String? {
         if settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
         if tool == .lens && usesNormalX3f { return L10n.text("此输入不支持镜头校正") }
-        if tool == .lens && viewModel.sourceKind != .raw { return L10n.text("仅 RAW 照片支持镜头校正。") }
         if tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.rawWhiteBalance == nil {
             return L10n.text("此照片没有可用的相机白平衡校准。")
         }
@@ -77,10 +77,22 @@ extension ContentView {
         selectEditorTool(.adjustment(.exposure))
         viewModel.updatePreview(settings:candidate)
     }
-    var editingLocked: Bool { isImporting || isSaving || viewModel.isBusy || batchModel?.isRunning == true }
-    var editorBusy: Bool { viewModel.isBusy || viewModel.isLoadingLUTs || viewModel.isImportingLooks || editingLocked }
+    var editingLocked: Bool { coordinator.editingLocked }
+    var editorBusy: Bool { coordinator.editorBusy }
+    var showingBefore: Bool {
+        get { coordinator.showingBefore }
+        nonmutating set { coordinator.showingBefore = newValue }
+    }
+    var isImporting: Bool {
+        get { coordinator.isImporting }
+        nonmutating set { coordinator.isImporting = newValue }
+    }
+    var isSaving: Bool {
+        get { coordinator.isSaving }
+        nonmutating set { coordinator.isSaving = newValue }
+    }
     var selectedFilmName: String {
-        settings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == settings.lutID }?.name ?? (settings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
+        workingSettings.masterRecipe?.title ?? viewModel.availableLUTs.first { $0.id == workingSettings.lutID }?.name ?? (workingSettings.lutID == nil ? L10n.text("中性") : L10n.text("外观不可用"))
     }
 
     var currentPreviewImage: UIImage? { viewModel.previewImage ?? viewModel.basePreviewImage }
@@ -159,43 +171,40 @@ extension ContentView {
             switch result {
             case .success(let url):
                 isSaving = false
-                fileExportRequest = FileExportRequest(
+                coordinator.fileExportRequest = FileExportRequest(
                     urls: [url],
                     removeAfterExport: true,
                     successMessage: L10n.text("已导出渲染型 DNG。"),
-                    cancelMessage: L10n.text("已生成渲染型 DNG，未另存到所选位置。")
+                    cancelMessage: L10n.text("已生成渲染型 DNG，未另存到所选位置。"),
+                    evidenceIdentifiers: [viewModel.sourceIdentity?.contentIdentifier].compactMap { $0 }
                 )
             case .failure(let error):
                 isSaving = false
-                viewModel.reportError(error, operation: .photoExport, stage: "renderDNG")
+                if error is CancellationError {
+                    viewModel.statusMessage = L10n.text("导出已取消")
+                } else {
+                    viewModel.reportError(error, operation: .photoExport, stage: "renderDNG")
+                }
             }
         }
     }
 
     func applySettingsChange(_ newSettings: RawSettings) {
-        settings = newSettings
+        workingSettings = newSettings
     }
 
     func queueEditorSettingsChange(_ newSettings: RawSettings) {
-        showingBefore = false
-        viewModel.queueSettingsSave(newSettings)
-        if isAdjustingSlider {
-            viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
-                                           includeHistogram: false, quality: .interactive)
-        } else {
-            _ = viewModel.saveCurrentSettings(newSettings)
-            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-        }
+        coordinator.queueEditorSettingsChange(newSettings)
     }
 
     func adjustmentBinding(_ adjustment: AdjustmentKind) -> Binding<Double> {
         Binding(
-            get: { adjustment.value(from: settings) },
+            get: { adjustment.value(from: workingSettings) },
             set: { value in
-                var updated = !settings.isHDREditing && viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && settings.masterRecipeID == nil))
-                    ? manualWhiteBalanceSettings : settings
+                var updated = !workingSettings.isHDREditing && viewModel.sourceKind == .raw && (adjustment == .temperature || (adjustment == .tint && workingSettings.masterRecipeID == nil))
+                    ? manualWhiteBalanceSettings : workingSettings
                 adjustment.setValue(value, in: &updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw,
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw,
                    (adjustment == .temperature || adjustment == .tint) && !(updated.masterRecipeID != nil && adjustment == .tint) {
                     updated.whiteBalanceMode = .custom
                 }
@@ -205,9 +214,9 @@ extension ContentView {
     }
 
     func reset(_ adjustment: AdjustmentKind) {
-        var updated = settings
+        var updated = workingSettings
         adjustment.reset(in: &updated)
-        if !settings.isHDREditing, viewModel.sourceKind == .raw,
+        if !workingSettings.isHDREditing, viewModel.sourceKind == .raw,
            adjustment == .temperature || adjustment == .tint {
             if let whiteBalance = viewModel.rawWhiteBalance {
                 if adjustment == .temperature { updated.temperature = whiteBalance.temperature }
@@ -235,10 +244,10 @@ extension ContentView {
     }
 
     func setWhiteBalanceMode(_ mode: RawWhiteBalanceMode) {
-        guard !settings.isHDREditing else { return }
-        var updated = settings
+        guard !workingSettings.isHDREditing else { return }
+        var updated = workingSettings
         if mode == .custom,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             updated.temperature = whiteBalance.temperature
             if updated.masterRecipeID == nil { updated.tint = whiteBalance.tint }
@@ -252,26 +261,26 @@ extension ContentView {
     }
 
     var displayedTemperature: Double {
-        if settings.isHDREditing { return settings.hdr!.temperature }
+        if workingSettings.isHDREditing { return workingSettings.hdr!.temperature }
         guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             return whiteBalance.temperature
         }
-        return settings.temperature
+        return workingSettings.temperature
     }
 
     var displayedTint: Double {
-        if settings.isHDREditing { return settings.hdr!.tint }
+        if workingSettings.isHDREditing { return workingSettings.hdr!.tint }
         guard viewModel.sourceKind != .raster else { return 0 }
-        if settings.masterRecipeID != nil { return settings.tint }
+        if workingSettings.masterRecipeID != nil { return workingSettings.tint }
         if viewModel.sourceKind == .raw,
-           settings.whiteBalanceMode == .camera,
+           workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
             return whiteBalance.tint
         }
-        return settings.tint
+        return workingSettings.tint
     }
 
     func reciprocalTemperatureBinding() -> Binding<Double> {
@@ -280,7 +289,7 @@ extension ContentView {
             set: { value in
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(RawSettings.temperature(forReciprocalSliderValue:value),in:&updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
@@ -294,46 +303,22 @@ extension ContentView {
                 var updated = manualWhiteBalanceSettings
                 AdjustmentKind.temperature.setValue(min(max(value.rounded(),RawSettings.temperatureRange.lowerBound),
                     RawSettings.temperatureRange.upperBound),in:&updated)
-                if !settings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
+                if !workingSettings.isHDREditing, viewModel.sourceKind == .raw { updated.whiteBalanceMode = .custom }
                 applySettingsChange(updated)
             }
         )
     }
 
     func setSliderEditing(_ editing: Bool) {
-        guard !editorBusy else {
-            isAdjustingSlider = false
-            cancelRulerFocus()
-            return
-        }
-        let wasEditing = isAdjustingSlider
-        if !isEditorDraftActive {
-            if editing && !wasEditing {
-                guard viewModel.beginAdjustmentInteraction(settings: settings) else { return }
-            } else if !editing && (wasEditing || viewModel.adjustmentInteractionRejected) {
-                _ = viewModel.endAdjustmentInteraction(settings: settings)
-            }
-        }
-        isAdjustingSlider = editing
-        updateRulerFocus(editing: editing, wasEditing: wasEditing)
-        if !editing {
-            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-        }
+        coordinator.setSliderEditing(editing, reduceMotion: reduceMotion)
     }
 
     func cancelSliderInteraction() {
-        hslTargetInteraction.cancel(); hslTargetHistoryActive = false
-        hslTargetPoint = nil; hslTargetNotice = nil
-        if let original = viewModel.cancelAdjustmentInteraction() {
-            settings = original
-            viewModel.updatePreview(settings: original, includeHistogram: true, quality: .final)
-        }
-        isAdjustingSlider = false
-        cancelRulerFocus()
+        coordinator.cancelSliderInteraction()
     }
 
     func photoImportButton(isEnabled: Bool) -> some View {
-        Button { requestEditorImport(file: false) } label: { Image(systemName: "photo.badge.plus") }
+        Button { requestEditorImport(file: false) } label: { Image(systemName: viewModel.hasImage ? "chevron.left" : "photo.badge.plus") }
             .accessibilityLabel(L10n.text("导入照片"))
             .help(L10n.text("从照片图库导入"))
             .accessibilityIdentifier("editor.import")
@@ -348,18 +333,13 @@ extension ContentView {
             .disabled(!isEnabled)
     }
 
-    func requestEditorImport(file: Bool) {
-        guard !editorBusy else { return }
-        photoViewing.endTemporaryViewing()
-        pendingFileImport = file
-        pendingPhotoImport = !file
-        if isEditorDraftChanged { draftExitPresented = true; return }
-        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
-        continueEditorImport()
+    func requestEditorImport(file: Bool, recent: RecentPhoto? = nil) {
+        coordinator.requestEditorImport(file: file, recent: recent)
     }
 
     func requestSystemPhotoImport(_ urls: [URL]) {
-        pendingSystemPhotoURLs = PhotoImportFile.appendSystemPhotoEvent(urls, to: pendingSystemPhotoURLs)
+        coordinator.recentReselection = nil
+        coordinator.pendingSystemPhotoURLs = PhotoImportFile.appendSystemPhotoEvent(urls, to: coordinator.pendingSystemPhotoURLs)
         continueSystemPhotoImport()
     }
 
@@ -387,52 +367,50 @@ extension ContentView {
     }
 
     func continueSystemPhotoImport() {
-        guard !pendingSystemPhotoURLs.isEmpty, !editorBusy else { return }
+        guard !coordinator.pendingSystemPhotoURLs.isEmpty, !editorBusy else { return }
         photoViewing.endTemporaryViewing()
         cancelSliderInteraction()
         if isEditorDraftChanged { draftExitPresented = true; return }
         if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
         guard viewModel.saveCurrentSettings(settings) else { return }
-        guard let event = PhotoImportFile.consumeSystemPhotoEvent(from: pendingSystemPhotoURLs) else { return }
+        guard let event = PhotoImportFile.consumeSystemPhotoEvent(from: coordinator.pendingSystemPhotoURLs) else { return }
         guard importFromFile(.success(event.current)) else { return }
-        pendingSystemPhotoURLs = event.remaining
+        coordinator.pendingSystemPhotoURLs = event.remaining
     }
 
     func continueEditorImport() {
-        guard pendingFileImport || pendingPhotoImport else { return }
-        guard viewModel.saveCurrentSettings(settings) else { return }
-        if pendingFileImport { documentImportKind = .photo }
-        showingDocumentImporter = pendingFileImport
-        showingPhotoImporter = pendingPhotoImport
-        pendingFileImport = false
-        pendingPhotoImport = false
+        coordinator.continueEditorImport()
     }
 
     func requestLookImport() {
-        guard !editorBusy, !isEditorDraftChanged else { return }
-        documentImportKind = .looks
-        showingDocumentImporter = true
+        coordinator.requestLookImport()
     }
 
     @MainActor
     func importLooks(_ result: Result<[URL], Error>) {
-        guard !editorBusy, !isEditorDraftChanged else { return }
+        guard !editorBusy, !isEditorDraftActive || currentEditorTool == .film else { return }
+        let draftID = workspaceDraftID, source = viewModel.sourceRevision
         switch result {
         case .failure(let error):
             viewModel.reportError(error, operation: .lookImport, stage: "filePicker", context: ["entryPoint": "files"])
         case .success(let sources):
             viewModel.importLooks(from: sources, compatibilityPrompt: { source, draft, finish in
-                lookCompatibilityCompletion = finish
-                confirmedLookCompatibility = nil
-                pendingLookCompatibility = .init(source: source, draft: draft)
+                coordinator.lookCompatibilityCompletion = finish
+                coordinator.confirmedLookCompatibility = nil
+                coordinator.pendingLookCompatibility = EditorOpaquePresentation(
+                    value: LookCompatibilityPresentation(source: source, draft: draft)
+                )
             }, dcpOptionsPrompt: { source, reason, finish in
-                dcpImportOptionsCompletion = finish
-                confirmedDCPImportOptions = nil
-                pendingDCPImportOptions = .init(source: source, reason: reason)
+                coordinator.dcpImportOptionsCompletion = finish
+                coordinator.confirmedDCPImportOptions = nil
+                coordinator.pendingDCPImportOptions = EditorOpaquePresentation(
+                    value: DCPImportOptionsPresentation(source: source, reason: reason)
+                )
             }) { report in
-                if case .select(let selectedID) = LookImportSelection.decision(previousID: settings.lutID,
+                guard workspaceDraftID == draftID, viewModel.sourceRevision == source else { return }
+                if case .select(let selectedID) = LookImportSelection.decision(previousID: workingSettings.lutID,
                                                                                 imported: report.imported) {
-                    var updated = settings
+                    var updated = workingSettings
                     if let reason = updated.clearMasterRecipe(context: resetContext) {
                         viewModel.statusMessage = resetBlockedMessage(reason); return
                     }
@@ -460,39 +438,51 @@ extension ContentView {
 
     @MainActor
     func importFromPhotoItem(_ item: PhotosPickerItem, requestID: UUID) async {
-        guard photoImportRequestID == requestID, !Task.isCancelled, !isEditorDraftActive else { return }
+        guard coordinator.photoImportRequestID == requestID, !Task.isCancelled, !isEditorDraftActive else { return }
         guard viewModel.saveCurrentSettings(settings) else {
-            selectedPhotoItem = nil
-            photoImportTask = nil
-            photoImportRequestID = nil
+            coordinator.selectedPhotoItem = nil
+            coordinator.photoImportTask = nil
+            coordinator.photoImportRequestID = nil
             return
         }
         isImporting = true
         showingBefore = false
+        let reselecting = coordinator.recentReselection
+        coordinator.recentReselection = nil
         do {
             let source = try await loadPhotoSource(from: item)
-            let resourceIdentifier = item.itemIdentifier
-            let identity = (try? await viewModel.photoIdentity(for: source, from: item))
-                ?? resourceIdentifier.flatMap { $0.isEmpty ? nil : PhotoIdentity(resourceIdentifier: $0) }
-            guard photoImportRequestID == requestID, !Task.isCancelled else {
-                PhotoImportFile.release(source.url)
-                return
+            var transferred = false
+            defer { if !transferred { PhotoImportFile.release(source.url) } }
+            var identity = try await viewModel.photoIdentity(for: source, from: item)
+            if let reselecting {
+                guard identity.contentIdentifier == reselecting.identity.contentIdentifier else {
+                    throw RecentPhotoError.originalChanged
+                }
+                identity = reselecting.identity
             }
+            guard coordinator.photoImportRequestID == requestID, !Task.isCancelled else { return }
+            try await resolveLegacyAssetEdit(for: identity)
+            guard coordinator.photoImportRequestID == requestID, !Task.isCancelled else { return }
+            transferred = true
             viewModel.importImage(from: source, identity: identity, settings: .default,
                 diagnosticContext: ["entryPoint": "photos"],
                 onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
-                guard photoImportRequestID == requestID else { return }
+                guard coordinator.photoImportRequestID == requestID else { return }
                 settings = restored
-                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+                if restored.isHDREditing {
+                    coordinator.selectedGroup = .light
+                    coordinator.selectedAdjustment = .exposure
+                    coordinator.selectedHDRRenditionTool = nil
+                }
             }
-            selectedPhotoItem = nil
-            photoImportTask = nil
+            coordinator.selectedPhotoItem = nil
+            coordinator.photoImportTask = nil
         } catch {
-            guard photoImportRequestID == requestID else { return }
-            photoImportTask = nil
-            photoImportRequestID = nil
+            guard coordinator.photoImportRequestID == requestID else { return }
+            coordinator.photoImportTask = nil
+            coordinator.photoImportRequestID = nil
             isImporting = false
-            selectedPhotoItem = nil
+            coordinator.selectedPhotoItem = nil
             if !Task.isCancelled && !(error is CancellationError) {
                 viewModel.reportError(error, operation: .photoImport, stage: "readPhotoLibrary",
                                       attemptID: requestID, context: ["entryPoint": "photos"])
@@ -501,12 +491,33 @@ extension ContentView {
     }
 
     func cancelPhotoImport() {
-        photoImportRequestID = nil
-        photoImportTask?.cancel()
-        photoImportTask = nil
-        selectedPhotoItem = nil
-        viewModel.cancelImageImport()
-        isImporting = false
+        coordinator.cancelPhotoImport()
+    }
+
+    @MainActor
+    @discardableResult
+    func resolveLegacyAssetEdit(for identity: PhotoIdentity) async throws -> Bool {
+        guard let store = viewModel.editPersistence else { return false }
+        let legacy: PhotoEditState?
+        do {
+            legacy = try store.unverifiedAssetEdit(for: identity)
+        } catch is UnusableEditRecordError {
+            // 坏旧版资产记录交给 importImage 走单条恢复弹窗，不在入口处提前中断。
+            return false
+        }
+        guard let legacy else { return false }
+        let restore = await withCheckedContinuation { continuation in
+            coordinator.legacyAssetEditDecision = continuation
+            coordinator.showingLegacyAssetEdit = true
+        }
+        try Task.checkCancellation()
+        guard let restore else { throw CancellationError() }
+        try store.resolveUnverifiedAssetEdit(for: identity, expected: legacy, restore: restore)
+        return true
+    }
+
+    func finishLegacyAssetEditDecision(_ restore: Bool?) {
+        coordinator.finishLegacyAssetEditDecision(restore)
     }
 
     @MainActor
@@ -515,6 +526,7 @@ extension ContentView {
         guard !editorBusy, !isEditorDraftChanged else { return false }
         let urls = PhotoImportFile.fileURLs(from: (try? result.get()) ?? [])
         guard let url = urls.first else {
+            coordinator.recentReselection = nil
             if case .failure(let error) = result, !(error is CancellationError) {
                 viewModel.reportError(error, operation: .photoImport, stage: "filePicker", context: ["entryPoint": "files"])
             }
@@ -523,10 +535,10 @@ extension ContentView {
         guard viewModel.saveCurrentSettings(settings) else { return false }
         if urls.count > 1 {
             isImporting = true
-            photoImportTask = Task { @MainActor in
+            coordinator.photoImportTask = Task { @MainActor in
                 defer {
                     for url in urls { PhotoImportFile.release(url) }
-                    photoImportTask = nil
+                    coordinator.photoImportTask = nil
                     isImporting = false
                 }
                 for url in urls {
@@ -542,17 +554,19 @@ extension ContentView {
                     }
                 }
                 viewModel.batchSelection.selection.returnToCollection()
-                showingBatchSelection = true
+                coordinator.showingBatchSelection = true
             }
             return true
         }
-        photoImportTask?.cancel()
+        coordinator.photoImportTask?.cancel()
         let requestID = UUID()
-        photoImportRequestID = requestID
+        coordinator.photoImportRequestID = requestID
         viewModel.cancelImageImport()
         isImporting = true
         showingBefore = false
-        photoImportTask = Task {
+        let reselecting = coordinator.recentReselection
+        coordinator.recentReselection = nil
+        coordinator.photoImportTask = Task {
             defer { PhotoImportFile.release(url) }
             let (prepared, context): (Result<(PhotoImportSource, PhotoIdentity?), Error>, [String: String]) = await Task.detached(priority: .userInitiated) {
                 let accessing = url.startAccessingSecurityScopedResource()
@@ -562,27 +576,41 @@ extension ContentView {
                 context["securityScope"] = String(accessing)
                 do {
                     let source = try await PhotoImportFile.load(fromFile: url)
-                    return (Result.success((source, try? PhotoIdentity.fallback(for: source.url))), context)
+                    var transferred = false
+                    defer { if !transferred { PhotoImportFile.release(source.url) } }
+                    var identity = try PhotoIdentity.fallback(for: source.url)
+                    if let reselecting {
+                        guard identity.contentIdentifier == reselecting.identity.contentIdentifier else {
+                            throw RecentPhotoError.originalChanged
+                        }
+                        identity = reselecting.identity
+                    }
+                    transferred = true
+                    return (Result.success((source, identity)), context)
                 } catch {
                     return (Result.failure(error), context)
                 }
             }.value
-            guard !Task.isCancelled, photoImportRequestID == requestID else {
+            guard !Task.isCancelled, coordinator.photoImportRequestID == requestID else {
                 if case .success(let value) = prepared { PhotoImportFile.release(value.0.url) }
                 return
             }
             switch prepared {
             case .success(let value):
-                photoImportTask = nil
+                coordinator.photoImportTask = nil
                 viewModel.importImage(from: value.0, identity: value.1, settings: .default,
                                       diagnosticContext: context,
                                       onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
-                if restored.isHDREditing { activateEditorTool(.adjustment(.exposure)) }
+                    if restored.isHDREditing {
+                        coordinator.selectedGroup = .light
+                        coordinator.selectedAdjustment = .exposure
+                        coordinator.selectedHDRRenditionTool = nil
+                    }
                 }
             case .failure(let error):
-                photoImportTask = nil
-                photoImportRequestID = nil
+                coordinator.photoImportTask = nil
+                coordinator.photoImportRequestID = nil
                 isImporting = false
                 if !Task.isCancelled {
                     viewModel.reportError(error, operation: .photoImport, stage: "retainPickerSource",
@@ -593,16 +621,22 @@ extension ContentView {
         return true
     }
 
+    func requestSingleExport(_ format: BatchOutputFormat) {
+        coordinator.requestSingleExport(format)
+    }
+
     func openBatchExport() {
-        guard !isEditorDraftActive else { return }
+        guard closeEditorDraftCleanly() else { return }
         if batchModel != nil { showingBatchExport = true; return }
         guard let source = viewModel.currentBatchSource(settings: settings) else {
             viewModel.statusMessage = L10n.text("请先导入一张照片。")
             return
         }
-        batchModel = BatchExportModel(source: source, editor: viewModel)
-        batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
-        batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false }
+        let model = BatchExportModel(source: source, editor: viewModel)
+        testHooks.onBatchModelCreated?(model)
+        model.onUsage = { UsageAnalytics.shared.record($0) }
+        model.onDiscard = { batchModel = nil; showingBatchExport = false }
+        batchModel = model
         showingBatchExport = true
     }
 
@@ -610,9 +644,17 @@ extension ContentView {
         do {
             let journal = try BatchJournalStore.appStore()
             if let job = try journal.pendingJobs().first {
-                batchModel = BatchExportModel(job:job,journalStore:journal,editor:viewModel)
-                batchModel?.onUsage = { UsageAnalytics.shared.record($0) }
-                batchModel?.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
+                BatchArtifactRetention.protectJob(job.id)
+                let model = BatchExportModel(job: job, journalStore: journal, editor: viewModel)
+                testHooks.onBatchModelCreated?(model)
+                model.onUsage = { UsageAnalytics.shared.record($0) }
+                model.onDiscard = {
+                    BatchArtifactRetention.unprotectJob(job.id)
+                    batchModel = nil
+                    showingBatchExport = false
+                    recoverBatchExport()
+                }
+                batchModel = model
             }
         } catch {
             viewModel.reportError(error, operation: .batchExport, stage: "recover",
@@ -621,7 +663,7 @@ extension ContentView {
     }
 
     func loadPhotoSource(from item: PhotosPickerItem) async throws -> PhotoImportSource {
-        try await PhotoImportFile.loadSource { try await PhotoImportFile.load(from: item) }
+        try await coordinator.loadPhotoSource(from: item)
     }
 
     func saveToPhotoLibrary(_ data: Data, format: BatchOutputFormat) {
@@ -648,6 +690,8 @@ extension ContentView {
                         viewModel.reportError(error, operation: .photoExport, stage: "savePhotoLibrary")
                     } else if success {
                         UsageAnalytics.shared.record(.exportCompleted)
+                        // Q6（B1）：保存照片图库成功 = 真实外部出口，登记源照片内容标识。
+                        ExportEvidenceStore.shared.record(contentIdentifier: viewModel.sourceIdentity?.contentIdentifier)
                         viewModel.statusMessage = L10n.text("已保存到照片。")
                     } else {
                         viewModel.reportError(NSError(domain: "RawLab.PhotoLibrary", code: -1),

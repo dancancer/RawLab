@@ -4,6 +4,8 @@
 
 namespace sony2fuji {
 
+struct SubRectMap;
+
 struct PhotoEffectsOptions {
     float vignetteAmount = 0;
     float vignetteMidpoint = 50;
@@ -34,5 +36,6 @@ public:
 
 // Display-sRGB finishing at source resolution, after sharpening and before resize.
 void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options);
+void applyPhotoEffectsROI(ImageData& image, const PhotoEffectsOptions& options, const SubRectMap& roiMap);
 
 } // namespace sony2fuji

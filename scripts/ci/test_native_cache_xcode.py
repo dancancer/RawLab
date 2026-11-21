@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from native_cache import cache_paths, selected_files
+from native_cache import ROOT, cache_paths, libraw_version, selected_files
 
 
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("xcodebuild"), "Requires Xcode")
@@ -31,7 +31,7 @@ class XcodeCacheBoundaryTests(unittest.TestCase):
             root = Path(temporary) / "work"
             source = root / "project"
             shutil.copytree(Path(__file__).with_name("fixtures") / "native-cache", source)
-            build = root / "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64"
+            build = root / f"lutools/build-ios-libraw/{libraw_version(ROOT)}/core-iphoneos-arm64"
             configure = ["cmake", "-S", str(source), "-B", str(build), "-G", "Xcode",
                          "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO"]
             compile_command = ["cmake", "--build", str(build), "--config", "Release", "--target", "sony2fuji", "-j", "2"]

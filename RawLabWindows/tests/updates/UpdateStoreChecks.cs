@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Diagnostics;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class UpdateStoreChecks
 {
@@ -11,8 +12,11 @@ internal static class UpdateStoreChecks
     }
     internal static void Run(Action<bool, string> check)
     {
+        AtomicWriteRetries(check);
         StateRepair(check);
         FailedStateValidation(check);
+        CheckFailureCompatibility(check);
+        RollbackCompatibility(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-store-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try
         {
@@ -53,9 +57,7 @@ internal static class UpdateStoreChecks
             catch (IOException) { rejected = true; }
             check(rejected && File.ReadAllText(photo) == "latest format" && !backup.HasPendingRecovery,
                 "A mid-recovery failure rolls back moved directories without losing new data");
-            var start = new ProcessStartInfo("dotnet") { UseShellExecute = false };
-            start.ArgumentList.Add(typeof(UpdateStoreChecks).Assembly.Location);
-            start.ArgumentList.Add("--crash-recovery"); start.ArgumentList.Add(root); start.ArgumentList.Add(saved);
+            var start = RawLab.Windows.Tests.IsolatedChildRunner.CreateStartInfo("--crash-recovery", root, saved);
             using var child = Process.Start(start)!;
             if (!child.WaitForExit(10000)) { child.Kill(); child.WaitForExit(); throw new Exception("Recovery crash fixture timed out"); }
             check(child.ExitCode == 71 && backup.HasPendingRecovery && !File.Exists(photo), "An actual process crash leaves a recovery journal between directory moves");
@@ -88,7 +90,13 @@ internal static class UpdateStoreChecks
             {
                 store.Save(new()); var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!;
                 json["PendingUpdate"]![field] = 99; File.WriteAllText(store.StatePath, json.ToJsonString());
-                check(Rejected(() => store.Load(false)) && Rejected(() => store.RepairableState()), "Future enum state cannot open editing or be reset: " + field);
+                UpdatePreferences? downgraded = null; try { downgraded = store.Load(false); } catch { }
+                check(downgraded != null && downgraded.PendingUpdate.Phase == UpdatePhase.Idle &&
+                    downgraded.PendingUpdate.Choice == UpdateInstallChoice.None && downgraded.PendingUpdate.Failure == null,
+                    "Future enum state opens editing as idle (Q13 rollback): " + field);
+                string? rebuildError = null; try { store.RepairableState(); } catch (InvalidDataException error) { rebuildError = error.Message; }
+                check(rebuildError != null && rebuildError.Contains("readable", StringComparison.Ordinal),
+                    "Unknown enum state reports readable instead of demanding a rebuild: " + field);
             }
             byte[] damaged = "{broken"u8.ToArray(); File.WriteAllBytes(store.StatePath, damaged);
             var snapshot = store.RepairableState(); var repaired = store.RepairState(snapshot); var receipt = repaired.StateRepairReceipt!;
@@ -165,5 +173,473 @@ internal static class UpdateStoreChecks
             check(accepted.Count == 0, "Malformed failed states must be rejected; accepted: " + string.Join(", ", accepted));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void RollbackCompatibility(Action<bool, string> check)
+    {
+        // Q13 回滚兼容：新版写入旧版读不懂的枚举值时降级为 Idle，不锁编辑区；
+        // 真正的损坏与安装证据仍走显式存储修复。
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-rollback-compat-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(root); Directory.CreateDirectory(store.DirectoryPath);
+            var lastCheck = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var release = new UpdateDescriptor("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes");
+            UpdatePreferences Prepared()
+            {
+                var prefs = new UpdatePreferences { AutomaticCheck = true, LastCheck = lastCheck, SkippedVersion = "0.9.0" };
+                var token = prefs.PendingUpdate.BeginCheck();
+                prefs.PendingUpdate.Found(release, token);
+                var download = prefs.PendingUpdate.BeginDownload()!.Value;
+                prefs.PendingUpdate.Preparing(download); prefs.PendingUpdate.Verified(download);
+                return prefs;
+            }
+            void Patch(Action<System.Text.Json.Nodes.JsonObject> edit)
+            {
+                var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!.AsObject();
+                edit(json); File.WriteAllText(store.StatePath, json.ToJsonString());
+            }
+            UpdatePreferences? Downgrade() { try { return store.Load(false); } catch { return null; } }
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Phase"] = 99);
+            var onDisk = File.ReadAllBytes(store.StatePath);
+            var fromPhase = Downgrade();
+            check(fromPhase != null && fromPhase.PendingUpdate.Phase == UpdatePhase.Idle && fromPhase.PendingUpdate.Release == null &&
+                fromPhase.PendingUpdate.Attempt != Guid.Empty, "Future Phase downgrades to a fresh idle record");
+            check(fromPhase != null && fromPhase.AutomaticCheck && fromPhase.LastCheck == lastCheck && fromPhase.SkippedVersion == "0.9.0",
+                "Future Phase downgrade preserves preferences outside the pending update");
+            check(File.ReadAllBytes(store.StatePath).SequenceEqual(onDisk), "Future Phase downgrade never rewrites state during load");
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Choice"] = 99);
+            var fromChoice = Downgrade();
+            check(fromChoice != null && fromChoice.PendingUpdate.Phase == UpdatePhase.Idle && fromChoice.PendingUpdate.Release == null,
+                "Future install choice downgrades to idle instead of locking the editor");
+
+            var failed = Prepared(); var downloadToken = failed.PendingUpdate.Attempt;
+            failed.PendingUpdate.Fail("network", "dropped", downloadToken);
+            store.Save(failed);
+            Patch(json => json["PendingUpdate"]!["Failure"]!["Stage"] = 99);
+            var fromStage = Downgrade();
+            check(fromStage != null && fromStage.PendingUpdate.Phase == UpdatePhase.Idle && fromStage.PendingUpdate.Failure == null,
+                "Future failure stage downgrades to idle instead of locking the editor");
+
+            store.Save(Prepared());
+            Patch(json => json["PendingUpdate"]!["Progress"] = 2.5);
+            var rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Known enum values with out-of-range progress remain rejected");
+
+            store.Save(failed);
+            Patch(json => { json["PendingUpdate"]!["Failure"]!["Stage"] = 99; json["AutomaticCheck"] = "broken"; });
+            var bytes = File.ReadAllBytes(store.StatePath);
+            rejected = false; try { store.Load(false); } catch (JsonException) { rejected = true; }
+            check(rejected, "Future enum plus unrelated corruption still requires explicit repair");
+            byte[]? rebuild = null; try { rebuild = store.RepairableState(); } catch { }
+            check(rebuild != null && rebuild.SequenceEqual(bytes) && File.ReadAllBytes(store.StatePath).SequenceEqual(bytes),
+                "Future enum no longer refuses an otherwise-corrupt state rebuild");
+            var repaired = store.RepairState(store.RepairableState());
+            check(repaired.PendingUpdate.Phase == UpdatePhase.Idle && repaired.StateRepairReceipt != null && !repaired.AutomaticCheck,
+                "Explicit rebuild of a future-enum state still archives bytes and disables automatic updates");
+
+            var evidenceStore = new UpdateStore(Path.Combine(root, "evidence")); Directory.CreateDirectory(evidenceStore.DirectoryPath);
+            File.WriteAllBytes(evidenceStore.StatePath, bytes);
+            var json2 = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(evidenceStore.StatePath))!.AsObject();
+            json2["AutomaticCheck"] = true; json2["PendingUpdate"]!["BackupPath"] = "C:\\RawLab\\Backups\\pending";
+            File.WriteAllText(evidenceStore.StatePath, json2.ToJsonString());
+            string? rebuildReason = null; try { evidenceStore.RepairableState(); } catch (InvalidDataException error) { rebuildReason = error.Message; }
+            check(rebuildReason != null && rebuildReason.Contains("cannot be rebuilt", StringComparison.Ordinal),
+                "Installation evidence still refuses the rollback-compat rebuild");
+            rejected = false; try { evidenceStore.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Evidence combo keeps the storage gate instead of downgrading to idle");
+
+            // — Q13 组合：未知枚举与安装证据并存时不得进入「删备份」的降级分支 —
+            store.Save(Prepared());
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject();
+                pending["Phase"] = (int)UpdatePhase.Installing; pending["Choice"] = 99; pending["BackupPath"] = "pending-backup"; pending["PreviousVersion"] = "0.8.2"; });
+            var comboBytes = File.ReadAllBytes(store.StatePath);
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected && File.ReadAllBytes(store.StatePath).SequenceEqual(comboBytes),
+                "Known Installing with a future choice keeps the storage gate instead of downgrading");
+
+            store.Save(Prepared());
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Phase"] = 99; pending["PreviousBuild"] = "19"; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future phase with previous build identity keeps the storage gate");
+
+            store.Save(failed);
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Choice"] = 99; pending["Failure"]!["Stage"] = (int)UpdatePhase.Installing; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future choice over a Failed(Installing) record keeps the recovery gate");
+
+            // — 结构完整性先于降级判定：未知枚举不得掩盖损坏（评审 Finding 2） —
+            store.Save(Prepared());
+            Patch(json => { json["PendingUpdate"]!["Phase"] = 99; json["PendingUpdate"]!["Progress"] = 2.5; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future enum with out-of-range progress still routes to explicit repair");
+
+            store.Save(Prepared());
+            Patch(json => { json["PendingUpdate"]!["Phase"] = 99; json["PendingUpdate"]!["Blockers"] = null; });
+            rejected = false; try { store.Load(false); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "Future enum with null blockers still routes to explicit repair");
+
+            store.Save(failed);
+            Patch(json => { var pending = json["PendingUpdate"]!.AsObject(); pending["Choice"] = 99; pending.Remove("Failure"); });
+            var incomplete = ""; try { store.Load(false); } catch (InvalidDataException error) { incomplete = error.Message; }
+            check(incomplete.Contains("Incomplete update failure", StringComparison.Ordinal),
+                "Failed phase with a missing failure record is not masked by a future choice downgrade");
+
+            // — 未知 Phase/Stage 不得按「已知非安装」放行孤儿备份（评审 Finding 3） —
+            foreach (var slot in new[] { "Phase", "FailureStage" })
+            {
+                var gate = new UpdateStore(Path.Combine(root, "gate-" + slot)); Directory.CreateDirectory(gate.DirectoryPath);
+                var orphan = Path.Combine(gate.DirectoryPath, "Backups", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(orphan); File.WriteAllText(Path.Combine(orphan, "part.json"), "orphan copy");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(failed))!.AsObject();
+                node["AutomaticCheck"] = "broken";
+                if (slot == "Phase") node["PendingUpdate"]!["Phase"] = 99; else node["PendingUpdate"]!["Failure"]!["Stage"] = 99;
+                File.WriteAllText(gate.StatePath, node.ToJsonString());
+                rejected = false;
+                try { gate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rejected, "Unknown " + slot + " is not treated as known-non-installation when backups exist");
+            }
+
+            // — W2（#297 残留）：Load 与 RepairableState 对磁盘备份/恢复证据必须对称 —
+            // 结构完整且含未知枚举（但新版本省去或改名 JSON 备份字段）+ 盘上存在 Backups/Recoveries/recovery-in-progress.json 时，
+            // Load 不得降级为 Idle（否则启动后 DiscardUnreferencedBackups(null) 静默删备份）。
+            static bool Rejected(Action action) { try { action(); return false; } catch (InvalidDataException) { return true; } }
+            foreach (var slot in new[] { "Phase", "Choice", "FailureStage" })
+            {
+                var dataRoot = Path.Combine(root, "disk-backup-" + slot);
+                var diskStore = new UpdateStore(Path.Combine(dataRoot, "Updates")); Directory.CreateDirectory(diskStore.DirectoryPath);
+                var edits = Path.Combine(dataRoot, "Edits"); Directory.CreateDirectory(edits);
+                File.WriteAllText(Path.Combine(edits, "photo.json"), "committed");
+                var createdBackup = new UpdateDataBackup(dataRoot, diskStore.DirectoryPath).Create("0.8.2", "0.9.1", "14");
+                var sourcePrefs = slot == "FailureStage" ? failed : Prepared();
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(sourcePrefs))!.AsObject();
+                var pending = node["PendingUpdate"]!.AsObject();
+                pending["BackupPath"] = null; pending["PreviousVersion"] = null; pending["PreviousBuild"] = null;
+                if (slot == "Phase") pending["Phase"] = 99;
+                else if (slot == "Choice") pending["Choice"] = 99;
+                else pending["Failure"]!["Stage"] = 99;
+                File.WriteAllText(diskStore.StatePath, node.ToJsonString());
+                check(Rejected(() => diskStore.Load(false)) && Directory.Exists(createdBackup) && File.Exists(Path.Combine(createdBackup, "manifest.json")),
+                    "Unknown " + slot + " rejects rollback downgrade when disk backup evidence exists");
+                var rebuildBlocked = false;
+                try { diskStore.RepairableState(); } catch (InvalidDataException error) { rebuildBlocked = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rebuildBlocked, "Unknown " + slot + " also blocks RepairableState when disk backup evidence exists");
+            }
+            {
+                var recoveryRoot = Path.Combine(root, "disk-recovery-enum");
+                var recoveryStore = new UpdateStore(Path.Combine(recoveryRoot, "Updates")); Directory.CreateDirectory(recoveryStore.DirectoryPath);
+                var recoveryEntry = Path.Combine(recoveryStore.DirectoryPath, "Recoveries", Guid.NewGuid().ToString("N"), "original", "Edits");
+                Directory.CreateDirectory(recoveryEntry);
+                File.WriteAllText(Path.Combine(recoveryEntry, "newer.json"), "newer edit");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Prepared()))!.AsObject();
+                node["PendingUpdate"]!["Phase"] = 99;
+                File.WriteAllText(recoveryStore.StatePath, node.ToJsonString());
+                check(Rejected(() => recoveryStore.Load(false)) && File.Exists(Path.Combine(recoveryEntry, "newer.json")),
+                    "Unknown Phase rejects rollback downgrade when Recoveries directory is non-empty");
+                Directory.Delete(Path.Combine(recoveryStore.DirectoryPath, "Recoveries"), true);
+                File.WriteAllText(Path.Combine(recoveryStore.DirectoryPath, "recovery-in-progress.json"), "journal");
+                check(Rejected(() => recoveryStore.Load(false)) && Rejected(() => recoveryStore.RepairableState()),
+                    "Unknown Phase rejects rollback downgrade when recovery-in-progress journal exists");
+            }
+            {
+                var choiceGate = new UpdateStore(Path.Combine(root, "gate-Choice")); Directory.CreateDirectory(choiceGate.DirectoryPath);
+                var orphan = Path.Combine(choiceGate.DirectoryPath, "Backups", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(orphan); File.WriteAllText(Path.Combine(orphan, "part.json"), "orphan copy");
+                var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Prepared()))!.AsObject();
+                node["AutomaticCheck"] = "broken"; node["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllText(choiceGate.StatePath, node.ToJsonString());
+                rejected = false;
+                try { choiceGate.RepairableState(); } catch (InvalidDataException error) { rejected = error.Message.Contains("status is unknown", StringComparison.Ordinal); }
+                check(rejected, "Unknown Choice is not treated as known-non-installation when backups exist");
+            }
+            {
+                // W2 复核 Finding 2 红测：已完成恢复的 RecoveryReceipt 与未发布 .staging-* 临时目录不得在非安装未知枚举下误锁编辑或阻断状态修复。
+                var histRoot = Path.Combine(root, "completed-recovery-enum");
+                var histStore = new UpdateStore(Path.Combine(histRoot, "Updates")); Directory.CreateDirectory(histStore.DirectoryPath);
+                var histEdits = Path.Combine(histRoot, "Edits"); Directory.CreateDirectory(histEdits);
+                File.WriteAllText(Path.Combine(histEdits, "photo.json"), "restored edit");
+                var histBackupMgr = new UpdateDataBackup(histRoot, histStore.DirectoryPath);
+                var histBackup = histBackupMgr.Create("0.8.2", "0.9.1", "14");
+                File.WriteAllText(Path.Combine(histEdits, "photo.json"), "newer format");
+                var histReceipt = histBackupMgr.Restore(histBackup);
+                histBackupMgr.FinishRecovery(histReceipt);
+                histBackupMgr.DiscardUnreferencedBackups(null, histReceipt);
+
+                var recoveredPrefs = new UpdatePreferences { AutomaticCheck = true, RecoveryReceipt = histReceipt };
+                var recoveredNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(recoveredPrefs))!.AsObject();
+                recoveredNode["PendingUpdate"]!["Choice"] = 99;
+                File.WriteAllText(histStore.StatePath, recoveredNode.ToJsonString());
+                UpdatePreferences? downgradedRecovered = null;
+                try { downgradedRecovered = histStore.Load(false); } catch { }
+                check(downgradedRecovered != null && downgradedRecovered.PendingUpdate.Phase == UpdatePhase.Idle &&
+                    downgradedRecovered.RecoveryReceipt == histReceipt && Directory.Exists(histReceipt),
+                    "Verified completed RecoveryReceipt allows non-installation unknown enum downgrade and preserves receipt data");
+
+                var corruptRecovered = recoveredNode.DeepClone();
+                corruptRecovered["AutomaticCheck"] = "broken";
+                File.WriteAllText(histStore.StatePath, corruptRecovered.ToJsonString());
+                byte[]? repairableRecovered = null;
+                try { repairableRecovered = histStore.RepairableState(); } catch { }
+                check(repairableRecovered != null && repairableRecovered.Length > 0 &&
+                    histStore.RepairState(repairableRecovered).RecoveryReceipt == histReceipt && Directory.Exists(histReceipt),
+                    "Verified completed RecoveryReceipt allows preference repair on unknown enum without losing receipt link");
+
+                // 负向边界：未引用的另一 Recoveries 目录或失效 receipt 仍必须拒绝降级并阻断重建。
+                File.WriteAllText(histStore.StatePath, recoveredNode.ToJsonString());
+                var unreferencedRecovery = Path.Combine(histStore.DirectoryPath, "Recoveries", Guid.NewGuid().ToString("N"), "original", "Edits");
+                Directory.CreateDirectory(unreferencedRecovery);
+                File.WriteAllText(Path.Combine(unreferencedRecovery, "unreferenced.json"), "keep safe");
+                check(Rejected(() => histStore.Load(false)) && File.Exists(Path.Combine(unreferencedRecovery, "unreferenced.json")),
+                    "Extra unreferenced Recoveries directory still blocks unknown enum downgrade alongside RecoveryReceipt");
+                File.WriteAllText(histStore.StatePath, corruptRecovered.ToJsonString());
+                check(Rejected(() => histStore.RepairableState()),
+                    "Extra unreferenced Recoveries directory still blocks RepairableState alongside RecoveryReceipt");
+            }
+            {
+                var stagingRoot = Path.Combine(root, "staging-only-enum");
+                var stagingStore = new UpdateStore(Path.Combine(stagingRoot, "Updates")); Directory.CreateDirectory(stagingStore.DirectoryPath);
+                var oldStaging = Path.Combine(stagingStore.DirectoryPath, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                var freshStaging = Path.Combine(stagingStore.DirectoryPath, "Backups", ".staging-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(oldStaging); Directory.CreateDirectory(freshStaging);
+                File.WriteAllText(Path.Combine(oldStaging, "part.json"), "abandoned");
+                File.WriteAllText(Path.Combine(freshStaging, "part.json"), "active");
+                Directory.SetLastWriteTimeUtc(oldStaging, DateTime.UtcNow.AddDays(-2));
+                var stagingNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new UpdatePreferences { AutomaticCheck = true }))!.AsObject();
+                stagingNode["PendingUpdate"]!["Phase"] = 99;
+                File.WriteAllText(stagingStore.StatePath, stagingNode.ToJsonString());
+                UpdatePreferences? downgradedStaging = null;
+                try { downgradedStaging = stagingStore.Load(false); } catch { }
+                check(downgradedStaging != null && downgradedStaging.PendingUpdate.Phase == UpdatePhase.Idle,
+                    "Unpublished staging backup directories do not block non-installation unknown enum downgrade");
+
+                var corruptStaging = stagingNode.DeepClone();
+                corruptStaging["AutomaticCheck"] = "broken";
+                File.WriteAllText(stagingStore.StatePath, corruptStaging.ToJsonString());
+                byte[]? repairableStaging = null;
+                try { repairableStaging = stagingStore.RepairableState(); } catch { }
+                check(repairableStaging != null && repairableStaging.Length > 0,
+                    "Unpublished staging backup directories do not block RepairableState on unknown enum");
+
+                // 负向边界：若同目录出现未知文件 Backups/prior，仍拒绝。
+                Directory.CreateDirectory(Path.Combine(stagingStore.DirectoryPath, "Backups", "prior"));
+                File.WriteAllText(stagingStore.StatePath, stagingNode.ToJsonString());
+                check(Rejected(() => stagingStore.Load(false)),
+                    "Unknown entry in Backups alongside staging still blocks downgrade");
+            }
+            Console.WriteLine("PASS: UpdateStore.Load and RepairableState symmetrically block downgrade/rebuild when disk backup or recovery evidence exists");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void CheckFailureCompatibility(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-check-failure-store-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new UpdateStore(root); Directory.CreateDirectory(store.DirectoryPath);
+            var t0 = DateTimeOffset.FromUnixTimeSeconds(1800000000);
+            var legacyNode = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new UpdatePreferences { LastCheck = t0 }))!.AsObject();
+            legacyNode.Remove("CheckFailure");
+            File.WriteAllText(store.StatePath, legacyNode.ToJsonString());
+            var legacy = store.Load(true);
+            check(legacy.CheckFailure == null && legacy.LastCheck == t0 &&
+                UpdatePresentation.Status(legacy) == "尚未发现可安装的更新" &&
+                UpdatePresentation.CheckFailureDetail(legacy) == null,
+                "Legacy state omitting CheckFailure deserializes as no failure and up-to-date when LastCheck exists");
+
+            legacyNode["LastCheck"] = null;
+            File.WriteAllText(store.StatePath, legacyNode.ToJsonString());
+            var uncheckedLegacy = store.Load(true);
+            check(uncheckedLegacy.CheckFailure == null && uncheckedLegacy.LastCheck == null &&
+                UpdatePresentation.Status(uncheckedLegacy) == "尚未检查更新",
+                "Legacy state with null LastCheck presents never-checked status");
+
+            var failed = new UpdatePreferences
+            {
+                CheckFailure = new(t0.AddMinutes(5), "network", 3, "DNS lookup failed")
+            };
+            store.Save(failed);
+            var roundTrip = store.Load(true);
+            check(roundTrip.CheckFailure == failed.CheckFailure &&
+                UpdatePresentation.Status(roundTrip) == "检查失败，请稍后重试或访问 GitHub 仓库" &&
+                !UpdatePresentation.ShowsCheckFailureNotice(roundTrip) &&
+                UpdatePresentation.CheckFailureDetail(roundTrip) is { } detail &&
+                detail.Contains("network", StringComparison.Ordinal) &&
+                detail.Contains("UTC", StringComparison.Ordinal) &&
+                detail.Contains("DNS lookup failed", StringComparison.Ordinal),
+                "CheckFailure persists across Save/Load and formats failure category, UTC timestamp, and detail");
+
+            var availableWithCheckFailure = roundTrip.Copy();
+            var checkToken = availableWithCheckFailure.PendingUpdate.BeginCheck();
+            availableWithCheckFailure.PendingUpdate.Found(
+                new("0.9.1", "19", "windows", "x64", "stable", "https://example.invalid/update.nupkg", 12, null, "Notes"), checkToken);
+            check(UpdatePresentation.Status(availableWithCheckFailure) == "有可用更新" &&
+                UpdatePresentation.ShowsCheckFailureNotice(availableWithCheckFailure) &&
+                UpdatePresentation.CheckFailureDetail(availableWithCheckFailure) != null,
+                "Available release with a subsequent check failure keeps release heading and surfaces check failure notice");
+
+            var verifyFailed = availableWithCheckFailure.Copy();
+            var downloadToken = verifyFailed.PendingUpdate.BeginDownload()!.Value;
+            verifyFailed.PendingUpdate.Preparing(downloadToken);
+            verifyFailed.PendingUpdate.Fail("signature", "Rejected", downloadToken);
+            check(!UpdatePresentation.ShowsCheckFailureNotice(verifyFailed) &&
+                UpdatePresentation.CheckFailureDetail(verifyFailed) == null,
+                "Non-checking failure suppresses stale check failure notice and detail");
+
+            var deferred = roundTrip.Copy();
+            deferred.CheckFailure = roundTrip.CheckFailure! with { RetryAfter = t0.AddMinutes(35) };
+            store.Save(deferred);
+            check(store.Load(true).CheckFailure?.RetryAfter == t0.AddMinutes(35),
+                "Deferred RetryAfter timestamp survives Save/Load");
+
+            var nonPositiveCount = roundTrip.Copy();
+            nonPositiveCount.CheckFailure = new(t0, "timeout", 0, "", default(DateTimeOffset));
+            store.Save(nonPositiveCount);
+            var normalized = store.Load(true).CheckFailure;
+            check(normalized?.ConsecutiveFailures == 1 && normalized.RetryAfter == null,
+                "Non-positive ConsecutiveFailures and default RetryAfter normalize safely");
+
+            var emptyCategory = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(store.StatePath))!.AsObject();
+            emptyCategory["CheckFailure"]!["Category"] = " ";
+            File.WriteAllText(store.StatePath, emptyCategory.ToJsonString());
+            check(store.Load(true).CheckFailure == null,
+                "Blank CheckFailure category degrades safely to no failure instead of rejecting state");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    private static void AtomicWriteRetries(Action<bool, string> check)
+    {
+        static IOException SharingViolation() => new("Sharing violation", unchecked((int)0x80070020));
+        static IOException LockViolation() => new("Lock violation", unchecked((int)0x80070021));
+
+        var elapsed = TimeSpan.Zero;
+        var delays = new List<int>();
+        void RecordSleep(TimeSpan delay) { delays.Add((int)delay.TotalMilliseconds); elapsed += delay; }
+
+        var policyAttempts = 0;
+        UpdateStore.RetryTransientIo(() => { if (++policyAttempts < 3) throw SharingViolation(); }, RecordSleep, () => elapsed);
+        check(policyAttempts == 3 && delays.SequenceEqual(new[] { 10, 50 }),
+            "Retry policy succeeds on the third attempt after two sharing violations");
+
+        elapsed = TimeSpan.Zero; delays.Clear();
+        var lockAttempts = 0;
+        UpdateStore.RetryTransientIo(() => { if (++lockAttempts < 2) throw LockViolation(); }, RecordSleep, () => elapsed);
+        check(lockAttempts == 2 && delays.SequenceEqual(new[] { 10 }),
+            "Retry policy also retries transient Win32 lock violations");
+
+        elapsed = TimeSpan.Zero; delays.Clear();
+        var budgetAttempts = 0; var budgetExceeded = false;
+        try
+        {
+            UpdateStore.RetryTransientIo(() =>
+            {
+                budgetAttempts++;
+                elapsed += TimeSpan.FromMilliseconds(495);
+                throw SharingViolation();
+            }, RecordSleep, () => elapsed);
+        }
+        catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { budgetExceeded = true; }
+        check(budgetExceeded && budgetAttempts == 1 && delays.Count == 0,
+            "Retry policy stops before sleeping past the total UI wait budget");
+
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-atomic-write-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var target = Path.Combine(root, "state.json");
+            byte[] initial = "committed"u8.ToArray(), writtenByTempRetry = "after-temp-retry"u8.ToArray(), writtenByMoveRetry = "after-move-retry"u8.ToArray();
+            File.WriteAllBytes(target, initial);
+
+            elapsed = TimeSpan.Zero; delays.Clear();
+            int writeCalls = 0, moveCalls = 0;
+            UpdateStore.WriteAtomic(target, writtenByTempRetry,
+                (temporary, bytes) =>
+                {
+                    if (++writeCalls <= 2) { File.WriteAllText(temporary, "partial"); throw SharingViolation(); }
+                    File.WriteAllBytes(temporary, bytes);
+                },
+                (source, destination) => { moveCalls++; File.Move(source, destination, true); },
+                RecordSleep, () => elapsed);
+            check(writeCalls == 3 && moveCalls == 1 && delays.SequenceEqual(new[] { 10, 50 }) &&
+                File.ReadAllBytes(target).SequenceEqual(writtenByTempRetry) && Directory.GetFiles(root).Length == 1,
+                "Atomic write retries transient sharing conflicts during temporary file creation and removes failed temporaries");
+
+            elapsed = TimeSpan.Zero; delays.Clear();
+            writeCalls = 0; moveCalls = 0;
+            UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                (temporary, bytes) => { writeCalls++; File.WriteAllBytes(temporary, bytes); },
+                (source, destination) =>
+                {
+                    var call = ++moveCalls;
+                    if (call == 1) throw SharingViolation();
+                    if (call == 2) throw LockViolation();
+                    File.Move(source, destination, true);
+                },
+                RecordSleep, () => elapsed);
+            check(writeCalls == 1 && moveCalls == 3 && delays.SequenceEqual(new[] { 10, 50 }) &&
+                File.ReadAllBytes(target).SequenceEqual(writtenByMoveRetry) && Directory.GetFiles(root).Length == 1,
+                "Atomic write retries transient replace conflicts without rewriting the flushed temporary file");
+
+            File.WriteAllBytes(target, initial);
+            elapsed = TimeSpan.Zero; delays.Clear();
+            writeCalls = 0; moveCalls = 0; var exhausted = false;
+            try
+            {
+                UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                    (temporary, bytes) => { writeCalls++; File.WriteAllBytes(temporary, bytes); },
+                    (_, _) => { moveCalls++; throw SharingViolation(); },
+                    RecordSleep, () => elapsed);
+            }
+            catch (IOException error) when (error.HResult == unchecked((int)0x80070020)) { exhausted = true; }
+            check(exhausted && writeCalls == 1 && moveCalls == 4 && delays.SequenceEqual(new[] { 10, 50, 200 }) &&
+                File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                "Exhausted sharing retries propagate IOException, preserve prior state and clean up temporary files");
+
+            foreach (var permanent in new Exception[]
+            {
+                new UnauthorizedAccessException("Access denied"),
+                new IOException("Win32 access denied", unchecked((int)0x80070005)),
+                new IOException("Disk full", unchecked((int)0x80070070)),
+                new IOException("Handle disk full", unchecked((int)0x80070027)),
+                new IOException("Generic I/O failure"),
+                new DirectoryNotFoundException("Missing parent"),
+                new FileNotFoundException("Missing source")
+            })
+            {
+                elapsed = TimeSpan.Zero; delays.Clear();
+                var writeFaultCalls = 0; Exception? caughtWrite = null;
+                try
+                {
+                    UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                        (_, _) => { writeFaultCalls++; throw permanent; },
+                        (source, destination) => File.Move(source, destination, true),
+                        RecordSleep, () => elapsed);
+                }
+                catch (Exception error) { caughtWrite = error; }
+                check(ReferenceEquals(caughtWrite, permanent) && writeFaultCalls == 1 && delays.Count == 0 &&
+                    File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                    "Non-transient write failure is not retried: " + permanent.GetType().Name + ":" + permanent.HResult);
+
+                elapsed = TimeSpan.Zero; delays.Clear();
+                var moveFaultCalls = 0; Exception? caughtMove = null;
+                try
+                {
+                    UpdateStore.WriteAtomic(target, writtenByMoveRetry,
+                        (temporary, bytes) => File.WriteAllBytes(temporary, bytes),
+                        (_, _) => { moveFaultCalls++; throw permanent; },
+                        RecordSleep, () => elapsed);
+                }
+                catch (Exception error) { caughtMove = error; }
+                check(ReferenceEquals(caughtMove, permanent) && moveFaultCalls == 1 && delays.Count == 0 &&
+                    File.ReadAllBytes(target).SequenceEqual(initial) && Directory.GetFiles(root).Length == 1,
+                    "Non-transient replace failure is not retried: " + permanent.GetType().Name + ":" + permanent.HResult);
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 }

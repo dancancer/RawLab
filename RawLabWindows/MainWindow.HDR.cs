@@ -17,10 +17,23 @@ public partial class MainWindow
     private CancellationTokenSource hdrPresentationCancellation = new();
     private HDRRenderedPair? hdrPresentationResult, hdrPresentationReference;
     private float hdrPresentationHeadroom = 1;
+    private readonly HDRPresentationCoordinator hdrPresentationCoordinator = new();
+    private FrameworkElement[]? hdrOverlayElements;
 
     private void InitializeHDRPresentation()
     {
-        LayoutUpdated += (_, _) => RefreshHDRPresentation();
+        LayoutUpdated += (_, _) => {
+            if (hdrPresentationCoordinator.ShouldRunOnLayoutUpdated(
+                    IsLoaded,
+                    settings.IsHDREditing,
+                    result?.HDR != null,
+                    hdrSdrPreview,
+                    ResultHDRSurface.Available,
+                    NeutralHDRSurface.Available,
+                    transform.Active && transform.Tool == TransformTool.Geometry,
+                    clipping))
+                RefreshHDRPresentation();
+        };
         hdrDisplayTimer.Tick += (_, _) => {
             ResultHDRSurface.RefreshCapabilities(); NeutralHDRSurface.RefreshCapabilities();
             var headroom = ResultHDRSurface.Headroom;
@@ -28,7 +41,7 @@ public partial class MainWindow
                 hdrPresentationHeadroom = headroom; InvalidateHDRFalseColor(); RefreshViewingFrames();
             } else RefreshHDRPresentation();
         };
-        Closed += (_, _) => { hdrDisplayTimer.Stop(); InvalidateHDRFalseColor(); };
+        Closed += (_, _) => { hdrDisplayTimer.Stop(); InvalidateHDRFalseColor(); DisposeSourceWatches(); };
     }
     private void InvalidateHDRFalseColor()
     {
@@ -65,7 +78,7 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays=new FrameworkElement[]{NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner};
+        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner];
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
@@ -75,10 +88,11 @@ public partial class MainWindow
             var presented=surface.ShowFrame(active ? image : null,reference,canvas,hdrSdrPreview,hdrFalseColor,overlays);
             if(ReferenceEquals(surface,ResultHDRSurface))resultPresented=presented;
         }
-        var reference=ReferenceCurrent ? neutralResult?.HDR?.HDR : null;
+        var referenceCurrent=ReferenceCurrent;
+        var reference=referenceCurrent ? neutralResult?.HDR?.HDR : null;
         Present(ResultHDRSurface,ResultCanvas,result?.HDR?.HDR,reference);
         Present(NeutralHDRSurface,NeutralCanvas,reference,null);
-        var shown=view.HoldingBefore && ReferenceCurrent ? neutralResult?.HDR : result?.HDR;
+        var shown=view.HoldingBefore && referenceCurrent ? neutralResult?.HDR : result?.HDR;
         Histogram.SetHdrStatistics(active ? shown?.Statistics.Bins : null, ResultHDRSurface.Headroom);
         if(active && shown!=null) {
             HistogramTitle.Text=Loc.Text("HDR 亮度直方图");
@@ -86,6 +100,16 @@ public partial class MainWindow
             ClipStats.Text=Loc.Format("参考白以上 {0}",shown.Statistics.AboveWhite.ToString("P1",System.Globalization.CultureInfo.CurrentCulture));
         } else HistogramTitle.Text=Loc.Text("RGB 直方图");
         HistogramHeading.Text = HistogramTitle.Text;
+        hdrPresentationCoordinator.RecordPresentation(
+            IsLoaded,
+            settings.IsHDREditing,
+            result?.HDR != null,
+            hdrSdrPreview,
+            ResultHDRSurface.Available,
+            NeutralHDRSurface.Available,
+            transform.Active && transform.Tool == TransformTool.Geometry,
+            clipping,
+            hdrDisplayTimer.IsEnabled);
     }
 
     private void RefreshHDRControls()
@@ -104,8 +128,15 @@ public partial class MainWindow
     private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
         if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
+        var initialPath = file;
+        var initialOpened = openRevision;
         CancelParameterInputs();
-        if (!ResolveTransformDraft() || !SaveEdits()) { RefreshHDRControls(); return; }
+        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
+        if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
+        {
+            RefreshHDRControls();
+            return;
+        }
         var before = settings;
         var candidate = before.Clone();
         var enabled = HDREditMenu.IsChecked;
@@ -131,7 +162,7 @@ public partial class MainWindow
             {
                 await Task.Run(() =>
                 {
-                    using var validator = new RenderEngine(gpuMode: gpu);
+                    using var validator = CreateRenderEngine(gpuMode: gpu);
                     var preflight = candidate.Clone();
                     preflight.HDRCameraAIEnabled = false;
                     validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
@@ -153,7 +184,7 @@ public partial class MainWindow
         ResetAITask();
         settings = candidate;
         MarkEdited();
-        if (!SaveEdits()) { settings = before; RefreshControls(); return; }
+        if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
         RefreshControls();
         Schedule();
     }
@@ -202,7 +233,7 @@ public partial class MainWindow
         }
         HDRSettings Bundled(HDRSettings target, bool applyMaster) {
             var directory = System.IO.Path.Combine(AppContext.BaseDirectory,"BundledLooks","HDR");
-            var look = HDRNative.ImportLook(System.IO.Path.Combine(directory,"HDR Silver.cube"));
+            var look = HDRNative.ImportLook(System.IO.Path.Combine(directory,"HDR Silver.cube"), appPaths.HdrLooksDirectory);
             if (!applyMaster) return target.WithLook(look);
             var payload = AdjustmentPayload.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory,"HDR Silver Master.json")));
             if (AdjustmentPayload.HDRLookValue(payload[AdjustmentField.HdrLook]) != look) throw new HDRSourceException(1,18,10);
@@ -213,7 +244,7 @@ public partial class MainWindow
             var picker = new Microsoft.Win32.OpenFileDialog { Title="HDR LUT", Filter="CUBE (*.cube)|*.cube", CheckFileExists=true };
             if (picker.ShowDialog(dialog)!=true) return;
             var before = draft;
-            await Load(()=>before.WithLook(HDRNative.ImportLook(picker.FileName)));
+            await Load(()=>before.WithLook(HDRNative.ImportLook(picker.FileName, appPaths.HdrLooksDirectory)));
         };
         silver.Click += async (_,_) => { var before = draft; await Load(()=>Bundled(before,false)); };
         master.Click += async (_,_) => { var before = draft; await Load(()=>Bundled(before,true)); };
@@ -279,8 +310,12 @@ public partial class MainWindow
         panel.Children.Add(temperature); panel.Children.Add(tint);
         AddRow("曝光基准",exposure,"exposure");
         if (hdrSource?.SupportsBayerDevelopment == true) AddRow("RAW 降噪",fbdd,"fbdd");
-        panel.Children.Add(LensToggle("畸变校正",draft.LensDistortion,value => draft=draft with { LensDistortion=value }));
-        panel.Children.Add(LensToggle("横向色差",draft.LensTca,value => draft=draft with { LensTca=value }));
+        var distortion = LensToggle("畸变校正",draft.LensDistortion,value => draft=draft with { LensDistortion=value });
+        var tca = LensToggle("横向色差",draft.LensTca,value => draft=draft with { LensTca=value });
+        var vignetting = LensToggle("暗角校正",draft.LensVignetting,value => draft=draft with { LensVignetting=value });
+        panel.Children.Add(distortion);
+        panel.Children.Add(tca);
+        panel.Children.Add(vignetting);
         panel.Children.Add(crop);
         var profileName = new TextBlock { Margin=new Thickness(0,10,0,4), TextWrapping=TextWrapping.Wrap };
         AutomationProperties.SetAutomationId(profileName,"hdr.camera.profile.name");
@@ -300,26 +335,37 @@ public partial class MainWindow
         panel.Children.Add(profileActions);
         panel.Children.Add(profileError);
         var actions = new WrapPanel { HorizontalAlignment=HorizontalAlignment.Right, Margin=new Thickness(0,12,0,0) };
+        var reset = new Button { Content=Loc.Text("重置") };
+        AutomationProperties.SetAutomationId(reset,"hdr.camera.reset");
         var apply = new Button { Content=Loc.Text("应用"), IsDefault=true };
         AutomationProperties.SetAutomationId(apply,"hdr.camera.apply");
         chooseProfile.Click += async (_,_) => {
             var picker = new Microsoft.Win32.OpenFileDialog { Title=Loc.Text("HDR 相机配置"),
                 Filter="DCP / RLOOK (*.dcp;*.rlook)|*.dcp;*.rlook", CheckFileExists=true };
             if (picker.ShowDialog(dialog)!=true) return;
-            chooseProfile.IsEnabled=clearProfile.IsEnabled=apply.IsEnabled=false;
+            chooseProfile.IsEnabled=clearProfile.IsEnabled=reset.IsEnabled=apply.IsEnabled=false;
             profileError.Text="";
             try {
-                var profile = await Task.Run(() => HDRNative.ImportCameraProfile(picker.FileName));
+                var profile = await Task.Run(() => HDRNative.ImportCameraProfile(picker.FileName, appPaths.HdrCameraProfilesDirectory));
                 draft=draft with { CameraProfile=profile };
             } catch (Exception failure) { profileError.Text=failure.Message; }
-            finally { chooseProfile.IsEnabled=apply.IsEnabled=true; RefreshProfile(); }
+            finally { chooseProfile.IsEnabled=reset.IsEnabled=apply.IsEnabled=true; RefreshProfile(); }
         };
         clearProfile.Click += (_,_) => { draft=draft with { CameraProfile=null }; profileError.Text=""; RefreshProfile(); };
+        reset.Click += (_,_) => {
+            draft=new();
+            temperature.CancelInput(); tint.CancelInput();
+            custom.SelectedIndex=0; exposure.SelectedIndex=0; fbdd.SelectedIndex=0;
+            distortion.IsChecked=tca.IsChecked=vignetting.IsChecked=false;
+            crop.IsChecked=true; crop.IsEnabled=false;
+            profileError.Text=""; RefreshWB(); RefreshProfile();
+        };
         apply.Click += (_,_) => {
             if (draft.CustomWhiteBalance && (!temperature.Commit() || !tint.Commit())) return;
             if (!draft.LensActive) draft=draft with { LensProfile=null };
             if (draft.IsValid) dialog.DialogResult=true;
         };
+        actions.Children.Add(reset);
         actions.Children.Add(new Button { Content=Loc.Text("取消"), IsCancel=true });
         actions.Children.Add(apply); panel.Children.Add(actions);
         dialog.Content=panel; RefreshWB(); RefreshProfile();
@@ -335,14 +381,14 @@ public partial class MainWindow
         cameraHDRPreflight=true; RefreshHDRControls();
         try {
             await Task.Run(() => {
-                using var validator = new RenderEngine(gpuMode:gpu);
+                using var validator = CreateRenderEngine(gpuMode:gpu);
                 var preflight = candidate.Clone();
                 preflight.HDRCameraAIEnabled = false;
                 validator.Render(path,preflight,null,edge,statistics:false,clipping:false);
             });
             if (!IsCurrent()) return;
             settings=candidate; MarkEdited();
-            if (!SaveEdits()) { settings=previous; RefreshControls(); return; }
+            if (!await FlushSaveEditsAsync()) { settings=previous; RefreshControls(); return; }
             RefreshControls(); Schedule();
         } catch (Exception failure) { if (IsCurrent()) Report(failure); }
         finally { cameraHDRPreflight=false; if (!closing) RefreshHDRControls(); }
@@ -362,22 +408,37 @@ public partial class MainWindow
         AutomationProperties.SetAutomationId(dialog,"hdr.rendition");
         var panel = new StackPanel { Margin=new Thickness(24) };
         var rows = new List<ParameterRow>();
-        void Add(string id, string title, NumericRange range, double value, string unit, Action<double> update)
+        var resetRows = new List<Action>();
+        foreach (var spec in HDRRenditionSpec.All)
         {
+            var id = spec.Id switch {
+                HDRRenditionParameter.PeakLimitEV => "peakLimit",
+                HDRRenditionParameter.SdrExposureEV => "sdrExposure",
+                HDRRenditionParameter.SdrContrast => "sdrContrast",
+                HDRRenditionParameter.SdrSaturation => "sdrSaturation",
+                _ => throw new ArgumentOutOfRangeException(nameof(spec.Id))
+            };
+            var localized = Loc.Text(spec.Title);
+            var range = new NumericRange(spec.Min, spec.Max, spec.Grid);
             var row = new ParameterRow { SourceIdentity=opened, Margin=new Thickness(0,3,0,3), KeepInvalidInput=true };
-            row.Refresh(Loc.Text(title),range,value,0,unit);
+            void RefreshRow(double current) => row.Refresh(localized,range,current,0,spec.Unit);
+            RefreshRow(draft[spec.Id]);
             AutomationProperties.SetAutomationId(row.Slider,"hdr.rendition."+id);
             AutomationProperties.SetAutomationId(row.Number,"hdr.rendition."+id+".value");
-            row.Changed += (next,_) => update(next);
+            row.Changed += (next,_) => draft = draft.With(spec.Id, next);
             rows.Add(row);
+            resetRows.Add(() => { row.CancelInput(); RefreshRow(0); });
             panel.Children.Add(row);
+            if (spec.Id == HDRRenditionParameter.PeakLimitEV)
+                panel.Children.Add(new TextBlock { Text="0 EV · " + Loc.Text("不限"), Margin=new Thickness(0,0,0,6) });
         }
-        Add("peakLimit","HDR 亮度上限",new(0,6),draft.PeakLimitEV,"EV",value => draft=draft with { PeakLimitEV=value });
-        panel.Children.Add(new TextBlock { Text="0 EV · " + Loc.Text("不限"), Margin=new Thickness(0,0,0,6) });
-        Add("sdrExposure","SDR 底图曝光",new(-4,4),draft.SdrExposureEV,"EV",value => draft=draft with { SdrExposureEV=value });
-        Add("sdrContrast","SDR 底图对比度",new(-100,100,1),draft.SdrContrast,"%",value => draft=draft with { SdrContrast=value });
-        Add("sdrSaturation","SDR 底图饱和度",new(-100,100,1),draft.SdrSaturation,"%",value => draft=draft with { SdrSaturation=value });
         var actions = new WrapPanel { HorizontalAlignment=HorizontalAlignment.Right, Margin=new Thickness(0,12,0,0) };
+        var reset = new Button { Content=Loc.Text("重置") };
+        AutomationProperties.SetAutomationId(reset,"hdr.rendition.reset");
+        reset.Click += (_,_) => {
+            draft=new();
+            foreach (var resetRow in resetRows) resetRow();
+        };
         var cancel = new Button { Content=Loc.Text("取消"), IsCancel=true };
         var apply = new Button { Content=Loc.Text("应用"), IsDefault=true };
         AutomationProperties.SetAutomationId(apply,"hdr.rendition.apply");
@@ -388,7 +449,7 @@ public partial class MainWindow
             }
             dialog.DialogResult=true;
         };
-        actions.Children.Add(cancel); actions.Children.Add(apply); panel.Children.Add(actions);
+        actions.Children.Add(reset); actions.Children.Add(cancel); actions.Children.Add(apply); panel.Children.Add(actions);
         dialog.Content=panel;
         if (dialog.ShowDialog() != true || opened != openRevision || revision != editRevision || closing ||
             draft == hdr.RenditionSettings) return;

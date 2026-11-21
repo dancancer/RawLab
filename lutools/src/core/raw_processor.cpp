@@ -5,37 +5,70 @@
 #include "photo_rendering.h"
 #include "white_balance.h"
 #include "file_path.h"
-#include "processing_cancellation.h"
+#include "output_file_mode.h"
+#include "parallel_pixels.h"
 #include <libraw/libraw.h>
 #include "x3f_processor.h"
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <cmath>
+#include <csetjmp>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <cstring>
+#include <cstddef>
+#include <cstdio>
 #include <fstream>
 #include <array>
-#include <zlib.h>
+#include <limits>
+#include <new>
+#include <system_error>
+#include <spng.h>
+#include <jpeglib.h>
+#include <jerror.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOGDI
+#define NOGDI
+#endif
+#include <windows.h>
+#undef RGB
+#undef near
+#undef far
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #ifdef SONY2FUJI_ENABLE_DNGSDK
 #include <dng_host.h>
 #endif
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#ifdef _WIN32
-#define STBIW_WINDOWS_UTF8
-#endif
-#include "stb_image_write.h"
 #include "rendered_dng.h"
-
-#ifdef _OPENMP
-namespace {
-constexpr int kParallelThreshold = 1 << 16;
-}
-#endif
 
 namespace sony2fuji {
 
 namespace {
+// Private LibRaw option used by the Sony DefaultCrop backport in patch-libraw.cmake.
+constexpr unsigned kLegacySonyCrop = 1u << 31;
+
+ErrorCode decodeError(int ret) {
+    if (ret == LIBRAW_FILE_UNSUPPORTED) return ErrorCode::InvalidFormat;
+    if (ret == LIBRAW_IO_ERROR) return ErrorCode::FileNotFound;
+    if (ret == LIBRAW_UNSUFFICIENT_MEMORY || ret == LIBRAW_MEMPOOL_OVERFLOW) return ErrorCode::OutOfMemory;
+    return ErrorCode::ProcessingError;
+}
+
 class RawCancellationScope {
     LibRaw& raw_;
     ProcessingCancellation cancellation_ = processingCancellation;
@@ -128,7 +161,9 @@ LensMetadata lensMetadata(const LibRaw& processor, bool sdkStage3 = false) {
 
 class RAWProcessor::Impl {
 public:
-    Impl() : rawProcessor_(std::make_unique<LibRaw>()) {}
+    explicit Impl(bool legacySonyCrop) : rawProcessor_(std::make_unique<LibRaw>()) {
+        if (legacySonyCrop) rawProcessor_->imgdata.rawparams.options |= kLegacySonyCrop;
+    }
 
     ErrorCode loadFile(const std::string& filepath, X3fMode mode = X3fMode::Legacy, bool inspectOnly = false) {
         RawCancellationScope cancellation(*rawProcessor_);
@@ -154,6 +189,15 @@ public:
         sourceReady_ = true;
         identificationCameraWB_ = true;
         identificationAutoWB_ = false;
+        snapshotCalibration();
+        return ErrorCode::Success;
+    }
+
+    ErrorCode inspectFile(const std::string& filepath) {
+        const auto status = loadFile(filepath, X3fMode::Legacy, true);
+        if (status != ErrorCode::Success) return status;
+        // Align getWidth/getHeight with unpacked active inset crop without decoding mosaic pixels.
+        rawProcessor_->adjust_to_raw_inset_crop(3);
         snapshotCalibration();
         return ErrorCode::Success;
     }
@@ -369,10 +413,17 @@ public:
             const auto& raw=data.image[static_cast<size_t>(row)*width+col];
             float rgb[3]={};
             float camera[4];
+            float lensGains[3] = {1, 1, 1};
+            if (correction.report().appliedVignetting) {
+                lensGains[0] = correction.gainAt(coordinates ? coordinates[0] : float(col), coordinates ? coordinates[1] : float(row));
+                lensGains[1] = correction.report().appliedTCA ? correction.gainAt(coordinates[2], coordinates[3]) : lensGains[0];
+                lensGains[2] = correction.report().appliedTCA ? correction.gainAt(coordinates[4], coordinates[5]) : lensGains[0];
+            }
             for (int c=0;c<channels;++c) {
                 const int mapped = c == 3 ? 1 : c;
                 camera[c] = coordinates ? sampleCameraChannel(&data.image[0][0], width, height, c,
                     coordinates[mapped*2], coordinates[mapped*2+1]) : raw[c];
+                camera[c] *= lensGains[mapped];
             }
             for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
                 rgb[dst]+=cameraMatrix[dst][c]*camera[c]*scale;
@@ -381,20 +432,21 @@ public:
                 for (int c = 0; c < 3; ++c) {
                     const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
                         coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
-                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta;
+                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
                 }
             }
             return RGB(rgb[0],rgb[1],rgb[2]);
         };
         auto linearRGB=[&](int row,int col) {
             alignas(16) float coordinates[6];
-            if (correction.active()) correction.map(col, row, 1, 1, coordinates);
-            return sampledRGB(row, col, correction.active() ? coordinates : nullptr);
+            if (correction.hasGeometry()) correction.map(col, row, 1, 1, coordinates);
+            return sampledRGB(row, col, correction.hasGeometry() ? coordinates : nullptr);
         };
         baselineExposureEV_=options.applyBaselineExposure ? sceneExposureEV(metadataExposureEV_) : 0;
         previewExposureEV_=0;
         if (options.matchEmbeddedPreviewExposure) {
-            auto preview=loadPreviewLuminance(filepath_);
+            auto* previewCache=currentPreviewExposureCache();
+            auto preview=previewCache ? previewCache->getOrLoad(filepath_) : localPreviewCache_.getOrLoad(filepath_);
             if (!preview.empty()) {
                 std::vector<float> luminance;
                 luminance.reserve(128*128);
@@ -422,40 +474,41 @@ public:
             (options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
         const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB, target);
         outputSpace_ = options.outputLinear ? target : ColorSpace::sRGB;
-        const auto cancellation = processingCancellation;
-#ifdef _OPENMP
-#pragma omp parallel for if (static_cast<int64_t>(output.width)*output.height >= kParallelThreshold)
-#endif
-        for (int y=0;y<output.height;++y) {
-            if (cancellation.cancelled()) continue;
+        struct ImageGuard {
+            LibRaw* raw;
+            ~ImageGuard() { raw->free_image(); }
+        } imageGuard{rawProcessor_.get()};
+        parallelRowRanges(output.height, output.width, [&](int firstRow, int lastRow) {
             std::vector<float> coordinates;
-            if (correction.active()) {
+            if (correction.hasGeometry()) {
                 coordinates.resize(static_cast<size_t>(output.width)*6);
-                if (flip & 4) correction.map((flip & 1) ? width-1-y : y, 0, 1, height, coordinates.data());
-                else correction.map(0, (flip & 2) ? height-1-y : y, width, 1, coordinates.data());
             }
-            for (int x=0;x<output.width;++x) {
-                int row=y, col=x;
-                if (flip & 4) std::swap(row,col);
-                if (flip & 2) row=height-1-row;
-                if (flip & 1) col=width-1-col;
-                const int mappedIndex = (flip & 4) ? row : col;
-                auto rgb=sampledRGB(row,col,coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
-                rgb=RGB(rgb.r*gain,rgb.g*gain,rgb.b*gain);
-                RGB pixel = ColorConverter::applyMatrix(rgb,matrix);
-                if (!options.outputLinear) {
-                    pixel = RGB(neutralDisplay(rgb.r),neutralDisplay(rgb.g),neutralDisplay(rgb.b));
-                    if (options.outputBitsPerSample == 8) {
-                        pixel.r=std::round(pixel.r*255)/255;
-                        pixel.g=std::round(pixel.g*255)/255;
-                        pixel.b=std::round(pixel.b*255)/255;
-                    }
+            for (int y = firstRow; y < lastRow; ++y) {
+                if (correction.hasGeometry()) {
+                    if (flip & 4) correction.map((flip & 1) ? width-1-y : y, 0, 1, height, coordinates.data());
+                    else correction.map(0, (flip & 2) ? height-1-y : y, width, 1, coordinates.data());
                 }
-                output.at(x,y)=pixel;
+                for (int x=0;x<output.width;++x) {
+                    int row=y, col=x;
+                    if (flip & 4) std::swap(row,col);
+                    if (flip & 2) row=height-1-row;
+                    if (flip & 1) col=width-1-col;
+                    const int mappedIndex = (flip & 4) ? row : col;
+                    auto rgb=sampledRGB(row,col,coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
+                    rgb=RGB(rgb.r*gain,rgb.g*gain,rgb.b*gain);
+                    RGB pixel = ColorConverter::applyMatrix(rgb,matrix);
+                    if (!options.outputLinear) {
+                        pixel = RGB(neutralDisplay(rgb.r),neutralDisplay(rgb.g),neutralDisplay(rgb.b));
+                        if (options.outputBitsPerSample == 8) {
+                            pixel.r=std::round(pixel.r*255)/255;
+                            pixel.g=std::round(pixel.g*255)/255;
+                            pixel.b=std::round(pixel.b*255)/255;
+                        }
+                    }
+                    output.at(x,y)=pixel;
+                }
             }
-        }
-        rawProcessor_->free_image();
-        cancellation.check();
+        });
         return ErrorCode::Success;
     }
 
@@ -498,6 +551,8 @@ public:
     int getHeight() const {
         return sourceReady_ ? height_ : 0;
     }
+
+    std::pair<int, int> getNativeOutputSize() const { return nativeOutputSize_; }
 
     std::string getCameraMake() const {
         return sourceReady_ ? cameraMake_ : std::string();
@@ -547,6 +602,7 @@ private:
         identificationCameraWB_ = false;
         identificationAutoWB_ = false;
         width_ = height_ = 0;
+        nativeOutputSize_ = {};
         cameraMake_.clear();
         cameraModel_.clear();
         whiteBalance_.reset();
@@ -618,6 +674,9 @@ private:
         bayerSource_ = data.idata.colors == 3 && data.idata.filters > 1000 && !data.idata.is_foveon;
         width_ = data.sizes.width;
         height_ = data.sizes.height;
+        // Save the oriented canvas while LibRaw still has the full-resolution source geometry.
+        int channels = 0, bits = 0;
+        rawProcessor_->get_mem_image_format(&nativeOutputSize_.first, &nativeOutputSize_.second, &channels, &bits);
         cameraMake_ = data.idata.make;
         cameraModel_ = data.idata.model;
         const float dngExposure = data.color.dng_levels.baseline_exposure;
@@ -694,19 +753,13 @@ private:
         return ErrorCode::Success;
     }
 
-    static ErrorCode decodeError(int ret) {
-        if (ret == LIBRAW_FILE_UNSUPPORTED) return ErrorCode::InvalidFormat;
-        if (ret == LIBRAW_IO_ERROR) return ErrorCode::FileNotFound;
-        if (ret == LIBRAW_UNSUFFICIENT_MEMORY || ret == LIBRAW_MEMPOOL_OVERFLOW) return ErrorCode::OutOfMemory;
-        return ErrorCode::ProcessingError;
-    }
-
 #ifdef SONY2FUJI_ENABLE_DNGSDK
     // LibRaw 的 SDK 图像释放依赖 host，host 必须比 LibRaw 活得更久。
     std::unique_ptr<dng_host> dngHost_;
 #endif
     std::unique_ptr<LibRaw> rawProcessor_;
     std::unique_ptr<X3fProcessor> x3fProcessor_;
+    PreviewExposureCache localPreviewCache_;
     bool displayReferred_ = false;
     std::string lastError_;
     std::string filepath_;
@@ -726,6 +779,7 @@ private:
     LensCorrectionReport lensReport_;
     int width_ = 0;
     int height_ = 0;
+    std::pair<int, int> nativeOutputSize_{};
     ColorSpace outputSpace_ = ColorSpace::sRGB;
     float previewExposureEV_ = 0;
     float baselineExposureEV_ = 0;
@@ -739,9 +793,8 @@ private:
 // RAWProcessor Implementation
 // ============================================================================
 
-RAWProcessor::RAWProcessor()
-    : pImpl_(std::make_unique<Impl>()) {
-}
+RAWProcessor::RAWProcessor() : RAWProcessor(false) {}
+RAWProcessor::RAWProcessor(bool legacySonyCrop) : pImpl_(std::make_unique<Impl>(legacySonyCrop)) {}
 
 RAWProcessor::~RAWProcessor() = default;
 
@@ -753,7 +806,76 @@ ErrorCode RAWProcessor::loadFile(const std::string& filepath, X3fMode mode) {
 }
 
 ErrorCode RAWProcessor::inspectFile(const std::string& filepath) {
-    return pImpl_->loadFile(filepath, X3fMode::Legacy, true);
+    return pImpl_->inspectFile(filepath);
+}
+
+ProbeSizeResult RAWProcessor::probeOutputSize(const std::string& filepath, bool legacySonyCrop,
+                                              uint32_t& width, uint32_t& height, X3fMode x3fMode) {
+    width = 0;
+    height = 0;
+    if (filepath.empty() || filepath.find('\0') != std::string::npos) return ProbeSizeResult::OpenFailed;
+    auto canOpenInput = [&]() -> bool {
+#ifdef _WIN32
+        std::ifstream testStream(std::filesystem::u8path(filepath), std::ios::binary);
+#else
+        std::ifstream testStream(filepath, std::ios::binary);
+#endif
+        return static_cast<bool>(testStream);
+    };
+    if (!canOpenInput()) return ProbeSizeResult::OpenFailed;
+    // Normal X3F uses x3f-bridge CAMF KeepImageArea, which differs from LibRaw foveon_data.
+    if (x3fMode == X3fMode::Normal && hasX3fSignature(filepath)) {
+        return ProbeSizeResult::DeferredPostDecode;
+    }
+    auto raw = std::make_unique<LibRaw>();
+    if (legacySonyCrop) raw->imgdata.rawparams.options |= kLegacySonyCrop;
+    RawCancellationScope cancellation(*raw);
+    const int status = openRawFile(*raw, filepath);
+    if (status == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+    if (status != LIBRAW_SUCCESS) {
+        return (status == LIBRAW_IO_ERROR && !canOpenInput())
+            ? ProbeSizeResult::OpenFailed
+            : ProbeSizeResult::Unsupported;
+    }
+    const char* decoder = raw->unpack_function_name();
+    // JPEG XL DNG applies ActiveArea/DefaultUserCrop/Stage3 opcodes during DNG SDK unpack; verify post-decode.
+    if (decoder && std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0) {
+        return ProbeSizeResult::DeferredPostDecode;
+    }
+    raw->adjust_to_raw_inset_crop(3);
+    int outWidth = 0, outHeight = 0, colors = 0, bps = 0;
+    raw->get_mem_image_format(&outWidth, &outHeight, &colors, &bps);
+    if (outWidth <= 0 || outHeight <= 0) return ProbeSizeResult::DeferredPostDecode;
+    width = static_cast<uint32_t>(outWidth);
+    height = static_cast<uint32_t>(outHeight);
+    return ProbeSizeResult::Probed;
+}
+
+ErrorCode RAWProcessor::sonyFramingChanged(const std::string& filepath, bool& changed) {
+    changed = false;
+    auto raw = std::make_unique<LibRaw>();
+    RawCancellationScope cancellation(*raw);
+    auto open = [&] {
+        const int status = openRawFile(*raw, filepath);
+        if (status == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+        return status;
+    };
+    auto status = open();
+    if (status != LIBRAW_SUCCESS) return decodeError(status);
+    if (raw->imgdata.idata.dng_version || raw->imgdata.idata.maker_index != LIBRAW_CAMERAMAKER_Sony)
+        return ErrorCode::Success;
+    auto inset = [&] {
+        raw->adjust_to_raw_inset_crop(3);
+        const auto& sizes = raw->imgdata.sizes;
+        return std::array{sizes.left_margin, sizes.top_margin, sizes.width, sizes.height};
+    };
+    const auto full = inset();
+    raw->recycle();
+    raw->imgdata.rawparams.options |= kLegacySonyCrop;
+    status = open();
+    if (status != LIBRAW_SUCCESS) return decodeError(status);
+    changed = full != inset();
+    return ErrorCode::Success;
 }
 
 ErrorCode RAWProcessor::inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels) {
@@ -787,6 +909,8 @@ int RAWProcessor::getWidth() const {
 int RAWProcessor::getHeight() const {
     return pImpl_->getHeight();
 }
+
+std::pair<int, int> RAWProcessor::getNativeOutputSize() const { return pImpl_->getNativeOutputSize(); }
 
 std::string RAWProcessor::getCameraMake() const {
     return pImpl_->getCameraMake();
@@ -861,109 +985,437 @@ ErrorCode ImageEncoder::saveImage(
     }
 }
 
+namespace {
+
+void removeStagingPathNoThrow(const std::filesystem::path& path) noexcept {
+    if (path.empty()) return;
+    std::error_code error;
+    std::filesystem::remove(path, error);
+}
+
+// 编码结果先写入目标目录内的临时文件，最后一次原子替换发布。这样取消或失败都不会
+// 破坏目标位置已有的文件，也不会留下半成品。
+class EncodedStagingFile final {
+public:
+    enum class Kind { Jpeg, Png };
+
+    explicit EncodedStagingFile(Kind kind) : kind_(kind) {}
+    EncodedStagingFile(const EncodedStagingFile&) = delete;
+    EncodedStagingFile& operator=(const EncodedStagingFile&) = delete;
+
+    ~EncodedStagingFile() { cleanup(); }
+
+    bool create(const std::filesystem::path& destination) {
+#ifdef _WIN32
+        // Mirror of the POSIX branch below: CREATE_NEW (_wopen O_EXCL) with a bounded
+        // retry. A collided name is never opened or deleted by us (foreign-name
+        // protection); GetTempFileNameW could return an already-existing name and
+        // the CRT "wb" open would truncate it. NTFS permissions follow the target
+        // directory's ACL inheritance, so this platform has no destination-mode copy.
+        std::wstring temporaryName;
+        int createdFd = -1;
+        try {
+            std::filesystem::path parent = destination.parent_path();
+            if (parent.empty()) parent = L".";
+            const std::wstring base = kind_ == Kind::Jpeg ? L".rawlab-jpeg" : L".rawlab-png";
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                const std::string suffix = stagingSuffix();
+                temporaryName = (parent / (base + L"-" + std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
+                createdFd = ::_wopen(
+                    temporaryName.c_str(),
+                    _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY | _O_NOINHERIT,
+                    _S_IREAD | _S_IWRITE);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never delete it
+                }
+            }
+            if (createdFd < 0) return false;
+
+            path_ = std::filesystem::path(temporaryName);
+            file_ = ::_fdopen(createdFd, "wb");
+            if (!file_) {
+                (void)::_close(createdFd);
+                createdFd = -1;
+                cleanup();
+                return false;
+            }
+            createdFd = -1; // file_ owns the descriptor after _fdopen succeeds.
+            return true;
+        } catch (...) {
+            if (createdFd >= 0) (void)::_close(createdFd);
+            cleanup();
+            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
+            throw;
+        }
+#else
+        std::string temporaryName;
+        int createdFd = -1;
+        try {
+            std::filesystem::path parent = destination.parent_path();
+            if (parent.empty()) parent = ".";
+            const std::string base = kind_ == Kind::Jpeg ? ".rawlab-jpeg" : ".rawlab-png";
+            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
+                temporaryName = (parent / (base + "-" + stagingSuffix() + ".tmp")).string();
+                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
+                if (createdFd < 0) {
+                    if (errno != EEXIST) return false;
+                    temporaryName.clear(); // the name belongs to someone else; never unlink it
+                }
+            }
+            if (createdFd < 0) return false;
+            preserveDestinationMode(createdFd, destination);
+
+            path_ = std::filesystem::path(temporaryName);
+            file_ = ::fdopen(createdFd, "wb");
+            if (!file_) {
+                (void)::close(createdFd);
+                createdFd = -1;
+                cleanup();
+                return false;
+            }
+            createdFd = -1; // file_ owns the descriptor after fdopen succeeds.
+            return true;
+        } catch (...) {
+            if (createdFd >= 0) (void)::close(createdFd);
+            cleanup();
+            if (!temporaryName.empty()) (void)::unlink(temporaryName.c_str());
+            throw;
+        }
+#endif
+    }
+
+    std::FILE* file() const noexcept { return file_; }
+
+    bool finishAndPublish(const std::filesystem::path& destination) {
+        if (!file_) return false;
+        const bool flushed = (std::fflush(file_) == 0) && (std::ferror(file_) == 0);
+        const bool closed = (std::fclose(file_) == 0);
+        file_ = nullptr;
+        if (!flushed || !closed) {
+            cleanup();
+            return false;
+        }
+#ifdef _WIN32
+        const std::wstring source = path_.wstring();
+        const std::wstring target = destination.wstring();
+        const bool published = MoveFileExW(
+            source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        const bool published = (::rename(path_.c_str(), destination.c_str()) == 0);
+#endif
+        if (!published) {
+            cleanup();
+            return false;
+        }
+        published_ = true;
+        path_.clear();
+        return true;
+    }
+
+private:
+    void cleanup() noexcept {
+        if (file_) {
+            (void)std::fclose(file_);
+            file_ = nullptr;
+        }
+        if (!published_) {
+            removeStagingPathNoThrow(path_);
+        }
+        path_.clear();
+    }
+
+    Kind kind_ = Kind::Jpeg;
+    std::filesystem::path path_;
+    std::FILE* file_ = nullptr;
+    bool published_ = false;
+};
+
+// libjpeg-turbo 扫描线编码器：写入 EncodedStagingFile 的暂存 FILE（stdio 目标管理器），
+// 取消信号在扫描线边界即时中止（ProcessingCancelled 沿栈展开，析构删 .tmp），
+// ERREXIT 经 setjmp 分类为 IO/内存/处理错误；流式写出，无整帧偏移量索引。
+struct TurboJpegEncoder {
+    jpeg_compress_struct codec{};
+    jpeg_error_mgr manager{};
+    std::jmp_buf jump{};
+    std::FILE* file = nullptr;
+    bool outOfMemory = false;
+
+    explicit TurboJpegEncoder(std::FILE* destination) : file(destination) {}
+    ~TurboJpegEncoder() { jpeg_destroy_compress(&codec); }
+
+    static void fail(j_common_ptr codec) {
+        auto* self = reinterpret_cast<TurboJpegEncoder*>(
+            reinterpret_cast<char*>(codec->err) - offsetof(TurboJpegEncoder, manager));
+        self->outOfMemory = codec->err->msg_code == JERR_OUT_OF_MEMORY;
+        std::longjmp(self->jump, 1);
+    }
+
+    // 返回 false 表示 libjpeg 报错：按 outOfMemory 或 FILE 错误位分类。
+    bool encode(int width, int height, const uint8_t* data, int quality) {
+        codec.err = jpeg_std_error(&manager);
+        manager.error_exit = &TurboJpegEncoder::fail;
+        if (setjmp(jump) != 0) return false;
+        jpeg_create_compress(&codec);
+        jpeg_stdio_dest(&codec, file);
+        codec.image_width = static_cast<JDIMENSION>(width);
+        codec.image_height = static_cast<JDIMENSION>(height);
+        codec.input_components = 3;
+        codec.in_color_space = JCS_RGB;
+        jpeg_set_defaults(&codec);
+        const int effectiveQuality = std::clamp(quality, 1, 100);
+        // 基线表，与旧 stb 写出同语义。
+        jpeg_set_quality(&codec, effectiveQuality, TRUE);
+        // stb 参考语义：q<=90 用 4:2:0，q>90 用 4:4:4；对齐采样因子，
+        // 避免高质量导出的色彩细节相对旧管线回退。
+        const bool subsample = effectiveQuality <= 90;
+        codec.comp_info[0].h_samp_factor = subsample ? 2 : 1;
+        codec.comp_info[0].v_samp_factor = subsample ? 2 : 1;
+        for (int component = 1; component < codec.num_components; ++component) {
+            codec.comp_info[component].h_samp_factor = 1;
+            codec.comp_info[component].v_samp_factor = 1;
+        }
+        jpeg_start_compress(&codec, TRUE);
+        // 行首指针用 size_t 步长：>2GiB 输入缓冲（约 715.8MP 上限 × 3B）无 int 溢出。
+        const size_t rowBytes = static_cast<size_t>(width) * 3u;
+        while (codec.next_scanline < static_cast<JDIMENSION>(height)) {
+            checkProcessingCancellation();
+            JSAMPROW row = const_cast<JSAMPLE*>(data) + static_cast<size_t>(codec.next_scanline) * rowBytes;
+            jpeg_write_scanlines(&codec, &row, 1);
+        }
+        jpeg_finish_compress(&codec);
+        return true;
+    }
+};
+
+} // namespace
+static_assert(JPEG_MAX_DIMENSION == 65500, "libjpeg-turbo dimension ceiling matches SDR JPEG contract");
 ErrorCode ImageEncoder::saveJPEG(
     const ImageData& image,
     const std::string& filepath,
     int quality
 ) {
-    if (image.pixels.empty()) {
+    if (filepath.empty() || filepath.find('\0') != std::string::npos ||
+        image.width <= 0 || image.height <= 0 ||
+        image.width > 65500 || image.height > 65500 ||
+        image.pixels.empty() ||
+        image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;
     }
 
-    // 转换为 uint8_t
-    std::vector<uint8_t> data(image.width * image.height * 3);
+    const uint64_t rgbBytes =
+        static_cast<uint64_t>(image.width) * static_cast<uint64_t>(image.height) * 3u;
+    if (rgbBytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return ErrorCode::ProcessingError;
+    }
 
-    const int pixel_count = image.width * image.height;
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
+    std::filesystem::path destination;
+    try {
+#ifdef _WIN32
+        destination = std::filesystem::u8path(filepath);
+#else
+        destination = std::filesystem::path(filepath);
 #endif
-    for (int i = 0; i < pixel_count; ++i) {
-        data[i * 3 + 0] = floatToUint8(image.pixels[i].r);
-        data[i * 3 + 1] = floatToUint8(image.pixels[i].g);
-        data[i * 3 + 2] = floatToUint8(image.pixels[i].b);
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
     }
 
-    int result = stbi_write_jpg(
-        filepath.c_str(),
-        image.width,
-        image.height,
-        3,
-        data.data(),
-        quality
-    );
-
-    if (result == 0) {
+    std::error_code directoryError;
+    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError)) {
         std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
-        return ErrorCode::ProcessingError;
+        return ErrorCode::IOError;
+    }
+
+    try {
+        const size_t pixelCount =
+            static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+        std::vector<uint8_t> data(pixelCount * 3);
+
+        parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
+            for (size_t index = first; index < last; ++index) {
+                data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
+                data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
+                data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
+            }
+        });
+
+        EncodedStagingFile staging(EncodedStagingFile::Kind::Jpeg);
+        if (!staging.create(destination)) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::IOError;
+        }
+
+        TurboJpegEncoder encoder(staging.file());
+        if (!encoder.encode(image.width, image.height, data.data(), quality)) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            if (encoder.outOfMemory) return ErrorCode::OutOfMemory;
+            return std::ferror(staging.file()) != 0 ? ErrorCode::IOError : ErrorCode::ProcessingError;
+        }
+        // 提交点：编码完成后、替换目标文件之前再看一次取消。
+        checkProcessingCancellation();
+        if (!staging.finishAndPublish(destination)) {
+            std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+            return ErrorCode::IOError;
+        }
+    } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
+        return ErrorCode::IOError;
     }
 
     std::cout << "成功保存: " << filepath << std::endl;
     return ErrorCode::Success;
 }
 
-ErrorCode ImageEncoder::savePNG(const ImageData& image, const std::string& filepath) {
-    if (image.width <= 0 || image.height <= 0 ||
-        image.pixels.size() != static_cast<size_t>(image.width) * image.height)
+ErrorCode ImageEncoder::savePNG(
+    const ImageData& image,
+    const std::string& filepath,
+    const PngMetadata* metadata
+) {
+    if (filepath.empty() || filepath.find('\0') != std::string::npos ||
+        image.width <= 0 || image.height <= 0 ||
+        image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
         return ErrorCode::ProcessingError;
-    std::ofstream file(std::filesystem::u8path(filepath), std::ios::binary);
-    if (!file) return ErrorCode::ProcessingError;
-    auto write32 = [&](uint32_t value) {
-        unsigned char bytes[] = {static_cast<unsigned char>(value>>24),
-            static_cast<unsigned char>(value>>16), static_cast<unsigned char>(value>>8),
-            static_cast<unsigned char>(value)};
-        file.write(reinterpret_cast<char*>(bytes), 4);
-    };
-    auto chunk = [&](const char* type, const unsigned char* data, size_t length) {
-        write32(static_cast<uint32_t>(length));
-        file.write(type, 4);
-        if (length) file.write(reinterpret_cast<const char*>(data), length);
-        uLong crc = crc32(0, reinterpret_cast<const Bytef*>(type), 4);
-        if (length) crc = crc32(crc, data, static_cast<uInt>(length));
-        write32(static_cast<uint32_t>(crc));
-    };
-    const unsigned char signature[] = {137,80,78,71,13,10,26,10};
-    file.write(reinterpret_cast<const char*>(signature), sizeof(signature));
-    unsigned char header[13] = {};
-    for (int i=0; i<4; ++i) {
-        header[i] = static_cast<unsigned char>(image.width >> (24-8*i));
-        header[4+i] = static_cast<unsigned char>(image.height >> (24-8*i));
     }
-    header[8]=16; header[9]=2;
-    chunk("IHDR", header, sizeof(header));
-    const unsigned char intent = 0;
-    chunk("sRGB", &intent, 1);
-    z_stream stream{};
-    if (deflateInit(&stream, Z_DEFAULT_COMPRESSION) != Z_OK) return ErrorCode::ProcessingError;
-    std::vector<unsigned char> row(static_cast<size_t>(image.width)*6+1);
-    std::array<unsigned char, 65536> compressed;
-    bool ok = true;
-    for (int y=0; y<image.height && ok; ++y) {
-        row[0]=0;
-        for (int x=0; x<image.width; ++x) {
-            const auto& p = image.at(x,y);
-            const uint16_t values[] = {floatToUint16(p.r),floatToUint16(p.g),floatToUint16(p.b)};
-            for (int c=0;c<3;++c) {
-                row[1+x*6+c*2] = static_cast<unsigned char>(values[c]>>8);
-                row[2+x*6+c*2] = static_cast<unsigned char>(values[c]);
+
+    const uint64_t rowBytes64 = static_cast<uint64_t>(image.width) * 3u * sizeof(uint16_t);
+    if (rowBytes64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        return ErrorCode::OutOfMemory;
+    }
+
+    std::filesystem::path destination;
+    try {
+#ifdef _WIN32
+        destination = std::filesystem::u8path(filepath);
+#else
+        destination = std::filesystem::path(filepath);
+#endif
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
+    }
+    std::error_code directoryError;
+    if (!destination.has_filename() || std::filesystem::is_directory(destination, directoryError)) {
+        return ErrorCode::IOError;
+    }
+
+    try {
+        EncodedStagingFile staging(EncodedStagingFile::Kind::Png);
+        if (!staging.create(destination)) return ErrorCode::IOError;
+
+        struct SpngEncoderGuard {
+            spng_ctx* ctx = nullptr;
+            explicit SpngEncoderGuard(spng_ctx* c) : ctx(c) {}
+            ~SpngEncoderGuard() {
+                if (ctx) spng_ctx_free(ctx);
+            }
+        };
+        spng_ctx* ctx = spng_ctx_new(SPNG_CTX_ENCODER);
+        if (!ctx) return ErrorCode::OutOfMemory;
+        SpngEncoderGuard ctxGuard(ctx);
+
+        auto mapSpngError = [&](int err) -> ErrorCode {
+            if (std::ferror(staging.file()) != 0) return ErrorCode::IOError;
+            if (err == SPNG_EMEM) return ErrorCode::OutOfMemory;
+            return ErrorCode::ProcessingError;
+        };
+
+        if (int err = spng_set_png_file(ctx, staging.file()); err != 0) {
+            return mapSpngError(err);
+        }
+
+        spng_ihdr ihdr{};
+        ihdr.width = static_cast<uint32_t>(image.width);
+        ihdr.height = static_cast<uint32_t>(image.height);
+        ihdr.bit_depth = 16;
+        ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR;
+        if (int err = spng_set_ihdr(ctx, &ihdr); err != 0) {
+            return mapSpngError(err);
+        }
+
+        if (int err = spng_set_option(ctx, SPNG_FILTER_CHOICE, SPNG_FILTER_CHOICE_ALL); err != 0) {
+            return mapSpngError(err);
+        }
+
+        if (metadata && !metadata->iccProfile.empty()) {
+            spng_iccp iccp{};
+            const std::string& profileName =
+                metadata->iccProfileName.empty() ? std::string("ICC Profile") : metadata->iccProfileName;
+            const size_t nameLen = std::min<size_t>(profileName.size(), sizeof(iccp.profile_name) - 1);
+            std::memcpy(iccp.profile_name, profileName.data(), nameLen);
+            iccp.profile_name[nameLen] = '\0';
+            iccp.profile_len = metadata->iccProfile.size();
+            iccp.profile = reinterpret_cast<char*>(const_cast<uint8_t*>(metadata->iccProfile.data()));
+            if (int err = spng_set_iccp(ctx, &iccp); err != 0) {
+                return mapSpngError(err);
+            }
+        } else {
+            if (int err = spng_set_srgb(ctx, 0); err != 0) {
+                return mapSpngError(err);
             }
         }
-        stream.next_in = row.data();
-        stream.avail_in = static_cast<uInt>(row.size());
-        const int flush = y == image.height-1 ? Z_FINISH : Z_NO_FLUSH;
-        int status;
-        do {
-            stream.next_out = compressed.data();
-            stream.avail_out = compressed.size();
-            status = deflate(&stream, flush);
-            if (status != Z_OK && status != Z_STREAM_END) { ok=false; break; }
-            const size_t size = compressed.size()-stream.avail_out;
-            if (size) chunk("IDAT", compressed.data(), size);
-        } while (stream.avail_in || stream.avail_out == 0 || (flush == Z_FINISH && status != Z_STREAM_END));
+
+        if (metadata && !metadata->exif.empty()) {
+            spng_exif exif{};
+            exif.length = metadata->exif.size();
+            exif.data = reinterpret_cast<char*>(const_cast<uint8_t*>(metadata->exif.data()));
+            if (int err = spng_set_exif(ctx, &exif); err != 0) {
+                return mapSpngError(err);
+            }
+        }
+
+        if (int err = spng_encode_image(
+                ctx, nullptr, 0, SPNG_FMT_PNG, SPNG_ENCODE_PROGRESSIVE | SPNG_ENCODE_FINALIZE);
+            err != 0) {
+            return mapSpngError(err);
+        }
+
+        std::vector<uint16_t> row(static_cast<size_t>(image.width) * 3u);
+        const size_t rowBytes = static_cast<size_t>(rowBytes64);
+        constexpr size_t kCancelCheckPixels = 65536;
+        size_t pixelsSinceCheck = 0;
+        for (int y = 0; y < image.height; ++y) {
+            pixelsSinceCheck += static_cast<size_t>(image.width);
+            if (pixelsSinceCheck >= kCancelCheckPixels) {
+                pixelsSinceCheck = 0;
+                checkProcessingCancellation();
+            }
+            for (int x = 0; x < image.width; ++x) {
+                const auto& p = image.at(x, y);
+                const size_t base = static_cast<size_t>(x) * 3u;
+                row[base + 0] = floatToUint16(p.r);
+                row[base + 1] = floatToUint16(p.g);
+                row[base + 2] = floatToUint16(p.b);
+            }
+            const int err = spng_encode_row(ctx, row.data(), rowBytes);
+            const bool lastRow = (y == image.height - 1);
+            const bool rowOk = lastRow ? (err == SPNG_EOI || err == 0) : (err == 0);
+            if (!rowOk) {
+                return mapSpngError(err);
+            }
+        }
+
+        if (std::fflush(staging.file()) != 0 || std::ferror(staging.file()) != 0) {
+            return ErrorCode::IOError;
+        }
+        // 提交点：编码完成后、替换目标文件之前再看一次取消。
+        checkProcessingCancellation();
+        if (!staging.finishAndPublish(destination)) return ErrorCode::IOError;
+    } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::IOError;
     }
-    deflateEnd(&stream);
-    chunk("IEND", nullptr, 0);
-    file.flush();
-    return ok && file.good() ? ErrorCode::Success : ErrorCode::ProcessingError;
+
+    return ErrorCode::Success;
 }
 
 } // namespace sony2fuji

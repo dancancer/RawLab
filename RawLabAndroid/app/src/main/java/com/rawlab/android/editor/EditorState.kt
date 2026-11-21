@@ -1,7 +1,13 @@
 package com.rawlab.android.editor
 
+import com.rawlab.android.editor.render.ExportDestinationCleanup
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
+import com.rawlab.android.editor.render.Work
+import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.ExportSize
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.R
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LookChoice
 import com.rawlab.android.settings.PhotoIdentity
@@ -10,6 +16,8 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.LUTCompatibility
 import android.net.Uri
+import com.rawlab.android.settings.AdjustmentOperationExpiredException
+import kotlinx.coroutines.CancellationException
 
 sealed interface PendingLookImport {
     val uri: Uri
@@ -34,7 +42,8 @@ data class PendingDcpImport(
 //  编辑器的界面状态：当前照片、参数、预览与进行中的操作
 // ============================================================================
 
-enum class Operation { NONE, IMPORT, IMPORT_LOOK, PICK_EXPORT, EXPORT }
+enum class Operation { NONE, IMPORT, IMPORT_LOOK, PREPARE_EXPORT, PICK_EXPORT, EXPORT }
+enum class SingleExportStep { NONE, PREPARING, OPTIONS, PICKING_DESTINATION, WRITING }
 enum class EditSaveState { NONE, RESTORED, SAVED, FAILED }
 
 internal class PendingPhotoImport {
@@ -54,19 +63,30 @@ data class EditorState(
     val photo: ImportedPhoto? = null,
     val edits: EditSettings = EditSettings(),
     val looks: List<LookChoice> = LookChoice.builtIns,
+    val unreadableLooks: List<com.rawlab.android.looks.UnreadableLook> = emptyList(),
     val recentLookIds: List<String> = emptyList(),
     val preview: PreviewPair? = null,
+    val detail: PreviewDetailOverlay? = null,
+    val detailTiles: List<PreviewDetailOverlay> = emptyList(),
     val operation: Operation = Operation.NONE,
+    val exportStep: SingleExportStep = when (operation) {
+        Operation.PREPARE_EXPORT -> SingleExportStep.PREPARING
+        Operation.PICK_EXPORT -> SingleExportStep.OPTIONS
+        Operation.EXPORT -> SingleExportStep.WRITING
+        else -> SingleExportStep.NONE
+    },
     val rendering: Boolean = false,
     val previewResizePending: Boolean = false,
     val exact: Boolean = false,
     val error: String? = null,
     val retryLegacyX3f: Boolean = false,
+    val recoverUnusableRecord: Boolean = false,
     val saveState: EditSaveState = EditSaveState.NONE,
     val saveError: String? = null,
     val message: String? = null,
     val lookImportReport: String? = null,
     val importingHDRCameraProfile: Boolean = false,
+    val importingHDRLook: Boolean = false,
     val hdrCameraDraft: HDRCameraPanelDraft? = null,
     val pendingLookImports: List<PendingLookImport> = emptyList(),
     val lookImportPreparing: Boolean = false,
@@ -74,6 +94,9 @@ data class EditorState(
     val draft: AdjustmentDraft? = null,
     val adjustmentRevision: Long = 0,
     val committingAdjustments: Boolean = false,
+    val processingMigration: com.rawlab.android.settings.ProcessingMigrationReceipt? = null,
+    val matchingProcessing: Boolean = false,
+    val exportProgress: Float? = null,
 ) {
     val hdrCameraDraftSettings get() = edits.hdr?.cameraSettings?.let { baseline ->
         photo?.let { hdrCameraDraft?.valueFor(it.identity, baseline) } ?: baseline
@@ -81,6 +104,7 @@ data class EditorState(
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
         operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments
+    val exportOptionsVisible: Boolean get() = operation == Operation.PICK_EXPORT && exportStep == SingleExportStep.OPTIONS
     val visibleEdits get() = draft?.project(edits) ?: edits
     val draftReady get() = draft != null && controlsEnabled && exact && !rendering && !previewResizePending && error == null
     val canApplyDraft get() = draftReady && draft?.changed == true
@@ -92,8 +116,17 @@ internal data class EditorMutation(val state: EditorState, val preview: EditSett
 internal object EditorStateReducer {
     fun renderFinished(current: EditorState): EditorState = current.copy(
         operation = if (current.operation == Operation.IMPORT_LOOK) Operation.IMPORT_LOOK else Operation.NONE,
+        exportStep = SingleExportStep.NONE,
+        exportProgress = null,
         rendering = false,
     )
+
+    // Q12: 已过提交点的导出遇迟到取消按「已完成」收尾——文件保留并发布，即使结果 revision
+    // 已过期（cancelExport 已 renderFinished），提示也告知完成而非取消成功；只覆盖完成文案。
+    fun lateExportCompleted(current: EditorState, done: String): EditorState = current.copy(message = done)
+
+    fun looksLoaded(current: EditorState, loaded: com.rawlab.android.looks.LookLibraryEntries): EditorState =
+        looksLoaded(current, loaded.looks).copy(unreadableLooks = loaded.unreadable)
 
     fun looksLoaded(current: EditorState, loaded: List<LookChoice>): EditorState {
         val loadedIds = loaded.mapTo(mutableSetOf()) { it.id }
@@ -102,15 +135,18 @@ internal object EditorStateReducer {
     }
 
     fun lookImported(current: EditorState, look: ManagedLook): EditorMutation {
-        val selected = try { current.edits.selectFilm(look.id, current.preview?.tint,
+        val selected = try { current.visibleEdits.selectFilm(look.id, current.preview?.tint,
             current.preview?.temperature, current.photo?.inputKind ?: PhotoInputKind.RAW) }
             catch (_: IllegalArgumentException) { null }
-        val edits = selected ?: current.edits
+        val edits = selected ?: current.visibleEdits
+        val draft = current.draft?.update(edits)
         val hasPhoto = current.photo != null
         val state = current.copy(
             looks = current.looks.filterNot { it.id == look.id } + LookChoice(look.id, look.name, managed = true, appearanceUnverified = look.appearanceUnverified, compatibilityMode = look.compatibilityMode),
-            edits = edits,
+            edits = if (draft == null) edits else current.edits,
+            draft = draft,
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             rendering = if (selected != null && hasPhoto) true else current.rendering,
             exact = if (selected != null && hasPhoto) false else current.exact,
             error = if (selected == null) current.error else null,
@@ -122,6 +158,7 @@ internal object EditorStateReducer {
         val state = current.copy(
             looks = current.looks.map { if (it.id == look.id) LookChoice(look.id, look.name, managed = true, appearanceUnverified = look.appearanceUnverified, compatibilityMode = look.compatibilityMode) else it },
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             error = null,
         )
         return EditorMutation(state, null)
@@ -135,11 +172,24 @@ internal object EditorStateReducer {
             looks = current.looks.filterNot { it.id == id },
             edits = edits,
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             rendering = if (rerender) true else current.rendering,
             exact = if (rerender) false else current.exact,
             error = null,
         )
         return EditorMutation(state, edits.takeIf { rerender })
+    }
+
+    // HDR 外观导入结束必然交还 operation；过期或取消明确提示，读取失败报错，成功由调用方继续提交编辑。
+    fun hdrLookImportFinished(current: EditorState, outcome: Result<*>, cancelled: String, unavailable: String): EditorState {
+        val ready = current.copy(
+            importingHDRLook = false,
+            operation = if (current.operation == Operation.IMPORT_LOOK) Operation.NONE else current.operation,
+            exportStep = if (current.operation == Operation.IMPORT_LOOK) SingleExportStep.NONE else current.exportStep,
+        )
+        val failure = outcome.exceptionOrNull() ?: return ready
+        return if (failure is AdjustmentOperationExpiredException || failure is CancellationException) ready.copy(message = cancelled)
+        else ready.copy(error = unavailable)
     }
 }
 
@@ -151,3 +201,50 @@ internal fun EditorState.resetContext(): EditorResetContext = EditorResetContext
         ?.let { AsShotWhiteBalance(it.temperature, it.tint) },
     edits.recipeID?.let(::setOf) ?: emptySet(),
 )
+
+internal sealed interface ExportSubmission {
+    data class Ready(val work: Work.Export, val state: EditorState) : ExportSubmission
+    data class Rejected(
+        val state: EditorState,
+        val errorKey: Int? = null,
+        val refreshPreviewSize: Boolean = false,
+    ) : ExportSubmission
+}
+
+internal fun prepareExportSubmission(
+    current: EditorState,
+    destination: Uri?,
+    format: ExportFormat,
+    longEdge: Int?,
+    gpuMode: Int,
+    cleanup: ExportDestinationCleanup,
+    disposed: Boolean = false,
+): ExportSubmission {
+    val photo = current.photo
+    if (disposed || current.operation != Operation.PICK_EXPORT || photo == null) {
+        cleanup.scheduleDelete(destination, photo?.uri)
+        return ExportSubmission.Rejected(current)
+    }
+    if (destination == null && !format.allowsGallery) {
+        return ExportSubmission.Rejected(
+            current.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE),
+            errorKey = R.string.dng_file_only,
+        )
+    }
+    if (!ExportSize.isValid(longEdge)) {
+        cleanup.scheduleDelete(destination, photo.uri)
+        return ExportSubmission.Rejected(
+            current.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE),
+            errorKey = R.string.output_size_error,
+            refreshPreviewSize = true,
+        )
+    }
+    return ExportSubmission.Ready(
+        Work.Export(photo, current.edits, destination, format, longEdge, gpuMode),
+        current.copy(
+            operation = Operation.EXPORT,
+            exportStep = SingleExportStep.WRITING,
+            exportProgress = if (photo.hdrSource != null && current.edits.isHDREditing) 0f else null,
+        ),
+    )
+}

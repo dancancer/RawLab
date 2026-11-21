@@ -1,6 +1,18 @@
+import RawLabKit
 import Combine
+import CoreGraphics
 import Foundation
 import ImageIO
+import UIKit
+
+@_silgen_name("rawlab_raster_counter_reset")
+func rawlabRasterCounterReset()
+@_silgen_name("rawlab_raster_counter_load_display_image")
+func rawlabRasterCounterLoadDisplayImage() -> Int32
+@_silgen_name("rawlab_raster_counter_cg_full_image")
+func rawlabRasterCounterCGFullImage() -> Int32
+@_silgen_name("rawlab_raster_counter_cg_thumbnail")
+func rawlabRasterCounterCGThumbnail() -> Int32
 
 @main
 struct RasterExportTests {
@@ -186,10 +198,194 @@ struct RasterExportTests {
             try rawIgnoresDraft(fixture, raw: raw)
             try rewrittenCache(fixture)
             try missingBuffer(fixture)
+            try boundedLargeRasterPreviewAndExport(fixture)
         case "rewritten-cache": try rewrittenCache(fixture)
         case "missing-buffer": try missingBuffer(fixture)
         default: throw RasterExportFailure.message("Unknown mode: \(mode)")
         }
         print("PASS: single raster export regression suite (\(assertions) assertions)")
+    }
+
+    private static func writeLargeImage(_ url: URL, width: Int, height: Int, orientation: Int = 1,
+                                        colorSpaceName: CFString = CGColorSpace.sRGB,
+                                        bitsPerComponent: Int = 8, alpha: UInt8 = 255) throws {
+        let bytesPerComponent = bitsPerComponent / 8
+        let stride = width * 4 * bytesPerComponent
+        var data = Data(count: stride * height)
+        data.withUnsafeMutableBytes { raw in
+            if bitsPerComponent == 16 {
+                let ptr = raw.bindMemory(to: UInt16.self)
+                let a16: UInt16 = alpha == 255 ? 65535 : UInt16(alpha) * 257
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let base = (y * width + x) * 4
+                        ptr[base] = UInt16((x * 65535) / max(1, width - 1))
+                        ptr[base + 1] = UInt16((y * 65535) / max(1, height - 1))
+                        ptr[base + 2] = 32768
+                        ptr[base + 3] = a16
+                    }
+                }
+            } else {
+                let ptr = raw.bindMemory(to: UInt8.self)
+                for y in 0..<height {
+                    for x in 0..<width {
+                        let base = (y * width + x) * 4
+                        ptr[base] = UInt8((x * 255) / max(1, width - 1))
+                        ptr[base + 1] = UInt8((y * 255) / max(1, height - 1))
+                        ptr[base + 2] = 128
+                        ptr[base + 3] = alpha
+                    }
+                }
+            }
+        }
+        let uti = url.pathExtension.lowercased() == "png" ? "public.png" : "public.jpeg"
+        let bitmapInfo: CGBitmapInfo = bitsPerComponent == 16
+            ? CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder16Little)
+            : CGBitmapInfo(rawValue: (alpha == 255 ? CGImageAlphaInfo.noneSkipLast : CGImageAlphaInfo.premultipliedLast).rawValue)
+        guard let provider = CGDataProvider(data: data as CFData),
+              let space = CGColorSpace(name: colorSpaceName),
+              let cgImage = CGImage(width: width, height: height, bitsPerComponent: bitsPerComponent,
+                                    bitsPerPixel: 4 * bitsPerComponent, bytesPerRow: stride,
+                                    space: space, bitmapInfo: bitmapInfo,
+                                    provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, uti as CFString, 1, nil) else {
+            throw RasterExportFailure.message("Failed to build large raster fixture at \(url.path)")
+        }
+        CGImageDestinationAddImage(dest, cgImage, [
+            kCGImagePropertyOrientation: orientation,
+            kCGImageDestinationLossyCompressionQuality: 0.9
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else {
+            throw RasterExportFailure.message("Failed to finalize large raster fixture at \(url.path)")
+        }
+    }
+
+    private static func imageDimensions(ofData data: Data) -> (Int, Int)? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else { return nil }
+        return (w, h)
+    }
+
+    private static func dngDimensions(ofData bytes: Data) -> (Int, Int)? {
+        guard bytes.count >= 8 else { return nil }
+        let little = bytes[0] == 0x49 && bytes[1] == 0x49
+        guard little || (bytes[0] == 0x4d && bytes[1] == 0x4d) else { return nil }
+        func integer(_ offset: Int, _ count: Int) -> Int {
+            (0..<count).reduce(0) { value, index in
+                let shift = little ? index : count - index - 1
+                return value | (Int(bytes[offset + index]) << (shift * 8))
+            }
+        }
+        func readIFDDims(_ directory: Int) -> (width: Int, height: Int, hasVersion: Bool, subIFDOffsets: [Int])? {
+            guard directory > 0, directory <= bytes.count - 2 else { return nil }
+            let count = integer(directory, 2)
+            guard count <= (bytes.count - directory - 2) / 12 else { return nil }
+            var width = 0, height = 0, hasVersion = false
+            var subIFDOffsets: [Int] = []
+            for index in 0..<count {
+                let entry = directory + 2 + index * 12
+                let tag = integer(entry, 2), type = integer(entry + 2, 2), values = integer(entry + 4, 4)
+                if (tag == 256 || tag == 257) && values == 1 && (type == 3 || type == 4) {
+                    let dimension = integer(entry + 8, type == 3 ? 2 : 4)
+                    if tag == 256 { width = dimension } else { height = dimension }
+                }
+                if tag == 50706 && type == 1 && values == 4 { hasVersion = bytes[entry + 8] == 1 }
+                if tag == 330 && (type == 4 || type == 13) && values >= 1 {
+                    if values == 1 {
+                        subIFDOffsets.append(integer(entry + 8, 4))
+                    } else {
+                        let tableOffset = integer(entry + 8, 4)
+                        if tableOffset > 0 && tableOffset + values * 4 <= bytes.count {
+                            for i in 0..<values {
+                                subIFDOffsets.append(integer(tableOffset + i * 4, 4))
+                            }
+                        }
+                    }
+                }
+            }
+            return (width, height, hasVersion, subIFDOffsets)
+        }
+        guard integer(2, 2) == 42, let ifd0 = readIFDDims(integer(4, 4)), ifd0.hasVersion else { return nil }
+        var best = (ifd0.width, ifd0.height)
+        for subOffset in ifd0.subIFDOffsets {
+            if let sub = readIFDDims(subOffset), sub.width * sub.height > best.0 * best.1 {
+                best = (sub.width, sub.height)
+            }
+        }
+        return (best.0 > 0 && best.1 > 0) ? best : nil
+    }
+
+    private static func boundedLargeRasterPreviewAndExport(_ fixture: RasterExportFixture) throws {
+        // 1. Small raster export reuses draftBuffer with 0 loadDisplayImage calls.
+        let small = fixture.directory.appendingPathComponent("small-reuse.jpg")
+        try RasterExportFixture.writeRaster(small, orientation: 1)
+        try fixture.importRaster(small)
+        try check(fixture.model.draftBuffer?.isProxy == false, "small 96x64 raster draftBuffer is non-proxy")
+        rawlabRasterCounterReset()
+        _ = try fixture.jpeg()
+        _ = try fixture.dng()
+        try check(rawlabRasterCounterLoadDisplayImage() == 0,
+                  "small raster JPEG+DNG export reuses draftBuffer with 0 loadDisplayImage calls (got \(rawlabRasterCounterLoadDisplayImage()))")
+
+        // 2. Large 2000x1500 JPEG uses bounded ImageIO thumbnail (0 full-res decodes) and exports full 2000x1500 once.
+        let largeJPEG = fixture.directory.appendingPathComponent("large-2000x1500.jpg")
+        try writeLargeImage(largeJPEG, width: 2000, height: 1500)
+        rawlabRasterCounterReset()
+        try fixture.importRaster(largeJPEG)
+        let draft = fixture.model.draftBuffer
+        try check(draft?.isProxy == true && max(draft?.width ?? 0, draft?.height ?? 0) == 1280 &&
+                  draft?.nativeSize == CGSize(width: 2000, height: 1500),
+                  "large 2000x1500 JPEG import produces 1280px proxy with nativeSize 2000x1500")
+        try check(rawlabRasterCounterLoadDisplayImage() == 0 && rawlabRasterCounterCGFullImage() == 0 &&
+                  rawlabRasterCounterCGThumbnail() >= 1,
+                  "large 8-bit JPEG import performs 0 full-res decodes (load=\(rawlabRasterCounterLoadDisplayImage()) cgFull=\(rawlabRasterCounterCGFullImage()) thumb=\(rawlabRasterCounterCGThumbnail()))")
+
+        rawlabRasterCounterReset()
+        let fullJPEG = try fixture.jpeg()
+        let fullDims = imageDimensions(ofData: fullJPEG)
+        try check(fullDims?.0 == 2000 && fullDims?.1 == 1500 && rawlabRasterCounterLoadDisplayImage() == 1,
+                  "large JPEG export produces full 2000x1500 output with 1 loadDisplayImage call")
+
+        rawlabRasterCounterReset()
+        let fullDNG = try fixture.dng()
+        let dngDims = dngDimensions(ofData: fullDNG)
+        let dngLoads = rawlabRasterCounterLoadDisplayImage()
+        try check(dngDims?.0 == 2000 && dngDims?.1 == 1500 && dngLoads == 1,
+                  "large DNG export produces full 2000x1500 output with 1 loadDisplayImage call (dims=\(String(describing: dngDims)) loads=\(dngLoads))")
+
+        // 3. Rotated Display-P3 JPEG (1500x2000 with orientation 6 -> oriented 2000x1500).
+        let p3Rotated = fixture.directory.appendingPathComponent("p3-rotated.jpg")
+        try writeLargeImage(p3Rotated, width: 1500, height: 2000, orientation: 6, colorSpaceName: CGColorSpace.displayP3)
+        rawlabRasterCounterReset()
+        try fixture.importRaster(p3Rotated)
+        let p3Draft = fixture.model.draftBuffer
+        try check(p3Draft?.isProxy == true && p3Draft?.width == 1280 && p3Draft?.height == 960 &&
+                  p3Draft?.nativeSize == CGSize(width: 2000, height: 1500) && rawlabRasterCounterCGFullImage() == 0,
+                  "rotated Display-P3 JPEG import bounds to 1280x960 proxy with nativeSize 2000x1500 and 0 full-res decodes")
+        let p3ExportDims = imageDimensions(ofData: try fixture.jpeg())
+        try check(p3ExportDims?.0 == 2000 && p3ExportDims?.1 == 1500,
+                  "rotated Display-P3 JPEG exports full upright 2000x1500")
+
+        // 4. Large 16-bit opaque PNG (1600x1200) bounds resident draftBuffer to 1280px proxy and exports full 1600x1200.
+        let large16PNG = fixture.directory.appendingPathComponent("large-16bit.png")
+        try writeLargeImage(large16PNG, width: 1600, height: 1200, bitsPerComponent: 16)
+        try fixture.importRaster(large16PNG)
+        let png16Draft = fixture.model.draftBuffer
+        try check(png16Draft?.isProxy == true && max(png16Draft?.width ?? 0, png16Draft?.height ?? 0) == 1280 &&
+                  png16Draft?.nativeSize == CGSize(width: 1600, height: 1200),
+                  "16-bit 1600x1200 PNG import bounds resident draftBuffer to 1280px proxy")
+        let png16DNGDims = dngDimensions(ofData: try fixture.dng())
+        try check(png16DNGDims?.0 == 1600 && png16DNGDims?.1 == 1200,
+                  "16-bit PNG DNG export produces full 1600x1200 (dims=\(String(describing: png16DNGDims)))")
+
+        // 5. Transparent PNG (alpha=128) is rejected by bounded preview decode too.
+        let alphaPNG = fixture.directory.appendingPathComponent("transparent.png")
+        try writeLargeImage(alphaPNG, width: 1600, height: 1200, alpha: 128)
+        var alphaRejected = false
+        do { _ = try fixture.model.processor.loadRasterBuffer(url: alphaPNG, previewLongEdge: 1280) }
+        catch { alphaRejected = true }
+        try check(alphaRejected, "transparent large PNG is rejected by bounded preview decode")
     }
 }

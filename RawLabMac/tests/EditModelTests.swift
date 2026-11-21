@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private struct Failure: Error { let message: String }
@@ -39,13 +40,86 @@ private func writeRasterFixture(_ image: CGImage, to url: URL, type: CFString) t
 private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Data }
 
 @main struct EditModelTests {
+    static func unusableRecordOpenRecoveryChecks(root: URL) throws {
+        let dir = root.appendingPathComponent("unusable-open-recovery")
+        let editDir = dir.appendingPathComponent("edits")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let brokenPNG = dir.appendingPathComponent("broken.png")
+        let healthyPNG = dir.appendingPathComponent("healthy.png")
+        try writeRasterFixture(rasterFixtureImage(), to: brokenPNG, type: "public.png" as CFString)
+        try writeRasterFixture(rasterFixtureImage(), to: healthyPNG, type: "public.png" as CFString)
+
+        let store = try MacEditPersistence(directory: editDir)
+        var c5 = Adjustments(); c5.processing = .c5; c5.exposure = 0.65
+        try store.save(healthyPNG, state: MacPhotoEditState(settings: c5, filmID: ""))
+        try store.save(brokenPNG, state: MacPhotoEditState(settings: c5, filmID: ""))
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
+        var migrated = c5; migrated.processing = .current
+        _ = try store.commitProcessingMigration(expected: store.readState(for: healthyPNG),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: ""),
+                                                quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: brokenPNG),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: ""),
+                                                quality: quality)
+
+        let file = editDir.appendingPathComponent("edits.json")
+        var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var records = registry["records"] as! [String: Any]
+        let brokenKey = try OriginalFileIdentity(brokenPNG).path
+        var brokenEntry = records[brokenKey] as! [String: Any]
+        var brokenState = brokenEntry["state"] as! [String: Any]
+        var brokenSettings = brokenState["settings"] as! [String: Any]
+        brokenSettings["processing"] = ["family": "rawlab", "version": 99, "quality": "standard"]
+        brokenState["settings"] = brokenSettings
+        brokenEntry["state"] = brokenState
+        records[brokenKey] = brokenEntry
+        registry["records"] = records
+        try JSONSerialization.data(withJSONObject: registry).write(to: file)
+        let beforeDeclineBytes = try Data(contentsOf: file)
+
+        let editor = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                                 editDirectory: editDir,
+                                 batchDirectory: dir.appendingPathComponent("batch"))
+        editor.open(healthyPNG)
+        try waitForRender(editor, "healthy sibling PNG")
+        try check(editor.file == healthyPNG && editor.settings.exposure == 0.65,
+                  "EditorModel opens healthy sibling when another photo record is unusable")
+
+        var promptedURL: URL?
+        editor.confirmUnusableRecordReset = { url, _ in
+            promptedURL = url
+            return false
+        }
+        editor.open(brokenPNG)
+        try check(promptedURL == brokenPNG && editor.file == healthyPNG && editor.saveError != nil && editor.error == nil,
+                  "Declining unusable-record reset keeps previous photo open and surfaces readable error")
+        try check(try Data(contentsOf: file) == beforeDeclineBytes,
+                  "Declining unusable-record reset leaves disk registry byte-identical")
+
+        promptedURL = nil
+        editor.confirmUnusableRecordReset = { url, _ in
+            promptedURL = url
+            return true
+        }
+        editor.open(brokenPNG)
+        try waitForRender(editor, "recovered broken PNG")
+        try check(promptedURL == brokenPNG && editor.file == brokenPNG && editor.saveError == nil && editor.error == nil && editor.settings.exposure == 0,
+                  "Confirming unusable-record reset opens photo with default unmodified settings")
+        let reopenedStore = try MacEditPersistence(directory: editDir)
+        try check(try reopenedStore.state(for: brokenPNG) == nil &&
+                  reopenedStore.processingMigration(for: brokenPNG) == nil &&
+                  reopenedStore.state(for: healthyPNG)?.settings.exposure == 0.65 &&
+                  reopenedStore.processingMigration(for: healthyPNG)?.status == .migrated,
+                  "Manual recovery clears only the broken photo's record and receipt")
+    }
+
     static func processingEditorChecks(root: URL, input: URL) throws {
         let directory = root.appendingPathComponent("processing-edits")
         var settings = Adjustments()
         settings.processing = .legacy
         settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 65, chroma: 72, coarse: 100)
-        let store = try EditPersistence(directory: directory)
-        try store.save(input, state: PhotoEditState(settings: settings, filmID: ""))
+        let store = try MacEditPersistence(directory: directory)
+        try store.save(input, state: MacPhotoEditState(settings: settings, filmID: ""))
         let registryURL = directory.appendingPathComponent("edits.json")
         var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as! [String: Any]
         var records = registry["records"] as! [String: Any]
@@ -101,8 +175,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
 
     static func protectedRestoreCheck(root: URL, input: URL) throws {
         let directory = root.appendingPathComponent("unsupported-edits")
-        let store = try EditPersistence(directory: directory)
-        try store.save(input, state: PhotoEditState(settings: Adjustments(), filmID: ""))
+        let store = try MacEditPersistence(directory: directory)
+        try store.save(input, state: MacPhotoEditState(settings: Adjustments(), filmID: ""))
         let file = directory.appendingPathComponent("edits.json")
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var records = object["records"] as! [String: Any]
@@ -147,6 +221,153 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         result.films = [Film(name: "PROVIA", url: lut)]
         result.selectedFilmID = lut.path
         return result
+    }
+
+    private static func writeFlatPNG(width: Int, height: Int, to url: URL) throws {
+        let bytes = [UInt8](repeating: 128, count: width * height * 4)
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else {
+            throw Failure(message: "cannot build \(width)x\(height) data provider")
+        }
+        let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+            throw Failure(message: "cannot create PNG destination")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw Failure(message: "cannot write \(width)x\(height) PNG fixture")
+        }
+    }
+
+    private static func memoryFootprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return status == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
+    /// Samples the process footprint from a helper thread while body runs, and returns the observed peak.
+    private static func peakFootprintMB(during body: () throws -> Void) rethrows -> Double {
+        let peak = Locked(value: memoryFootprintMB())
+        let stop = DispatchSemaphore(value: 0)
+        let samplerFinished = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            while stop.wait(timeout: .now()) == .timedOut {
+                peak.max(memoryFootprintMB())
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            peak.max(memoryFootprintMB())
+            samplerFinished.signal()
+        }
+        do {
+            try body()
+        } catch {
+            stop.signal()
+            samplerFinished.wait()
+            throw error
+        }
+        stop.signal()
+        samplerFinished.wait()
+        return peak.value
+    }
+
+    private final class Locked {
+        private let lock = NSLock()
+        private var stored: Double
+        init(value: Double) { stored = value }
+        func max(_ candidate: Double) {
+            lock.lock(); if candidate > stored { stored = candidate }; lock.unlock()
+        }
+        var value: Double { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    // Q8 (M3/D-04): the SDR neutral reference frame caps its long edge and its
+    // capped size is charged into the exact-preview memory budget.
+    static func referenceFrameCapChecks(root: URL) throws {
+        let fixtureRoot = root.appendingPathComponent("reference-frame-cap")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        func model() -> EditorModel {
+            let editor = EditorModel(lookDirectory: fixtureRoot.appendingPathComponent("looks"),
+                                     editDirectory: fixtureRoot.appendingPathComponent("edits"),
+                                     batchDirectory: fixtureRoot.appendingPathComponent("batch"))
+            editor.fullResolution = true
+            return editor
+        }
+
+        // Over-cap input: 6144×1536 exceeds the 4096 long-edge cap on both anchors' scale.
+        let aboveCap = fixtureRoot.appendingPathComponent("above-cap.png")
+        try writeFlatPNG(width: 6144, height: 1536, to: aboveCap)
+        let footprintBeforeOpen = memoryFootprintMB()
+        let over = model()
+        let peak = try peakFootprintMB {
+            over.open(aboveCap)
+            try waitForRender(over, "above-cap reference open")
+        }
+        let footprintAfterOpen = memoryFootprintMB()
+        let neutralOver = over.neutral!
+        print(String(format: "[Q8] above-cap open footprint %.1f MB -> %.1f MB, peak %.1f MB (neutral %dx%d)",
+                     footprintBeforeOpen, footprintAfterOpen, peak, neutralOver.image.width, neutralOver.image.height))
+
+        try check(neutralOver.image.width == 4096 && neutralOver.image.height == 1024,
+                  "over-cap neutral reference is downsampled to the long-edge cap")
+        try check(!neutralOver.isFullResolution, "a capped reference no longer claims a native frame")
+        try check(over.result!.image.width == 6144 && over.result!.image.height == 1536 && over.result!.isFullResolution,
+                  "full-resolution mode keeps the result frame native beside a capped reference")
+        // Budget accounting must observe the capped reference size.
+        let expectedCharge = MacExactPreviewCache.bytes(over.result!) + MacExactPreviewCache.bytes(neutralOver)
+        try check(over.exactPreviewCache.totalBytes == expectedCharge,
+                  "the exact-preview budget charges the reference frame at its capped size")
+
+        // Should#3：切换面板尺寸档位产生第二条缓存条目时，同一张共享基准帧只计费一次，
+        // 两条条目并存（去重后预算更小、不再互相挤掉）。
+        over.fullResolution = false
+        try waitForRender(over, "above-cap pane-edge pass")
+        let paneResult = over.result!
+        try check(over.neutral!.image === neutralOver.image,
+                  "a pane-size pass reuses the same shared reference frame object")
+        try check(over.exactPreviewCache.totalBytes
+                      == expectedCharge + MacExactPreviewCache.bytes(paneResult),
+                  "the shared reference frame is charged once while both pane entries stay cached")
+
+        // D-04 evidence: a 63MP-class open must cap the reference and lower the measured peak.
+        let giant = fixtureRoot.appendingPathComponent("giant-63mp.png")
+        try writeFlatPNG(width: 8192, height: 7680, to: giant)
+        let giantModel = model()
+        let giantPeak = try peakFootprintMB {
+            giantModel.open(giant)
+            try waitForRender(giantModel, "63MP reference open")
+        }
+        let giantNeutral = giantModel.neutral!
+        print(String(format: "[Q8] 63MP-class open peak %.1f MB (neutral %dx%d)",
+                     giantPeak, giantNeutral.image.width, giantNeutral.image.height))
+        try check(giantNeutral.image.width == 4096 && giantNeutral.image.height == 3840,
+                  "a 63MP-class neutral reference is capped to the long edge")
+
+        // Boundary: at exactly the cap the baseline stays native and is never enlarged…
+        let atCap = fixtureRoot.appendingPathComponent("at-cap.png")
+        try writeFlatPNG(width: 4096, height: 1024, to: atCap)
+        let at = model()
+        at.open(atCap)
+        try waitForRender(at, "at-cap reference open")
+        try check(at.neutral!.image.width == 4096 && at.neutral!.image.height == 1024 && at.neutral!.isFullResolution,
+                  "a reference at exactly the long-edge cap stays native and is never enlarged")
+        // …while one pixel above the cap downsamples to exactly the cap.
+        let capPlusOne = fixtureRoot.appendingPathComponent("cap-plus-one.png")
+        try writeFlatPNG(width: 4097, height: 2048, to: capPlusOne)
+        let edge = model()
+        edge.open(capPlusOne)
+        try waitForRender(edge, "cap-plus-one reference open")
+        try check(edge.neutral!.image.width == 4096 && edge.neutral!.image.height == 2048 && !edge.neutral!.isFullResolution,
+                  "one pixel above the cap downsamples the reference to exactly the cap")
+        try check(MacReferenceFramePolicy.longEdgeCap == 4096,
+                  "the reference cap matches the budget derivation in MacReferenceFramePolicy")
+        print("PASS: Over-cap neutral reference is capped to the long edge and charged at the capped size (Q8/M3)")
     }
 
     static func checkRasterMetadata(_ model: EditorModel, _ label: String) throws {
@@ -366,8 +587,56 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try FileManager.default.removeItem(at: directory)
         try FileManager.default.moveItem(at: backup, to: directory)
         try check(model.saveEdits() && !model.dirty && model.saveError == nil &&
-                  EditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
+                  MacEditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
                   "failed reset save can retry the candidate")
+
+        // Full reset (.all) clears processing migration receipt both on disk and in EditorModel memory; partial reset keeps it.
+        let migrationStore = try MacEditPersistence(directory: directory)
+        var legacySettings = Adjustments(); legacySettings.processing = .c5; legacySettings.exposure = 0.7; legacySettings.saturation = 12
+        let legacyState = MacPhotoEditState(settings: legacySettings, filmID: "")
+        try migrationStore.save(source, state: legacyState)
+        var migratedSettings = legacySettings; migratedSettings.processing = .current
+        let migratedState = MacPhotoEditState(settings: migratedSettings, filmID: "")
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 20)
+        let migratedRecord = try migrationStore.commitProcessingMigration(expected: try migrationStore.readState(for: source),
+                                                                          candidate: migratedState, quality: quality)
+        model.editStore = migrationStore
+        model.adjustmentSession = AdjustmentTransferSession(store: migrationStore)
+        model.committedEdit = migratedRecord
+        model.adjustmentSession?.adoptProcessingMigration(migratedRecord)
+        model.processingMigrationReceipt = try migrationStore.processingMigration(for: source)
+        model.updatingMetadata = true; model.settings = migratedSettings; model.selectedFilmID = ""; model.updatingMetadata = false
+        model.dirty = false; model.saveWork?.cancel(); model.saveWork = nil
+        try check(model.processingMigrationReceipt?.status == .migrated && model.canRollbackProcessingMigration &&
+                  model.processingMigrationStatus != nil,
+                  "migrated receipt enables rollback and status in EditorModel")
+        let partialReset = try prepared(.group(.light))
+        try check(model.commitReset(partialReset) && model.saveEdits() &&
+                  model.processingMigrationReceipt?.status == .migrated &&
+                  (try migrationStore.processingMigration(for: source)?.status) == .migrated,
+                  "partial group reset preserves migration receipt in memory and on disk")
+        let fullReset = try prepared(.all)
+        try check(model.commitReset(fullReset) && model.saveEdits() &&
+                  model.processingMigrationReceipt == nil && !model.canRollbackProcessingMigration &&
+                  model.processingMigrationStatus == nil &&
+                  (try migrationStore.state(for: source))?.settings.processing == .current &&
+                  (try migrationStore.processingMigration(for: source)) == nil,
+                  "reset all persists neutral current record and clears migration receipt in EditorModel memory and on disk")
+        do {
+            _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
+            throw Failure(message: "rollback after reset all must throw expired")
+        } catch AdjustmentCommitError.expired { }
+        try check(try MacEditPersistence(directory: directory).processingMigration(for: source) == nil,
+                  "cleared migration receipt stays nil after reopening EditPersistence")
+        model.undoAdjustment()
+        try check(model.settings.saturation == 12 && model.processingMigrationReceipt == nil &&
+                  !model.canRollbackProcessingMigration && model.processingMigrationStatus == nil &&
+                  (try migrationStore.processingMigration(for: source)) == nil,
+                  "undoing reset all restores pre-reset adjustments while keeping migration receipt nil")
+        do {
+            _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
+            throw Failure(message: "rollback after undoing reset all must stay expired")
+        } catch AdjustmentCommitError.expired { }
         print("PASS: EditorModel reset preparation, stale guards, single commit, draft boundary and retry")
     }
 
@@ -390,14 +659,18 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         x3f.settings.exposure = 0.25
         x3f.settings.aiDenoiseEnabled = true
         x3f.settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true,
-            autoCrop: false, mode: .manual, profileID: "saved-lens-profile")
+            autoCrop: false, mode: .manual, profileID: "saved-lens-profile",
+            focalLength: 35, cropFactor: 1.5, vignetting: true)
         x3f.selectedFilmID = "PROVIA"
         x3f.selectX3fMode(.normal)
         try check(x3f.settings.x3fMode == .normal && !x3f.settings.aiDenoiseEnabled &&
                   x3f.settings.exposure == 0.25 && x3f.selectedFilmID == "PROVIA",
                   "X3F mode switch keeps edits and look while disabling incompatible AI")
-        try check(!x3f.settings.lensSettings.isEnabled &&
+        try check(!x3f.settings.lensSettings.distortion && !x3f.settings.lensSettings.tca &&
+                  !x3f.settings.lensSettings.vignetting && !x3f.settings.lensSettings.isEnabled &&
                   x3f.settings.lensSettings.profileID == "saved-lens-profile" &&
+                  x3f.settings.lensSettings.focalLength == 35 &&
+                  x3f.settings.lensSettings.cropFactor == 1.5 &&
                   x3f.settings.lensSettings.mode == .manual && !x3f.settings.lensSettings.autoCrop,
                   "X3F normal switch disables lens corrections while preserving profile preferences")
         try check(!x3f.canUseLensCorrection && !x3f.beginGeometryDraft(tab: .lens),
@@ -441,13 +714,25 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   selection.settings.grainAmount == 40, "applying a recipe preserves unrelated adjustments")
         selection.settings.exposure = 1
         selection.selectMasterRecipe(.hamadaDaylightV2)
-        try check(selection.settings.exposure == 0.4, "explicitly reapplying the same recipe overwrites manual changes")
+        try check(selection.settings.exposure == 0.4 && selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id,
+                  "explicitly reapplying the same recipe overwrites manual changes")
+        selection.selectMasterRecipe(.takashiYasuiZen)
+        try check(selection.settings.masterRecipeID == MasterRecipe.takashiYasuiZen.id &&
+                  selection.settings.exposure == MasterRecipe.takashiYasuiZen.exposureDelta,
+                  "selecting a different recipe applies its deltas")
+        selection.selectMasterRecipe(.hamadaDaylightV2)
+        try check(selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id &&
+                  selection.settings.exposure == 0.4,
+                  "switching back to a recipe applies its deltas")
         selection.settings.resolveWhiteBalance(WhiteBalance(temperature: 5300, tint: 8))
         selection.selectedFilmID = ""
         try check(selection.settings.masterRecipeID == nil, "selecting neutral clears an active recipe")
         selection.selectMasterRecipe(.hamadaDaylightV2)
         selection.selectedFilmID = "PROVIA"
         try check(selection.settings.masterRecipeID == nil, "selecting a film clears an active recipe")
+        selection.selectMasterRecipe(nil)
+        try check(selection.settings.masterRecipeID == nil && selection.selectedFilmID == "PROVIA",
+                  "selecting neutral recipe when no recipe is active preserves the current film")
         fputs("[EXPECTED RAW FAILURE] EditModelTests.persistence: a.ARW and b.ARW in \(root.path) contain one-byte placeholders, not RAW photos. Their asynchronous decoder rejections are expected; assertion failures are not.\n", stderr)
         let first = model()
         first.open(a)
@@ -459,10 +744,10 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         second.open(a)
         try check(second.settings.exposure == 0.75, "editor must restore from disk")
         let legacyDirectory = root.appendingPathComponent("legacy-edits")
-        let legacyStore = try EditPersistence(directory: legacyDirectory)
+        let legacyStore = try MacEditPersistence(directory: legacyDirectory)
         var legacySettings = Adjustments()
         legacySettings.masterRecipeID = MasterRecipe.hamadaDaylightV2.id
-        try legacyStore.save(a, state: PhotoEditState(settings: legacySettings, filmID: "",
+        try legacyStore.save(a, state: MacPhotoEditState(settings: legacySettings, filmID: "",
                                                      masterRecipeID: legacySettings.masterRecipeID))
         let legacyFile = legacyDirectory.appendingPathComponent("edits.json")
         var legacyRegistry = try JSONSerialization.jsonObject(with: Data(contentsOf: legacyFile)) as! [String: Any]
@@ -517,8 +802,11 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
                   "restoring a preset keeps later manual edits instead of reapplying preset defaults")
         let blocked = root.appendingPathComponent("blocked")
         for recipe in MasterRecipe.allRecipes {
+            let recipePhoto = root.appendingPathComponent("catalog-\(recipe.id).ARW")
+            try Data([1]).write(to: recipePhoto)
             let catalogModel = model()
-            catalogModel.open(a)
+            catalogModel.open(recipePhoto)
+            catalogModel.selectedFilmID = "PROVIA"
             catalogModel.selectMasterRecipe(recipe)
             try check(catalogModel.settings.masterRecipeID == recipe.id && catalogModel.selectedFilmID.isEmpty &&
                       catalogModel.settings.tint == recipe.tintDelta && catalogModel.settings.contrast == recipe.contrastDelta &&
@@ -528,7 +816,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             catalogModel.settings.setHSL(.saturation, channel: 4, value: -37)
             try check(catalogModel.saveEdits(), "\(recipe.id): recipe saves")
             let restored = model()
-            restored.open(a)
+            restored.open(recipePhoto)
             try check(restored.settings.masterRecipeID == recipe.id && restored.settings.exposure == 0.63 &&
                       restored.settings.saturation == recipe.saturationDelta &&
                       restored.settings.hslSettings.value(.saturation, channel: 4) == -37,
@@ -547,22 +835,34 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(FileManager.default.isReadableFile(atPath: rasterLUT.path),
                   "raster EditorModel integration has a real PROVIA LUT")
         try rasterEditorChecks(root: root, lut: rasterLUT)
+        try unusableRecordOpenRecoveryChecks(root: root)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
+        try referenceFrameCapChecks(root: root)
         if CommandLine.arguments.count > 1 {
             fputs("[RAW SUCCESS REQUIRED] EditModelTests.realRAW: \(CommandLine.arguments[1]) must render successfully; decoder failures for this input are not expected.\n", stderr)
             let raw = URL(fileURLWithPath: CommandLine.arguments[1])
             let identity = try OriginalFileIdentity(raw)
             try autoreleasepool { try processingEditorChecks(root: root, input: raw) }
             let live = model()
-            live.open(raw)
             func waitForRender() throws {
                 let deadline = Date().addingTimeInterval(120)
                 while live.busy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
                 try check(!live.busy && live.error == nil && live.result != nil, "real RAW render must complete")
             }
-            try waitForRender()
+            let rawOpenPeak = try peakFootprintMB {
+                live.open(raw)
+                try waitForRender()
+            }
             let original = live.neutral!.image
-            try check(live.neutral!.isFullResolution, "original baseline provides native source geometry")
+            print(String(format: "[Q8-RAW] real RAW open peak %.1f MB (neutral %dx%d, native %@)",
+                         rawOpenPeak, original.width, original.height,
+                         live.neutral!.nativeWidth.map { "\($0)x\(live.neutral!.nativeHeight ?? 0)" } ?? "unknown"))
+            let baselineNative = max(live.neutral!.nativeWidth ?? live.neutral!.image.width,
+                                     live.neutral!.nativeHeight ?? live.neutral!.image.height)
+            try check(max(live.neutral!.image.width, live.neutral!.image.height)
+                          == min(baselineNative, MacReferenceFramePolicy.longEdgeCap)
+                      && live.neutral!.isFullResolution == (baselineNative <= MacReferenceFramePolicy.longEdgeCap),
+                      "original baseline provides native source geometry up to the reference long-edge cap")
             live.settings.exposure = 1
             try waitForRender()
             try check(live.neutral!.image === original, "exposure must not replace the original image")

@@ -1,20 +1,19 @@
+#include "test_harness.h"
 #include "sony2fuji/raw_processor.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
 
 using namespace sony2fuji;
 
-void check(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
-    std::cout << "PASS " << message << std::endl;
-}
-
+using rawlab::test::requirePass;
 struct Session {
     sony2fuji_session* value = nullptr;
     Session() {
-        check(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "create session");
+        requirePass(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "create session");
         sony2fuji_gpu_config config{};
         config.version = SONY2FUJI_GPU_CONFIG_VERSION;
         config.struct_size = sizeof(config);
@@ -38,21 +37,45 @@ std::vector<unsigned char> render(Session& session, const sony2fuji_request& req
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) return 2;
+    if (argc < 1 || argc > 3) return 2;
     try {
         Session session;
         int32_t supported = -1;
-        check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
+        requirePass(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
               SONY2FUJI_STATUS_INVALID_ARGUMENT, "support is unknown before loading a RAW");
-        check(sony2fuji_session_set_raw_noise_reduction(nullptr, 1) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+        requirePass(sony2fuji_session_set_raw_noise_reduction(nullptr, 1) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
               sony2fuji_session_set_raw_noise_reduction(session.value, -1) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
               sony2fuji_session_set_raw_noise_reduction(session.value, 3) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
               "reject invalid RAW denoise levels and null session");
+        RAWProcessor processor;
+        requirePass(!processor.supportsNoiseReduction(), "unloaded processor has no denoise capability");
+        const char* bayerArg = (argc >= 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* bayerEnv = std::getenv("RAWLAB_TEST_RAW");
+        if (bayerEnv && !*bayerEnv) bayerEnv = nullptr;
+        const char* bayerPath = bayerArg ? bayerArg : bayerEnv;
+        const char* nonBayerArg = (argc == 3 && *argv[2]) ? argv[2] : nullptr;
+        const char* nonBayerEnv = std::getenv("RAWLAB_TEST_NON_BAYER_RAW");
+        if (nonBayerEnv && !*nonBayerEnv) nonBayerEnv = nullptr;
+        const char* nonBayerPath = nonBayerArg ? nonBayerArg : nonBayerEnv;
+        if (bayerPath && !std::filesystem::is_regular_file(std::filesystem::u8path(bayerPath))) {
+            std::cerr << "FAIL raw_noise: Bayer RAW sample does not exist: " << bayerPath << std::endl;
+            return 1;
+        }
+        if (nonBayerPath && !std::filesystem::is_regular_file(std::filesystem::u8path(nonBayerPath))) {
+            std::cerr << "FAIL raw_noise: non-Bayer RAW sample does not exist: " << nonBayerPath << std::endl;
+            return 1;
+        }
+        if (!bayerPath) {
+            requirePass(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
+                  !processor.supportsNoiseReduction(), "failed load clears denoise capability");
+            std::cout << "SKIP raw_noise: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW" << std::endl;
+            return 77;
+        }
         sony2fuji_request request{};
         request.version = SONY2FUJI_REQUEST_VERSION;
         request.struct_size = sizeof(request);
         request.input_type = SONY2FUJI_INPUT_RAW;
-        request.input_path = argv[1];
+        request.input_path = bayerPath;
         request.wb_mode = SONY2FUJI_WB_CAMERA;
         request.temperature = 6500;
         request.brightness = request.contrast = request.saturation = 1;
@@ -62,50 +85,50 @@ int main(int argc, char** argv) {
         request.output_target = SONY2FUJI_TARGET_BUFFER;
         request.output_format = SONY2FUJI_OUTPUT_RGBA8;
         const auto original = render(session, request);
-        check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
+        requirePass(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
               SONY2FUJI_STATUS_OK && supported == 1, "Bayer RAW supports FBDD");
         std::vector<unsigned char> previous = original;
         for (int level : {1, 2, 0}) {
-            check(sony2fuji_session_set_raw_noise_reduction(session.value, level) == SONY2FUJI_STATUS_OK,
+            requirePass(sony2fuji_session_set_raw_noise_reduction(session.value, level) == SONY2FUJI_STATUS_OK,
                   "set RAW noise reduction level");
             const auto changed = render(session, request);
-            check(changed != previous, "changing level invalidates the RAW cache");
+            requirePass(changed != previous, "changing level invalidates the RAW cache");
             Session fresh;
             sony2fuji_session_set_raw_noise_reduction(fresh.value, level);
             sony2fuji_session_set_interactive_preview(fresh.value, 1);
             if (level > 0)
-                check(render(fresh, request) == changed, "interactive RAW retains full FBDD processing");
-            if (level == 0) check(changed == original, "turning denoise off restores original pixels");
+                requirePass(render(fresh, request) == changed, "interactive RAW retains full FBDD processing");
+            if (level == 0) requirePass(changed == original, "turning denoise off restores original pixels");
             previous = changed;
         }
 
-        RAWProcessor processor;
-        check(!processor.supportsNoiseReduction(), "unloaded processor has no denoise capability");
-        check(processor.loadFile(argv[1]) == ErrorCode::Success, "load Bayer fixture");
+        requirePass(processor.loadFile(bayerPath) == ErrorCode::Success, "load Bayer fixture");
         RAWProcessOptions options;
         options.rawNoiseReduction = 2;
         options.halfSize = true;
         ImageData full;
-        check(processor.process(options, full) == ErrorCode::Success &&
+        requirePass(processor.process(options, full) == ErrorCode::Success &&
               (full.width == processor.getWidth() || full.height == processor.getWidth()),
               "C++ half-size request cannot silently skip enabled FBDD");
         options.rawNoiseReduction = 3;
-        check(processor.process(options, full) == ErrorCode::InvalidFormat && full.pixels.empty(),
+        requirePass(processor.process(options, full) == ErrorCode::InvalidFormat && full.pixels.empty(),
               "C++ rejects an invalid denoise level without stale pixels");
-        check(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
+        requirePass(processor.loadFile("/nonexistent/raw-noise.raw") != ErrorCode::Success &&
               !processor.supportsNoiseReduction(), "failed load clears denoise capability");
 
-        if (argc == 3) {
-            request.input_path = argv[2];
-            render(session, request);
-            check(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
-                  SONY2FUJI_STATUS_OK && supported == 0, "non-Bayer RAW reports unsupported");
-            sony2fuji_session_set_raw_noise_reduction(session.value, 1);
-            sony2fuji_buffer buffer{};
-            const auto status = sony2fuji_process(session.value, &request, &buffer);
-            sony2fuji_release_buffer(&buffer);
-            check(status == SONY2FUJI_STATUS_UNSUPPORTED, "non-Bayer RAW never silently ignores enabled FBDD");
+        if (!nonBayerPath) {
+            std::cout << "SKIP raw_noise: supply SONY2FUJI_TEST_NON_BAYER_RAW or RAWLAB_TEST_NON_BAYER_RAW" << std::endl;
+            return 77;
         }
+        request.input_path = nonBayerPath;
+        render(session, request);
+        requirePass(sony2fuji_session_get_raw_noise_reduction_support(session.value, &supported) ==
+              SONY2FUJI_STATUS_OK && supported == 0, "non-Bayer RAW reports unsupported");
+        sony2fuji_session_set_raw_noise_reduction(session.value, 1);
+        sony2fuji_buffer buffer{};
+        const auto status = sony2fuji_process(session.value, &request, &buffer);
+        sony2fuji_release_buffer(&buffer);
+        requirePass(status == SONY2FUJI_STATUS_UNSUPPORTED, "non-Bayer RAW never silently ignores enabled FBDD");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL " << error.what() << std::endl;

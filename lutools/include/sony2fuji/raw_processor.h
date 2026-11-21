@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <array>
+#include <utility>
 
 namespace sony2fuji {
 
@@ -17,6 +18,13 @@ enum class BayerDemosaicMethod {
 };
 
 enum class X3fMode { Legacy = 0, Normal = 1 };
+
+enum class ProbeSizeResult {
+    Probed,
+    DeferredPostDecode,
+    Unsupported,
+    OpenFailed,
+};
 
 // 有效 sensor 区域，尚未白平衡或旋转。相机标定与原始 RAW 一起保存。
 struct RAWBayerSource {
@@ -44,6 +52,7 @@ struct RAWBayerOverride {
  */
 struct RAWProcessOptions {
     X3fMode x3fMode = X3fMode::Legacy;
+    bool legacySonyCrop = false; // for callers that open a second RAW processor
     bool useAutoWhiteBalance;   // 使用自动白平衡
     bool useCameraWhiteBalance; // 使用相机白平衡
     bool useCustomWhiteBalance;
@@ -95,6 +104,7 @@ struct RAWProcessOptions {
 class RAWProcessor {
 public:
     RAWProcessor();
+    explicit RAWProcessor(bool legacySonyCrop);
     ~RAWProcessor();
 
     // 禁止拷贝
@@ -111,6 +121,12 @@ public:
     ErrorCode loadFile(const std::string& filepath, X3fMode mode);
     // 能力探测只识别元数据，不解包 RAW 像素。
     ErrorCode inspectFile(const std::string& filepath);
+    // Probes the oriented native output canvas from RAW/DNG metadata without unpacking pixels.
+    static ProbeSizeResult probeOutputSize(const std::string& filepath, bool legacySonyCrop,
+                                           uint32_t& width, uint32_t& height,
+                                           X3fMode x3fMode = X3fMode::Legacy);
+    // Compare the two inset rectangles before fitting an automatic color migration.
+    static ErrorCode sonyFramingChanged(const std::string& filepath, bool& changed);
     // Inspects a supported camera HDR source without unpacking the mosaic.
     ErrorCode inspectCameraHDR(const std::string& filepath, int& width, int& height, uint64_t& sensorPixels);
     bool supportsHDRCameraProfile(const HDRCameraProfile& profile) const;
@@ -131,6 +147,8 @@ public:
      */
     int getWidth() const;
     int getHeight() const;
+    // Full-resolution canvas from LibRaw, including source orientation.
+    std::pair<int, int> getNativeOutputSize() const;
     std::string getCameraMake() const;
     std::string getCameraModel() const;
     // Legacy name: returns the last processed image's working space, not sensor RGB.
@@ -170,6 +188,10 @@ public:
      * @param format 输出格式
      * @param quality JPEG 质量 (1-100, 仅用于 JPEG)
      * @return 错误码
+     * @note 取消语义：装了取消回调（processing_cancellation.h 的 scope/会话回调）时，
+     *       取消以重抛 ProcessingCancelled 结束本次保存——ErrorCode 没有 Cancelled
+     *       取值，取消不会退化成通用错误码；直接链本库的调用方必须捕获
+     *       ProcessingCancelled。FFI 层把它映射为 SONY2FUJI_STATUS_CANCELLED。
      */
     static ErrorCode saveImage(
         const ImageData& image,
@@ -180,6 +202,7 @@ public:
 
     /**
      * @brief 保存为 JPEG
+     * @note 取消语义同 saveImage：取消重抛 ProcessingCancelled，不退化成错误码。
      */
     static ErrorCode saveJPEG(
         const ImageData& image,
@@ -187,12 +210,20 @@ public:
         int quality = 95
     );
 
+    struct PngMetadata {
+        std::vector<uint8_t> exif;
+        std::string iccProfileName;
+        std::vector<uint8_t> iccProfile;
+    };
+
     /**
      * @brief 保存为 PNG
+     * @note 取消语义同 saveImage：取消重抛 ProcessingCancelled，不退化成错误码。
      */
     static ErrorCode savePNG(
         const ImageData& image,
-        const std::string& filepath
+        const std::string& filepath,
+        const PngMetadata* metadata = nullptr
     );
 
 private:

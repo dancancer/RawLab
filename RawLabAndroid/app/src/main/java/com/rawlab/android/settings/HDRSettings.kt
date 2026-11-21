@@ -1,5 +1,6 @@
 package com.rawlab.android.settings
 
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.geometry.GeometrySettings
 import java.io.File
 import java.io.IOException
@@ -27,7 +28,7 @@ data class HDRToneSettings(
     init { require(listOf(blackPoint, whitePoint, curveStrength).all { it in -100f..100f }) }
     val isDefault get() = blackPoint == 0f && whitePoint == 0f && curveStrength == 0f && curve.isDefault
     val isIdentity get() = blackPoint == 0f && whitePoint == 0f &&
-        (if (curve.isDefault) curveStrength == 0f else curve.isIdentity)
+        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) && curve.channels.isIdentity
 }
 
 data class HDRColorSettings(
@@ -47,8 +48,11 @@ data class HDRRenditionSettings(
     val sdrSaturation: Float = 0f,
 ) {
     init {
-        require(peakLimitEV in 0f..6f && sdrExposureEV in -4f..4f &&
-            sdrContrast in -100f..100f && sdrSaturation in -100f..100f)
+        val f = AdjustmentFieldSpec.Fields
+        require(peakLimitEV in f.HDR_PEAK_LIMIT_EV.androidModel.floatRange!! &&
+            sdrExposureEV in f.HDR_SDR_EXPOSURE_EV.androidModel.floatRange!! &&
+            sdrContrast in f.HDR_SDR_CONTRAST.androidModel.floatRange!! &&
+            sdrSaturation in f.HDR_SDR_SATURATION.androidModel.floatRange!!)
     }
     val isDefault get() = peakLimitEV == 0f && sdrExposureEV == 0f && sdrContrast == 0f && sdrSaturation == 0f
 }
@@ -59,7 +63,13 @@ data class HDRDetailSettings(
     val dehaze: Float = 0f,
     val denoise: Float = 0f,
 ) {
-    init { require(sharpening in 0f..2f && clarity in -1f..1f && dehaze in -1f..1f && denoise in 0f..1f) }
+    init {
+        val f = AdjustmentFieldSpec.Fields
+        require(sharpening in f.DETAIL_SHARPENING.androidModel.floatRange!! &&
+            clarity in f.EFFECTS_CLARITY.androidModel.hdrFloatRange!! &&
+            dehaze in f.EFFECTS_DEHAZE.androidModel.hdrFloatRange!! &&
+            denoise in f.DETAIL_DENOISE_POST_RGB.androidModel.floatRange!!)
+    }
     val isDefault get() = sharpening == 0f && clarity == 0f && dehaze == 0f && denoise == 0f
 }
 
@@ -110,7 +120,7 @@ data class HDRCameraDevelopmentSettings(
     val customWhiteBalance: Boolean = false, val temperature: Float = 0f, val tint: Float = 0f,
     val sensorExposure: Boolean = false, val fbddLevel: Int = 0, val lensDistortion: Boolean = false,
     val lensTca: Boolean = false, val lensAutoCrop: Boolean = true, val lensProfile: String? = null,
-    val cameraProfile: HDRCameraProfile? = null,
+    val cameraProfile: HDRCameraProfile? = null, val lensVignetting: Boolean = false,
 ) {
     init {
         require(if (customWhiteBalance) temperature in 2000f..50000f && tint in -150f..150f else temperature == 0f && tint == 0f)
@@ -118,7 +128,7 @@ data class HDRCameraDevelopmentSettings(
         require(lensProfile == null || lensActive && lensProfile.toByteArray(Charsets.UTF_8).size in 1..1024 &&
             lensProfile.none(Char::isISOControl))
     }
-    val lensActive get() = lensDistortion || lensTca
+    val lensActive get() = lensDistortion || lensTca || lensVignetting
     val isDefault get() = this == HDRCameraDevelopmentSettings()
 }
 
@@ -151,10 +161,12 @@ data class HDRSettings(
         require(effects == null || rendition != null)
         require(detail == null || effects != null)
         require(look == null || detail != null)
+        require(tone?.curve?.hasChannelCurves != true || look != null)
     }
 
-    val recordVersion get() = if (cameraDevelopment == null) processingVersion else 8
+    val recordVersion get() = if (processingVersion == 8) 9 else if (cameraDevelopment == null) processingVersion else 8
     val processingVersion get() = when {
+        tone?.curve?.hasChannelCurves == true -> 8
         look != null -> 7
         detail != null -> 6
         effects != null -> 5
@@ -182,10 +194,12 @@ data class HDRSettings(
     val neutralGeometrySettings: HDRSettings
         get() = reset().copy(geometry = geometry, cameraDevelopment = cameraDevelopment?.let {
             // 对比颜色时沿用同一镜头画框，白平衡及其他显影参数仍保持中性。
-            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca,
+            HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca, lensVignetting = it.lensVignetting,
                 lensAutoCrop = it.lensAutoCrop, lensProfile = it.lensProfile)
         })
-    fun withTone(value: HDRToneSettings) = copy(tone = value.takeUnless { tone == null && it.isDefault })
+    fun withTone(value: HDRToneSettings) = if (value.curve.hasChannelCurves)
+        copy(tone = value, color = colorSettings, rendition = renditionSettings, effects = effectSettings, detail = detailSettings, look = lookSettings)
+        else copy(tone = value.takeUnless { tone == null && it.isDefault })
     fun withColor(value: HDRColorSettings): HDRSettings {
         if (color == null && value.isDefault) return this
         return copy(tone = toneSettings, color = value)

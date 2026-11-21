@@ -25,6 +25,31 @@ class NativeCacheTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(self.cache, "Native dependency cache helper is missing")
 
+    def test_every_text_io_declares_utf8(self):
+        """The Windows runner's default codec is not UTF-8, so text IO must not rely on it."""
+        import ast
+
+        tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name not in {"read_text", "write_text", "open"}:
+                continue
+            if name == "open" and len(node.args) >= 2:
+                mode = node.args[1]
+                if isinstance(mode, ast.Constant) and "b" in str(mode.value):
+                    continue
+            if not any(keyword.arg == "encoding" for keyword in node.keywords):
+                offenders.append(f"{MODULE_PATH.name}:{node.lineno}:{name}")
+        self.assertEqual(offenders, [], "text IO without an explicit encoding: " + ", ".join(offenders))
+
+    def test_workflow_with_non_ascii_comments_loads(self):
+        """ci.yml carries Chinese comments, so the loader must not depend on the locale codec."""
+        identity = self.cache.workflow_identity(ROOT, "windows", "x86_64")
+        self.assertTrue(identity)
+
     def test_toolchain_architecture_and_workspace_change_identity(self):
         inputs = {"dependency.cmake": "abc123"}
         environment = {"compiler": "clang 18", "sdk": "26.0", "workspace": "/work/RawLab"}
@@ -43,6 +68,8 @@ class NativeCacheTests(unittest.TestCase):
             with self.subTest(platform=platform):
                 inputs = self.cache.dependency_inputs(ROOT, platform)
                 for path in ("lutools/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                             "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/libraw/libraw.cmake",
+                             "lutools/cmake/libraw/manifest.json", "lutools/cmake/libraw/manifest.py",
                              "lutools/cmake/dng-sdk/CMakeLists.txt", "lutools/cmake/lens-dependencies.json",
                              "lutools/third_party/rawspeed-camera-calibration.inc",
                              "lutools/third_party/nikon_he/codec.h",
@@ -139,14 +166,14 @@ class NativeCacheTests(unittest.TestCase):
                  "build/windows-native/lib/sony2fuji_core.lib",
                  "build/windows-native/core/CMakeFiles/sony2fuji_core.dir/a.obj"]),
             "ios": (
-                ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/rawlab_dng_sdk.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/cvconfig.h",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/raw-dependencies/libraw/Release-iphoneos/libraw.a",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/XCBuildData/build.db"],
-                ["lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/lib/libsony2fuji_core.a",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/build/sony2fuji_core.build/a.o",
-                 "lutools/build-ios-libraw/0.22.2/core-iphoneos-arm64/output/sony2fuji.framework/sony2fuji",
+                [f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/rawlab_dng_sdk.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/cvconfig.h",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/raw-dependencies/libraw/Release-iphoneos/libraw.a",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/XCBuildData/build.db"],
+                [f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/sony2fuji.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/lib/libsony2fuji_core.a",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/build/sony2fuji_core.build/a.o",
+                 f"lutools/build-ios-libraw/{self.cache.libraw_version(ROOT)}/core-iphoneos-arm64/output/sony2fuji.framework/sony2fuji",
                  "lutools/build-ios/sony2fuji.xcframework/sony2fuji"]),
             "android": (
                 ["RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/_deps/rawlab_opencv-build/modules/core/a.o",
@@ -169,6 +196,36 @@ class NativeCacheTests(unittest.TestCase):
                     path.touch()
                 selected = self.cache.selected_files(root, self.cache.cache_paths(platform, "arm64"))
                 self.assertEqual({str(path.relative_to(root)) for path in selected}, set(included))
+
+
+class DependencyArchiveKeyTests(unittest.TestCase):
+    """归档缓存键只随下载归档 (URL, SHA256) pin 集合变化，与 toolchain 键解耦。"""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("native_cache_archives", MODULE_PATH)
+        cls.cache = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.cache)
+
+    def test_key_covers_every_configured_archive_pin(self):
+        pairs = self.cache.dependency_archives(ROOT)
+        # 4 个 cmake pin（dng/tiff/opencv/opencv_contrib）+ 5 个 hdr manifest pin；
+        # 新增或漏抓都会改变数量，强制有意识地更新归档缓存合同。
+        self.assertEqual(len(pairs), 9)
+        urls = {url for url, _ in pairs}
+        for fragment in ("dng_sdk_1_7_1_2724_20260908.zip", "tiff-4.7.1.tar.gz",
+                         "opencv/opencv/archive/refs/tags/4.12.0.tar.gz",
+                         "opencv/opencv_contrib/archive/refs/tags/4.12.0.tar.gz",
+                         "libultrahdr", "libjpeg-turbo"):
+            self.assertTrue(any(fragment in url for url in urls), f"archive pin not hashed: {fragment}")
+        self.assertTrue(all(len(sha) == 64 and all(c in "0123456789abcdef" for c in sha) for _, sha in pairs))
+
+    def test_key_is_stable_and_follows_the_pin_set(self):
+        pairs = self.cache.dependency_archives(ROOT)
+        key = self.cache.archives_key("windows", "x86_64", pairs)
+        self.assertEqual(key, self.cache.archives_key("windows", "x86_64", self.cache.dependency_archives(ROOT)))
+        self.assertNotEqual(key, self.cache.archives_key("windows", "x86_64", [(url + "x", sha) for url, sha in pairs]))
+        self.assertNotEqual(key, self.cache.archives_key("windows", "x86_64", pairs[:-1]))
 
 
 if __name__ == "__main__":

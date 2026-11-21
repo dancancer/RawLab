@@ -1,59 +1,73 @@
+import RawLabKit
 import SwiftUI
 
 extension ContentView {
     @ViewBuilder
     var valuePanel: some View {
         if geometrySelected {
+            HStack(spacing: 0) {
+                ForEach(0..<3) { tab in
+                    Button {
+                        cancelSliderInteraction(); coordinator.geometryPerspective = tab == 2; coordinator.geometryRotation = tab == 1
+                    } label: {
+                        Text(L10n.text(["裁切", "旋转", "透视"][tab])).font(.subheadline)
+                            .foregroundStyle((coordinator.geometryPerspective ? 2 : coordinator.geometryRotation ? 1 : 0) == tab ? Color.yellow : Color.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                    }.buttonStyle(.plain).accessibilityIdentifier("geometry.tab.\(tab)")
+                }
+            }.padding(.horizontal, 16)
             IOSGeometryControls(settings: geometryDraftBinding, onEditingChanged: setSliderEditing,
-                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $geometryAspectPreset,
-                                    lockedRatio: $geometryLockedRatio, aspectSwapped: $geometryAspectSwapped,
-                                    showsGrid: $geometryGrid, perspective: geometryPerspective)
+                                    canvasSize: geometryEditingCanvasSize, aspectPreset: $coordinator.geometryAspectPreset,
+                                    lockedRatio: $coordinator.geometryLockedRatio, aspectSwapped: $coordinator.geometryAspectSwapped,
+                                    showsGrid: $coordinator.geometryGrid, perspective: coordinator.geometryPerspective, rotation: coordinator.geometryRotation)
             .padding(.horizontal, 16)
-            .disabled(!viewModel.hasImage || editingLocked)
+            .disabled(geometryEditingCanvasSize == .zero || editingLocked)
         } else if lensSelected {
             IOSLensControls(settings: lensDraftBinding, info: viewModel.lensInfo)
             .padding(.horizontal, 16)
-            .disabled(!viewModel.hasImage || editingLocked || viewModel.sourceKind != .raw || usesNormalX3f)
+            .disabled(!viewModel.hasImage || editingLocked || usesNormalX3f)
         } else if choosingMasterRecipe {
             masterRecipePanel
         } else if selectedAdjustment == .toneCurve {
-            IOSToneCurveControls(settings: Binding(get: { settings.editingCurveSettings }, set: { settings.editingCurveSettings = $0 }),
-                legacy: Binding(get: { AdjustmentKind.toneCurve.value(from: settings) },
-                                set: { AdjustmentKind.toneCurve.setValue($0, in: &settings) }),
-                usesExposureStops: settings.isHDREditing, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+            IOSToneCurveControls(settings: Binding(get: { workingSettings.editingCurveSettings }, set: { workingSettings.editingCurveSettings = $0 }),
+                legacy: Binding(get: { AdjustmentKind.toneCurve.value(from: workingSettings) },
+                                set: { AdjustmentKind.toneCurve.setValue($0, in: &workingSettings) }),
+                usesExposureStops: workingSettings.isHDREditing, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
-            IOSColorGradingControls(settings: Binding(get: { settings.editingGradingSettings }, set: { settings.editingGradingSettings = $0 }),
-                zone: $gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+            IOSColorGradingControls(settings: Binding(get: { workingSettings.editingGradingSettings }, set: { workingSettings.editingGradingSettings = $0 }),
+                zone: $coordinator.gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .hsl {
             VStack(spacing: 8) {
-                HSLTargetControls(enabled: $hslTargetEnabled, axis: $hslTargetAxis,
-                    sample: hslTargetInteraction.selection, waiting: hslTargetInteraction.isWaiting,
-                    notice: hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16)
-                IOSHSLMixer(settings: Binding(get: { settings.editingHSLSettings }, set: { settings.editingHSLSettings = $0 }),
+                if coordinator.hslTargetEnabled { HSLTargetControls(enabled: $coordinator.hslTargetEnabled, axis: $coordinator.hslTargetAxis,
+                    sample: coordinator.hslTargetInteraction.selection, waiting: coordinator.hslTargetInteraction.isWaiting,
+                    notice: coordinator.hslTargetNotice, onCancel: cancelHSLTarget).padding(.horizontal, 16) }
+                IOSHSLMixer(settings: Binding(get: { workingSettings.editingHSLSettings }, set: { workingSettings.editingHSLSettings = $0 }),
                     onEditingChanged: { editing in
                         if editing { cancelHSLTarget() }
                         setSliderEditing(editing)
-                    }, channel: $hslChannel)
+                    }, channel: $coordinator.hslChannel)
             }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, value: { parameter in
-                Binding(get: { settings.editingEffectValue(parameter) }, set: { settings.setEditingEffect(parameter, to: $0) })
+                Binding(get: { workingSettings.editingEffectValue(parameter) }, set: { workingSettings.setEditingEffect(parameter, to: $0) })
             }, onEditingChanged: setSliderEditing,
                 onReset: { requestEditorReset(.tool(currentEditorTool)) },
                 resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
-        } else if selectedAdjustment == .noiseReduction && !settings.isHDREditing {
+        } else if selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing {
             IOSDenoiseControls(settings: Binding(
-                get: { settings.denoise },
-                set: { settings.denoise = $0; settings.noiseReduction = 0 }
+                get: { workingSettings.denoise },
+                set: { workingSettings.denoise = $0; workingSettings.noiseReduction = 0 }
             ), onEditingChanged: setSliderEditing,
                 onReset: { requestEditorReset(.tool(currentEditorTool)) },
                 resetEnabled: resetModified(.tool(currentEditorTool)))
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {
+            hdrRenditionPanel(hdrTool, keyPath: keyPath)
         } else if let adjustment = selectedAdjustment {
             if adjustment == .temperature || adjustment == .tint {
                 whiteBalancePanel
@@ -61,40 +75,35 @@ extension ContentView {
             } else {
                 scalarAdjustmentPanel(adjustment)
             }
+        } else if workingSettings.isHDREditing {
+            HDRLookControls(settings: Binding(get: { workingSettings.hdr ?? HDRSettings() }, set: { workingSettings.hdr = $0 }),
+                onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction,
+                onResourceRestored: { viewModel.retryPreview(settings: workingSettings) }).padding(.horizontal, 16)
         } else {
             filmPanel(imageSize: filmSize)
         }
     }
 
-    var geometrySourceCanvasSize: CGSize {
-        guard let buffer = viewModel.draftBuffer else { return .zero }
-        return buffer.nativeSize ?? CGSize(width: buffer.width, height: buffer.height)
-    }
-
     var geometryEditingCanvasSize: CGSize {
-        viewModel.nativeImageSize ?? currentPreviewImage?.size ?? geometrySourceCanvasSize
+        currentPreviewImage.flatMap { geometryProjection(for: $0)?.safeSize } ?? .zero
     }
 
     var geometryDraftAspectRatio: Double? {
-        if let geometryLockedRatio { return geometryAspectSwapped ? 1 / geometryLockedRatio : geometryLockedRatio }
-        return geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: geometryAspectSwapped)
+        if let locked = coordinator.geometryLockedRatio { return coordinator.geometryAspectSwapped ? 1 / locked : locked }
+        return coordinator.geometryAspectPreset.ratio(for: geometryEditingCanvasSize, swapped: coordinator.geometryAspectSwapped)
     }
 
     var editorDraftActions: some View {
-        HStack(spacing: 12) {
-            Button(action: cancelEditorDraft) {
-                Text(L10n.text("取消")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-            }
-                .buttonStyle(.bordered)
+        HStack(spacing: 8) {
+            Button(action: cancelEditorDraft) { Image(systemName: "xmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
+                .accessibilityLabel(L10n.text("取消"))
                 .accessibilityIdentifier("editor.draft.cancel")
-            Button(action: applyEditorDraft) {
-                Text(L10n.text("应用")).frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
-            }
-                .buttonStyle(.borderedProminent)
-                .foregroundStyle(.black)
-                .disabled(!isEditorDraftChanged || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)
+            Text(currentEditorTool.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+            Button(action: applyEditorDraft) { Image(systemName: "checkmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
+                .accessibilityLabel(L10n.text("应用"))
+                .disabled(viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider || editorBusy)
                 .accessibilityIdentifier("editor.draft.apply")
-        }
+        }.buttonStyle(.plain)
     }
 
     func scalarAdjustmentPanel(_ adjustment: AdjustmentKind) -> some View {
@@ -104,7 +113,7 @@ extension ContentView {
             : adjustment.formatted
         return VStack(alignment: .leading, spacing: 8) {
             AdjustmentControl(title: adjustment.title, value: adjustmentBinding(adjustment),
-                              range: adjustment.range, step: adjustment.step,
+                              range: workingSettings.isHDREditing && adjustment == .exposure ? -4...4 : adjustment.range, step: adjustment.step,
                               defaultValue: adjustment.value(from: .default),
                               unit: hdrDenoise ? "%" : adjustment.unit,
                               formatter: formatter,
@@ -118,7 +127,37 @@ extension ContentView {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
-        .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && !settings.hasLook))
+        .disabled(!viewModel.hasImage || editingLocked || (adjustment == .strength && !workingSettings.hasLook))
+    }
+
+    func hdrRenditionPanel(_ tool: EditorToolSelection, keyPath: WritableKeyPath<HDRRenditionSettings, Double>) -> some View {
+        let isEV = tool == .hdrPeakLimit || tool == .hdrSDRExposure
+        let range: ClosedRange<Double> = tool == .hdrPeakLimit ? 0...6 : (isEV ? -4...4 : -100...100)
+        let step = isEV ? 0.1 : 1.0
+        let formatter: (Double) -> String = { value in
+            let number = value == 0 ? 0 : value
+            return String(format: (number != 0 ? "%+" : "%") + (isEV ? ".1f" : ".0f"), locale: L10n.locale, number)
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            AdjustmentControl(title: tool.title,
+                              value: Binding(
+                                get: { workingSettings.hdr?.renditionSettings[keyPath: keyPath] ?? 0 },
+                                set: { newValue in
+                                    guard workingSettings.isHDREditing, var state = workingSettings.hdr, newValue.isFinite else { return }
+                                    state.renditionSettings[keyPath: keyPath] = newValue
+                                    guard state.isValid else { return }
+                                    workingSettings.hdr = state
+                                }
+                              ),
+                              range: range, step: step, defaultValue: 0,
+                              unit: isEV ? "EV" : "%", formatter: formatter,
+                              reciprocal: false, displayScale: 1,
+                              identifier: "adjustment", onEditingChanged: setSliderEditing)
+                .id(tool.stableID)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .disabled(!viewModel.hasImage || editingLocked || !workingSettings.isHDREditing)
     }
 
     private var exposureActions: some View {
@@ -126,14 +165,14 @@ extension ContentView {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(spacing: 8))
         return layout {
-            if viewModel.sourceKind == .raw && !settings.isHDREditing {
+            if viewModel.sourceKind == .raw && !workingSettings.isHDREditing {
                 Menu {
-                    Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
+                    Picker(L10n.text("曝光基准"), selection: workingSettingsBinding.exposureMode) {
                         ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(settings.exposureMode.title)
+                        Text(workingSettings.exposureMode.title)
                             .font(.caption)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -147,7 +186,7 @@ extension ContentView {
                 .id(localizationLocale.identifier)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .accessibilityLabel(L10n.text("曝光基准"))
-                .accessibilityValue(settings.exposureMode.title)
+                .accessibilityValue(workingSettings.exposureMode.title)
                 .accessibilityIdentifier("exposure.mode")
                 .disabled(usesNormalX3f)
             }
@@ -156,18 +195,18 @@ extension ContentView {
                     .fixedSize()
             }
             .buttonStyle(EditorCompactActionStyle())
-            .disabled(autoExposing || viewModel.isBusy)
+            .disabled(coordinator.autoExposing || viewModel.isBusy)
             .accessibilityIdentifier("exposure.auto")
         }
     }
 
     var whiteBalancePanel: some View {
-        let isRaster = viewModel.sourceKind == .raster && !settings.isHDREditing
+        let isRaster = viewModel.sourceKind == .raster && !workingSettings.isHDREditing
         return VStack(alignment: .leading, spacing: 12) {
-            if settings.isHDREditing { Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary) }
-            if viewModel.sourceKind == .raw && !settings.isHDREditing {
+            if workingSettings.isHDREditing { Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary) }
+            if viewModel.sourceKind == .raw && !workingSettings.isHDREditing {
                 Picker(L10n.text("白平衡"), selection: Binding(
-                    get: { settings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
+                    get: { workingSettings.whiteBalanceMode }, set: { setWhiteBalanceMode($0) }
                 )) {
                     Text(L10n.text("拍摄时设置")).tag(RawWhiteBalanceMode.camera)
                     Text(L10n.text("自定义")).tag(RawWhiteBalanceMode.custom)
@@ -186,13 +225,13 @@ extension ContentView {
                               reciprocal: true, identifier: "whiteBalance.temperature",
                               onEditingChanged: setSliderEditing)
                 .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil))
-            AdjustmentControl(title: L10n.text(settings.masterRecipeID == nil ? "色调" : "色调偏移"), value: whiteBalanceTintBinding,
+            AdjustmentControl(title: L10n.text(workingSettings.masterRecipeID == nil ? "色调" : "色调偏移"), value: whiteBalanceTintBinding,
                               range: RawSettings.tintRange, step: 1,
                               defaultValue: whiteBalanceTintDefault,
                               formatter: { String(format: $0 == 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
                               identifier: "whiteBalance.tint", onEditingChanged: setSliderEditing)
                 .disabled(isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
-                          (viewModel.sourceKind == .raw && settings.whiteBalanceMode == .camera && settings.masterRecipeID == nil))
+                          (viewModel.sourceKind == .raw && workingSettings.whiteBalanceMode == .camera && workingSettings.masterRecipeID == nil))
 
             if let note = whiteBalanceNote {
                 Text(note)
@@ -208,9 +247,9 @@ extension ContentView {
 
     // 底部说明：RAW 缺少相机校准时提示；有校准时给出拍摄时数值作参照
     private var whiteBalanceNote: String? {
-        guard viewModel.sourceKind == .raw && !settings.isHDREditing else { return nil }
+        guard viewModel.sourceKind == .raw && !workingSettings.isHDREditing else { return nil }
         guard let camera = viewModel.rawWhiteBalance else { return L10n.text("缺少有效相机校准，保留拍摄时白平衡") }
-        return AdjustmentKind.asShotNote(for: settings, cameraTemperature: camera.temperature, cameraTint: camera.tint)
+        return AdjustmentKind.asShotNote(for: workingSettings, cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
     private var whiteBalanceTemperatureBinding: Binding<Double> {
@@ -230,7 +269,7 @@ extension ContentView {
 
     private var whiteBalanceTintDefault: Double {
         guard let whiteBalance = viewModel.rawWhiteBalance else { return 0 }
-        return settings.masterRecipeID == nil ? whiteBalance.tint : 0
+        return workingSettings.masterRecipeID == nil ? whiteBalance.tint : 0
     }
 
     private var whiteBalanceTintBinding: Binding<Double> {
@@ -240,9 +279,9 @@ extension ContentView {
                 reset(.tint)
                 return
             }
-            var updated = settings
+            var updated = workingSettings
             AdjustmentKind.tint.setValue(min(max(value.rounded(),RawSettings.tintRange.lowerBound),RawSettings.tintRange.upperBound),in:&updated)
-            if !settings.isHDREditing, viewModel.sourceKind == .raw, updated.masterRecipeID == nil {
+            if !workingSettings.isHDREditing, viewModel.sourceKind == .raw, updated.masterRecipeID == nil {
                 updated.whiteBalanceMode = .custom
             }
             applySettingsChange(updated)

@@ -1,6 +1,10 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
+#include <limits>
+#include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -21,10 +25,40 @@ struct ImageData {
     std::vector<RGB> pixels;
 
     ImageData() : width(0), height(0) {}
-    ImageData(int w, int h) : width(w), height(h), pixels(w * h) {}
+    ImageData(int w, int h)
+        : width(w > 0 && h > 0 ? w : 0),
+          height(w > 0 && h > 0 ? h : 0),
+          pixels(checkedPixelCount(width, height)) {}
 
-    RGB& at(int x, int y) { return pixels[y * width + x]; }
-    const RGB& at(int x, int y) const { return pixels[y * width + x]; }
+    RGB& at(int x, int y) {
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            throw std::out_of_range("ImageData::at coordinate out of range");
+        }
+        const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+        if (index >= pixels.size()) {
+            throw std::out_of_range("ImageData::at pixel index out of range");
+        }
+        return pixels[index];
+    }
+    const RGB& at(int x, int y) const {
+        if (x < 0 || x >= width || y < 0 || y >= height) {
+            throw std::out_of_range("ImageData::at coordinate out of range");
+        }
+        const size_t index = static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x);
+        if (index >= pixels.size()) {
+            throw std::out_of_range("ImageData::at pixel index out of range");
+        }
+        return pixels[index];
+    }
+
+private:
+    static size_t checkedPixelCount(int w, int h) {
+        const uint64_t total = static_cast<uint64_t>(w) * static_cast<uint64_t>(h);
+        if (total > std::numeric_limits<size_t>::max() / sizeof(RGB)) {
+            throw std::bad_alloc();
+        }
+        return static_cast<size_t>(total);
+    }
 };
 
 // 色彩空间定义
@@ -54,7 +88,8 @@ enum class ErrorCode {
     InvalidFormat,
     ProcessingError,
     OutOfMemory,
-    IOError
+    IOError,
+    Unsupported
 };
 
 } // namespace sony2fuji

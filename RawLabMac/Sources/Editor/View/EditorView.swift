@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 import AppKit
 
@@ -6,6 +7,12 @@ struct EditorView: View {
     @ObservedObject var model: EditorModel
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
+    @StateObject private var photoPreviews: MacEditedPhotoPreviews
+
+    init(model: EditorModel) {
+        self.model = model
+        _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(editDirectory: model.editDirectory))
+    }
     @StateObject private var browser = MacWorkspaceBrowserState()
     @AppStorage("workspace.files.width") private var savedLibraryWidth = Double(MacWorkspaceLayout.defaultLibraryWidth)
     @AppStorage("workspace.adjustments.width") private var savedInspectorWidth = Double(MacWorkspaceLayout.defaultInspectorWidth)
@@ -167,6 +174,18 @@ struct EditorView: View {
 
     private var observedEditor: some View {
         editorContent
+        .environmentObject(photoPreviews)
+        .onChange(of: model.films, initial: true) { _, films in
+            guard photoPreviews.films != films else { return }
+            photoPreviews.films = films
+            photoPreviews.refresh()
+        }
+        .onChange(of: model.busy || model.importing || model.exporting || model.aiState.isRunning, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in photoPreviews.refresh() }
+        .onReceive(model.$completedEditPreview) { preview in
+            guard let preview else { return }
+            photoPreviews.accept(record: preview.record, image: preview.image)
+        }
         .onChange(of: model.sourceRevision) { _, _ in
             queuedQuickPreset = nil
             viewing.sourceChanged()
@@ -361,9 +380,20 @@ struct EditorView: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
                 Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
-                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.current)
+                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.c5)
+                Text(L10n.text("处理 v3")).tag(ProcessingIdentity.current)
             }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
                 .disabled(model.geometryDraft != nil)
+            if let status = model.processingMigrationStatus {
+                Text(L10n.text(status)).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("processing.migration.status")
+            }
+            if model.processingMigrationReceipt?.status == .migrated {
+                Button(L10n.text("回到迁移前"), action: model.rollbackProcessingMigration)
+                    .disabled(!model.canRollbackProcessingMigration)
+                    .accessibilityIdentifier("processing.migration.rollback")
+            }
             if RenderEngine.isX3fInput(model.file) {
                 Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
                     ForEach(X3fMode.allCases) { mode in
@@ -639,7 +669,7 @@ struct EditorView: View {
 
     private var resetMenu: some View {
         Menu {
-            let tool = model.adjustmentNavigation.tool
+            let tool = model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing).tool
             if tool == .colorGrading {
                 resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
                 resetButton(.allGrading, title: L10n.text("重置颜色分级"))

@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 struct IOSAdjustmentInteraction {
@@ -43,6 +44,7 @@ extension RawEditorViewModel {
 
     func acceptImportedEditRecord(_ record: PhotoEditRecord?, settings: RawSettings) {
         loadedEditRecord = record
+        processingMigrationReceipt = record.flatMap { try? editPersistence?.processingMigration(for: $0.identity) }
         adjustmentInteraction = nil
         adjustmentInteractionRejected = false
         adjustmentRestoredSettings = nil
@@ -58,6 +60,7 @@ extension RawEditorViewModel {
 
     @discardableResult
     func beginAdjustmentInteraction(settings: RawSettings) -> Bool {
+        cancelProcessingMigration()
         guard !isBusy, !hasAdjustmentDraft, adjustmentInteraction == nil, let source = editorEditSource else { return false }
         guard saveCurrentSettings(settings) else { adjustmentInteractionRejected = true; return false }
         adjustmentInteractionRejected = false
@@ -83,6 +86,7 @@ extension RawEditorViewModel {
         guard let interaction, interaction.source == editorEditSource else { return nil }
         cancelQueuedSettingsSave()
         pendingSettings = nil
+        pendingResetMigrationClear = nil
         if let record = loadedEditRecord?.state { retainEditMetadata(record) }
         persistedEditorSettings = PersistedEditorSettings(source: interaction.source, settings: interaction.before)
         committedPreviewSettings = interaction.before
@@ -140,6 +144,7 @@ extension RawEditorViewModel {
                 recordSavedLookChange(from: loadedEditRecord?.state, to: state)
             }
             loadedEditRecord = saved
+            pendingResetMigrationClear = nil
             let state: PhotoEditState
             do { state = try saved.state ?? PhotoEditState(settings:sourceDefaultSettings,updatedAt:Date(timeIntervalSince1970:0)) }
             catch { editSaveState = .failed(adjustmentErrorMessage(error)); continue }

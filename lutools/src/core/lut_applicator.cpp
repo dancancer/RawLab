@@ -1,14 +1,9 @@
 #include "sony2fuji/lut_applicator.h"
 #include "lut_interpolation.h"
+#include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-
-#ifdef _OPENMP
-namespace {
-constexpr size_t kParallelThreshold = 1u << 16;
-}
-#endif
 
 namespace sony2fuji {
 
@@ -50,15 +45,12 @@ ErrorCode LUTApplicator::applyToImage(ImageData& image) const {
         return ErrorCode::ProcessingError;
     }
 
-    const size_t pixel_count = image.pixels.size();
-
     // 对每个像素应用 LUT
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
-#endif
-    for (size_t i = 0; i < pixel_count; ++i) {
-        image.pixels[i] = apply(image.pixels[i]);
-    }
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            image.pixels[i] = apply(image.pixels[i]);
+        }
+    });
 
     return ErrorCode::Success;
 }
@@ -78,13 +70,11 @@ ErrorCode LUTApplicator::applyToImage(const ImageData& input, ImageData& output)
     output.pixels.resize(input.pixels.size());
 
     // 应用 LUT
-    const size_t pixel_count = input.pixels.size();
-#ifdef _OPENMP
-#pragma omp parallel for if (pixel_count >= kParallelThreshold)
-#endif
-    for (size_t i = 0; i < pixel_count; ++i) {
-        output.pixels[i] = apply(input.pixels[i]);
-    }
+    parallelPixelRanges(input.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            output.pixels[i] = apply(input.pixels[i]);
+        }
+    });
 
     return ErrorCode::Success;
 }

@@ -6,6 +6,8 @@
 #import <Metal/Metal.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <mutex>
 #include <vector>
 
@@ -36,34 +38,45 @@ static NSString* kShaderSource =
      "    pixels[gid] = packed_float3(out);\n"
      "}\n";
 
+bool initContext(MetalContext& context) {
+    @autoreleasepool {
+        context.device = MTLCreateSystemDefaultDevice();
+        if (!context.device) {
+            return false;
+        }
+        context.queue = [context.device newCommandQueue];
+        if (!context.queue) {
+            return false;
+        }
+        id<MTLLibrary> library = [context.device newLibraryWithSource:kShaderSource
+                                                              options:nil
+                                                                error:nil];
+        if (!library) {
+            return false;
+        }
+        id<MTLFunction> function = [library newFunctionWithName:@"apply_lut"];
+        if (!function) {
+            return false;
+        }
+        context.pipeline = [context.device newComputePipelineStateWithFunction:function error:nil];
+        context.ready = context.pipeline != nil;
+    }
+    return context.ready;
+}
+
 MetalContext* getMetalContext() {
     static MetalContext context;
-    static std::once_flag once;
-    std::call_once(once, []() {
-        @autoreleasepool {
-            context.device = MTLCreateSystemDefaultDevice();
-            if (!context.device) {
-                return;
-            }
-            context.queue = [context.device newCommandQueue];
-            if (!context.queue) {
-                return;
-            }
-            id<MTLLibrary> library = [context.device newLibraryWithSource:kShaderSource
-                                                                  options:nil
-                                                                    error:nil];
-            if (!library) {
-                return;
-            }
-            id<MTLFunction> function = [library newFunctionWithName:@"apply_lut"];
-            if (!function) {
-                return;
-            }
-            context.pipeline = [context.device newComputePipelineStateWithFunction:function error:nil];
-            context.ready = context.pipeline != nil;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    // 失败不缓存比 TTL 少一套计时状态；只发布完整上下文，失败的 ARC 资源随候选对象释放。
+    if (!context.ready) {
+        MetalContext candidate;
+        if (!initContext(candidate)) {
+            return nullptr;
         }
-    });
-    return context.ready ? &context : nullptr;
+        context = candidate;
+    }
+    return &context;
 }
 
 id<MTLTexture> createLutTexture(MetalContext& context, const sony2fuji::LUT3D& lut) {
@@ -96,15 +109,8 @@ id<MTLTexture> createLutTexture(MetalContext& context, const sony2fuji::LUT3D& l
     return texture;
 }
 
-id<MTLBuffer> wrapPixelBuffer(MetalContext& context, sony2fuji::ImageData& image) {
-    const size_t length = image.pixels.size() * sizeof(sony2fuji::RGB);
-    if (length == 0) {
-        return nil;
-    }
-    return [context.device newBufferWithBytes:image.pixels.data()
-                                             length:length
-                                            options:MTLResourceStorageModeShared];
-}
+// 与 GLES 路径一致的瓦片大小：GPU 暂存缓冲上限固定，不随整幅尺寸膨胀。
+constexpr size_t kLutTileBytes = 16ull * 1024 * 1024;
 
 id<MTLBuffer> createParamsBuffer(MetalContext& context, uint32_t pixel_count, uint32_t lut_size) {
     struct Params {
@@ -121,10 +127,15 @@ bool runCompute(
     MetalContext& context,
     id<MTLBuffer> pixel_buffer,
     id<MTLTexture> lut_texture,
-    uint32_t pixel_count,
+    size_t pixel_count,
     uint32_t lut_size
 ) {
-    id<MTLBuffer> params = createParamsBuffer(context, pixel_count, lut_size);
+    if (pixel_count == 0 ||
+        static_cast<uint64_t>(pixel_count) > std::numeric_limits<uint32_t>::max()) {
+        return false;
+    }
+    const uint32_t count32 = static_cast<uint32_t>(pixel_count);
+    id<MTLBuffer> params = createParamsBuffer(context, count32, lut_size);
     if (!params) {
         return false;
     }
@@ -144,7 +155,7 @@ bool runCompute(
     NSUInteger max_threads = context.pipeline.maxTotalThreadsPerThreadgroup;
     NSUInteger threadgroup_size = std::min<NSUInteger>(256, max_threads);
     MTLSize threads_per_group = MTLSizeMake(threadgroup_size, 1, 1);
-    MTLSize grid = MTLSizeMake(pixel_count, 1, 1);
+    MTLSize grid = MTLSizeMake(count32, 1, 1);
     [encoder dispatchThreads:grid threadsPerThreadgroup:threads_per_group];
     [encoder endEncoding];
 
@@ -157,27 +168,83 @@ bool runCompute(
 
 namespace sony2fuji {
 
-bool applyLutMetal(const LUT3D& lut, ImageData& image) {
-    MetalContext* context = getMetalContext();
-    if (!context) {
+bool applyLutMetalPixels(
+    const LUT3D& lut,
+    RGB* pixels,
+    size_t pixel_count,
+    size_t* completedPixels
+) {
+    if (completedPixels) {
+        *completedPixels = 0;
+    }
+    if (!pixels || pixel_count == 0 ||
+        static_cast<uint64_t>(pixel_count) > std::numeric_limits<uint32_t>::max()) {
         return false;
     }
-    const uint32_t pixel_count = static_cast<uint32_t>(image.pixels.size());
-    if (pixel_count == 0) {
-        return false;
+    size_t completed = 0;
+    @autoreleasepool {
+        @try {
+            try {
+                MetalContext* context = getMetalContext();
+                if (!context) {
+                    return false;
+                }
+                id<MTLTexture> lut_texture = createLutTexture(*context, lut);
+                if (!lut_texture) {
+                    return false;
+                }
+                // 与 GLES 路径一致的瓦片大小（并受设备 maxBufferLength 约束）：上传/回写
+                // 仍是两次整幅 memcpy，但 GPU 暂存峰值从整幅（可达数百 MiB）降到固定瓦片。
+                // 每个瓦片只有在计算成功后才回写；completedPixels 报告已完整提交的像素数，
+                // 供 Auto 回退只补未提交尾部，失败调用方也不会对未提交像素读到半截结果。
+                const size_t tile_pixels = std::min({
+                    pixel_count,
+                    kLutTileBytes / sizeof(RGB),
+                    static_cast<size_t>(context->device.maxBufferLength) / sizeof(RGB)});
+                if (tile_pixels == 0) {
+                    return false;
+                }
+                id<MTLBuffer> pixel_buffer = [context->device newBufferWithLength:tile_pixels * sizeof(RGB)
+                                                                          options:MTLResourceStorageModeShared];
+                if (!pixel_buffer || !pixel_buffer.contents) {
+                    return false;
+                }
+                auto* staging = static_cast<float*>(pixel_buffer.contents);
+                for (size_t offset = 0; offset < pixel_count; offset += tile_pixels) {
+                    const size_t count = std::min(tile_pixels, pixel_count - offset);
+                    const size_t bytes = count * sizeof(RGB);
+                    std::memcpy(staging, pixels + offset, bytes);
+                    if (!runCompute(*context, pixel_buffer, lut_texture, count,
+                                    static_cast<uint32_t>(lut.getSize()))) {
+                        if (completedPixels) {
+                            *completedPixels = completed;
+                        }
+                        return false;
+                    }
+                    std::memcpy(pixels + offset, staging, bytes);
+                    completed = offset + count;
+                }
+                if (completedPixels) {
+                    *completedPixels = pixel_count;
+                }
+                return true;
+            } catch (const std::exception&) {
+                if (completedPixels) {
+                    *completedPixels = completed;
+                }
+                return false;
+            }
+        } @catch (NSException*) {
+            if (completedPixels) {
+                *completedPixels = completed;
+            }
+            return false;
+        }
     }
-    id<MTLTexture> lut_texture = createLutTexture(*context, lut);
-    if (!lut_texture) {
-        return false;
-    }
-    id<MTLBuffer> pixel_buffer = wrapPixelBuffer(*context, image);
-    if (!pixel_buffer) {
-        return false;
-    }
-    if (!runCompute(*context, pixel_buffer, lut_texture, pixel_count,
-                    static_cast<uint32_t>(lut.getSize()))) return false;
-    std::memcpy(image.pixels.data(), pixel_buffer.contents, image.pixels.size() * sizeof(RGB));
-    return true;
+}
+
+bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    return applyLutMetalPixels(lut, image.pixels.data(), image.pixels.size(), completedPixels);
 }
 
 }

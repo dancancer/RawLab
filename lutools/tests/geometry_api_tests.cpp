@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "native_gpu_test_support.h"
 
@@ -5,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -15,15 +17,9 @@
 namespace {
 
 static_assert(sizeof(sony2fuji_geometry_config) == 40, "geometry config ABI");
-size_t checks = 0;
-
-void check(bool condition, const std::string& name) {
-    ++checks;
-    if (!condition) throw std::runtime_error(name);
-}
-
+using rawlab::test::require;
 void checkStatus(sony2fuji_status actual, sony2fuji_status expected, const std::string& name) {
-    check(actual == expected, name + ": " + sony2fuji_status_message(actual));
+    require(actual == expected, name + ": " + sony2fuji_status_message(actual));
 }
 
 struct Session {
@@ -64,14 +60,14 @@ void geometrySize(const sony2fuji_session* session, uint32_t expectedWidth, uint
     const std::string& name) {
     uint32_t width = 999, height = 999;
     checkStatus(sony2fuji_session_get_geometry_size(session, &width, &height), SONY2FUJI_STATUS_OK, name);
-    check(width == expectedWidth && height == expectedHeight, name + " native canvas dimensions");
+    require(width == expectedWidth && height == expectedHeight, name + " native canvas dimensions");
 }
 
 void geometrySizeUnavailable(const sony2fuji_session* session, const std::string& name) {
     uint32_t width = 999, height = 999;
     checkStatus(sony2fuji_session_get_geometry_size(session, &width, &height),
         SONY2FUJI_STATUS_UNSUPPORTED, name);
-    check(width == 0 && height == 0, name + " clears output dimensions");
+    require(width == 0 && height == 0, name + " clears output dimensions");
 }
 
 sony2fuji_request bufferRequest(const Pixels& source) {
@@ -111,9 +107,9 @@ Pixels render(sony2fuji_session* session, const sony2fuji_request& request,
     Buffer output;
     checkStatus(sony2fuji_process(session, &request, &output.value), SONY2FUJI_STATUS_OK, name);
     const auto& buffer = output.value;
-    check(buffer.data && buffer.width > 0 && buffer.height > 0, name + " has pixels");
-    check(buffer.pixel_format == SONY2FUJI_PIXEL_RGB8, name + " RGB8 format");
-    check(buffer.stride_bytes >= size_t(buffer.width) * 3 &&
+    require(buffer.data && buffer.width > 0 && buffer.height > 0, name + " has pixels");
+    require(buffer.pixel_format == SONY2FUJI_PIXEL_RGB8, name + " RGB8 format");
+    require(buffer.stride_bytes >= size_t(buffer.width) * 3 &&
         buffer.size_bytes >= size_t(buffer.stride_bytes) * (buffer.height - 1) + size_t(buffer.width) * 3,
         name + " buffer layout");
     Pixels result{buffer.width, buffer.height,
@@ -126,30 +122,30 @@ Pixels render(sony2fuji_session* session, const sony2fuji_request& request,
 }
 
 void equal(const Pixels& actual, const Pixels& expected, const std::string& name, int tolerance = 0) {
-    check(actual.width == expected.width && actual.height == expected.height,
+    require(actual.width == expected.width && actual.height == expected.height,
         name + " dimensions: " + std::to_string(actual.width) + "x" + std::to_string(actual.height) +
         ", expected " + std::to_string(expected.width) + "x" + std::to_string(expected.height));
-    check(actual.bytes.size() == expected.bytes.size(), name + " byte count");
+    require(actual.bytes.size() == expected.bytes.size(), name + " byte count");
     for (size_t i = 0; i < expected.bytes.size(); ++i)
         if (std::abs(int(actual.bytes[i]) - int(expected.bytes[i])) > tolerance)
-            check(false, name + " pixel byte " + std::to_string(i) + ": " +
+            require(false, name + " pixel byte " + std::to_string(i) + ": " +
                 std::to_string(actual.bytes[i]) + ", expected " + std::to_string(expected.bytes[i]));
-    check(true, name + " all pixel bytes");
+    require(true, name + " all pixel bytes");
 }
 
 void abiTests() {
     using Config = sony2fuji_geometry_config;
-    check(sizeof(Config) == 40, "geometry config has 40-byte ABI");
-    check(offsetof(Config, version) == 0, "geometry version offset");
-    check(offsetof(Config, struct_size) == 4, "geometry size offset");
-    check(offsetof(Config, crop_x) == 8, "geometry crop x offset");
-    check(offsetof(Config, crop_y) == 12, "geometry crop y offset");
-    check(offsetof(Config, crop_width) == 16, "geometry crop width offset");
-    check(offsetof(Config, crop_height) == 20, "geometry crop height offset");
-    check(offsetof(Config, quarter_turns) == 24, "geometry quarter turns offset");
-    check(offsetof(Config, flip_horizontal) == 28, "geometry horizontal flip offset");
-    check(offsetof(Config, flip_vertical) == 32, "geometry vertical flip offset");
-    check(offsetof(Config, straighten_degrees) == 36, "geometry straighten offset");
+    require(sizeof(Config) == 40, "geometry config has 40-byte ABI");
+    require(offsetof(Config, version) == 0, "geometry version offset");
+    require(offsetof(Config, struct_size) == 4, "geometry size offset");
+    require(offsetof(Config, crop_x) == 8, "geometry crop x offset");
+    require(offsetof(Config, crop_y) == 12, "geometry crop y offset");
+    require(offsetof(Config, crop_width) == 16, "geometry crop width offset");
+    require(offsetof(Config, crop_height) == 20, "geometry crop height offset");
+    require(offsetof(Config, quarter_turns) == 24, "geometry quarter turns offset");
+    require(offsetof(Config, flip_horizontal) == 28, "geometry horizontal flip offset");
+    require(offsetof(Config, flip_vertical) == 32, "geometry vertical flip offset");
+    require(offsetof(Config, straighten_degrees) == 36, "geometry straighten offset");
 }
 
 // Independent forward permutations, operating on the already rendered neutral
@@ -222,7 +218,7 @@ void resizedFromNative(const Pixels& actual, const Pixels& native, const std::st
             const float expected = top * (1 - ty) + bottom * ty;
             // Native RGB8 already contains one quantization step. Resizing float
             // display pixels and quantizing once can differ by at most one code.
-            check(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + c] - expected) <= 1.01f,
+            require(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + c] - expected) <= 1.01f,
                 name + " align-corners bilinear byte " + std::to_string((size_t(y) * actual.width + x) * 3 + c));
         }
     }
@@ -259,11 +255,11 @@ void integerTests() {
     tiny.crop_width = tiny.crop_height = 1e-6f;
     setGeometry(session.value, tiny);
     const auto one = render(session.value, request, "subpixel crop");
-    check(one.width == 1 && one.height == 1, "positive subpixel crop retains a pixel");
+    require(one.width == 1 && one.height == 1, "positive subpixel crop retains a pixel");
     equal(one, integerReference(baseline, tiny), "subpixel crop position");
     setGeometry(session.value, identity());
     equal(render(session.value, request, "identity after changes"), baseline, "session reset restores baseline");
-    check(source.bytes == original, "geometry never modifies caller input");
+    require(source.bytes == original, "geometry never modifies caller input");
 }
 
 void validationTests() {
@@ -327,7 +323,7 @@ void validationTests() {
         setGeometry(session.value, edge);
         const auto result = render(session.value, request, "inclusive straighten boundary");
         const auto dimensions = nativeDimensions(source.width, source.height, edge);
-        check(result.width == dimensions.first && result.height == dimensions.second,
+        require(result.width == dimensions.first && result.height == dimensions.second,
             "inclusive straighten boundary dimensions");
     }
 }
@@ -346,7 +342,7 @@ void floatBoundaryTests() {
     const auto cropped = render(session.value, request, "UI float boundary crop");
     equal(cropped, expected, "0.2 plus 0.8 crop retains complete right and bottom edges");
     for (size_t channel = 0; channel < 3; ++channel)
-        check(cropped.bytes[cropped.bytes.size() - 3 + channel] ==
+        require(cropped.bytes[cropped.bytes.size() - 3 + channel] ==
             baseline.bytes[baseline.bytes.size() - 3 + channel],
             "float boundary crop preserves bottom-right pixel");
     using Config = sony2fuji_geometry_config;
@@ -375,15 +371,15 @@ void geometrySizeTests() {
     uint32_t width = 999, height = 999;
     checkStatus(sony2fuji_session_get_geometry_size(nullptr, &width, &height),
         SONY2FUJI_STATUS_INVALID_ARGUMENT, "size getter null session");
-    check(width == 0 && height == 0, "null session clears both size outputs");
+    require(width == 0 && height == 0, "null session clears both size outputs");
     height = 999;
     checkStatus(sony2fuji_session_get_geometry_size(session.value, nullptr, &height),
         SONY2FUJI_STATUS_INVALID_ARGUMENT, "size getter null width");
-    check(height == 0, "null width clears height output");
+    require(height == 0, "null width clears height output");
     width = 999;
     checkStatus(sony2fuji_session_get_geometry_size(session.value, &width, nullptr),
         SONY2FUJI_STATUS_INVALID_ARGUMENT, "size getter null height");
-    check(width == 0, "null height clears width output");
+    require(width == 0, "null height clears width output");
     checkStatus(sony2fuji_session_get_geometry_size(session.value, nullptr, nullptr),
         SONY2FUJI_STATUS_INVALID_ARGUMENT, "size getter null outputs");
 
@@ -393,7 +389,7 @@ void geometrySizeTests() {
     request.preview_long_edge = 19;
     setGpu(session.value, SONY2FUJI_GPU_OFF);
     const auto reduced = render(session.value, request, "identity early reduced preview");
-    check(reduced.width < source.width && reduced.height < source.height,
+    require(reduced.width < source.width && reduced.height < source.height,
         "identity preview output is smaller than source");
     geometrySize(session.value, source.width, source.height, "identity early preview reports source size");
     checkStatus(sony2fuji_session_set_viewport_preview(session.value, 1), SONY2FUJI_STATUS_OK,
@@ -409,7 +405,7 @@ void geometrySizeTests() {
     geometrySizeUnavailable(session.value, "new valid geometry clears old dimensions");
     const auto output = render(session.value, request, "active geometry reduced preview");
     const auto dimensions = nativeDimensions(source.width, source.height, config);
-    check(output.width < dimensions.first && output.height < dimensions.second,
+    require(output.width < dimensions.first && output.height < dimensions.second,
         "active geometry preview output is smaller than native canvas");
     geometrySize(session.value, dimensions.first, dimensions.second,
         "active preview reports geometry before output resize");
@@ -463,9 +459,9 @@ void previewTests() {
         request.preview_long_edge = 0;
         const auto native = render(session.value, request, "native geometric final");
         const auto dimensions = nativeDimensions(source.width, source.height, config);
-        check(native.width == dimensions.first && native.height == dimensions.second,
+        require(native.width == dimensions.first && native.height == dimensions.second,
             "native dimensions follow inscribed canvas then crop");
-        check(*std::min_element(native.bytes.begin(), native.bytes.end()) > 0,
+        require(*std::min_element(native.bytes.begin(), native.bytes.end()) > 0,
             "straightening and crop introduce no black border");
         checkStatus(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK,
             "enable interactive preview");
@@ -478,7 +474,7 @@ void previewTests() {
         for (const auto& size : {std::pair<uint32_t, uint32_t>{7, 5}, {31, 23}, {1, 9}, {9, 1}}) {
             request.target_width = size.first; request.target_height = size.second;
             const auto preview = render(session.value, request, "resized geometric preview");
-            check(preview.width == size.first && preview.height == size.second, "exact output dimensions");
+            require(preview.width == size.first && preview.height == size.second, "exact output dimensions");
             resizedFromNative(preview, native, "preview resizes after geometry");
             request.intent = SONY2FUJI_INTENT_FINAL;
             equal(render(session.value, request, "resized geometric final"), preview,
@@ -488,7 +484,7 @@ void previewTests() {
         request.preview_long_edge = 19;
         const auto preview = render(session.value, request, "preview long edge priority");
         const float scale = 19.f / std::max(native.width, native.height);
-        check(preview.width == std::max(1u, static_cast<uint32_t>(std::round(native.width * scale))) &&
+        require(preview.width == std::max(1u, static_cast<uint32_t>(std::round(native.width * scale))) &&
             preview.height == std::max(1u, static_cast<uint32_t>(std::round(native.height * scale))),
             "preview limit uses geometric dimensions");
         resizedFromNative(preview, native, "long edge preview resizes after geometry");
@@ -499,7 +495,7 @@ void previewTests() {
     request.long_edge = 1000;
     const auto result = render(session.value, request, "final ignores preview limit");
     const auto dimensions = nativeDimensions(source.width, source.height, config);
-    check(result.width == dimensions.first && result.height == dimensions.second,
+    require(result.width == dimensions.first && result.height == dimensions.second,
         "final preserves geometric native dimensions without enlargement");
 }
 
@@ -513,10 +509,10 @@ void gpuTests(bool nativeGpu) {
     const auto automatic = render(session.value, request, "identity Auto");
     const auto identityBackend = sony2fuji_session_get_last_backend(session.value);
     if (nativeGpu) {
-        check(identityBackend == rawlabtest::nativeBackend, "identity retains native GPU backend");
+        require(identityBackend == rawlabtest::nativeBackend, "identity retains native GPU backend");
         equal(automatic, baseline, "identity CPU/native GPU", 2);
     } else {
-        check(identityBackend == SONY2FUJI_BACKEND_CPU, "unavailable native GPU falls back to CPU");
+        require(identityBackend == SONY2FUJI_BACKEND_CPU, "unavailable native GPU falls back to CPU");
         equal(automatic, baseline, "identity CPU fallback");
         std::cout << "SKIP native GPU hardware parity: backend unavailable\n";
     }
@@ -532,7 +528,7 @@ void gpuTests(bool nativeGpu) {
         setGpu(session.value, SONY2FUJI_GPU_AUTO);
         equal(render(session.value, request, "active geometry Auto"), cpu,
             "geometry CPU/Auto RGB8 parity", nativeGpu ? 2 : 0);
-        check(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU,
+        require(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU,
             "Auto reports final CPU geometry stage");
         setGpu(session.value, SONY2FUJI_GPU_FORCE);
         Buffer rejected;
@@ -543,28 +539,25 @@ void gpuTests(bool nativeGpu) {
     setGpu(session.value, SONY2FUJI_GPU_AUTO);
     equal(render(session.value, request, "identity after GPU geometry"), automatic,
         "reset geometry retains previous Auto behavior");
-    check(sony2fuji_session_get_last_backend(session.value) == identityBackend,
+    require(sony2fuji_session_get_last_backend(session.value) == identityBackend,
         "reset geometry restores actual backend");
     if (nativeGpu) {
         setGpu(session.value, SONY2FUJI_GPU_FORCE);
         equal(render(session.value, request, "identity Force"), automatic,
             "identity Force native GPU behavior");
-        check(sony2fuji_session_get_last_backend(session.value) == rawlabtest::nativeBackend,
+        require(sony2fuji_session_get_last_backend(session.value) == rawlabtest::nativeBackend,
             "identity Force reports native GPU");
     }
 }
 
 void rawTests(const char* path) {
-    if (!path || !*path) {
-        std::cout << "SKIP real RAW geometry/cache/orientation: supply a path or RAWLAB_TEST_RAW\n";
-        return;
-    }
     Session session;
     setGpu(session.value, SONY2FUJI_GPU_OFF);
     auto request = bufferRequest(Pixels{});
     request.input_type = SONY2FUJI_INPUT_RAW;
     request.input_pixels = nullptr;
     request.input_path = path;
+    request.intent = SONY2FUJI_INTENT_FINAL;
     const auto baseline = render(session.value, request, "RAW native identity");
     geometrySize(session.value, baseline.width, baseline.height, "RAW identity native canvas");
     checkStatus(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK,
@@ -574,10 +567,19 @@ void rawTests(const char* path) {
     request.intent = SONY2FUJI_INTENT_PREVIEW;
     request.preview_long_edge = 23;
     render(session.value, request, "RAW identity reduced preview");
-    geometrySize(session.value, baseline.width, baseline.height,
-        "RAW identity preview reports full cached source dimensions");
+    uint32_t previewNativeWidth = 0, previewNativeHeight = 0;
+    checkStatus(sony2fuji_session_get_geometry_size(session.value, &previewNativeWidth, &previewNativeHeight),
+        SONY2FUJI_STATUS_OK, "RAW identity preview native canvas");
     request.intent = SONY2FUJI_INTENT_FINAL;
     request.preview_long_edge = 0;
+    equal(render(session.value, request, "RAW FINAL immediately after interactive preview"), baseline,
+        "RAW FINAL after an identity preview uses exact pixels");
+    require(previewNativeWidth == baseline.width && previewNativeHeight == baseline.height,
+        "RAW identity viewport reports the full source canvas");
+    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    equal(render(session.value, request, "RAW native-size viewport request"), baseline,
+        "RAW native-size viewport uses exact pixels");
+    request.intent = SONY2FUJI_INTENT_FINAL;
     auto config = identity();
     config.quarter_turns = 1; config.flip_horizontal = 1;
     config.crop_x = .25f; config.crop_y = .125f;
@@ -605,7 +607,7 @@ void rawTests(const char* path) {
     geometrySize(session.value, expected.width, expected.height,
         "RAW cropped canvas dimensions before preview resize");
     const float scale = 23.f / std::max(expected.width, expected.height);
-    check(preview.width == std::max(1u, static_cast<uint32_t>(std::round(expected.width * scale))) &&
+    require(preview.width == std::max(1u, static_cast<uint32_t>(std::round(expected.width * scale))) &&
         preview.height == std::max(1u, static_cast<uint32_t>(std::round(expected.height * scale))),
         "RAW preview dimensions follow oriented crop");
     checkStatus(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK,
@@ -631,6 +633,14 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
+        const char* argRaw = (argc == 2 && *argv[1]) ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (rawPath && !std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL geometry_api: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
         abiTests();
         integerTests();
         validationTests();
@@ -638,11 +648,15 @@ int main(int argc, char** argv) {
         geometrySizeTests();
         previewTests();
         gpuTests(rawlabtest::nativeGpuAvailable());
-        rawTests(argc == 2 ? argv[1] : std::getenv("RAWLAB_TEST_RAW"));
-        std::cout << "PASS " << checks << " geometry ABI, setter, source-canvas, preview/final and GPU checks\n";
+        if (argc == 2 && !rawPath) {
+            std::cout << "SKIP geometry_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (rawPath) rawTests(rawPath);
+        std::cout << "PASS " << rawlab::test::checkCount() << " geometry ABI, setter, source-canvas, preview/final and GPU rawlab::test::checkCount()\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
+        std::cerr << "FAIL after " << rawlab::test::checkCount() << " rawlab::test::checkCount(): " << error.what() << '\n';
         return 1;
     }
 }

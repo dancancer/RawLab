@@ -8,7 +8,9 @@ data class AdjustmentTransferContext(val identifier: String, val isRaw: Boolean,
     val cameraTemperature: Float? = null, val cameraTint: Float? = null, val defaultExposureMode: Int = 1,
     val hasUncommittedDraft: Boolean = false, val validateLens: ((LensSettings) -> Unit)? = null,
     val sourceSupportsCameraHDR: Boolean = false, val sourceIsProRAW: Boolean = false, val hdrLookDirectory: File? = null,
-    val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap()) {
+    val validateHDRCamera: ((EditSettings) -> Unit)? = null, val recipeTintDefaults: Map<String, Float> = emptyMap(),
+    val onTransferNotice: ((AdjustmentTransferNotice) -> Unit)? = null,
+    val cameraWhiteBalanceProvider: (() -> Pair<Float, Float>?)? = null) {
     val supportsHDRCameraDevelopment get() = isRaw && sourceSupportsCameraHDR && !sourceIsProRAW
 }
 
@@ -84,6 +86,9 @@ object AdjustmentTransfer {
     private fun prepareChecked(payload: AdjustmentPayload, target: EditSettings, context: AdjustmentTransferContext): EditSettings {
         if (context.hasUncommittedDraft) throw AdjustmentTransferException(AdjustmentFailure.DRAFT)
         payload.validate()
+        // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
+        if (payload.source.processingVersion != target.processing.version)
+            context.onTransferNotice?.invoke(AdjustmentTransferNotice.RETAINED_TARGET_PROCESSING_VERSION)
         var result = target
         val before = effectiveNumbers(target)
         val originalValues = AdjustmentTransferValues.values(target, context)
@@ -129,8 +134,10 @@ object AdjustmentTransfer {
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
-            // 普通图片没有 RAW 曝光基准，选中任何来源模式均保持 sensor。
-            result = result.copy(exposureMode = if (!context.isRaw) 2 else listOf("scene", "preview", "sensor").indexOf(mode))
+            // 普通图片没有 RAW 曝光基准：其 sensor 占位值不改变 RAW 目标；普通目标始终保持 sensor。
+            if (payload.source.isRaw || !context.isRaw) {
+                result = result.copy(exposureMode = if (!context.isRaw) 2 else listOf("scene", "preview", "sensor").indexOf(mode))
+            }
         }
         result = AdjustmentTransferValues.applyObjects(payload, result, context)
         result = AdjustmentTransferRefinement.apply(payload, target, result, fullRecipe)
@@ -234,11 +241,21 @@ object AdjustmentTransfer {
         var result = target.synchronizeHDR()
         var hdr = result.hdr ?: throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.target")
         fun number(field: AdjustmentField): Double? = payload[field]?.number
-        number(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
-        number(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
-        number(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
-        number(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
-        number(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
+        // A17/P1-10：带配方的普通来源复制的是配方逻辑值；与 Shared/HDRAdjustmentTransfer 和 Windows 一致，
+        // 接收端按来源配方强度把五共享标量换算为实际贡献（contrast/saturation 以 1.0 为中性点）。
+        val recipeStrength = payload.source.recipe?.strength
+        fun scaled(field: AdjustmentField): Double? = number(field)?.let { raw ->
+            if (recipeStrength != null && recipeStrength != 1.0 && field in AdjustmentTransferValues.scaled) {
+                if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION)
+                    1.0 + (raw - 1.0) * recipeStrength
+                else raw * recipeStrength
+            } else raw
+        }
+        scaled(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
+        scaled(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
+        scaled(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
+        scaled(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
+        scaled(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
         number(AdjustmentField.HDR_TEMPERATURE)?.let { result = result.copy(temperature = it.toFloat()); hdr = hdr.copy(temperature = it.toFloat()) }
         number(AdjustmentField.HDR_TINT)?.let { result = result.copy(tint = it.toFloat()); hdr = hdr.copy(tint = it.toFloat()) }
         var geometry = result.geometry

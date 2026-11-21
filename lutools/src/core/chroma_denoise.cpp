@@ -2,6 +2,7 @@
 #include "gpu/denoise.h"
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+#include "processing_cancellation.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/ximgproc/edge_filter.hpp>
@@ -13,7 +14,11 @@
 #include <vector>
 
 namespace {
-struct ChromaGpuFailure {};
+struct ChromaGpuFailure {
+    sony2fuji::GpuFailureKind failure = sony2fuji::GpuFailureKind::ProcessingError;
+    sony2fuji::GpuBackendFault fault = sony2fuji::GpuBackendFault::FilterError;
+    std::string message;
+};
 
 float quantile(std::vector<float> values, float fraction = .5f) {
     if (values.empty()) return 0;
@@ -173,6 +178,9 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
     cv::Mat result(source.size(),source.type());
     constexpr int tile = 768, halo = 32;
     for (int y = 0; y < source.rows; y += tile) for (int x = 0; x < source.cols; x += tile) {
+        // tile 之间互不相交（各写各的 result 矩形）且循环在调用线程上，tile 顶就是安全边界；
+        // 公开入口在 filter 完整结束后才把 Lab 转回 RGB，取消中途图像保持原像素。
+        sony2fuji::checkProcessingCancellation();
         const cv::Rect center(x,y,std::min(tile,source.cols-x),std::min(tile,source.rows-y));
         const int left = std::max(0,x-halo), top = std::max(0,y-halo);
         const cv::Rect bounds(left,top,std::min(source.cols,x+tile+halo)-left,std::min(source.rows,y+tile+halo)-top);
@@ -182,12 +190,24 @@ cv::Mat guided(const cv::Mat& lab, const cv::Mat& source, int radius, double eps
         bool accelerated = false;
         if (gpuMode != sony2fuji::GpuMode::Off) {
             filtered.create(input.size(), input.type());
+            sony2fuji::lastGpuFilterOutcome() = {};
             accelerated = sony2fuji::gpuGuidedFilter(guide.ptr<float>(), input.ptr<float>(),
                 input.cols, input.rows, radius, static_cast<float>(epsilon), filtered.ptr<float>());
         }
         if (accelerated) gpuUsed = true;
         else {
-            if (gpuMode == sony2fuji::GpuMode::Force) throw ChromaGpuFailure{};
+            if (gpuMode == sony2fuji::GpuMode::Force) {
+                const auto outcome = sony2fuji::lastGpuFilterOutcome();
+                throw ChromaGpuFailure{
+                    outcome.failure != sony2fuji::GpuFailureKind::None
+                        ? outcome.failure
+                        : sony2fuji::GpuFailureKind::ProcessingError,
+                    outcome.fault != sony2fuji::GpuBackendFault::None
+                        ? outcome.fault
+                        : sony2fuji::GpuBackendFault::FilterError,
+                    outcome.message
+                };
+            }
             cv::ximgproc::guidedFilter(guide,input,filtered,radius,epsilon);
         }
         filtered(cv::Rect(x-left,y-top,center.width,center.height)).copyTo(result(center));
@@ -324,7 +344,12 @@ ErrorCode applyChromaDenoise(ImageData& image, int mode, ChromaDenoiseDiagnostic
     if (noise.confidence == 0) return ErrorCode::Success;
     bool gpuUsed = false;
     try { filter(lab,noise,mode == 2,gpuMode,gpuUsed); }
-    catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
+    catch (const ChromaGpuFailure& failure) {
+        lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+        return failure.failure == GpuFailureKind::Unsupported ? ErrorCode::Unsupported
+            : failure.failure == GpuFailureKind::OutOfMemory ? ErrorCode::OutOfMemory
+            : ErrorCode::ProcessingError;
+    }
     cv::cvtColor(lab,rgb,cv::COLOR_Lab2RGB);
     if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
     return ErrorCode::Success;
@@ -373,6 +398,9 @@ ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode, ChromaDenoiseDia
         int previousFirst = 0, previousEnd = 0;
         bool gpuUsed = false;
         for (int y = 0; y < pixels.rows; y += rowsPerBand) {
+            // 工作图入口逐带写回图像，带顶是调用方「失败即丢弃」契约认可的安全边界；
+            // 带内部的耗时大头（guided）另有 tile 级检查点，取消在下一带或下一 tile 返回。
+            sony2fuji::checkProcessingCancellation();
             const int end = std::min(pixels.rows, y + rowsPerBand);
             const int top = std::max(0, y - halo), bottom = std::min(pixels.rows, end + halo);
             cv::Mat band = pixels.rowRange(top, bottom).clone();
@@ -404,7 +432,12 @@ ErrorCode applyChromaDenoiseWorking(ImageData& image, int mode, ChromaDenoiseDia
         convertRows(cv::COLOR_Lab2RGB);
         if (diagnostics) { diagnostics->applied = true; diagnostics->gpuUsed = gpuUsed; }
         return ErrorCode::Success;
-    } catch (const ChromaGpuFailure&) { return ErrorCode::ProcessingError; }
+    } catch (const ChromaGpuFailure& failure) {
+        lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+        return failure.failure == GpuFailureKind::Unsupported ? ErrorCode::Unsupported
+            : failure.failure == GpuFailureKind::OutOfMemory ? ErrorCode::OutOfMemory
+            : ErrorCode::ProcessingError;
+    }
     catch (const std::bad_alloc&) { return ErrorCode::OutOfMemory; }
     catch (const cv::Exception& error) {
         return error.code == cv::Error::StsNoMem ? ErrorCode::OutOfMemory : ErrorCode::ProcessingError;

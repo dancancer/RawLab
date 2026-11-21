@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/photo_geometry.h"
 
 #include <algorithm>
@@ -12,10 +13,7 @@ using namespace sony2fuji;
 namespace {
 
 size_t cases = 0;
-void check(bool value, const char* message) {
-    if (!value) throw std::runtime_error(message);
-}
-
+using rawlab::test::require;
 std::vector<GeometryOptions> matrix() {
     std::vector<GeometryOptions> result;
     for (int turn = 0; turn < 4; ++turn) for (int flips = 0; flips < 4; ++flips)
@@ -53,18 +51,18 @@ std::vector<GeometryOptions> matrix() {
 void compare(int width, int height, const GeometryOptions& options) {
     ImageData image(width, height);
     const auto native = geometryOutputSize(width, height, options);
-    check(applyGeometry(image, options) == ErrorCode::Success, "apply geometry");
-    check(native == std::make_pair(image.width, image.height), "size differs from actual geometry");
+    require(applyGeometry(image, options) == ErrorCode::Success, "apply geometry");
+    require(native == std::make_pair(image.width, image.height), "size differs from actual geometry");
     for (const auto target : {std::pair<int, int>{1, 1}, {std::max(1, native.first / 3),
             std::max(1, native.second / 3)}, native, {native.first + 1, native.second + 1}}) {
         const auto source = geometryViewportSourceSize(width, height, options, target.first, target.second);
-        check(source.first > 0 && source.second > 0 && source.first <= width && source.second <= height,
+        require(source.first > 0 && source.second > 0 && source.first <= width && source.second <= height,
             "viewport source enlarged or empty");
         if (target.first >= native.first || target.second >= native.second) {
-            check(source == std::make_pair(width, height), "100 percent source must remain exact");
+            require(source == std::make_pair(width, height), "100 percent source must remain exact");
         } else {
             const auto actual = geometryOutputSize(source.first, source.second, options);
-            check(actual.first >= target.first && actual.second >= target.second, "final resize would enlarge");
+            require(actual.first >= target.first && actual.second >= target.second, "final resize would enlarge");
             /* 独立检查缩放区间的交集，也覆盖同一长边内短边先跳变的情况。 */
             for (int w = 1; w <= source.first; ++w) for (int h = 1; h <= source.second; ++h) {
                 if (w == source.first && h == source.second) continue;
@@ -72,7 +70,7 @@ void compare(int width, int height, const GeometryOptions& options) {
                 const double upper = std::min(double(w) / width, double(h) / height);
                 if (lower >= upper) continue;
                 const auto size = geometryOutputSize(w, h, options);
-                check(size.first < target.first || size.second < target.second, "source is not smallest");
+                require(size.first < target.first || size.second < target.second, "source is not smallest");
             }
         }
         ++cases;
@@ -87,12 +85,12 @@ int main() {
                 {17, 11}, {31, 19}, {95, 67}})
             for (const auto& options : matrix()) compare(size.first, size.second, options);
         GeometryOptions flipped; flipped.flip_horizontal = true;
-        check(geometryViewportSourceSize(100, 99, flipped, 50, 49) == std::make_pair(50, 49),
+        require(geometryViewportSourceSize(100, 99, flipped, 50, 49) == std::make_pair(50, 49),
             "a scale between long-edge steps must not retain an unnecessary short-edge pixel");
         GeometryOptions invalid; invalid.crop_width = 0;
-        check(geometryOutputSize(3, 5, invalid) == std::make_pair(0, 0), "invalid geometry size");
-        check(geometryOutputSize(0, 5, {}) == std::make_pair(0, 0), "empty source size");
-        check(geometryViewportSourceSize(3, 5, {}, 0, 1) == std::make_pair(0, 0), "invalid viewport target");
+        require(geometryOutputSize(3, 5, invalid) == std::make_pair(0, 0), "invalid geometry size");
+        require(geometryOutputSize(0, 5, {}) == std::make_pair(0, 0), "empty source size");
+        require(geometryViewportSourceSize(3, 5, {}, 0, 1) == std::make_pair(0, 0), "invalid viewport target");
         std::cout << "PASS " << cases << " geometry size and minimal viewport source checks\n";
         return 0;
     } catch (const std::exception& error) {

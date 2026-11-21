@@ -1,11 +1,29 @@
 #pragma once
 
-#include "sony2fuji/ffi/sony2fuji_c.h"
 #include <array>
+#include <cstdint>
 
 namespace sony2fuji {
 
-bool validToneCurve(const sony2fuji_tone_curve_config& config);
+inline constexpr uint32_t kToneCurveMaxPoints = 33u;
+
+enum class ToneCurveMode : uint32_t {
+    Legacy = 0,
+    Custom = 1
+};
+
+struct ToneCurvePoint {
+    double x = 0.0;
+    double y = 0.0;
+};
+
+struct ToneCurveConfig {
+    ToneCurveMode mode = ToneCurveMode::Legacy;
+    uint32_t count = 0;
+    std::array<ToneCurvePoint, kToneCurveMaxPoints> points{};
+};
+
+bool validToneCurve(const ToneCurveConfig& config);
 
 // 归一化区间切线避免把很窄区间展开成溢出的三次多项式系数。
 struct ToneCurveSegment {
@@ -15,7 +33,7 @@ struct ToneCurveSegment {
 class ToneCurve {
 public:
     ToneCurve() = default;
-    explicit ToneCurve(const sony2fuji_tone_curve_config& config);
+    explicit ToneCurve(const ToneCurveConfig& config);
     bool custom() const { return custom_; }
     bool active() const { return active_; }
     bool gpuSupported() const { return gpuSupported_; }
@@ -24,7 +42,7 @@ public:
     double evaluate(double value) const;
 
 private:
-    std::array<ToneCurveSegment, SONY2FUJI_TONE_CURVE_MAX_POINTS - 1> segments_{};
+    std::array<ToneCurveSegment, kToneCurveMaxPoints - 1> segments_{};
     uint32_t count_ = 0;
     bool custom_ = false, active_ = false, gpuSupported_ = true;
 };

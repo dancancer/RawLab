@@ -1,9 +1,11 @@
+import RawLabKit
 import PhotosUI
 import SwiftUI
 
 struct IOSBatchSelectionView: View {
     @ObservedObject var model: RawEditorViewModel
     @ObservedObject var collection: IOSBatchSelection
+    @ObservedObject var previews: IOSPhotoPreviewLibrary
     let settings: RawSettings
     let hasPendingBatch: Bool
     let resolveDraft: (String, Bool) -> Bool
@@ -17,6 +19,7 @@ struct IOSBatchSelectionView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var message: String?
     @State private var sheet: CollectionSheet?
+    @State private var legacyPhotoToEdit: String?
     private enum CollectionSheet: String, Identifiable { case synchronize, history, export; var id: String { rawValue } }
 
     var body: some View {
@@ -93,19 +96,31 @@ struct IOSBatchSelectionView: View {
                 loadTask = Task { await addPhotos(items) }
             }
             .onChange(of: sheet) { _, value in if value == nil { collection.refreshValidation() } }
-            .sheet(item: $sheet) { kind in
+            .sheet(item: $sheet, onDismiss: {
+                if let id = legacyPhotoToEdit {
+                    legacyPhotoToEdit = nil
+                    editPhoto(id)
+                }
+            }) { kind in
                 switch kind {
                 case .synchronize:
-                    IOSCollectionSyncView(model: model, collection: collection, settings: settings, resolveDraft: resolveDraft)
+                    IOSCollectionSyncView(model: model, collection: collection, settings: settings,
+                        resolveDraft: resolveDraft, editLegacyPhoto: queueLegacyPhotoEdit)
                 case .history:
                     IOSAdjustmentTransferView(model: model, kind: .history, settings: settings,
                         focusedHistory: collection.selection.lastSynchronization)
                 case .export:
-                    IOSCollectionExportView(model: model, collection: collection, resolveDraft: resolveDraft, created: created)
+                    IOSCollectionExportView(model: model, collection: collection, resolveDraft: resolveDraft,
+                        editLegacyPhoto: queueLegacyPhotoEdit, created: created)
                 }
             }
         }.interactiveDismissDisabled(loading)
             .onDisappear { loadTask?.cancel() }
+    }
+
+    private func queueLegacyPhotoEdit(_ id: String) {
+        legacyPhotoToEdit = id
+        sheet = nil
     }
 
     private func photoRow(_ stored: IOSCollectionPhoto) -> some View {
@@ -113,7 +128,11 @@ struct IOSBatchSelectionView: View {
             Toggle(L10n.text("选择"), isOn: Binding(get: { collection.selection.selected.contains(stored.id) }, set: {
                 collection.selection.select(stored.id, $0)
             })).labelsHidden().toggleStyle(.button).accessibilityIdentifier("collection.select.\(stored.id)")
-            if let file = stored.photo.file { BatchPhotoThumbnail(sourceFile: file).frame(width: 54, height: 54) }
+            if let file = stored.photo.file {
+                IOSPhotoThumbnail(input: .source(.init(identity: stored.photo.identity, file: file,
+                    displayName: stored.photo.displayName, isRaw: stored.photo.isRaw)), library: previews, model: model)
+                    .frame(width: 54, height: 54)
+            }
             VStack(alignment: .leading) {
                 Text(stored.photo.displayName).lineLimit(2)
                 if let error = collection.failures[stored.id] ?? stored.error?.localizedDescription { Text(error).font(.caption).foregroundStyle(.orange) }
@@ -162,6 +181,7 @@ private struct IOSCollectionSyncView: View {
     @ObservedObject var collection: IOSBatchSelection
     let settings: RawSettings
     let resolveDraft: (String, Bool) -> Bool
+    let editLegacyPhoto: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "custom"
     @State private var fields: Set<AdjustmentTransferField>
@@ -171,8 +191,9 @@ private struct IOSCollectionSyncView: View {
         Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
     }
     init(model: RawEditorViewModel, collection: IOSBatchSelection, settings: RawSettings,
-         resolveDraft: @escaping (String, Bool) -> Bool) {
+         resolveDraft: @escaping (String, Bool) -> Bool, editLegacyPhoto: @escaping (String) -> Void) {
         self.model=model; self.collection=collection; self.settings=settings; self.resolveDraft=resolveDraft
+        self.editLegacyPhoto = editLegacyPhoto
         let source = Result { try model.loadedEditRecord?.state?.settings ?? model.sourceDefaultSettings }
         switch source {
         case .success(let source):
@@ -185,7 +206,8 @@ private struct IOSCollectionSyncView: View {
         let source = sourceSettings
         return Group {
             if let synchronization {
-                IOSAdjustmentTransferView(model: model, kind: .paste, settings: settings, synchronization: synchronization)
+                IOSAdjustmentTransferView(model: model, kind: .paste, settings: settings, synchronization: synchronization,
+                    editLegacyPhoto: editLegacyPhoto)
             } else {
                 NavigationStack {
                     Form {
@@ -234,6 +256,7 @@ private struct IOSCollectionExportView: View {
     @ObservedObject var model: RawEditorViewModel
     @ObservedObject var collection: IOSBatchSelection
     let resolveDraft: (String, Bool) -> Bool
+    let editLegacyPhoto: (String) -> Void
     let created: (BatchExportJob, BatchJournalStore, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -244,6 +267,13 @@ private struct IOSCollectionExportView: View {
     private var review: IOSCollectionExportReview? { model.collectionExportReview }
     private var busy: Bool { model.collectionExportPreparing || model.collectionExportFreezing }
     private var targetCount: Int { collection.selection.targets().filter { !skipped.contains($0) }.count }
+    private var awaitingLegacyDecision: Bool {
+        review?.rows.contains { row in
+            guard !skipped.contains(row.id) else { return false }
+            if case .legacyAssetEditNeedsDecision? = row.error as? EditPersistenceError { return true }
+            return false
+        } == true
+    }
     @State private var message: String?
     var body: some View {
         NavigationStack {
@@ -265,7 +295,7 @@ private struct IOSCollectionExportView: View {
                 }
                 Section {
                     Button(L10n.format("开始导出 %@ 张", String(targetCount)), action: start)
-                        .disabled(!sizeValid || targetCount == 0 || busy)
+                        .disabled(!sizeValid || targetCount == 0 || busy || awaitingLegacyDecision)
                         .accessibilityIdentifier("collection.export.start")
                     if targetCount == 0 {
                         Text(L10n.text("没有可处理目标，请重新选择照片。"))
@@ -308,7 +338,13 @@ private struct IOSCollectionExportView: View {
                     Button(L10n.text("放弃草稿")) { resolve(photo.id, false) }
                 }.disabled(skipped.contains(photo.id))
             }
-            if let error = row?.error ?? photo.error { Text(model.adjustmentErrorMessage(error)).font(.footnote).foregroundStyle(.orange) }
+            if let error = row?.error ?? photo.error {
+                Text(model.adjustmentErrorMessage(error)).font(.footnote).foregroundStyle(.orange)
+                if case .legacyAssetEditNeedsDecision? = error as? EditPersistenceError {
+                    Button(L10n.text("单张微调")) { editLegacyPhoto(photo.id) }
+                        .accessibilityIdentifier("collection.export.edit-legacy.\(photo.id)")
+                }
+            }
             if let row, let settings = row.settings {
                 Text(L10n.text(row.lookName ?? "中性")).font(.callout)
                 DisclosureGroup(L10n.text("全部调整")) { IOSBatchSettingsRows(settings: settings) }

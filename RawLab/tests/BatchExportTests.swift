@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 // 独立模型不加载原生资源；相机配置资产由 hdr-batch 原生测试覆盖。
@@ -69,14 +70,19 @@ struct BatchExportTests {
         check(BatchOutputFormat.hdrJPEG.publishesToPhotos && BatchOutputFormat.jpeg.publishesToPhotos
               && !BatchOutputFormat.renderedDNG.publishesToPhotos,
               "HDR and SDR JPEG publication offer Photos confirmation; rendered DNG uses file reconciliation")
-        check(ExportSize.isValid(1) && ExportSize.isValid(65535) && !ExportSize.isValid(0) && !ExportSize.isValid(65536),
-              "custom export size enforces the 1-65535 range")
+        check(ExportSize.isValid(1) && ExportSize.isValid(65500) && !ExportSize.isValid(0) && !ExportSize.isValid(65501),
+              "custom export size enforces the 1-65500 range")
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("rawlab-batch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try checkBatchSelection(root)
         defer { try? FileManager.default.removeItem(at: root) }
         try checkPerTargetSnapshots(root)
+        try checkUniformBatchX3fTargetMode(root)
+        try checkOrphanedJobDirectories(root)
+        try checkCorruptJobIsolation(root)
+        try checkJournalWriteAmplification(root)
+        try checkFutureJournalRefusesQuarantine(root)
         try BatchSourceJournalTests.run(root: root.appendingPathComponent("source-journal"))
 
         let sourceURL = root.appendingPathComponent("source.ARW")
@@ -528,4 +534,481 @@ private func checkPerTargetSnapshots(_ root: URL) throws {
     let changed = try BatchExportRunner.run(job: frozen, journalStore: nil, render: { _, _ in }, write: { _, _, _, _ in })
     try BatchExportTests.require(changed.targets[0].status == .failed && changed.targets[1].status == .succeeded,
                                 "changed input fails only its frozen target")
+}
+
+private func checkOrphanedJobDirectories(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("orphan-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("orphan-source.ARW")
+    try Data("orphan-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "orphan-source")
+    func job(_ status: BatchJobStatus, format: BatchOutputFormat) throws -> BatchExportJob {
+        let id = UUID()
+        let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+        let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                         displayName: "orphan-source.ARW", settings: .default)
+        var job = BatchExportJob(id: id, source: source,
+                                 targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "orphan-source.ARW")],
+                                 outputFormat: format, longEdge: 3000)
+        job.status = status
+        try journal.save(job)
+        return job
+    }
+    let failed = try job(.failed, format: .jpeg)
+    let cancelled = try job(.cancelled, format: .jpeg)
+    let completedDNG = try job(.completed, format: .renderedDNG)
+    let orphanID = UUID()
+    let orphanInput = try BatchInputStore.copy(sourceURL, identity: identity, jobID: orphanID, root: journal.directory)
+    let unrelated = journal.directory.appendingPathComponent("not-a-job", isDirectory: true)
+    try FileManager.default.createDirectory(at: unrelated, withIntermediateDirectories: true)
+
+    journal.removeOrphanedJobDirectories()
+
+    func exists(_ id: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: journal.directory.appendingPathComponent(id.uuidString).path)
+    }
+    BatchExportTests.check(!exists(orphanID) && !FileManager.default.fileExists(atPath: orphanInput.path),
+                           "launch cleanup removes a batch input directory without a journal")
+    BatchExportTests.check(exists(failed.id) && exists(cancelled.id) && exists(completedDNG.id),
+                           "launch cleanup keeps failed, cancelled and DNG job directories that still have journals")
+    BatchExportTests.check(FileManager.default.fileExists(atPath: unrelated.path),
+                           "launch cleanup ignores directories that are not batch job IDs")
+    let pending = try journal.pendingJobs()
+    BatchExportTests.check(Set(pending.map(\.id)) == [failed.id, cancelled.id, completedDNG.id] &&
+                           pending.allSatisfy { FileManager.default.fileExists(atPath: $0.targets[0].sourceURL.path) },
+                           "jobs kept by launch cleanup remain recoverable with their frozen inputs")
+}
+
+private func checkCorruptJobIsolation(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("isolation-source.ARW")
+    try Data("isolation-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "isolation-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "isolation-source.ARW", settings: .default)
+    var validJob = BatchExportJob(id: id, source: source,
+                                  targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                  outputFormat: .jpeg, longEdge: 3000)
+    validJob.status = .failed
+    try journal.save(validJob)
+
+    // Write a truncated/garbled job file
+    let corruptID = UUID()
+    let corruptFile = journal.directory.appendingPathComponent("\(corruptID.uuidString).json")
+    try Data("{\"id\": \"corrupt\", \"version\": truncated...".utf8).write(to: corruptFile)
+
+    // pendingJobs() must still return valid job, isolate the corrupt file, and not fail
+    let pending = try journal.pendingJobs()
+    BatchExportTests.check(pending.count == 1 && pending.first?.id == validJob.id,
+                           "pendingJobs isolates corrupt job and returns valid job")
+    BatchExportTests.check(!FileManager.default.fileExists(atPath: corruptFile.path),
+                           "corrupt job file removed from active json location")
+    let quarantinedFiles = try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.contains("\(corruptID.uuidString).json.corrupt-") }
+    BatchExportTests.check(quarantinedFiles.count == 1,
+                           "corrupt job file quarantined with timestamp")
+
+    // Subsequent save must succeed
+    var nextJob = BatchExportJob(id: UUID(), source: source,
+                                 targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                 outputFormat: .jpeg, longEdge: 2048)
+    nextJob.status = .failed
+    try journal.save(nextJob)
+    let reloaded = try journal.pendingJobs()
+    BatchExportTests.check(reloaded.count == 2,
+                           "subsequent save succeeds after corrupt job isolation")
+
+    // The corrupt journal must be isolated even when no scan moved it out of the way first:
+    // save with the SAME id goes through load(id:) → quarantine → atomic overwrite.
+    let sameID = UUID()
+    try Data("{\"id\": \"half-written\", \"targets\": [truncated".utf8).write(
+        to: journal.directory.appendingPathComponent("\(sameID.uuidString).json"))
+    var sameIDJob = BatchExportJob(id: sameID, source: source,
+                                   targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                   outputFormat: .jpeg, longEdge: 3000)
+    sameIDJob.status = .failed
+    try journal.save(sameIDJob)
+    let sameIDQuarantined = try FileManager.default.contentsOfDirectory(at: journal.directory, includingPropertiesForKeys: nil)
+        .filter { $0.lastPathComponent.hasPrefix("\(sameID.uuidString).json.corrupt-") }
+    BatchExportTests.check(sameIDQuarantined.count == 1,
+                           "save isolates the same-ID corrupt journal instead of failing the write path")
+    let sameIDReloaded = try journal.load(id: sameID)
+    BatchExportTests.check(sameIDReloaded == sameIDJob,
+                           "save overwrites the isolated corrupt journal with the new record")
+
+    // A quarantine rename failure must not be swallowed into a silent overwrite of the corrupt record.
+    let lockedStore = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-locked", isDirectory: true))
+    let stuckID = UUID()
+    let stuckFile = lockedStore.directory.appendingPathComponent("\(stuckID.uuidString).json")
+    try Data("{\"id\": \"unreadable-shape\"".utf8).write(to: stuckFile)
+    let originalAttributes = try FileManager.default.attributesOfItem(atPath: lockedStore.directory.path)[.posixPermissions] as? NSNumber
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o500)],
+                                          ofItemAtPath: lockedStore.directory.path)
+    var renameFailureSurfaced = false
+    var stuckStillActive = false
+    do {
+        _ = try lockedStore.pendingJobs()
+    } catch {
+        renameFailureSurfaced = true
+        stuckStillActive = FileManager.default.fileExists(atPath: stuckFile.path)
+    }
+    try FileManager.default.setAttributes([.posixPermissions: originalAttributes ?? NSNumber(value: 0o700)],
+                                          ofItemAtPath: lockedStore.directory.path)
+    BatchExportTests.check(renameFailureSurfaced && stuckStillActive,
+                           "pendingJobs reports quarantine rename failures instead of leaving the corrupt record to be overwritten")
+
+    // A good but unreadable record (0o000) must surface the read I/O instead of being quarantined and overwritten.
+    let unreadableStore = try BatchJournalStore(directory: root.appendingPathComponent("corrupt-isolation-unreadable", isDirectory: true))
+    var healthyJob = BatchExportJob(id: UUID(), source: source,
+                                    targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "isolation-source.ARW")],
+                                    outputFormat: .jpeg, longEdge: 2048)
+    healthyJob.status = .failed
+    try unreadableStore.save(healthyJob)
+    let healthyFile = unreadableStore.directory.appendingPathComponent("\(healthyJob.id.uuidString).json")
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o000)], ofItemAtPath: healthyFile.path)
+    var unreadableSurfaced = false
+    var healthyStillActive = false
+    var unreadableOverwriteRejected = false
+    var unreadableNothingQuarantined = false
+    do {
+        _ = try unreadableStore.pendingJobs()
+    } catch {
+        unreadableSurfaced = true
+        healthyStillActive = FileManager.default.fileExists(atPath: healthyFile.path)
+        do {
+            try unreadableStore.save(healthyJob)
+        } catch {
+            unreadableOverwriteRejected = true
+        }
+        unreadableNothingQuarantined = try FileManager.default.contentsOfDirectory(at: unreadableStore.directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.contains(".corrupt-") }.isEmpty
+    }
+    try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: healthyFile.path)
+    BatchExportTests.check(unreadableSurfaced && healthyStillActive && unreadableOverwriteRejected && unreadableNothingQuarantined,
+                           "pendingJobs/save surface an unreadable good journal instead of quarantining and overwriting it")
+}
+
+private func checkJournalWriteAmplification(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("journal-amplify", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("amplify-source.ARW")
+    try Data("amplify-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "amplify-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "amplify-source.ARW", settings: .default)
+    func job(_ longEdge: Int, status: BatchJobStatus = .failed) -> BatchExportJob {
+        var value = BatchExportJob(id: id, source: source,
+                                   targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "amplify-source.ARW")],
+                                   outputFormat: .jpeg, longEdge: longEdge)
+        value.status = status
+        return value
+    }
+    let record = journal.directory.appendingPathComponent("\(id.uuidString).json")
+
+    // 稳态写入：每任务首写整读一次，之后靠本进程 APFS stat 指纹（dev+ino+size+mtime_ns+ctime_ns）跳过整读回（撤跳过逻辑必红）。
+    try journal.save(job(3000))
+    try journal.save(job(2048))
+    try journal.save(job(1024))
+    BatchExportTests.check(journal.diskReloads == 1, "steady-state saves reload the journal once, not once per write")
+    let newest = try journal.load(id: id)?.longEdge
+    BatchExportTests.check(newest == 1024, "skipped re-reads still persist the newest job")
+
+    // 外部改动检测：**同字节长度**、无 sleep 的未来版本覆写必须触发重读并 fail-closed，不得被静默覆盖
+    // （同 inode 原地等长覆写让 size-only 指纹失效，只能靠 mtime_ns/ctime_ns 纳秒变化识别；整读回都去掉必红）。
+    let beforeBytes = try Data(contentsOf: record)
+    // 顶层键按 sortedKeys 排序后 "version" 位于最后一个 `"version":` 出现处（source/targets 内嵌 version 都在其前）。
+    let marker = [UInt8]("\"version\":".utf8)
+    let bytes = [UInt8](beforeBytes)
+    var matchAt = -1
+    var scan = 0
+    while scan + marker.count <= bytes.count {
+        if Array(bytes[scan..<(scan + marker.count)]) == marker { matchAt = scan }
+        scan += 1
+    }
+    guard matchAt >= 0, matchAt + marker.count < bytes.count,
+          bytes[matchAt + marker.count] >= UInt8(ascii: "0"), bytes[matchAt + marker.count] <= UInt8(ascii: "9") else {
+        throw BatchExportError.global("amplify fixture journal has no root version digit.")
+    }
+    var tampered = bytes
+    tampered[matchAt + marker.count] = UInt8(ascii: "3")
+    let futureBytes = Data(tampered)
+    BatchExportTests.check(futureBytes.count == beforeBytes.count && futureBytes != beforeBytes,
+                           "future fixture rewrites the root version in place at identical byte length")
+    try futureBytes.write(to: record)
+    var rejected = false
+    do { try journal.save(job(512)) } catch { rejected = true }
+    let untouchedBytes = try Data(contentsOf: record)
+    BatchExportTests.check(rejected && untouchedBytes == futureBytes && journal.diskReloads == 2,
+                           "an externally replaced future-version journal triggers exactly one reload and fails closed")
+
+    // 回归：写入中途被杀留下完整旧文件与游离 tmp → 重启 load 仍整份恢复（processing→pending、running→interrupted）不误判损坏。
+    var crashed = job(2048, status: .running)
+    crashed.targets[0].status = .processing
+    // 上一段拒绝后磁盘仍是未来版本外壳；先把"进程被杀前最后一次成功写出的完整旧文件"放回盘上。
+    try JSONEncoder().encode(crashed).write(to: record)
+    try journal.save(crashed)
+    try Data("stray".utf8).write(to: journal.directory.appendingPathComponent("\(id.uuidString).json.tmp-stray"))
+    let reopened = try BatchJournalStore(directory: journal.directory)
+    guard let recovered = try reopened.load(id: id)?.recovered() else {
+        throw BatchExportError.global("mid-write kill must leave the previous complete journal loadable")
+    }
+    BatchExportTests.check(recovered.targets[0].status == .pending && recovered.status == .interrupted,
+                           "restart derives the interrupted processing target back to pending without false quarantine")
+    try reopened.save(recovered)
+    BatchExportTests.check(reopened.diskReloads == 1, "a reopened store runs one full validation on its first save")
+}
+
+private func checkFutureJournalRefusesQuarantine(_ root: URL) throws {
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("future-journal", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("future-source.ARW")
+    try Data("future-source".utf8).write(to: sourceURL)
+    let identity = PhotoIdentity(resourceIdentifier: "future-source")
+    let id = UUID()
+    let input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: id, root: journal.directory)
+    let source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(input),
+                                     displayName: "future-source.ARW", settings: .default)
+    var job = BatchExportJob(id: id, source: source,
+                             targets: [BatchTarget(identity: identity, sourceURL: input, displayName: "future-source.ARW")],
+                             outputFormat: .jpeg, longEdge: 3000)
+    job.status = .failed
+    try journal.save(job)
+    let record = journal.directory.appendingPathComponent("\(id.uuidString).json")
+    func rewritten(_ mutate: (inout [String: Any]) -> Void) throws -> Data {
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any] else {
+            throw BatchExportError.global("Test fixture journal is not a JSON object.")
+        }
+        mutate(&object)
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+
+    // A good record written by a newer build (unknown higher journal version) must throw,
+    // stay on its active path, and block save — never be renamed away as corrupt.
+    try rewritten { $0["version"] = 99 }.write(to: record)
+    var pendingRejected = false
+    do { _ = try journal.pendingJobs() } catch { pendingRejected = true }
+    BatchExportTests.check(pendingRejected, "pendingJobs refuses to quarantine a future-version journal as corrupt")
+    BatchExportTests.check(FileManager.default.fileExists(atPath: record.path),
+                           "future-version journal stays on its active path instead of a corrupt rename")
+    var saveRejected = false
+    var newerJob = job
+    newerJob.updatedAt = Date()
+    do { try journal.save(newerJob) } catch { saveRejected = true }
+    BatchExportTests.check(saveRejected, "save refuses to overwrite a future-version journal")
+    let untouched = try JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any]
+    BatchExportTests.check((untouched?["version"] as? Int) == 99, "rejected save leaves the future record untouched")
+
+    // Deeper path: a future processing identity inside source.settings must be recognized as future too.
+    try rewritten { object in
+        var sourceObject = object["source"] as? [String: Any] ?? [:]
+        var settings = sourceObject["settings"] as? [String: Any] ?? [:]
+        settings["processing"] = ["family": "rawlab", "version": 9, "quality": "standard"]
+        sourceObject["settings"] = settings
+        object["source"] = sourceObject
+    }.write(to: record)
+    var deepRejected = false
+    do { _ = try journal.load(id: id) } catch { deepRejected = true }
+    BatchExportTests.check(deepRejected && FileManager.default.fileExists(atPath: record.path),
+                           "load refuses to quarantine a journal with a future processing version")
+}
+
+private func checkUniformBatchX3fTargetMode(_ root: URL) throws {
+    let store = try EditPersistence(directory: root.appendingPathComponent("x3f-target-edits", isDirectory: true))
+    let sourceURL = root.appendingPathComponent("source.x3f")
+    try Data("source-x3f".utf8).write(to: sourceURL)
+
+    var sourceSettings = RawSettings.default
+    sourceSettings.x3fMode = .legacy
+    sourceSettings.exposure = 0.75
+    sourceSettings.lensCorrection = LensCorrectionSettings(
+        distortion: true,
+        tca: true,
+        autoCrop: false,
+        mode: .manual,
+        profileID: "saved-lens-profile",
+        focalLength: 35,
+        cropFactor: 1.5,
+        vignetting: true
+    )
+    let source = BatchSourceSnapshot(
+        identity: try PhotoIdentity.fallback(for: sourceURL),
+        sourceFile: .externallyManaged(sourceURL),
+        displayName: "source.x3f",
+        sourceKind: .raw,
+        settings: sourceSettings
+    )
+
+    let savedLegacyURL = root.appendingPathComponent("saved-legacy.X3F")
+    let savedNormalURL = root.appendingPathComponent("saved-normal.x3f")
+    let unsavedNormalURL = root.appendingPathComponent("unsaved-normal.x3f")
+    let unsavedLegacyURL = root.appendingPathComponent("unsaved-legacy.x3f")
+    let nonX3fURL = root.appendingPathComponent("target.arw")
+    for url in [savedLegacyURL, savedNormalURL, unsavedNormalURL, unsavedLegacyURL, nonX3fURL] {
+        try Data(url.lastPathComponent.utf8).write(to: url)
+    }
+
+    let savedLegacyID = PhotoIdentity(
+        resourceIdentifier: "ph-asset-saved-legacy",
+        contentIdentifier: try PhotoIdentity.fallback(for: savedLegacyURL).contentIdentifier
+    )
+    let savedNormalID = try PhotoIdentity.fallback(for: savedNormalURL)
+    let unsavedNormalID = try PhotoIdentity.fallback(for: unsavedNormalURL)
+    let unsavedLegacyID = try PhotoIdentity.fallback(for: unsavedLegacyURL)
+    let nonX3fID = try PhotoIdentity.fallback(for: nonX3fURL)
+
+    var legacyEdit = RawSettings.default
+    legacyEdit.x3fMode = .legacy
+    try store.save(savedLegacyID, state: PhotoEditState(settings: legacyEdit))
+
+    var normalEdit = RawSettings.default
+    normalEdit.x3fMode = .normal
+    try store.save(savedNormalID, state: PhotoEditState(settings: normalEdit))
+
+    var defaultCalls: [String] = []
+    let resolver = BatchExportJob.x3fModeResolver(store: store) { url in
+        defaultCalls.append(url.lastPathComponent)
+        switch url.lastPathComponent {
+        case savedLegacyURL.lastPathComponent: return .normal
+        case savedNormalURL.lastPathComponent: return .legacy
+        case unsavedNormalURL.lastPathComponent: return .normal
+        case unsavedLegacyURL.lastPathComponent: return .legacy
+        default: throw NSError(domain: "UnexpectedDefaultProbe", code: 1)
+        }
+    }
+
+    let targets = [
+        BatchTarget(identity: savedLegacyID, sourceURL: savedLegacyURL, displayName: "saved-legacy.X3F"),
+        BatchTarget(identity: savedNormalID, sourceURL: savedNormalURL, displayName: "saved-normal.x3f"),
+        BatchTarget(identity: unsavedNormalID, sourceURL: unsavedNormalURL, displayName: "unsaved-normal.x3f"),
+        BatchTarget(identity: unsavedLegacyID, sourceURL: unsavedLegacyURL, displayName: "unsaved-legacy.x3f"),
+        BatchTarget(identity: nonX3fID, sourceURL: nonX3fURL, displayName: "target.arw")
+    ]
+    let job = BatchExportJob(source: source, targets: targets)
+
+    let resolvedSavedLegacy = try job.settings(for: job.targets[0], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedSavedLegacy.x3fMode == .legacy &&
+            resolvedSavedLegacy.lensCorrection == sourceSettings.lensCorrection &&
+            resolvedSavedLegacy.exposure == 0.75,
+        "saved legacy X3F mode wins over file default normal and preserves source lens settings"
+    )
+
+    let resolvedSavedNormal = try job.settings(for: job.targets[1], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedSavedNormal.x3fMode == .normal &&
+            resolvedSavedNormal.lensCorrection?.distortion == false &&
+            resolvedSavedNormal.lensCorrection?.tca == false &&
+            resolvedSavedNormal.lensCorrection?.vignetting == false &&
+            resolvedSavedNormal.lensCorrection?.isEnabled == false &&
+            resolvedSavedNormal.lensCorrection?.autoCrop == false &&
+            resolvedSavedNormal.lensCorrection?.mode == .manual &&
+            resolvedSavedNormal.lensCorrection?.profileID == "saved-lens-profile" &&
+            resolvedSavedNormal.lensCorrection?.focalLength == 35 &&
+            resolvedSavedNormal.lensCorrection?.cropFactor == 1.5 &&
+            resolvedSavedNormal.exposure == 0.75,
+        "saved normal X3F mode wins over file default legacy and clears distortion, TCA, and vignetting"
+    )
+
+    let resolvedUnsavedNormal = try job.settings(for: job.targets[2], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedUnsavedNormal.x3fMode == .normal &&
+            resolvedUnsavedNormal.lensCorrection?.distortion == false &&
+            resolvedUnsavedNormal.lensCorrection?.tca == false &&
+            resolvedUnsavedNormal.lensCorrection?.vignetting == false &&
+            resolvedUnsavedNormal.lensCorrection?.isEnabled == false,
+        "unsaved X3F target falls back to file default normal and clears all three lens flags"
+    )
+
+    var normalSourceSettings = sourceSettings
+    normalSourceSettings.x3fMode = .normal
+    let normalSource = BatchSourceSnapshot(
+        identity: source.identity,
+        sourceFile: source.sourceFile,
+        displayName: source.displayName,
+        sourceKind: .raw,
+        settings: normalSourceSettings
+    )
+    let resolvedUnsavedLegacy = try normalSource.settings(for: job.targets[3], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedUnsavedLegacy.x3fMode == .legacy &&
+            resolvedUnsavedLegacy.lensCorrection == sourceSettings.lensCorrection,
+        "unsaved X3F target falls back to file default legacy instead of inheriting normal source mode"
+    )
+
+    let resolvedNonX3f = try job.settings(for: job.targets[4], resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        resolvedNonX3f == sourceSettings &&
+            defaultCalls == [unsavedNormalURL.lastPathComponent, unsavedLegacyURL.lastPathComponent] &&
+            job.source.settings == sourceSettings,
+        "default probe runs only for unsaved X3F targets and non-X3F targets keep existing behavior"
+    )
+
+    let extensionlessURL = root.appendingPathComponent("extensionless-x3f")
+    try Data("extensionless-x3f".utf8).write(to: extensionlessURL)
+    let extensionlessID = try PhotoIdentity.fallback(for: extensionlessURL)
+    let copiedExtensionlessURL = try BatchInputStore.copy(
+        extensionlessURL,
+        identity: extensionlessID,
+        jobID: job.id,
+        root: root.appendingPathComponent("extensionless-store", isDirectory: true),
+        displayName: "extensionless.X3F"
+    )
+    let legacyRawCopiedTarget = BatchTarget(
+        identity: savedNormalID,
+        sourceURL: root.appendingPathComponent("legacy-owned.raw"),
+        displayName: "legacy-copied.X3F"
+    )
+    let resolvedLegacyRawCopied = try job.settings(for: legacyRawCopiedTarget, resolveX3fMode: resolver)
+    try BatchExportTests.require(
+        copiedExtensionlessURL.pathExtension.lowercased() == "x3f" &&
+            legacyRawCopiedTarget.isX3f &&
+            resolvedLegacyRawCopied.x3fMode == .normal,
+        "BatchInputStore preserves displayName X3F suffix for extensionless sources and BatchTarget.isX3f still matches .raw owned copies"
+    )
+
+    let corruptURL = root.appendingPathComponent("corrupt.x3f")
+    try Data("corrupt".utf8).write(to: corruptURL)
+    let corruptTarget = BatchTarget(
+        identity: try PhotoIdentity.fallback(for: corruptURL),
+        sourceURL: corruptURL,
+        displayName: "corrupt.x3f"
+    )
+    var injectedRendered: [String: RawSettings] = [:]
+    let injectedRunnerJob = BatchExportJob(source: source, targets: [corruptTarget, job.targets[1]])
+    let injectedOutcome = try BatchExportRunner.run(
+        job: injectedRunnerJob,
+        journalStore: nil,
+        render: { target, effective in
+            injectedRendered[target.id] = effective
+        },
+        write: { _, _, _, _ in },
+        resolveX3fMode: resolver
+    )
+    try BatchExportTests.require(
+        injectedOutcome.status == .partialFailure &&
+            injectedOutcome.targets[0].status == .failed &&
+            injectedOutcome.targets[1].status == .succeeded &&
+            injectedRendered[savedNormalID.key]?.x3fMode == .normal &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.distortion == false &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.tca == false &&
+            injectedRendered[savedNormalID.key]?.lensCorrection?.vignetting == false,
+        "BatchExportRunner uses injected EditPersistence resolver and isolates corrupt X3F probe failures per target"
+    )
+
+    let appStore = try EditPersistence.appStore()
+    try appStore.save(savedNormalID, state: PhotoEditState(settings: normalEdit))
+    defer { try? appStore.reset(savedNormalID) }
+    var runnerRendered: RawSettings?
+    let runnerJob = BatchExportJob(source: source, targets: [job.targets[1]])
+    _ = try BatchExportRunner.run(job: runnerJob, journalStore: nil, render: { _, effective in
+        runnerRendered = effective
+    }, write: { _, _, _, _ in })
+    try BatchExportTests.require(
+        runnerRendered?.x3fMode == .normal &&
+            runnerRendered?.lensCorrection?.distortion == false &&
+            runnerRendered?.lensCorrection?.tca == false &&
+            runnerRendered?.lensCorrection?.vignetting == false,
+        "BatchExportRunner uniform export resolves saved X3F target mode from appStore and clears lens flags"
+    )
 }

@@ -1,3 +1,4 @@
+import RawLabKit
 import Photos
 import PhotosUI
 import SwiftUI
@@ -5,29 +6,27 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct LookCompatibilityPresentation: Identifiable {
-    let id = UUID()
+    let id: UUID
     let source: URL
     let draft: LUTCompatibility
+
+    init(id: UUID = UUID(), source: URL, draft: LUTCompatibility) {
+        self.id = id
+        self.source = source
+        self.draft = draft
+    }
 }
 
 struct DCPImportOptionsPresentation: Identifiable {
-    let id = UUID()
+    let id: UUID
     let source: URL
     let reason: DCPCompilerError
-}
 
-enum EditorDocumentImportKind {
-    case photo
-    case looks
-
-    var contentTypes: [UTType] {
-        switch self {
-        case .photo: PhotoImportFile.photoPickerContentTypes
-        case .looks: PhotoImportFile.supportedLookContentTypes
-        }
+    init(id: UUID = UUID(), source: URL, reason: DCPCompilerError) {
+        self.id = id
+        self.source = source
+        self.reason = reason
     }
-
-    var allowsMultipleSelection: Bool { self == .looks }
 }
 
 struct ContentView: View {
@@ -37,120 +36,83 @@ struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.displayScale) var displayScale
     @Environment(\.scenePhase) var scenePhase
-    @StateObject var viewModel = RawEditorViewModel()
-    @StateObject var hdrDisplay=HDRDisplayState()
-    @State var settings = RawSettings.default
-    @State private var didAutoLoadSample = false
-    @State var photoViewing = PhotoViewingState()
-    @State var photoViewport = PhotoViewport()
+    @StateObject var viewModel: RawEditorViewModel
+    @StateObject var hdrDisplay = HDRDisplayState()
+    @StateObject var photoPreviews = IOSPhotoPreviewLibrary()
+    @StateObject var coordinator: EditorCoordinator
+    let testHooks: EditorTestHooks
     @State var photoComparisonControlBounds = CGRect.zero
-    @State var pendingPhotoImport = false
-    @State var pendingFileImport = false
-    @State var pendingSystemPhotoURLs: [[URL]] = []
-    var showingBefore: Bool {
-        get { photoViewing.holdingBefore }
-        nonmutating set {
-            if newValue { photoViewing.beginHolding(isDraft: isEditorDraftActive) }
-            else { photoViewing.endTemporaryViewing() }
-        }
-    }
-    @State var selectedAdjustment: AdjustmentKind? = nil
-    @State var lensSelected = false
-    @State var geometrySelected = false
-    @State var choosingMasterRecipe = false
-    @State var adjustmentsExpanded = true
-    @State var histogramExpanded = false
-    @State var isImporting = false
-    @State var isSaving = false
-    @State var isAdjustingSlider = false
-    @State var rulerFocusPhase = RulerFocusPhase.idle
-    @State var rulerFocusTask: Task<Void, Never>?
-    @State var geometryDraft: GeometrySettings?
-    @State var geometryAspectPreset: CropAspectPreset = .free
-    @State var geometryLockedRatio: Double?
-    @State var geometryAspectSwapped = false
-    @State var geometryGrid = true
-    @State var geometryPerspective = false
-    @State var showingProcessingContext = false
-    @State var adjustmentSheet: IOSAdjustmentSheet?
-    @State var pendingAdjustmentAction: IOSAdjustmentAction?
-    @State var queuedPresetAction: IOSAdjustmentAction?
-    @State var applyingPreset: AdjustmentPreset?
-    @State var returnToPresetLibrary = false
-    @State var presetLibraryRevision = UUID()
-    @State var lensDraft: RawSettings?
-    @State var draftExitPresented = false
-    @State var pendingToolSelection: EditorToolSelection?
-    @State var selectedGroup = EditorAdjustmentGroup.looks
-    @State var hslChannel = 0
-    @State var hslTargetEnabled = false
-    @State var hslTargetAxis: HSLAxis = .hue
-    @State var hslTargetInteraction = HSLTargetInteraction()
-    @State var hslTargetPoint: CGPoint?
-    @State var hslTargetNotice: HSLTargetAvailability?
-    @State var hslTargetHistoryActive = false
-    @State var gradingZone: ColorGradingZone = .shadows
-    @State var adjustmentFine = false
-    @State var pendingAdjustmentExpansion: Bool?
-    @State var collapsedEditorTool: EditorToolSelection?
-    @State var preparedReset: PreparedEditorReset?
-    @State var preparedResetScope: EditorAdjustmentScope?
-    @State var resetConfirmationPresented = false
-    @State var resetRestoreTool: EditorToolSelection?
-    @State var resetIntentSource: EditorEditSource?
-    @State var resetDraftSuspended = false
-    @State var resetWaitingForReady = false
-    @State var suppressNextDraftPreview = false
-    @State var autoExposing = false
-    @State var settingsRevision = UUID()
-    @State var selectedPhotoItem: PhotosPickerItem?
-    @State var photoImportTask: Task<Void, Never>?
-    @State var photoImportRequestID: UUID?
-    @State var showingPhotoImporter = false
-    @State var documentImportKind = EditorDocumentImportKind.photo
-    @State var showingDocumentImporter = false
-    @State var pendingLookCompatibility: LookCompatibilityPresentation?
-    @State var lookCompatibilityCompletion: ((LUTCompatibility?) -> Void)?
-    @State var confirmedLookCompatibility: LUTCompatibility?
-    @State var pendingDCPImportOptions: DCPImportOptionsPresentation?
-    @State var dcpImportOptionsCompletion: ((DCPImportOptions?) -> Void)?
-    @State var confirmedDCPImportOptions: DCPImportOptions?
-    @State var renamingLUT: LUTOption?
-    @State var renamedLUTName = ""
-    @State var showingLookRename = false
-    @State private var checkedBatchRecovery = false
-    @State var showingBatchSelection = false
-    @State var queuedCollectionEdit: String?
-    @State var collectionBatchHandoff = IOSCollectionBatchHandoff()
-    @State var queuedCollectionExistingBatch = false
-    @State var pendingCollectionNavigation: IOSCollectionNavigation?
-    @State var showingBatchExport = false
-    @State var batchModel: BatchExportModel?
-    @State var photoInfoMode = PhotoInfoMode.hidden
-    @State var photoInformation: PhotoInformation?
-    @State var showingExportSize = false
-    @State var showingPrivacy = false
-    @State var exportLongEdge: Int?
-    @State var singleExportFormat: BatchOutputFormat = .jpeg
-    @State var fileExportRequest: FileExportRequest?
     @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
     @ScaledMetric(relativeTo: .caption) var toolHeight = 44.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
     @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
     @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
     @State var parameterContentHeight: CGFloat = 0
-    @State var parameterActionsHeight: CGFloat = 0
+
+    @MainActor
+    init(
+        viewModel: @autoclosure @escaping () -> RawEditorViewModel = RawEditorViewModel(),
+        coordinator: @MainActor @autoclosure @escaping () -> EditorCoordinator? = nil,
+        testHooks: EditorTestHooks = EditorTestHooks()
+    ) {
+        _viewModel = StateObject(wrappedValue: viewModel())
+        _coordinator = StateObject(wrappedValue: coordinator() ?? EditorCoordinator())
+        self.testHooks = testHooks
+    }
 
     var body: some View {
         let _ = localizationLocale
+        let _ = coordinator.attachIfNeeded(backend: viewModel)
         let root = editorNavigation
         let presented = applyEditorPresentation(to: root)
         let dataObserved = applyEditorDataObservers(to: presented)
         let draftObserved = applyEditorDraftObservers(to: dataObserved)
         let interactionObserved = applyEditorInteractionObservers(to: draftObserved)
         return applyEditorSheets(to: interactionObserved)
-            .sheet(isPresented: $showingProcessingContext) { processingContextSheet }
+            .fullScreenCover(isPresented: $coordinator.showingCameraWorkspace, onDismiss: {
+                guard let url = coordinator.cameraOriginalToOpen else { return }
+                coordinator.cameraOriginalToOpen = nil
+                requestSystemPhotoImport([url])
+            }) {
+                IOSCameraWorkspace(onOpenOriginal: { url in
+                    coordinator.cameraOriginalToOpen = url
+                    coordinator.showingCameraWorkspace = false
+                }, onClose: { coordinator.showingCameraWorkspace = false })
+            }
+            .sheet(isPresented: $coordinator.showingProcessingContext) { processingContextSheet }
+            .sheet(isPresented: $coordinator.showingRecentPhotos, onDismiss: finishRecentPhotos) {
+                RecentPhotosView(library: photoPreviews, model: viewModel,
+                    filter: $coordinator.recentPhotoFilter, scrollID: $coordinator.recentPhotoScrollID,
+                    open: { coordinator.recentPhotoToOpen = $0; coordinator.showingRecentPhotos = false },
+                    importPhoto: { coordinator.recentImportRequested = true; coordinator.showingRecentPhotos = false })
+            }
+            .alert(L10n.text("无法重新打开照片"), isPresented: Binding(get: { coordinator.recentOpenError != nil }, set: { if !$0 { coordinator.recentOpenError = nil } })) {
+                Button(L10n.text("从照片图库导入")) {
+                    coordinator.recentOpenError = nil
+                    requestEditorImport(file: false, recent: coordinator.recentFailedPhoto)
+                    coordinator.recentFailedPhoto = nil
+                }
+                Button(L10n.text("从文件导入")) {
+                    coordinator.recentOpenError = nil
+                    requestEditorImport(file: true, recent: coordinator.recentFailedPhoto)
+                    coordinator.recentFailedPhoto = nil
+                }
+                Button(L10n.text("取消"), role: .cancel) {
+                    coordinator.recentOpenError = nil
+                    coordinator.recentFailedPhoto = nil
+                }
+            } message: { Text(coordinator.recentOpenError ?? "") }
+            .onChange(of: viewModel.importedPhotoRevision) { _, _ in recordRecentPhoto(); restoreEditorDraft() }
+            .onChange(of: viewModel.hslFrameRevision) { _, _ in cacheCurrentPhotoPreview() }
+            .onChange(of: viewModel.adjustmentHistoryRevision) { _, _ in
+                cacheCurrentPhotoPreview()
+                if coordinator.showingRecentPhotos {
+                    Task { await photoPreviews.reload(editDirectory: viewModel.editPersistence?.directory) }
+                }
+            }
+            .onChange(of: editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.matchingProcessing, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
             .onOpenURL { requestSystemPhotoImport([$0]) }
             .onChange(of: editorBusy) { _, busy in
                 if !busy { continueSystemPhotoImport() }
@@ -168,9 +130,12 @@ struct ContentView: View {
                         return true
                     }
             }
+            .background(EditorToolBackGesture(
+                enabled: toolWorkspaceOpen && !editorBusy && !draftExitPresented && adjustmentSheet == nil && !photoViewing.previewOnly,
+                onBack: requestToolWorkspaceExit))
             .safeAreaInset(edge: .top) {
                 if let batchModel, !showingBatchExport {
-                    Button { showingBatchExport = true } label: {
+                    Button { coordinator.showingBatchExport = true } label: {
                         HStack {
                             Image(systemName: "square.stack.3d.up")
                             Text(L10n.format("查看批量任务 · %@ 张", String(describing: batchModel.job.targets.count)))
@@ -180,8 +145,7 @@ struct ContentView: View {
                     }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
                 }
             }
-            // 紧凑宽度下两侧按钮已占满导航栏，标题只会被挤成"…"，干脆不显示
-            .navigationTitle(horizontalSizeClass == .compact ? "" : "RawLab")
+            .navigationTitle(toolWorkspaceOpen ? currentEditorTool.title : viewModel.sourceDisplayName ?? "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
             .toolbar(photoViewing.previewOnly ? .hidden : .visible, for: .navigationBar)
@@ -192,14 +156,14 @@ struct ContentView: View {
 
     private func applyEditorPresentation<Content: View>(to content: Content) -> some View {
         // 同一宿主只注册一个文件窗口，避免 iPadOS 26 的照片入口被后一个导入器遮蔽。
-        let importKind = documentImportKind
+        let importKind = coordinator.documentImportKind
         return content
         .preferredColorScheme(.dark)
         .tint(.yellow)
-        .photosPicker(isPresented: $showingPhotoImporter, selection: $selectedPhotoItem,
+        .photosPicker(isPresented: $coordinator.showingPhotoImporter, selection: $coordinator.selectedPhotoItem,
                       matching: .images, preferredItemEncoding: .current, photoLibrary: .shared())
-        .sheet(isPresented: $showingPrivacy) { UsagePrivacyView() }
-        .fileImporter(isPresented: $showingDocumentImporter,
+        .sheet(isPresented: $coordinator.showingPrivacy) { UsagePrivacyView() }
+        .fileImporter(isPresented: $coordinator.showingDocumentImporter,
                       allowedContentTypes: importKind.contentTypes,
                       allowsMultipleSelection: importKind.allowsMultipleSelection) { result in
             switch importKind {
@@ -207,48 +171,66 @@ struct ContentView: View {
             case .looks: importLooks(result)
             }
         }
-        .sheet(item: $pendingLookCompatibility, onDismiss: {
-            let completion = lookCompatibilityCompletion
-            let confirmed = confirmedLookCompatibility
-            lookCompatibilityCompletion = nil
-            confirmedLookCompatibility = nil
+        .sheet(item: Binding<LookCompatibilityPresentation?>(
+            get: { coordinator.pendingLookCompatibility.flatMap { $0.value as? LookCompatibilityPresentation } },
+            set: { coordinator.pendingLookCompatibility = $0.map { EditorOpaquePresentation(value: $0) } }
+        ), onDismiss: {
+            let completion = coordinator.lookCompatibilityCompletion as? (LUTCompatibility?) -> Void
+            let confirmed = coordinator.confirmedLookCompatibility as? LUTCompatibility
+            coordinator.lookCompatibilityCompletion = nil
+            coordinator.confirmedLookCompatibility = nil
             completion?(confirmed)
         }) { pending in
             IOSLUTCompatibilityView(source: pending.source, draft: pending.draft,
                 initialPhoto: viewModel.sourceFile.map { file in
-                    LUTPreviewSource(name: file.displayName) { destination in
+                    LUTPreviewSource(name: file.displayName, localURL: file.persistentLocalURL) { destination in
                         try file.withReadAccess { try FileManager.default.copyItem(at: $0, to: destination) }
                     }
                 }) { result in
-                confirmedLookCompatibility = result
-                pendingLookCompatibility = nil
+                coordinator.confirmedLookCompatibility = result
+                coordinator.pendingLookCompatibility = nil
             }
         }
-        .sheet(item: $pendingDCPImportOptions, onDismiss: {
-            let completion = dcpImportOptionsCompletion
-            let options = confirmedDCPImportOptions
-            dcpImportOptionsCompletion = nil
-            confirmedDCPImportOptions = nil
+        .sheet(item: Binding<DCPImportOptionsPresentation?>(
+            get: { coordinator.pendingDCPImportOptions.flatMap { $0.value as? DCPImportOptionsPresentation } },
+            set: { coordinator.pendingDCPImportOptions = $0.map { EditorOpaquePresentation(value: $0) } }
+        ), onDismiss: {
+            let completion = coordinator.dcpImportOptionsCompletion as? (DCPImportOptions?) -> Void
+            let options = coordinator.confirmedDCPImportOptions as? DCPImportOptions
+            coordinator.dcpImportOptionsCompletion = nil
+            coordinator.confirmedDCPImportOptions = nil
             completion?(options)
         }) { pending in
             IOSDCPImportOptionsView(source: pending.source, reason: pending.reason) { options in
-                confirmedDCPImportOptions = options
-                pendingDCPImportOptions = nil
+                coordinator.confirmedDCPImportOptions = options
+                coordinator.pendingDCPImportOptions = nil
             }
         }
-        .alert(L10n.text("重命名外观"), isPresented: $showingLookRename) {
-            TextField(L10n.text("外观名称"), text: $renamedLUTName)
-            Button(L10n.text("取消"), role: .cancel) { renamingLUT = nil }
-            Button(L10n.text("保存")) {
-                if let look = renamingLUT { viewModel.renameLook(id: look.id, name: renamedLUTName) }
-                renamingLUT = nil
-            }.disabled(renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                       renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
+        .alert(L10n.text("重命名外观"), isPresented: $coordinator.showingLookRename) {
+            TextField(L10n.text("外观名称"), text: $coordinator.renamedLUTName)
+            Button(L10n.text("取消"), role: .cancel) { coordinator.cancelLookRename() }
+            Button(L10n.text("保存")) { coordinator.completeLookRename() }
+                .disabled(coordinator.renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                          coordinator.renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
         }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
             set: { if !$0, viewModel.statusMessage != nil { viewModel.statusMessage = nil } }
         )) {
+            if let recover = viewModel.resetUnusableImportRecord {
+                Button(L10n.text("重置全部调整"), role: .destructive) {
+                    viewModel.statusMessage = nil
+                    recover { restored in
+                        settings = restored
+                        if restored.isHDREditing {
+                            coordinator.selectedGroup = .light
+                            coordinator.selectedAdjustment = .exposure
+                            coordinator.selectedHDRRenditionTool = nil
+                        }
+                    }
+                }
+                .accessibilityIdentifier("edits.resetUnusable")
+            }
             if let retry = viewModel.retryLegacyX3fImport {
                 Button(L10n.text("使用旧版显影重试")) { retry { settings = $0 } }
                     .accessibilityIdentifier("x3f.retryLegacy")
@@ -258,7 +240,7 @@ struct ContentView: View {
                     .disabled(!canStartFileExport)
                     .accessibilityIdentifier("diagnostics.export.alert")
             }
-            Button(L10n.text("关闭"), role: .cancel) {
+            Button(L10n.text(viewModel.resetUnusableImportRecord == nil ? "关闭" : "取消"), role: .cancel) {
                 viewModel.statusMessage = nil
             }
         } message: {
@@ -272,192 +254,190 @@ struct ContentView: View {
 
     private func applyEditorDataObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: settings) { _, newValue in
-            settingsRevision = UUID()
-            viewModel.committedPreviewSettings = newValue
-            if viewModel.consumeRestoredSettings(newValue) { return }
-            if viewModel.consumePersistedEditorSettings(newValue) { return }
-            queueEditorSettingsChange(newValue)
+        .onChange(of: coordinator.settings) { _, newValue in
+            coordinator.handleSettingsChange(newValue)
         }
         .onChange(of: viewModel.adjustmentRestoredSettings) { _, restored in
             guard let restored else { return }
             settings = restored
-            if restored.isHDREditing && !viewModel.quickPresetsVisible { activateEditorTool(.adjustment(.exposure)) }
+            if restored.isHDREditing && !viewModel.quickPresetsVisible {
+                coordinator.selectedGroup = .light
+                coordinator.selectedAdjustment = .exposure
+                coordinator.selectedHDRRenditionTool = nil
+            } else {
+                coordinator.normalizeHDRNavigation(isHDREditing: restored.isHDREditing)
+            }
             viewModel.adjustmentRestoredSettings = nil
             viewModel.updatePreview(settings: restored, includeHistogram: true, quality: .final)
         }
-        .onChange(of: selectedPhotoItem) { _, newItem in
+        .onChange(of: coordinator.selectedPhotoItem) { _, newItem in
             guard let newItem else { return }
-            photoImportTask?.cancel()
+            coordinator.photoImportTask?.cancel()
             let requestID = UUID()
-            photoImportRequestID = requestID
+            coordinator.photoImportRequestID = requestID
             viewModel.cancelImageImport()
-            photoImportTask = Task {
+            coordinator.photoImportTask = Task {
                 await importFromPhotoItem(newItem, requestID: requestID)
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background || phase == .inactive {
-                cancelSliderInteraction()
-                viewModel.saveCurrentSettings(settings)
-            }
-            if phase == .background {
-                batchModel?.cancel(forBackground: true)
-                viewModel.cancelHDRExport()
-            }
-            if phase != .active {
-                collectionBatchHandoff.cancelAutomaticStart()
-                viewModel.cancelCollectionExportPreparation()
-                viewModel.cancelQuickPreset(); cancelRulerFocus(); photoViewing.endTemporaryViewing()
-            }
+            coordinator.handleScenePhaseChange(phase)
         }
     }
 
     private func applyEditorDraftObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: editorDraftSnapshot) { old, draft in
-            viewModel.hasAdjustmentDraft = draft.isActive
-            if (old.geometry != draft.geometry || old.lens != draft.lens),
-               draft.geometry != nil || draft.lens != nil {
-                if suppressNextDraftPreview { suppressNextDraftPreview = false }
-                else { previewEditorDraft() }
-            }
+        .onChange(of: coordinator.editorDraftSnapshot) { old, draft in
+            coordinator.handleDraftSnapshotChange(old: old, draft: draft)
         }
+        .onChange(of: coordinator.geometryDraftState) { _, _ in coordinator.syncGeometryDraft() }
+        .onChange(of: coordinator.geometryDraft) { _, _ in coordinator.syncGeometryDraft() }
+        .onChange(of: coordinator.lensDraft) { _, _ in coordinator.syncGeometryDraft() }
         .onChange(of: viewModel.sourceRevision) { _, _ in
-            cancelHSLTarget()
-            gradingZone = .shadows
-            photoViewing.sourceChanged()
+            coordinator.resetForNewSource()
             photoComparisonControlBounds = .zero
-            photoViewport = PhotoViewport()
-            pendingFileImport = false
-            pendingPhotoImport = false
-            pendingAdjustmentAction = nil
-            queuedPresetAction = nil
-            applyingPreset = nil
-            returnToPresetLibrary = false
-            if adjustmentSheet == .presetSave || adjustmentSheet == .presetApply { adjustmentSheet = nil }
-            adjustmentFine = false
-            geometryDraft = nil
-            lensDraft = nil
-            pendingToolSelection = nil
-            pendingAdjustmentExpansion = nil
-            preparedReset = nil
-            preparedResetScope = nil
-            resetConfirmationPresented = false
-            resetRestoreTool = nil
-            resetIntentSource = nil
-            resetDraftSuspended = false
-            resetWaitingForReady = false
-            suppressNextDraftPreview = false
-            draftExitPresented = false
-            cancelRulerFocus()
-            // Import renders the committed crop; the retained geometry tool needs the full image.
-            if geometrySelected && !viewModel.isBusy {
-                viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-            }
         }
         .onChange(of: viewModel.isBusy) { _, busy in
             if !busy, let current = viewModel.batchSelection.selection.current, current != viewModel.sourceIdentity?.key {
                 viewModel.batchSelection.selection.returnToCollection()
             }
-            if !busy && photoImportTask == nil {
-                isImporting = false
-                photoImportRequestID = nil
+            if !busy && coordinator.photoImportTask == nil {
+                coordinator.isImporting = false
+                coordinator.photoImportRequestID = nil
             }
-            continuePendingAllReset()
         }
-        .onChange(of: viewModel.previewRendering) { _, _ in continuePendingAllReset() }
-        .onChange(of: viewModel.previewResizePending) { _, _ in continuePendingAllReset() }
         .onChange(of: viewModel.basePreviewImage) { _, image in
-            if image == nil { photoViewing.endTemporaryViewing() }
+            if image == nil { coordinator.photoViewing.endTemporaryViewing() }
         }
         .onChange(of: viewModel.hasImage) { _, hasImage in
-            if hasImage { adjustmentsExpanded = true }
+            if hasImage { coordinator.adjustmentsExpanded = true }
+        }
+        .onChange(of: coordinator.photoViewing.holdingBefore) { _, _ in
+            testHooks.onHoldingBeforeChange?(self)
+        }
+        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore, initial: true) { _, needed in
+            viewModel.setDetailNeedsBefore(needed)
         }
     }
 
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: adjustmentsExpanded) { _, expanded in
+        .onChange(of: coordinator.adjustmentsExpanded) { _, expanded in
             if !expanded { closeQuickPresets() }
-            if !expanded && isAdjustingSlider && !hslTargetEnabled { setSliderEditing(false) }
-            if expanded, let tool = collapsedEditorTool { activateEditorTool(tool) }
+            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled { setSliderEditing(false) }
+            if expanded, let tool = coordinator.collapsedEditorTool { activateEditorTool(tool) }
         }
-        .onChange(of: geometrySelected) { _, active in
+        .onChange(of: coordinator.geometrySelected) { _, active in
             if active {
-                photoViewing.sourceChanged()
+                coordinator.photoViewing.sourceChanged()
                 photoComparisonControlBounds = .zero
                 // 裁切 controller 使用 fit 画布，进入时显式收敛唯一视口。
-                photoViewport = PhotoViewport()
+                coordinator.photoViewport = PhotoViewport()
             }
-            if isAdjustingSlider { setSliderEditing(false) }
+            if coordinator.isAdjustingSlider { setSliderEditing(false) }
         }
-        .onChange(of: lensSelected) { _, active in
-            if active { photoViewing.sourceChanged() }
+        .onChange(of: coordinator.lensSelected) { _, active in
+            if active { coordinator.photoViewing.sourceChanged() }
         }
-        .onChange(of: selectedAdjustment) { _, _ in
-            cancelHSLTarget(); hslTargetEnabled = false
-            if isAdjustingSlider { cancelSliderInteraction() }
-            cancelRulerFocus()
+        .onChange(of: coordinator.selectedAdjustment) { _, _ in
+            coordinator.cancelHSLTarget()
+            coordinator.hslTargetEnabled = false
+            if coordinator.isAdjustingSlider { cancelSliderInteraction() }
+            coordinator.cancelRulerFocus()
         }
-        .onChange(of: gradingZone) { _, _ in cancelSliderInteraction() }
-        .onChange(of: hslChannel) { _, _ in cancelHSLTarget(); cancelSliderInteraction() }
-        .onChange(of: hslTargetEnabled) { _, _ in photoViewing.endTemporaryViewing() }
-        .onChange(of: adjustmentFine) { _, _ in cancelSliderInteraction() }
+        .onChange(of: coordinator.selectedHDRRenditionTool) { _, _ in
+            coordinator.cancelHSLTarget()
+            coordinator.hslTargetEnabled = false
+            if coordinator.isAdjustingSlider { cancelSliderInteraction() }
+            coordinator.cancelRulerFocus()
+        }
+        .onChange(of: coordinator.gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: coordinator.hslChannel) { _, _ in
+            coordinator.cancelHSLTarget()
+            cancelSliderInteraction()
+        }
+        .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
             handleEditorAppear()
+            testHooks.onAppear?(self)
         }
     }
 
     private func applyEditorSheets<Content: View>(to content: Content) -> some View {
         content
-        .sheet(item: $adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Q3/Q4：快捷预设（无粘贴 Sheet）用非阻塞横幅展示提示，数秒后自动消失；
+            // Sheet 打开时不显示横幅，提示保留在属性里，由 Sheet 内嵌提示行呈现。
+            if viewModel.transferResultNotices.isEmpty || adjustmentSheet != nil {
+                Color.clear.frame(height: 0)
+            } else {
+                Text(viewModel.transferResultNotices.joined(separator: "；"))
+                    .font(.footnote)
+                    .padding(.vertical, 8).padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .background(.bar)
+                    .accessibilityIdentifier("adjustment.notices.banner")
+                    .task {
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        viewModel.transferResultNotices = []
+                    }
+            }
+        }
+        .sheet(item: $coordinator.adjustmentSheet, onDismiss: finishAdjustmentSheet) { kind in
             switch kind {
             case .presets, .presetSave:
                 IOSAdjustmentPresetView(model: viewModel, settings: settings, initialSave: kind == .presetSave,
                     requestPhotoAction: queuePresetAction)
             case .presetApply:
-                if let applyingPreset {
+                if let applyingPreset = coordinator.applyingPreset {
                     IOSAdjustmentTransferView(model: viewModel, kind: .paste, settings: settings, preset: applyingPreset)
                 }
             default:
                 IOSAdjustmentTransferView(model: viewModel, kind: kind, settings: settings)
             }
         }
-        .sheet(isPresented: $showingBatchSelection, onDismiss: finishBatchSelection) {
-            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, settings: settings,
-                hasPendingBatch: batchModel != nil || collectionBatchHandoff.hasPending, resolveDraft: resolveCollectionDraft,
-                editPhoto: { queuedCollectionEdit = $0; showingBatchSelection = false },
-                showExistingBatch: { queuedCollectionExistingBatch = true; showingBatchSelection = false },
+        .sheet(isPresented: $coordinator.showingBatchSelection, onDismiss: finishBatchSelection) {
+            IOSBatchSelectionView(model: viewModel, collection: viewModel.batchSelection, previews: photoPreviews, settings: settings,
+                hasPendingBatch: batchModel != nil || coordinator.collectionBatchHandoff.hasPending, resolveDraft: resolveCollectionDraft,
+                editPhoto: { coordinator.queuedCollectionEdit = $0; coordinator.showingBatchSelection = false },
+                showExistingBatch: { coordinator.queuedCollectionExistingBatch = true; coordinator.showingBatchSelection = false },
                 created: { job, journal, automaticallyStart in
-                    collectionBatchHandoff.enqueue(BatchExportModel(job: job, journalStore: journal, editor: viewModel),
+                    let batch = BatchExportModel(job: job, journalStore: journal, editor: viewModel)
+                    testHooks.onBatchModelCreated?(batch)
+                    testHooks.onBatchHandoff?(automaticallyStart, scenePhase)
+                    coordinator.collectionBatchHandoff.enqueue(batch,
                         automaticallyStart: automaticallyStart && scenePhase == .active)
-                    if showingBatchSelection { showingBatchSelection = false }
+                    if coordinator.showingBatchSelection { coordinator.showingBatchSelection = false }
                     else { finishBatchSelection() }
                 })
         }
-        .sheet(isPresented: $showingBatchExport) {
+        .sheet(isPresented: $coordinator.showingBatchExport) {
             if let batchModel {
                 BatchExportView(model: batchModel)
             }
         }
-        .sheet(isPresented: $showingExportSize) {
-            ExportSizeSheet(longEdge: $exportLongEdge,
-                            title: singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
-                                singleExportFormat == .hdrHEIF ? singleExportFormat.title : "保存当前照片") {
-                showingExportSize = false
-                if singleExportFormat == .renderedDNG {
-                    exportDNG(longEdge: exportLongEdge)
+        .sheet(isPresented: $coordinator.showingExportSize) {
+            ExportSizeSheet(longEdge: $coordinator.exportLongEdge,
+                            title: coordinator.singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
+                                coordinator.singleExportFormat == .hdrHEIF ? coordinator.singleExportFormat.title : "保存当前照片") {
+                coordinator.showingExportSize = false
+                if coordinator.singleExportFormat == .renderedDNG {
+                    exportDNG(longEdge: coordinator.exportLongEdge)
                 } else {
-                    exportPhoto(longEdge: exportLongEdge, format: singleExportFormat)
+                    exportPhoto(longEdge: coordinator.exportLongEdge, format: coordinator.singleExportFormat)
                 }
             }
         }
-        .sheet(item: $fileExportRequest) { request in
+        .sheet(item: $coordinator.fileExportRequest) { request in
             FileExportPicker(urls: request.urls) { exported in
-                fileExportRequest = nil
-                if exported && request.recordsPhotoExport { UsageAnalytics.shared.record(.exportCompleted) }
+                coordinator.fileExportRequest = nil
+                if exported && request.recordsPhotoExport {
+                    UsageAnalytics.shared.record(.exportCompleted)
+                    // Q6（B1）：Files 另存成功 = 真实外部出口，登记源照片内容标识。
+                    ExportEvidenceStore.shared.record(contentIdentifiers: request.evidenceIdentifiers)
+                }
                 if request.removeAfterExport {
                     for url in request.urls { try? FileManager.default.removeItem(at: url) }
                 }
@@ -465,36 +445,34 @@ struct ContentView: View {
             }
             .interactiveDismissDisabled(!request.recordsPhotoExport)
         }
-        .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $draftExitPresented) {
+        .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $coordinator.draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
-                .disabled(editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider)
+                .disabled(editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || coordinator.isAdjustingSlider)
             Button(L10n.text("放弃修改"), role: .destructive) { finishDraftNavigation(apply: false) }
             Button(L10n.text("继续编辑"), role: .cancel) { cancelDraftNavigation() }
         }
-        .alert(resetConfirmationTitle, isPresented: $resetConfirmationPresented) {
+        .alert(resetConfirmationTitle, isPresented: $coordinator.resetConfirmationPresented) {
             Button(L10n.text("重置"), role: .destructive) { confirmEditorReset() }
             Button(L10n.text("取消"), role: .cancel) { cancelEditorReset() }
         } message: { Text(resetConfirmationMessage) }
+        .alert(L10n.text("恢复这张照片的旧调整？"), isPresented: $coordinator.showingLegacyAssetEdit) {
+            Button(L10n.text("恢复旧调整")) { coordinator.finishLegacyAssetEditDecision(true) }
+            Button(L10n.text("从原片开始"), role: .cancel) { coordinator.finishLegacyAssetEditDecision(false) }
+        } message: { Text(L10n.text("旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。")) }
         .onDisappear {
             cancelSliderInteraction()
-            viewModel.saveCurrentSettings(settings)
-            photoViewing.endTemporaryViewing()
+            _ = viewModel.saveCurrentSettings(settings)
+            coordinator.photoViewing.endTemporaryViewing()
             cancelPhotoImport()
+            testHooks.onDisappear?()
         }
     }
 
     private func handleEditorAppear() {
-        if ProcessInfo.processInfo.arguments.contains("-RawLab.testBusyEditor") {
-            isImporting = true
-        }
-        if !checkedBatchRecovery {
-            checkedBatchRecovery = true
+        if !coordinator.checkedBatchRecovery {
+            coordinator.checkedBatchRecovery = true
             recoverBatchExport()
         }
-        guard !didAutoLoadSample else { return }
-        guard ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] == "1" else { return }
-        didAutoLoadSample = true
-        viewModel.runBundledSampleSmokeTest(settings: settings)
     }
 }
 

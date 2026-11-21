@@ -8,9 +8,14 @@ internal class RenderQueue<T, R>(
     private val release: () -> Unit,
     private val discard: (R) -> Unit = {},
     private val discardPending: (T) -> Unit = {},
+    /** 「取消类」判据：代次失效时仅这类结果可吞；其余失败（如 BatchPublicationUncertain）仍须上抛。 */
+    private val isCancellation: (Throwable) -> Boolean = { isExportCancellation(it) },
+    private val canFinishInFlight: (T, T) -> Boolean = { _, _ -> false },
 ) : AutoCloseable {
     constructor(render: (T) -> R, publish: (Long, Result<R>) -> Unit, release: () -> Unit,
-        discard: (R) -> Unit = {}, discardPending: (T) -> Unit = {}) : this({ value, _ -> render(value) }, publish, release, discard, discardPending)
+        discard: (R) -> Unit = {}, discardPending: (T) -> Unit = {},
+        isCancellation: (Throwable) -> Boolean = { isExportCancellation(it) }) :
+        this({ value, _ -> render(value) }, publish, release, discard, discardPending, isCancellation)
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "rawlab-render") }
     private val lock = Any()
@@ -19,12 +24,12 @@ internal class RenderQueue<T, R>(
     private var revision = 0L
     private var running = false
     private var closed = false
-    private var active: RenderCancellation? = null
+    private var active: Task<T>? = null
 
     fun submit(value: T): Long = synchronized(lock) {
         check(!closed)
         revision += 1
-        active?.cancel()
+        active?.let { if (!canFinishInFlight(it.value, value)) it.cancellation.cancel() }
         pending?.value?.let(discardPending)
         pending = Task(revision, value)
         if (!running) {
@@ -34,21 +39,38 @@ internal class RenderQueue<T, R>(
         revision
     }
 
+    /** 失效旧帧而不启动新渲染；已提交的新设置可以等待编辑页恢复。 */
+    fun invalidate(): Long = synchronized(lock) {
+        check(!closed)
+        revision += 1
+        active?.cancellation?.cancel()
+        pending?.value?.let(discardPending)
+        pending = null
+        revision
+    }
+
     private fun drain() {
         while (true) {
             val task = synchronized(lock) {
                 val next = pending
                 pending = null
                 if (next == null || closed) { running = false; return }
-                active = next.cancellation
+                active = next
                 next
             }
             val result = runCatching { render(task.value, task.cancellation) }
             val accepted = synchronized(lock) {
                 active = null
-                if (!closed && task.revision == revision) { publish(task.revision, result); true } else false
+                // 连续预览只保留一个最新 pending，但允许兼容的在途帧先交付像素。
+                // 取消已锁存的帧不能因后来的兼容请求而重新有效。
+                val progress = result.isSuccess && !task.cancellation.isCancelled &&
+                    pending?.let { canFinishInFlight(task.value, it.value) } == true
+                if (!closed && (task.revision == revision || progress)) { publish(task.revision, result); true } else false
             }
-            if (!accepted) result.getOrNull()?.let(discard)
+            // Q12（不确定≠取消）：代次失效只吞「取消类」结果；取消类之外的失败（如发布结果不确定，
+            // 文件可能已落盘）仍以旧代次上抛，由消费方上屏并保留清理入口。close 路径消费者正在拆除，维持吞弃。
+            if (!accepted) result.fold({ discard(it) },
+                { error -> if (!closed && !isCancellation(error)) publish(task.revision, result) })
         }
     }
 
@@ -63,7 +85,7 @@ internal class RenderQueue<T, R>(
             closed = true
             pending?.value?.let(discardPending)
             pending = null
-            active?.cancel()
+            active?.cancellation?.cancel()
             worker.execute { try { release() } finally { worker.shutdown() } }
         }
     }

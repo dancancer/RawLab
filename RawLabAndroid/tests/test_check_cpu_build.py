@@ -20,7 +20,7 @@ class CpuBuildPolicyTest(unittest.TestCase):
         result = []
         sources = (
             ("/build/core/wavelib/wavelib.c", "wavelib"),
-            (str(REPO / "lutools/src/core/wavelet_denoise.cpp"), "sony2fuji_core"),
+            (str(REPO / "lutools/src/core/wavelet_denoise.cpp"), "sony2fuji_core_objects"),
             ("/build/_deps/rawlab_opencv-src/modules/core/src/matrix.cpp", "opencv_core"),
             ("/build/_deps/rawlab_opencv-src/modules/imgproc/src/box_filter.dispatch.cpp", "opencv_imgproc"),
             ("/build/_deps/rawlab_opencv-src/modules/imgproc/src/filter.dispatch.cpp", "opencv_imgproc"),

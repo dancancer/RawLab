@@ -56,7 +56,7 @@ Integer fields require integer JSON tokens (for example `95`, rather than `95.0`
 | `edits.white_balance.tint` | [-150,150]; positive adds magenta; only in `temperature` mode | 0 |
 | `edits.look.path` | Compatible `.cube` / `.rlook`, or `null` for neutral output; required if group present | `null` when the whole group is omitted |
 | `edits.look.strength` | Factor [0,1]; 0 bypasses look loading | 1 |
-| `output.format` | `jpeg`, `png` (16-bit), `dng` (rendered float32 SDR) | Required; never inferred from extension |
+| `output.format` | `jpeg`, `png` (16-bit), `dng` (rendered 16-bit LinearRaw SDR) | Required; never inferred from extension |
 | `output.jpeg_quality` | Integer 1–100; used only for JPEG | 95 |
 | `output.size.mode` | `native`, `limit_long_edge` | `native` when group omitted |
 | `output.size.long_edge` | Positive uint32 pixels, required only for `limit_long_edge`; preserves aspect, never enlarges | Required in limit mode |
@@ -121,10 +121,9 @@ containing `code`, `message` and `status`. Native status values 1–6 map to
 and `output_io_error`. `invalid_recipe` identifies a JSON schema/parser failure.
 Argument/parser failures have `status:null`; backend failures retain the actual
 native status. A backend error is never relabeled as success or another status.
-The existing DNG writer reports output storage failures as status 6; legacy
-JPEG/PNG encoding can report status 4 for such a failure. Results preserve that
-distinction. Paths in successful exports are absolute, without requiring symlink
-canonicalization.
+JPEG, PNG and DNG encoding all publish through staged writes, so an output
+storage failure reports status 6 (`output_io_error`) for every format. Paths in
+successful exports are absolute, without requiring symlink canonicalization.
 
 Capability results list only currently supported commands, recipe versions,
 input types, file formats and exposure modes. Querying requires no photo or
@@ -317,7 +316,7 @@ camera state from a neighboring RAW photo.
 | `edits.denoise.wavelet.luma`, `chroma`, `coarse` | [0,100] | 0, 46, 50 |
 | `edits.lens_correction.distortion`, `tca` | Boolean | `false` |
 | `edits.lens_correction.auto_crop` | Boolean | `true` |
-| `edits.lens_correction.profile_id` | Nonempty catalog ID or `null`; `null` selects automatic matching | `null` |
+| `edits.lens_correction.profile_id` | Nonempty catalog ID (at most 1024 UTF-8 bytes) or `null`; `null` selects automatic matching. Catalog IDs join maker, model, mount and crop factor with newlines; no other control characters are accepted | `null` |
 
 For raster input, the effective defaults are `sensor` exposure, `none` white
 balance, `raw_level: 0`, and disabled/null lens correction. A raw recipe may
@@ -346,18 +345,19 @@ when the v4 parser and serializer are available.
 groups, and requires one additional root object:
 
 ```json
-"processing": { "family": "rawlab", "version": 2, "quality": "standard" }
+"processing": { "family": "rawlab", "version": 3, "quality": "standard" }
 ```
 
-The supported versions are `1` (released v0.8.2 RAW/SWT behavior) and `2`
-(Bayer VNG and C5 EAW denoising). Both use quality `standard`.
+The supported versions are `1` (released v0.8.2 RAW/SWT behavior), `2`
+(Bayer VNG and C5 EAW denoising), and `3` (v2 RAW/denoise with
+[basic controls v3](basic-controls-v3.md)). All use quality `standard`.
 Unknown members, families, versions or quality values are rejected before
 rendering or creating output. The processing version is independent of
 `schema_version`, the result protocol and request v2.
 
 Schemas 1–4 implicitly select processing version 1, continue rejecting the
 `processing` field, and normalize without adding it. An in-memory recipe with
-processing version 2 cannot be serialized as schema 1–4: the serializer throws
+processing version 2 or 3 cannot be serialized as schema 1–4: the serializer throws
 instead of discarding its identity. A schema 5 recipe can explicitly select
 version 1 without changing any edit values.
 
@@ -371,6 +371,11 @@ normalized form; zero-valued additive keys are omitted during normalization.
 Schemas 1–4 reject the new fields, and serialization refuses to discard nonzero
 controls into an older schema. CLI capabilities advertises their algorithm
 version, minimum recipe version, stable field names and range in `tone_controls`.
+
+Schema 5 also accepts optional `edits.effects.clarity` and `edits.effects.dehaze`,
+each a finite number in `[-1,1]`, default zero. They drive the atmosphere stage
+documented in [atmosphere v1](atmosphere-v1.md); schemas 1–4 reject both keys, and
+serialization never discards a nonzero value into an older schema.
 
 Schema 5 also accepts an optional `edits.color_grading` object with
 `shadows`, `midtones` and `highlights`. Each present zone must contain both
@@ -440,7 +445,7 @@ color grading and atmospheric effects are rejected by field, even when neutral.
 
 HDR JPEG output requires explicit `base_color="srgb"|"display_p3"`, writes ISO
 and XMP gain-map descriptions, and defaults to quality 95. Optional long edge is
-1–65535, with no upscale. Source files and existing destinations survive failure.
+1–65535 in schema v6–v15 (effective JPEG encode/decode ceiling 65500), with no upscale. Source files and existing destinations survive failure.
 Metadata is copied from the SHA-256-verified original and the gain map is generated
 from the edited HDR/SDR pair.
 
@@ -569,9 +574,9 @@ follow the Mac camera HDR development settings, before the separate relative
 | `temperature`, `tint` | Both `0` for as-shot; temperature mode uses 2000–50000 K (default 6500), tint -150–150 (default 0) |
 | `exposure_reference` | `metadata` (default) or `sensor`; no ordinary RAW scene/preview boost |
 | `fbdd_level` | Integer 0–2, default 0 |
-| `lens_distortion`, `lens_tca` | Booleans, default false |
+| `lens_distortion`, `lens_tca`, `lens_vignetting` | Booleans, default false; vignetting is omitted when false |
 | `lens_auto_crop` | Boolean, default true; active only with lens correction |
-| `lens_profile` | Optional nonempty profile id, at most 1024 UTF-8 bytes, requiring active lens correction |
+| `lens_profile` | Optional nonempty profile id (newline-joined catalog segments; no other control characters), at most 1024 UTF-8 bytes, requiring active lens correction |
 | `camera_profile` | Optional `{ "path": "camera.dcp", "sha256": "<64 lowercase hex digits>" }` for a D65 camera-matrix DCP or RLOOKHDR |
 
 Camera profile paths resolve relative to the recipe, like look paths. The
@@ -600,3 +605,32 @@ return `unsupported` for that explicitly selected source type.
 For `--info`, an unrecognized extension triggers content-based HDR probing,
 then SDR image loading, then LibRaw inspection. Recognized invalid HDR
 containers are rejected instead of silently opening their SDR base.
+
+## v15: HDR channel curves
+
+[Schema 15](edit-json-v15.schema.json) selects `rawlab_hdr` processing version
+8 and retains the v14 source and export formats. `edits.tone.curve.channels`
+optionally holds `red`, `green` and `blue` curves, each with its own `mode`
+and `points` under the same fixed-endpoint, monotone PCHIP rules as the
+master curve. Missing channels are legacy identity curves. Channel objects
+cannot contain further channels. The master luminance curve runs first;
+independent RGB curves then use the normalized log-EV domain. Older HDR
+schemas reject active channel curves and keep their original processing.
+
+The CLI publishes `hdr.channel_curve_recipe_version=15` and processing
+version 8. SDR schemas 5 and 7 also accept `tone.curve.channels` without
+changing their existing processing identity; the channels use display RGB
+there. Identity channels are omitted during normalization, preserving old
+recipes. `tone_curve.channels` lists the available channel names.
+
+SDR schemas 4, 5 and 7 accept optional `edits.lens_correction.vignetting`,
+default false and omitted from normalized output when disabled. Agent CLI
+raster recipes still reject active lens corrections: the native display
+lens API requires explicit camera metadata that this recipe does not carry.
+Camera HDR schemas 14 and 15 accept `input.camera_development.lens_vignetting`;
+a vignetting-only correction can select a `lens_profile`.
+
+For JPEG outputs (`jpeg` and `hdr_jpeg`), although historical JSON schemas v6–v15
+declare `output.size.long_edge` with `maximum: 65535`, the effective JPEG
+encode/decode dimension ceiling is **65500** pixels per edge (`JPEG_MAX_DIMENSION`);
+final JPEG dimensions exceeding 65500 are rejected before rendering.

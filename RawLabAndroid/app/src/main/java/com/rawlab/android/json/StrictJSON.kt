@@ -1,89 +1,90 @@
 package com.rawlab.android.json
 
-import org.json.JSONTokener
+import com.fasterxml.jackson.core.JacksonException
+import com.fasterxml.jackson.core.JsonFactory
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.JsonToken
+import com.fasterxml.jackson.core.StreamReadConstraints
+import com.fasterxml.jackson.core.StreamReadFeature
+import org.json.JSONArray
+import org.json.JSONObject
 
-/** JSONObject 在 Android 接受宽松语法；持久化记录先检查标准 JSON、重复 key 和整数元数据。 */
-internal fun validateStrictJSON(text: String, integerKeys: Set<String> = emptySet()) = StrictJSONTokens(text, integerKeys).validate()
+private val strictJsonFactory: JsonFactory = JsonFactory.builder()
+    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+    .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(64).build())
+    .build()
 
-private class StrictJSONTokens(private val text: String, private val metadata: Set<String>) {
-    private var index = 0
-    private val number = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
-    private val integer = Regex("-?(0|[1-9][0-9]*)")
+/** 只检查词法与整数元数据；不转换数字，也不为只验证的调用方分配 JSON 树。 */
+internal fun validateStrictJSON(text: String, integerKeys: Set<String> = emptySet()) {
+    readStrictJSON(text, integerKeys, materialize = false, strictJsonFactory)
+}
 
-    fun validate() {
-        value(0)
-        whitespace()
-        requireValid(index == text.length)
-    }
+/** 同一轮严格 token 读取直接填充现有对象，调用方无需再次解析原文。 */
+internal fun parseStrictJSONObject(
+    text: String,
+    integerKeys: Set<String> = emptySet(),
+    factory: JsonFactory = strictJsonFactory,
+): JSONObject = readStrictJSON(text, integerKeys, materialize = true, factory) as? JSONObject
+    ?: throw IllegalArgumentException("Invalid JSON object")
 
-    private fun value(depth: Int, integerMetadata: Boolean = false) {
-        requireValid(depth < 64)
-        whitespace()
-        if (integerMetadata) {
-            val token = numberToken()
-            requireValid(integer.matches(token) && token.toLongOrNull() != null)
-            return
+private fun readStrictJSON(text: String, integerKeys: Set<String>, materialize: Boolean, factory: JsonFactory): Any? {
+    try {
+        factory.createParser(text).use { parser ->
+            val first = parser.nextToken() ?: throw IllegalArgumentException("Invalid JSON")
+            val value = readValue(parser, first, depth = 0, integerKeys, integerRequired = false, materialize)
+            if (parser.nextToken() != null) throw IllegalArgumentException("Invalid JSON")
+            return value
         }
-        when (text.getOrNull(index)) {
-            '{' -> {
-                index++; whitespace()
-                if (consume('}')) return
-                val keys = mutableSetOf<String>()
-                while (true) {
-                    whitespace()
-                    val key = string()
-                    requireValid(keys.add(key))
-                    whitespace(); requireValid(consume(':'))
-                    value(depth + 1, key in metadata)
-                    whitespace()
-                    if (consume('}')) return
-                    requireValid(consume(','))
-                }
-            }
-            '[' -> {
-                index++; whitespace()
-                if (consume(']')) return
-                while (true) {
-                    value(depth + 1); whitespace()
-                    if (consume(']')) return
-                    requireValid(consume(','))
-                }
-            }
-            '"' -> string()
-            't' -> literal("true")
-            'f' -> literal("false")
-            'n' -> literal("null")
-            else -> requireValid(number.matches(numberToken()))
-        }
+    } catch (error: IllegalArgumentException) {
+        throw error
+    } catch (error: JacksonException) {
+        throw IllegalArgumentException("Invalid JSON", error)
     }
+}
 
-    private fun string(): String {
-        val start = index
-        requireValid(consume('"'))
-        while (index < text.length) {
-            val char = text[index++]
-            if (char == '"') return JSONTokener(text.substring(start, index)).nextValue() as String
-            requireValid(char.code >= 0x20)
-            if (char == '\\') {
-                val escape = text.getOrNull(index++)
-                if (escape == 'u') repeat(4) {
-                    val hex = text.getOrNull(index++)
-                    requireValid(hex != null && (hex in '0'..'9' || hex in 'a'..'f' || hex in 'A'..'F'))
-                } else requireValid(escape in listOf('"', '\\', '/', 'b', 'f', 'n', 'r', 't'))
+private fun readValue(
+    parser: JsonParser,
+    token: JsonToken,
+    depth: Int,
+    integerKeys: Set<String>,
+    integerRequired: Boolean,
+    materialize: Boolean,
+): Any? {
+    if (depth >= 64) throw IllegalArgumentException("Invalid JSON")
+    if (integerRequired) {
+        if (token != JsonToken.VALUE_NUMBER_INT) throw IllegalArgumentException("Invalid JSON")
+        parser.longValue
+    }
+    return when (token) {
+        JsonToken.START_OBJECT -> {
+            val value = if (materialize) JSONObject() else null
+            while (true) {
+                val field = parser.nextToken() ?: throw IllegalArgumentException("Invalid JSON")
+                if (field == JsonToken.END_OBJECT) break
+                if (field != JsonToken.FIELD_NAME) throw IllegalArgumentException("Invalid JSON")
+                val key = parser.currentName()
+                val child = parser.nextToken() ?: throw IllegalArgumentException("Invalid JSON")
+                val item = readValue(parser, child, depth + 1, integerKeys, key in integerKeys, materialize)
+                value?.put(key, item)
             }
+            value
         }
-        throw IllegalArgumentException("Invalid JSON")
+        JsonToken.START_ARRAY -> {
+            val value = if (materialize) JSONArray() else null
+            while (true) {
+                val item = parser.nextToken() ?: throw IllegalArgumentException("Invalid JSON")
+                if (item == JsonToken.END_ARRAY) break
+                val child = readValue(parser, item, depth + 1, integerKeys, integerRequired = false, materialize)
+                value?.put(child)
+            }
+            value
+        }
+        JsonToken.VALUE_STRING -> if (materialize) parser.text else { parser.finishToken(); null }
+        JsonToken.VALUE_NUMBER_INT,
+        JsonToken.VALUE_NUMBER_FLOAT -> if (materialize) parser.numberValue else { parser.finishToken(); null }
+        JsonToken.VALUE_TRUE -> if (materialize) true else null
+        JsonToken.VALUE_FALSE -> if (materialize) false else null
+        JsonToken.VALUE_NULL -> if (materialize) JSONObject.NULL else null
+        else -> throw IllegalArgumentException("Invalid JSON")
     }
-
-    private fun numberToken(): String {
-        val start = index
-        while (index < text.length && text[index] !in " \t\r\n,]}") index++
-        return text.substring(start, index)
-    }
-    private fun literal(value: String) {
-        requireValid(text.startsWith(value, index)); index += value.length
-    }
-    private fun consume(char: Char): Boolean = (text.getOrNull(index) == char).also { if (it) index++ }
-    private fun whitespace() { while (index < text.length && text[index] in " \t\r\n") index++ }
-    private fun requireValid(value: Boolean) { if (!value) throw IllegalArgumentException("Invalid JSON") }
 }

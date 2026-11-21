@@ -13,7 +13,9 @@ import com.rawlab.android.editor.ui.editorToolIcons
 
 class EditorToolGroupingTest {
     @Test fun everyGroupStartsAtItsDesignatedTool() {
-        assertEquals(listOf(0, 2, 8, 22, 11, 17), EditorAdjustmentGroup.entries.map(EditorAdjustmentRules::defaultTool))
+        assertEquals(listOf(0, 2, 8, 22, 11, 17, 24), EditorAdjustmentGroup.entries.map(EditorAdjustmentRules::defaultTool))
+        assertEquals(listOf(0, 2, 8, 22, 11, 17), EditorAdjustmentRules.visibleGroups(false).map(EditorAdjustmentRules::defaultTool))
+        assertEquals(listOf(0, 2, 8, 22, 11, 17, 24), EditorAdjustmentRules.visibleGroups(true).map(EditorAdjustmentRules::defaultTool))
     }
 
     @Test fun busyDoesNotHideStoredLegacyAuxiliaryObjectMarkers() {
@@ -22,8 +24,10 @@ class EditorToolGroupingTest {
         assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.DETAIL), state.visibleEdits, state.resetContext()))
     }
 
-    @Test fun toolsFollowTheSixWorkspaceGroupsWithStableIds() {
-        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 22, 23, 12, 13, 11, 10, 17, 16), editorToolOrder)
+    @Test fun toolsFollowTheSevenWorkspaceGroupsWithStableIds() {
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 22, 23, 12, 13, 11, 10, 17, 16, 24, 25, 26, 27), editorToolOrder)
+        assertEquals(listOf(24, 25, 26, 27), EditorAdjustmentRules.tools(EditorAdjustmentGroup.HDR_RENDITION))
+        assertTrue((24..27).all(EditorAdjustmentRules::supportsHDR))
     }
 
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {

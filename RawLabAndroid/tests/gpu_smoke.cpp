@@ -65,29 +65,33 @@ double benchmark(Session& session, const sony2fuji_request& request, bool gpu) {
 }
 
 int main(int argc, char** argv) {
-    require(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    require(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::HslOptions& hsl, sony2fuji::ImageData& output) {
+        params.hsl = hsl;
         sony2fuji::GlesPhotoRenderer renderer;
-        return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
-            input.width, input.height, 0, output, {}, 0, false, hsl);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
     }), "HSL out-of-range boundary and active adjustment");
-    require(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    require(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::ToneControlsOptions& controls, sony2fuji::ImageData& output) {
+        params.toneControls = controls;
         sony2fuji::GlesPhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{},controls);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
     }), "Tone endpoints/vibrance match CPU float reference");
-    require(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ColorGradingOptions& grading,sony2fuji::ImageData& output) {
+    require(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ColorGradingOptions& grading, sony2fuji::ImageData& output) {
+        params.colorGrading = grading;
         sony2fuji::GlesPhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},grading);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
     }),"Color grading matches CPU float reference across regions and gamut boundaries");
-    require(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ToneCurve& curve,sony2fuji::ImageData& output) {
+    require(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ToneCurve& curve, sony2fuji::ImageData& output) {
+        params.customCurve = curve;
         sony2fuji::GlesPhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},{},curve);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
     }),"PCHIP curve matches CPU float reference including 33 points and plateaus");
     Session forced(SONY2FUJI_GPU_FORCE);
     Session cpu(SONY2FUJI_GPU_OFF), automatic(SONY2FUJI_GPU_AUTO);

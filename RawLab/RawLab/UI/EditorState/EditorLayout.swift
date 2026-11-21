@@ -1,10 +1,21 @@
+import RawLabKit
 import SwiftUI
 import UIKit
 
 extension ContentView {
+    var mobileEditorGroups: [EditorAdjustmentGroup] {
+        EditorLayoutPolicy.mobileEditorGroups(isHDREditing: settings.isHDREditing)
+    }
+    var mobileEditorTools: [EditorToolSelection] {
+        EditorLayoutPolicy.mobileEditorTools(for: selectedGroup)
+    }
+
     var editorToolHeight: CGFloat {
-        guard UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory else { return toolHeight }
-        return max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16)
+        EditorLayoutPolicy.editorToolHeight(
+            accessibility: UIApplication.shared.preferredContentSizeCategory.isAccessibilityCategory,
+            bodyLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            standardHeight: toolHeight
+        )
     }
 
     func editorToolRowHeight(width: CGFloat, accessibility: Bool) -> CGFloat {
@@ -42,7 +53,9 @@ extension ContentView {
     }
 
     var singleLineGroupNavigationHeight: CGFloat {
-        max(44, ceil(UIFont.preferredFont(forTextStyle: .caption1).lineHeight) + 8)
+        EditorLayoutPolicy.singleLineGroupNavigationHeight(
+            captionLineHeight: UIFont.preferredFont(forTextStyle: .caption1).lineHeight
+        )
     }
 
     private func groupTextMetrics(_ title: String, width: CGFloat, font: UIFont,
@@ -64,80 +77,139 @@ extension ContentView {
     }
 
     private func scrollsToolsWithParameters(size: CGSize, accessibility: Bool) -> Bool {
-        let bodyLine = UIFont.preferredFont(forTextStyle: .body).lineHeight
-        let actionSpace = max(44, bodyLine + 16) + 16
-        let parameterSpace = max(44, bodyLine) + 8
-        return accessibility && size.width > size.height &&
-            size.height < groupNavigationButtonHeight + editorToolStripHeight(width: size.width, accessibility: accessibility) + actionSpace + parameterSpace + 24
+        EditorLayoutPolicy.scrollsToolsWithParameters(
+            width: size.width,
+            height: size.height,
+            accessibility: accessibility,
+            bodyLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            groupButtonHeight: groupNavigationButtonHeight,
+            toolStripHeight: editorToolStripHeight(width: size.width, accessibility: accessibility)
+        )
     }
 
     func editorWorkspace(size: CGSize, accessibility: Bool) -> some View {
-        let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
-        let singleLineGroups = accessibility && size.width > size.height
-        let sideWidth = min(336, size.width * 0.48)
-        let side = EditorLayoutPolicy.usesSidePanel(width: size.width, height: size.height,
-            accessibility: accessibility)
+        let side = EditorLayoutPolicy.usesSidePanel(width: size.width, height: size.height, accessibility: accessibility)
         let layout = side ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+        let panelWidth = EditorLayoutPolicy.sidePanelWidth(totalWidth: size.width)
+        let isTool = toolWorkspaceOpen || viewModel.quickPresetsVisible
+        let parameterHeight = EditorLayoutPolicy.parameterPanelHeight(
+            measuredHeight: parameterContentHeight,
+            totalHeight: size.height,
+            accessibility: accessibility
+        )
         return layout {
-            previewSection.frame(maxWidth: .infinity, maxHeight: .infinity)
+            previewSection
+                .overlay(alignment: .bottom) {
+                    if viewModel.hasImage && !photoViewing.previewOnly { workspaceActions.padding(.horizontal, 8) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             if viewModel.hasImage {
                 Divider().opacity(photoViewing.previewOnly ? 0 : 1)
-                    .frame(width: side && photoViewing.previewOnly ? 0 : nil, height: !side && photoViewing.previewOnly ? 0 : nil)
                 VStack(spacing: 0) {
-                    if side { groupNavigation(side: true, singleLine: singleLineGroups) }
-                    if adjustmentsExpanded {
-                        if side { Divider() }
-                        if !scrollTools { toolStrip(width: side ? sideWidth : size.width, accessibility: accessibility); Divider() }
-                        VStack(spacing: 0) {
-                            ScrollView(.vertical) {
-                                VStack(spacing: 0) {
-                                    if scrollTools { toolStrip(width: side ? sideWidth : size.width, accessibility: accessibility); Divider() }
-                                    adjustmentPanel
+                    if !isTool {
+                        ScrollView {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: EditorLayoutPolicy.toolGridColumns(accessibility: accessibility)), spacing: 4) {
+                                ForEach(mobileEditorTools, id: \.self) { tool in
+                                    Button { coordinator.geometryPerspective = false; coordinator.geometryRotation = false; selectEditorTool(tool) } label: {
+                                        VStack(spacing: 4) {
+                                            Image(systemName: tool.symbol).font(.system(size: 21)).frame(height: 24)
+                                            Text(tool.title).font(.caption).multilineTextAlignment(.center)
+                                            Circle().fill(resetModified(.tool(tool)) ? Color.yellow : .clear).frame(width: 3, height: 3)
+                                        }.frame(maxWidth: .infinity, minHeight: EditorLayoutPolicy.toolGridMinRowHeight(accessibility: accessibility)).contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(editorBusy || (settings.isHDREditing && !supportsHDR(tool)) ||
+                                        (tool == .lens && usesNormalX3f) ||
+                                        (tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.sourceKind != .raw))
+                                    .accessibilityLabel(tool.title).accessibilityValue(editorToolAccessibilityValue(tool))
+                                    .accessibilityIdentifier("tool.\(tool.stableID)")
                                 }
-                                .frame(maxWidth: .infinity)
+
+                            }.padding(.horizontal, 8).padding(.vertical, 4)
+                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility).map { CGFloat($0) })
+                            .accessibilityIdentifier("editor.tools")
+                        groupNavigation(side: false, singleLine: true, availableWidth: side ? panelWidth : size.width)
+                    } else {
+                        let metrics = EditorPanelLayoutMetrics(
+                            width: size.width,
+                            height: size.height,
+                            accessibility: accessibility,
+                            buttonWidth: groupNavigationButtonWidth,
+                            buttonHeight: groupNavigationButtonHeight,
+                            scrollTools: scrollsToolsWithParameters(size: size, accessibility: accessibility),
+                            sideWidth: panelWidth,
+                            side: side
+                        )
+                        ScrollView(.vertical) {
+                            adjustmentPanel
                                 .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterContentHeight = $0 }
-                            }
-                                .id("\(currentEditorTool.stableID).\(geometryPerspective).\(viewModel.quickPresetsVisible)")
-                                .accessibilityIdentifier("editor.panel")
-                            if (geometrySelected || lensSelected) && !viewModel.quickPresetsVisible {
-                                VStack(spacing: 0) {
-                                    Divider()
-                                    editorDraftActions.disabled(resetDraftSuspended).padding(.horizontal, 16).padding(.vertical, scrollTools ? 4 : 8)
-                                }
-                                .fixedSize(horizontal: false, vertical: true)
-                                .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { parameterActionsHeight = $0 }
-                            }
                         }
-                        .frame(height: side ? nil : adjustmentRegionHeight(size: size, accessibility: accessibility))
-                    }
-                    if !side {
-                        Divider()
-                        groupNavigation(side: false, singleLine: singleLineGroups)
+                        .id("\(currentEditorTool.stableID).\(coordinator.geometryPerspective).\(coordinator.geometryRotation).\(viewModel.quickPresetsVisible)")
+                        .frame(height: side ? nil : parameterHeight)
+                        .modifier(OptionalGeometryObserver(action: testHooks.onPanelLayout.map { hook in
+                            { frame in hook(frame, metrics) }
+                        }))
+                        .accessibilityIdentifier("editor.panel")
+                        if toolWorkspaceOpen {
+                            Divider()
+                            editorDraftActions.padding(.horizontal, 8)
+                        } else {
+                            Button(L10n.text("关闭"), action: closeQuickPresets).frame(minHeight: 44)
+                        }
                     }
                 }
-                .frame(width: side ? (photoViewing.previewOnly ? 0 : sideWidth) : nil,
-                       height: photoViewing.previewOnly ? 0 : nil)
-                .opacity(photoViewing.previewOnly ? 0 : 1)
-                .allowsHitTesting(!photoViewing.previewOnly)
+                .frame(width: side ? panelWidth : nil, height: photoViewing.previewOnly ? 0 : nil)
+                .opacity(photoViewing.previewOnly ? 0 : 1).allowsHitTesting(!photoViewing.previewOnly)
                 .accessibilityHidden(photoViewing.previewOnly)
                 .frame(maxHeight: side ? .infinity : nil, alignment: .top)
                 .background(Color(.secondarySystemBackground))
             }
-        }
-        .background(Color(.systemBackground))
+        }.background(Color(.systemBackground))
     }
 
-    private func adjustmentRegionHeight(size: CGSize, accessibility: Bool) -> CGFloat {
-        let preferred = min(panelHeight, size.height * (accessibility ? 0.64 : 0.52))
-        let navigationHeight = accessibility && size.width > size.height
-            ? singleLineGroupNavigationHeight : groupNavigationButtonHeight
-        let scrollTools = scrollsToolsWithParameters(size: size, accessibility: accessibility)
-        let available = max(0, size.height - (scrollTools ? 0 : editorToolStripHeight(width: size.width, accessibility: accessibility)) - navigationHeight - 3)
-        // 即使工具与参数一起滚动，也保留 44pt 照片叠层触点及上下留白。
-        let photoSpace = min(scrollTools ? 68 : 96, available)
-        let maximum = min(preferred, max(0, available - photoSpace))
-        // 只测量滚动内容的自然高度；底栏收紧不改变侧栏预算和草稿操作可达性。
-        let content = parameterContentHeight + ((geometrySelected || lensSelected) && !viewModel.quickPresetsVisible ? parameterActionsHeight : 0)
-        return parameterContentHeight > 0 ? min(maximum, content) : maximum
+    var workspaceActions: some View {
+        HStack(spacing: 0) {
+            Button { if toolWorkspaceOpen { undoEditorDraft() } else { requestAdjustmentAction(.undo) } } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                .disabled((toolWorkspaceOpen ? workspaceDraft?.canUndo != true : !viewModel.canUndoAdjustment) || editorBusy)
+                .accessibilityLabel(L10n.text("撤销")).accessibilityIdentifier("editor.draft.undo")
+            Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                .disabled((toolWorkspaceOpen ? workspaceDraft?.canRedo != true : !viewModel.canRedoAdjustment) || editorBusy)
+                .accessibilityLabel(L10n.text("重做")).accessibilityIdentifier("editor.draft.redo")
+            workspaceResetControl
+            Spacer(minLength: 0)
+            Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
+            if toolWorkspaceOpen {
+            Menu {
+                Toggle(L10n.text("精细"), isOn: $coordinator.adjustmentFine).accessibilityIdentifier("editor.fine")
+                    .modifier(OptionalGeometryObserver(action: testHooks.onFineToggleFrame))
+                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $coordinator.hslTargetEnabled) }
+                Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
+                    .accessibilityIdentifier("editor.compare.mode")
+                Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
+                Button(L10n.text("照片信息")) { coordinator.photoInfoMode = coordinator.photoInfoMode.next }
+                    .accessibilityIdentifier("editor.photoInfo").accessibilityValue(coordinator.photoInfoMode.title)
+                Button(L10n.text("纯预览")) { coordinator.photoViewing.togglePreview(isDraft: geometrySelected) }
+                Button(L10n.text("照片处理设置")) { coordinator.presentProcessingContext() }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 44, height: 44) }
+                .accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("editor.tool.more")
+            }
+        }.buttonStyle(.plain).foregroundStyle(.primary)
+    }
+
+    var workspaceResetControl: some View {
+        let available = viewModel.hasImage && !editorBusy && !viewModel.previewRendering &&
+            !viewModel.quickPresetState.isPreparing
+        let presentation = EditorWorkspaceResetPresentation.make(
+            toolWorkspaceOpen: toolWorkspaceOpen,
+            quickPresetsVisible: viewModel.quickPresetsVisible,
+            selectedGroup: selectedGroup,
+            currentTool: currentEditorTool,
+            hslChannel: hslChannel,
+            gradingZone: coordinator.gradingZone,
+            isAvailable: available,
+            isModified: resetModified
+        )
+        return EditorWorkspaceResetControl(presentation: presentation, onReset: requestEditorReset)
     }
 }

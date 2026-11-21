@@ -234,7 +234,7 @@ internal static class LookImportChecks
         if (valid == null || missingTone == null)
             throw new FileNotFoundException("Real DCP ABI regression needs supported and missing-tone fixtures");
 
-        NativeLibrary.SetDllImportResolver(typeof(PInvokeNative).Assembly, (name, _, _) =>
+        NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, (name, _, _) =>
             string.Equals(name, "sony2fuji.dll", StringComparison.OrdinalIgnoreCase)
                 ? NativeLibrary.Load(nativePath)
                 : IntPtr.Zero);

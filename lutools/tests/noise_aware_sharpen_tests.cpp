@@ -100,7 +100,7 @@ int main(int argc, char**) {
     NoiseAwareSharpenDiagnostics info;
     assert(applyNoiseAwareSharpen(automatic, 2, &info, GpuMode::Auto) == ErrorCode::Success);
     assert(identical(cpu, automatic) && !info.gpuUsed);
-    assert(applyNoiseAwareSharpen(forced, 2, &info, GpuMode::Force) == ErrorCode::ProcessingError);
+    assert(applyNoiseAwareSharpen(forced, 2, &info, GpuMode::Force) == ErrorCode::Unsupported);
     assert(identical(forced, source) && !info.gpuUsed && !info.applied);
 #endif
 #else

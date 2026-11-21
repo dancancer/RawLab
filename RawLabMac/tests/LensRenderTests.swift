@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import ImageIO
 
@@ -44,11 +45,11 @@ import ImageIO
         if info.candidates.filter(\.isMatch).count == 1 {
             try check(bytes(automatic.image) == bytes(corrected.image), "Automatic and manual matching agree")
         } else {
-            try check(automatic.lensInfo!.state == SONY2FUJI_LENS_AMBIGUOUS && !automatic.lensInfo!.appliedDistortion,
+            try check(automatic.lensInfo!.state == .ambiguous && !automatic.lensInfo!.appliedDistortion,
                       "Ambiguous matching is explicit and never guesses a profile")
         }
         let reset = try cpu.render(raw, settings: Adjustments(), lut: nil, edge: 700)!
-        try check(bytes(reset.image) == bytes(baseline.image) && reset.lensInfo!.state == SONY2FUJI_LENS_OFF,
+        try check(bytes(reset.image) == bytes(baseline.image) && reset.lensInfo!.state == .off,
                   "Disabling corrections restores exact baseline, with no session leakage")
         let history = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: database)
         var preview = Adjustments()

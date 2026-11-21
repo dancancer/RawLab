@@ -1,4 +1,5 @@
 #if RAWLAB_RUM
+import RawLabKit
 import Foundation
 import RawLabRUMNative
 

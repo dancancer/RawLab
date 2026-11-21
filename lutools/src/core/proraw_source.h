@@ -8,8 +8,9 @@ namespace sony2fuji::hdr {
 // DNG SDK 1.7.1 显影配置 v2；Apple Core Image 的配置 v1 保持独立。
 constexpr uint64_t portableProRAWRevision = 2;
 constexpr uint64_t proRAWStageBytes(uint64_t pixels) { return pixels * 88 + (128ull << 20); }
-sony2fuji_hdr_source_info_v1 probeProRAW(const char* path);
-DecodedImage decodeProRAW(const char* path, const sony2fuji_hdr_decode_options_v1& options,
+HDRSourceInfo probeProRAW(const char* path);
+DecodedImage decodeProRAW(const char* path, const HDRDecodeOptions& options,
     const std::filesystem::path& temporaryRoot);
-HDRRowSource openProRAW(const char* path, const std::filesystem::path& temporaryRoot);
+// expectedSHA256 已由调用方在流式来源准入时校验；解码过程以文件 stamp 前后夹逼。
+HDRRowSource openProRAW(const char* path, const std::filesystem::path& temporaryRoot, const uint8_t expectedSHA256[32]);
 }

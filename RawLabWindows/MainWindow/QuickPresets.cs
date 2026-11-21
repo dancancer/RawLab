@@ -45,7 +45,9 @@ public partial class MainWindow
     {
         ++quickPresetGeneration;
         if (quickPreset.Phase == QuickPresetPhase.Preparing) { ++transferGeneration; transferPreparing = false; }
-        quickPreset = new(); RefreshQuickPresets(); RefreshControls();
+        quickPreset = new();
+        DisposeQuickPresetTransferNotices();
+        RefreshQuickPresets(); RefreshControls();
     }
 
     private bool PrepareQuickPresetCommand()
@@ -57,11 +59,21 @@ public partial class MainWindow
         return PrepareAdjustmentCommand();
     }
 
+    private Task<bool> PrepareQuickPresetCommandAsync()
+    {
+        foreach (var row in ParameterRows(AdjustmentPanel).Where(row => row.HasPendingInput)) {
+            if (row.Commit()) continue;
+            CloseQuickPresets(); row.Number.Focus(); return Task.FromResult(false);
+        }
+        return PrepareAdjustmentCommandAsync();
+    }
+
     internal async Task ApplyPresetToCurrentPhoto(AdjustmentPreset preset)
     {
         if (!quickPresetsVisible || transferPreparing || quickPreset.Phase == QuickPresetPhase.Preparing || file == null) return;
         var source = file; var opened = openRevision;
-        if (!PrepareQuickPresetCommand() || !quickPresetsVisible || file != source || openRevision != opened) return;
+        if (!await PrepareQuickPresetCommandAsync() || !quickPresetsVisible || file != source || openRevision != opened) return;
+        BeginTransferPrepare();
         var generation = ++quickPresetGeneration; var revision = editRevision;
         try {
             _ = CaptureVerifiedAdjustmentSource();
@@ -74,6 +86,7 @@ public partial class MainWindow
             if (operation.Targets.FirstOrDefault()?.Error is { } targetError) throw targetError;
             if (operation.Targets.Count != 1) throw new AdjustmentOperationExpiredException();
             var outcome = AdoptAdjustmentOutcomes(session.Apply(operation), []).Single();
+            ShowAdjustmentTransferNotices(operation, [outcome], AdjustmentTransferNoticeOrigin.QuickPreset, CurrentAdoptedSuccessfully([outcome]));
             if (outcome.Status == AdjustmentStatus.Applied && (outcome.Error != null || outcome.Saved?.SameAs(currentEditRecord) != true)) {
                 quickPreset = new(QuickPresetPhase.Failed, preset, Message: Loc.Text("调整已保存，界面未更新。"));
             } else if (outcome.Error == null && outcome.Saved?.SameAs(currentEditRecord) == true && outcome.Status is AdjustmentStatus.Applied or AdjustmentStatus.Unchanged) {
@@ -90,6 +103,7 @@ public partial class MainWindow
     {
         if (!quickPresetsVisible || quickPreset.Phase is not (QuickPresetPhase.Saved or QuickPresetPhase.UndoFailed) || quickPreset.Transaction is not { } transaction ||
             quickPreset.Preset is not { } preset || !PrepareQuickPresetCommand() || file == null) return;
+        DisposeQuickPresetTransferNotices();
         var outcomes = AdoptAdjustmentOutcomes(TransferSession.UndoPhoto(file, transaction, HistoryTargetIsCurrent), []);
         var outcome = outcomes.SingleOrDefault();
         quickPreset = outcome?.Status == AdjustmentStatus.Applied && outcome.Error == null && outcome.Saved?.SameAs(currentEditRecord) == true
@@ -122,7 +136,7 @@ public partial class MainWindow
 
     private async Task ApplyPresetToPhotos(AdjustmentPreset preset)
     {
-        if (!PrepareQuickPresetCommand()) return;
+        if (!await PrepareQuickPresetCommandAsync()) return;
         CancelQuickPreset();
         var picker = new OpenFileDialog { Title = Loc.Text("选择目标照片"), Filter = Loc.Text("照片|") + LibraryEntry.ImageFilter, Multiselect = true };
         if (picker.ShowDialog(this) == true) await ShowAdjustmentPreflight(preset.Payload, picker.FileNames, AdjustmentHistoryAction.Preset, preset.Name);

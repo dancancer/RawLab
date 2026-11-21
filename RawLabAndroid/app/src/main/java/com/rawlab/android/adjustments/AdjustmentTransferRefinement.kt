@@ -27,9 +27,13 @@ internal object AdjustmentTransferRefinement {
     }
 
     private fun logicalCurve(desired: ToneCurveSettings, strength: Double): ToneCurveSettings {
-        if (desired.mode == ToneCurveMode.LEGACY || strength == 0.0 && desired.isIdentity) return desired
+        if (desired.isDefault || strength == 0.0 && desired.isIdentity) return desired
         if (strength == 0.0) unrepresentable(AdjustmentField.CURVE)
-        return ToneCurveSettings(ToneCurveMode.CUSTOM, desired.points.map { ToneCurvePoint(it.x, it.x + (it.y - it.x) / strength) })
+        return ToneCurveChannel.entries.fold(desired) { result, channel ->
+            val shape = desired.shape(channel)
+            if (shape.mode == ToneCurveMode.LEGACY) result else result.replacing(channel,
+                ToneCurveShape(ToneCurveMode.CUSTOM, shape.points.map { ToneCurvePoint(it.x, it.x + (it.y - it.x) / strength) }))
+        }
     }
 
     private fun logicalWheel(desired: ColorGradingWheel, strength: Float, field: AdjustmentField): ColorGradingWheel {
@@ -47,9 +51,10 @@ internal object AdjustmentTransferRefinement {
     }
 
     private fun scaled(value: ColorGradingWheel, strength: Float) = value.copy(saturation = (value.saturation * strength).coerceIn(0f, 100f))
-    private fun equivalent(a: ToneCurveSettings, b: ToneCurveSettings) = a.mode == b.mode &&
-        (a.isIdentity && b.isIdentity || a.points.size == b.points.size && a.points.zip(b.points).all {
-            it.first.x == it.second.x && abs(it.first.y - it.second.y) <= 1e-12
-        })
+    private fun equivalent(a: ToneCurveSettings, b: ToneCurveSettings) = ToneCurveChannel.entries.all { channel ->
+        val first = a.shape(channel); val second = b.shape(channel)
+        first.mode == second.mode && (first.isIdentity && second.isIdentity || first.points.size == second.points.size &&
+            first.points.zip(second.points).all { it.first.x == it.second.x && abs(it.first.y - it.second.y) <= 1e-12 })
+    }
     private fun unrepresentable(field: AdjustmentField): Nothing = throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
 }

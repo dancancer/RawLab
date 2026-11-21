@@ -3,6 +3,9 @@ package com.rawlab.android.engine
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import com.rawlab.android.camera.CameraJPEGGainMapAdjustmentException
+import com.rawlab.android.camera.CameraJPEGOptions
+import com.rawlab.android.camera.CameraJPEGProcessing
 import com.rawlab.android.editor.render.HDRBitmapAdapter
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
@@ -53,6 +56,18 @@ class HDRNativeInstrumentedTest {
 
                 val full = processor.decodeHDRCamera(source, info, 0)
                 try {
+                    val redCurve = com.rawlab.android.settings.ToneCurveSettings().replacing(
+                        com.rawlab.android.settings.ToneCurveChannel.RED,
+                        com.rawlab.android.settings.ToneCurveShape.identity.inserting(.5, .6))
+                    val settings = HDRSettings().withTone(com.rawlab.android.settings.HDRToneSettings(curve = redCurve))
+                    processor.renderHDR(full, settings, 0).use { channelResult ->
+                        val before = full.hdrPlane(); val after = channelResult.hdrPlane()
+                        assertTrue("HDR independent red channel changes real pixels", before.indices.any { it % 3 == 0 && abs(before[it] - after[it]) > 1e-5 })
+                        before.indices.filter { it % 3 != 0 }.forEach { assertEquals(before[it], after[it], 1e-6f) }
+                        val channelPng = File(root, "channel-export.png")
+                        NativeHDRBridge.exportSdr(channelResult, null, channelPng, ExportFormat.PNG.nativeValue)
+                        assertTrue(channelPng.length() > 0)
+                    }
                     processor.renderHDR(full, HDRSettings(), 0).use { rendered ->
                         val hdr = File(root, "camera-hdr.jpg")
                         val sdr = File(root, "camera-sdr.jpg")
@@ -121,6 +136,20 @@ class HDRNativeInstrumentedTest {
         for(edge in listOf(32,0)) NativeHDRBridge.decode(file,info,edge).use { pair ->
             assertTrue(pair.hdrPlane().max() > 2f)
             assertEquals(if(edge==0)64 else edge,pair.width)
+        }
+    }
+
+    @Test fun cameraJpegAdjustmentRejectsAppleGainMapBeforeWriting() {
+        val fixture = "apple-legacy-macos26.jpg"
+        assertTrue(InstrumentationRegistry.getInstrumentation().context.assets.list("")!!.contains(fixture))
+        withFixture(fixture) { file, root ->
+            val original = file.readBytes()
+            val output = File(root, "adjusted.jpg")
+            assertThrows(CameraJPEGGainMapAdjustmentException::class.java) {
+                CameraJPEGProcessing.process(file, output, CameraJPEGOptions(adjust = true, longEdge = 32))
+            }
+            assertFalse(output.exists())
+            assertArrayEquals(original, file.readBytes())
         }
     }
 

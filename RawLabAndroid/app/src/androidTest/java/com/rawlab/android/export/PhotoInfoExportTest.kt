@@ -28,6 +28,7 @@ import com.rawlab.android.photo.PhotoInfoReader
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.testing.cycleWorkbenchPhotoInfo
 import com.rawlab.android.testing.LanguageTestRule
 
 class PhotoInfoExportTest {
@@ -81,19 +82,19 @@ class PhotoInfoExportTest {
             val source = raw(root, "info-source.ARW")
             val target = raw(root, "info-target.ARW")
             import(source)
-            val button = compose.onNodeWithTag("photo-info-button")
-            button.performClick()
+            fun cycleInfo() = compose.cycleWorkbenchPhotoInfo(context.getString(R.string.editor_photo_info))
+            cycleInfo()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("info-source.ARW", substring = true).fetchSemanticsNodes().size > 1 }
             compose.waitUntil(10_000) {
                 runCatching { compose.onNodeWithTag("photo-info-panel").assertIsDisplayed(); true }.getOrDefault(false)
             }
             capture("file-info.png")
-            button.performClick()
+            cycleInfo()
             compose.onNodeWithText(requireNotNull(PhotoInfoReader.read(source).camera), substring = true).assertIsDisplayed()
             capture("capture-info.png")
-            button.performClick(); compose.onNodeWithTag("photo-info-panel").assertDoesNotExist()
+            cycleInfo(); compose.onNodeWithTag("photo-info-panel").assertDoesNotExist()
             import(target)
-            button.performClick()
+            cycleInfo()
             compose.waitUntil(10_000) { compose.onAllNodesWithText("info-target.ARW", substring = true).fetchSemanticsNodes().size > 1 }
             compose.onNodeWithText("文件名  info-source.ARW").assertDoesNotExist()
             compose.onNodeWithContentDescription("导出").performClick()
@@ -149,7 +150,7 @@ class PhotoInfoExportTest {
                 }
                 val native = File(root, "native.jpg"); val capped = File(root, "no-enlarge.jpg")
                 processor.export(source, null, EditSettings(), native, ExportFormat.JPEG)
-                processor.export(source, null, EditSettings(), capped, ExportFormat.JPEG, 65535)
+                processor.export(source, null, EditSettings(), capped, ExportFormat.JPEG, 65500)
                 val a = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(native.path, a); BitmapFactory.decodeFile(capped.path, b)
@@ -172,7 +173,8 @@ class PhotoInfoExportTest {
             import(source)
             val model = compose.activity.model
             compose.runOnUiThread { model.beginBatch() }
-            val batch = model.batch.value!!
+            compose.waitUntil(60_000) { model.batch.value != null }
+            val batch = requireNotNull(model.batch.value)
             compose.waitUntil(60_000) { batch.state.value.phase == BatchPhase.SELECTING }
             compose.runOnUiThread { batch.addUris(listOf(Uri.fromFile(target), Uri.fromFile(broken))) }
             compose.waitUntil(60_000) { batch.state.value.phase != BatchPhase.PREPARING }

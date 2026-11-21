@@ -8,6 +8,8 @@ public sealed class WhiteBalancePanel : StackPanel
 {
     private readonly ParameterRow temperature = new();
     private readonly ParameterRow tint = new();
+    internal ParameterRow TemperatureRow => temperature;
+    internal ParameterRow TintRow => tint;
     // 分组重置写成文字按钮，与普通参数的“重置分组”、HSL 的“重置 HSL”一致；
     // 无字的图标会和两行各自的重置图标叠成一列，看起来像多出来的第三个
     private readonly Button reset = new();

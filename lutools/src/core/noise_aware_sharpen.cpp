@@ -4,6 +4,7 @@
 #include <limits>
 #include <new>
 #ifdef SONY2FUJI_ENABLE_METAL
+#include "gpu/denoise.h"
 #include "gpu/metal_sharpen.h"
 #endif
 
@@ -140,6 +141,9 @@ ErrorCode applyNoiseAwareSharpen(ImageData& image, float amount, NoiseAwareSharp
         if (!std::isfinite(rgb.r) || !std::isfinite(rgb.g) || !std::isfinite(rgb.b)) return ErrorCode::InvalidFormat;
     if (amount == 0) return ErrorCode::Success;
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
+#ifndef SONY2FUJI_ENABLE_METAL
+    if (mode == GpuMode::Force) return ErrorCode::Unsupported;
+#endif
     try {
         static_assert(sizeof(RGB) == 3 * sizeof(float));
         ImageData output = image;
@@ -182,14 +186,20 @@ ErrorCode applyNoiseAwareSharpen(ImageData& image, float amount, NoiseAwareSharp
 #ifdef SONY2FUJI_ENABLE_METAL
             if (mode != GpuMode::Off) {
                 result.create(rgb.size(), CV_32FC3);
+                lastGpuFilterOutcome() = {};
                 accelerated = metalNoiseAwareSharpen(rgb.ptr<float>(), luma.ptr<float>(), high.ptr<float>(),
                     variance.ptr<float>(), rgb.cols, rgb.rows, amount, result.ptr<float>());
             }
-#endif
-            if (!accelerated) {
-                if (mode == GpuMode::Force) return ErrorCode::ProcessingError;
-                result = filterCpu(rgb, luma, high, variance, amount);
+            if (!accelerated && mode == GpuMode::Force) {
+                const auto outcome = lastGpuFilterOutcome();
+                return outcome.failure == GpuFailureKind::Unsupported
+                    ? ErrorCode::Unsupported
+                    : outcome.failure == GpuFailureKind::OutOfMemory
+                        ? ErrorCode::OutOfMemory
+                        : ErrorCode::ProcessingError;
             }
+#endif
+            if (!accelerated) result = filterCpu(rgb, luma, high, variance, amount);
             info.gpuUsed |= accelerated;
             result(cv::Rect(x - left, y - top, center.width, center.height)).copyTo(destination(center));
         }

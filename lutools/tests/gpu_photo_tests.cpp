@@ -1,7 +1,9 @@
+#include "test_harness.h"
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
 #include "gpu/photo_gpu.h"
+#include "core/processing_cancellation.h"
 #include "hsl_gpu_boundary.h"
 #include "tone_gpu_boundary.h"
 #include "grading_gpu_boundary.h"
@@ -12,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -29,14 +32,7 @@
 
 namespace {
 
-int failures = 0;
-
-void check(bool condition, const std::string& name) {
-    std::cout << (condition ? "PASS " : "FAIL ") << name << '\n';
-    if (!condition) {
-        ++failures;
-    }
-}
+using rawlab::test::checkPass;
 
 sony2fuji_request baseRequest(
     const std::vector<unsigned char>& pixels,
@@ -143,6 +139,31 @@ std::filesystem::path makePhotoLUT(const std::string& input = "FLog2", const std
     return path;
 }
 
+sony2fuji::RenderParams toRenderParams(
+    const sony2fuji_request& request,
+    const std::shared_ptr<sony2fuji::LUT3D>& lut
+) {
+    sony2fuji::RenderParams params;
+    params.exposureEV = request.exposure_ev;
+    params.brightness = request.brightness;
+    params.contrast = request.contrast;
+    params.saturation = request.saturation;
+    params.temperature = request.temperature;
+    params.tint = request.tint;
+    params.highlights = request.highlights;
+    params.shadows = request.shadows;
+    params.toneCurve = request.tone_curve;
+    params.noiseReduction = request.noise_reduction;
+    params.sharpening = request.sharpening;
+    params.lutStrength = request.lut_strength;
+    params.lut = lut;
+    params.intent = request.intent == SONY2FUJI_INTENT_PREVIEW
+        ? sony2fuji::RenderIntent::Preview
+        : sony2fuji::RenderIntent::Final;
+    params.wbMode = static_cast<sony2fuji::RenderWhiteBalanceMode>(request.wb_mode);
+    return params;
+}
+
 bool compareCase(
     sony2fuji_session* session,
     const std::vector<unsigned char>& pixels,
@@ -164,18 +185,17 @@ bool compareCase(
     const auto cpuStatus = sony2fuji_process(session, &request, &cpu);
 
     const auto input = toLinearImage(pixels, width, height);
+    const auto params = toRenderParams(request, lut);
     sony2fuji::ImageData gpu;
 #ifdef SONY2FUJI_ENABLE_D3D11
     static sony2fuji::D3D11PhotoRenderer renderer;
     const bool gpuStatus = renderer.render(input, sony2fuji::ColorSpace::sRGB,
-        request, lut, sony2fuji::RGB(1,1,1), targetWidth, targetHeight, 0, gpu);
+        params, targetWidth, targetHeight, 0, gpu);
 #else
     const bool gpuStatus = sony2fuji::renderPhotoMetal(
         input,
         sony2fuji::ColorSpace::sRGB,
-        request,
-        lut,
-        sony2fuji::RGB(1.0f, 1.0f, 1.0f),
+        params,
         targetWidth,
         targetHeight,
         gpu
@@ -190,7 +210,7 @@ bool compareCase(
     if (result) {
         result = withinTwoDN(encodeRGB8(gpu), cpu, &maximum);
     }
-    check(result, name + " (max DN " + std::to_string(maximum) + ")");
+    checkPass(result, name + " (max DN " + std::to_string(maximum) + ")");
     sony2fuji_release_buffer(&cpu);
     return result;
 }
@@ -207,7 +227,7 @@ void compareForcedCase(sony2fuji_session* cpuSession, sony2fuji_session* gpuSess
 #else
     const auto expectedBackend = SONY2FUJI_BACKEND_METAL;
 #endif
-    check(gpuStatus == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(gpuSession) == expectedBackend,
+    checkPass(gpuStatus == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(gpuSession) == expectedBackend,
           name + " Force completes on the actual photo GPU backend");
     size_t maximum = 0;
     bool matched = false;
@@ -215,7 +235,7 @@ void compareForcedCase(sony2fuji_session* cpuSession, sony2fuji_session* gpuSess
         const auto* bytes = static_cast<const unsigned char*>(gpu.data);
         matched = withinTwoDN(std::vector<unsigned char>(bytes, bytes + gpu.size_bytes), cpu, &maximum);
     }
-    check(matched, name + " forced CPU/GPU parity (max DN " + std::to_string(maximum) + ")");
+    checkPass(matched, name + " forced CPU/GPU parity (max DN " + std::to_string(maximum) + ")");
     sony2fuji_release_buffer(&cpu);
     sony2fuji_release_buffer(&gpu);
 }
@@ -223,55 +243,60 @@ void compareForcedCase(sony2fuji_session* cpuSession, sony2fuji_session* gpuSess
 } // namespace
 
 int main() {
-    if (!std::getenv("SONY2FUJI_TEST_GPU")) {
+    const auto* enableGpu = std::getenv("SONY2FUJI_TEST_GPU");
+    if (!enableGpu || !*enableGpu) {
         std::cout << "SKIP gpu_photo_tests (set SONY2FUJI_TEST_GPU=1)\n";
-        return 0;
+        return 77;
     }
 
-    check(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    checkPass(rawlabtest::hslGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::HslOptions& hsl, sony2fuji::ImageData& output) {
+        params.hsl = hsl;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
-            input.width, input.height, 0, output, {}, 0, false, hsl);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, {}, {1,1,1},
-            input.width, input.height, output, {}, {}, 0, false, hsl);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }), "HSL out-of-range boundary and active adjustment");
 
-    check(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, const sony2fuji_request& request,
+    checkPass(rawlabtest::toneGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
         const sony2fuji::ToneControlsOptions& controls, sony2fuji::ImageData& output) {
+        params.toneControls = controls;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{},controls);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{},controls);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }), "Tone controls preserve CPU float reference including gamut/zero boundaries");
-    check(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ColorGradingOptions& grading,sony2fuji::ImageData& output) {
+    checkPass(rawlabtest::gradingGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ColorGradingOptions& grading, sony2fuji::ImageData& output) {
+        params.colorGrading = grading;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},grading);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{}, {},grading);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }),"Color grading matches CPU float reference across regions and gamut boundaries");
 
-    check(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input,const sony2fuji_request& request,
-        const sony2fuji::ToneCurve& curve,sony2fuji::ImageData& output) {
+    checkPass(rawlabtest::curveGpuBoundary([](const sony2fuji::ImageData& input, sony2fuji::RenderParams params,
+        const sony2fuji::ToneCurve& curve, sony2fuji::ImageData& output) {
+        params.customCurve = curve;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer renderer;
-        return renderer.render(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,0,output,{},0,false,{}, {},{},curve);
+        return renderer.render(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, 0, output);
 #else
-        return sony2fuji::renderPhotoMetal(input,sony2fuji::ColorSpace::sRGB,request,{}, {1,1,1},
-            input.width,input.height,output,{}, {},0,false,{}, {},{},curve);
+        return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+            input.width, input.height, output);
 #endif
     }),"PCHIP curve matches CPU float reference including 33 points and plateaus");
 
@@ -280,10 +305,10 @@ int main() {
     auto lut = std::shared_ptr<sony2fuji::LUT3D>(
         sony2fuji::LUTParser::loadLUT(lutPath.string())
     );
-    check(lut && lut->isValid() && lut->isPhotoLUT(), "custom photo LUT loads");
+    checkPass(lut && lut->isValid() && lut->isPhotoLUT(), "custom photo LUT loads");
 
     sony2fuji_session* session = nullptr;
-    check(
+    checkPass(
         sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK && session,
         "CPU comparison session creates"
     );
@@ -293,6 +318,64 @@ int main() {
         14, 52, 103, 156, 201, 240, 11, 88, 177, 219, 231, 17
     };
     const auto baseline = baseRequest(pixels, 4, 2);
+
+    {
+        // C10/P2-15：带/阶段边界的取消必须以 ProcessingCancelled 逃出 GPU 后端，
+        // 不能被通用 catch 吞成 false（否则 Auto 静默回退 CPU 重跑、Force 误报 GPU 失败）。
+        auto cancelRequest = baseline;
+        cancelRequest.noise_reduction = 0.4f;
+        const auto input = toLinearImage(pixels, 4, 2);
+
+        auto renderOnce = [](const sony2fuji::ImageData& image, const sony2fuji_request& request,
+                             sony2fuji::ImageData& output) {
+            const auto params = toRenderParams(request, nullptr);
+#ifdef SONY2FUJI_ENABLE_D3D11
+            static sony2fuji::D3D11PhotoRenderer renderer;
+            return renderer.render(image, sony2fuji::ColorSpace::sRGB, params,
+                request.target_width, request.target_height, 0, output);
+#else
+            return sony2fuji::renderPhotoMetal(image, sony2fuji::ColorSpace::sRGB, params,
+                request.target_width, request.target_height, output);
+#endif
+        };
+        auto countDown = [](std::atomic<int>& remaining) {
+            return sony2fuji::ProcessingCancellation{+[](void* context) -> int32_t {
+                return static_cast<std::atomic<int>*>(context)->fetch_sub(1) <= 1;
+            }, &remaining};
+        };
+
+        // 场景 A：首个阶段/带边界即取消——输出尚未发布。
+        sony2fuji::ImageData earlyOut;
+        bool earlyCancelled = false;
+        {
+            std::atomic<int> remaining{1};
+            sony2fuji::ProcessingCancellationScope cancellation(countDown(remaining));
+            try { renderOnce(input, cancelRequest, earlyOut); }
+            catch (const sony2fuji::ProcessingCancelled&) { earlyCancelled = true; }
+        }
+        checkPass(earlyCancelled && earlyOut.pixels.empty(),
+              "cancelled photo render escapes the GPU backend instead of reporting a GPU failure");
+
+        // 场景 B：阶段间取消——4096×480 至少跨两个 16 MiB 预算带，第 2 个检查点落在
+        // 首个带/阶段完成之后；取消后复用同一渲染器必须仍然健康（D3D11 不 reset impl_）。
+        const std::vector<unsigned char> tallPixels(size_t(4096) * 480 * 3, 96);
+        auto tallRequest = baseRequest(tallPixels, 4096, 480);
+        tallRequest.noise_reduction = 0.4f;
+        const auto tallInput = toLinearImage(tallPixels, 4096, 480);
+        sony2fuji::ImageData midOut;
+        bool midCancelled = false;
+        {
+            std::atomic<int> remaining{2};
+            sony2fuji::ProcessingCancellationScope cancellation(countDown(remaining));
+            try { renderOnce(tallInput, tallRequest, midOut); }
+            catch (const sony2fuji::ProcessingCancelled&) { midCancelled = true; }
+        }
+        checkPass(midCancelled && midOut.pixels.empty(),
+              "photo render cancelled between stages escapes as ProcessingCancelled with no published output");
+        sony2fuji::ImageData reused;
+        checkPass(renderOnce(tallInput, tallRequest, reused) && !reused.pixels.empty(),
+              "photo renderer stays healthy after a cancelled render");
+    }
 
     const float strengths[] = {0.0f, 0.5f, 1.0f, 2.0f};
     for (float strength : strengths) {
@@ -354,18 +437,43 @@ int main() {
     previewRequest.target_height = 1;
     previewRequest.lut_path = lutUtf8.c_str();
     previewRequest.lut_strength = 0.5f;
-    previewRequest.noise_reduction = 0.3f;
     compareCase(session, pixels, 4, 2, previewRequest, lut, 2, 1, "preview resize precedes effects");
 
     auto finalRequest = previewRequest;
     finalRequest.intent = SONY2FUJI_INTENT_FINAL;
     finalRequest.preview_long_edge = 0;
+    finalRequest.noise_reduction = 0.3f;
     compareCase(session, pixels, 4, 2, finalRequest, lut, 2, 1, "final resize follows effects");
 
     sony2fuji_session* forced = nullptr;
-    check(sony2fuji_session_create(&forced) == SONY2FUJI_STATUS_OK, "Force comparison session creates");
+    checkPass(sony2fuji_session_create(&forced) == SONY2FUJI_STATUS_OK, "Force comparison session creates");
     sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(config), SONY2FUJI_GPU_FORCE};
     sony2fuji_session_set_gpu_config(forced, &config);
+    {
+        // 旧版降噪是固定 3x3 像素邻域：GPU 默认预览须在源分辨率执行，结果与导出一致。
+        std::vector<unsigned char> detail(16 * 16 * 3);
+        for (int y = 0; y < 16; ++y) for (int x = 0; x < 16; ++x) for (int c = 0; c < 3; ++c)
+            detail[(y * 16 + x) * 3 + c] = static_cast<unsigned char>((x * 37 + y * 19 + c * 23) % 220 + 10);
+        auto denoiseRequest = baseRequest(detail, 16, 16);
+        denoiseRequest.target_width = denoiseRequest.target_height = 8;
+        denoiseRequest.noise_reduction = 1.0f;
+        denoiseRequest.intent = SONY2FUJI_INTENT_FINAL;
+        sony2fuji_buffer exported{}, preview{};
+        const auto exportStatus = sony2fuji_process(session, &denoiseRequest, &exported);
+        denoiseRequest.intent = SONY2FUJI_INTENT_PREVIEW;
+        denoiseRequest.preview_long_edge = 8;
+        const auto previewStatus = sony2fuji_process(forced, &denoiseRequest, &preview);
+        size_t maximum = 0;
+        bool matched = exportStatus == SONY2FUJI_STATUS_OK && previewStatus == SONY2FUJI_STATUS_OK && preview.data;
+        if (matched) {
+            const auto* bytes = static_cast<const unsigned char*>(preview.data);
+            matched = withinTwoDN(std::vector<unsigned char>(bytes, bytes + preview.size_bytes), exported, &maximum);
+        }
+        checkPass(matched, "legacy noise reduction keeps GPU preview at source resolution (max DN " +
+            std::to_string(maximum) + ")");
+        sony2fuji_release_buffer(&exported);
+        sony2fuji_release_buffer(&preview);
+    }
     std::vector<unsigned char> ramp(17 * 13 * 3);
     for (size_t i=0; i<ramp.size(); ++i) ramp[i] = static_cast<unsigned char>((i*73+i/7)%256);
     for (const auto& inputName : {"FLog", "FLog2", "FLog2C"}) {
@@ -399,7 +507,7 @@ int main() {
         {1, sizeof(sony2fuji_photo_effects_config), -65, 35, -37, 60, 80, 100, 100, 100}
     }};
     for (size_t index = 0; index < effects.size(); ++index) {
-        check(sony2fuji_session_set_photo_effects(session, &effects[index]) == SONY2FUJI_STATUS_OK &&
+        checkPass(sony2fuji_session_set_photo_effects(session, &effects[index]) == SONY2FUJI_STATUS_OK &&
               sony2fuji_session_set_photo_effects(forced, &effects[index]) == SONY2FUJI_STATUS_OK, "effects configure both backends");
         for (bool withLUT : {false, true}) for (bool preview : {false, true}) {
             auto request = baseRequest(texture, 513, 257);
@@ -470,7 +578,7 @@ int main() {
     for (auto* target : {session,forced}) sony2fuji_session_set_tone_controls(target,&tone);
     compareForcedCase(session,forced,hslRequest,"Tone controls with LUT, HSL, chroma, detail, effects and resize");
     sony2fuji_color_grading_config grading{1,sizeof(grading),220,75,110,35,35,60};
-    for (auto* target : {session,forced})check(sony2fuji_session_set_color_grading(target,&grading)==SONY2FUJI_STATUS_OK,"grading combination setter");
+    for (auto* target : {session,forced})checkPass(sony2fuji_session_set_color_grading(target,&grading)==SONY2FUJI_STATUS_OK,"grading combination setter");
     compareForcedCase(session,forced,hslRequest,"Grading with tone, LUT, HSL, chroma, detail, effects and resize");
     sony2fuji_tone_curve_config curve{1,sizeof(curve),SONY2FUJI_CURVE_CUSTOM,4,{{0,0},{.25,.12},{.75,.88},{1,1}}};
     for (auto* target : {session,forced}) sony2fuji_session_set_tone_curve(target,&curve);
@@ -495,5 +603,5 @@ int main() {
     sony2fuji_session_destroy(session);
     std::error_code error;
     std::filesystem::remove(lutPath, error);
-    return failures ? 1 : 0;
+    return rawlab::test::exitCode();
 }

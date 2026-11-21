@@ -1,14 +1,41 @@
 import Foundation
 import CryptoKit
 
+enum UpdateStateWriteFailure: LocalizedError {
+    case uncertainAfterReplace(Error)
+    var errorDescription: String? {
+        switch self {
+        case .uncertainAfterReplace(let error): return error.localizedDescription
+        }
+    }
+}
+
 struct UpdateStore {
     let directory: URL
+    private let writeState: (UpdatePreferences, URL) throws -> Void
     var stateURL: URL { directory.appendingPathComponent("state.json") }
     static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/Updates", isDirectory: true)
     }
-    init(directory: URL = defaultDirectory) { self.directory = directory }
+    init(directory: URL = defaultDirectory,
+         writeState: @escaping (UpdatePreferences, URL) throws -> Void = Self.writeAtomically) {
+        self.directory = directory
+        self.writeState = writeState
+    }
+    static func synchronizeFile(at url: URL) throws {
+        let file = try FileHandle(forWritingTo: url); defer { try? file.close() }; try file.synchronize()
+    }
+    static func writeAtomically(_ preferences: UpdatePreferences, to stateURL: URL) throws {
+        try writeAtomically(preferences, to: stateURL, synchronize: Self.synchronizeFile)
+    }
+    static func writeAtomically(_ preferences: UpdatePreferences, to stateURL: URL,
+                                synchronize: (URL) throws -> Void) throws {
+        try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)
+        do { try synchronize(stateURL) }
+        catch { throw UpdateStateWriteFailure.uncertainAfterReplace(error) }
+    }
     func load(automaticCheck: Bool) throws -> UpdatePreferences {
         guard FileManager.default.fileExists(atPath: stateURL.path) else {
             var result = UpdatePreferences(); result.automaticCheck = automaticCheck; return result
@@ -134,9 +161,7 @@ struct UpdateStore {
     }
     private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func save(_ preferences: UpdatePreferences) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(preferences).write(to: stateURL, options: .atomic)
-        let file = try FileHandle(forWritingTo: stateURL); defer { try? file.close() }; try file.synchronize()
+        try writeState(preferences, stateURL)
     }
 }
 

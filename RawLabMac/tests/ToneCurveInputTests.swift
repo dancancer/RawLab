@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 @main enum ToneCurveInputTests {

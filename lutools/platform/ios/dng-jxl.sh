@@ -65,7 +65,9 @@ if [ -n "$EXTERNAL" ]; then
 fi
 
 test_define="-DTEST_FIXTURE_DIR=\"$ROOT/tests/fixtures\""
-core="$ROOT/build-ios-libraw/0.22.2/core-iphonesimulator-arm64"
+libraw_env="$(python3 "$ROOT/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
+core="$ROOT/build-ios-libraw/$RAWLAB_LIBRAW_VERSION/core-iphonesimulator-arm64"
 dng_source="$(sed -n 's/^FETCHCONTENT_SOURCE_DIR_RAWLAB_DNG_SOURCE:[^=]*=//p' "$core/CMakeCache.txt")"
 dng_source="${dng_source:-$core/_deps/rawlab_dng_source-src}"
 dng_headers="${RAWLAB_DNGSDK_HEADERS:-$dng_source/dng_sdk/source}"

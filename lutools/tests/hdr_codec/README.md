@@ -59,8 +59,12 @@ and exposure checks. Keep the resulting logs/provenance outside the repository.
   native and library decoders provide separate observations.
 - The production `hdr_image_decode` test additionally runs `numeric_acceptance.h`:
   16 authored RGB32F bars, quality 95, a two-pixel boundary exclusion, and all six
-  sRGB/P3 × ISO-only/XMP-only/dual-metadata paths. It enforces A08 HDR luminance EV
-  P95 and target-primary SDR RGB8 MAE/P99 limits with an actual output ICC profile.
+  sRGB/P3 × ISO-only/XMP-only/dual-metadata JPEG paths. When the system HEIF encoder
+  is available, it also encodes the same bars as sRGB and P3 ISO HEIF. It enforces A08
+  HDR luminance EV P95 and target-primary SDR RGB8 MAE/P99 limits with an actual
+  output ICC profile.
+  `camera_raw_hdr` round-trips a textured Bayer fixture without flat patches, so it
+  records its HEIF SDR P99 but gates only HDR P95, SDR MAE and super-white peak.
   Product and probe disable libultrahdr intrinsics because the pinned arm64 P3 path
   fails this vector; scalar execution preserves the same acceptance thresholds.
 - Optional authentic phone fixtures are sampled at at most 1024 pixels on the long edge

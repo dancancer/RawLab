@@ -142,6 +142,17 @@ bash lutools/platform/ios/verify-framework.sh
 5. Connect your iPhone over USB and trust the computer. At the top of Xcode, select **the RawLab scheme and your physical iPhone**, not a simulator or `Any iOS Device`. Wait for pairing and debugging support to finish. On the phone, enable **Settings > Privacy & Security > Developer Mode**, restart, and confirm again. Then click Xcode's Run button.
 6. Once RawLab opens on your phone, installation is complete. When a free account's signature expires, run and install again using the same account and bundle identifier.
 
+The default Debug and Release configurations leave **Code Signing Entitlements**
+empty so a free Personal Team can sign the app. To connect a Sony camera with
+this configuration, join the camera hotspot in iOS Wi-Fi settings, then tap
+**Connected, continue** in RawLab.
+
+Teams with both Wi-Fi capabilities can opt in to automatic joining. Enable
+**Hotspot Configuration** and **Access Wi-Fi Information** for your app
+identifier and provisioning profile. In the RawLab target's Build Settings,
+set **Code Signing Entitlements** to `RawLab/Resources/RawLab.entitlements`
+for the configuration you sign. See [Apple's iOS capability table](https://developer.apple.com/help/account/reference/supported-capabilities-ios).
+
 Xcode handles signing the app and its embedded framework; you do not need to
 add the framework again manually. See the
 [repository's iOS build guide](../../lutools/platform/ios/README.md) for build

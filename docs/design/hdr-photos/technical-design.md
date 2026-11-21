@@ -64,7 +64,7 @@ macOS 14 打开未来 HDR 编辑记录时，不应用或覆盖该记录；保留
 - [C ABI](../../../lutools/include/sony2fuji/ffi/sony2fuji_c.h)的图像 buffer 只有 RGB8/RGBA8。
 - [调色曲线](../../../lutools/src/core/photo_tone_curve.cpp)、部分 tone/effects 和现有外观以 SDR 域为前提；不能只解除导入检查。
 - [Mac Engine](../../../RawLabMac/Sources/Rendering/Engine.swift)与[iOS processor](../../../RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift)的旧路径创建 8 位 sRGB 预览；HDR 改走独立浮点 pair 与画布。
-- 渲染型 DNG 保存的是 SDR 显影结果，float32 存储不构成 HDR 支持。
+- 渲染型 DNG 保存的是 SDR 显影结果，存储位深本身不构成 HDR 支持。
 
 ## 3. 图像、颜色与亮度契约
 
@@ -308,7 +308,7 @@ codec 不满足该门槛时修正选型/实现，或明确提出范围变更；�
 
 在同目录临时文件完成编码、元数据与结构校验后原子替换目标；失败保留既有文件，取消不发布半成品。
 从来源选择性复制可用拍摄信息，更新尺寸/方向，清除失效源 gain-map/编码标签；色彩和 HDR 标签由
-新编码器生成。[现有 ExportMetadata](../../../Shared/ExportMetadata.swift)不能不经验证再重写 HDR 文件。
+新编码器生成。[现有 ExportMetadata](../../../Shared/RawLabKit/ExportMetadata.swift)不能不经验证再重写 HDR 文件。
 原图、单张、批量、iOS 相册保存/文件保存和重新导入必须使用同一输出合同。
 不保证社交平台转码后仍保留 HDR，只保证文件本身及明确测试查看器中的行为。
 

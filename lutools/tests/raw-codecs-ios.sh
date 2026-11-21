@@ -3,7 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRAMEWORK="${1:-$ROOT/build-ios/sony2fuji.xcframework/ios-arm64_x86_64-simulator/sony2fuji.framework}"
 DEVICE="${2:-booted}"
-LIBRAW="${3:-$ROOT/build-ios-libraw/0.22.2/sources/LibRaw-0.22.2}"
+libraw_env="$(python3 "$ROOT/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
+LIBRAW="${3:-$ROOT/build-ios-libraw/$RAWLAB_LIBRAW_VERSION/sources/$RAWLAB_LIBRAW_DIRECTORY}"
 OUT="$(mktemp -d /tmp/rawlab-raw-codecs-ios.XXXXXX)"
 trap 'rm -rf -- "$OUT"' EXIT
 test -f "$FRAMEWORK/sony2fuji"

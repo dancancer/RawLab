@@ -1,0 +1,113 @@
+import Foundation
+
+/// 按 `RawEditorViewModel.updateHDRResourceNotice` 的方式逐帧交付 HDR 预览，并统计状态消息写入次数。
+final class StatusProbe {
+    var notice = HDRResourceNotice()
+    var writes = 0
+    var status: String? { didSet { writes += 1 } }
+
+    func deliverFrame(missingResource message: String?) {
+        switch notice.change(to: message, status: status) {
+        case .show(let message): status = message
+        case .clear: status = nil
+        case .keep: break
+        }
+    }
+}
+
+@main enum HDRResourceNoticeTests {
+    static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+        if !condition() { fatalError(message) }
+        print("PASS: \(message)")
+    }
+
+    static func main() throws {
+        let saved = "已保存到照片。"
+        let look = "上次使用的外观不可用，请重新选择或导入外观。"
+        let profile = "找不到 HDR 相机配置，请重新导入。"
+
+        let complete = StatusProbe()
+        complete.status = saved
+        let writesBeforeFrames = complete.writes
+        for _ in 0..<3 { complete.deliverFrame(missingResource: nil) }
+        check(complete.status == saved && complete.writes == writesBeforeFrames,
+              "A complete HDR preview frame keeps the user's status message")
+
+        let missing = StatusProbe()
+        missing.status = saved
+        missing.writes = 0
+        missing.deliverFrame(missingResource: look)
+        check(missing.status == look && missing.writes == 1, "A newly missing HDR resource is shown once")
+        for _ in 0..<3 { missing.deliverFrame(missingResource: look) }
+        check(missing.writes == 1, "Repeated HDR frames do not rewrite an unchanged missing-resource warning")
+        missing.status = saved
+        missing.deliverFrame(missingResource: look)
+        check(missing.status == saved, "Repeated HDR frames do not replace a newer user message")
+        missing.deliverFrame(missingResource: profile)
+        check(missing.status == profile, "A different missing HDR resource is shown")
+        missing.status = saved
+        missing.deliverFrame(missingResource: nil)
+        check(missing.status == saved, "Recovered HDR resources do not clear a newer user message")
+
+        let recovered = StatusProbe()
+        recovered.deliverFrame(missingResource: look)
+        recovered.deliverFrame(missingResource: nil)
+        check(recovered.status == nil, "Recovered HDR resources withdraw the still-visible warning")
+
+        // 交付时状态转换收口在生产 HDRResourceNotice.delivered（导入三个交付站点共用）。
+        let deliveredHDR = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: look)
+        check(deliveredHDR.message == look, "HDR import delivery records the warning it already showed")
+        check(HDRResourceNotice.delivered(isHDREditing: true, missingMessage: nil).message == nil,
+              "A complete HDR delivery records no warning")
+        check(HDRResourceNotice.delivered(isHDREditing: false, missingMessage: look).message == nil,
+              "SDR import delivery resets the notice cache even when the photo still misses HDR resources")
+
+        let reEnabled = StatusProbe()
+        reEnabled.notice = deliveredHDR
+        reEnabled.status = look
+        reEnabled.writes = 0
+        reEnabled.deliverFrame(missingResource: look)
+        check(reEnabled.status == look && reEnabled.writes == 0,
+              "The first preview after an HDR import does not repeat the import warning")
+        reEnabled.notice = .delivered(isHDREditing: false, missingMessage: look)
+        reEnabled.deliverFrame(missingResource: look)
+        check(reEnabled.status == look && reEnabled.writes == 1,
+              "Switching the same photo back to HDR editing after an SDR delivery shows the missing-resource warning again")
+
+        // V-UIIOS P1-05 seam：SDR 照片在出帧前因缺外观或解码错误早退时，重置只挂在成功
+        // 交付站点就够不到该路径；源切换边界必须退役旧照片的警告缓存，否则相同警告被 .keep 压制。
+        let staleHDR = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
+        let afterFailedSwitch = staleHDR.afterUndeliveredFrame
+        check(afterFailedSwitch.message == nil,
+              "A failed SDR source switch drops the stale HDR missing-resource cache")
+        let rebound = StatusProbe()
+        rebound.notice = afterFailedSwitch
+        rebound.writes = 0
+        rebound.deliverFrame(missingResource: profile)
+        check(rebound.status == profile && rebound.writes == 1,
+              "The identical warning is shown again after switching back to the HDR photo")
+        let sameSource = StatusProbe()
+        sameSource.writes = 0
+        sameSource.deliverFrame(missingResource: profile)
+        sameSource.deliverFrame(missingResource: profile)
+        check(sameSource.writes == 1, "Frames of the same source still dedup the warning")
+
+        // V-UIIOS P1-05 碳审补充：同图 HDR→SDR 不经 importImage，updatePreview 出帧前
+        // 缺外观早退（Rendering.swift :117-124）或解码/渲染报错同样必须退役警告缓存，
+        // 否则切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（docs/archive/architecture/remediation-plan-2026-11-13/b-task-table.md:17 台账场景）。
+        let aborted = HDRResourceNotice.delivered(isHDREditing: true, missingMessage: profile)
+        let afterAbort = aborted.afterUndeliveredFrame
+        check(afterAbort.message == nil,
+              "An aborted SDR preview attempt drops the HDR missing-resource cache")
+        let backToHDR = StatusProbe()
+        backToHDR.notice = afterAbort
+        backToHDR.status = "所选外观不可用，请重新选择外观。"
+        backToHDR.writes = 0
+        backToHDR.deliverFrame(missingResource: profile)
+        check(backToHDR.status == profile && backToHDR.writes == 1,
+              "Switching the same photo back to HDR re-shows the warning after an early SDR abort")
+        backToHDR.deliverFrame(missingResource: profile)
+        check(backToHDR.status == profile && backToHDR.writes == 1,
+              "The re-shown warning still dedups later frames of the same source")
+    }
+}

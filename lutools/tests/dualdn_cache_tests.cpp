@@ -1,6 +1,8 @@
 #include "ai/cache_reader.h"
 #include "ai/dualdn_cache.h"
 #include "ai/model_package.h"
+#include "core/sha256.h"
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -26,6 +28,8 @@ int main(int argc, char** argv) {
         const auto raw = root / "source.raw";
         { std::ofstream(raw) << "immutable RAW fixture"; }
         const auto key = rawCacheKey(raw.string(), std::string(64, 'a'), 0);
+        require(rawCacheKey(raw.string(), std::string(64, 'a'), 0, true) != key,
+                "different Sony crop references shared the same AI cache key");
         // 固定旧版身份，证明升级估计器后不能再读取之前误估噪声生成的三个缓存。
         const auto legacyIdentity = std::string("{\"backend\":0,\"decoder\":\"rawlab-bayer-v2\",\"model\":\"")+
             std::string(64,'a')+"\",\"noise\":\"rawlab-bayer-noise-v2:haar-mad-v1:sony-ilce-7cm2-20261022-bce08d93bc36\","+
@@ -76,7 +80,11 @@ int main(int argc, char** argv) {
         options.lensCorrection.distortion = true;
         require(sceneRGBCacheKey(key, options) != sceneKey && rgbCacheKey(key, options) == rgbKey,
                 "lens settings did not isolate scene RGB cache");
-        options.lensCorrection.distortion = false;
+        const auto distortedScene = sceneRGBCacheKey(key, options);
+        options.lensCorrection.vignetting = true;
+        require(sceneRGBCacheKey(key, options) != distortedScene && rgbCacheKey(key, options) == rgbKey,
+                "vignetting did not invalidate only the developed scene cache");
+        options.lensCorrection = {};
         options.exposure = 2; options.brightness = 1.2f; options.applyBaselineExposure = false;
         require(rgbCacheKey(key, options) == rgbKey, "exposure invalidated AI cache");
         require(sceneRGBCacheKey(key, options) == sceneKey, "exposure invalidated scene RGB cache");
@@ -92,13 +100,24 @@ int main(int argc, char** argv) {
         cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size());
         const auto restored = cache.load(key, CacheKind::Raw, 3, 2);
         require(restored && restored->values == values, "cache did not preserve finite float32 values");
-        std::string producer = "stale";
+        const auto rawPayload = sha256Bytes(values.data(), values.size() * sizeof(float));
+        std::string producer = "stale", storedDigest = "stale", loadedDigest = "stale";
         require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer.empty(),
                 "legacy cache invented a producer");
-        cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML");
-        require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer == "CoreML",
-                "cache did not retain actual producer");
-        require(!cache.load(key, CacheKind::Raw, 2, 3), "wrong geometry accepted");
+        bool storeAborted = false;
+        try {
+            cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML",
+                        [] { throw std::runtime_error("abort"); }, &storedDigest);
+        } catch (const std::runtime_error&) { storeAborted = true; }
+        require(storeAborted && storedDigest.empty(), "aborted cache store leaked a payload digest");
+        storedDigest = "stale";
+        cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size(), {}, "CoreML", {}, &storedDigest);
+        require(storedDigest == rawPayload, "cache store did not report exact payload digest");
+        require(cache.load(key, CacheKind::Raw, 3, 2, {}, &producer, &loadedDigest) &&
+                producer == "CoreML" && loadedDigest == storedDigest,
+                "cache did not retain actual producer or payload digest");
+        require(!cache.load(key, CacheKind::Raw, 2, 3, {}, nullptr, &loadedDigest) && loadedDigest.empty(),
+                "wrong geometry accepted or retained stale payload digest");
         {
             const auto path = root / "cache" / (key + ".rawcache");
             std::string expected;
@@ -119,11 +138,12 @@ int main(int argc, char** argv) {
         const auto file = root / "cache" / (key + ".rawcache");
         { std::fstream stream(file, std::ios::in | std::ios::out | std::ios::binary); stream.seekp(-1, std::ios::end); stream.put('\0'); }
         require(!cache.load(key, CacheKind::Raw, 3, 2), "corrupt cache accepted");
-        require(!cache.load(key, CacheKind::Raw, 3, 2, {}, &producer) && producer.empty(),
-                "failed cache load retained a stale producer");
+        loadedDigest = "stale";
+        require(!cache.load(key, CacheKind::Raw, 3, 2, {}, &producer, &loadedDigest) &&
+                producer.empty() && loadedDigest.empty(),
+                "failed cache load retained a stale producer or payload digest");
         cache.store(key, CacheKind::Raw, 3, 2, values.data(), values.size());
         require(cache.load(key, CacheKind::Raw, 3, 2)->values == values, "corrupt cache could not be repaired");
-        const auto rawPayload = sha256Bytes(values.data(), values.size() * sizeof(float));
         cache.store(sceneKey, CacheKind::SceneRGB, 2, 1, values.data(), values.size(), {}, "CoreML");
         const auto scene = cache.load(sceneKey, CacheKind::SceneRGB, 0, 0);
         require(scene && scene->width == 2 && scene->height == 1 && scene->values == values,
@@ -141,6 +161,36 @@ int main(int argc, char** argv) {
         cache.store(sceneKey,CacheKind::SceneRGB,2,1,values.data(),values.size());
         cache.store(rgbKey, CacheKind::RGB, 1, 2, values.data(), values.size(), rawPayload);
         require(cache.load(rgbKey, CacheKind::RGB, 1, 2, rawPayload).has_value(), "matching RAW dependency rejected");
+        {
+            std::string verifiedProducer, verifiedDigest;
+            require(cache.verify(rgbKey, CacheKind::RGB, 1, 2, rawPayload, &verifiedProducer, &verifiedDigest) &&
+                    verifiedDigest == sha256Bytes(values.data(), values.size() * sizeof(float)),
+                    "streaming verify rejected valid RGB cache");
+            std::string loadedProducer, loadedRgbDigest;
+            const auto rgbCorrection = cache.loadRGBCorrection(rgbKey, 1, 2, rawPayload, &loadedProducer, &loadedRgbDigest);
+            require(rgbCorrection && rgbCorrection->size() == 2 &&
+                    loadedRgbDigest == verifiedDigest &&
+                    (*rgbCorrection)[0].r == values[0] && (*rgbCorrection)[0].g == values[2] && (*rgbCorrection)[0].b == values[4] &&
+                    (*rgbCorrection)[1].r == values[1] && (*rgbCorrection)[1].g == values[3] && (*rgbCorrection)[1].b == values[5],
+                    "loadRGBCorrection did not match planar RGB cache");
+            require(cache.verify(sceneKey, CacheKind::SceneRGB, 0, 0),
+                    "streaming verify rejected valid SceneRGB cache");
+            // Streaming Sha256 chunk boundary parity
+            const std::array<size_t, 5> splitSizes = {1, 63, 64, 65, 131079};
+            for (size_t sz : splitSizes) {
+                std::vector<uint8_t> bytes(sz);
+                for (size_t i = 0; i < sz; ++i) bytes[i] = static_cast<uint8_t>((i * 41 + 7) & 0xff);
+                hash::Sha256 streamed;
+                size_t pos = 0;
+                while (pos < sz) {
+                    const size_t step = std::min<size_t>(sz - pos, 17);
+                    streamed.update(bytes.data() + pos, step);
+                    pos += step;
+                }
+                require(streamed.finish() == sha256Bytes(bytes.data(), bytes.size()),
+                        "streaming Sha256 diverged from one-shot sha256Bytes");
+            }
+        }
         auto rebuiltRaw = values; rebuiltRaw[0] += .01f;
         const auto rebuiltPayload = sha256Bytes(rebuiltRaw.data(), rebuiltRaw.size() * sizeof(float));
         require(!cache.load(rgbKey, CacheKind::RGB, 1, 2, rebuiltPayload),

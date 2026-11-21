@@ -11,7 +11,12 @@ public partial class MainWindow
     internal bool CollectionBusy=>closing || exporting || transferPreparing || UpdateInstallationActive;
     internal bool CollectionHasExport=>CurrentBatch!=null;
     internal string? CollectionSourceID {
-        get {try{return file==null ? null : OriginalIdentity.Read(file).StableKey;}catch{return null;}}
+        get {
+            if (file == null) return null;
+            if (CurrentViewSource is { } cached) return cached.StableKey;
+            try { return OriginalIdentity.Read(file).StableKey; }
+            catch { return null; }
+        }
     }
     private bool CommitCollectionInputs()
     {
@@ -30,14 +35,13 @@ public partial class MainWindow
     }
     private void ShowCollection()
     {
-        Collection.RefreshFailures();
         if(collectionWindow==null) {
             collectionWindow=new(this){IsEnabled=!UpdateInstallationActive};
             collectionWindow.Closed+=(_,_)=>{collectionWindow=null;};
         }
         collectionWindow.Refresh(restorePosition:true);collectionWindow.Show();collectionWindow.Activate();RefreshControls();
     }
-    internal void AddCollectionPhotos(IEnumerable<string> paths) {Collection.Add(paths,file);Collection.RefreshFailures();}
+    internal void AddCollectionPhotos(IEnumerable<string> paths) => Collection.Add(paths,file);
     // 用户拒绝导航时消费请求；只有暂时阻塞或保存失败才交给定时器重试。
     internal bool TryOpenSystemPhotos(IEnumerable<string> paths)
     {
@@ -115,6 +119,7 @@ public partial class MainWindow
             CurrentTransferContext().SupportsHDRCameraDevelopment);
         if(scope.ShowDialog()!=true || payload==null)return;
         try {
+            BeginTransferPrepare();
             var expected=targets.ToDictionary(photo=>photo.Path,StringComparer.OrdinalIgnoreCase);
             var operation=await PrepareAdjustmentTargets(payload,targets.Select(photo=>photo.Path),AdjustmentHistoryAction.Synchronize,source,expected);
             if(!owner.IsVisible)return;
@@ -123,14 +128,16 @@ public partial class MainWindow
                 target.Unchanged ? AdjustmentStatus.Unchanged : AdjustmentStatus.Blocked,
                 Error:target.Error,RequiresHistoryDecision:target.Error!=null)).ToArray();
             if(initial.Length==0)return;
-            var adopted=new Dictionary<string,Exception?>();var session=TransferSession;AdjustmentResultDialog? dialog=null;
+            var adopted=new Dictionary<string,Exception?>(StringComparer.OrdinalIgnoreCase);var session=TransferSession;AdjustmentResultDialog? dialog=null;
             dialog=new(owner,"同步调整",initial,true,skipping=>{
                 var results=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);
                 Collection.RecordSynchronization(operation.ID,results.Any(result=>result.Status==AdjustmentStatus.Applied));
+                ShowAdjustmentTransferNotices(operation,results,AdjustmentTransferNoticeOrigin.Dialog,CurrentAdoptedSuccessfully(results));
                 return results;
             },sourceSummary:Loc.Format("来源：{0} · {1} 项调整",Path.GetFileName(source.Path),payload.Fields.Count),
                 historyParts:()=>session.Transactions.FirstOrDefault(transaction=>transaction.ID==operation.ID)?.Parts ?? [],
-                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName);
+                changeHistory:undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload:payload,lookName:AdjustmentSummaryLookName,
+                resolveNotices:operation.EffectiveNotices,onInvalidateNotices:InvalidateDialogTransferNotices,onDisposeNotices:DisposeDialogTransferNotices);
             dialog.ShowDialog();
         }catch(Exception error){if(owner.IsVisible)MessageBox.Show(owner,error.Message,Loc.Text("调整未应用"),MessageBoxButton.OK,MessageBoxImage.Information);}
         finally{collectionWindow?.Refresh();}
@@ -144,13 +151,13 @@ public partial class MainWindow
     }
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
-        editStore ??=new(EditStore.DefaultDirectory);
+        editStore ??=new(appPaths.EditsDirectory);
         return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
     }
     internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
     {
         if(CollectionBusy)return null;
-        editStore ??=new(EditStore.DefaultDirectory);
+        editStore ??=new(appPaths.EditsDirectory);
         var photos=Collection.SelectedPhotos.ToArray();var skipped=skipping.ToHashSet(StringComparer.Ordinal);
         var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
@@ -163,15 +170,35 @@ public partial class MainWindow
                 photos.Select(photo=>photo.ID).SequenceEqual(Collection.SelectedPhotos.Select(photo=>photo.ID)) ? result : null;
         }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
-    internal BatchJob FreezeCollectionExport(CollectionExportReview review,bool autoStart=false)
+    internal async Task<BatchJob> FreezeCollectionExportAsync(CollectionExportReview review,bool autoStart=false,Action? beforeShowBatch=null,Action<string>? observeStage=null)
     {
         if(CollectionBusy)throw new InvalidOperationException(Loc.Text("请等待当前操作完成。"));
-        if(CurrentBatch is {} previous && previous.SelectedCount>previous.SucceededCount)
+        if(CurrentBatch is {} running && running.SelectedCount>running.SucceededCount)
             throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         if(batchWindow!=null){batchWindow.Close();if(batchWindow!=null)throw new InvalidOperationException(Loc.Text("请先关闭当前任务窗口。"));}
-        editStore ??=new(EditStore.DefaultDirectory);
-        var job=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Freeze(Collection,review,CollectionDraftFailure,RequestedAIBackend,aiPreference.DeviceID);
-        previousBatch=job;ShowBatch(job,autoStart);return job;
+        editStore ??=new(appPaths.EditsDirectory);
+        var selectionIDs=Collection.SelectedPhotos.Select(photo=>photo.ID).ToList();
+        var failures=review.Rows.ToDictionary(row=>row.Photo.ID,row=>CollectionDraftFailure(row.Photo.ID));
+        var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
+        var device=aiPreference.DeviceID;
+        // RequestedAIBackend 读 WPF GpuMode：在 UI 线程快照，后台派发闭包不得再触碰 DispatcherObject（同 Rendering.cs 惯例）。
+        var aiBackend=RequestedAIBackend;
+        var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
+        transferPreparing=true;
+        try {
+            // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）经 Task.Run 留在后台线程，UI 线程只完成原子复核、落盘与切换。
+            var job=await exporter.FreezeAsync(review,selectionIDs,id=>failures.GetValueOrDefault(id),validateBeforeCommit:()=>{
+                // 与 UI 原子的复核保留在 UI 线程：编辑窗口状态、选择与实时草稿随任务挂载一次判定。
+                if(closing||exporting||UpdateInstallationActive||generation!=transferGeneration||opened!=openRevision||revision!=editRevision||file!=current||
+                    !Collection.SelectedPhotos.Select(photo=>photo.ID).SequenceEqual(selectionIDs)||
+                    review.Rows.Any(row=>CollectionDraftFailure(row.Photo.ID)!=null))
+                    throw new InvalidOperationException(Loc.Text("照片选择已变化，请重新检查。"));
+            },aiBackend:aiBackend,aiDeviceID:device,observeStage:observeStage);
+            previousBatch=job;
+            // 任务窗口 Show() 会同步触发对话框 Deactivated；解除取消门禁的回调必须在 ShowBatch 激活新窗口之前执行。
+            beforeShowBatch?.Invoke();
+            ShowBatch(job,autoStart);return job;
+        }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());
 }

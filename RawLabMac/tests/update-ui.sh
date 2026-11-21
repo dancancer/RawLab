@@ -1,20 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/RawLabMac/tests/native-env.sh"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
 FIXTURE="${1:?Pass a fixture}"
 OUT="${2:?Pass an isolated output directory}"
 mkdir -p "$OUT"
-STAGE="$(mktemp -d "$OUT/harness.XXXXXX")"
-trap 'rm -rf "$STAGE"' EXIT
+rawlab_mac_make_temp_dir STAGE harness "$OUT"
 APP="$STAGE/SoftwareUpdateTests.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SOURCES=()
-while IFS= read -r -d '' file; do
-    case "$file" in */RawLabMacApp.swift) continue ;; esac
-    SOURCES+=("$file")
-done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
 python3 - "$ROOT" "$OUT" "$FIXTURE" "${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}/libsony2fuji_core.a" <<'PY'
 import hashlib, json, pathlib, subprocess, sys
 root, out = map(pathlib.Path, sys.argv[1:3])
@@ -24,14 +18,9 @@ paths = {str(root/name) for name in names if name} | set(sys.argv[3:])
 files = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in sorted(paths) if pathlib.Path(name).is_file()}
 (out/'source-manifest.json').write_text(json.dumps(files, indent=2)+'\n')
 PY
-swiftc -swift-version 5 -O -whole-module-optimization -num-threads 4 \
-    -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" -target "$(uname -m)-apple-macosx14.0" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "${SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift" \
-    "${CORE_LINK[@]}" \
-    $(pkg-config --libs libraw opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-    -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
-    -o "$APP/Contents/MacOS/SoftwareUpdateTests"
+rawlab_mac_compile_native full-app "$OUT/swiftpm" "$APP/Contents/MacOS/SoftwareUpdateTests" -- \
+    -O -whole-module-optimization -num-threads 4 \
+    "$ROOT/RawLabMac/tests/MacUITestRobot.swift" "$ROOT/RawLabMac/tests/SoftwareUpdateUITests.swift"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>dev.rawlab.software-update-tests</string><key>CFBundleExecutable</key><string>SoftwareUpdateTests</string><key>CFBundlePackageType</key><string>APPL</string><key>LSBackgroundOnly</key><true/></dict></plist>

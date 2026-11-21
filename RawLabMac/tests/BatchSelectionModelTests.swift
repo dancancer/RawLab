@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private func check(_ value: @autoclosure () throws -> Bool, _ label: String) throws {
@@ -55,18 +56,27 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             var probedOnMain: Bool?
             let deferredTargets = model.adjustmentTransferTargetPreparation([second],
                 payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
-                    snapshot: PhotoEditState(settings: Adjustments(), filmID: ""),
+                    snapshot: MacPhotoEditState(settings: Adjustments(), filmID: ""),
                     context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
                 probeRAW: { _ in probedOnMain = Thread.isMainThread; return nil })
             try check(probedOnMain == nil, "Capturing paste/sync inputs defers RAW probing")
             let targetsReady = DispatchSemaphore(value: 0)
             var preparedTargets: [AdjustmentTransferTarget] = []
             DispatchQueue.global(qos: .userInitiated).async {
-                preparedTargets = deferredTargets()
+                preparedTargets = deferredTargets({ false })
                 targetsReady.signal()
             }
             while targetsReady.wait(timeout: .now()) != .success { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
             try check(probedOnMain == false, "Deferred paste/sync RAW probing runs off the main thread")
+            var cancelled = false, probes = 0
+            let cancellableTargets = model.adjustmentTransferTargetPreparation([second, third],
+                payload: try MacAdjustmentTransfer.capture(scope: .custom([.exposure]),
+                    snapshot: MacPhotoEditState(settings: Adjustments(), filmID: ""),
+                    context: MacAdjustmentTransferContext(identifier: first.path, isRaw: false)),
+                probeRAW: { _ in probes += 1; cancelled = true; return nil })
+            let partial = cancellableTargets({ cancelled })
+            try check(probes == 1 && partial.count == 1,
+                "Cancelled paste/sync target probing stops after its active target (probes=\(probes), expected=1)")
             try check(preparedTargets.first?.isCurrent?() == true, "Prepared targets accept the captured source revision")
             model.sourceRevision = UUID()
             try check(preparedTargets.first?.isCurrent?() == false, "Changing source revision invalidates prepared targets")
@@ -74,6 +84,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         }
         try BatchFlowModelTests.preparedSourceChange(root: root, fixture: first)
         try BatchFlowModelTests.automaticLaunch(root: root, fixture: first)
+        try BatchFlowModelTests.freezeStagesOffMain(root: root, fixture: first)
         try BatchFlowModelTests.pendingLaunches(root: root, fixture: first)
         try BatchFlowModelTests.x3fSnapshots(root: root)
         let alias = root.appendingPathComponent("alias.png")
@@ -97,7 +108,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let clipboard = try model.copyAdjustments(scope: .custom([.contrast]))
         let operation = try model.prepareCollectionSynchronization(scope: .custom([.exposure]))
         try check(operation.targets.count == 2 && !operation.targets.contains { $0.id == first.path }, "synchronization freezes actual targets and excludes selected source")
-        let wrongBinding = AdjustmentTransferTarget(url: second, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""),
+        let wrongBinding = AdjustmentTransferTarget(url: second, defaultState: MacPhotoEditState(settings: Adjustments(), filmID: ""),
             context: model.adjustmentTransferContext(for: second), expectedIdentity: try OriginalFileIdentity(first))
         let rejectedBinding = try model.adjustmentSession!.prepare(payload: operation.payload, targets: [wrongBinding], action: .synchronize)
         try check(rejectedBinding.targets.first?.error != nil, "prepared record must match the exact collection input identity")
@@ -166,8 +177,188 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.adjustmentOutcomes.first { $0.targetID == second.path }?.status == .blocked,
             "write guard refuses a target replaced with the frozen source identity")
         try draftAndLookChecks(root: root, fixture: first)
+        try asyncCommitCollectionExportChecks(root: root, fixture: first)
         if let fixture = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
             try incompatibleProRAWModeSwitch(root: root, fixture: URL(fileURLWithPath: fixture))
+        }
+    }
+
+    static func asyncCommitCollectionExportChecks(root: URL, fixture: URL) throws {
+        // Probe 1A: Pre-drain async save failure on ioQueue must not leak optimistic edit into prepare/freeze.
+        do {
+            let dir = root.appendingPathComponent("probe-1a-predrain")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photo = dir.appendingPathComponent("photo.png")
+            try FileManager.default.copyItem(at: fixture, to: photo)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let failLock = NSLock()
+            var shouldFail = false
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                failLock.lock()
+                let fail = shouldFail
+                failLock.unlock()
+                if fail { throw CocoaError(.fileWriteOutOfSpace) }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photo])
+            let id = model.batchSelection.ordered[0]
+            model.open(photo); try rendered(model)
+            let priorReadyReview = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir)
+            try check(priorReadyReview.ready, "Probe 1A setup: initial clean review is ready")
+
+            failLock.lock(); shouldFail = true; failLock.unlock()
+            model.settings.exposure = 1.25
+            try check(model.saveEditsAsync() && !model.dirty,
+                "Probe 1A setup: saveEditsAsync enqueues optimistically and clears dirty")
+            model.editStore?.waitForPendingIO()
+
+            try check(model.collectionHasDraft(id),
+                "Probe 1A: collectionHasDraft reports true for undrained failed async commit without blocking")
+
+            let prepared = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir)
+            try check(!prepared.ready && prepared.rows.first?.hasDraft == true &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1A: prepareCollectionExport flushes pre-drain async failure, rolls back committedEdit, and reports draft")
+
+            try check(model.resolveCollectionDraft(id, apply: false) && !model.dirty && model.settings.exposure == 0,
+                "Probe 1A: discarding rolled-back draft restores clean disk state")
+
+            // Verify freezeCollectionExport also flushes pre-drain failure even against an existing ready review.
+            model.settings.exposure = 1.35
+            try check(model.saveEditsAsync(), "Probe 1A setup: second saveEditsAsync enqueues optimistically")
+            model.editStore?.waitForPendingIO()
+            do {
+                _ = try model.freezeCollectionExport(priorReadyReview)
+                throw NSError(domain: "Probe 1A: freezeCollectionExport accepted undrained failed async edit", code: 1)
+            } catch AdjustmentCommitError.expired {
+                print("PASS: Probe 1A: freezeCollectionExport flushes pre-drain async failure and rejects stale review")
+            }
+            try check(model.batch == nil && (try model.batchJournal.load()) == nil &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1A: rejected freeze writes no batch journal and preserves rollback state")
+        }
+
+        // Probe 1B: In-flight async save failure racing startCollectionExport must flush and refuse to freeze/export.
+        do {
+            let dir = root.appendingPathComponent("probe-1b-inflight")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photo = dir.appendingPathComponent("photo.png")
+            try FileManager.default.copyItem(at: fixture, to: photo)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let enteredWrite = DispatchSemaphore(value: 0)
+            let releaseWrite = DispatchSemaphore(value: 0)
+            let failLock = NSLock()
+            var shouldFail = false
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                failLock.lock()
+                let fail = shouldFail
+                failLock.unlock()
+                if fail {
+                    enteredWrite.signal()
+                    _ = releaseWrite.wait(timeout: .now() + 5)
+                    throw CocoaError(.fileWriteOutOfSpace)
+                }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photo])
+            model.open(photo); try rendered(model)
+
+            failLock.lock(); shouldFail = true; failLock.unlock()
+            model.settings.exposure = 1.5
+            try check(model.saveEditsAsync() && !model.dirty,
+                "Probe 1B setup: saveEditsAsync enqueues optimistically")
+            try check(enteredWrite.wait(timeout: .now() + 5) == .success,
+                "Probe 1B setup: ioQueue write is in-flight")
+
+            // Release ioQueue failure from background thread shortly after startCollectionExport is invoked.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05) {
+                releaseWrite.signal()
+            }
+            var startedJobID: UUID?
+            model.startCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: outputDir, completed: { jobID in
+                startedJobID = jobID
+            })
+
+            let deadline = Date().addingTimeInterval(10)
+            while (model.collectionExportPreparing || model.hasPendingEditCommits || model.batch?.running == true) && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            model.collectionExportQueue.sync {}
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+
+            try check(startedJobID == nil && model.batch == nil && (try model.batchJournal.load()) == nil &&
+                (try FileManager.default.contentsOfDirectory(atPath: outputDir.path)).isEmpty &&
+                model.dirty && model.saveError != nil && model.committedEdit?.state == nil &&
+                (try model.editStore!.state(for: photo)) == nil,
+                "Probe 1B: startCollectionExport flushes in-flight async failure and never freezes/exports optimistic edit")
+        }
+
+        // Probe 1C: Healthy in-flight async commit settles cleanly before startCollectionExport, and skipping a dirty photo still works.
+        do {
+            let dir = root.appendingPathComponent("probe-1c-healthy-and-skip")
+            let outputDir = dir.appendingPathComponent("output")
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let photoA = dir.appendingPathComponent("a.png")
+            let photoB = dir.appendingPathComponent("b.png")
+            try FileManager.default.copyItem(at: fixture, to: photoA)
+            try FileManager.default.copyItem(at: fixture, to: photoB)
+
+            let model = EditorModel(lookDirectory: dir.appendingPathComponent("looks"),
+                editDirectory: dir.appendingPathComponent("edits"),
+                batchDirectory: dir.appendingPathComponent("batch"),
+                presetDirectory: dir.appendingPathComponent("presets"))
+            let enteredWrite = DispatchSemaphore(value: 0)
+            let releaseWrite = DispatchSemaphore(value: 0)
+            var pauseNextWrite = false
+            let lock = NSLock()
+            model.editStore = try MacEditPersistence(directory: dir.appendingPathComponent("edits"), writeData: { data, url in
+                lock.lock()
+                let pause = pauseNextWrite
+                pauseNextWrite = false
+                lock.unlock()
+                if pause {
+                    enteredWrite.signal()
+                    _ = releaseWrite.wait(timeout: .now() + 5)
+                }
+                try data.write(to: url, options: .atomic)
+            })
+            model.addCollectionPhotos([photoA, photoB])
+            let ids = model.batchSelection.ordered
+            model.open(photoA); try rendered(model)
+            lock.lock(); pauseNextWrite = true; lock.unlock()
+            model.settings.exposure = 0.8
+            try check(model.saveEditsAsync(), "Probe 1C setup: healthy async save enqueues")
+            try check(enteredWrite.wait(timeout: .now() + 5) == .success, "Probe 1C setup: healthy write in-flight")
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05) {
+                releaseWrite.signal()
+            }
+            model.open(photoB); try rendered(model)
+            model.setInteracting(true); model.settings.exposure = 1.9
+
+            var startedID: UUID?
+            model.startCollectionExport(skipping: [ids[1]], format: .png, longEdge: nil, directory: outputDir, completed: { jobID in
+                startedID = jobID
+            })
+            let deadline = Date().addingTimeInterval(15)
+            while (startedID == nil || model.batch?.running == true) && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            try check(startedID != nil && model.batch?.job.succeededCount == 1 &&
+                model.batch?.job.items.count == 1 && model.batch?.job.items[0].frozen?.settings.exposure == 0.8 &&
+                model.dirty && model.settings.exposure == 1.9,
+                "Probe 1C: skipping dirty active photo exports healthy persisted photo without interference")
         }
     }
 
@@ -181,7 +372,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         var hdr = HDRSettings(); hdr.mode = .sdr; hdr.exposure = 0.75
         settings.hdr = hdr
         settings.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
-        try model.editStore!.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
         model.open(photo); try rendered(model)
         try check(model.sourceSupportsCameraHDR && !model.settings.isHDREditing, "incompatible ProRAW record still opens in SDR")
         let before = try model.editStore!.readState(for: photo)
@@ -200,7 +391,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             editDirectory: root.appendingPathComponent("edits2"), batchDirectory: root.appendingPathComponent("batch2"),
             presetDirectory: root.appendingPathComponent("presets2"))
         var fail = true
-        model.editStore = try EditPersistence(directory: root.appendingPathComponent("edits2"), writeData: { data, url in
+        model.editStore = try MacEditPersistence(directory: root.appendingPathComponent("edits2"), writeData: { data, url in
             if fail { throw CocoaError(.fileWriteNoPermission) }
             try data.write(to: url, options: .atomic)
         })
@@ -260,6 +451,104 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "each photo freezes its own look and retains task-owned copy after library removal")
         try check(model.batch!.discardDraft() && model.batch == nil, "discarding a frozen draft frees its task and owned resources")
         try check(!FileManager.default.fileExists(atPath: job.items[0].frozen!.look!.path), "discard cleans task-owned look")
+        do {
+            let cachedCube = root.appendingPathComponent("cached-batch-look.cube")
+            try data.write(to: cachedCube)
+            MacResourceDigestCache.shared.invalidate(url: cachedCube)
+            let beforeCount = MacResourceDigestCache.shared.sha256Count
+            let firstDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            let secondDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            let thirdDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            try check(firstDigest == secondDigest && secondDigest == thirdDigest &&
+                      MacResourceDigestCache.shared.sha256Count == beforeCount + 1,
+                "BatchFrozenSettings.checksum reuses MacResourceDigestCache across repeated calls for unchanged look")
+            let updatedData = data + Data("# updated\n".utf8)
+            try updatedData.write(to: cachedCube)
+            let updatedDigest = try MacBatchFrozenSettings.checksum(cachedCube)
+            try check(updatedDigest != firstDigest &&
+                      MacResourceDigestCache.shared.sha256Count == beforeCount + 2,
+                "BatchFrozenSettings.checksum detects replaced look and recomputes digest")
+        }
+        do {
+            let corruptBatchDir = root.appendingPathComponent("editor-corrupt-batch")
+            try FileManager.default.createDirectory(at: corruptBatchDir, withIntermediateDirectories: true)
+            let corruptPayload = Data("{broken-editor-batch".utf8)
+            try corruptPayload.write(to: corruptBatchDir.appendingPathComponent("job.json"))
+            let recovered = EditorModel(lookDirectory: root.appendingPathComponent("editor-corrupt-looks"),
+                editDirectory: root.appendingPathComponent("editor-corrupt-edits"),
+                batchDirectory: corruptBatchDir,
+                presetDirectory: root.appendingPathComponent("editor-corrupt-presets"))
+            try check(recovered.batch == nil && !recovered.updateJournalLoadFailed && recovered.error != nil,
+                "EditorModel isolates corrupt startup batch journal into empty state with user notice")
+            guard let archive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing archived corrupt journal", code: 1)
+            }
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "EditorModel startup preserves corrupt job.json bytes on disk")
+            recovered.open(fixture)
+            try rendered(recovered)
+            try check(recovered.prepareBatch() && recovered.batch != nil &&
+                      recovered.error == nil && recovered.batch?.error == nil,
+                "EditorModel prepareBatch succeeds after corrupt journal isolation without residual notice")
+            try check(try Data(contentsOf: archive) == corruptPayload,
+                "prepareBatch retains archived corrupt job.json alongside the new job")
+
+            let corruptURL = corruptBatchDir.appendingPathComponent("job.json")
+            let runtimeDraftPayload = Data("{corrupt-during-runtime-draft".utf8)
+            try runtimeDraftPayload.write(to: corruptURL)
+            recovered.batch!.setLongEdge(2048)
+            guard let draftArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime draft archive", code: 1)
+            }
+            try check(recovered.batch?.error != nil && recovered.error == nil &&
+                      (try Data(contentsOf: draftArchive)) == runtimeDraftPayload,
+                "runtime saveDraft quarantine prompts once on BatchExportModel and preserves corrupt bytes")
+            recovered.batch!.setLongEdge(1024)
+            try check(recovered.batch?.error == nil && recovered.error == nil,
+                "subsequent healthy draft save clears BatchExportModel error without residual notice")
+
+            let runtimeDiscardPayload = Data("{corrupt-during-discard".utf8)
+            try runtimeDiscardPayload.write(to: corruptURL)
+            try check(recovered.batch!.discardTask() && recovered.batch == nil && recovered.error != nil,
+                "runtime discardTask quarantine prompts once on EditorModel when detaching batch")
+            guard let discardArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime discard archive", code: 1)
+            }
+            try check(discardArchive != draftArchive && (try Data(contentsOf: discardArchive)) == runtimeDiscardPayload,
+                "runtime discardTask preserves corrupt job.json bytes without colliding with prior archives")
+            recovered.error = nil
+            try check(recovered.prepareBatch() && recovered.batch != nil &&
+                      recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent healthy prepareBatch after runtime discard quarantine has no residual notice")
+            try check(recovered.batch!.discardTask() && recovered.error == nil,
+                "healthy discardTask leaves no notice")
+
+            recovered.addCollectionPhotos([photo])
+            let cleanOutput = root.appendingPathComponent("editor-corrupt-clean-output")
+            try FileManager.default.createDirectory(at: cleanOutput, withIntermediateDirectories: true)
+            let cleanReview = try recovered.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: cleanOutput)
+            _ = try recovered.freezeCollectionExport(cleanReview)
+            try check(recovered.batch != nil && recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent healthy freezeCollectionExport has no residual quarantine notice")
+
+            let runtimeStartPayload = Data("{corrupt-before-start".utf8)
+            try runtimeStartPayload.write(to: corruptURL)
+            try check(recovered.batch!.start(), "frozen batch starts after mid-session journal corruption")
+            try BatchFlowModelTests.wait { recovered.batch?.running == false }
+            guard let startArchive = recovered.batchJournal.lastQuarantinedURL else {
+                throw NSError(domain: "missing runtime start archive", code: 1)
+            }
+            try check(recovered.batch?.job.succeededCount == 1 &&
+                      recovered.batch?.error != nil && recovered.error == nil &&
+                      startArchive != discardArchive &&
+                      (try Data(contentsOf: startArchive)) == runtimeStartPayload,
+                "runtime start quarantine prompts once on BatchExportModel across checkpoint saves and preserves bytes")
+            try check(recovered.batch!.discardTask() && recovered.error == nil,
+                "discarding completed batch after runtime start quarantine leaves no residual notice")
+            try check(recovered.prepareBatch() && recovered.error == nil && recovered.batch?.error == nil,
+                "subsequent prepareBatch after runtime start quarantine has no residual notice")
+            _ = recovered.batch?.discardTask()
+        }
     }
 
     static func rendered(_ model: EditorModel) throws {

@@ -1,0 +1,223 @@
+using System.Globalization;
+using System.Text.Json.Serialization;
+
+namespace RawLab.Windows;
+
+public enum UpdatePhase { Idle, Checking, Available, Downloading, Verifying, PackageReady, WaitingForTasks, ReadyToInstall, Installing, PendingRestart, Complete, Failed }
+public enum UpdateInstallChoice { None, RestartNow, AfterTasks, OnQuit, AutomaticOnQuit }
+public sealed record UpdateDescriptor(string Version, string Build, string Platform, string Architecture, string Channel,
+    string AssetUrl, long Size, string? Sha256, string Notes)
+{
+    public string Identity => string.Join("|", Platform, Architecture, Channel, Version, Build, AssetUrl, Sha256 ?? "");
+}
+public sealed record UpdateFailure(UpdatePhase Stage, string Code, string Detail);
+public sealed record UpdateCheckFailure(DateTimeOffset FailedAt, string Category, int ConsecutiveFailures = 1, string Detail = "", DateTimeOffset? RetryAfter = null);
+
+public sealed class UpdateTaskState
+{
+    public int Format { get; set; } = 1;
+    [JsonInclude] public UpdatePhase Phase { get; private set; }
+    [JsonInclude] public Guid Attempt { get; private set; } = Guid.NewGuid();
+    [JsonInclude] public UpdateDescriptor? Release { get; private set; }
+    [JsonInclude] public UpdateFailure? Failure { get; private set; }
+    [JsonInclude] public UpdateInstallChoice Choice { get; private set; }
+    [JsonInclude] public double Progress { get; private set; }
+    [JsonInclude] public string[] Blockers { get; private set; } = [];
+    public string? BackupPath { get; set; }
+    public string? PreviousVersion { get; set; }
+    public string? PreviousBuild { get; set; }
+
+    public Guid BeginCheck()
+    {
+        if (Release == null || Choice is not (UpdateInstallChoice.OnQuit or UpdateInstallChoice.AutomaticOnQuit)) { Choice = UpdateInstallChoice.None; Release = null; }
+        Attempt = Guid.NewGuid(); Phase = UpdatePhase.Checking; Failure = null;
+        Progress = 0; Blockers = []; BackupPath = null; PreviousVersion = null; PreviousBuild = null; return Attempt;
+    }
+    public bool Found(UpdateDescriptor? release, Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.Checking)) return false;
+        if (release?.Identity != Release?.Identity) Choice = UpdateInstallChoice.None;
+        Release = release; Phase = release == null ? UpdatePhase.Idle : UpdatePhase.Available; return true;
+    }
+    public Guid? BeginDownload()
+    {
+        if (Phase != UpdatePhase.Available || Release == null) return null;
+        Attempt = Guid.NewGuid(); Phase = UpdatePhase.Downloading; Failure = null; Progress = 0; return Attempt;
+    }
+    public bool Received(double fraction, Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.Downloading) || !double.IsFinite(fraction)) return false;
+        Progress = Math.Clamp(fraction, Progress, 1); return true;
+    }
+    public bool Preparing(Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.Downloading)) return false;
+        Phase = UpdatePhase.Verifying; Progress = 1; return true;
+    }
+    public bool Verified(Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.Verifying)) return false;
+        Phase = UpdatePhase.PackageReady; return true;
+    }
+    public bool Choose(UpdateInstallChoice choice)
+    {
+        if (!Prepared || choice == UpdateInstallChoice.None) return false;
+        Choice = choice; return true;
+    }
+    public bool Admit(string[] reasons)
+    {
+        if (!Prepared || Choice == UpdateInstallChoice.None) return false;
+        Blockers = reasons; Phase = reasons.Length == 0 ? UpdatePhase.ReadyToInstall : UpdatePhase.WaitingForTasks;
+        return reasons.Length == 0;
+    }
+    public bool Installing(Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.ReadyToInstall) || Choice == UpdateInstallChoice.None || Blockers.Length != 0) return false;
+        Phase = UpdatePhase.Installing; return true;
+    }
+    public bool AwaitingRestart(Guid token)
+    {
+        if (!Accepts(token, UpdatePhase.Installing)) return false;
+        Phase = UpdatePhase.PendingRestart; return true;
+    }
+    public bool Fail(string code, string detail, Guid token) => Fail(Phase, code, detail, token);
+    public bool Fail(UpdatePhase stage, string code, string detail, Guid token)
+    {
+        if (token != Attempt || Phase is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
+            stage is UpdatePhase.Idle or UpdatePhase.Available or UpdatePhase.Complete or UpdatePhase.Failed ||
+            string.IsNullOrEmpty(code) || detail == null) return false;
+        if (Phase != UpdatePhase.Checking || stage != UpdatePhase.Checking) Choice = UpdateInstallChoice.None;
+        if (stage is not (UpdatePhase.Installing or UpdatePhase.PendingRestart))
+        {
+            BackupPath = null; PreviousVersion = null; PreviousBuild = null;
+        }
+        Failure = new(stage, code, detail); Phase = UpdatePhase.Failed;
+        Attempt = Guid.NewGuid(); Blockers = []; return true;
+    }
+    public void Cancel(bool preservingChoice = false)
+    {
+        if (Phase is UpdatePhase.Installing or UpdatePhase.PendingRestart) return;
+        Attempt = Guid.NewGuid(); Phase = Release == null ? UpdatePhase.Idle : UpdatePhase.Available;
+        if (!preservingChoice) Choice = UpdateInstallChoice.None;
+        Failure = null; Progress = 0; Blockers = [];
+        BackupPath = null; PreviousVersion = null; PreviousBuild = null;
+    }
+    public void DisableAutomaticInstallation() { if (Choice == UpdateInstallChoice.AutomaticOnQuit) Cancel(); }
+    public void RestoreAfterLaunch(string version, string build, bool trusted)
+    {
+        Attempt = Guid.NewGuid(); Blockers = [];
+        if (Phase is not (UpdatePhase.Available or UpdatePhase.Checking) && !(Phase == UpdatePhase.Failed && Failure?.Stage == UpdatePhase.Checking)) Choice = UpdateInstallChoice.None;
+        if (Phase is UpdatePhase.Failed or UpdatePhase.Complete or UpdatePhase.Idle or UpdatePhase.Available) return;
+        if (Phase is (UpdatePhase.Installing or UpdatePhase.PendingRestart) && trusted && Release?.Version == version && Release?.Build == build)
+        { Phase = UpdatePhase.Complete; Failure = null; BackupPath = null; PreviousVersion = null; PreviousBuild = null; }
+        else { Failure = new(Phase, "interrupted", ""); Phase = UpdatePhase.Failed; }
+    }
+    [JsonIgnore] public bool Prepared => Phase is UpdatePhase.PackageReady or UpdatePhase.WaitingForTasks or UpdatePhase.ReadyToInstall;
+    private bool Accepts(Guid token, UpdatePhase phase) => Attempt == token && Phase == phase;
+    public UpdateTaskState Copy()
+    {
+        var result = (UpdateTaskState)MemberwiseClone(); result.Blockers = (string[])Blockers.Clone(); return result;
+    }
+}
+
+public sealed class UpdatePreferences
+{
+    public bool AutomaticCheck { get; set; } = true;
+    public bool AutomaticInstall { get; set; }
+    public string? SkippedVersion { get; set; }
+    public DateTimeOffset? RemindAfter { get; set; }
+    public DateTimeOffset? LastCheck { get; set; }
+    public UpdateCheckFailure? CheckFailure { get; set; }
+    public string Channel { get; set; } = "stable";
+    public UpdateTaskState PendingUpdate { get; set; } = new();
+    public string? RecoveryReceipt { get; set; }
+    public UpdateStateRepairReceipt? StateRepairReceipt { get; set; }
+    public UpdatePreferences Copy() => new() { AutomaticCheck = AutomaticCheck, AutomaticInstall = AutomaticInstall,
+        SkippedVersion = SkippedVersion, RemindAfter = RemindAfter, LastCheck = LastCheck, CheckFailure = CheckFailure,
+        Channel = Channel, PendingUpdate = PendingUpdate.Copy(), RecoveryReceipt = RecoveryReceipt, StateRepairReceipt = StateRepairReceipt };
+}
+
+public sealed record UpdateStateRepairReceipt(Guid Id, string Sha256);
+internal sealed record UpdateBannerNotice(bool HasFailure, string? ReleaseVersion)
+{
+    public bool Visible => HasFailure || ReleaseVersion != null;
+}
+
+internal static class UpdatePresentation
+{
+    public static UpdateBannerNotice MainWindowNotice(UpdatePreferences preferences, string? unavailableReason)
+    {
+        if (unavailableReason != null)
+            return new(false, null);
+        var state = preferences.PendingUpdate;
+        if (state.Phase == UpdatePhase.Available && state.Release?.Version is { } available)
+            return new(false, available);
+        if (state.Phase == UpdatePhase.Failed || state.Phase == UpdatePhase.Idle && preferences.CheckFailure != null)
+            return new(true, null);
+        return new(false, null);
+    }
+    public static string Status(UpdatePreferences preferences)
+    {
+        var state = preferences.PendingUpdate;
+        if (state.Phase == UpdatePhase.Failed && state.Failure?.Stage == UpdatePhase.Checking)
+            return "检查失败，请稍后重试或访问 GitHub 仓库";
+        if (state.Phase == UpdatePhase.Idle)
+        {
+            if (preferences.CheckFailure != null) return "检查失败，请稍后重试或访问 GitHub 仓库";
+            if (preferences.LastCheck == null) return "尚未检查更新";
+            return "尚未发现可安装的更新";
+        }
+        return Phase(state.Phase);
+    }
+    public static bool ShowsCheckFailureNotice(UpdatePreferences preferences) =>
+        preferences.CheckFailure != null && preferences.PendingUpdate.Phase == UpdatePhase.Available;
+    public static string? CheckFailureDetail(UpdatePreferences preferences)
+    {
+        var state = preferences.PendingUpdate;
+        if (state.Phase == UpdatePhase.Failed && state.Failure is { Stage: UpdatePhase.Checking } legacy)
+        {
+            if (preferences.CheckFailure == null)
+                return string.IsNullOrEmpty(legacy.Detail) ? legacy.Code : legacy.Code + "\n" + legacy.Detail;
+        }
+        else if (state.Phase is not (UpdatePhase.Idle or UpdatePhase.Available)) return null;
+        if (preferences.CheckFailure is not { } checkFailure) return null;
+        var header = $"{checkFailure.Category}\n{checkFailure.FailedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture)}";
+        return string.IsNullOrEmpty(checkFailure.Detail) ? header : header + "\n" + checkFailure.Detail;
+    }
+    public static bool IsRejected(UpdateFailure failure) =>
+        failure.Stage == UpdatePhase.Verifying && failure.Code is not ("trust_temporary" or "interrupted");
+    public static bool IsRetryableFailure(UpdateFailure? failure) => failure != null && failure.Stage switch
+    {
+        UpdatePhase.Checking => true,
+        UpdatePhase.Downloading => true,
+        UpdatePhase.Verifying => !IsRejected(failure),
+        UpdatePhase.PackageReady or UpdatePhase.WaitingForTasks or UpdatePhase.ReadyToInstall => true,
+        _ => false
+    };
+    public static string? FailureHeading(UpdateFailure failure, bool requiresRecovery) =>
+        requiresRecovery ? "更新未完成，请查看恢复说明" :
+        IsRejected(failure) ? "更新包未通过验证，已拒绝" : null;
+    public static string Phase(UpdatePhase phase) => phase switch
+    {
+        UpdatePhase.Idle => "尚未发现可安装的更新",
+        UpdatePhase.Checking => "正在检查更新…",
+        UpdatePhase.Available => "有可用更新",
+        UpdatePhase.Downloading => "正在下载更新…",
+        UpdatePhase.Verifying => "正在校验并准备更新…",
+        UpdatePhase.PackageReady => "更新已校验，请选择安装时间",
+        UpdatePhase.WaitingForTasks => "正在等待编辑和任务处理完成",
+        UpdatePhase.ReadyToInstall => "已具备安装条件",
+        UpdatePhase.Installing => "正在安装更新…",
+        UpdatePhase.PendingRestart => "等待重新启动",
+        UpdatePhase.Complete => "更新已完成",
+        _ => "更新失败"
+    };
+    public static string Blocker(string value) => value switch
+    {
+        "draft" => "请返回编辑器应用或放弃草稿和未提交输入",
+        "unsaved" => "照片编辑尚未保存",
+        "save" => "照片编辑保存失败，请先重试保存",
+        "journal" => "批量任务记录尚未安全保存",
+        _ => "正在等待预览、导出或批量任务结束"
+    };
+}

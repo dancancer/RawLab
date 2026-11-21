@@ -59,6 +59,7 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.PERSPECTIVE_VERTICAL -> R.string.transfer_field_perspective_vertical
         AdjustmentField.LENS_DISTORTION -> R.string.transfer_field_lens_distortion
         AdjustmentField.LENS_TCA -> R.string.transfer_field_lens_tca
+        AdjustmentField.LENS_VIGNETTING -> R.string.lens_vignetting
         AdjustmentField.LENS_AUTO_CROP -> R.string.transfer_field_lens_auto_crop
         AdjustmentField.LENS_PROFILE -> R.string.transfer_field_lens_profile
         else -> error("HSL field must have a channel")

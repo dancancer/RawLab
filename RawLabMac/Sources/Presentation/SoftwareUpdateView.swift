@@ -1,10 +1,20 @@
+import RawLabKit
 import SwiftUI
+
+struct UpdateNoticeBanner: View {
+    let notice: String?
+
+    var body: some View {
+        if let notice {
+            Label(L10n.text(notice), systemImage: "info.circle")
+        }
+    }
+}
 
 struct SoftwareUpdateView: View {
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var updates: DesktopUpdateController
-    @ObservedObject var legacy: UpdateChecker
     var settings = true
     private var detailFont: Font { .system(size: textSize.isAccessibilitySize ? 18 : 13) }
 
@@ -15,24 +25,19 @@ struct SoftwareUpdateView: View {
                 Text(L10n.format("版本 %@", updates.currentVersion)).foregroundStyle(.secondary)
                 if settings {
                     Toggle(L10n.text("自动检查更新"), isOn: Binding(get: { updates.preferences.automaticCheck }, set: {
-                        updates.setAutomaticCheck($0); legacy.automatic = updates.preferences.automaticCheck
+                        updates.setAutomaticCheck($0)
                     })).disabled(updates.storageError != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticCheck")
                     Toggle(L10n.text("自动下载并在退出时安装"), isOn: Binding(get: { updates.preferences.automaticInstall }, set: updates.setAutomaticInstall))
-                        .disabled(updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
+                        .disabled(updates.storageError != nil || updates.unavailableReason != nil || updates.requiresRecovery || updates.requiresStartupHealthCheck).accessibilityIdentifier("updates.automaticInstall")
                     Text(L10n.text("自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。"))
                         .font(detailFont).foregroundStyle(.secondary)
                     Divider()
                 }
-                if updates.unavailableReason != nil {
-                    Label(L10n.text("此安装暂不支持自动安装更新"), systemImage: "info.circle")
-                    Text(legacy.status).font(detailFont)
-                } else {
+                UpdateNoticeBanner(notice: UpdatePresentation.unavailableNotice(unavailableReason: updates.unavailableReason, storageError: updates.storageError))
+                if updates.unavailableReason == nil {
                     Text(L10n.text(UpdatePresentation.phase(updates.state.phase))).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
                 }
                 if let release = updates.state.release {
-                    Text(L10n.format("发现新版本 %@", release.version)).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
-                    if !release.notes.isEmpty { Text(release.notes).textSelection(.enabled) }
-                } else if let release = legacy.available, updates.unavailableReason != nil {
                     Text(L10n.format("发现新版本 %@", release.version)).font(.system(size: textSize.isAccessibilitySize ? 22 : 13, weight: .semibold))
                     if !release.notes.isEmpty { Text(release.notes).textSelection(.enabled) }
                 }
@@ -56,8 +61,10 @@ struct SoftwareUpdateView: View {
                 }
                 if let error = updates.storageError {
                     Text(error).font(detailFont).textSelection(.enabled)
-                    Text(L10n.text(updates.canRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。"))
-                    if updates.canRepairState {
+                    Text(L10n.text(UpdatePresentation.storageNotice(canRetrySave: updates.canRetrySave, canRepairState: updates.canRepairState)))
+                    if updates.canRetrySave {
+                        Button(L10n.text("重试")) { _ = updates.retrySave() }.accessibilityIdentifier("updates.retrySave")
+                    } else if updates.canRepairState {
                         Button(L10n.text("重建更新设置"), action: updates.repairState).accessibilityIdentifier("updates.repairState")
                     }
                 }
@@ -88,7 +95,7 @@ struct SoftwareUpdateView: View {
                         Text(L10n.text("查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。"))
                     }.font(detailFont)
                 }
-                Link(L10n.text("官方手动下载"), destination: UpdateRelease.repository.appendingPathComponent("releases"))
+                Link(L10n.text("官方手动下载"), destination: URL(string: "https://github.com/dancancer/RawLab/releases")!)
                 if let path = updates.state.backupPath {
                     Button(L10n.text("查看更新前的数据备份")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                 }
@@ -105,10 +112,8 @@ struct SoftwareUpdateView: View {
     }
 
     @ViewBuilder private var actions: some View {
-        Button(L10n.text("检查更新")) {
-            if updates.unavailableReason != nil { Task { await legacy.check(manual: true) } }
-            else { updates.check(manual: true) }
-        }.disabled(updates.requiresRecovery || legacy.checking || updates.unavailableReason == nil && !updates.canCheck)
+        Button(L10n.text("检查更新")) { updates.check(manual: true) }
+            .disabled(!updates.canCheck)
             .accessibilityIdentifier("updates.check")
         if updates.canDownload {
             Button(L10n.text("安装更新"), action: updates.download).accessibilityIdentifier("updates.download")
@@ -144,12 +149,24 @@ enum UpdatePresentation {
         case .failed: return "更新失败"
         }
     }
+    static func unavailableNotice(unavailableReason: String?, storageError: String?) -> String? {
+        if let unavailableReason {
+            return unavailableReason == "storage" ? "自动更新不可用，请手动下载" : "此安装暂不支持自动安装更新"
+        }
+        return storageError == nil ? nil : "自动更新不可用，请手动下载"
+    }
+    static func storageNotice(canRetrySave: Bool, canRepairState: Bool) -> String {
+        if canRetrySave { return "无法读取或写入文件，请检查路径和访问权限。" }
+        return canRepairState ? "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" : "无法确认更新或恢复状态，请保留全部文件并联系支持。"
+    }
     static func blocker(_ value: String) -> String {
         switch value {
         case "draft": return "请返回编辑器应用或放弃草稿和未提交输入"
         case "unsaved": return "照片编辑尚未保存"
         case "save": return "照片编辑保存失败，请先重试保存"
         case "journal": return "批量任务记录尚未安全保存"
+        case "presets": return "预设库无法读取，原文件保持不变。请从备份恢复后重试。"
+        case "looks": return "无法读取已保存的外观库，原有记录未被覆盖。"
         default: return "正在等待预览、导出或批量任务结束"
         }
     }

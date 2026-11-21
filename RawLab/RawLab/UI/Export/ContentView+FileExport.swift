@@ -1,3 +1,4 @@
+import RawLabKit
 import ImageIO
 import Photos
 import PhotosUI
@@ -5,18 +6,9 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-struct FileExportRequest: Identifiable {
-    let id = UUID()
-    let urls: [URL]
-    let removeAfterExport: Bool
-    let successMessage: String?
-    let cancelMessage: String?
-    var recordsPhotoExport = true
-}
-
 extension ContentView {
     var canStartFileExport: Bool {
-        !isSaving && !showingExportSize && fileExportRequest == nil
+        coordinator.canStartFileExport
     }
 
     @MainActor func exportErrorDiagnostics() {
@@ -32,8 +24,8 @@ extension ContentView {
                     viewModel.statusMessage = L10n.text("暂无可导出的错误日志。")
                     return
                 }
-                fileExportRequest = FileExportRequest(urls: [file], removeAfterExport: true, successMessage: nil,
-                                                      cancelMessage: nil, recordsPhotoExport: false)
+                coordinator.fileExportRequest = FileExportRequest(urls: [file], removeAfterExport: true, successMessage: nil,
+                                                                  cancelMessage: nil, recordsPhotoExport: false)
             } catch {
                 guard canStartFileExport else { return }
                 viewModel.statusMessage = L10n.text("无法导出错误日志。")

@@ -1,8 +1,11 @@
 #!/bin/bash
 # 由 build.sh 在开始下载或编译之前加载。
 if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
-    : "${RAWLAB_RELEASE_VERSION:?Set RAWLAB_RELEASE_VERSION to the authorized release version}"
-    : "${RAWLAB_RELEASE_BUILD:?Set RAWLAB_RELEASE_BUILD to the authorized build number}"
+    _rawlab_version="$("${PYTHON_EXECUTABLE:-python3}" "$ROOT/scripts/version/generate.py" --print version)"
+    _rawlab_build="$("${PYTHON_EXECUTABLE:-python3}" "$ROOT/scripts/version/generate.py" --print build)"
+    export RAWLAB_RELEASE_VERSION="${RAWLAB_RELEASE_VERSION:-$_rawlab_version}"
+    export RAWLAB_RELEASE_BUILD="${RAWLAB_RELEASE_BUILD:-$_rawlab_build}"
+    unset _rawlab_version _rawlab_build
     : "${RAWLAB_CODESIGN_IDENTITY:?Set RAWLAB_CODESIGN_IDENTITY to the fixed signing certificate}"
     : "${RAWLAB_SPARKLE_PUBLIC_KEY:?Set RAWLAB_SPARKLE_PUBLIC_KEY to the persistent EdDSA public key}"
     if [ "$ARCH" = arm64 ]; then
@@ -16,5 +19,5 @@ if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
         if [ "${RAWLAB_DUALDN:-0}" != 0 ]; then echo 'Intel release builds do not include AI denoise.' >&2; exit 2; fi
         export RAWLAB_DUALDN=0
     fi
-    python3 "$ROOT/scripts/release/macos_config.py" validate "$ARCH"
+    "${PYTHON_EXECUTABLE:-python3}" "$ROOT/scripts/release/macos_config.py" validate "$ARCH"
 fi

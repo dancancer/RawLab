@@ -1,8 +1,36 @@
+import Accelerate
+import RawLabKit
 import CoreGraphics
 import Foundation
 import ImageIO
 import UIKit
 import UniformTypeIdentifiers
+
+extension ProcessingIdentity {
+    var core: sony2fuji_processing_version {
+        switch version {
+        case 1: return SONY2FUJI_PROCESSING_LEGACY
+        case 2: return SONY2FUJI_PROCESSING_C5_V2
+        default: return SONY2FUJI_PROCESSING_BASIC_V3
+        }
+    }
+}
+
+extension X3fMode {
+    var core: sony2fuji_x3f_mode {
+        self == .normal ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY
+    }
+}
+
+extension RawExposureMode {
+    var core: sony2fuji_raw_exposure_mode {
+        switch self {
+        case .scene: return SONY2FUJI_EXPOSURE_SCENE
+        case .preview: return SONY2FUJI_EXPOSURE_PREVIEW
+        case .sensor: return SONY2FUJI_EXPOSURE_SENSOR
+        }
+    }
+}
 
 extension Sony2FujiProcessor {
     func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
@@ -44,21 +72,8 @@ extension Sony2FujiProcessor {
         _ = sony2fuji_session_destroy(session)
     }
 
-    func configureProcessing(_ session: OpaquePointer, identity: ProcessingIdentity) throws {
-        let processing = identity.version == 1 ? SONY2FUJI_PROCESSING_LEGACY : SONY2FUJI_PROCESSING_C5_V2
-        let processingStatus = sony2fuji_session_set_processing_version(session, processing)
-        guard processingStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(processingStatus))
-        }
-    }
-
-    func configureX3f(_ session: OpaquePointer, mode: X3fMode) throws {
-        let status = sony2fuji_session_set_x3f_mode(session, sony2fuji_x3f_mode(rawValue: mode.nativeValue))
-        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
-    }
-
     func isNormalX3f(_ url: URL, settings: RawSettings) -> Bool {
-        url.pathExtension.lowercased() == "x3f" && settings.x3fMode == .normal
+        url.path.withCString { sony2fuji_is_normal_x3f($0, settings.x3fMode.core) != 0 }
     }
 
     func defaultSettings(for url: URL, isRaw: Bool, x3fModeOverride: X3fMode? = nil) throws -> RawSettings {
@@ -73,57 +88,35 @@ extension Sony2FujiProcessor {
         return mode == SONY2FUJI_X3F_NORMAL ? .normal : .legacy
     }
 
-    func configureCurve(_ session: OpaquePointer, settings: ToneCurveSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的曲线参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_tone_curve(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的曲线参数"))
+    private func validationMessage(for error: CanonicalEditRecipeError) -> String {
+        switch error {
+        case .invalidToneCurve: return L10n.text("无效的曲线参数")
+        case .invalidColorGrading: return L10n.text("无效的颜色分级参数")
+        case .invalidToneControls: return L10n.text("无效的黑白场或鲜艳度参数")
+        case .invalidAtmosphere: return L10n.text("无效的清晰度或去朦胧参数")
+        case .invalidHSL: return L10n.text("无效的 HSL 参数")
+        case .invalidGeometry: return L10n.text("无效的几何参数")
+        case .invalidPhotoEffects: return L10n.text("无效的暗角或颗粒参数")
+        case .invalidWaveletDenoise, .invalidChromaDenoise, .invalidRawNoiseReduction:
+            return L10n.text("无效或不可用的降噪参数")
         }
     }
 
-    func configureGrading(_ session: OpaquePointer, settings: ColorGradingSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_color_grading(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的颜色分级参数"))
+    func applySessionParams(_ session: OpaquePointer, settings: RawSettings,
+                            isRaster: Bool = false) throws {
+        let recipeJSON: String
+        do {
+            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster)
+        } catch let error as CanonicalEditRecipeError {
+            throw ProcessorError.processFailed(validationMessage(for: error))
         }
-    }
-
-    func configureTone(_ session: OpaquePointer, settings: ToneControlsSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_tone_controls(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的黑白场或鲜艳度参数"))
-        }
-    }
-
-    func configureAtmosphere(_ session: OpaquePointer, settings: AtmosphereSettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数")) }
-        var config = settings.nativeConfig
-        guard sony2fuji_session_set_atmosphere(session, &config) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的清晰度或去朦胧参数"))
-        }
+        let status = recipeJSON.withCString { sony2fuji_apply_params(session, $0) }
+        guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
     }
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
                           viewportPreview: Bool = false) throws {
-        try configureProcessing(session, identity: settings.processing)
-        try configureX3f(session, mode: settings.x3fMode)
-        try configureTone(session, settings: settings.toneSettings)
-        try configureAtmosphere(session, settings: settings.atmosphereSettings)
-        try configureCurve(session, settings: settings.curveSettings)
-        try configureGrading(session, settings: settings.gradingSettings)
-        try configureGeometry(session, settings: settings.geometry)
-        try configureLens(session, settings: settings.lensSettings)
-        let exposureMode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-        guard sony2fuji_session_set_raw_exposure_mode(session, exposureMode) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
-        }
-        guard settings.hsl.isValid else { throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数")) }
-        var hsl = settings.hsl.nativeConfig
-        guard sony2fuji_session_set_hsl(session, &hsl) == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.text("无效的 HSL 参数"))
-        }
+        try applySessionParams(session, settings: settings, isRaster: false)
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
@@ -132,37 +125,6 @@ extension Sony2FujiProcessor {
         guard gpuStatus == SONY2FUJI_STATUS_OK else {
             throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
         }
-        guard settings.photoEffects.isValid else { throw ProcessorError.processFailed(L10n.text("无效的暗角或颗粒参数")) }
-        var effects = sony2fuji_photo_effects_config()
-        effects.version = UInt32(SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION)
-        effects.struct_size = UInt32(MemoryLayout<sony2fuji_photo_effects_config>.size)
-        effects.vignette_amount = Float(settings.photoEffects.vignetteAmount)
-        effects.vignette_midpoint = Float(settings.photoEffects.vignetteMidpoint)
-        effects.vignette_roundness = Float(settings.photoEffects.vignetteRoundness)
-        effects.vignette_feather = Float(settings.photoEffects.vignetteFeather)
-        effects.vignette_highlights = Float(settings.photoEffects.vignetteHighlights)
-        effects.grain_amount = Float(settings.photoEffects.grainAmount)
-        effects.grain_size = Float(settings.photoEffects.grainSize)
-        effects.grain_roughness = Float(settings.photoEffects.grainRoughness)
-        let effectsStatus = sony2fuji_session_set_photo_effects(session, &effects)
-        guard effectsStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.format("Invalid photo effects: %@", statusMessage(effectsStatus)))
-        }
-        let chromaMode = Int32(settings.displayChromaDenoise)
-        let chromaStatus = sony2fuji_session_set_chroma_denoise(session, chromaMode)
-        guard chromaStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(L10n.format("Invalid display chroma denoise mode: %@", statusMessage(chromaStatus)))
-        }
-        guard settings.denoise.isValid else { throw ProcessorError.processFailed(L10n.text("无效或不可用的降噪参数")) }
-        var denoise = sony2fuji_wavelet_denoise_config()
-        denoise.version = UInt32(SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION)
-        denoise.struct_size = UInt32(MemoryLayout<sony2fuji_wavelet_denoise_config>.size)
-        denoise.enabled = settings.denoise.enabled ? 1 : 0
-        denoise.luma = Float(settings.denoise.luma)
-        denoise.chroma = Float(settings.denoise.chroma)
-        denoise.coarse = Float(settings.denoise.coarse)
-        let status = sony2fuji_session_set_wavelet_denoise(session, &denoise)
-        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
         let previewStatus = sony2fuji_session_set_interactive_preview(session, interactive ? 1 : 0)
         guard previewStatus == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(previewStatus)) }
         let viewportStatus = sony2fuji_session_set_viewport_preview(session, viewportPreview ? 1 : 0)
@@ -176,46 +138,39 @@ extension Sony2FujiProcessor {
         return CGSize(width: Int(width), height: Int(height))
     }
 
-    func configureGeometry(_ session: OpaquePointer, settings: GeometrySettings) throws {
-        guard settings.isValid else { throw ProcessorError.processFailed(L10n.text("无效的几何参数")) }
-        var config = sony2fuji_geometry_config()
-        config.version = UInt32(SONY2FUJI_GEOMETRY_CONFIG_VERSION)
-        config.struct_size = UInt32(MemoryLayout<sony2fuji_geometry_config>.size)
-        config.crop_x = Float(settings.cropX)
-        config.crop_y = Float(settings.cropY)
-        config.crop_width = Float(settings.cropWidth)
-        config.crop_height = Float(settings.cropHeight)
-        config.quarter_turns = Int32(settings.quarterTurns)
-        config.flip_horizontal = settings.flipHorizontal ? 1 : 0
-        config.flip_vertical = settings.flipVertical ? 1 : 0
-        config.straighten_degrees = Float(settings.straightenDegrees)
-        let status = sony2fuji_session_set_geometry(session, &config)
-        guard status == SONY2FUJI_STATUS_OK else { throw ProcessorError.processFailed(statusMessage(status)) }
-        var perspective = sony2fuji_perspective_config()
-        perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
-        perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
-        perspective.horizontal = Float(settings.perspectiveHorizontal)
-        perspective.vertical = Float(settings.perspectiveVertical)
-        let perspectiveStatus = sony2fuji_session_set_perspective(session, &perspective)
-        guard perspectiveStatus == SONY2FUJI_STATUS_OK else {
-            throw ProcessorError.processFailed(statusMessage(perspectiveStatus))
-        }
-    }
-
     func prepareRecipe(_ settings: RawSettings, session: OpaquePointer, url: URL?) throws -> RawSettings {
         guard settings.masterRecipeID != nil else { return settings }
         guard let url else { return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0) }
-        if isNormalX3f(url, settings: settings) {
-            return settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
+        var req = sony2fuji_recipe_wb_request()
+        req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION
+        req.struct_size = UInt32(MemoryLayout<sony2fuji_recipe_wb_request>.size)
+        req.processing_version = settings.processing.core
+        req.x3f_mode = settings.x3fMode.core
+        req.exposure_mode = settings.exposureMode.core
+        req.recipe_active = 1
+        req.recipe_strength = Float(settings.recipeScale)
+        req.custom_wb = settings.whiteBalanceMode == .camera ? 0 : 1
+        req.temperature = Float(settings.temperature)
+        req.tint = Float(settings.tint)
+        var res = sony2fuji_recipe_wb_result()
+        let status = url.path.withCString { pathPtr -> sony2fuji_status in
+            req.input_path = pathPtr
+            return sony2fuji_session_resolve_recipe_wb(session, &req, &res)
         }
-        if settings.whiteBalanceMode == .camera && settings.tint * settings.recipeScale == 0 {
-            return settings.renderedRecipe(cameraTemperature: settings.temperature, cameraTint: 0)
+        if status == SONY2FUJI_STATUS_UNSUPPORTED {
+            throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
         }
-        let camera = try recipeWhiteBalance.resolve(url: url, processing: settings.processing, x3fMode: settings.x3fMode) {
-            try loadRecipeWhiteBalance(session: session, url: url, exposureMode: settings.exposureMode,
-                                       processing: settings.processing, x3fMode: settings.x3fMode)
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw processingFailure(status, session: session)
         }
-        return settings.renderedRecipe(cameraTemperature: camera.temperature, cameraTint: camera.tint)
+        var result = settings.renderedRecipe(
+            cameraTemperature: Double(res.camera_temperature),
+            cameraTint: Double(res.camera_tint)
+        )
+        result.whiteBalanceMode = res.wb_mode == SONY2FUJI_WB_TEMPERATURE ? .custom : .camera
+        result.temperature = Double(res.temperature)
+        result.tint = Double(res.tint)
+        return result
     }
 
     func effectiveSettings(_ settings: RawSettings, session: OpaquePointer, url: URL?,
@@ -227,27 +182,7 @@ extension Sony2FujiProcessor {
         result.temperature = 6500
         result.tint = 0
         result.noiseReduction = 0
-        result.lensCorrection = nil
         return result
-    }
-
-    func loadRecipeWhiteBalance(session: OpaquePointer, url: URL,
-                               exposureMode: RawExposureMode, processing: ProcessingIdentity, x3fMode: X3fMode) throws -> RawWhiteBalance {
-        // Read the target RAW once; saved recipe values are not its as-shot WB.
-        var neutral = RawSettings.default
-        neutral.processing = processing
-        neutral.x3fMode = x3fMode
-        neutral.exposureMode = exposureMode
-        try configureSession(session, settings: neutral, interactive: false)
-        var request = makeBaseRequest(settings: neutral, inputType: SONY2FUJI_INPUT_RAW)
-        request.preview_long_edge = 32
-        var buffer = sony2fuji_buffer()
-        defer { sony2fuji_release_buffer(&buffer) }
-        let status = processRaw(session: session, request: &request, inputPath: url.path, lutPath: nil, outBuffer: &buffer)
-        guard status == SONY2FUJI_STATUS_OK, let camera = readRawWhiteBalance(from: session), camera.isCalibrated else {
-            throw ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
-        }
-        return camera
     }
 
     func makeBaseRequest(settings: RawSettings, inputType: sony2fuji_input_type) -> sony2fuji_request {
@@ -311,6 +246,43 @@ extension Sony2FujiProcessor {
             request.target_width = width
             request.target_height = height
         }
+    }
+
+    func applyViewportROI(session: OpaquePointer, roi: ViewportROI?) -> sony2fuji_status {
+        var nativeRoi = sony2fuji_viewport_roi()
+        nativeRoi.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi>.size)
+        if let roi {
+            nativeRoi.enabled = 1
+            nativeRoi.norm_x0 = Double(roi.normalizedRect.minX)
+            nativeRoi.norm_y0 = Double(roi.normalizedRect.minY)
+            nativeRoi.norm_x1 = Double(roi.normalizedRect.maxX)
+            nativeRoi.norm_y1 = Double(roi.normalizedRect.maxY)
+            nativeRoi.max_output_long_edge = UInt32(max(0, roi.maxOutputLongEdge))
+        } else {
+            nativeRoi.enabled = 0
+        }
+        return sony2fuji_session_set_viewport_roi(session, &nativeRoi)
+    }
+
+    func readViewportROIResult(session: OpaquePointer) -> ViewportROIResult? {
+        var result = sony2fuji_viewport_roi_result()
+        result.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi_result>.size)
+        guard sony2fuji_session_get_viewport_roi_result(session, &result) == SONY2FUJI_STATUS_OK,
+              result.active != 0,
+              result.native_x1 > result.native_x0,
+              result.native_y1 > result.native_y0,
+              result.full_native_width > 0,
+              result.full_native_height > 0 else {
+            return nil
+        }
+        return ViewportROIResult(
+            nativeX0: Int(result.native_x0),
+            nativeY0: Int(result.native_y0),
+            nativeX1: Int(result.native_x1),
+            nativeY1: Int(result.native_y1),
+            fullNativeWidth: Int(result.full_native_width),
+            fullNativeHeight: Int(result.full_native_height)
+        )
     }
 
     func processRaw(
@@ -450,6 +422,107 @@ extension Sony2FujiProcessor {
         )
     }
 
+    func makeNativeBGRADisplayCGImage(
+        consuming buffer: inout sony2fuji_buffer,
+        semantic: Buffer.Semantic = .legacy
+    ) -> CGImage? {
+        if buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8,
+           let baseAddress = buffer.data,
+           buffer.width > 0, buffer.height > 0,
+           buffer.stride_bytes == buffer.width * 4 {
+            let width = Int(buffer.width)
+            let height = Int(buffer.height)
+            let rowBytes = Int(buffer.stride_bytes)
+            var src = vImage_Buffer(
+                data: baseAddress,
+                height: vImagePixelCount(height),
+                width: vImagePixelCount(width),
+                rowBytes: rowBytes
+            )
+            let permuteMap: [UInt8] = [2, 1, 0, 3]
+            if vImagePermuteChannels_ARGB8888(&src, &src, permuteMap, vImage_Flags(kvImageNoFlags)) == kvImageNoError,
+               let taken = try? takeBuffer(&buffer, semantic: semantic),
+               let provider = CGDataProvider(data: taken.data as CFData) {
+                let bgraInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue)
+                    .union(.byteOrder32Little)
+                return CGImage(
+                    width: taken.width,
+                    height: taken.height,
+                    bitsPerComponent: 8,
+                    bitsPerPixel: 32,
+                    bytesPerRow: taken.stride,
+                    space: outputColorSpace(),
+                    bitmapInfo: bgraInfo,
+                    provider: provider,
+                    decode: nil,
+                    shouldInterpolate: true,
+                    intent: .defaultIntent
+                )
+            }
+        }
+        guard let taken = try? takeBuffer(&buffer, semantic: semantic) else { return nil }
+        return makeCGImage(from: taken)
+    }
+
+    func downscaleDisplayCGImage(_ cgImage: CGImage, maxLongEdge: Int) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0, maxLongEdge > 0 else { return nil }
+        let longest = max(width, height)
+        if longest <= maxLongEdge {
+            return cgImage
+        }
+        let scale = Double(maxLongEdge) / Double(longest)
+        let dstW = max(1, Int((Double(width) * scale).rounded()))
+        let dstH = max(1, Int((Double(height) * scale).rounded()))
+        if cgImage.bitsPerPixel == 32,
+           cgImage.bitsPerComponent == 8,
+           let srcData = cgImage.dataProvider?.data,
+           CFDataGetLength(srcData) >= cgImage.bytesPerRow * height,
+           let srcPtr = CFDataGetBytePtr(srcData) {
+            let dstStride = dstW * 4
+            let byteCount = dstStride * dstH
+            if let dstRaw = malloc(byteCount) {
+                let dstData = Data(bytesNoCopy: dstRaw, count: byteCount, deallocator: .free)
+                var srcBuf = vImage_Buffer(
+                    data: UnsafeMutableRawPointer(mutating: srcPtr),
+                    height: vImagePixelCount(height),
+                    width: vImagePixelCount(width),
+                    rowBytes: cgImage.bytesPerRow
+                )
+                var dstBuf = vImage_Buffer(
+                    data: dstRaw,
+                    height: vImagePixelCount(dstH),
+                    width: vImagePixelCount(dstW),
+                    rowBytes: dstStride
+                )
+                if vImageScale_ARGB8888(&srcBuf, &dstBuf, nil, vImage_Flags(kvImageHighQualityResampling)) == kvImageNoError,
+                   let provider = CGDataProvider(data: dstData as CFData) {
+                    return CGImage(
+                        width: dstW,
+                        height: dstH,
+                        bitsPerComponent: 8,
+                        bitsPerPixel: 32,
+                        bytesPerRow: dstStride,
+                        space: cgImage.colorSpace ?? outputColorSpace(),
+                        bitmapInfo: cgImage.bitmapInfo,
+                        provider: provider,
+                        decode: nil,
+                        shouldInterpolate: true,
+                        intent: .defaultIntent
+                    )
+                }
+            }
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: dstW, height: dstH), format: format).image { _ in
+            UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+                .draw(in: CGRect(x: 0, y: 0, width: dstW, height: dstH))
+        }.cgImage
+    }
+
     func orientedCGImage(_ image: CGImage, orientation: CGImagePropertyOrientation) -> CGImage? {
         guard orientation != .up else { return image }
         let oriented = UIImage(cgImage: image, scale: 1, orientation: UIImage.Orientation(orientation))
@@ -482,13 +555,288 @@ extension Sony2FujiProcessor {
     }
 
     func readRawWhiteBalance(from session: OpaquePointer) -> Sony2FujiProcessor.RawWhiteBalance? {
-        var temperature: Float = 6500
+        var temperature: Float = 0
         var tint: Float = 0
-        let status = sony2fuji_session_get_raw_white_balance(session, &temperature, &tint)
+        let status = sony2fuji_session_get_effective_raw_white_balance(session, &temperature, &tint)
         guard status == SONY2FUJI_STATUS_OK else { return nil }
         return Sony2FujiProcessor.RawWhiteBalance(
-            temperature: Double(temperature).rounded(), tint: Double(tint).rounded(), isCalibrated: true
+            temperature: Double(temperature), tint: Double(tint), isCalibrated: true
         )
+    }
+
+    struct DisplayImageMetadata {
+        let type: String
+        let imageSource: CGImageSource
+        let properties: [CFString: Any]
+        let width: Int
+        let height: Int
+        let depth: Int
+        let orientation: Int
+        let rgb16: Bool
+        let tiffPair: Bool
+        let hasAlpha: Bool
+        let hasProfile: Bool
+        let pngColorSpaceName: CFString?
+
+        var orientedWidth: Int { orientation >= 5 ? height : width }
+        var orientedHeight: Int { orientation >= 5 ? width : height }
+        var orientedMax: Int { max(orientedWidth, orientedHeight) }
+    }
+
+    func validateDisplayImageMetadata(url: URL) throws -> DisplayImageMetadata {
+        guard !url.path.isEmpty else { throw displayImageFailure(SONY2FUJI_STATUS_INVALID_ARGUMENT) }
+        guard url.pathExtension.lowercased() != "dng" else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        let resolved = url.resolvingSymlinksInPath()
+        guard (try? resolved.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {
+            throw displayImageFailure(SONY2FUJI_STATUS_IO_ERROR)
+        }
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+        }
+        guard let type = CGImageSourceGetType(imageSource) as String?,
+              ["public.jpeg", "public.png", "public.tiff", "public.heif", "public.heic"].contains(type) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        var pngColorSpaceName: CFString? = nil
+        if type == "public.png" {
+            pngColorSpaceName = try parsePNGColorMetadata(url: resolved)
+        }
+        let imageCount = CGImageSourceGetCount(imageSource)
+        let tiffPair = imageCount == 2 && type == "public.tiff"
+        let mpfCount = type == "public.jpeg" ? Int(url.path.withCString { sony2fuji_inspect_sdr_jpeg_mpf($0) }) : 0
+        guard mpfCount >= 0 && (imageCount == 1 || tiffPair || (mpfCount > 0 && imageCount == mpfCount)) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if CGImageSourceCopyAuxiliaryDataInfoAtIndex(imageSource, 0, kCGImageAuxiliaryDataTypeHDRGainMap) != nil {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if #available(iOS 18.0, macOS 15.0, *),
+           CGImageSourceCopyAuxiliaryDataInfoAtIndex(imageSource, 0, kCGImageAuxiliaryDataTypeISOGainMap) != nil {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any] else {
+            throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+        }
+        guard let widthNum = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let heightNum = properties[kCGImagePropertyPixelHeight] as? NSNumber else {
+            throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+        }
+        let width = widthNum.int64Value
+        let height = heightNum.int64Value
+        guard width > 0, height > 0 else { throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) }
+        let maxDisplayPixels: UInt64 = 128_000_000
+        guard UInt64(width) <= maxDisplayPixels / UInt64(height),
+              UInt64(width) * UInt64(height) <= maxDisplayPixels,
+              width <= Int64(UInt32.max / 4) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        let depth = (properties[kCGImagePropertyDepth] as? NSNumber)?.intValue ?? 8
+        let tiff16 = depth == 16 && type == "public.tiff"
+        let rgb16 = tiff16 || (depth == 16 && type == "public.png")
+        guard depth == 8 || rgb16 else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if tiffPair {
+            guard tiff16, hasValidSigmaTIFFMetadata(imageSource: imageSource, properties: properties, width: width, height: height) else {
+                throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+            }
+        }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        guard (1...8).contains(orientation) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if let colorModel = properties[kCGImagePropertyColorModel] as? String,
+           colorModel != (kCGImagePropertyColorModelRGB as String) {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if (properties[kCGImagePropertyIsFloat] as? Bool) == true {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        if let profileName = properties[kCGImagePropertyProfileName] as? String,
+           isHDRColorSpaceName(profileName) {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        let hasAlpha = (properties[kCGImagePropertyHasAlpha] as? Bool) ?? false
+        let hasProfile = properties[kCGImagePropertyProfileName] != nil
+        return DisplayImageMetadata(
+            type: type,
+            imageSource: imageSource,
+            properties: properties,
+            width: Int(width),
+            height: Int(height),
+            depth: depth,
+            orientation: orientation,
+            rgb16: rgb16,
+            tiffPair: tiffPair,
+            hasAlpha: hasAlpha,
+            hasProfile: hasProfile,
+            pngColorSpaceName: pngColorSpaceName
+        )
+    }
+
+    private func parsePNGColorMetadata(url: URL) throws -> CFString? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            throw displayImageFailure(SONY2FUJI_STATUS_IO_ERROR)
+        }
+        defer { try? handle.close() }
+        let fileSize = (try? handle.seekToEnd()) ?? 0
+        guard fileSize >= 8 else { throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) }
+        try handle.seek(toOffset: 8)
+        var colorSpaceName: CFString? = nil
+        while true {
+            guard let header = try? handle.read(upToCount: 8), header.count == 8 else {
+                throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+            }
+            let length = (UInt32(header[0]) << 24) | (UInt32(header[1]) << 16) |
+                (UInt32(header[2]) << 8) | UInt32(header[3])
+            let chunkType = String(bytes: header[4..<8], encoding: .ascii) ?? ""
+            if chunkType == "mDCv" || chunkType == "mDCV" || chunkType == "cLLi" || chunkType == "cLLI" {
+                throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+            }
+            if chunkType == "cICP" {
+                guard length == 4 else { throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED) }
+                guard let cicp = try? handle.read(upToCount: 4), cicp.count == 4 else {
+                    throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+                }
+                let bytes = [UInt8](cicp)
+                if bytes == [1, 13, 0, 1] { colorSpaceName = CGColorSpace.sRGB }
+                else if bytes == [12, 13, 0, 1] { colorSpaceName = CGColorSpace.displayP3 }
+                else if bytes == [1, 1, 0, 1] { colorSpaceName = CGColorSpace.itur_709 }
+                else { throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED) }
+            } else {
+                let offset = (try? handle.offset()) ?? fileSize
+                guard UInt64(length) <= fileSize - offset else {
+                    throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+                }
+                try handle.seek(toOffset: offset + UInt64(length))
+            }
+            guard let crc = try? handle.read(upToCount: 4), crc.count == 4 else {
+                throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+            }
+            if chunkType == "IEND" {
+                guard length == 0 else { throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) }
+                return colorSpaceName
+            }
+        }
+    }
+
+    private func hasValidSigmaTIFFMetadata(imageSource: CGImageSource, properties: [CFString: Any], width: Int64, height: Int64) -> Bool {
+        guard let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any],
+              let software = tiff[kCGImagePropertyTIFFSoftware] as? String,
+              software.hasPrefix("SIGMA Photo Pro "),
+              let preview = CGImageSourceCopyPropertiesAtIndex(imageSource, 1, nil) as? [CFString: Any],
+              let pw = (preview[kCGImagePropertyPixelWidth] as? NSNumber)?.int64Value,
+              let ph = (preview[kCGImagePropertyPixelHeight] as? NSNumber)?.int64Value,
+              let pDepth = (preview[kCGImagePropertyDepth] as? NSNumber)?.int64Value else {
+            return false
+        }
+        return pDepth == 8 && pw > 0 && ph > 0 && pw < width && ph < height &&
+            max(pw, ph) == 160 && abs(width * ph - height * pw) <= max(width, height)
+    }
+
+    func isHDRColorSpaceName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.contains("extended") || lower.contains("hdr") || lower.contains("pq") || lower.contains("hlg")
+    }
+
+    func isHDRColorSpace(_ space: CGColorSpace) -> Bool {
+        if CGColorSpaceUsesITUR_2100TF(space) || CGColorSpaceUsesExtendedRange(space) { return true }
+        if let name = space.name as String? {
+            return isHDRColorSpaceName(name)
+        }
+        return false
+    }
+
+    func isOpaqueAlphaInfo(_ alpha: CGImageAlphaInfo) -> Bool {
+        alpha == .none || alpha == .noneSkipFirst || alpha == .noneSkipLast
+    }
+
+    func makeDisplayCGImage(from native: sony2fuji_buffer) -> CGImage? {
+        guard let dataPtr = native.data, native.size_bytes > 0, native.width > 0, native.height > 0 else { return nil }
+        guard let provider = CGDataProvider(dataInfo: nil, data: dataPtr, size: Int(native.size_bytes), releaseData: { _, _, _ in }) else {
+            return nil
+        }
+        let is16 = native.pixel_format == SONY2FUJI_PIXEL_RGBA16
+        let bitsPerComponent = is16 ? 16 : 8
+        let bitsPerPixel = is16 ? 64 : 32
+        let bitmap = is16
+            ? CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder16Little)
+            : bitmapInfo(for: 4)
+        return CGImage(
+            width: Int(native.width),
+            height: Int(native.height),
+            bitsPerComponent: bitsPerComponent,
+            bitsPerPixel: bitsPerPixel,
+            bytesPerRow: Int(native.stride_bytes),
+            space: outputColorSpace(),
+            bitmapInfo: bitmap,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
+    func renderDisplayRGBA8Buffer(
+        from image: CGImage,
+        targetWidth: Int,
+        targetHeight: Int,
+        checkOpaqueAlpha: Bool,
+        nativeSize: CGSize,
+        isProxy: Bool,
+        sourceURL: URL
+    ) throws -> Buffer {
+        guard targetWidth > 0, targetHeight > 0 else {
+            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+        }
+        let stride = targetWidth * 4
+        let total = stride * targetHeight
+        var pixels = Data(count: total)
+        let drawn = pixels.withUnsafeMutableBytes { rawBytes -> Bool in
+            guard let baseAddress = rawBytes.baseAddress,
+                  let context = CGContext(
+                      data: baseAddress,
+                      width: targetWidth,
+                      height: targetHeight,
+                      bitsPerComponent: 8,
+                      bytesPerRow: stride,
+                      space: outputColorSpace(),
+                      bitmapInfo: bitmapInfo(for: 4).rawValue
+                  ) else {
+                return false
+            }
+            context.interpolationQuality = .high
+            context.setBlendMode(.copy)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+            return true
+        }
+        guard drawn else { throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) }
+        if checkOpaqueAlpha {
+            let opaque = pixels.withUnsafeBytes { rawBytes -> Bool in
+                guard let ptr = rawBytes.bindMemory(to: UInt8.self).baseAddress else { return false }
+                var offset = 3
+                while offset < total {
+                    if ptr[offset] != 255 { return false }
+                    offset += 4
+                }
+                return true
+            }
+            guard opaque else { throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED) }
+        }
+        var buffer = Buffer(
+            data: pixels,
+            width: targetWidth,
+            height: targetHeight,
+            stride: stride,
+            pixelFormat: SONY2FUJI_PIXEL_RGBA8,
+            semantic: .display,
+            nativeSize: nativeSize,
+            isProxy: isProxy
+        )
+        buffer.sourceLensMetadata = DisplayLensMetadata.read(sourceURL)
+        return buffer
     }
 }
 

@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.canvas
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -9,6 +11,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -24,7 +27,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -34,6 +36,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,7 +46,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -54,12 +56,12 @@ import kotlin.math.max
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.rawlab.android.R
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.HDRBitmapAdapter
-import com.rawlab.android.engine.HDRDisplayController
-import com.rawlab.android.engine.HDRDisplayParameters
-import com.rawlab.android.engine.HDRPreviewMode
 import com.rawlab.android.photo.PhotoInfo
+
+internal val photoViewMargin = 8.dp
 
 class PhotoCanvasState {
     var viewport by mutableStateOf<PhotoViewport?>(null)
@@ -113,16 +115,68 @@ class PhotoCanvasState {
 }
 
 @Composable
+private fun DetailOverlayTiles(
+    tiles: List<PreviewDetailOverlay>,
+    useNeutral: Boolean,
+    image: PhotoImageRect,
+    hdrParameters: com.rawlab.android.engine.HDRDisplayParameters,
+    fp16Enabled: Boolean,
+) {
+    if (tiles.isEmpty() || image.width <= 0f || image.height <= 0f) return
+    val resolved = ArrayList<Pair<PreviewDetailOverlay, androidx.compose.ui.graphics.ImageBitmap>>(tiles.size)
+    for (tile in tiles) {
+        key(tile.tileKey ?: tile.normalizedRect) {
+            val bitmap = if (useNeutral) {
+                HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled) ?: tile.neutral
+            } else {
+                HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled) ?: tile.result
+            }
+            if (bitmap != null) {
+                resolved += tile to remember(bitmap) { bitmap.asImageBitmap() }
+            }
+        }
+    }
+    if (resolved.isEmpty()) return
+    Canvas(Modifier.fillMaxSize()) {
+        for ((tile, imageBitmap) in resolved) {
+            val r = tile.normalizedRect
+            val dstLeft = (image.left + r.x0 * image.width).roundToInt()
+            val dstTop = (image.top + r.y0 * image.height).roundToInt()
+            val dstRight = (image.left + r.x1 * image.width).roundToInt()
+            val dstBottom = (image.top + r.y1 * image.height).roundToInt()
+            val dstWidth = dstRight - dstLeft
+            val dstHeight = dstBottom - dstTop
+            if (dstWidth > 0 && dstHeight > 0 &&
+                dstRight > 0 && dstBottom > 0 &&
+                dstLeft < size.width && dstTop < size.height
+            ) {
+                drawImage(
+                    image = imageBitmap,
+                    dstOffset = IntOffset(dstLeft, dstTop),
+                    dstSize = IntSize(dstWidth, dstHeight),
+                    filterQuality = FilterQuality.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun PhotoCanvas(
     pair: PreviewPair, compare: Boolean, filename: String, state: PhotoCanvasState,
     info: PhotoInfo? = null, infoMode: Int = 0, onInfoClick: () -> Unit = {},
     onPreviewSizeChange: (Int) -> Unit = {}, bottomOverlayInset: Dp = 0.dp,
     bottomOverlay: @Composable () -> Unit = {},
     mode: ComparisonMode = ComparisonMode.SIDE_BY_SIDE, holdingBefore: Boolean = false,
-    showOverlays: Boolean = true, margins: Boolean = true,
+    showOverlays: Boolean = true, margins: Boolean = false,
     onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, viewingEnabled: Boolean = true,
-    hslTarget: HslTargetActions? = null,
+    hslTarget: HslTargetActions? = null, workspaceControls: Boolean = false,
+    histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
+    hdrPreview: PhotoHDRPreview = rememberPhotoHDRPreview(pair.hdr?.result),
+    detail: PreviewDetailOverlay? = null,
+    detailTiles: List<PreviewDetailOverlay> = emptyList(),
+    onDetailRequest: (ViewportRoiRequest?) -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -135,43 +189,56 @@ internal fun PhotoCanvas(
     val tap by rememberUpdatedState(onCanvasTap)
     val hold by rememberUpdatedState(onHoldBefore)
     val target by rememberUpdatedState(hslTarget)
+    val latestOnDetailRequest by rememberUpdatedState(onDetailRequest)
     val focusRequester = remember { FocusRequester() }
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
     val labelBounds = remember { mutableStateMapOf<String, Rect>() }
     var targetTouch by remember { mutableStateOf<Offset?>(null) }
     var targetAnchor by remember { mutableStateOf<Offset?>(null) }
     var targetImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val activity = (LocalView.current.context as? android.app.Activity)
-    val hardwareCanvas = LocalView.current.isHardwareAccelerated
-    val hdrController = remember(activity) { activity?.let { HDRDisplayController(it.window) } }
-    var hdrState by remember { mutableStateOf(com.rawlab.android.engine.HDRDisplayState(false, 1f)) }
-    var hdrMode by remember { mutableStateOf(HDRPreviewMode.AUTOMATIC) }
-    var hdrFalseColor by remember { mutableStateOf(false) }
-    LaunchedEffect(pair.hdr, activity, hdrMode, hardwareCanvas) {
-        hdrState = hdrController?.refresh(surfaceReady = pair.hdr != null && hardwareCanvas && hdrMode == HDRPreviewMode.AUTOMATIC,
-            contentHeadroom = pair.hdr?.result?.contentHeadroom ?: 1f)
-            ?: com.rawlab.android.engine.HDRDisplayState(false, 1f, "No activity window")
-    }
-    DisposableEffect(hdrController) {
-        if (activity != null && android.os.Build.VERSION.SDK_INT >= 34)
-            hdrController?.registerRatioChanges(activity.mainExecutor) { hdrState = it }
-        onDispose { hdrController?.close() }
-    }
+    val hdrParameters = hdrPreview.parameters
     DisposableEffect(Unit) { onDispose { hold(false); target?.cancel() } }
-    BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) 8.dp else 0.dp).clipToBounds()) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) photoViewMargin else 0.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         val canvasWidth = constraints.maxWidth.toFloat(); val canvasHeight = constraints.maxHeight.toFloat()
         val horizontal = constraints.maxWidth >= constraints.maxHeight
         val sideBySide = compare && mode == ComparisonMode.SIDE_BY_SIDE
         val gap = 1.dp
         val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { gap.roundToPx() }
-        val primary = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight,
+        val nativeWidth = pair.nativeWidth.coerceAtLeast(1).toFloat()
+        val nativeHeight = pair.nativeHeight.coerceAtLeast(1).toFloat()
+        val primary = PhotoViewport(nativeWidth, nativeHeight,
             if (sideBySide && horizontal) ((constraints.maxWidth - gapPx) / 2).toFloat() else constraints.maxWidth.toFloat(),
             if (sideBySide && !horizontal) ((constraints.maxHeight - gapPx) / 2).toFloat() else constraints.maxHeight.toFloat())
         SideEffect { if (state.viewport != primary) state.resize(primary) }
-        val previewEdge = primary.previewLongEdge(state.view.project(primary).scale)
+        val projectedZoom = state.view.project(primary)
+        val previewEdge = if (pair.hdr == null) {
+            minOf(1600, maxOf(pair.nativeWidth, pair.nativeHeight))
+        } else {
+            primary.previewLongEdge(projectedZoom.scale)
+        }
+        val baseLongEdge = maxOf(pair.result.width, pair.result.height)
+        var detailActive by remember(pair.nativeWidth, pair.nativeHeight) { mutableStateOf(false) }
+        val detailRequest = primary.detailRequest(
+            projectedZoom,
+            baseLongEdge,
+            if (pair.hdr != null) 1280 else 2048,
+            active = detailActive,
+        )
+        SideEffect { detailActive = detailRequest != null }
+        // Use the current pane geometry, not globally-positioned hit-test bounds: those
+        // also contain this overlay and arrive a frame after a resize/zoom/mode change.
+        val captionTop = if (sideBySide && horizontal) {
+            val labelStyle = MaterialTheme.typography.labelSmall
+            val measurer = rememberTextMeasurer()
+            val labelHeight = maxOf(measurer.measure(beforeLabel, labelStyle, maxLines = 1).size.height,
+                measurer.measure(afterLabel, labelStyle, maxLines = 1).size.height)
+            photoImageRect(primary, projectedZoom).bottom - labelHeight -
+                with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+        } else null
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
-        val percent = "${(state.view.project(primary).scale * 100).roundToInt()}%"
+        LaunchedEffect(detailRequest) { latestOnDetailRequest(detailRequest) }
+        val percent = "${(projectedZoom.scale * 100).roundToInt()}%"
         val before = holdingBefore && !compare && hslTarget == null
         val resultOrigin = Offset(if (sideBySide && horizontal) primary.width + gapPx else 0f,
             if (sideBySide && !horizontal) primary.height + gapPx else 0f)
@@ -187,7 +254,7 @@ internal fun PhotoCanvas(
         }
         @Composable fun pane(modifier: Modifier, neutralOnly: Boolean = false, paneLabel: String? = null) {
             BoxWithConstraints(modifier.clipToBounds()) {
-                val area = PhotoViewport(pair.comparisonWidth, pair.comparisonHeight, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+                val area = PhotoViewport(nativeWidth, nativeHeight, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                 val zoom = state.view.project(area)
                 val image = photoImageRect(area, zoom)
                 val transform = Modifier.fillMaxSize().graphicsLayer {
@@ -195,10 +262,11 @@ internal fun PhotoCanvas(
                     translationX = zoom.x; translationY = zoom.y
                 }
                 val wipe = compare && mode == ComparisonMode.WIPE
-                val hdrFrame = if (neutralOnly || before) pair.hdr?.neutral else pair.hdr?.result
-                val hdrBitmap = HDRBitmapAdapter.rememberBitmap(hdrFrame,
-                    HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                val hdrBitmap = if (neutralOnly || before)
+                    HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
+                else hdrPreview.bitmap
                 val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
+                val activeTiles = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
                     .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
                         if (hslTarget == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
@@ -207,17 +275,18 @@ internal fun PhotoCanvas(
                     }) {
                     Image(shownBitmap.asImageBitmap(), null,
                         transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
-                            if(hdrFalseColor && hdrBitmap!=null)stateDescription=falseColorLabel
+                            if (hdrParameters.falseColor && hdrBitmap != null) stateDescription = falseColorLabel
                         }, contentScale = ContentScale.Fit)
+                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
                             val x = image.splitX(state.split)
                             clipRect(image.left, image.top, x, image.bottom) { this@drawWithContent.drawContent() }
                             drawLine(Color.White, Offset(x, image.top), Offset(x, image.bottom), 1.dp.toPx())
                         }) {
-                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral,
-                                HDRDisplayParameters(hdrState.headroom, hdrMode, hdrFalseColor), hdrState.available || hdrFalseColor)
+                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                             Image((neutralBitmap ?: pair.neutral).asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
+                            DetailOverlayTiles(activeTiles, useNeutral = true, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
                         }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
                             .size(with(androidx.compose.ui.platform.LocalDensity.current) { image.width.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { image.height.toDp() })
@@ -237,7 +306,7 @@ internal fun PhotoCanvas(
                         }.focusable())
                         Box(Modifier.offset { IntOffset((image.splitX(state.split).coerceIn(image.left + minOf(24.dp.toPx(), image.width / 2), image.right - minOf(24.dp.toPx(), image.width / 2)) - 16.dp.toPx()).roundToInt(), ((image.top + image.bottom) / 2 - 16.dp.toPx()).roundToInt()) }
                             .size(32.dp).testTag("comparison-handle").background(Color.White, CircleShape).padding(4.dp)) {
-                            Icon(Icons.Outlined.SwapHoriz, null, Modifier.fillMaxSize().testTag("comparison-handle-glyph"), tint = Color.Black)
+                            Icon(AppIcons.Outlined.SwapHoriz, null, Modifier.fillMaxSize().testTag("comparison-handle-glyph"), tint = Color.Black)
                         }
                     }
                     if (showOverlays && (paneLabel != null || wipe)) {
@@ -309,21 +378,29 @@ internal fun PhotoCanvas(
             }
             if (showOverlays) {
                 pair.hdr?.let { hdr ->
-                    HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrState, hdrMode, hdrFalseColor,
-                        { hdrMode = it }, { hdrFalseColor = it }, Modifier.align(Alignment.TopEnd)
-                            .padding(top = if (compare) 48.dp else 8.dp, end = 8.dp))
+                    HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrPreview.display,
+                        hdrParameters.mode, hdrParameters.falseColor, hdrPreview.onModeChange, hdrPreview.onFalseColorChange,
+                        Modifier.align(Alignment.TopEnd)
+                            .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
                 if (hslTarget == null) {
-                    BoxWithConstraints(Modifier.fillMaxSize()) { PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp) }
+                    BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (workspaceControls) 48.dp else 0.dp)) {
+                        PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp, !workspaceControls)
+                    }
                 }
                 DisposableEffect(Unit) { onDispose { labelBounds.remove("bottom-overlay") } }
-                Box(Modifier.align(Alignment.BottomCenter).wrapContentWidth().padding(bottom = bottomOverlayInset)
-                    .onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
+                Box(Modifier.align(Alignment.BottomCenter).wrapContentWidth().layout { measurable, constraints ->
+                    val overlay = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    val inset = maxOf(bottomOverlayInset.roundToPx(),
+                        captionTop?.let { (canvasHeight - it + 8.dp.toPx()).roundToInt() } ?: 0)
+                        .coerceIn(0, (constraints.maxHeight - overlay.height).coerceAtLeast(0))
+                    layout(overlay.width, overlay.height + inset) { overlay.placeRelative(0, 0) }
+                }.onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
-                    Box(Modifier.align(Alignment.TopEnd).padding(end = 56.dp)) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 0.dp, end = 56.dp)) {
                         IconButton(onClick = { menu = true }, Modifier.size(48.dp).testTag("comparison-mode")) {
-                            Icon(Icons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
+                            Icon(AppIcons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
                         }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.editor_compare_side_by_side)) }, onClick = { menu = false; onModeChange(ComparisonMode.SIDE_BY_SIDE) })
@@ -361,19 +438,20 @@ internal fun PhotoCanvas(
                 }
             }
             RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && pair.hdr == null,
-                Modifier.align(Alignment.TopEnd).padding(8.dp))
+                Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
+                showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange)
         }
     }
 }
 
 @Composable
-private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp, endInset: Dp) {
+private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Unit, availableHeight: Dp, endInset: Dp, showsButton: Boolean = true) {
     val modeDescription = when (mode) {
         1 -> stringResource(R.string.info_file)
         2 -> stringResource(R.string.info_capture)
         else -> stringResource(R.string.info_hidden)
     }
-    IconButton(
+    if (showsButton) IconButton(
         onClick = onInfoClick,
         modifier = Modifier.padding(8.dp).size(48.dp)
             .background(Color.Black.copy(alpha = .65f), CircleShape)
@@ -384,7 +462,7 @@ private fun PhotoInfoOverlay(info: PhotoInfo?, mode: Int, onInfoClick: () -> Uni
     }
     if (mode != 0 && info != null) {
         Column(
-            Modifier.heightIn(max = availableHeight).padding(start = 60.dp, top = 12.dp, end = endInset).widthIn(max = 360.dp)
+            Modifier.heightIn(max = availableHeight).padding(start = if (showsButton) 60.dp else 8.dp, top = 12.dp, end = endInset).widthIn(max = 360.dp)
                 .background(Color.Black.copy(alpha = .72f))
                 .padding(horizontal = 10.dp, vertical = 8.dp)
                 .testTag("photo-info-panel"),

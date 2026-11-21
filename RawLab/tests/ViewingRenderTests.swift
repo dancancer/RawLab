@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import UIKit
 
@@ -14,6 +15,63 @@ struct ViewingRenderTests {
         let deadline = Date().addingTimeInterval(4)
         while model.histogram == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     }
+
+    @MainActor
+    static func checkHDRGeometryViewport(_ model: RawEditorViewModel, geometry: GeometrySettings, name: String,
+                                         viewportSize: CGSize = CGSize(width: 430, height: 500)) {
+        var settings = RawSettings.default
+        settings.hdr = HDRSettings()
+        settings.hdr?.geometry = geometry
+        let limit = model.viewportPreviewLimit
+        if model.previewLongEdge == limit { model.updatePreview(settings: settings) }
+        else { model.updatePreviewSize(limit, settings: settings) }
+        wait(model)
+        guard let initial = model.previewImage, let hdr = model.hdrPresentation else {
+            check(false, "HDR \(name) must produce a preview")
+            return
+        }
+        check(!model.previewRendering && !model.previewFailed && model.acceptedPreviewRequest?.settings == settings,
+              "HDR \(name) must render the requested geometry")
+        if geometry.cropWidth < 1 {
+            check(max(hdr.image.outputNativeWidth, hdr.image.outputNativeHeight) < limit,
+                  "The cropped native canvas must be smaller than the preview limit")
+        }
+        let expectedEdge = min(limit, max(hdr.image.nativeWidth, hdr.image.nativeHeight))
+
+        let view = PhotoCanvasView(frame: CGRect(origin: .zero, size: viewportSize))
+        var viewport = PhotoViewport()
+        var reportedEdge: Int?
+        view.onViewportChange = { viewport = $0 }
+        view.onPreviewSizeChange = { edge in
+            reportedEdge = edge
+            model.updatePreviewSize(edge, settings: settings)
+        }
+        func layoutPreview() {
+            view.configure(image: model.previewImage!, reference: nil, label: "HDR preview",
+                           state: PhotoViewingState(), viewport: viewport, displayScale: 3,
+                           isDraft: false, interactionEnabled: true, nativePixelSize: model.viewportNativeSize,
+                           previewSourceSize: model.viewportPreviewSourceSize,
+                           previewLongEdgeLimit: model.viewportPreviewLimit, hdr: model.hdrPresentation)
+            view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            wait(model)
+        }
+        for _ in 0..<4 {
+            layoutPreview()
+            check(reportedEdge != nil, "HDR canvas must report a viewport size")
+            check(!model.previewRendering && !model.previewFailed && model.previewImage?.size == initial.size,
+                  "HDR \(name) shrank after viewport feedback from \(initial.size) to \(String(describing: model.previewImage?.size)) (request: \(reportedEdge!))")
+            check(reportedEdge == expectedEdge, "HDR \(name) viewport must request \(expectedEdge) source pixels")
+        }
+        view.result.setZoomScale(1, animated: false)
+        layoutPreview()
+        layoutPreview()
+        check(model.previewImage?.size == initial.size && view.result.accessibilityValue == "100%",
+              "HDR \(name) changed size at 100% zoom (request: \(reportedEdge!), zoom: \(view.result.zoomScale))")
+        print("PASS: HDR \(name) remains \(initial.size) across viewport updates and 100% zoom (source request \(expectedEdge))")
+    }
+
+    @MainActor
     static func main() throws {
         setbuf(stdout, nil)
         let out = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -65,6 +123,26 @@ struct ViewingRenderTests {
         waitForHistogram(cacheModel)
         check(cacheModel.histogram?.width == 1280, "reused zoom preview gets its own histogram")
         print("PASS: completed raster Fit and zoom previews reuse pixels and preserve their own histograms")
+        cacheModel.invalidatePreviewRequests()
+        cacheModel.recordImportedComparison(settings: .default)
+        check(cacheModel.acceptedPreviewFrameID.map { cacheModel.isLatestRenderID($0) } == true,
+              "recordImportedComparison must register latestRenderID so post-import ROI renders are not self-cancelled")
+        cacheModel.updateDetailRequest(PhotoDetailRequest(
+            visibleRect: CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2),
+            overscanRect: CGRect(x: 0.38, y: 0.38, width: 0.24, height: 0.24),
+            zoomScale: 1.0,
+            baseScale: 0.25,
+            maxOutputLongEdge: 2048
+        ))
+        let rasterDetailDeadline = Date().addingTimeInterval(6)
+        while cacheModel.detailOverlay == nil && Date() < rasterDetailDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        check(cacheModel.detailOverlay?.cgImage != nil && cacheModel.detailOverlay?.beforeCGImage != nil,
+              "raster ROI detail overlay completes after recordImportedComparison")
+        cacheModel.updateDetailRequest(nil)
+        check(cacheModel.detailOverlay == nil, "clearing raster detail request clears detailOverlay")
+        print("PASS: post-import ROI detail scheduling is not self-cancelled")
         let buffer = try model.processor.loadRasterBuffer(url: url).buffer
         model.sourceFile = .externallyManaged(url)
         model.draftBuffer = buffer
@@ -174,6 +252,92 @@ struct ViewingRenderTests {
             let deadline = Date().addingTimeInterval(35)
             while rawModel.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
             check(rawModel.hasImage, "RAW import succeeds: \(rawModel.statusMessage ?? "nil")")
+            let backingDeadline = Date().addingTimeInterval(15)
+            while rawModel.detailBacking == nil && Date() < backingDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailBacking != nil &&
+                  max(rawModel.detailBacking!.pixelSize.width, rawModel.detailBacking!.pixelSize.height) <= CGFloat(rawModel.detailBackingMaxLongEdge) &&
+                  rawModel.detailBacking!.fullNativeSize.width > 1280,
+                  "RAW import pre-warms high-resolution detailBacking without clobbering 1280px previewImage")
+
+            let regionA = PhotoDetailRequest(
+                visibleRect: CGRect(x: 0.05, y: 0.05, width: 0.15, height: 0.18),
+                overscanRect: CGRect(x: 0.03, y: 0.03, width: 0.19, height: 0.22),
+                zoomScale: 1.0,
+                baseScale: 0.21,
+                maxOutputLongEdge: 2048
+            )
+            let expectedA = PhotoDetailTilePlan.tiles(
+                visibleRect: regionA.visibleRect,
+                fullNativeSize: rawModel.viewportNativeSize ?? .zero,
+                zoomScale: regionA.zoomScale,
+                baseScale: regionA.baseScale
+            )
+            check(!expectedA.isEmpty, "RAW import produces non-empty tile plan for region A")
+            rawModel.updateDetailRequest(regionA)
+            let detailDeadlineA = Date().addingTimeInterval(15)
+            while !expectedA.allSatisfy({ rawModel.detailTileCache[$0.key] != nil }) &&
+                    Date() < detailDeadlineA {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailOverlay != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key] != nil }) &&
+                  !rawModel.detailTiles.isEmpty,
+                  "RAW import immediately supports viewport ROI tile rendering without needing preview resize")
+            check(rawModel.detailOverlay?.cgImage != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage == nil }),
+                  "Single-view edited RAW ROI skips redundant before renders")
+            check((rawModel.detailOverlay?.pixelSize.width ?? 0) > 200 &&
+                  (rawModel.detailOverlay?.fullNativeSize.width ?? 0) > 1280,
+                  "RAW ROI overlay reports full native dimensions and high-res tile pixels")
+
+            rawModel.setDetailNeedsBefore(true)
+            let beforeDeadline = Date().addingTimeInterval(15)
+            while (!expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }) ||
+                   rawModel.detailBacking?.beforeCGImage == nil) &&
+                    Date() < beforeDeadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailBacking?.beforeCGImage != nil &&
+                  expectedA.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }),
+                  "Enabling comparison lazily populates beforeCGImage on backing and visible RAW tiles")
+
+            let cachedAfterA = rawModel.detailTileCache.count
+            let regionB = PhotoDetailRequest(
+                visibleRect: CGRect(x: 0.65, y: 0.55, width: 0.15, height: 0.18),
+                overscanRect: CGRect(x: 0.63, y: 0.53, width: 0.19, height: 0.22),
+                zoomScale: 1.0,
+                baseScale: 0.21,
+                maxOutputLongEdge: 2048
+            )
+            let expectedB = PhotoDetailTilePlan.tiles(
+                visibleRect: regionB.visibleRect,
+                fullNativeSize: rawModel.viewportNativeSize ?? .zero,
+                zoomScale: regionB.zoomScale,
+                baseScale: regionB.baseScale
+            )
+            rawModel.updateDetailRequest(regionB)
+            let detailDeadlineB = Date().addingTimeInterval(15)
+            while !expectedB.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }) &&
+                    Date() < detailDeadlineB {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            check(rawModel.detailTileCache.count > cachedAfterA &&
+                  expectedB.allSatisfy({ rawModel.detailTileCache[$0.key]?.beforeCGImage != nil }),
+                  "panning to a second RAW region adds its tiles while retaining previously rendered tiles")
+            rawModel.updateDetailRequest(regionA)
+            check(rawModel.detailDebounceWorkItem == nil,
+                  "panning back to a previously rendered RAW region hits the tile cache without re-rendering")
+            rawModel.updateDetailRequest(nil)
+            check(rawModel.detailOverlay == nil && rawModel.detailTiles.isEmpty &&
+                  !rawModel.detailTileCache.isEmpty && rawModel.detailBacking != nil,
+                  "zooming back to Fit clears active tiles while retaining cached RAW tiles and detailBacking")
+            rawModel.updateDetailRequest(regionA)
+            check(rawModel.detailDebounceWorkItem == nil && !rawModel.detailTiles.isEmpty,
+                  "zooming back into a previously rendered RAW region hits the preserved tile cache synchronously")
+            rawModel.updateDetailRequest(nil)
+            print("PASS: real RAW post-import ROI tile pyramid caches and reuses visited regions")
             let rawZoom = rawModel.previewImage
             rawModel.updatePreviewSize(320, settings: edited)
             wait(rawModel)
@@ -208,6 +372,7 @@ struct ViewingRenderTests {
             let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: out.appendingPathComponent("hdr-edits")))
             model.hasImage = true
             model.sourceKind = .raster
+            model.sourceIsHDR = true
             model.sourceFile = .externallyManaged(url)
             var settings = RawSettings.default
             settings.hdr = HDRSettings()
@@ -260,6 +425,26 @@ struct ViewingRenderTests {
             check(!model.previewFailed && model.acceptedPreviewFrameID != acceptedFrameID && model.hdrReference === reference,
                   "HDR retry accepts a preview and reuses the still-valid reference")
             print("PASS: HDR preview failure retains pixels, exports diagnostics and preserves comparison reuse on retry")
+
+            let source = model.hdrPresentation!.image
+            let limit = model.viewportPreviewLimit
+            let sourceEdge = max(source.nativeWidth, source.nativeHeight)
+            var straighten = GeometrySettings()
+            straighten.straightenDegrees = 15.1
+            checkHDRGeometryViewport(model, geometry: straighten, name: "straighten 15.1°")
+
+            let fraction = min(0.5, Double(limit) * 0.75 / Double(sourceEdge))
+            var crop = GeometrySettings()
+            crop.cropX = (1 - fraction) / 2; crop.cropY = crop.cropX
+            crop.cropWidth = fraction; crop.cropHeight = fraction
+            crop.quarterTurns = 1
+            // 视口按旋转后的源图比例留出 1280 px，宽高颠倒会在窄边先触顶。
+            let viewportScale = CGFloat(limit) / (3 * CGFloat(sourceEdge))
+            let viewport = CGSize(width: (CGFloat(source.nativeHeight) * viewportScale).rounded(.up),
+                                  height: (CGFloat(source.nativeWidth) * viewportScale).rounded(.up))
+            checkHDRGeometryViewport(model, geometry: crop, name: "small crop and rotation 90°", viewportSize: viewport)
+        } else {
+            print("SKIP: HDR viewport checks require an HDR input via RAWLAB_TEST_HDR")
         }
     }
 }

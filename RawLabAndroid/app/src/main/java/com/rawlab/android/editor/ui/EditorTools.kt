@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
@@ -10,8 +12,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -53,18 +53,31 @@ internal val editorToolOrder = EditorAdjustmentGroup.entries.flatMap(EditorAdjus
 internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.string.exposure, R.string.highlights,
     R.string.shadows, R.string.contrast, R.string.curve_title, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
-    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze)
+    R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze,
+    R.string.hdr_peak_limit, R.string.hdr_sdr_exposure, R.string.hdr_sdr_contrast, R.string.hdr_sdr_saturation)
 
-internal val editorToolIcons: List<ImageVector> get() = listOf(Icons.Outlined.PhotoFilter, Icons.Outlined.Tune,
-    Icons.Outlined.Exposure, Icons.Outlined.WbSunny, Icons.Outlined.DarkMode, Icons.Outlined.Contrast,
-    Icons.Outlined.SsidChart, Icons.Outlined.WaterDrop, Icons.Outlined.Thermostat, Icons.Outlined.Palette,
-    Icons.Outlined.Deblur, Icons.Outlined.NoiseAware, Icons.Outlined.Circle, Icons.Outlined.Grain,
-    Icons.Outlined.ColorLens, Icons.Outlined.Layers, Icons.Outlined.CenterFocusStrong, Icons.Outlined.CropRotate, Icons.Filled.Circle, Icons.Outlined.RadioButtonUnchecked, Icons.Filled.WaterDrop, Icons.Outlined.Palette, Icons.Outlined.Tonality, Icons.Outlined.Cloud)
+internal val editorToolIcons: List<ImageVector> get() = listOf(AppIcons.Outlined.PhotoFilter, AppIcons.Outlined.Tune,
+    AppIcons.Outlined.Exposure, AppIcons.Outlined.WbSunny, AppIcons.Outlined.DarkMode, AppIcons.Outlined.Contrast,
+    AppIcons.Outlined.SsidChart, AppIcons.Outlined.WaterDrop, AppIcons.Outlined.Thermostat, AppIcons.Outlined.Palette,
+    AppIcons.Outlined.Deblur, AppIcons.Outlined.BlurOff, AppIcons.Outlined.Circle, AppIcons.Outlined.Grain,
+    AppIcons.Outlined.ColorLens, AppIcons.Outlined.Layers, AppIcons.Outlined.CenterFocusStrong, AppIcons.Outlined.CropRotate, AppIcons.Filled.Circle, AppIcons.Outlined.RadioButtonUnchecked, AppIcons.Filled.WaterDrop, AppIcons.Outlined.Palette, AppIcons.Outlined.Tonality, AppIcons.Outlined.Cloud,
+    AppIcons.Outlined.BrightnessHigh, AppIcons.Outlined.BrightnessMedium, AppIcons.Outlined.Brightness6, AppIcons.Outlined.Opacity)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
     val tint = if (edits.recipeID != null) 0f else shotTint ?: edits.tint
     return abs(edits.temperature - temperature) > .0001f || abs(edits.tint - tint) > .0001f
+}
+
+internal fun mobileEditorGroups(isHDREditing: Boolean) = listOf(EditorAdjustmentGroup.LOOKS, EditorAdjustmentGroup.LIGHT, EditorAdjustmentGroup.COLOR,
+    EditorAdjustmentGroup.DETAIL, EditorAdjustmentGroup.GEOMETRY, EditorAdjustmentGroup.EFFECTS) +
+    if (isHDREditing) listOf(EditorAdjustmentGroup.HDR_RENDITION) else emptyList()
+internal fun mobileEditorTools(group: EditorAdjustmentGroup): List<Int> = when (group) {
+    EditorAdjustmentGroup.LOOKS -> listOf(0, 15)
+    EditorAdjustmentGroup.LIGHT -> listOf(2, 5, 3, 4, 19, 18, 6)
+    EditorAdjustmentGroup.COLOR -> listOf(8, 20, 7, 14, 21)
+    EditorAdjustmentGroup.DETAIL -> listOf(10, 11)
+    else -> EditorAdjustmentRules.tools(group)
 }
 
 @Composable
@@ -83,7 +96,7 @@ internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int>
         items(entries, key = { it }) { index ->
             if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
-                Icon(Icons.Outlined.Transform, null, Modifier.size(18.dp))
+                Icon(AppIcons.Outlined.Transform, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
             } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
         }
@@ -98,11 +111,11 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
     val scalar = when (index) {
         1 -> Triple(edits.strength * 100f, 100f, 0f..200f)
-        2 -> Triple(edits.exposure, 0f, -4f..4f)
+        2 -> Triple(edits.exposure, 0f, if (edits.isHDREditing) -4f..4f else -5f..5f)
         3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
         4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
         5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
-        6 -> if (edits.editingCurve.isDefault) Triple(edits.editingCurveStrength * 100f, 0f, -100f..100f) else null
+        6 -> if (edits.editingCurve.mode == com.rawlab.android.settings.ToneCurveMode.LEGACY) Triple(edits.editingCurveStrength * 100f, 0f, -100f..100f) else null
         7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
         // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
@@ -112,13 +125,17 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         20 -> Triple(edits.editingVibrance, 0f, -100f..100f)
         22 -> Triple(edits.editingClarity, 0f, -100f..100f)
         23 -> Triple(edits.editingDehaze, 0f, -100f..100f)
+        24 -> Triple(edits.hdr?.renditionSettings?.peakLimitEV ?: 0f, 0f, 0f..6f)
+        25 -> Triple(edits.hdr?.renditionSettings?.sdrExposureEV ?: 0f, 0f, -4f..4f)
+        26 -> Triple(edits.hdr?.renditionSettings?.sdrContrast ?: 0f, 0f, -100f..100f)
+        27 -> Triple(edits.hdr?.renditionSettings?.sdrSaturation ?: 0f, 0f, -100f..100f)
         else -> null
     }
     val changed = EditorAdjustmentRules.isModified(EditorResetScope.Tool(index), edits, state.resetContext())
     val primary = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val color = if (selected) primary else muted
-    val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else 1f) }
+    val number = scalar?.let { formatAdjustment(it.first, if (index == 2) .05f else if (index == 24 || index == 25) .1f else 1f) }
     val title = stringResource(editorToolTitles[index])
     val status = stringResource(if (changed) R.string.hsl_adjusted else R.string.hsl_unadjusted)
     val valueDescription = if (index == 8) listOf(
@@ -127,25 +144,33 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
     val unavailableReason = when {
         state.edits.isHDREditing && !EditorAdjustmentRules.supportsHDR(index) -> stringResource(R.string.tool_unavailable_hdr)
         index == 16 && state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL -> stringResource(R.string.lens_input_unsupported)
-        index == 16 && !rawOnly -> stringResource(R.string.tool_raw_lens_only)
         index == 8 && !state.edits.isHDREditing && (!rawOnly || state.preview?.temperature?.isFinite() != true) -> stringResource(R.string.tool_white_balance_unavailable)
         else -> null
     }
     val selectable = Modifier.selectable(selected,
         enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || EditorAdjustmentRules.supportsHDR(index)) &&
             (index != 8 || rawOnly || state.edits.isHDREditing) &&
-            (index != 16 || rawOnly && !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
+            (index != 16 || !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(unavailableReason, valueDescription, status).joinToString(" · ")
     }
-    Row(selectable.heightIn(min = 48.dp).background(if (selected) primary.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(5.dp))
-        .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Icon(editorToolIcons[index], null, Modifier.size(18.dp).testTag("editor-tool-ring-$index"), tint = color)
-        Text(if (index == 17) stringResource(R.string.geometry_crop_tool) else title,
-            Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelMedium, color = color)
+    @Composable fun marker() {
         Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index").background(if (changed) primary else Color.Transparent, CircleShape))
     }
+    if (inlineLabels) Row(selectable.heightIn(min = 48.dp).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(editorToolIcons[index], null, Modifier.size(18.dp).testTag("editor-tool-ring-$index"), tint = color)
+        Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelMedium, color = color)
+        marker()
+    } else Column(selectable.fillMaxWidth().heightIn(min = if (LocalDensity.current.fontScale > 1.3f) 68.dp else 52.dp).padding(horizontal = 1.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Icon(editorToolIcons[index], null, Modifier.size(22.dp).testTag("editor-tool-ring-$index"), tint = color)
+        Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelSmall,
+            color = color, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        marker()
+    }
+
 
 }
 
@@ -156,6 +181,7 @@ internal fun groupTitle(group: EditorAdjustmentGroup): Int = when (group) {
     EditorAdjustmentGroup.EFFECTS -> R.string.editor_group_effects
     EditorAdjustmentGroup.DETAIL -> R.string.editor_group_detail
     EditorAdjustmentGroup.GEOMETRY -> R.string.editor_group_geometry
+    EditorAdjustmentGroup.HDR_RENDITION -> R.string.hdr_rendition
 }
 
 @Composable
@@ -164,7 +190,7 @@ internal fun EditorGroupStrip(state: EditorState, expanded: Boolean, tool: Int,
     navigationEnabled: Boolean = true, inlineLabels: Boolean = false, modifier: Modifier = Modifier, select: (EditorAdjustmentGroup) -> Unit) {
     LazyRow(modifier.fillMaxWidth().testTag("editor-groups"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-        items(EditorAdjustmentGroup.entries, key = { it.id }) { group ->
+        items(mobileEditorGroups(state.visibleEdits.isHDREditing), key = { it.id }) { group ->
             EditorGroupButton(state, group, expanded && EditorAdjustmentRules.groupFor(tool) == group,
                 Modifier.widthIn(min = 48.dp), compact = true, navigationEnabled = navigationEnabled, inlineLabels = true) { select(group) }
         }
@@ -183,7 +209,7 @@ private fun EditorGroupButton(state: EditorState, group: EditorAdjustmentGroup, 
         .testTag("editor-group-${group.id}").semantics(mergeDescendants = true) {
             contentDescription = title; stateDescription = status
         }
-    Box(selectable.heightIn(min = 48.dp).background(if (active) tint.copy(alpha = .12f) else Color.Transparent)
+    Box(selectable.heightIn(min = 48.dp)
         .padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, Modifier.testTag("editor-group-label-${group.id}"), style = MaterialTheme.typography.labelMedium, color = tint)

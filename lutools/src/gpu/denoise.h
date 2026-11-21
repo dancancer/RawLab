@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/photo_effects.h"
+#include "gpu/photo_gpu.h"
 #include "sony2fuji/processing_version.h"
 #include <algorithm>
 
@@ -23,6 +24,11 @@ inline int waveletEnergyWindow(int level, bool luminance, ProcessingVersion vers
 
 inline bool waveletUsesFirmThreshold(int level, bool luminance, ProcessingVersion version = ProcessingVersion::C5V2) {
     return version != ProcessingVersion::Legacy && !luminance && level >= 2 && level <= 4;
+}
+
+inline GpuRenderOutcome& lastGpuFilterOutcome() noexcept {
+    thread_local GpuRenderOutcome outcome{};
+    return outcome;
 }
 
 // Native backend filtering. A failed operation leaves caller output unchanged.

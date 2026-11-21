@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "ai/dualdn_geometry.h"
 #include "ai/noise_profile.h"
 #include "sony2fuji/raw_processor.h"
@@ -8,7 +9,7 @@
 #include <stdexcept>
 
 using namespace sony2fuji::ai;
-void require(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+using rawlab::test::require;
 template <typename Error, typename Function> void rejects(Function fn) {
     bool failed = false; try { fn(); } catch (const Error&) { failed = true; }
     require(failed, "expected rejection");

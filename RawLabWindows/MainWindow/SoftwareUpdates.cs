@@ -54,10 +54,10 @@ public partial class MainWindow
     }
     private void UpdateChanged(object? sender, PropertyChangedEventArgs args)
     {
-        var version=desktopUpdates.State.Phase==UpdatePhase.Available ? desktopUpdates.State.Release?.Version :
-            desktopUpdates.UnavailableReason!=null ? updates.Available?.Version : null;
-        UpdateNotice.Content=version==null ? "" : Loc.Format("RawLab {0} 已发布",version);
-        UpdateNotice.Visibility=version==null ? Visibility.Collapsed : Visibility.Visible;
+        var notice=UpdatePresentation.MainWindowNotice(desktopUpdates.Preferences,desktopUpdates.UnavailableReason);
+        UpdateNotice.Content=notice.ReleaseVersion!=null ? Loc.Format("RawLab {0} 已发布",notice.ReleaseVersion)
+            : notice.HasFailure ? Loc.Text("更新失败") : "";
+        UpdateNotice.Visibility=notice.Visible ? Visibility.Visible : Visibility.Collapsed;
         if(!closing)IsEnabled=true;
         EditorShell.IsEnabled=!UpdateInstallationActive;
         UpdateLockBanner.Visibility=UpdateInstallationActive ? Visibility.Visible : Visibility.Collapsed;
@@ -86,7 +86,7 @@ public partial class MainWindow
         PreserveUpdateNavigation();
         if(softwareUpdateWindow==null)
         {
-            softwareUpdateWindow=new(desktopUpdates,updates,settings){Owner=this};
+            softwareUpdateWindow=new(desktopUpdates,settings){Owner=this};
             softwareUpdateWindow.Closed+=(_,_)=>softwareUpdateWindow=null;
             softwareUpdateWindow.Show();
         }
@@ -96,7 +96,10 @@ public partial class MainWindow
     {
         if(updateQuitPending)return;
         updateQuitPending=true;
-        try { if(await desktopUpdates.PrepareForQuitAsync()){updateQuitApproved=true;Close();} }
+        try {
+            if(!await FlushSaveEditsAsync())return;
+            if(await desktopUpdates.PrepareForQuitAsync()){updateQuitApproved=true;Close();}
+        }
         finally { updateQuitPending=false; }
     }
 }

@@ -158,10 +158,10 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return CliAdapter(self.config, environment=merged)
 
     async def test_capabilities_negotiate_hdr_recipe_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15")
+        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16")
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
-        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15))
+        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export",
         ])
@@ -259,6 +259,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             (11, "1,2,3,4,5,6,8,9,10", "1,2,3,4,5,6,8,9,10,11"),
             (12, "1,2,3,4,5,6,8,9,10,11", "1,2,3,4,5,6,8,9,10,11,12"),
             (13, "1,2,3,4,5,6,8,9,10,11,12", "1,2,3,4,5,6,8,9,10,11,12,13"),
+            (14, "1,2,3,4,5,6,8,9,10,11,12,13", "1,2,3,4,5,6,8,9,10,11,12,13,14"),
+            (15, "1,2,3,4,5,6,8,9,10,11,12,13,14", "1,2,3,4,5,6,8,9,10,11,12,13,14,15"),
         ):
             with self.subTest(version=version):
                 destination = self.write_root / f"hdr-{version}.jpg"
@@ -286,6 +288,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                     look = self.input_path.with_suffix(".cube")
                     look.write_text("declared HDR fixture", encoding="utf-8")
                     document["edits"]["look"] = {"path": str(look), "sha256": "a" * 64, "strength": .8}
+                if version == 15:
+                    document["processing"]["version"] = 8
+                    document["edits"]["tone"]["curve"]["channels"] = {"red": {"mode": "custom", "points": [[0, 0], [.5, .7], [1, 1]]}}
                 self.recipe_path.write_text(json.dumps(document), encoding="utf-8")
                 old = self.adapter(FAKE_VERSIONS=legacy)
                 await old.start()
@@ -554,33 +559,34 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         await adapter.start()
         unsupported = OSError(errno.ENOTSUP, "operation unsupported")
-        copy_started = threading.Event()
+        loop = asyncio.get_running_loop()
+        copy_started = asyncio.Event()
         copy_finished = threading.Event()
         release = threading.Event()
         monitor_seen = asyncio.Event()
 
         def slow_copy(source, output):
-            copy_started.set()
+            loop.call_soon_threadsafe(copy_started.set)
+            # 超时只为错误的同步实现兜底；正常路径由事件循环确认后放行。
             release.wait(1)
             output.write(source.read())
             copy_finished.set()
 
         async def monitor_copy():
-            await asyncio.to_thread(copy_started.wait)
+            await copy_started.wait()
             if not copy_finished.is_set():
                 monitor_seen.set()
+            release.set()
 
         monitor = asyncio.create_task(monitor_copy())
-        release_timer = threading.Timer(0.2, release.set)
-        release_timer.start()
         try:
             with patch.object(adapter_module.os, "link", side_effect=unsupported), \
                     patch.object(adapter_module.shutil, "copyfileobj", side_effect=slow_copy):
                 result = await adapter.export_photo(self.recipe_path)
         finally:
             release.set()
-            release_timer.cancel()
-            await monitor
+            monitor.cancel()
+            await asyncio.gather(monitor, return_exceptions=True)
         self.assertTrue(result.ok, str(result.error))
         self.assertTrue(monitor_seen.is_set(), "fallback copy blocked the event loop")
 

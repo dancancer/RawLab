@@ -6,6 +6,8 @@ struct UpdateSessionStatus {
     var saveFailed = false
     var tasksRunning = false
     var journalFailed = false
+    var presetsFailed = false
+    var looksFailed = false
 }
 
 @MainActor final class UpdateInstallGate {
@@ -27,7 +29,8 @@ struct UpdateSessionStatus {
         Array(Set(active.flatMap { entry -> [String] in
             let value = entry.status()
             return [(value.draft, "draft"), (value.unsaved, "unsaved"), (value.saveFailed, "save"),
-                    (value.tasksRunning, "tasks"), (value.journalFailed, "journal")].compactMap { $0.0 ? $0.1 : nil }
+                    (value.tasksRunning, "tasks"), (value.journalFailed, "journal"),
+                    (value.presetsFailed, "presets"), (value.looksFailed, "looks")].compactMap { $0.0 ? $0.1 : nil }
         })).sorted()
     }
     func prepare() -> [String] {

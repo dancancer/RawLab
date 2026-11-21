@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -10,6 +11,9 @@ final class RawEditorViewModel: ObservableObject {
     }
 
     @Published var previewImage: UIImage?
+    @Published var detailOverlay: PhotoDetailOverlay?
+    @Published var detailTiles: [PhotoDetailOverlay] = []
+    @Published var detailBacking: PhotoDetailBacking?
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
@@ -25,12 +29,19 @@ final class RawEditorViewModel: ObservableObject {
         didSet {
             statusHasDiagnostics = false
             retryLegacyX3fImport = nil
+            resetUnusableImportRecord = nil
         }
     }
+    // Q3/Q4：粘贴提示（已翻译文案）。非阻塞：粘贴 Sheet 打开时由 Sheet 展示，否则由根视图横幅展示。
+    @Published var transferResultNotices: [String] = []
+    var hdrResourceNotice = HDRResourceNotice()
     @Published var statusHasDiagnostics = false
     @Published var retryLegacyX3fImport: ((@escaping (RawSettings) -> Void) -> Void)?
+    @Published var resetUnusableImportRecord: ((((RawSettings) -> Void)?) -> Void)?
     @Published var isBusy = false
     @Published var isExportingHDR = false
+    @Published var hdrExportProgress: Double? = nil
+    @Published var isStoppingHDRExport = false
     final class ExportCancellation {
         private let lock = NSLock()
         private var cancelled = false
@@ -38,7 +49,19 @@ final class RawEditorViewModel: ObservableObject {
         func cancel() { lock.lock(); cancelled = true; lock.unlock() }
     }
     var hdrExportCancellation: ExportCancellation?
-    func cancelHDRExport() { hdrExportCancellation?.cancel() }
+    func cancelHDRExport() {
+        if isExportingHDR {
+            isStoppingHDRExport = true
+        }
+        hdrExportCancellation?.cancel()
+    }
+    final class ImportCancellation {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
+    var activeImportCancellation: ImportCancellation?
     @Published var previewRendering = false
     @Published var previewResizePending = false
     @Published var previewFailed = false
@@ -65,6 +88,7 @@ final class RawEditorViewModel: ObservableObject {
     var basePreviewLens = LensCorrectionSettings()
     @Published var histogram: Sony2FujiProcessor.RGBHistogram? = nil
     @Published var baseHistogram: Sony2FujiProcessor.RGBHistogram? = nil
+    @Published var unreadableLooks: [LookLibrary.UnreadableLook] = []
     @Published var availableLUTs: [LUTOption] = []
     @Published var lookBrowser = LookBrowserState()
     @Published var recentLooks = RecentLooks()
@@ -145,10 +169,14 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceFile: PhotoSourceFile?
     @Published var sourceRevision = UUID() {
         didSet {
+            cancelProcessingMigration()
+            processingMigrationReceipt = nil
+            pendingResetMigrationClear = nil
             hslSourceRevision &+= 1
             acceptedPreviewRequest = nil
             completedPreviewCache.removeAll()
             completedPreviewCacheBytes = 0
+            fullRasterROIBuffer = nil
             closeQuickPresets()
         }
     }
@@ -157,6 +185,7 @@ final class RawEditorViewModel: ObservableObject {
         sourceKind == .raw && sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true
     }
     var sourceIdentity: PhotoIdentity?
+    @Published var importedPhotoRevision = UUID()
     @Published var sourceDisplayName: String?
     var restoredSettings: RawSettings?
     var pendingSettings: RawSettings?
@@ -166,6 +195,12 @@ final class RawEditorViewModel: ObservableObject {
     var persistedEditorSettings: PersistedEditorSettings?
     var failedDraftSource: EditorEditSource?
     var loadedEditRecord: PhotoEditRecord?
+    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<PhotoEditState>?
+    @Published var matchingProcessing = false
+    var processingMigrationCancellation: ProcessingMigrationCancellation?
+    var processingMigrationAttemptSource: UUID?
+    var pendingResetMigrationClear: (source: EditorEditSource, state: PhotoEditState, queued: Bool)?
+    static let processingMigrationQueue = DispatchQueue(label: "com.rawlab.processing-migration", qos: .utility)
     let batchSelection = IOSBatchSelection()
     @Published var collectionExportPreparing = false
     @Published var collectionExportFreezing = false
@@ -195,6 +230,7 @@ final class RawEditorViewModel: ObservableObject {
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
+    var fullRasterROIBuffer: Sony2FujiProcessor.Buffer?
     var latestRenderID = UUID()
     var activeImportRevision: UUID?
     let resultDelivery: (@escaping () -> Void) -> Void
@@ -202,24 +238,57 @@ final class RawEditorViewModel: ObservableObject {
     let importQueue: DispatchQueue
     let lookImportCoordinator: LookImportCoordinator
     var previewWorkItem: DispatchWorkItem?
+    var detailDebounceWorkItem: DispatchWorkItem?
+    var detailRenderToken = UUID()
+    var lastDetailRequest: PhotoDetailRequest?
+    var detailTileCache: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
+    var detailTileLRU: [PhotoDetailTileKey] = []
+    var detailTileCacheBytes: Int = 0
+    var detailTileFrameID: UUID?
+    let detailTileByteBudget = 112 * 1024 * 1024
+    let detailTileMaxCount = 36
+    let detailBackingMaxLongEdge = 3072
+    let fastMetalFullResMaxPixels = 28_000_000
+    var detailPrewarmEnabled = true
+    var detailNeedsBefore = false
+    var desiredDetailSpecs: [PhotoDetailTileSpec] = []
+    var desiredDetailKeys: Set<PhotoDetailTileKey> = []
+    var desiredDetailVisibleKeys: Set<PhotoDetailTileKey> = []
+    var desiredDetailRequiredKeys: Set<PhotoDetailTileKey> = []
+    var inFlightDetailTileKey: PhotoDetailTileKey?
+    var detailWorkerActive = false
+    var detailWorkerFrameID: UUID?
+    var detailBackingRenderedFrameID: UUID?
+    var detailPrewarmScheduledFrameID: UUID?
+    var detailMetalFullResFailedFrameID: UUID?
+    var detailNeedsBeforeLocked = false
+    var detailPrewarmPending = false
+    var detailBeforeBackingPending = false
+    var cachedDetailTileBeforeLocked: [PhotoDetailTileKey: Bool] = [:]
+    var detailTileAfterLocked: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
+    var detailDeliverySequence: UInt64 = 0
+    var pendingDetailDeliveryKeys: [PhotoDetailTileKey: (hasBefore: Bool, seq: UInt64)] = [:]
+    var hdrDetailCache: [PhotoDetailOverlay] = []
+    let hdrDetailMaxCount = 4
+    private var memoryWarningObserver: NSObjectProtocol?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
+    var onPreviewRequest: ((PreviewRequest, UUID) -> Void)?
+    var onViewportResize: ((Bool) -> Void)?
     var completedPreviewCache: [CompletedPreview] = []
     let completedPreviewCacheLimit = 3
     var completedPreviewCacheBytes = 0
     var previewLongEdge = 1280
     var requestedPreviewLongEdge = 1280
     var previewResizeWorkItem: DispatchWorkItem?
-    var currentPreviewSettings = RawSettings.default
-    let sampleResourceName = "sample"
-    let sampleResourceExtension = "ARW"
+    var currentPreviewSettings = RawSettings.default {
+        didSet { if oldValue != currentPreviewSettings { cancelProcessingMigration() } }
+    }
     let previewMaxDimension: CGFloat = 1280
     let interactivePreviewMaxDimension: CGFloat = 720
     let histogramDelay: TimeInterval = 0.25
     var lutMap: [String: LUTReference] = [:]
     var didStartLUTLoad = false
-    var rawLUTID: String?
-    var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
     var openEditPersistence: () throws -> EditPersistence = EditPersistence.appStore
@@ -237,8 +306,11 @@ final class RawEditorViewModel: ObservableObject {
         self.exportQueue = exportQueue
         self.importQueue = importQueue
         do {
-            let store = try editPersistence ?? EditPersistence.appStore()
+            let store = try editPersistence ?? openEditPersistence()
             self.editPersistence = store
+            if let quarantined = store.consumeQuarantinedError() {
+                ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+            }
             adjustmentSession = IOSAdjustmentTransferSession(store: store)
             recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
             recentLooks = RecentLooks.load(from: recentLooksURL!)
@@ -248,6 +320,27 @@ final class RawEditorViewModel: ObservableObject {
             ErrorDiagnostics.log(error, operation: .editPersistence, stage: "openStore")
             editSaveState = .failed(error.localizedDescription)
         }
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.clearDetailState(releaseRaster: true, keepRequest: true)
+            self.renderStateLock.lock()
+            self.detailPrewarmScheduledFrameID = self.acceptedPreviewFrameID
+            self.renderStateLock.unlock()
+            self.renderQueue.async { [weak self] in
+                self?.processor.clearHDRSessionCache()
+            }
+        }
+    }
+
+    deinit {
+        if let memoryWarningObserver {
+            NotificationCenter.default.removeObserver(memoryWarningObserver)
+        }
+        detailDebounceWorkItem?.cancel()
     }
 
 }

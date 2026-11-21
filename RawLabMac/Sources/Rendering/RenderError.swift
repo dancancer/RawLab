@@ -1,11 +1,15 @@
+import RawLabKit
 import Foundation
 
-enum RenderError: LocalizedError {
+enum RenderError: LocalizedError, BatchRenderError {
     case failed(String)
     case outputIO
     case aiNotReady(String)
     case aiFailed(String)
     case aiCancelled
+
+    var isAICancelled: Bool { if case .aiCancelled = self { return true }; return false }
+    var isOutputIO: Bool { if case .outputIO = self { return true }; return false }
 
     var errorDescription: String? {
         switch self {
@@ -30,17 +34,28 @@ enum RenderError: LocalizedError {
         }
     }
 
-    static func processing(_ status: sony2fuji_status, input: URL, look: URL?, output: URL?) -> RenderError {
+    static func processing(
+        _ status: sony2fuji_status,
+        input: URL? = nil,
+        look: URL? = nil,
+        output: URL? = nil,
+        session: OpaquePointer? = nil,
+        unsupportedReason: sony2fuji_unsupported_reason? = nil
+    ) -> RenderError {
         switch status {
         case SONY2FUJI_STATUS_OUTPUT_IO_ERROR:
             return .outputIO
         case SONY2FUJI_STATUS_IO_ERROR:
             return .failed(L10n.text("无法读取或写入文件，请检查路径和访问权限。"))
         case SONY2FUJI_STATUS_UNSUPPORTED:
+            let resolvedReason = unsupportedReason ?? session.map { sony2fuji_session_get_unsupported_reason($0) }
+            if resolvedReason == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+                return .failed(L10n.text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"))
+            }
             return .failed(L10n.text("不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。"))
         case SONY2FUJI_STATUS_INVALID_ARGUMENT:
             // 原生层仍负责拒绝覆盖；这里只区分覆盖保护和其他参数错误。
-            if let output, aliases(input, output) || look.map({ aliases($0, output) }) == true {
+            if let input, let output, aliases(input, output) || look.map({ aliases($0, output) }) == true {
                 return .failed(L10n.text("不能覆盖原始文件。"))
             }
             return .failed(L10n.text("参数或输出路径无效。"))
@@ -49,7 +64,7 @@ enum RenderError: LocalizedError {
         }
     }
 
-    private static func aliases(_ source: URL, _ destination: URL) -> Bool {
+    static func aliases(_ source: URL, _ destination: URL) -> Bool {
         if source.resolvingSymlinksInPath().standardizedFileURL == destination.resolvingSymlinksInPath().standardizedFileURL {
             return true
         }

@@ -9,9 +9,9 @@ static void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
 
-static std::vector<uint8_t> render(sony2fuji_session& session, sony2fuji_request& request) {
+static std::vector<uint8_t> render(sony2fuji_session* session, sony2fuji_request& request) {
     sony2fuji_buffer buffer{};
-    require(sony2fuji_process(&session, &request, &buffer) == SONY2FUJI_STATUS_OK, "ABI render failed");
+    require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_OK, "ABI render failed");
     const auto* bytes = static_cast<const uint8_t*>(buffer.data);
     std::vector<uint8_t> result(bytes, bytes + buffer.size_bytes);
     sony2fuji_release_buffer(&buffer);
@@ -41,10 +41,21 @@ static void inspect(const char* name, sony2fuji::ImageData image) {
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
     try {
-        sony2fuji_session session;
-        session.gpu_config.mode = sony2fuji::GpuMode::Off;
-        session.raw_exposure_mode = SONY2FUJI_EXPOSURE_PREVIEW;
-        session.viewport_preview = true;
+        struct SessionGuard {
+            sony2fuji_session* handle = nullptr;
+            ~SessionGuard() {
+                if (handle) sony2fuji_session_destroy(handle);
+            }
+        } guard;
+        require(sony2fuji_session_create(&guard.handle) == SONY2FUJI_STATUS_OK && guard.handle != nullptr,
+            "Session creation failed");
+        sony2fuji_session* session = guard.handle;
+        const sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+        require(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK, "GPU config failed");
+        require(sony2fuji_session_set_raw_exposure_mode(session, SONY2FUJI_EXPOSURE_PREVIEW) == SONY2FUJI_STATUS_OK,
+            "Exposure mode failed");
+        require(sony2fuji_session_set_viewport_preview(session, 1) == SONY2FUJI_STATUS_OK,
+            "Viewport preview failed");
         sony2fuji_request request{};
         request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = sizeof(request);
         request.input_type = SONY2FUJI_INPUT_RAW; request.input_path = argv[1];
@@ -56,22 +67,28 @@ int main(int argc, char** argv) {
         request.output_format = SONY2FUJI_OUTPUT_RGBA8;
         const auto off = render(session, request);
         sony2fuji_wavelet_denoise_config config{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(config), 1, 10, 72, 100};
-        const auto accepted = sony2fuji_session_set_wavelet_denoise(&session, &config);
+        const auto accepted = sony2fuji_session_set_wavelet_denoise(session, &config);
         require(accepted == SONY2FUJI_STATUS_OK, "Clean configuration rejected");
         const auto clean = render(session, request);
         size_t changed = 0;
         require(off.size() == clean.size(), "Output sizes differ");
         for (size_t i = 0; i < off.size(); ++i) changed += off[i] != clean[i];
-        const auto cache = sony2fuji::waveletCacheDiagnostics(&session);
+        const auto cache = sony2fuji::waveletCacheDiagnostics(session);
         std::cout << "ABI accepted=" << accepted << " changedBytes=" << changed << " filterRuns=" << cache.filterRuns
             << " outputHits=" << cache.outputHits << " analysisHits=" << cache.analysisHits << std::endl;
-        uint32_t width = 0, height = 0;
-        require(computeTargetSize(request, session.raw_cache.width, session.raw_cache.height, &width, &height) == SONY2FUJI_STATUS_OK,
-            "Viewport size failed");
-        const double scale=std::min({1.0, double(session.raw_cache.width)/width, double(session.raw_cache.height)/height});
-        width=std::max(1u,static_cast<uint32_t>(std::lround(width*scale)));
-        height=std::max(1u,static_cast<uint32_t>(std::lround(height*scale)));
-        auto viewport = resizeBilinear(session.raw_cache, width, height);
+        sony2fuji::ImageData viewport;
+        {
+            SessionLease lease;
+            require(SessionLease::acquire(session, lease), "Session lease failed");
+            const auto& rawCache = lease.constRaw()->raw_cache;
+            uint32_t width = 0, height = 0;
+            require(computeTargetSize(request, rawCache.width, rawCache.height, &width, &height) == SONY2FUJI_STATUS_OK,
+                "Viewport size failed");
+            const double scale=std::min({1.0, double(rawCache.width)/width, double(rawCache.height)/height});
+            width=std::max(1u,static_cast<uint32_t>(std::lround(width*scale)));
+            height=std::max(1u,static_cast<uint32_t>(std::lround(height*scale)));
+            viewport = resizeBilinear(rawCache, width, height);
+        }
         require(sony2fuji::ColorConverter().convertImage(viewport, sony2fuji::ColorSpace::AdobeRGB,
             sony2fuji::ColorSpace::sRGB) == sony2fuji::ErrorCode::Success, "Color conversion failed");
         inspect("raw-viewport", std::move(viewport));
@@ -79,6 +96,8 @@ int main(int argc, char** argv) {
         std::mt19937 random(42); std::normal_distribution<float> noise(.18f, .016f);
         for (auto& pixel : synthetic.pixels) pixel = {noise(random), noise(random), noise(random)};
         inspect("synthetic", std::move(synthetic));
+        guard.handle = nullptr;
+        require(sony2fuji_session_destroy(session) == SONY2FUJI_STATUS_OK, "Session destroy failed");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << std::endl;

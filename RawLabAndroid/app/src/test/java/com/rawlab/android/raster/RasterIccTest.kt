@@ -22,24 +22,38 @@ class RasterIccTest {
     }
 
     @Test
-    fun png16RejectsLutTransformsEvenWhenMatrixTrcFallbackExists() {
+    fun png16AcceptsLutTransformsAndExtractsProfileBytes() {
+        val pureA2b0 = pureLutIccProfile()
+        val pure8 = RasterContainerValidator.inspect(pngWithIccp(pureA2b0, depth = 8))
+        val pure16 = RasterContainerValidator.inspect(pngWithIccp(pureA2b0, depth = 16))
+        assertTrue("8-bit pure A2B0 LUT ICC must be accepted", pure8.isValid)
+        assertTrue("16-bit pure A2B0 LUT ICC must be accepted", pure16.isValid)
+        assertTrue(pure16.info?.hasColorProfile == true)
+        assertTrue("16-bit PNG inspection must retain uncompressed ICC bytes for lcms2",
+            pure16.info?.iccProfile?.contentEquals(pureA2b0) == true)
+
         val signatures = (0..2).flatMap { listOf("A2B$it", "B2A$it") } +
             (0..3).flatMap { listOf("D2B$it", "B2D$it") }
         for (signature in signatures) {
             val profile = syntheticIccProfile(displayP3 = true, transformTag = signature)
-            assertTrue("8-bit profile behavior must remain compatible: $signature",
-                RasterContainerValidator.inspect(pngWithIccp(profile)).isValid)
-            assertFalse("PNG16 cannot apply $signature exactly",
+            assertTrue("8-bit LUT tag $signature must be accepted",
+                RasterContainerValidator.inspect(pngWithIccp(profile, depth = 8)).isValid)
+            assertTrue("16-bit LUT tag $signature must be accepted",
                 RasterContainerValidator.inspect(pngWithIccp(profile, depth = 16)).isValid)
         }
-        assertTrue(RasterContainerValidator.inspect(pngWithIccp(syntheticIccProfile(true), depth = 16)).isValid)
+
+        val malformedLut = syntheticIccProfile(displayP3 = true, rawTransformTag = "A2B0" to ("mAB ".toByteArray() + ByteArray(28)))
+        assertFalse("Malformed 0-channel mAB LUT tag must be rejected",
+            RasterContainerValidator.inspect(pngWithIccp(malformedLut, depth = 16)).isValid)
     }
 
     @Test
-    fun png16RejectsSampledCurvesThatColorSpaceWouldApproximate() {
+    fun png16AcceptsSampledCurvesForNativeLcms2() {
         val profile = syntheticIccProfile(displayP3 = true, sampledCurve = true)
-        assertTrue(RasterContainerValidator.inspect(pngWithIccp(profile)).isValid)
-        assertFalse(RasterContainerValidator.inspect(pngWithIccp(profile, depth = 16)).isValid)
+        assertTrue(RasterContainerValidator.inspect(pngWithIccp(profile, depth = 8)).isValid)
+        val png16 = RasterContainerValidator.inspect(pngWithIccp(profile, depth = 16))
+        assertTrue(png16.isValid)
+        assertTrue(png16.info?.iccProfile?.contentEquals(profile) == true)
     }
 
     @Test
@@ -180,12 +194,15 @@ class RasterIccTest {
         ICC_PROFILE_PREFIX + byteArrayOf(sequence.toByte(), total.toByte()) + payload
 
     private fun syntheticIccProfile(displayP3: Boolean, extraTags: Int = 0, curveType: Int = 3,
-        transformTag: String? = null, sampledCurve: Boolean = false): ByteArray {
+        transformTag: String? = null, sampledCurve: Boolean = false,
+        rawTransformTag: Pair<String, ByteArray>? = null): ByteArray {
         val curve = if (sampledCurve) ByteArray(18).also {
             "curv".toByteArray().copyInto(it)
             writeU32(it, 8, 3)
             it[14] = 0x40; it[16] = 0xff.toByte(); it[17] = 0xff.toByte()
         } else parametricCurveTag(curveType)
+        val lutTag = transformTag?.let { Tag(it, validLutTagBytes(it)) }
+            ?: rawTransformTag?.let { (sig, bytes) -> Tag(sig, bytes) }
         val tags = listOf(
             Tag("rXYZ", xyzTag(if (displayP3) 0.5151 else 0.4361, if (displayP3) 0.2412 else 0.2225,
                 if (displayP3) -0.0011 else 0.0139)),
@@ -197,8 +214,39 @@ class RasterIccTest {
             Tag("rTRC", curve),
             Tag("gTRC", curve),
             Tag("bTRC", curve),
-        ) + listOfNotNull(transformTag?.let { Tag(it, "mAB ".toByteArray() + ByteArray(28)) }) +
+        ) + listOfNotNull(lutTag) +
             (0 until extraTags).map { Tag("x" + it.toString().padStart(3, '0'), xyzTag(0.5, 0.5, 0.5)) }
+        return assembleIccProfile(tags)
+    }
+
+    private fun pureLutIccProfile(): ByteArray = assembleIccProfile(
+        listOf(
+            Tag("wtpt", xyzTag(0.9642, 1.0, 0.8249)),
+            Tag("A2B0", validLutTagBytes("A2B0")),
+            Tag("B2A0", validLutTagBytes("B2A0")),
+        ),
+    )
+
+    private fun validLutTagBytes(signature: String): ByteArray = when {
+        signature.startsWith("A2B") || signature.startsWith("B2A") -> {
+            val sig = if (signature.startsWith("B2A")) "mBA " else "mAB "
+            val bCurves = ByteArray(36).also { curves ->
+                for (c in 0..2) "curv".toByteArray(StandardCharsets.US_ASCII).copyInto(curves, c * 12)
+            }
+            ByteArray(32 + bCurves.size).also { bytes ->
+                sig.toByteArray(StandardCharsets.US_ASCII).copyInto(bytes, 0)
+                bytes[8] = 3; bytes[9] = 3
+                writeU32(bytes, 12, 32)
+                bCurves.copyInto(bytes, 32)
+            }
+        }
+        else -> ByteArray(16).also { bytes ->
+            "mpet".toByteArray(StandardCharsets.US_ASCII).copyInto(bytes, 0)
+            bytes[9] = 3; bytes[11] = 3
+        }
+    }
+
+    private fun assembleIccProfile(tags: List<Tag>): ByteArray {
         val tableEnd = 132 + tags.size * 12
         val totalSize = tableEnd + tags.sumOf { it.data.size }
         val profile = ByteArray(totalSize)

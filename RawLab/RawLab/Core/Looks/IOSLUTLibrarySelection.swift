@@ -4,6 +4,7 @@ import Combine
 final class IOSLUTLibraryPhoto {
     private let source: PhotoImportSource
     var name: String { source.displayName }
+    var fileURL: URL { source.url }
     init(_ source: PhotoImportSource) { self.source = source }
     func copy(to destination: URL) throws { try FileManager.default.copyItem(at: source.url, to: destination) }
     deinit { PhotoImportFile.release(source.url) }

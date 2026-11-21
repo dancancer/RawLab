@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/dcp_look.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <algorithm>
@@ -18,13 +19,7 @@ namespace fs = std::filesystem;
 using sony2fuji::DcpLook;
 using sony2fuji::RGB;
 using Bytes = std::vector<unsigned char>;
-int failures = 0;
-
-void check(bool ok, const char* label) {
-    std::cout << (ok ? "PASS " : "FAIL ") << label << '\n';
-    if (!ok) ++failures;
-}
-
+using rawlab::test::checkPass;
 void integer(Bytes& bytes, uint64_t value, size_t count) {
     for (size_t i = 0; i < count; ++i) bytes.push_back(static_cast<unsigned char>(value >> (i * 8)));
 }
@@ -72,65 +67,106 @@ void save(const fs::path& path, const Bytes& bytes) {
     stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
+void replaceKeepingMtime(const fs::path& path, const Bytes& bytes) {
+    const auto modified = fs::last_write_time(path);
+    auto staging = path;
+    staging += ".tmp";
+    save(staging, bytes);
+    fs::last_write_time(staging, modified);
+    // Match staged look imports without depending on ctime clock granularity.
+    fs::rename(staging, path);
+}
+
 double encode(double x) { return x <= .0031308 ? 12.92 * x : 1.055 * std::pow(x, 1 / 2.4) - .055; }
 bool near(float actual, double expected) { return std::abs(actual - expected) <= 2e-6; }
 
+void cacheTests(const fs::path& root) {
+    const auto path = root / "cache-a.rlook", alternatePath = root / "cache-b.rlook";
+    save(path, fixture());
+    save(alternatePath, fixture(120));
+    const auto first = DcpLook::loadCached(path.u8string());
+    const auto alternate = DcpLook::loadCached(alternatePath.u8string());
+    checkPass(first && alternate, "load A/B native profiles");
+    for (int i = 0; i < 3; ++i) {
+        checkPass(first && first == DcpLook::loadCached(path.u8string()), "alternating A/B retains A parsed object");
+        checkPass(alternate && alternate == DcpLook::loadCached(alternatePath.u8string()),
+              "alternating A/B retains B parsed object");
+    }
+    const auto beforeRewrite = DcpLook::loadCached(path.u8string());
+    replaceKeepingMtime(path, fixture(120));
+    const auto rewritten = DcpLook::loadCached(path.u8string());
+    checkPass(rewritten && rewritten != beforeRewrite, "same-size rewrite with restored mtime invalidates cache");
+    checkPass(rewritten && near(rewritten->apply(RGB(.5f, 0, 0)).g, encode(.5)), "rewrite changes rendered color");
+    checkPass(first && near(first->apply(RGB(.5f, 0, 0)).r, encode(.5)), "retained pre-rewrite profile stays immutable");
+    auto invalid = fixture();
+    invalid[8] = 3;
+    replaceKeepingMtime(path, invalid);
+    checkPass(!DcpLook::loadCached(path.u8string()), "invalid rewritten version cannot return stale cached profile");
+    replaceKeepingMtime(path, fixture());
+    const auto repaired = DcpLook::loadCached(path.u8string());
+    checkPass(repaired && near(repaired->apply(RGB(.5f, 0, 0)).r, encode(.5)), "valid profile recovers after rejected rewrite");
+}
+
 void mathTests(const fs::path& root) {
+    cacheTests(root);
     const auto path = root / "identity.rlook";
     save(path, fixture());
     auto look = DcpLook::loadCached(path.u8string());
-    check(look != nullptr, "load native profile");
+    checkPass(look != nullptr, "load native profile");
     if (!look) return;
     sony2fuji_look_format format = SONY2FUJI_LOOK_UNKNOWN;
     uint32_t version = 0;
-    check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
+    checkPass(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
           format == SONY2FUJI_LOOK_RLOOK && version == 1,
           "native look import reports v1 without a RAW or GPU");
-    check(sony2fuji_validate_look(path.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_OK,
+    checkPass(sony2fuji_inspect_lut_color(path.u8string().c_str()) == SONY2FUJI_LUT_LEGACY_DECLARATION,
+          "valid native rlook reports legacy/direct color state instead of unreadable");
+    checkPass(sony2fuji_validate_look(path.u8string().c_str(), nullptr, nullptr) == SONY2FUJI_STATUS_OK,
           "native look validation allows optional information outputs");
-    check(look == DcpLook::loadCached(path.u8string()), "immutable native profile cache hit");
+    checkPass(look == DcpLook::loadCached(path.u8string()), "immutable native profile cache hit");
     const auto identity = look->apply(RGB(.18f, .3f, .6f));
-    check(near(identity.r, encode(.18f)) && near(identity.g, encode(.3f)) && near(identity.b, encode(.6f)),
+    checkPass(near(identity.r, encode(.18f)) && near(identity.g, encode(.3f)) && near(identity.b, encode(.6f)),
           "identity stages and output transfer");
     const auto clipped = look->apply(RGB(-1, 2, 0));
-    check(clipped.r == 0 && clipped.g == 1 && clipped.b == 0, "SDR stage clamp");
+    checkPass(clipped.r == 0 && clipped.g == 1 && clipped.b == 0, "SDR stage clamp");
     auto changed = fixture(120);
-    save(path, changed);
-    fs::last_write_time(path, fs::last_write_time(path) + std::chrono::seconds(2));
+    replaceKeepingMtime(path, changed);
     auto rotated = DcpLook::loadCached(path.u8string());
-    check(rotated && rotated != look, "changed profile invalidates cache");
+    checkPass(rotated && rotated != look, "same-size rewrite with restored mtime invalidates cache");
     if (rotated) {
         auto value = rotated->apply(RGB(.5f, 0, 0));
-        check(near(value.r, 0) && near(value.g, encode(.5)) && near(value.b, 0), "hue shift uses degrees");
+        checkPass(near(value.r, 0) && near(value.g, encode(.5)) && near(value.b, 0), "hue shift uses degrees");
     }
-    check(near(look->apply(RGB(.5f, 0, 0)).r, encode(.5)), "retained cached profile remains immutable");
+    checkPass(near(look->apply(RGB(.5f, 0, 0)).r, encode(.5)), "retained cached profile remains immutable");
     const auto encodedPath = root / "encoded.rlook";
     save(encodedPath, fixture(0, .5f, 1));
     auto encoded = DcpLook::loadCached(encodedPath.u8string());
-    check(encoded && near(encoded->apply(RGB(.25f, 0, 0)).r, encode(.25) * .5), "value scale in encoded domain");
+    checkPass(encoded && near(encoded->apply(RGB(.25f, 0, 0)).r, encode(.25) * .5), "value scale in encoded domain");
     const auto tonePath = root / "tone.rlook";
     save(tonePath, fixture(0, 1, 0, true));
     auto tone = DcpLook::loadCached(tonePath.u8string());
     if (tone) {
         auto value = tone->apply(RGB(.75f, .5f, .25f));
-        check(near(value.r, encode(.5625)) && near(value.g, encode(.3125)) && near(value.b, encode(.0625)),
+        checkPass(near(value.r, encode(.5625)) && near(value.g, encode(.3125)) && near(value.b, encode(.0625)),
               "tone preserves middle channel position");
-    } else check(false, "load tone profile");
+    } else checkPass(false, "load tone profile");
     const auto wrapPath = root / "wrap.rlook";
     save(wrapPath, fixture(-1e-17f));
     auto wrapped = DcpLook::loadCached(wrapPath.u8string());
-    check(wrapped && near(wrapped->apply(RGB(.5f, 0, 0)).r, encode(.5)), "tiny negative hue wraps safely");
+    checkPass(wrapped && near(wrapped->apply(RGB(.5f, 0, 0)).r, encode(.5)), "tiny negative hue wraps safely");
     for (bool withLook : {false, true}) {
         const auto v2path = root / (withLook ? "v2-both.rlook" : "v2-calibration.rlook");
         save(v2path, fixtureV2(withLook));
         auto v2 = DcpLook::loadCached(v2path.u8string());
-        check(v2 != nullptr, "load native v2 calibration stages");
-        check(sony2fuji_validate_look(v2path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
+        checkPass(v2 != nullptr, "load native v2 calibration stages");
+        checkPass(sony2fuji_validate_look(v2path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_OK &&
               format == SONY2FUJI_LOOK_RLOOK && version == 2,
               "native look import preserves v2 with either table layout");
+        checkPass(sony2fuji_inspect_lut_color(v2path.u8string().c_str()) == SONY2FUJI_LUT_LEGACY_DECLARATION,
+              "valid native v2 rlook reports legacy/direct color state");
         if (v2) {
             const auto result = v2->apply(RGB(.5f, 0, 0));
-            check(near(result.r, 0) && near(withLook ? result.b : result.g, encode(.5)),
+            checkPass(near(result.r, 0) && near(withLook ? result.b : result.g, encode(.5)),
                   "v2 applies HSM and optional look exactly once");
         }
     }
@@ -166,12 +202,14 @@ void malformedTests(const fs::path& root) {
     for (size_t i = 0; i < cases.size(); ++i) {
         const auto path = root / ("invalid-" + std::to_string(i) + ".rlook");
         save(path, cases[i]);
-        check(!DcpLook::loadCached(path.u8string()), "reject malformed native profile");
+        checkPass(!DcpLook::loadCached(path.u8string()), "reject malformed native profile");
         sony2fuji_look_format format = SONY2FUJI_LOOK_RLOOK;
         uint32_t version = 1;
-        check(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_UNSUPPORTED &&
+        checkPass(sony2fuji_validate_look(path.u8string().c_str(), &format, &version) == SONY2FUJI_STATUS_UNSUPPORTED &&
               format == SONY2FUJI_LOOK_UNKNOWN && version == 0,
               "native look import fully validates all profile stages before accepting");
+        checkPass(sony2fuji_inspect_lut_color(path.u8string().c_str()) == SONY2FUJI_LUT_UNREADABLE,
+              "malformed native rlook reports unreadable color state");
     }
 }
 
@@ -190,14 +228,14 @@ void photoTests(const fs::path& root) {
     request.brightness = request.contrast = request.saturation = 1;
     request.temperature = 6500; request.lut_path = path.c_str(); request.lut_strength = 1;
     sony2fuji_session* session = nullptr;
-    check(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "create PHOTO session");
+    checkPass(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "create PHOTO session");
     if (!session) return;
     sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(sony2fuji_gpu_config), SONY2FUJI_GPU_OFF};
     sony2fuji_session_set_gpu_config(session, &config);
     auto render = [&](const char* label, std::array<unsigned char, 3>& result) {
         sony2fuji_buffer output{};
         const auto status = sony2fuji_process(session, &request, &output);
-        check(status == SONY2FUJI_STATUS_OK, label);
+        checkPass(status == SONY2FUJI_STATUS_OK, label);
         if (status == SONY2FUJI_STATUS_OK && output.data) std::memcpy(result.data(), output.data, 3);
         sony2fuji_release_buffer(&output);
         return status == SONY2FUJI_STATUS_OK;
@@ -206,34 +244,39 @@ void photoTests(const fs::path& root) {
     const bool cpuOk = render("PHOTO accepts compiled DCP", cpu);
     if (cpuOk) {
         for (int c = 0; c < 3; ++c)
-            check(std::abs(cpu[c] - std::lround(encode(pixels[c] / 255.0f) * 255)) <= 1, "PHOTO skips RGB CUBE and double tone");
+            checkPass(std::abs(cpu[c] - std::lround(encode(pixels[c] / 255.0f) * 255)) <= 1, "PHOTO skips RGB CUBE and double tone");
     }
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);
     const bool autoOk = render("PHOTO Auto renders compiled DCP", automatic);
-    check(cpuOk && autoOk && cpu == automatic, "PHOTO Auto preserves native look output");
+    checkPass(cpuOk && autoOk && cpu == automatic, "PHOTO Auto preserves native look output");
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
     sony2fuji_buffer output{};
     const auto forced = sony2fuji_process(session, &request, &output);
-    check(forced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
+#ifdef SONY2FUJI_ENABLE_METAL
+    checkPass(forced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
           (forced == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL),
           "PHOTO Force either uses Metal or fails explicitly");
+#else
+    checkPass(forced == SONY2FUJI_STATUS_UNSUPPORTED,
+          "PHOTO Force returns UNSUPPORTED without a Metal DCP backend");
+#endif
     sony2fuji_release_buffer(&output);
     config.mode = SONY2FUJI_GPU_OFF; sony2fuji_session_set_gpu_config(session, &config);
     request.exposure_ev = 1;
     if (render("PHOTO exposure before native look", exposed))
         for (int c = 0; c < 3; ++c)
-            check(std::abs(exposed[c] - std::lround(encode(pixels[c] / 255.0f * 2) * 255)) <= 1,
+            checkPass(std::abs(exposed[c] - std::lround(encode(pixels[c] / 255.0f * 2) * 255)) <= 1,
                   "PHOTO linear exposure applied once");
     request.exposure_ev = 0; request.lut_strength = 0; request.lut_path = "missing.rlook";
     render("PHOTO zero strength bypasses native file loading", neutral);
     request.lut_path = path.c_str(); request.lut_strength = .4f;
     if (render("PHOTO native strength blend", blended))
         for (int c = 0; c < 3; ++c)
-            check(std::abs(blended[c] - std::lround(neutral[c] + .4 * (cpu[c] - neutral[c]))) <= 1,
+            checkPass(std::abs(blended[c] - std::lround(neutral[c] + .4 * (cpu[c] - neutral[c]))) <= 1,
                   "PHOTO blends in display RGB");
     request.lut_strength = 1; request.input_is_linear = 0;
     if (render("PHOTO display input is linearized", cpu))
-        check(std::equal(cpu.begin(), cpu.end(), std::begin(pixels)), "PHOTO identity native stages preserve display input");
+        checkPass(std::equal(cpu.begin(), cpu.end(), std::begin(pixels)), "PHOTO identity native stages preserve display input");
     auto extreme = fixture();
     Bytes number; floating(number, 1e38);
     std::copy(number.begin(), number.end(), extreme.begin() + 40);
@@ -244,15 +287,19 @@ void photoTests(const fs::path& root) {
     request.lut_path = extremePath.c_str();
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);
     render("PHOTO Auto handles FP32 overflow via precise CPU", automatic);
-    check(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite Metal stage cannot report success");
+    checkPass(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite Metal stage cannot report success");
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
-    check(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force rejects nonfinite Metal stage");
+#ifdef SONY2FUJI_ENABLE_METAL
+    checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force rejects nonfinite Metal stage");
+#else
+    checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED, "Force returns UNSUPPORTED for rlook without Metal");
+#endif
     sony2fuji_release_buffer(&output);
     request.lut_path = path.c_str();
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);
     render("valid profile recovers after nonfinite GPU stage", automatic);
-    check(std::equal(automatic.begin(), automatic.end(), std::begin(pixels)), "failed GPU output does not leak into next render");
-    check(forced != SONY2FUJI_STATUS_OK || sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL,
+    checkPass(std::equal(automatic.begin(), automatic.end(), std::begin(pixels)), "failed GPU output does not leak into next render");
+    checkPass(forced != SONY2FUJI_STATUS_OK || sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL,
           "valid native profile can use Metal again after fallback");
     sony2fuji_session_destroy(session);
 }
@@ -260,11 +307,12 @@ void photoTests(const fs::path& root) {
 #ifdef SONY2FUJI_ENABLE_METAL
 bool metal(const std::shared_ptr<const DcpLook>& look, const sony2fuji::ImageData& input, sony2fuji::ImageData& output,
            const sony2fuji::PhotoEffectsOptions& effects = {}, const sony2fuji::HslOptions& hsl = {}) {
-    sony2fuji_request request{};
-    request.brightness = request.contrast = request.saturation = request.lut_strength = 1;
-    request.temperature = 6500;
-    return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, request, nullptr, RGB(1, 1, 1),
-                                     input.width, input.height, output, look, effects, 0, false, hsl);
+    sony2fuji::RenderParams params;
+    params.dcp = look;
+    params.effects = effects;
+    params.hsl = hsl;
+    return sony2fuji::renderPhotoMetal(input, sony2fuji::ColorSpace::sRGB, params,
+                                     input.width, input.height, output);
 }
 
 void metalTests(const fs::path& root) {
@@ -278,7 +326,7 @@ void metalTests(const fs::path& root) {
         fs::last_write_time(path, fs::last_write_time(path) + std::chrono::seconds(2));
         auto look = DcpLook::loadCached(path.u8string());
         const bool rendered = look && metal(look, input, output);
-        check(rendered, "native stages execute on actual Metal");
+        checkPass(rendered, "native stages execute on actual Metal");
         if (!rendered) continue;
         double maximum = 0;
         for (size_t i = 0; i < input.pixels.size(); ++i) {
@@ -287,27 +335,27 @@ void metalTests(const fs::path& root) {
             maximum = std::max({maximum, double(std::abs(expected.r - actual.r)),
                                 double(std::abs(expected.g - actual.g)), double(std::abs(expected.b - actual.b))});
         }
-        check(maximum <= 5e-5, "native Metal synthetic parity within 5e-5");
+        checkPass(maximum <= 5e-5, "native Metal synthetic parity within 5e-5");
         if (first.empty()) first = output.pixels;
         else {
             bool changed = false;
             for (size_t i = 0; i < first.size(); ++i)
                 changed |= std::abs(first[i].r - output.pixels[i].r) + std::abs(first[i].g - output.pixels[i].g) > .1f;
-            check(changed, "native Metal cache uses updated stage data");
+            checkPass(changed, "native Metal cache uses updated stage data");
         }
         sony2fuji::PhotoEffectsOptions effects;
         effects.vignetteAmount = -50; effects.grainAmount = 80;
         const auto gpuProfile = output;
         auto expectedEffects = output;
         sony2fuji::applyPhotoEffects(expectedEffects, effects);
-        check(metal(look, input, output, effects), "DCP and photo effects execute together on Metal");
+        checkPass(metal(look, input, output, effects), "DCP and photo effects execute together on Metal");
         maximum = 0;
         for (size_t i = 0; i < output.pixels.size(); ++i) {
             const auto a = output.pixels[i], b = expectedEffects.pixels[i];
             maximum = std::max({maximum, double(std::abs(a.r - b.r)),
                                 double(std::abs(a.g - b.g)), double(std::abs(a.b - b.b))});
         }
-        check(maximum <= 5e-5, "DCP effects follow profile stages with CPU-equivalent pixels");
+        checkPass(maximum <= 5e-5, "DCP effects follow profile stages with CPU-equivalent pixels");
         sony2fuji::HslOptions hsl;
         hsl.hue[0] = 70; hsl.saturation[5] = -60; hsl.lightness[7] = 20;
         auto expectedHsl = sony2fuji::ImageData(input.width, input.height);
@@ -317,7 +365,7 @@ void metalTests(const fs::path& root) {
         auto stageReference = gpuProfile;
         sony2fuji::applyHsl(stageReference, hsl);
         sony2fuji::applyPhotoEffects(stageReference, effects);
-        check(metal(look, input, output, effects, hsl), "DCP, HSL and effects execute together on Metal");
+        checkPass(metal(look, input, output, effects, hsl), "DCP, HSL and effects execute together on Metal");
         maximum = 0;
         double stageMaximum = 0;
         for (size_t i = 0; i < output.pixels.size(); ++i) {
@@ -329,9 +377,9 @@ void metalTests(const fs::path& root) {
                                     double(std::abs(a.g - reference.g)), double(std::abs(a.b - reference.b))});
         }
         std::cout << "DCP HSL max float difference=" << maximum << " stage=" << stageMaximum << '\n';
-        check(stageMaximum <= 5e-5, "Metal HSL/effects stages match their CPU reference");
+        checkPass(stageMaximum <= 5e-5, "Metal HSL/effects stages match their CPU reference");
         // Float DCP rounding propagates through the nonlinear HSL stage.
-        check(maximum <= 1e-4, "DCP HSL precedes effects within the combined float tolerance");
+        checkPass(maximum <= 1e-4, "DCP HSL precedes effects within the combined float tolerance");
     }
 }
 #endif
@@ -375,12 +423,12 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "--metal") {
         metalTests(root);
         fs::remove_all(root);
-        return failures ? 1 : 0;
+        return rawlab::test::exitCode();
     }
 #endif
     mathTests(root);
     malformedTests(root);
     photoTests(root);
     fs::remove_all(root);
-    return failures ? 1 : 0;
+    return rawlab::test::exitCode();
 }

@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
@@ -127,6 +128,6 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
         guard next != value else { return }
         onEditingChanged(true)
         guard canChange() else { onCancelled(); return }
-        value = next; onEditingChanged(false)
+        value = value.replacing(.rgb, with: next.master); onEditingChanged(false)
     }
 }

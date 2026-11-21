@@ -37,8 +37,10 @@ internal class BatchOutputPublisher(
     fun render(target: BatchTarget, settings: EditSettings): File {
         val format = job.formatFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
+            .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         try {
-            val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile, target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
+            val hdrInfo = NativeHDRBridge.probeSource(target.sourceFile,
+                target.inputKind == com.rawlab.android.format.PhotoInputKind.RAW, settings.processing.version)
             if (settings.isHDREditing) {
                 requireNotNull(hdrInfo) { "HDR editing requires an HDR source" }
                 val edge = job.longEdgeFor(target) ?: 0
@@ -56,7 +58,7 @@ internal class BatchOutputPublisher(
                 }
                 val source = if (hdrInfo.isCameraRaw) processor.decodeHDRCamera(target.sourceFile, hdrInfo, 0, generation,
                     requireNotNull(settings.hdr).cameraSettings, storage.hdrCameraProfileDirectory)
-                    else NativeHDRBridge.decode(target.sourceFile, hdrInfo, 0)
+                    else NativeHDRBridge.decode(target.sourceFile, hdrInfo, 0, processor.sessionHandle(), generation)
                 val rendered = try {
                     processor.setGpuMode(NativeProcessor.CPU)
                     processor.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), edge, generation,
@@ -65,13 +67,15 @@ internal class BatchOutputPublisher(
                 try {
                     val metadata = target.sourceFile.takeUnless { hdrInfo.isCameraRaw && !hdrInfo.isProRAW }
                     if (format == com.rawlab.android.format.ExportFormat.HDR_JPEG)
-                        NativeHDRBridge.exportJpeg(rendered, metadata, temporary)
-                    else NativeHDRBridge.exportSdr(rendered, metadata, temporary, format.nativeValue)
+                        NativeHDRBridge.exportJpeg(rendered, metadata, temporary,
+                            session = processor.sessionHandle(), cancellationGeneration = generation)
+                    else NativeHDRBridge.exportSdr(rendered, metadata, temporary, format.nativeValue,
+                        session = processor.sessionHandle(), cancellationGeneration = generation)
                 } finally { rendered.close() }
                 return temporary
             }
             val backend = processor.export(target.sourceFile, job.lookFor(target), settings,
-                temporary, format, job.longEdgeFor(target), target.inputKind)
+                temporary, format, job.longEdgeFor(target), target.inputKind, cancellationGeneration)
             android.util.Log.i("RawLabBatch", "job=${job.id} exportBackend=$backend")
             return temporary
         } catch (error: Throwable) {

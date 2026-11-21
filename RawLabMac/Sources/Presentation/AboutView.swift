@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 struct AboutView: View {
@@ -18,8 +19,8 @@ struct AboutView: View {
             }
             Divider()
             Text(L10n.text("项目与作者")).font(.headline)
-            Link(L10n.text("GitHub 仓库"), destination: UpdateRelease.repository)
-            Link(L10n.text("作者的小红书主页"), destination: UpdateRelease.author)
+            Link(L10n.text("GitHub 仓库"), destination: URL(string: "https://github.com/dancancer/RawLab")!)
+            Link(L10n.text("作者的小红书主页"), destination: URL(string: "https://www.xiaohongshu.com/user/profile/6474b1560000000010037c8e")!)
             Divider()
             Picker(L10n.text("语言"), selection: $languagePreference) {
                 ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }

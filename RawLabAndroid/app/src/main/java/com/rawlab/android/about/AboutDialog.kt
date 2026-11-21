@@ -1,5 +1,7 @@
 package com.rawlab.android.about
 
+import com.rawlab.android.ui.AppIcons
+
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -7,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.rawlab.android.R
 import com.rawlab.android.analytics.UsageAnalyticsState
 import com.rawlab.android.i18n.AppStrings
@@ -39,7 +41,11 @@ fun AboutDialog(
         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
         catch (_: ActivityNotFoundException) { linkFailed = true }
     }
-    AlertDialog(onDismissRequest = onClose, title = { Text(stringResource(R.string.about_rawlab)) },
+    AlertDialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).widthIn(max = 560.dp),
+        title = { Text(stringResource(R.string.about_rawlab)) },
         text = {
             Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.app_version, state.version))
@@ -47,10 +53,10 @@ fun AboutDialog(
                 HorizontalDivider()
                 Text(stringResource(R.string.project_author), style = MaterialTheme.typography.titleSmall)
                 TextButton(onClick = { open(UpdateRelease.REPOSITORY) }) {
-                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.github_repository))
+                    Icon(AppIcons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.github_repository))
                 }
                 TextButton(onClick = { open(UpdateRelease.AUTHOR) }) {
-                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.author_xiaohongshu))
+                    Icon(AppIcons.AutoMirrored.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.author_xiaohongshu))
                 }
                 if (linkFailed) Text(stringResource(R.string.browser_unavailable), color = MaterialTheme.colorScheme.error)
                 HorizontalDivider()
@@ -74,7 +80,7 @@ fun AboutDialog(
                 }
                 Text(stringResource(usageState.statusMessage()), style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { open("https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html") }) {
-                    Icon(Icons.AutoMirrored.Outlined.OpenInNew, null)
+                    Icon(AppIcons.AutoMirrored.Outlined.OpenInNew, null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.usage_privacy_policy))
                 }

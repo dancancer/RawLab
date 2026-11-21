@@ -7,10 +7,13 @@ internal static class BatchSettingsText
     {
         var state=PhotoInput.PrepareInputSettings(path,snapshot.Restore());
         var raster=PhotoInput.IsRaster(path);
-        var text = Loc.Text("外观")+"  "+lookName+"\n"+string.Join("\n", ParameterSpec.All.Where(spec => state.Curve.IsDefault || spec.Id != Parameter.ToneCurve).Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
-        if (!state.Curve.IsDefault) {
-            text += "\n" + Loc.Format("多点曲线（{0} 个控制点）", state.Curve.Points.Count);
-            text += "\n" + string.Join("\n", state.Curve.Points.Select((point, index) =>
+        var text = Loc.Text("外观")+"  "+lookName+"\n"+string.Join("\n", ParameterSpec.All.Where(spec => state.Curve.Mode == ToneCurveMode.Legacy || spec.Id != Parameter.ToneCurve).Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
+        foreach (var channel in Enum.GetValues<ToneCurveChannel>()) {
+            var shape = state.Curve.Shape(channel);
+            if (shape.Mode != ToneCurveMode.Custom) continue;
+            var name = channel == ToneCurveChannel.Rgb ? "RGB" : channel.ToString()[..1];
+            text += "\n" + name + " · " + Loc.Format("多点曲线（{0} 个控制点）", shape.Points.Count);
+            text += "\n" + string.Join("\n", shape.Points.Select((point, index) =>
                 Loc.Format("控制点 {0}", index + 1) + "  " + point.X.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language)) +
                 " → " + point.Y.ToString("0.##", CultureInfo.GetCultureInfo(Loc.Language))));
         }

@@ -13,13 +13,36 @@ foreach(option BUILD_TESTS BUILD_PERF_TESTS BUILD_EXAMPLES BUILD_opencv_apps BUI
         BUILD_ZLIB WITH_ADE BUILD_opencv_gapi BUILD_opencv_dnn)
     set(${option} OFF CACHE BOOL "" FORCE)
 endforeach()
+# OpenCV 两个归档在 Windows native 门禁两次因出网 TLS 抖动（schannel: failed to decrypt data）下载失败，
+# 照 dng-sdk.cmake 先经 rawlab_download_archive 预取（3 次重试 + SHA256 校验 + 部分文件清理）再交给 FetchContent。
+# SHA256 于 2026-11-16 用 `curl -sL <tag 官方 tarball> | shasum -a 256` 实算，与既有 pin 一致。
+set(opencv_url https://github.com/opencv/opencv/archive/refs/tags/4.12.0.tar.gz)
+set(opencv_sha256 44c106d5bb47efec04e531fd93008b3fcd1d27138985c5baf4eafac0e1ec9e9d)
+FetchContent_GetProperties(rawlab_opencv)
+if(NOT rawlab_opencv_POPULATED AND NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_OPENCV
+        AND NOT FETCHCONTENT_FULLY_DISCONNECTED)
+    include("${CMAKE_CURRENT_LIST_DIR}/download-archive.cmake")
+    rawlab_archive_path(rawlab_opencv opencv-4.12.0.tar.gz opencv_archive)
+    rawlab_download_archive("${opencv_url}" "${opencv_sha256}" "${opencv_archive}")
+    set(opencv_url "${opencv_archive}")
+endif()
 FetchContent_Declare(rawlab_opencv
-    URL https://github.com/opencv/opencv/archive/refs/tags/4.12.0.tar.gz
-    URL_HASH SHA256=44c106d5bb47efec04e531fd93008b3fcd1d27138985c5baf4eafac0e1ec9e9d)
+    URL "${opencv_url}"
+    URL_HASH "SHA256=${opencv_sha256}")
 if(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+    set(opencv_contrib_url https://github.com/opencv/opencv_contrib/archive/refs/tags/4.12.0.tar.gz)
+    set(opencv_contrib_sha256 4197722b4c5ed42b476d42e29beb29a52b6b25c34ec7b4d589c3ae5145fee98e)
+    FetchContent_GetProperties(rawlab_opencv_contrib)
+    if(NOT rawlab_opencv_contrib_POPULATED AND NOT FETCHCONTENT_SOURCE_DIR_RAWLAB_OPENCV_CONTRIB
+            AND NOT FETCHCONTENT_FULLY_DISCONNECTED)
+        include("${CMAKE_CURRENT_LIST_DIR}/download-archive.cmake")
+        rawlab_archive_path(rawlab_opencv_contrib opencv_contrib-4.12.0.tar.gz opencv_contrib_archive)
+        rawlab_download_archive("${opencv_contrib_url}" "${opencv_contrib_sha256}" "${opencv_contrib_archive}")
+        set(opencv_contrib_url "${opencv_contrib_archive}")
+    endif()
     FetchContent_Declare(rawlab_opencv_contrib
-        URL https://github.com/opencv/opencv_contrib/archive/refs/tags/4.12.0.tar.gz
-        URL_HASH SHA256=4197722b4c5ed42b476d42e29beb29a52b6b25c34ec7b4d589c3ae5145fee98e
+        URL "${opencv_contrib_url}"
+        URL_HASH "SHA256=${opencv_contrib_sha256}"
         SOURCE_SUBDIR rawlab-no-upstream-build)
     FetchContent_MakeAvailable(rawlab_opencv_contrib)
     set(OPENCV_EXTRA_MODULES_PATH "${rawlab_opencv_contrib_SOURCE_DIR}/modules" CACHE PATH "" FORCE)

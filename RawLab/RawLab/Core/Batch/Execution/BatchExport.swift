@@ -1,3 +1,4 @@
+import RawLabKit
 import Photos
 import PhotosUI
 import SwiftUI
@@ -37,9 +38,11 @@ final class BatchExportModel: ObservableObject {
     @Published var validationMessage: String?
     var onDiscard: () -> Void = { }
     var onUsage: (UsageEvent) -> Void = { _ in }
+    var onStart: ((UUID) -> Void)?
 
     private let journalStore: BatchJournalStore?
     private let jpegWriter: JPEGWriter?
+    let editPersistence: EditPersistence?
     let queue = DispatchQueue(label: "com.rawlab.batch", qos: .userInitiated)
     private let cancellation = NSLock()
     private var didCancel = false
@@ -58,6 +61,7 @@ final class BatchExportModel: ObservableObject {
         source.lookName = source.settings.masterRecipe?.name ?? editor.availableLUTs.first { $0.id == source.settings.lutID }?.name ?? "中性"
         job = BatchExportJob(source: source, targets: [])
         jpegWriter = nil
+        editPersistence = editor.editPersistence
         do { journalStore = try BatchJournalStore.appStore() }
         catch { journalStore = nil; validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }
         if source.settings.isHDREditing {
@@ -88,6 +92,7 @@ final class BatchExportModel: ObservableObject {
         self.job = recovered
         self.journalStore = journalStore
         self.jpegWriter = jpegWriter
+        self.editPersistence = editor?.editPersistence
         if job.source.settings.isHDREditing,let editor { hdrPreparation=IOSHDRBatchPreparation(source:job.source,editor:editor) }
         isReady = true
         validationMessage = recovered.globalError
@@ -165,7 +170,7 @@ final class BatchExportModel: ObservableObject {
                 stage = "readIdentity"
                 let resourceIdentifier = item.itemIdentifier
                 let identity = try await perform {
-                    try PhotoIdentity.fallback(for: file.url, resourceIdentifier: resourceIdentifier)
+                    try PhotoIdentity.cachedFallback(for: file.url, resourceIdentifier: resourceIdentifier)
                 }
                 stage = "prepareTarget"
                 let target = try await prepareTarget(file, identity: identity, jobID: jobID,
@@ -202,7 +207,7 @@ final class BatchExportModel: ObservableObject {
                 defer { PhotoImportFile.release(source.url) }
                 context["sourceKind"] = source.isRaw ? "raw" : "raster"
                 stage = "readIdentity"
-                let identity = try await perform { try PhotoIdentity.fallback(for: source.url) }
+                let identity = try await perform { try PhotoIdentity.cachedFallback(for: source.url) }
                 stage = "prepareTarget"
                 targets.append(try await prepareTarget(source, identity: identity, jobID: jobID,
                                                        journalStore: journalStore))
@@ -219,7 +224,10 @@ final class BatchExportModel: ObservableObject {
         }
     }
 
-    @discardableResult func start() -> Bool { run(failuresOnly: false) }
+    @discardableResult func start() -> Bool {
+        onStart?(job.id)
+        return run(failuresOnly: false)
+    }
     @discardableResult func retryFailed() -> Bool { run(failuresOnly: true) }
 
     private func freezeHDRJob(_ draft: BatchExportJob,journal: BatchJournalStore) throws -> BatchExportJob {
@@ -233,8 +241,9 @@ final class BatchExportModel: ObservableObject {
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
-                let copy=folder.appendingPathComponent("hdr-look-\(UUID().uuidString).\(original.pathExtension)")
-                try FileManager.default.copyItem(at:original,to:copy); owned.append(copy); frozen.lookURL=copy
+                let copy=folder.appendingPathComponent("hdr-look-\(prepared.lookSHA256 ?? UUID().uuidString).\(original.pathExtension)")
+                if !FileManager.default.fileExists(atPath:copy.path){try FileManager.default.copyItem(at:original,to:copy)}
+                owned.append(copy); frozen.lookURL=copy
             }
             try frozen.verifyFiles(input:result.targets[index].sourceURL)
             result.targets[index].frozen=frozen
@@ -269,6 +278,7 @@ final class BatchExportModel: ObservableObject {
         let logFailure: (Error, String) -> Void = { error, stage in
             ErrorDiagnostics.log(error, operation: .batchExport, stage: stage, attemptID: attemptID, context: diagnosticContext)
         }
+        let resolveX3fMode = BatchExportJob.x3fModeResolver(store: editPersistence)
         queue.async { [self] in
             var attempted = Set<String>()
             do {
@@ -292,7 +302,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 } else if let jpegWriter {
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
                         render: { target, resolvedSettings in
@@ -307,7 +317,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 } else {
                     try PhotoLibraryBatchWriter.authorize()
                     result = try BatchExportRunner.run(job: snapshot, journalStore: journalStore,
@@ -326,7 +336,7 @@ final class BatchExportModel: ObservableObject {
                             snapshot = updated
                             DispatchQueue.main.async { self.job = updated }
                         },
-                        onlyIDs: failedIDs, didFail: logFailure)
+                        onlyIDs: failedIDs, didFail: logFailure, resolveX3fMode: resolveX3fMode)
                 }
                 let failed = result.targets.filter { attempted.contains($0.id) && $0.status == .failed }.count
                 DispatchQueue.main.async {
@@ -440,6 +450,18 @@ final class BatchExportModel: ObservableObject {
     func finishFileExport(_ exported: Bool) {
         shouldPresentFileExport = false
         fileExportStatus = exported ? .exported : .cancelled
+        // Q6（B1/B4）：渲染型 DNG 落沙盒不等于导出；用户在 picker 确认另存后才逐行
+        // 登记证据（对齐单张 Files 导出 exported==true 口径），取消/未弹出不记账。
+        guard job.outputFormat == .renderedDNG else { return }
+        let exportedPaths = Set((fileExportURLs ?? []).map(\.path))
+        ExportEvidenceStore.shared.record(contentIdentifiers: ExportEvidenceStore.renderedDNGEvidenceIdentifiers(
+            exported: exported,
+            candidates: job.targets.map { target in
+                ExportEvidenceStore.EvidenceCandidate(contentIdentifier: target.identity.contentIdentifier,
+                                                      succeeded: target.status == .succeeded,
+                                                      outputFileURL: target.outputFileURL,
+                                                      inPicker: target.outputFileURL.map { exportedPaths.contains($0.path) } == true)
+            }))
     }
 
     @discardableResult func discard() -> Bool {
@@ -455,12 +477,13 @@ final class BatchExportModel: ObservableObject {
     func preview(target: BatchTarget) async throws -> Preview {
         guard !isRunning, !isPreparing else { throw BatchExportError.target(L10n.text("请等待当前任务完成。")) }
         let snapshot = job
+        let resolveX3fMode = BatchExportJob.x3fModeResolver(store: editPersistence)
         return try await perform {
             try snapshot.validate()
             let prepared=snapshot.settingsMode == .uniformFrozen ? try self.hdrPreparation?.prepare(target,ordinal:0,format:snapshot.outputFormat,longEdge:snapshot.longEdge) : nil
             let targetSettings: RawSettings,look: URL?
             if let prepared { targetSettings=prepared.settings; look=prepared.lookURL }
-            else { targetSettings=try snapshot.settings(for:target); look=try snapshot.look(for:target) }
+            else { targetSettings=try snapshot.settings(for:target, resolveX3fMode: resolveX3fMode); look=try snapshot.look(for:target) }
             if snapshot.settingsMode == .perTargetFrozen { try target.frozen!.verifyFiles(input: target.sourceURL) }
             if targetSettings.hasLook && look.map({ FileManager.default.isReadableFile(atPath: $0.path) }) != true {
                 throw BatchExportError.global(L10n.text("任务使用的外观文件不可用，请重新创建任务。"))
@@ -468,7 +491,7 @@ final class BatchExportModel: ObservableObject {
             let processor = Sony2FujiProcessor()
             if targetSettings.isHDREditing,let hdr=targetSettings.hdr {
                 let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:1280,
-                    proRAWDecodeVersion:targetSettings.proRAWDecodeVersion)
+                    processing:targetSettings.processing,proRAWDecodeVersion:targetSettings.proRAWDecodeVersion)
                 let presentation=try HDRPresentation(pair)
                 return Preview(image:UIImage(cgImage:presentation.sdrImage),hdr:presentation)
             }
@@ -492,6 +515,12 @@ final class BatchExportModel: ObservableObject {
 
 
     private func saveJournal() {
+        // Q6（B1）：相册直出的批量导出成功逐条登记进导出证据账本（幂等，succeeded 才登记）；
+        // 渲染型 DNG 落沙盒时不记账，改由 finishFileExport 在 picker 确认另存后登记。
+        if job.outputFormat.publishesToPhotos {
+            ExportEvidenceStore.shared.record(contentIdentifiers: job.targets
+                .filter { $0.status == .succeeded }.compactMap(\.identity.contentIdentifier))
+        }
         guard let journalStore else { return }
         do { try journalStore.save(job) }
         catch { validationMessage = L10n.format("任务未保存：%@", String(describing: error.localizedDescription)) }

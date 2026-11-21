@@ -1,9 +1,13 @@
+#include "test_harness.h"
 #include "core/hdr_jpeg.h"
 #include "platform/hdr_image.h"
 #include "platform/hdr_metadata.h"
 #include "platform/hdr_heif_color.h"
 #include <libheif/heif.h>
 #include <lcms2.h>
+#include <spng.h>
+#include <memory>
+#include <cstring>
 #include <libheif/heif_items.h>
 #include <ultrahdr/gainmapmetadata.h>
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
@@ -13,13 +17,16 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 #ifdef RAWLAB_HDR_TEST_APPLE_AUTHOR
 std::vector<uint8_t> authorISOHEIF();
 std::vector<uint8_t> authorAppleJPEG(const char* path);
 #endif
 
 namespace {
-void check(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+using rawlab::test::require;
 template<class T> T init() { T value{}; value.version=1; value.struct_size=sizeof(value); return value; }
 std::vector<uint8_t> read(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
@@ -28,7 +35,7 @@ std::vector<uint8_t> read(const std::filesystem::path& path) {
 void write(const std::filesystem::path& path, const std::vector<uint8_t>& data) {
     std::ofstream output(path, std::ios::binary);
     output.write(reinterpret_cast<const char*>(data.data()), data.size());
-    check(output.good(), "fixture write failed");
+    require(output.good(), "fixture write failed");
 }
 std::vector<uint8_t> nclxProfile(uint16_t primaries, uint16_t transfer) {
     const auto box=[](const char* type, std::vector<uint8_t> data) {
@@ -49,9 +56,9 @@ void sdrNclxColors() {
         const auto bytes=nclxProfile(primaries,transfer);
         const auto profile=cmsOpenProfileFromMem(bytes.data(),uint32_t(bytes.size()));
         const auto srgb=cmsCreate_sRGBProfile();
-        check(profile && srgb,"SDR nclx profile creation failed");
+        require(profile && srgb,"SDR nclx profile creation failed");
         const auto transform=cmsCreateTransform(profile,TYPE_RGB_DBL,srgb,TYPE_RGB_DBL,INTENT_RELATIVE_COLORIMETRIC,0);
-        check(transform!=nullptr,"SDR nclx must convert to display sRGB");
+        require(transform!=nullptr,"SDR nclx must convert to display sRGB");
         const cmsCIExyY white{.3127,.3290,1};cmsCIEXYZ d65;cmsxyY2XYZ(&d65,&white);
         const auto expectedPrimaries= primaries==5 ?
             std::array<cmsCIExyY,3>{{{.64,.33,1},{.29,.60,1},{.15,.06,1}}} :
@@ -59,11 +66,11 @@ void sdrNclxColors() {
         const cmsTagSignature tags[]={cmsSigRedColorantTag,cmsSigGreenColorantTag,cmsSigBlueColorantTag};
         for (int channel=0;channel<3;++channel) {
             const auto xyz=static_cast<const cmsCIEXYZ*>(cmsReadTag(profile,tags[channel]));
-            check(xyz!=nullptr,"SDR nclx has no colorant tag");
+            require(xyz!=nullptr,"SDR nclx has no colorant tag");
             cmsCIEXYZ adapted;cmsCIExyY xy;
-            check(cmsAdaptToIlluminant(&adapted,cmsD50_XYZ(),&d65,xyz)!=0,"cannot restore nclx white point");
+            require(cmsAdaptToIlluminant(&adapted,cmsD50_XYZ(),&d65,xyz)!=0,"cannot restore nclx white point");
             cmsXYZ2xyY(&xy,&adapted);
-            check(std::abs(xy.x-expectedPrimaries[channel].x)<.001 &&
+            require(std::abs(xy.x-expectedPrimaries[channel].x)<.001 &&
                 std::abs(xy.y-expectedPrimaries[channel].y)<.001,"SDR nclx primaries changed");
         }
         for (const double x : {.01,.04,.08,.081,.08145,.0912,.5,.9}) {
@@ -74,10 +81,136 @@ void sdrNclxColors() {
                 transfer==15 ? (x<.08145 ? x/4.5 : std::pow((x+.0993)/1.0993,1/.45)) :
                 (x<.081 ? x/4.5 : std::pow((x+.099)/1.099,1/.45));
             const auto expected=linear<=.0031308 ? linear*12.92 : 1.055*std::pow(linear,1/2.4)-.055;
-            for (const auto value : output) check(std::abs(value-expected)<.002,"SDR nclx transfer differs from display sRGB");
+            for (const auto value : output) require(std::abs(value-expected)<.002,"SDR nclx transfer differs from display sRGB");
         }
         cmsDeleteTransform(transform);cmsCloseProfile(profile);cmsCloseProfile(srgb);
     }
+}
+// 主目录、Exif、GPS 各 4096 条；前 whole 个普通条目都声明“值就是整个 EXIF 块”。
+std::vector<uint8_t> amplifiedExif(size_t whole) {
+    const size_t directory=2+4096*12+4, size=8+3*directory;
+    std::vector<uint8_t> tiff(size,0);
+    const auto put16=[&](size_t at,uint16_t value) { tiff[at]=uint8_t(value); tiff[at+1]=uint8_t(value>>8); };
+    const auto put32=[&](size_t at,uint32_t value) { for (int i=0;i<4;++i) tiff[at+i]=uint8_t(value>>(8*i)); };
+    tiff[0]=tiff[1]='I'; put16(2,42); put32(4,8);
+    for (size_t index=0;index<3;++index) {
+        const size_t offset=8+index*directory; put16(offset,4096);
+        for (uint16_t i=0;i<4096;++i) {
+            const size_t at=offset+2+size_t(i)*12;
+            if (index==0 && i>=4094) {
+                put16(at,i==4094 ? 0x8769 : 0x8825); put16(at+2,4); put32(at+4,1);
+                put32(at+8,uint32_t(8+(i-4093)*directory)); continue;
+            }
+            put16(at,uint16_t(0x1000+i)); put16(at+2,7);
+            put32(at+4,whole ? uint32_t(size) : 1); put32(at+8,0); whole-=whole!=0;
+        }
+    }
+    return tiff;
+}
+
+void pngExport(const std::filesystem::path& root, const sony2fuji::HDRImagePair& image) {
+    sony2fuji::HDRSdrExportConfig config; config.outputFormat=sony2fuji::kHdrSdrOutputPng;
+    const auto target=root/"metadata-16bit.png";
+#ifndef _WIN32
+    // Newly staged outputs can be write-only under the caller's umask. Encoding
+    // metadata must not depend on reopening the completed PNG for input.
+    const mode_t previousMask=::umask(0444);
+    try { sony2fuji::hdr::exportSDR(image,config,target.u8string().c_str()); }
+    catch (...) { ::umask(previousMask); throw; }
+    ::umask(previousMask);
+    std::filesystem::permissions(target,std::filesystem::perms::owner_read|std::filesystem::perms::owner_write);
+#else
+    sony2fuji::hdr::exportSDR(image,config,target.u8string().c_str());
+#endif
+    const auto bytes=read(target);
+    const std::unique_ptr<spng_ctx,decltype(&spng_ctx_free)> decoder(spng_ctx_new(0),spng_ctx_free);
+    require(decoder && spng_set_png_buffer(decoder.get(),bytes.data(),bytes.size())==0,"PNG decoder setup failed");
+    spng_ihdr header{};
+    require(spng_get_ihdr(decoder.get(),&header)==0 && header.width==uint32_t(image.sdr.width) &&
+        header.height==uint32_t(image.sdr.height) && header.bit_depth==16 &&
+        header.color_type==SPNG_COLOR_TYPE_TRUECOLOR,"SDR PNG must retain its 16-bit RGB canvas");
+    std::vector<uint16_t> pixels(image.sdr.pixels.size()*3);
+    require(spng_decode_image(decoder.get(),pixels.data(),pixels.size()*sizeof(uint16_t),SPNG_FMT_PNG,0)==0 &&
+        spng_decode_chunks(decoder.get())==0,"SDR PNG pixel/chunk readback failed");
+    const auto expectedExif=sony2fuji::hdr::sanitizedExif(nullptr,0,image.sdr.width,image.sdr.height);
+    spng_exif exif{}; uint8_t intent=255;
+    require(spng_get_exif(decoder.get(),&exif)==0 && exif.length==expectedExif.size() &&
+        std::memcmp(exif.data,expectedExif.data(),expectedExif.size())==0,"SDR PNG EXIF did not roundtrip");
+    require(spng_get_srgb(decoder.get(),&intent)==0 && intent==0,"SDR PNG lost its sRGB color interpretation");
+    for (size_t i=0;i<image.sdr.pixels.size();++i) {
+        const auto& rgb=image.sdr.pixels[i]; const float channels[]={rgb.r,rgb.g,rgb.b};
+        for (size_t c=0;c<3;++c) {
+            const float linear=std::clamp(channels[c],0.0f,1.0f);
+            const float display=linear<=.0031308f ? 12.92f*linear : 1.055f*std::pow(linear,1/2.4f)-.055f;
+            require(pixels[i*3+c]==uint16_t(std::lround(display*65535)),"SDR PNG changed sRGB-encoded 16-bit pixels");
+        }
+    }
+    const auto blocked=root/"png-directory"; std::filesystem::create_directory(blocked);
+    write(blocked/"keep",{'k','e','e','p'});
+    try { sony2fuji::hdr::exportSDR(image,config,blocked.u8string().c_str()); require(false,"directory PNG output admitted"); }
+    catch (const sony2fuji::hdr::Error& error) {
+        require(error.status==sony2fuji::RenderStatus::OutputIoError && error.reason==SONY2FUJI_HDR_REASON_OUTPUT_IO,
+            "PNG output failure lost its diagnostic");
+    }
+    require(read(blocked/"keep")==std::vector<uint8_t>({'k','e','e','p'}),"failed PNG export damaged destination");
+    for (const auto& entry:std::filesystem::directory_iterator(root))
+        require(entry.path().filename().u8string().find(".rawlab-")!=0,"PNG export leaked a staging file");
+}
+
+void metadataCompatibility(const std::filesystem::path& root) {
+    for (bool little : {true, false}) {
+        std::vector<uint8_t> bytes(26, 0);
+        const auto put = [&](size_t at, uint64_t value, size_t width) {
+            for (size_t i = 0; i < width; ++i)
+                bytes.at(at + i) = uint8_t(value >> (8 * (little ? i : width - 1 - i)));
+        };
+        const auto rejected = [&] {
+            try { sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()); }
+            catch (const sony2fuji::hdr::Error& error) {
+                require(error.reason == SONY2FUJI_HDR_REASON_MALFORMED_AUX, "EXIF malformed diagnostic changed");
+                return;
+            }
+            require(false, "malformed EXIF was accepted");
+        };
+        bytes[0] = bytes[1] = little ? 'I' : 'M';
+        put(2, 42, 2); put(4, 8, 4); put(8, 1, 2);
+        put(10, 0x0112, 2); put(12, 3, 2); put(14, 1, 4); put(18, 6, 2);
+        require(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 6, "EXIF inline orientation byte order changed");
+        put(22, 8, 4); rejected();
+        put(22, 0, 4);
+        put(10, 0x8769, 2); put(12, 4, 2); put(18, 8, 4); rejected();
+        put(18, 0, 4);
+        require(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF null child remains tolerated");
+        put(10, 0x1000, 2); put(12, 13, 2);
+        require(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF retains type-13 support");
+        put(12, 7, 2); put(14, 0, 4);
+        require(sony2fuji::hdr::exifOrientation(bytes.data(), bytes.size()) == 1, "EXIF zero-count unknown tag remains tolerated");
+        bytes.resize(38, 0); put(8, 2, 2);
+        std::copy_n(bytes.begin() + 10, 12, bytes.begin() + 22);
+        rejected();
+
+        // RAW 不读取 next IFD，也不验证未选中的像素/私有标签。
+        put(10, 0x010f, 2); put(12, 2, 2); put(14, 4, 4);
+        bytes[18] = 'C'; bytes[19] = 'a'; bytes[20] = 'm'; bytes[21] = 0;
+        put(22, 0x1000, 2); put(24, 0, 2); put(26, 0xffffffff, 4); put(30, 0xffffffff, 4);
+        put(34, 8, 4);
+        rejected();
+        const auto path = root / (little ? "capture-le.dng" : "capture-be.dng");
+        write(path, bytes);
+        const auto sanitized = sony2fuji::hdr::sanitizedDNGExif(path, 640, 480);
+        require(!sanitized.empty() && sony2fuji::hdr::exifOrientation(sanitized.data(), sanitized.size()) == 1,
+              "RAW ignores unrelated malformed entries and its next offset");
+        put(22, 0x010f, 2); put(24, 2, 2); put(26, 4, 4); put(30, 0, 4);
+        write(path, bytes);
+        try { sony2fuji::hdr::sanitizedDNGExif(path, 640, 480); require(false, "RAW duplicate capture tag admitted"); }
+        catch (const sony2fuji::hdr::Error& error) {
+            require(error.reason == SONY2FUJI_HDR_REASON_MALFORMED_AUX, "RAW duplicate tag diagnostic changed");
+        }
+        std::filesystem::remove(path);
+    }
+    require(sony2fuji::hdr::exifOrientation(nullptr, 0) == 1, "empty EXIF retains default orientation");
+    const uint8_t noDirectory[] = {'I', 'I', 42, 0, 0, 0, 0, 0};
+    require(sony2fuji::hdr::exifOrientation(noDirectory, sizeof(noDirectory)) == 1, "EXIF null first IFD remains tolerated");
 }
 }
 
@@ -86,12 +219,21 @@ int main(int argc, const char* argv[]) {
         ("rawlab-portable-hdr-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(root);
     try {
+        metadataCompatibility(root);
         sdrNclxColors();
+        {
+            // 一条值覆盖整块（例如计数偏大的 MakerNote）仍在预算余量内。
+            const auto single=amplifiedExif(1);
+            require(sony2fuji::hdr::exifOrientation(single.data(),single.size())==1,"a single whole-block EXIF value stays within the budget");
+            const auto amplified=amplifiedExif(3*4096);
+            try { sony2fuji::hdr::exifOrientation(amplified.data(),amplified.size()); require(false,"amplified EXIF admitted"); }
+            catch (const sony2fuji::hdr::Error& error) { require(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"amplified EXIF has wrong diagnostic"); }
+        }
         const std::string xmp="<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" xmlns:g=\"http://ns.apple.com/HDRGainMap/1.0/\"><g:HDRGainMapVersion>65536</g:HDRGainMapVersion></x:xmpmeta>";
-        check(sony2fuji::hdr::appleXMPHeadroom(xmp.data(),xmp.size())==0,"valid Apple gain-map metadata rejected");
+        require(sony2fuji::hdr::appleXMPHeadroom(xmp.data(),xmp.size())==0,"valid Apple gain-map metadata rejected");
         auto future=xmp; future.replace(future.find("65536"),5,"65537");
-        try { sony2fuji::hdr::appleXMPHeadroom(future.data(),future.size()); check(false,"unknown Apple version admitted"); }
-        catch (const sony2fuji::hdr::Error& error) { check(error.reason==SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,"future Apple version has wrong diagnostic"); }
+        try { sony2fuji::hdr::appleXMPHeadroom(future.data(),future.size()); require(false,"unknown Apple version admitted"); }
+        catch (const sony2fuji::hdr::Error& error) { require(error.reason==SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,"future Apple version has wrong diagnostic"); }
         sony2fuji::HDRImagePair synthetic;
         synthetic.hdr=sony2fuji::ImageData(64,32); synthetic.sdr=sony2fuji::ImageData(64,32);
         for (int y=0;y<32;++y) for (int x=0;x<64;++x) {
@@ -99,13 +241,14 @@ int main(int argc, const char* argv[]) {
             synthetic.sdr.at(x,y)={.18f,.4f,.6f};
             synthetic.hdr.at(x,y)={.18f*gain,.4f*gain,.6f*gain};
         }
+        pngExport(root,synthetic);
         // JPEG 的线性化路径仅支持 sRGB TRC；HEIF 的 LCMS 路径仍可处理线性 profile。
         for (const bool linear : {false,true}) {
-            auto profile=cmsCreate_sRGBProfile();check(profile!=nullptr,"cannot create ICC fixture");
+            auto profile=cmsCreate_sRGBProfile();require(profile!=nullptr,"cannot create ICC fixture");
             if (linear) {
                 auto curve=cmsBuildGamma(nullptr,1);
                 for (auto tag : {cmsSigRedTRCTag,cmsSigGreenTRCTag,cmsSigBlueTRCTag})
-                    check(cmsWriteTag(profile,tag,curve)!=0,"cannot write ICC fixture TRC");
+                    require(cmsWriteTag(profile,tag,curve)!=0,"cannot write ICC fixture TRC");
                 cmsFreeToneCurve(curve);
             }
             cmsUInt32Number count=0;cmsSaveProfileToMem(profile,nullptr,&count);
@@ -113,8 +256,8 @@ int main(int argc, const char* argv[]) {
             const uint32_t length=count+16;
             std::vector<uint8_t> jpeg{255,0xd8,255,0xe2,uint8_t(length>>8),uint8_t(length),'I','C','C','_','P','R','O','F','I','L','E',0,1,1};
             jpeg.insert(jpeg.end(),icc.begin(),icc.end());jpeg.insert(jpeg.end(),{255,0xd9});
-            check(sony2fuji::hdr::iccColorDescription(icc.data(),icc.size())==SONY2FUJI_HDR_COLOR_SRGB,"HEIF gamut detection rejects linear TRC");
-            check(sony2fuji::hdr::jpegColorDescription(jpeg.data(),jpeg.size())==(linear ? SONY2FUJI_HDR_COLOR_UNKNOWN : SONY2FUJI_HDR_COLOR_SRGB),
+            require(sony2fuji::hdr::iccColorDescription(icc.data(),icc.size())==SONY2FUJI_HDR_COLOR_SRGB,"HEIF gamut detection rejects linear TRC");
+            require(sony2fuji::hdr::jpegColorDescription(jpeg.data(),jpeg.size())==(linear ? SONY2FUJI_HDR_COLOR_UNKNOWN : SONY2FUJI_HDR_COLOR_SRGB),
                 "JPEG admits non-sRGB TRC or rejects valid sRGB");
         }
         const auto source=root/"source.jpg", output=root/"output.jpg";
@@ -123,130 +266,130 @@ int main(int argc, const char* argv[]) {
         auto info=init<sony2fuji_hdr_source_info_v1>(); auto diagnostic=init<sony2fuji_hdr_diagnostic_v1>();
         auto status=sony2fuji_hdr_probe(path.c_str(),&info,&diagnostic);
         if (status) std::cerr<<"probe status="<<status<<" reason="<<diagnostic.reason<<'\n';
-        check(status==SONY2FUJI_STATUS_OK,"portable HDR probe must accept a valid gain-map JPEG");
-        check(info.width==64 && info.height==32 && info.orientation==1 && info.content_headroom>2,
+        require(status==SONY2FUJI_STATUS_OK,"portable HDR probe must accept a valid gain-map JPEG");
+        require(info.width==64 && info.height==32 && info.orientation==1 && info.content_headroom>2,
             "portable source metadata differs");
-        check(info.protocol==SONY2FUJI_HDR_PROTOCOL_ISO_XMP,"export must retain both interoperable metadata forms");
+        require(info.protocol==SONY2FUJI_HDR_PROTOCOL_ISO_XMP,"export must retain both interoperable metadata forms");
         auto options=init<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_PREVIEW; options.long_edge=16;
         auto pair=init<sony2fuji_hdr_image_pair_v1>();
-        check(sony2fuji_hdr_decode(path.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"bounded portable preview failed");
-        check(pair.hdr.width==16 && pair.hdr.height==8 && pair.sdr.width==16 && pair.is_proxy &&
+        require(sony2fuji_hdr_decode(path.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"bounded portable preview failed");
+        require(pair.hdr.width==16 && pair.hdr.height==8 && pair.sdr.width==16 && pair.is_proxy &&
             pair.native_width==64 && pair.native_height==32,"preview size/provenance lost");
         const auto* s=static_cast<const float*>(pair.sdr.data);
-        check(std::abs(s[0]-.18f)<.025f && std::abs(s[1]-.4f)<.025f,"SDR rendition must be the independently decoded base");
+        require(std::abs(s[0]-.18f)<.025f && std::abs(s[1]-.4f)<.025f,"SDR rendition must be the independently decoded base");
         auto config=init<sony2fuji_hdr_export_config_v1>(); config.jpeg_quality=95;
         config.base_color=SONY2FUJI_HDR_COLOR_SRGB; config.metadata_policy=SONY2FUJI_HDR_METADATA_ISO_XMP;
-        check(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)!=SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)!=SONY2FUJI_STATUS_OK,
             "proxy export was admitted");
         sony2fuji_hdr_release_pair(&pair);
         options.intent=SONY2FUJI_INTENT_FINAL; options.long_edge=0;
         pair=init<sony2fuji_hdr_image_pair_v1>();
-        check(sony2fuji_hdr_decode(path.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"portable FINAL failed");
-        check(pair.hdr.width==64 && !pair.is_proxy,"FINAL resolution lost");
+        require(sony2fuji_hdr_decode(path.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"portable FINAL failed");
+        require(pair.hdr.width==64 && !pair.is_proxy,"FINAL resolution lost");
         const auto original=read(source);
-        check(sony2fuji_hdr_export_jpeg(&pair,&config,path.c_str(),&diagnostic)!=SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_export_jpeg(&pair,&config,path.c_str(),&diagnostic)!=SONY2FUJI_STATUS_OK &&
             read(source)==original,"source overwrite protection failed");
-        check(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
             "portable HDR export failed");
         config.jpeg_quality=0;
-        check(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_export_jpeg(&pair,&config,output.u8string().c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
             "zero JPEG quality must use the shared default 95");
         auto roundtrip=init<sony2fuji_hdr_source_info_v1>();
-        check(sony2fuji_hdr_probe(output.u8string().c_str(),&roundtrip,&diagnostic)==SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_probe(output.u8string().c_str(),&roundtrip,&diagnostic)==SONY2FUJI_STATUS_OK &&
             roundtrip.width==64 && roundtrip.height==32,"portable exported gain map cannot be reopened");
         for (uint32_t format : {SONY2FUJI_OUTPUT_JPEG,SONY2FUJI_OUTPUT_PNG,SONY2FUJI_OUTPUT_DNG}) {
             auto sdr=init<sony2fuji_hdr_sdr_export_config_v1>(); sdr.output_format=format; sdr.quality=95;
             const auto destination=(root/("sdr-"+std::to_string(format))).u8string();
-            check(sony2fuji_hdr_export_sdr(&pair,&sdr,destination.c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
+            require(sony2fuji_hdr_export_sdr(&pair,&sdr,destination.c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
                 "portable SDR export failed");
-            check(read(std::filesystem::u8path(destination)).size()>100,"SDR export is empty");
+            require(read(std::filesystem::u8path(destination)).size()>100,"SDR export is empty");
         }
         sony2fuji_hdr_release_pair(&pair);
         const auto camera=(std::filesystem::path(TEST_FIXTURE_DIR)/"bayer-demosaic.dng").u8string();
         const auto cameraOutput=(root/"camera-hdr.jpg").u8string();
         pair=init<sony2fuji_hdr_image_pair_v1>();
-        check(sony2fuji_hdr_decode_camera_raw(nullptr,camera.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_decode_camera_raw(nullptr,camera.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,
             "camera RAW development failed with the portable file adapter");
-        check(sony2fuji_hdr_export_jpeg(&pair,&config,cameraOutput.c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
+        require(sony2fuji_hdr_export_jpeg(&pair,&config,cameraOutput.c_str(),&diagnostic)==SONY2FUJI_STATUS_OK,
             "portable camera RAW gain-map export failed");
         sony2fuji_hdr_release_pair(&pair);
         pair=init<sony2fuji_hdr_image_pair_v1>();
-        check(sony2fuji_hdr_decode(cameraOutput.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_decode(cameraOutput.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK &&
             pair.native_width==128 && pair.native_height==96 && pair.hdr.content_headroom>1,
             "portable camera RAW gain-map round trip lost its canvas or highlights");
         sony2fuji_hdr_release_pair(&pair);
         const auto legacy=(std::filesystem::path(TEST_FIXTURE_DIR)/"hdr/apple-legacy-macos26.jpg").u8string();
         info=init<sony2fuji_hdr_source_info_v1>();
         const auto legacyBytes=read(std::filesystem::u8path(legacy));
-        check(sony2fuji::hdr::jpegColorDescription(legacyBytes.data(),legacyBytes.size())==SONY2FUJI_HDR_COLOR_UNKNOWN &&
+        require(sony2fuji::hdr::jpegColorDescription(legacyBytes.data(),legacyBytes.size())==SONY2FUJI_HDR_COLOR_UNKNOWN &&
             sony2fuji::hdr::jpegColorDescription(legacyBytes.data(),legacyBytes.size(),true)==SONY2FUJI_HDR_COLOR_SRGB,
             "EXIF sRGB fallback must be explicit and restricted to Apple legacy");
-        try { sony2fuji::hdr::probeAppleJPEG(original.data(),original.size());check(false,"RGB gain map admitted as Apple monochrome"); }
-        catch(const sony2fuji::hdr::Error& error) {check(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"RGB gain-map rejection changed");}
+        try { sony2fuji::hdr::probeAppleJPEG(original.data(),original.size());require(false,"RGB gain map admitted as Apple monochrome"); }
+        catch(const sony2fuji::hdr::Error& error) {require(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX,"RGB gain-map rejection changed");}
         const auto legacyXML=sony2fuji::hdr::jpegGainMapXMP(legacyBytes.data(),legacyBytes.size());
         for(const auto& change : {std::pair<std::string,std::string>{"<HDRToneMap:OffsetHDR>0.000010","<HDRToneMap:OffsetHDR>-0.00001"},
             {"<HDRToneMap:Version>1","<HDRToneMap:Version>2"},
             {"urn:com:apple:photo:2020:aux:hdrgainmap","urn:invalid:apple:photo:auxiliary"}}) {
             std::string invalidXML(legacyXML.begin(),legacyXML.end());const auto at=invalidXML.find(change.first);
-            check(at!=std::string::npos,"legacy metadata fixture changed");invalidXML.replace(at,change.first.size(),change.second);
-            try { sony2fuji::hdr::appleGainMapMetadata(invalidXML.data(),invalidXML.size());check(false,"invalid legacy Apple metadata admitted"); }
-            catch(const sony2fuji::hdr::Error& error) {check(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX ||
+            require(at!=std::string::npos,"legacy metadata fixture changed");invalidXML.replace(at,change.first.size(),change.second);
+            try { sony2fuji::hdr::appleGainMapMetadata(invalidXML.data(),invalidXML.size());require(false,"invalid legacy Apple metadata admitted"); }
+            catch(const sony2fuji::hdr::Error& error) {require(error.reason==SONY2FUJI_HDR_REASON_MALFORMED_AUX ||
                 error.reason==SONY2FUJI_HDR_REASON_UNSUPPORTED_VERSION,"invalid legacy metadata has wrong diagnostic");}
         }
-        check(sony2fuji_hdr_probe(legacy.c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_probe(legacy.c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_OK &&
             info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE,"legacy Apple element XMP must use the Apple protocol");
         for(auto intent : {SONY2FUJI_INTENT_PREVIEW,SONY2FUJI_INTENT_FINAL}) {
             options.intent=intent;options.long_edge=intent==SONY2FUJI_INTENT_PREVIEW ? 32 : 0;
             pair=init<sony2fuji_hdr_image_pair_v1>();
-            check(sony2fuji_hdr_decode(legacy.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"legacy Apple JPEG decode failed");
+            require(sony2fuji_hdr_decode(legacy.c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"legacy Apple JPEG decode failed");
             const auto* pixels=static_cast<const float*>(pair.hdr.data);
-            check(*std::max_element(pixels,pixels+pair.hdr.width*pair.hdr.height*3)>2,"legacy Apple gain map was lost");
+            require(*std::max_element(pixels,pixels+pair.hdr.width*pair.hdr.height*3)>2,"legacy Apple gain map was lost");
             if(intent==SONY2FUJI_INTENT_FINAL) {
                 for(unsigned x : {8u,24u,40u,56u})
-                    check(std::abs(pixels[(16*pair.hdr.width+x)*3+1]-.5f*(1+x/16))<.06f,"legacy Apple logarithmic gain differs from authored HDR");
+                    require(std::abs(pixels[(16*pair.hdr.width+x)*3+1]-.5f*(1+x/16))<.06f,"legacy Apple logarithmic gain differs from authored HDR");
             }
             sony2fuji_hdr_release_pair(&pair);
         }
         const auto broken=root/"missing-gain-map.jpg"; write(broken,sony2fuji::hdr::jpegBase(original.data(),original.size()));
-        check(sony2fuji_hdr_probe(broken.u8string().c_str(),&info,&diagnostic)!=SONY2FUJI_STATUS_OK &&
+        require(sony2fuji_hdr_probe(broken.u8string().c_str(),&info,&diagnostic)!=SONY2FUJI_STATUS_OK &&
             diagnostic.reason!=SONY2FUJI_HDR_REASON_NOT_HDR,"declared but missing gain map was downgraded to SDR");
         const auto plain=root/"plain.jpg"; write(plain,sony2fuji::hdr::encodeSDRJPEG(synthetic.sdr,95));
-        check(sony2fuji_hdr_probe(plain.u8string().c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_UNSUPPORTED &&
+        require(sony2fuji_hdr_probe(plain.u8string().c_str(),&info,&diagnostic)==SONY2FUJI_STATUS_UNSUPPORTED &&
             diagnostic.reason==SONY2FUJI_HDR_REASON_NOT_HDR,"ordinary SDR must have an explicit NOT_HDR result");
-        try { sony2fuji::hdr::admitMemory(UINT64_MAX); check(false,"unbounded allocation admitted"); }
-        catch (const sony2fuji::hdr::Error& error) { check(error.status==SONY2FUJI_STATUS_OUT_OF_MEMORY,"memory rejection has wrong status"); }
+        try { sony2fuji::hdr::admitMemory(UINT64_MAX); require(false,"unbounded allocation admitted"); }
+        catch (const sony2fuji::hdr::Error& error) { require(error.status==sony2fuji::RenderStatus::OutOfMemory,"memory rejection has wrong status"); }
         if (argc==2) {
             options.intent=SONY2FUJI_INTENT_PREVIEW; options.long_edge=512;
             pair=init<sony2fuji_hdr_image_pair_v1>();
-            check(sony2fuji_hdr_decode(argv[1],&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"real portable fixture failed");
-            check(std::max(pair.hdr.width,pair.hdr.height)<=512 && pair.source_headroom>1,"real fixture lost HDR/bound");
+            require(sony2fuji_hdr_decode(argv[1],&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"real portable fixture failed");
+            require(std::max(pair.hdr.width,pair.hdr.height)<=512 && pair.source_headroom>1,"real fixture lost HDR/bound");
             const auto* hdr=static_cast<const float*>(pair.hdr.data);
             const auto* sdr=static_cast<const float*>(pair.sdr.data);
             float maximum=0; double delta=0;
             for (size_t i=0;i<size_t(pair.hdr.width)*pair.hdr.height*3;++i) {
-                check(std::isfinite(hdr[i]) && std::isfinite(sdr[i]),"real fixture has nonfinite pixels");
+                require(std::isfinite(hdr[i]) && std::isfinite(sdr[i]),"real fixture has nonfinite pixels");
                 maximum=std::max(maximum,hdr[i]); delta+=std::abs(hdr[i]-sdr[i]);
             }
-            check(maximum>1.05f && delta>1,"gain-map expansion did not change real pixels");
+            require(maximum>1.05f && delta>1,"gain-map expansion did not change real pixels");
             sony2fuji_hdr_release_pair(&pair);
 #ifdef RAWLAB_HDR_TEST_APPLE_AUTHOR
             if(std::filesystem::path(argv[1]).extension()==".HEIC") {
                 const auto apple=root/"apple.jpg";write(apple,authorAppleJPEG(argv[1]));
                 const auto status=sony2fuji_hdr_probe(apple.u8string().c_str(),&info,&diagnostic);
                 if(status)std::cerr<<"Apple JPEG status="<<status<<" reason="<<diagnostic.reason<<'\n';
-                check(status==SONY2FUJI_STATUS_OK && info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE,"Apple JPEG protocol/headroom failed");
+                require(status==SONY2FUJI_STATUS_OK && info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE,"Apple JPEG protocol/headroom failed");
                 pair=init<sony2fuji_hdr_image_pair_v1>();
-                check(sony2fuji_hdr_decode(apple.u8string().c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"Apple JPEG expansion failed");
+                require(sony2fuji_hdr_decode(apple.u8string().c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK,"Apple JPEG expansion failed");
                 sony2fuji_hdr_release_pair(&pair);
             }
             {
                 const auto iso=root/"iso.heic"; write(iso,authorISOHEIF());
                 const auto isoStatus=sony2fuji_hdr_probe(iso.u8string().c_str(),&info,&diagnostic);
                 if (isoStatus) std::cerr<<"ISO status="<<isoStatus<<" reason="<<diagnostic.reason<<" protocol="<<info.protocol<<'\n';
-                check(isoStatus==SONY2FUJI_STATUS_OK &&
+                require(isoStatus==SONY2FUJI_STATUS_OK &&
                     info.protocol==SONY2FUJI_HDR_PROTOCOL_ISO && info.content_headroom>1,"ISO HEIF association/metadata failed");
                 pair=init<sony2fuji_hdr_image_pair_v1>();
-                check(sony2fuji_hdr_decode(iso.u8string().c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK &&
+                require(sony2fuji_hdr_decode(iso.u8string().c_str(),&options,&pair,&diagnostic)==SONY2FUJI_STATUS_OK &&
                     pair.hdr.width && pair.hdr.height,"ISO HEIF gain-map reconstruction failed");
                 sony2fuji_hdr_release_pair(&pair);
             }

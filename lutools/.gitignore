@@ -18,12 +18,15 @@ cmake-build-*/
 !cmake/libraw-sony-arw6.cmake
 !cmake/libraw-cameras.cmake
 !cmake/raw-jpeg.cmake
+!cmake/raw-png.cmake
 !cmake/download-archive.cmake
 !cmake/tiff-dependencies.cmake
 !cmake/denoise-dependencies.cmake
 !cmake/ai-denoise.cmake
+!cmake/rawlab_add_test.cmake
 !CMakeLists.txt
 !cmake/patch-libraw.cmake
+!cmake/libraw/libraw.cmake
 
 # Compiled Object files
 *.o
@@ -100,7 +103,6 @@ deps/
 third_party/*
 !third_party/libraw/
 !third_party/libraw/**
-!third_party/stb_image_write.h
 !third_party/Adobe-DNG-SDK-LICENSE.txt
 !third_party/OpenCV-LICENSE.txt
 !third_party/wavelib-LICENSE.txt

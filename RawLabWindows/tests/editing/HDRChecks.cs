@@ -14,6 +14,7 @@ internal static class HDRChecks
         SnapshotKeepsInactiveHDRIndependent();
         EnablingPreservesLegacyState();
         ResetOnlyTouchesHDRRecord();
+        ResetAndModifiedIsolateActiveMode();
         TransferUsesHDRPayloadV2AndFloatMappings();
         ToneKeepsHDRAndSDRIndependent();
         ColorKeepsHDRAndSDRIndependent();
@@ -27,6 +28,8 @@ internal static class HDRChecks
         NativeLayoutsMatchHDRContract();
         LogicalFieldsCrossFamiliesWithoutCopyingGeometryOrInactiveState();
         BatchPreparationPreservesTheFrozenModeWithoutReopeningItsSource();
+        DormantFullHdrSurvivesProductionSdrResetAll();
+        RenditionGroupAndSingleToolResetAreIsolatedFromCameraDevelopment();
         Check(JsonSerializer.Deserialize<ExportFormat>("1")==ExportFormat.Png &&
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
             "Existing journal enum numbers keep PNG and DNG meanings");
@@ -126,6 +129,85 @@ internal static class HDRChecks
         var resetEdit = candidate.Candidate!;
         Check(resetEdit.Settings.Values[(int)Parameter.Exposure] == 0,
             "HDR reset leaves the independent SDR scalar untouched");
+    }
+
+    private static void ResetAndModifiedIsolateActiveMode()
+    {
+        var all = new EditorResetScope(EditorResetKind.All);
+        var rawIdentity = new OriginalIdentity("bayer.dng", 1, 2, 3);
+        var dormantHdr = new HDRSettings { Mode = HDRMode.Sdr, Exposure = -1.25, Contrast = 30 };
+
+        var sdrDefault = new Adjustments { HDR = dormantHdr, HDRCameraAIEnabled = true };
+        sdrDefault.ResolveWhiteBalance((5200, 8));
+        var sdrUnedited = new SavedEdit(rawIdentity, sdrDefault.Capture(), null);
+        Check(!EditorAdjustmentRules.IsModified(all, sdrUnedited) &&
+              EditorAdjustmentRules.PrepareReset(all, sdrUnedited).Status == EditorResetStatus.NoChange,
+            "Dormant HDR and HDRCameraAIEnabled do not mark unedited SDR as modified");
+
+        var sdrEditedState = sdrDefault.Clone();
+        sdrEditedState.Set(Parameter.Exposure, .75);
+        sdrEditedState.AIDenoiseEnabled = true;
+        var sdrEdited = new SavedEdit(rawIdentity, sdrEditedState.Capture(), "builtin:classic");
+        Check(EditorAdjustmentRules.IsModified(all, sdrEdited), "Active SDR edits mark All as modified");
+        var sdrReset = EditorAdjustmentRules.PrepareReset(all, sdrEdited);
+        Check(sdrReset.Status == EditorResetStatus.Ready &&
+              sdrReset.Candidate!.Look == null &&
+              !sdrReset.Candidate.Settings.AIDenoiseEnabled &&
+              sdrReset.Candidate.Settings.Values[(int)Parameter.Exposure] == 0 &&
+              sdrReset.Candidate.Settings.HDR == dormantHdr &&
+              sdrReset.Candidate.Settings.HDRCameraAIEnabled &&
+              !EditorAdjustmentRules.IsModified(all, sdrReset.Candidate),
+            "SDR all-reset preserves dormant HDR and HDRCameraAIEnabled and immediately clears IsModified(All)");
+
+        var proRawDefault = new Adjustments { HDR = dormantHdr, ProRAWDecodeVersion = 1 };
+        proRawDefault.ResolveWhiteBalance((5200, 8));
+        Check(!EditorAdjustmentRules.IsModified(all, new SavedEdit(rawIdentity, proRawDefault.Capture(), null)),
+            "Dormant ProRAWDecodeVersion does not mark unedited SDR as modified");
+        var proRawEdited = proRawDefault.Clone();
+        proRawEdited.Set(Parameter.Exposure, -.5);
+        var proRawReset = EditorAdjustmentRules.PrepareReset(all, new SavedEdit(rawIdentity, proRawEdited.Capture(), null));
+        Check(proRawReset.Status == EditorResetStatus.Ready &&
+              proRawReset.Candidate!.Settings.ProRAWDecodeVersion == 1 &&
+              proRawReset.Candidate.Settings.HDR == dormantHdr &&
+              !EditorAdjustmentRules.IsModified(all, proRawReset.Candidate),
+            "SDR all-reset preserves dormant ProRAWDecodeVersion and clears IsModified(All)");
+
+        void CheckHdrIsolation(AdjustmentSnapshot baseSdr, int? proRawVersion, bool hdrCameraAI)
+        {
+            var unedited = new SavedEdit(rawIdentity, (baseSdr with {
+                HDR = new HDRSettings { Mode = HDRMode.Hdr },
+                ProRAWDecodeVersion = proRawVersion,
+                HDRCameraAIEnabled = false
+            }), "builtin:classic");
+            Check(!EditorAdjustmentRules.IsModified(all, unedited) &&
+                  EditorAdjustmentRules.PrepareReset(all, unedited).Status == EditorResetStatus.NoChange,
+                "Active HDR ignores dormant SDR edits, Look, unknown recipe and ProRAWDecodeVersion when HDR is default");
+            var activeHdr = new HDRSettings { Mode = HDRMode.Hdr, Exposure = 1.5, Contrast = 25 }
+                .WithRendition(new HDRRenditionSettings { PeakLimitEV = 2 });
+            var edited = unedited with {
+                Settings = unedited.Settings with { HDR = activeHdr, HDRCameraAIEnabled = hdrCameraAI }
+            };
+            Check(EditorAdjustmentRules.IsModified(all, edited), "Active HDR edits mark All as modified");
+            var reset = EditorAdjustmentRules.PrepareReset(all, edited);
+            Check(reset.Status == EditorResetStatus.Ready &&
+                  reset.Candidate!.Settings.HDR!.IsIdentity &&
+                  !reset.Candidate.Settings.HDRCameraAIEnabled &&
+                  reset.Candidate.Look == "builtin:classic" &&
+                  reset.Candidate.Settings.Values[(int)Parameter.Exposure] == .75 &&
+                  reset.Candidate.Settings.Denoise == DenoiseSettings.Clean &&
+                  reset.Candidate.Settings.AIDenoiseEnabled &&
+                  reset.Candidate.Settings.MasterRecipeID == "unknown-dormant-recipe" &&
+                  reset.Candidate.Settings.ProRAWDecodeVersion == proRawVersion &&
+                  !EditorAdjustmentRules.IsModified(all, reset.Candidate),
+                "Active HDR all-reset preserves dormant SDR snapshot, Look and ProRAWDecodeVersion and clears IsModified(All)");
+        }
+        var dormantSdr = new Adjustments { Denoise = DenoiseSettings.Clean, AIDenoiseEnabled = true };
+        dormantSdr.ResolveWhiteBalance((5200, 8));
+        dormantSdr.Set(Parameter.Exposure, .75);
+        // AdjustmentSnapshot is the persisted record, so an unknown recipe id is expressed there.
+        var dormantSdrSnapshot = dormantSdr.Capture() with { MasterRecipeID = "unknown-dormant-recipe" };
+        CheckHdrIsolation(dormantSdrSnapshot, proRawVersion: 1, hdrCameraAI: false);
+        CheckHdrIsolation(dormantSdrSnapshot, proRawVersion: null, hdrCameraAI: true);
     }
 
     private static void EnablingPreservesLegacyState()
@@ -284,7 +366,7 @@ internal static class HDRChecks
         var neutral = new SavedEdit(identity, adjustments.Capture(), null);
         var rendition = new HDRRenditionSettings { PeakLimitEV=2, SdrExposureEV=-.75, SdrContrast=25, SdrSaturation=-15 };
         adjustments.HDR = adjustments.HDR.WithRendition(rendition);
-        var native = adjustments.HDR.NativeRenderRequest(HDRIntent.Final).Base.Base.Base;
+        var native = adjustments.HDR.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base;
         Check(native.Base.Base.Base.StructSize == 808 && native.PeakLimitEV == 2 && native.SdrExposureEV == -.75 &&
               native.SdrContrast == 25 && native.SdrSaturation == -15, "Native HDR v4 values");
         var context = new AdjustmentTransferContext("hdr.jpg", false);
@@ -316,7 +398,7 @@ internal static class HDRChecks
         Check(restored.SameAs(snapshot) && restored.Effects == sdr &&
               restored.HDR!.ProcessingVersion == 5 && restored.HDR.EffectSettings.GrainAmount == 40,
             "HDR effects round-trip independently of the ordinary SDR effect");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base;
+        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base;
         Check(native.Base.Base.Base.Base.StructSize == 848 && native.Effects.GrainAmount == 40 &&
               native.Effects.VignetteAmount == -55,"Native HDR v5 effects match the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
@@ -344,7 +426,7 @@ internal static class HDRChecks
         Check(restored.SameAs(snapshot) && restored.HDR!.ProcessingVersion == 6 &&
             restored.Values[(int)Parameter.Sharpening] == 25 && restored.Atmosphere!.Clarity == -15,
             "HDR detail persists independently of dormant SDR settings");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base;
+        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base;
         Check(native.Base.Base.Base.Base.Base.StructSize == 864 && native.Sharpening == 1.3f && native.Clarity == .5f &&
             native.Dehaze == -.25f && native.Denoise == .75f,"Native HDR v6 detail matches the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
@@ -372,7 +454,7 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.HDR is { ProcessingVersion: 7 } &&
             restored.HDR.LookSettings == look, "HDR look round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final);
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base;
         Check(request.Base.Base.Base.Base.Base.Base.StructSize == 952 && request.LookPath == look.AssetPath() &&
             request.LookStrength == .65f && System.Text.Encoding.ASCII.GetString(request.LookSha256, 0, 64) == look.Sha256,
             "HDR look maps to the v7 request");
@@ -426,7 +508,7 @@ internal static class HDRChecks
         var settings = new Adjustments { Curve = sdrCurve, ToneControls = new(-8, 9) };
         settings.Set(Parameter.ToneCurve, 12);
         settings.HDR = new();
-        Check(settings.HDR.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.StructSize == 88,
+        Check(settings.HDR.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.StructSize == 88,
             "Unedited HDR stays on request v1");
         settings.SetTone(ToneControlParameter.BlackPoint, -25);
         settings.SetTone(ToneControlParameter.WhitePoint, 50);
@@ -440,7 +522,7 @@ internal static class HDRChecks
             "HDR tone edits preserve the dormant SDR record");
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!.Restore();
         Check(restored.Capture().SameAs(snapshot), "Windows HDR tone settings round-trip");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final, 512).Base.Base.Base.Base.Base;
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final, 512).Base.Base.Base.Base.Base.Base;
         Check(request.Base.Version == 1 && request.Base.HDRProcessingVersion == 2 && request.Base.StructSize == 648 &&
               request.BlackPoint == -25 && request.WhitePoint == 50 && request.CurveStrength == 30 &&
               request.Curve.Count == 3 && request.Curve.Points[3] == .625, "Windows maps HDR tone to the C ABI");
@@ -474,7 +556,7 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.Hsl!.Equals(sdrHsl) && (restored.ToneControls?.Vibrance ?? 0) == 0 &&
               restored.HDR!.ProcessingVersion == 3 && restored.HDR.ToneSettings.IsDefault, "HDR color round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base;
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base;
         Check(request.Base.Base.StructSize == 792 && request.Vibrance == 35 && request.Hsl.Saturation[5] == -12.5 &&
               request.Grading.HighlightsHue == 215 && request.Grading.HighlightsSaturation == 30, "HDR colors map to ABI");
         var source = new SavedEdit(new OriginalIdentity("hdr.jpg", 1, 2, 3), snapshot, null);
@@ -489,5 +571,231 @@ internal static class HDRChecks
         var reset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Color), source).Candidate!;
         Check(reset.Settings.HDR!.ProcessingVersion == 3 && reset.Settings.HDR.ColorSettings.IsDefault &&
               reset.Settings.Hsl!.Equals(sdrHsl), "HDR color reset preserves v3 and dormant color");
+    }
+
+    private static void RenditionGroupAndSingleToolResetAreIsolatedFromCameraDevelopment()
+    {
+        var renditionTools = new[] {
+            EditorAdjustmentTool.HdrPeakLimit, EditorAdjustmentTool.HdrSdrExposure,
+            EditorAdjustmentTool.HdrSdrContrast, EditorAdjustmentTool.HdrSdrSaturation
+        };
+        Check(EditorAdjustmentRules.Tools(EditorAdjustmentGroup.HdrRendition).SequenceEqual(renditionTools),
+            "HDR rendition group owns the exact four display-mapping tools");
+        Check(EditorAdjustmentRules.DefaultTool(EditorAdjustmentGroup.HdrRendition) == EditorAdjustmentTool.HdrPeakLimit,
+            "HDR rendition group opens at PeakLimit");
+        Check(!EditorAdjustmentRules.VisibleGroups(isHDREditing: false).Contains(EditorAdjustmentGroup.HdrRendition) &&
+              EditorAdjustmentRules.VisibleGroups(isHDREditing: false).Count == 6,
+            "SDR mode hides HdrRendition group");
+        Check(EditorAdjustmentRules.VisibleGroups(isHDREditing: true).Contains(EditorAdjustmentGroup.HdrRendition) &&
+              EditorAdjustmentRules.VisibleGroups(isHDREditing: true).Count == 7,
+            "HDR mode exposes all seven groups including HdrRendition");
+        foreach (var tool in renditionTools)
+        {
+            Check(EditorAdjustmentRules.NormalizeTool(tool, isHDREditing: true) == tool,
+                "HDR mode retains rendition tool selection: " + tool);
+            var normalized = EditorAdjustmentRules.NormalizeTool(tool, isHDREditing: false);
+            Check(normalized == EditorAdjustmentTool.Exposure &&
+                  EditorAdjustmentRules.GroupFor(normalized) != EditorAdjustmentGroup.HdrRendition,
+                "SDR normalization exits HdrRendition from " + tool);
+        }
+
+        var identity = new OriginalIdentity("hdr.arw", 1, 2, 3);
+        var sdrBase = new Adjustments();
+        sdrBase.Set(Parameter.Exposure, -.5);
+        sdrBase.Set(Parameter.Contrast, 25);
+        var renditionHdr = sdrBase.Clone();
+        renditionHdr.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true);
+        renditionHdr.Set(Parameter.Exposure, 1.5);
+        renditionHdr.HDR = renditionHdr.HDR!.WithCameraDevelopment(new HDRCameraDevelopmentSettings(FbddLevel: 2));
+        var untouched = new SavedEdit(identity, renditionHdr.Capture(), "dormant-look");
+        var groupScope = new EditorResetScope(EditorResetKind.Group, EditorAdjustmentGroup.HdrRendition);
+        Check(!EditorAdjustmentRules.IsModified(groupScope, untouched) &&
+              renditionTools.All(tool => !EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), untouched)),
+            "Untouched HDR rendition or camera development never marks HdrRendition modified");
+        Check(EditorAdjustmentRules.PrepareReset(groupScope, untouched).Status == EditorResetStatus.NoChange &&
+              untouched.Settings.HDR!.ProcessingVersion == 1,
+            "No-op HdrRendition group reset is NoChange and keeps v1");
+
+        var fullRendition = new HDRRenditionSettings { PeakLimitEV = 2.4, SdrExposureEV = -1.2, SdrContrast = 35, SdrSaturation = -25 };
+        var editedHdr = renditionHdr.Clone();
+        editedHdr.HDR = editedHdr.HDR!.WithRendition(fullRendition);
+        var editedSnapshot = new SavedEdit(identity, editedHdr.Capture(), "dormant-look");
+        Check(editedSnapshot.Settings.HDR!.ProcessingVersion == 4, "HDR rendition edit upgrades ProcessingVersion to 4");
+        Check(EditorAdjustmentRules.IsModified(groupScope, editedSnapshot) &&
+              renditionTools.All(tool => EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), editedSnapshot)),
+            "Modified rendition fields mark group and all four tools modified");
+
+        foreach (var tool in renditionTools)
+        {
+            var single = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), editedSnapshot);
+            Check(single.Status == EditorResetStatus.Ready && !single.RequiresConfirmation,
+                "Single rendition reset is Ready without confirmation: " + tool);
+            var expected = tool switch {
+                EditorAdjustmentTool.HdrPeakLimit => fullRendition with { PeakLimitEV = 0 },
+                EditorAdjustmentTool.HdrSdrExposure => fullRendition with { SdrExposureEV = 0 },
+                EditorAdjustmentTool.HdrSdrContrast => fullRendition with { SdrContrast = 0 },
+                _ => fullRendition with { SdrSaturation = 0 }
+            };
+            Check(single.Candidate!.Settings.HDR!.RenditionSettings == expected,
+                "Single rendition reset clears only target field: " + tool);
+            Check(!EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), single.Candidate!) &&
+                  EditorAdjustmentRules.IsModified(groupScope, single.Candidate!),
+                "Single rendition reset clears tool marker while siblings keep group marker: " + tool);
+            Check(single.Candidate.Settings.HDR.Exposure == 1.5 &&
+                  single.Candidate.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+                  single.Candidate.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+                  single.Candidate.Look == "dormant-look",
+                "Single rendition reset isolates other HDR groups, camera dev and dormant SDR");
+            Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), single.Candidate!).Status == EditorResetStatus.NoChange,
+                "Single rendition reset is idempotent: " + tool);
+        }
+
+        var groupReset = EditorAdjustmentRules.PrepareReset(groupScope, editedSnapshot);
+        Check(groupReset.Status == EditorResetStatus.Ready && groupReset.RequiresConfirmation,
+            "HdrRendition group reset is Ready and requires confirmation");
+        Check(groupReset.Candidate!.Settings.HDR!.RenditionSettings.IsDefault &&
+              groupReset.Candidate.Settings.HDR.ProcessingVersion == 4 &&
+              groupReset.Candidate.Settings.HDR.Exposure == 1.5 &&
+              groupReset.Candidate.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+              groupReset.Candidate.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+              groupReset.Candidate.Look == "dormant-look",
+            "HdrRendition group reset clears all four fields while preserving v4, camera dev and dormant SDR");
+        Check(!EditorAdjustmentRules.IsModified(groupScope, groupReset.Candidate!) &&
+              EditorAdjustmentRules.PrepareReset(groupScope, groupReset.Candidate!).Status == EditorResetStatus.NoChange,
+            "HdrRendition group reset is idempotent");
+
+        var dormantSdr = editedHdr.Clone();
+        dormantSdr.SetHDRMode(false, sourceIsHDR: true, cameraRaw: true);
+        var dormantSnapshot = new SavedEdit(identity, dormantSdr.Capture(), "dormant-look");
+        Check(!EditorAdjustmentRules.IsModified(groupScope, dormantSnapshot) &&
+              EditorAdjustmentRules.PrepareReset(groupScope, dormantSnapshot).Status == EditorResetStatus.NoChange &&
+              renditionTools.All(tool => !EditorAdjustmentRules.IsModified(new(EditorResetKind.Tool, Tool: tool), dormantSnapshot) &&
+                  EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: tool), dormantSnapshot).Status == EditorResetStatus.NoChange),
+            "Dormant HDR rendition stays invisible and unresettable in SDR mode");
+        var sdrAll = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), dormantSnapshot).Candidate!;
+        Check(sdrAll.Settings.HDR!.RenditionSettings == fullRendition &&
+              sdrAll.Settings.HDR.CameraSettings.FbddLevel == 2 &&
+              sdrAll.Settings.HDR.Mode != HDRMode.Hdr &&
+              sdrAll.Settings.Values[(int)Parameter.Exposure] == 0,
+            "SDR ResetAll preserves dormant HDR rendition and camera development");
+        var hdrAllCandidate = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), editedSnapshot);
+        Check(hdrAllCandidate.Status == EditorResetStatus.Ready && hdrAllCandidate.RequiresConfirmation,
+            "HDR ResetAll requires confirmation");
+        var hdrAll = hdrAllCandidate.Candidate!;
+        Check(hdrAll.Settings.HDR is { Mode: HDRMode.Hdr } hdrAfterReset &&
+              hdrAfterReset.RenditionSettings.IsDefault &&
+              hdrAfterReset.IsIdentity &&
+              hdrAll.Settings.Values[(int)Parameter.Exposure] == sdrBase.Capture().Values[(int)Parameter.Exposure] &&
+              hdrAll.Look == "dormant-look",
+            "HDR ResetAll resets HDR rendition while preserving dormant SDR");
+
+        Check(sdrBase.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 0 &&
+              dormantSdr.EditingHDRRenditionValue(HDRRenditionParameter.SdrExposureEV) == 0,
+            "EditingHDRRenditionValue returns 0 when HDR editing is inactive");
+        sdrBase.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, 1.5);
+        dormantSdr.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, 1.5);
+        Check(sdrBase.HDR == null && dormantSdr.HDR!.RenditionSettings == fullRendition,
+            "SetHDRRendition is a no-op when HDR editing is inactive");
+
+        var editor = renditionHdr.Clone();
+        editor.SetHDRRendition(HDRRenditionParameter.PeakLimitEV, 2.44);
+        Check(editor.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 2.4,
+            "SetHDRRendition rounds 0.1 EV fields to grid");
+        editor.SetHDRRendition(HDRRenditionParameter.PeakLimitEV, 9.9);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, -9.9);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrContrast, 12.6);
+        editor.SetHDRRendition(HDRRenditionParameter.SdrSaturation, -12.6);
+        Check(editor.EditingHDRRenditionValue(HDRRenditionParameter.PeakLimitEV) == 6.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrExposureEV) == -4.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrContrast) == 13.0 &&
+              editor.EditingHDRRenditionValue(HDRRenditionParameter.SdrSaturation) == -13.0,
+            "SetHDRRendition clamps to range and rounds percent fields to integers");
+        foreach (var bad in new[] { double.NaN, double.PositiveInfinity })
+        {
+            var rejected = false;
+            try { editor.SetHDRRendition(HDRRenditionParameter.SdrExposureEV, bad); }
+            catch (ArgumentOutOfRangeException) { rejected = true; }
+            Check(rejected, "SetHDRRendition rejects non-finite value " + bad);
+        }
+    }
+
+    private static void DormantFullHdrSurvivesProductionSdrResetAll()
+    {
+        var all = new EditorResetScope(EditorResetKind.All);
+        var identity = new OriginalIdentity("dormant-full-hdr.arw", 11, 22, 33);
+        var richHdr = new HDRSettings {
+            Mode = HDRMode.Sdr,
+            Exposure = 1.25,
+            Temperature = 5800,
+            Tint = -8,
+            Contrast = 18,
+            Highlights = -25,
+            Shadows = 30,
+            Saturation = 12,
+            Geometry = new GeometrySettings(.05, .05, .9, .9, 1, true, false, 1.5),
+            CameraDevelopment = new HDRCameraDevelopmentSettings(
+                CustomWhiteBalance: true, Temperature: 5600, Tint: 6, SensorExposure: true,
+                LensDistortion: true, LensProfile: "test-hdr-lens")
+        }
+        .WithTone(new HDRToneSettings {
+            BlackPoint = -12, WhitePoint = 14, CurveStrength = 40,
+            Curve = ToneCurveSettings.Identity.Inserting(.5, .625)
+        })
+        .WithColor(new HDRColorSettings {
+            Vibrance = 20,
+            Hsl = new HslSettings().WithValue(0, 2, 15),
+            Grading = new ColorGradingSettings { Highlights = new(215, 30) }
+        })
+        .WithRendition(new HDRRenditionSettings {
+            PeakLimitEV = 2.5, SdrExposureEV = -.5, SdrContrast = 15, SdrSaturation = -10
+        })
+        .WithEffects(new PhotoEffectsSettings(-30, 45, 10, 60, 20, 25, 40, 55))
+        .WithDetail(new HDRDetailSettings(Sharpening: .6, Clarity: .2, Dehaze: .15, Denoise: .35))
+        .WithLook(new HDRLookSettings(new string('b', 64), "Dormant HDR Look", .85));
+
+        var sdrEdited = new Adjustments {
+            HDR = richHdr,
+            HDRCameraAIEnabled = true,
+            Denoise = DenoiseSettings.Clean,
+            AIDenoiseEnabled = true,
+            Effects = new PhotoEffectsSettings(-20, 50, 0, 50, 0, 30, 25, 50),
+            ToneControls = new ToneControlsSettings(-10, 12, 8)
+        };
+        sdrEdited.ResolveWhiteBalance((5200, 4));
+        sdrEdited.Set(Parameter.Exposure, .9);
+        sdrEdited.Set(Parameter.Saturation, 22);
+
+        var edit = new SavedEdit(identity, sdrEdited.Capture(), "builtin:provia.cube");
+        var ruleReset = EditorAdjustmentRules.PrepareReset(all, edit);
+        Check(ruleReset.Status == EditorResetStatus.Ready && ruleReset.RequiresConfirmation,
+            "Production PrepareReset(All) prepares confirmed SDR reset");
+        var ruleRestored = ruleReset.Candidate!.Settings.Restore();
+        Check(ruleReset.Candidate.Look == null &&
+              ruleRestored[Parameter.Exposure] == 0 &&
+              ruleRestored[Parameter.Saturation] == 0 &&
+              ruleRestored.Denoise == new DenoiseSettings() &&
+              !ruleRestored.AIDenoiseEnabled &&
+              ruleRestored.Effects == new PhotoEffectsSettings() &&
+              ruleRestored.ToneControls == new ToneControlsSettings() &&
+              ruleRestored.HDR == richHdr &&
+              ruleRestored.HDRCameraAIEnabled,
+            "PrepareReset(All) resets SDR fields while preserving full dormant HDR and HDRCameraAIEnabled");
+
+        var context = new EditorResetContext("builtin:provia.cube", 0);
+        var transaction = EditorResetTransaction.Prepare(all, identity.Path, 1, 1, edit, context);
+        Check(transaction.Status == EditorResetStatus.Ready && transaction.RequiresConfirmation,
+            "EditorResetTransaction.Prepare(All) prepares confirmed SDR reset");
+        var committed = false;
+        Check(transaction.TryCommit(identity.Path, 1, 1, edit, context, candidate => {
+            committed = true;
+            var txRestored = candidate.Settings.Restore();
+            Check(candidate.Look == null &&
+                  txRestored[Parameter.Exposure] == 0 &&
+                  txRestored.Denoise == new DenoiseSettings() &&
+                  !txRestored.AIDenoiseEnabled &&
+                  txRestored.HDR == richHdr &&
+                  txRestored.HDRCameraAIEnabled,
+                "EditorResetTransaction.TryCommit(All) preserves full dormant HDR and HDRCameraAIEnabled");
+        }) && committed, "EditorResetTransaction.TryCommit succeeds");
     }
 }

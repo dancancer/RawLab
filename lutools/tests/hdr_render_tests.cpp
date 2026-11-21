@@ -1,8 +1,13 @@
+#include "test_harness.h"
 #include "core/hdr_rendering.h"
 #include "core/hdr_look.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -18,12 +23,9 @@ using namespace sony2fuji;
 
 namespace {
 
-void check(bool value, const char* message) {
-    if (!value) throw std::runtime_error(message);
-}
-
+using rawlab::test::require;
 void near(float value, float reference, const char* message) {
-    check(std::abs(value - reference) <= 1e-6f * std::max(1.0f, std::abs(reference)), message);
+    require(std::abs(value - reference) <= 1e-6f * std::max(1.0f, std::abs(reference)), message);
 }
 
 float luminance(const RGB& p) { return .2126f * p.r + .7152f * p.g + .0722f * p.b; }
@@ -47,17 +49,83 @@ HDRImagePair fixture() {
 template<class Function> void rejects(Function function, const char* message) {
     bool rejected = false;
     try { function(); } catch (const std::invalid_argument&) { rejected = true; }
-    check(rejected, message);
+    require(rejected, message);
+}
+
+// V-01 融合红锚：撤掉融合（或放宽 inert 判据、改变 max 口径）时本用例必红；NaN/Inf 分支锁定逐位语义不变。
+void headroomFusion() {
+    const auto reference = [](const ImageData& image) {
+        float peak = 1;
+        for (const auto& pixel : image.pixels) peak = std::max(peak, luminance(pixel));
+        return peak;
+    };
+    auto source = fixture();
+    source.hdr.pixels[0] = {-1.5f, 2.25f, -0.75f};
+    source.hdr.pixels[1] = {std::numeric_limits<float>::denorm_min(), 0, 0};
+    source.hdr.pixels[2] = {std::numeric_limits<float>::max(), 0, 0};
+    source.sdr.pixels[0] = {-0.25f, 0, 1.0f};
+    HDRRenderOptions slider;
+    slider.saturation = -50;
+    const auto fused = renderHDRPair(source, slider);
+    require(fused.editedHeadroom == reference(fused.hdr) && fused.editedSdrHeadroom == reference(fused.sdr),
+        "fused single-pass headroom drifted from the independent full-image scan");
+    require(fused.editedSdrHeadroom >= 1, "inert render did not measure the SDR content peak");
+
+    HDRImagePair big;
+    big.hdr = ImageData(512, 258); big.sdr = ImageData(512, 258);
+    for (size_t i = 0; i < big.hdr.pixels.size(); ++i) {
+        const float v = (float(i % 4097) - 2048.f) * 1e-6f;
+        big.hdr.pixels[i] = {v, (i % 7) ? v * 2.f : -1e-7f, float(i % 3) * .5f};
+        big.sdr.pixels[i] = {v * .5f, float(i % 5) * .25f, (i % 9) ? 1.0f : -2.f};
+    }
+    big.nativeWidth = 512; big.nativeHeight = 258;
+    const auto fusedBig = renderHDRPair(big, slider);
+    require(fusedBig.editedHeadroom == reference(fusedBig.hdr) && fusedBig.editedSdrHeadroom == reference(fusedBig.sdr),
+        "parallel-range headroom reduction changed bits across threads");
+
+    HDRRenderOptions cropped = slider;
+    cropped.geometry.crop_width = .9f;
+    const auto fallback = renderHDRPair(source, cropped);
+    require(fallback.editedSdrHeadroom == 0, "active geometry published a fused SDR peak it did not measure");
+    require(fallback.editedHeadroom == reference(fallback.hdr), "fallback headroom scan changed");
+
+    HDRRenderOptions renditionOnly;
+    renditionOnly.processingVersion = SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+    renditionOnly.rendition.peakLimitEV = 1;
+    const auto hdrOnly = renderHDRPair(source, renditionOnly);
+    require(hdrOnly.editedSdrHeadroom == 0, "inactive SDR pass must not report a measured peak");
+    require(hdrOnly.editedHeadroom == reference(hdrOnly.hdr), "rendition fused headroom drifted");
+
+    auto corrupted = fixture();
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::quiet_NaN(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "NaN pixel survived HDR input validation");
+    corrupted.hdr.pixels[5] = {std::numeric_limits<float>::infinity(), 1, 1};
+    rejects([&] { renderHDRPair(corrupted, slider); }, "Infinite pixel survived HDR input validation");
+
+    auto saturated = fixture();
+    saturated.hdr.pixels[3] = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), 0};
+    saturated.hdr.pixels[4] = {std::numeric_limits<float>::max(), .75f * std::numeric_limits<float>::max(), 0};
+    const auto boundary = renderHDRPair(saturated, {});
+    require(boundary.editedHeadroom == reference(boundary.hdr) && boundary.editedSdrHeadroom == 0,
+        "scan-only render must match the fallback headroom bit-for-bit and leave the SDR peak unmeasured");
+
+    auto doubled = fixture();
+    doubled.hdr.pixels[3] = {std::numeric_limits<float>::max(), 0, 0};
+    HDRRenderOptions boost;
+    boost.exposureEV = 1;
+    bool editThrew = false;
+    try { renderHDRPair(doubled, boost); } catch (const std::overflow_error&) { editThrew = true; }
+    require(editThrew, "exposure overflow must still throw from the edit pass with a fused max tracked");
 }
 
 void identity() {
     auto source = fixture();
     const auto result = renderHDRPair(source, {});
-    check(std::memcmp(source.hdr.pixels.data(), result.hdr.pixels.data(), source.hdr.pixels.size() * sizeof(RGB)) == 0,
+    require(std::memcmp(source.hdr.pixels.data(), result.hdr.pixels.data(), source.hdr.pixels.size() * sizeof(RGB)) == 0,
         "HDR identity changed float bits or clipped super-whites");
-    check(std::memcmp(source.sdr.pixels.data(), result.sdr.pixels.data(), source.sdr.pixels.size() * sizeof(RGB)) == 0,
+    require(std::memcmp(source.sdr.pixels.data(), result.sdr.pixels.data(), source.sdr.pixels.size() * sizeof(RGB)) == 0,
         "SDR identity changed float bits");
-    check(result.decodeRevision == 42 && result.sourceHeadroom == 16 && result.editedHeadroom >= 16,
+    require(result.decodeRevision == 42 && result.sourceHeadroom == 16 && result.editedHeadroom >= 16,
         "content metadata was lost");
     HDRRenderOptions options;
     options.exposureEV = 1;
@@ -67,7 +135,7 @@ void identity() {
         near(brighter.sdr.pixels[i].r, source.sdr.pixels[i].r * 2, "exposure did not double linear SDR");
     }
     near(source.hdr.pixels[6].r, 16, "source mutated");
-    check(brighter.editedHeadroom >= 32, "edited headroom was capped to source capacity");
+    require(brighter.editedHeadroom >= 32, "edited headroom was capped to source capacity");
 }
 
 void tone() {
@@ -77,16 +145,16 @@ void tone() {
     auto brighter = renderHDRPair(source, options);
     options.highlights = -100;
     auto darker = renderHDRPair(source, options);
-    check(brighter.hdr.pixels[4].r > 4 && darker.hdr.pixels[4].r < 4, "HDR highlights have wrong direction");
+    require(brighter.hdr.pixels[4].r > 4 && darker.hdr.pixels[4].r < 4, "HDR highlights have wrong direction");
     near(brighter.hdr.pixels[4].r, 16, "positive highlight reference vector differs");
     near(darker.hdr.pixels[4].r, 1, "negative highlight reference vector differs");
     options = {}; options.shadows = 100;
     brighter = renderHDRPair(source, options);
-    check(brighter.hdr.pixels[1].r > .18f, "HDR shadows did not brighten");
+    require(brighter.hdr.pixels[1].r > .18f, "HDR shadows did not brighten");
     options = {}; options.contrast = 100;
     brighter = renderHDRPair(source, options);
     near(brighter.hdr.pixels[1].r, .18f, "contrast moved its gray anchor");
-    check(brighter.hdr.pixels[6].r > 16, "HDR contrast clipped highlights");
+    require(brighter.hdr.pixels[6].r > 16, "HDR contrast clipped highlights");
     near(brighter.hdr.pixels[4].r, 88.8888889f, "contrast reference vector differs");
     source.hdr.pixels[0] = {.2f, .5f, .8f};
     options = {}; options.saturation = -100;
@@ -98,8 +166,25 @@ void tone() {
     source.hdr.pixels[1] = {1.00001f, 1.00001f, 1.00001f};
     options = {}; options.highlights = 100;
     const auto edge = renderHDRPair(source, options);
-    check(edge.hdr.pixels[1].r > edge.hdr.pixels[0].r && edge.hdr.pixels[1].r - edge.hdr.pixels[0].r < .001f,
+    require(edge.hdr.pixels[1].r > edge.hdr.pixels[0].r && edge.hdr.pixels[1].r - edge.hdr.pixels[0].r < .001f,
         "HDR reference-white boundary has a plateau or jump");
+    options = {}; options.processingVersion = kHdrProcessingChannelCurvesVersion;
+    source = fixture();
+    const auto original = renderHDRPair(source, options);
+    options.tone.channels[0] = {ToneCurveMode::Custom, 3, {{{0,0},{.5,.6},{1,1}}}};
+    const auto red = renderHDRPair(source, options);
+    require(red.hdr.pixels[2].r > original.hdr.pixels[2].r, "HDR red curve must affect red");
+    for (size_t i = 0; i < source.hdr.pixels.size(); ++i) {
+        near(red.hdr.pixels[i].g, original.hdr.pixels[i].g, "HDR red curve preserves green");
+        near(red.hdr.pixels[i].b, original.hdr.pixels[i].b, "HDR red curve preserves blue");
+        near(red.sdr.pixels[i].g, original.sdr.pixels[i].g, "SDR rendition preserves green");
+    }
+    options.tone.channels[0].points[1].y = .5;
+    const auto identity = renderHDRPair(source, options);
+    require(std::memcmp(identity.hdr.pixels.data(), original.hdr.pixels.data(), original.hdr.pixels.size() * sizeof(RGB)) == 0 &&
+        std::memcmp(identity.sdr.pixels.data(), original.sdr.pixels.data(), original.sdr.pixels.size() * sizeof(RGB)) == 0,
+        "HDR channel identity is exact");
+
 }
 
 void color() {
@@ -118,7 +203,7 @@ void color() {
     v2.processingVersion = 2; v2.tone.whitePoint = 20;
     auto v3 = v2; v3.processingVersion = 3;
     auto previous = renderHDRPair(source, v2), next = renderHDRPair(source, v3);
-    check(std::memcmp(previous.hdr.pixels.data(), next.hdr.pixels.data(), previous.hdr.pixels.size() * sizeof(RGB)) == 0 &&
+    require(std::memcmp(previous.hdr.pixels.data(), next.hdr.pixels.data(), previous.hdr.pixels.size() * sizeof(RGB)) == 0 &&
         std::memcmp(previous.sdr.pixels.data(), next.sdr.pixels.data(), previous.sdr.pixels.size() * sizeof(RGB)) == 0,
         "neutral HDR v3 changed v2 pixels");
 
@@ -126,16 +211,16 @@ void color() {
     v3.color.vibrance = 100;
     next = renderHDRPair(source, v3);
     const auto bright = next.hdr.pixels[0], base = next.sdr.pixels[0];
-    check(bright.r > 4 && bright.b < -.2f && base.r > .8f, "vibrance did not preserve the extended range in both renditions");
+    require(bright.r > 4 && bright.b < -.2f && base.r > .8f, "vibrance did not preserve the extended range in both renditions");
     near(luminance(bright), luminance(source.hdr.pixels[0]), "vibrance changed HDR luminance");
     near(next.hdr.pixels[1].r, .18f, "vibrance tinted neutral gray");
     const auto skin = next.hdr.pixels[5], cool = next.hdr.pixels[6];
-    check(skin.r - skin.b < cool.b - cool.r, "vibrance did not protect the skin-tone range");
+    require(skin.r - skin.b < cool.b - cool.r, "vibrance did not protect the skin-tone range");
 
     v3.color = {};
     v3.color.hsl.hue.fill(100);
     next = renderHDRPair(source, v3);
-    check(next.hdr.pixels[0].g > source.hdr.pixels[0].g, "HDR hue adjustment did not rotate its color direction");
+    require(next.hdr.pixels[0].g > source.hdr.pixels[0].g, "HDR hue adjustment did not rotate its color direction");
     near(luminance(next.hdr.pixels[0]), luminance(source.hdr.pixels[0]), "HDR hue adjustment changed luminance");
     v3.color.hsl.hue.fill(0); v3.color.hsl.lightness.fill(100);
     next = renderHDRPair(source, v3);
@@ -145,9 +230,9 @@ void color() {
     v3.color = {};
     v3.color.grading.wheels[2] = {210, 65};
     next = renderHDRPair(source, v3);
-    check(next.hdr.pixels[4].b > 4 && next.hdr.pixels[4].r < 4, "HDR grading bypassed highlights");
+    require(next.hdr.pixels[4].b > 4 && next.hdr.pixels[4].r < 4, "HDR grading bypassed highlights");
     near(luminance(next.hdr.pixels[4]), 4, "HDR grading changed luminance");
-    check(next.hdr.pixels[3].b > next.hdr.pixels[2].b &&
+    require(next.hdr.pixels[3].b > next.hdr.pixels[2].b &&
         next.hdr.pixels[3].b - next.hdr.pixels[2].b < .001f, "HDR grading jumped at reference white");
     v3.color.vibrance = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { renderHDRPair(source, v3); }, "invalid v3 color options were accepted");
@@ -165,26 +250,26 @@ void rendition() {
         return std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0;
     };
     const auto neutral = renderHDRPair(source, options);
-    check(samePixels(neutral.hdr, reference.hdr) && samePixels(neutral.sdr, reference.sdr), "neutral v4 changed v3 pixels");
+    require(samePixels(neutral.hdr, reference.hdr) && samePixels(neutral.sdr, reference.sdr), "neutral v4 changed v3 pixels");
     options.rendition.peakLimitEV = 2;
     const auto limited = renderHDRPair(source, options);
-    check(samePixels(limited.sdr, reference.sdr), "HDR limit changed the SDR base");
+    require(samePixels(limited.sdr, reference.sdr), "HDR limit changed the SDR base");
     near(limited.hdr.pixels[2].r, 1, "HDR limit moved reference white");
     near(limited.hdr.pixels[3].r, 2, "HDR limit moved the knee");
     near(limited.hdr.pixels[4].r / limited.hdr.pixels[4].g, 1.5f, "HDR limit changed channel proportions");
-    check(limited.hdr.pixels[5].r < 4 && limited.hdr.pixels[6].r > limited.hdr.pixels[5].r &&
+    require(limited.hdr.pixels[5].r < 4 && limited.hdr.pixels[6].r > limited.hdr.pixels[5].r &&
         limited.editedHeadroom <= 4 && limited.sourceHeadroom == reference.sourceHeadroom, "HDR limit did not preserve peak detail");
     options.rendition.peakLimitEV = 0;
     options.rendition.sdrExposureEV = 1;
     const auto baseExposure = renderHDRPair(source, options);
-    check(samePixels(baseExposure.hdr, reference.hdr), "SDR base exposure changed the HDR primary");
+    require(samePixels(baseExposure.hdr, reference.hdr), "SDR base exposure changed the HDR primary");
     near(baseExposure.sdr.pixels[1].r, .56f, "SDR base exposure scale differs");
     options.rendition.sdrContrast = -25;
     options.rendition.sdrSaturation = -100;
     const auto baseColor = renderHDRPair(source, options);
-    check(samePixels(baseColor.hdr, reference.hdr), "SDR base contrast or saturation changed the HDR primary");
+    require(samePixels(baseColor.hdr, reference.hdr), "SDR base contrast or saturation changed the HDR primary");
     near(baseColor.sdr.pixels[1].r, baseColor.sdr.pixels[1].b, "SDR base desaturation did not reach gray");
-    check(baseColor.sdr.pixels[1].r != baseExposure.sdr.pixels[1].r, "SDR base trim had no effect");
+    require(baseColor.sdr.pixels[1].r != baseExposure.sdr.pixels[1].r, "SDR base trim had no effect");
     options.rendition.peakLimitEV = 7;
     rejects([&] { renderHDRPair(source, options); }, "invalid HDR output limit accepted");
 }
@@ -200,7 +285,7 @@ void effects() {
     for (bool hdr : {true, false}) {
         const auto& a = hdr ? reference.hdr : reference.sdr;
         const auto& b = hdr ? neutral.hdr : neutral.sdr;
-        check(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
+        require(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
             "neutral v5 changed v4 pixels");
     }
     source.hdr = ImageData(65, 49);
@@ -211,29 +296,29 @@ void effects() {
     options.rendition = {};
     options.effects.vignetteAmount = -80;
     const auto dark = renderHDRPair(source, options);
-    check(dark.hdr.at(0, 0).r < 4 && dark.hdr.at(0, 0).b < 0 &&
+    require(dark.hdr.at(0, 0).r < 4 && dark.hdr.at(0, 0).b < 0 &&
         dark.hdr.at(32, 24).r == 4 && dark.sdr.at(0, 0).r < .45f, "HDR dark vignette changed the center or clipped a channel");
     options.effects.vignetteHighlights = 100;
     const auto protectedHDR = renderHDRPair(source, options);
-    check(protectedHDR.hdr.at(0, 0).r == 4 && protectedHDR.sdr.at(0, 0).r < .45f,
+    require(protectedHDR.hdr.at(0, 0).r == 4 && protectedHDR.sdr.at(0, 0).r < .45f,
         "Vignette highlight protection did not use each rendition's luminance");
     options.effects.vignetteAmount = 60;
     const auto light = renderHDRPair(source, options);
-    check(light.hdr.at(0, 0).r == 4 && light.sdr.at(0, 0).r > .45f,
+    require(light.hdr.at(0, 0).r == 4 && light.sdr.at(0, 0).r > .45f,
         "Bright vignette pulled super-white HDR pixels toward white");
     options.effects.vignetteAmount = 0;
     options.effects.grainAmount = 100;
     const auto grained = renderHDRPair(source, options);
     const auto again = renderHDRPair(source, options);
-    check(std::memcmp(grained.hdr.pixels.data(), again.hdr.pixels.data(), again.hdr.pixels.size() * sizeof(RGB)) == 0 &&
+    require(std::memcmp(grained.hdr.pixels.data(), again.hdr.pixels.data(), again.hdr.pixels.size() * sizeof(RGB)) == 0 &&
         std::memcmp(grained.sdr.pixels.data(), again.sdr.pixels.data(), again.sdr.pixels.size() * sizeof(RGB)) == 0,
         "HDR grain changed with rendering order");
-    check(grained.hdr.at(0, 0).r > 1 && grained.hdr.at(0, 0).b < 0 &&
+    require(grained.hdr.at(0, 0).r > 1 && grained.hdr.at(0, 0).b < 0 &&
         grained.hdr.at(0, 0).r != grained.hdr.at(1, 0).r &&
         grained.sdr.at(0, 0).r != grained.sdr.at(1, 0).r, "HDR grain clipped or did not add texture");
     options.rendition.peakLimitEV = .3f;
     const auto capped = renderHDRPair(source, options);
-    check(capped.editedHeadroom <= std::exp2(.3f) + 1e-6f, "HDR grain exceeded the final luminance ceiling");
+    require(capped.editedHeadroom <= std::exp2(.3f) + 1e-6f, "HDR grain exceeded the final luminance ceiling");
     options.effects.grainRoughness = 101;
     rejects([&] { renderHDRPair(source, options); }, "invalid HDR effects accepted");
 }
@@ -250,7 +335,7 @@ void detail() {
     for (bool hdr : {true, false}) {
         const auto& a = hdr ? reference.hdr : reference.sdr;
         const auto& b = hdr ? neutral.hdr : neutral.sdr;
-        check(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
+        require(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
             "neutral v6 changed v5 pixels");
     }
 
@@ -265,21 +350,21 @@ void detail() {
     options.rendition = {};
     options.detail.sharpening = 2;
     const auto sharpened = renderHDRPair(source, options);
-    check(sharpened.hdr.at(4, 4).r > 5 && sharpened.hdr.at(4, 4).r < 5 * std::exp2(.45f) &&
+    require(sharpened.hdr.at(4, 4).r > 5 && sharpened.hdr.at(4, 4).r < 5 * std::exp2(.45f) &&
         sharpened.hdr.at(4, 4).b < -.375f && sharpened.hdr.at(0, 0).r == 4,
         "Sharpening did not retain signed highlights or bounded local gain");
     options.detail = {0, 1, 0, 0};
     const auto clear = renderHDRPair(source, options);
-    check(clear.hdr.at(4, 4).r > 5 && clear.hdr.at(2, 4).r < 4 && clear.hdr.at(3, 4).r == 4,
+    require(clear.hdr.at(4, 4).r > 5 && clear.hdr.at(2, 4).r < 4 && clear.hdr.at(3, 4).r == 4,
         "Clarity did not use the wider neighborhood");
     options.detail.clarity = -1;
-    check(renderHDRPair(source, options).hdr.at(4, 4).r < 5, "Negative clarity did not soften the bump");
+    require(renderHDRPair(source, options).hdr.at(4, 4).r < 5, "Negative clarity did not soften the bump");
     HDRDetailOptions clarity{0, 1, 0, 0};
     for (const auto size : {2000, 4000, 8000, 16000})
-        check(clarity.halo(size, 1) == size / 200 && clarity.halo(1, size) == size / 200,
+        require(clarity.halo(size, 1) == size / 200 && clarity.halo(1, size) == size / 200,
             "HDR clarity radius lost its relative canvas scale above 4.7k");
-    check(clarity.halo(65535, 1) == 328, "HDR clarity exceeded the supported canvas halo bound");
-    check(clarity.halo(100000, 1) == 500, "HDR buffer clarity lost its relative radius beyond JPEG dimensions");
+    require(clarity.halo(65535, 1) == 328, "HDR clarity exceeded the supported canvas halo bound");
+    require(clarity.halo(100000, 1) == 500, "HDR buffer clarity lost its relative radius beyond JPEG dimensions");
     ImageData tall(3, 65535);
     for (int y = 0; y < tall.height; ++y) for (int x = 0; x < tall.width; ++x) {
         const float value = .2f * std::exp2(.2f * std::sin(y * .03f));
@@ -294,24 +379,24 @@ void detail() {
         renderHDRDetailBand(plan, tall.pixels.data() + top * tall.width, top, bottom - top,
             bands.pixels.data() + first * tall.width, first, end - first);
     }
-    check(std::memcmp(full.pixels.data(), bands.pixels.data(), full.pixels.size() * sizeof(RGB)) == 0,
+    require(std::memcmp(full.pixels.data(), bands.pixels.data(), full.pixels.size() * sizeof(RGB)) == 0,
         "Large-canvas HDR clarity changed at band boundaries");
     options.detail = {0, 0, 0, 1};
     const auto clean = renderHDRPair(source, options);
-    check(clean.sdr.at(4, 4).r < .25f && clean.sdr.at(4, 4).r > .2f &&
+    require(clean.sdr.at(4, 4).r < .25f && clean.sdr.at(4, 4).r > .2f &&
         clean.sdr.at(4, 4).g == .2f && clean.hdr.at(4, 4).b < 0,
         "Rendered RGB denoise did not suppress a color fluctuation or clipped a signed channel");
     for (int x = 0; x < 3; ++x) for (int y = 0; y < 9; ++y) source.hdr.at(x, y) = {.2f, .2f, .2f};
     options.detail = {0, 0, 1, 0};
     const auto dehazed = renderHDRPair(source, options);
-    check(dehazed.hdr.at(0, 0).r < .15f && dehazed.hdr.at(8, 8).r > 3.9f &&
+    require(dehazed.hdr.at(0, 0).r < .15f && dehazed.hdr.at(8, 8).r > 3.9f &&
         dehazed.hdr.at(8, 8).b < 0 && dehazed.sdr.at(0, 0).r < .15f,
         "Dehaze did not prioritize the shadows in each rendition");
     options.detail.dehaze = -1;
-    check(renderHDRPair(source, options).hdr.at(0, 0).r > .25f, "Negative dehaze did not add veil");
+    require(renderHDRPair(source, options).hdr.at(0, 0).r > .25f, "Negative dehaze did not add veil");
     options.detail = {2, 1, -1, 1};
     options.rendition.peakLimitEV = .3f;
-    check(renderHDRPair(source, options).editedHeadroom <= std::exp2(.3f) + 1e-6f,
+    require(renderHDRPair(source, options).editedHeadroom <= std::exp2(.3f) + 1e-6f,
         "HDR detail exceeded the final luminance ceiling");
     options.detail.denoise = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { renderHDRPair(source, options); }, "non-finite HDR detail accepted");
@@ -328,25 +413,25 @@ void look(const char* path) {
     for (bool hdr : {true, false}) {
         const auto& a = hdr ? before.hdr : before.sdr;
         const auto& b = hdr ? after.hdr : after.sdr;
-        check(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
+        require(std::memcmp(a.pixels.data(), b.pixels.data(), a.pixels.size() * sizeof(RGB)) == 0,
             "Neutral HDR look changed v6 pixels");
     }
     const auto table = HDRLook::load(path);
-    check(table->gridSize() == 2 && table->domainMax().r == 4 && table->fingerprint().size() == 64,
+    require(table->gridSize() == 2 && table->domainMax().r == 4 && table->fingerprint().size() == 64,
         "Declared HDR look lost its domain or resource identity");
     rejects([&] { HDRLook::load(path, std::string(64, '0')); }, "Incorrect HDR look identity accepted");
     auto plain = LUTParser::loadLUT(path);
-    check(plain && plain->hasHDRLookContract() && !plain->isPhotoLUT(), "HDR table entered the SDR evaluator");
+    require(plain && plain->hasHDRLookContract() && !plain->isPhotoLUT(), "HDR table entered the SDR evaluator");
     const std::string oldCube = "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
-    check(plain->loadFromData(oldCube) == ErrorCode::Success && !plain->hasHDRLookContract(), "SDR CUBE gained an HDR contract");
-    check(plain->loadFromData("# RawLabHDRLook: display-linear-srgb-v1\n" + oldCube) == ErrorCode::InvalidFormat,
+    require(plain->loadFromData(oldCube) == ErrorCode::Success && !plain->hasHDRLookContract(), "SDR CUBE gained an HDR contract");
+    require(plain->loadFromData("# RawLabHDRLook: display-linear-srgb-v1\n" + oldCube) == ErrorCode::InvalidFormat,
         "HDR declaration accepted an SDR-only domain");
     options = {};
     options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     options.look = table;
     source.hdr.pixels[1] = {8, 2, -.25f}; source.sdr.pixels[1] = {.5f, .25f, .125f};
     const auto zero = renderHDRPair(source, options);
-    check(std::memcmp(zero.hdr.pixels.data(), source.hdr.pixels.data(), source.hdr.pixels.size() * sizeof(RGB)) == 0,
+    require(std::memcmp(zero.hdr.pixels.data(), source.hdr.pixels.data(), source.hdr.pixels.size() * sizeof(RGB)) == 0,
         "Zero look strength did not bypass HDR pixels");
     options.lookStrength = 1;
     const auto transformed = renderHDRPair(source, options);
@@ -356,9 +441,121 @@ void look(const char* path) {
     near(transformed.sdr.pixels[1].r, .5f, "HDR table did not evaluate the independent SDR base");
     near(transformed.sdr.pixels[1].g, .1875f, "HDR table skipped the SDR base");
     near(transformed.hdr.pixels[2].r, .875f, "Reference-white CUBE anchor changed");
-    check(transformed.editedHeadroom > 1, "HDR look lost HDR headroom");
+    require(transformed.editedHeadroom > 1, "HDR look lost HDR headroom");
     options.rendition.peakLimitEV = .5f;
-    check(renderHDRPair(source, options).editedHeadroom <= std::exp2(.5f) + 1e-6f, "Look bypassed the HDR limit");
+    require(renderHDRPair(source, options).editedHeadroom <= std::exp2(.5f) + 1e-6f, "Look bypassed the HDR limit");
+}
+
+struct LookCacheFiles {
+    std::filesystem::path directory = std::filesystem::temp_directory_path() /
+        ("rawlab-look-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    LookCacheFiles() { std::filesystem::create_directory(directory); }
+    ~LookCacheFiles() { std::error_code error; std::filesystem::remove_all(directory, error); }
+    std::string write(const std::filesystem::path& relative, int gain) {
+        const auto path = directory / relative;
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary);
+        file << "# RawLabHDRLook: display-linear-srgb-v1\nLUT_3D_SIZE 2\nDOMAIN_MAX 4 4 4\n";
+        for (int b = 0; b < 2; ++b) for (int g = 0; g < 2; ++g) for (int r = 0; r < 2; ++r)
+            file << r * gain << ' ' << g * gain << ' ' << b * gain << '\n';
+        require(bool(file), "Cannot write look cache fixture");
+        return path.u8string();
+    }
+};
+
+void lookCacheAlternating() {
+    LookCacheFiles files;
+    const auto a = files.write("a.cube", 2), b = files.write("b.cube", 3);
+    const auto hdrA = HDRLook::load(a), hdrB = HDRLook::load(b);
+    const auto lutA = LUTParser::loadLUTCached(a), lutB = LUTParser::loadLUTCached(b);
+    require(lutA && lutB && hdrA != hdrB && lutA != lutB, "Distinct LUTs must have distinct parsed resources");
+    for (int i = 0; i < 4; ++i) {
+        require(HDRLook::load(a, hdrA->fingerprint()) == hdrA && HDRLook::load(b) == hdrB,
+            "Alternating HDR LUTs evicted a hot parsed resource");
+        require(LUTParser::loadLUTCached(a) == lutA && LUTParser::loadLUTCached(b) == lutB,
+            "Alternating SDR LUTs evicted a hot parsed resource");
+    }
+    rejects([&] { HDRLook::load(a, hdrB->fingerprint()); }, "Cached HDR look ignored the expected digest");
+    const auto healed = HDRLook::load(a, hdrA->fingerprint());
+    require(healed && healed != hdrA && healed->fingerprint() == hdrA->fingerprint() &&
+        HDRLook::load(a, hdrA->fingerprint()) == healed,
+        "Expected-digest mismatch did not evict and self-heal on the next load");
+    near(healed->apply({4, 4, 4}, 1).r, 2, "Alternating HDR cache mixed LUT contents");
+    near(hdrB->apply({4, 4, 4}, 1).r, 3, "Alternating HDR cache mixed LUT contents");
+}
+
+void lookCacheOverwrite() {
+    LookCacheFiles files;
+    const auto gain4Digest = HDRLook::load(files.write("ref4.cube", 4))->fingerprint();
+    const auto path = files.write("overwrite.cube", 2);
+    const auto filePath = std::filesystem::u8path(path);
+    const auto hdr = HDRLook::load(path);
+    const auto lut = LUTParser::loadLUTCached(path);
+    require(bool(lut), "Initial cached LUT failed to parse");
+    const auto stamp = std::filesystem::last_write_time(filePath);
+    const auto bytes = std::filesystem::file_size(filePath);
+
+    files.write("overwrite.cube", 3);
+    std::filesystem::last_write_time(filePath, stamp);
+    require(std::filesystem::file_size(filePath) == bytes && std::filesystem::last_write_time(filePath) == stamp,
+        "Same-size overwrite fixture changed size or mtime");
+    rejects([&] { HDRLook::load(path, hdr->fingerprint()); }, "Overwritten HDR LUT accepted its stale digest");
+    const auto nextHDR = HDRLook::load(path);
+    const auto nextLUT = LUTParser::loadLUTCached(path);
+    require(nextLUT && nextHDR != hdr && nextLUT != lut && nextHDR->fingerprint() != hdr->fingerprint(),
+        "Same-size same-mtime overwrite reused stale parsed LUTs");
+    near(nextHDR->apply({4, 4, 4}, 1).r, 3, "HDR overwrite did not update rendered values");
+    near(LUTApplicator(nextLUT).apply({4, 4, 4}).r, 3, "SDR overwrite did not update rendered values");
+    require(HDRLook::load(path) == nextHDR && LUTParser::loadLUTCached(path) == nextLUT,
+        "Replacement LUT was not cached");
+
+    files.write("overwrite.cube", 4);
+    std::filesystem::last_write_time(filePath, stamp);
+    require(std::filesystem::file_size(filePath) == bytes && std::filesystem::last_write_time(filePath) == stamp,
+        "Second same-size overwrite fixture changed size or mtime");
+    rejects([&] { HDRLook::load(path, nextHDR->fingerprint()); }, "Second overwrite accepted its stale digest");
+    const auto healed = HDRLook::load(path, gain4Digest);
+    require(healed && healed != nextHDR && healed->fingerprint() == gain4Digest,
+        "Expected-digest load remained stuck after same-size same-mtime overwrite");
+    near(healed->apply({4, 4, 4}, 1).r, 4, "Self-healed HDR look rendered stale values");
+}
+
+void lookCacheContentAddressed() {
+    LookCacheFiles files;
+    const auto digest = HDRLook::load(files.write("seed.cube", 2))->fingerprint();
+    const auto other = HDRLook::load(files.write("other.cube", 3))->fingerprint();
+    for (const auto& dir : {std::filesystem::path("HDRLooks"),
+            std::filesystem::path("RawLab") / "Looks" / "HDR",
+            std::filesystem::path("looks") / "HDR"}) {
+        const auto addressed = files.write(dir / (digest + ".cube"), 2);
+        size_t io = 0;
+        const auto first = HDRLook::load(addressed, digest, &io);
+        require(io == 1 && first->fingerprint() == digest, "Cold content-addressed load must read once");
+        for (int i = 0; i < 3; ++i)
+            require(HDRLook::load(addressed, digest, &io) == first && io == 1,
+                "Warm content-addressed load performed disk I/O");
+        require(HDRLook::load(addressed, {}, &io) == first && io == 2,
+            "Unkeyed load on content-addressed path skipped byte hashing");
+    }
+
+    const auto hdrLooks = files.write(std::filesystem::path("HDRLooks") / (digest + ".cube"), 2);
+    size_t io = 0;
+    const auto cached = HDRLook::load(hdrLooks, digest, &io);
+    io = 0;
+    require(HDRLook::load(hdrLooks, digest, &io) == cached && io == 0, "Content-addressed hit performed disk I/O");
+    rejects([&] { HDRLook::load(hdrLooks, other, &io); }, "Content-addressed load accepted mismatched digest");
+    require(io == 1, "Mismatched expected digest did not fall back to full byte hashing");
+    const auto healed = HDRLook::load(hdrLooks, digest, &io);
+    require(healed && healed != cached && io == 2 && HDRLook::load(hdrLooks, digest, &io) == healed && io == 2,
+        "Content-addressed cache did not evict on mismatch and self-heal to zero-I/O");
+
+    for (const auto& fallback : {files.write(std::filesystem::path("HDRLooks") / "custom.cube", 2),
+            files.write(digest + ".cube", 2)}) {
+        size_t reads = 0;
+        const auto loaded = HDRLook::load(fallback, digest, &reads);
+        require(HDRLook::load(fallback, digest, &reads) == loaded && reads == 2,
+            "Non-content-addressed path skipped byte hashing");
+    }
 }
 
 void silver(const char* path) {
@@ -382,37 +579,37 @@ void whiteBalance() {
     auto source = fixture();
     HDRRenderOptions options; options.temperature = 10000;
     auto warm = renderHDRPair(source, options).hdr.pixels[1];
-    check(warm.r > warm.b, "positive relative temperature is not warmer");
+    require(warm.r > warm.b, "positive relative temperature is not warmer");
     near(luminance(warm), .18f, "relative WB changed neutral luminance");
     options = {}; options.temperature = 3000;
     auto cool = renderHDRPair(source, options).hdr.pixels[1];
-    check(cool.b > cool.r, "negative relative temperature is not cooler");
+    require(cool.b > cool.r, "negative relative temperature is not cooler");
     options = {}; options.tint = 100;
     auto tint = renderHDRPair(source, options).hdr.pixels[1];
-    check(tint.g < tint.r && tint.g < tint.b, "positive tint is not magenta");
+    require(tint.g < tint.r && tint.g < tint.b, "positive tint is not magenta");
 }
 
 void geometry() {
     auto source = fixture();
     HDRRenderOptions options; options.geometry.quarter_turns = 1;
     auto rotated = renderHDRPair(source, options);
-    check(rotated.hdr.width == 2 && rotated.hdr.height == 8 && rotated.sdr.width == 2, "geometry canvases diverge");
+    require(rotated.hdr.width == 2 && rotated.hdr.height == 8 && rotated.sdr.width == 2, "geometry canvases diverge");
     near(rotated.hdr.at(1, 6).r, source.hdr.at(6, 0).r, "clockwise HDR rotation differs");
     near(rotated.sdr.at(1, 6).r, source.sdr.at(6, 0).r, "SDR rotation differs");
     options.longEdge = 4;
     auto smaller = renderHDRPair(source, options);
-    check(smaller.hdr.width == 1 && smaller.hdr.height == 4 && smaller.sdr.height == 4, "final resize differs");
+    require(smaller.hdr.width == 1 && smaller.hdr.height == 4 && smaller.sdr.height == 4, "final resize differs");
     options.longEdge = 100;
-    check(renderHDRPair(source, options).hdr.height == 8, "long-edge limit upscaled the source");
+    require(renderHDRPair(source, options).hdr.height == 8, "long-edge limit upscaled the source");
     source.sourceQuality = HDRQuality::Preview; source.isProxy = true;
     rejects([&] { renderHDRPair(source, options); }, "proxy was promoted into FINAL");
     options.intent = HDRQuality::Preview;
-    check(renderHDRPair(source, options).isProxy, "preview provenance was erased");
+    require(renderHDRPair(source, options).isProxy, "preview provenance was erased");
 }
 
 void validation() {
     auto source = fixture();
-    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION + 1;
+    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
     rejects([&] { renderHDRPair(source, options); }, "unknown HDR processing version accepted");
     options = {}; options.exposureEV = 5;
     rejects([&] { renderHDRPair(source, options); }, "exposure range not enforced");
@@ -431,9 +628,9 @@ void moveReuse() {
     const auto* hdrStorage = source.hdr.pixels.data();
     const auto* sdrStorage = source.sdr.pixels.data();
     const auto result = renderHDRPair(std::move(source), {});
-    check(result.hdr.pixels.data() == hdrStorage && result.sdr.pixels.data() == sdrStorage,
+    require(result.hdr.pixels.data() == hdrStorage && result.sdr.pixels.data() == sdrStorage,
         "rvalue HDR render did not reuse exclusive pixel storage");
-    check(result.hdr.width == 8 && result.sdr.height == 2, "rvalue HDR render lost image metadata");
+    require(result.hdr.width == 8 && result.sdr.height == 2, "rvalue HDR render lost image metadata");
 }
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
@@ -454,21 +651,21 @@ void parallel() {
         if (mode==2) { options.geometry.quarter_turns=1; options.longEdge=384; }
         cv::setNumThreads(1); const auto scalar=renderHDRPair(source,options);
         cv::setNumThreads(4); const auto multi=renderHDRPair(source,options);
-        check(scalar.hdr.width==multi.hdr.width && scalar.hdr.height==multi.hdr.height &&
+        require(scalar.hdr.width==multi.hdr.width && scalar.hdr.height==multi.hdr.height &&
             scalar.outputNativeWidth==multi.outputNativeWidth && scalar.outputNativeHeight==multi.outputNativeHeight &&
             scalar.editedHeadroom==multi.editedHeadroom,"parallel HDR metadata differs");
-        check(std::memcmp(scalar.hdr.pixels.data(),multi.hdr.pixels.data(),scalar.hdr.pixels.size()*sizeof(RGB))==0 &&
+        require(std::memcmp(scalar.hdr.pixels.data(),multi.hdr.pixels.data(),scalar.hdr.pixels.size()*sizeof(RGB))==0 &&
             std::memcmp(scalar.sdr.pixels.data(),multi.sdr.pixels.data(),scalar.sdr.pixels.size()*sizeof(RGB))==0,
             "parallel HDR/SDR pixels differ from scalar processing");
     }
-    check(std::memcmp(source.hdr.pixels.data(),original.hdr.pixels.data(),source.hdr.pixels.size()*sizeof(RGB))==0 &&
+    require(std::memcmp(source.hdr.pixels.data(),original.hdr.pixels.data(),source.hdr.pixels.size()*sizeof(RGB))==0 &&
         std::memcmp(source.sdr.pixels.data(),original.sdr.pixels.data(),source.sdr.pixels.size()*sizeof(RGB))==0,
         "parallel processing mutated its source");
     source.hdr.pixels.back().r=std::numeric_limits<float>::max();
     HDRRenderOptions overflow; overflow.exposureEV=4;
     bool rejected=false;
     try { renderHDRPair(source,overflow); } catch (const std::overflow_error&) { rejected=true; }
-    check(rejected,"parallel workers lost finite overflow validation");
+    require(rejected,"parallel workers lost finite overflow validation");
 }
 #endif
 
@@ -478,12 +675,16 @@ int main(int argc, char* argv[]) {
     try {
         const std::string name = argc >= 2 ? argv[1] : "";
         if (name == "identity") identity();
+        else if (name == "headroom_fusion") headroomFusion();
         else if (name == "tone") tone();
         else if (name == "color") color();
         else if (name == "rendition") rendition();
         else if (name == "effects") effects();
         else if (name == "detail") detail();
         else if (name == "look" && argc == 3) look(argv[2]);
+        else if (name == "look_cache_alternating") lookCacheAlternating();
+        else if (name == "look_cache_overwrite") lookCacheOverwrite();
+        else if (name == "look_cache_content_addressed") lookCacheContentAddressed();
         else if (name == "silver" && argc == 3) silver(argv[2]);
         else if (name == "white_balance") whiteBalance();
         else if (name == "geometry") geometry();

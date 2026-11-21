@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -17,28 +18,22 @@ import SwiftUI
         app.run()
     }
     static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
-        guard try condition() else { throw RenderError.failed(message) }; print("PASS: \(message)")
+        try MacUITestRobot.check(condition(), message)
     }
     @MainActor static func settle(_ model: EditorModel) async throws {
-        try await Task.sleep(for: .milliseconds(350))
-        for _ in 0..<600 {
-            if !model.busy, !model.workerActive, model.result != nil { return }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw RenderError.failed("Native editor render timed out")
+        try await MacUITestRobot.settle(model)
     }
     @MainActor static func fields(_ view: NSView) -> [NumericTextField] {
-        (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
+        MacUITestRobot.fields(view)
     }
     @MainActor static func scrollViews(_ view: NSView) -> [NSScrollView] {
-        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews($0) }
+        MacUITestRobot.scrollViews(view)
+    }
+    @MainActor static func png(_ host: NSView) throws -> Data {
+        try MacUITestRobot.png(host)
     }
     @MainActor static func window<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> (NSWindow, NSHostingView<V>) {
-        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        host.appearance = NSAppearance(named: .darkAqua)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentView = host; host.layoutSubtreeIfNeeded()
-        return (window, host)
+        MacUITestRobot.window(view, width: width, height: height)
     }
     @MainActor static func run() async throws {
         guard CommandLine.arguments.count == 3 else { throw RenderError.failed("Pass a fixture and output directory") }
@@ -57,8 +52,6 @@ import SwiftUI
         let adapter = Adapter(), gate = UpdateInstallGate()
         model.registerUpdateGate(gate)
         let updates = DesktopUpdateController(adapter: adapter, gate: gate, store: UpdateStore(directory: state.appendingPathComponent("Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
-        let defaults = UserDefaults(suiteName: "dev.rawlab.updates-ui.\(UUID())")!
-        let legacy = UpdateChecker(defaults: defaults, currentVersion: "0.8.2", fetch: { throw URLError(.notConnectedToInternet) })
         model.open(photo); try await settle(model); model.selectAdjustmentTool(.exposure)
         let (editorWindow, editor) = window(GuardedEditor(model: model, updates: updates), width: 1200, height: 850)
         defer { editorWindow.contentView = nil; editorWindow.close() }
@@ -72,7 +65,7 @@ import SwiftUI
             let saved = try model.editStore!.readState(for: photo), count = model.adjustmentSession!.transactions.count
             let original = model.settings
             ParameterValueField.preserveInputsForUpdateNavigation()
-            let (updateWindow, _) = window(SoftwareUpdateView(updates: updates, legacy: legacy), width: 560, height: 600)
+            let (updateWindow, _) = window(SoftwareUpdateView(updates: updates), width: 560, height: 600)
             editorWindow.makeFirstResponder(nil); updateWindow.makeFirstResponder(updateWindow.contentView)
             updates.check(manual: true); adapter.send(.found(adapter.release)); updates.download()
             try await Task.sleep(for: .milliseconds(100)); editor.layoutSubtreeIfNeeded()
@@ -96,7 +89,7 @@ import SwiftUI
         updates.cancel(); model.cancelGeometryDraft(); try await settle(model)
         for language in ["zh-Hans", "en", "de", "fr", "ja", "es"] {
             UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
-            let (dialog, host) = window(SoftwareUpdateView(updates: updates, legacy: legacy).environment(\.locale, Locale(identifier: language)).dynamicTypeSize(.accessibility3)
+            let (dialog, host) = window(SoftwareUpdateView(updates: updates).environment(\.locale, Locale(identifier: language))
                 .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
             try await Task.sleep(for: .milliseconds(150)); host.layoutSubtreeIfNeeded()
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
@@ -127,7 +120,7 @@ import SwiftUI
         _ = pending.pendingUpdate.installing(token: token); _ = pending.pendingUpdate.fail("test", detail: "Injected failed install", token: token)
         try recoveryStore.save(pending); try Data("new format".utf8).write(to: original)
         let recovery = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery, legacy: legacy).dynamicTypeSize(.accessibility3)
+        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100)); recoveryHost.layoutSubtreeIfNeeded()
         try check(recovery.canRestorePreviousData && !recovery.canCheck, "Native recovery screen exposes the explicit restore action and blocks new checks")
@@ -144,17 +137,58 @@ import SwiftUI
         try check(recovery.recoveryNeedsRestart && recovery.state.phase != .complete && String(contentsOf: original, encoding: .utf8) == "previous edit",
             "Native recovery restores verified data and keeps editing blocked until reopening")
         recoveryWindow.contentView = nil; recoveryWindow.close()
+        let unsupported = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
+            store: UpdateStore(directory: output.appendingPathComponent("unsupported/Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
+        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
+        try await Task.sleep(for: .milliseconds(100))
+        let unsupportedPNG = try png(unsupportedHost)
+        unsupportedWindow.contentView = nil; unsupportedWindow.close()
         let repairStore = UpdateStore(directory: output.appendingPathComponent("state-repair/Updates"))
         try FileManager.default.createDirectory(at: repairStore.directory, withIntermediateDirectories: true)
         let damaged = Data("{broken".utf8); try damaged.write(to: repairStore.stateURL)
         let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair, legacy: legacy).dynamicTypeSize(.accessibility3), width: 560, height: 680)
-        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
-        try check(repair.canRepairState && !repair.canCheck, "Native damaged-state screen offers explicit repair")
+        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
+        try await Task.sleep(for: .milliseconds(100))
+        let degradedPNG = try png(repairHost)
+        try check(!repair.blocksEditing && repair.unavailableReason == "storage" && repair.canRepairState && !repair.canCheck,
+            "Damaged UpdateStore degrades updates without blocking editing and offers explicit repair")
+        let (bannerNilWindow, bannerNilHost) = window(UpdateNoticeBanner(notice: nil).frame(width: 400, height: 60, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 400, height: 60)
+        let (bannerDegradedWindow, bannerDegradedHost) = window(UpdateNoticeBanner(notice: "自动更新不可用，请手动下载").frame(width: 400, height: 60, alignment: .leading)
+            .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 400, height: 60)
+        try await Task.sleep(for: .milliseconds(100))
+        let bannerNilPNG = try png(bannerNilHost)
+        let bannerDegradedPNG = try png(bannerDegradedHost)
+        bannerNilWindow.contentView = nil; bannerNilWindow.close()
+        bannerDegradedWindow.contentView = nil; bannerDegradedWindow.close()
+        try check(!bannerNilPNG.isEmpty && !bannerDegradedPNG.isEmpty && bannerNilPNG != bannerDegradedPNG,
+            "UpdateNoticeBanner renders distinct bitmap when degraded notice is non-nil")
+        let degradedKey = UpdatePresentation.unavailableNotice(unavailableReason: repair.unavailableReason, storageError: repair.storageError)
+        try check(degradedKey == "自动更新不可用，请手动下载" &&
+            L10n.text(degradedKey!) != "自动更新不可用，请手动下载" && !L10n.text(degradedKey!).isEmpty &&
+            UpdatePresentation.unavailableNotice(unavailableReason: "configuration", storageError: nil) == "此安装暂不支持自动安装更新" &&
+            UpdatePresentation.unavailableNotice(unavailableReason: nil, storageError: repair.storageError) == "自动更新不可用，请手动下载" &&
+            UpdatePresentation.unavailableNotice(unavailableReason: nil, storageError: nil) == nil &&
+            !degradedPNG.isEmpty && !unsupportedPNG.isEmpty && degradedPNG != unsupportedPNG,
+            "SoftwareUpdateView selects localized degraded manual-download notice and renders distinct bitmap when UpdateStore is damaged")
+        let (degradedWindow, degradedEditor) = window(GuardedEditor(model: model, updates: repair), width: 1200, height: 850)
+        degradedEditor.layoutSubtreeIfNeeded()
+        try check(fields(degradedEditor).contains(where: { $0.isEnabled }) && !model.collectionHasDraft(photo.path),
+            "Editor remains enabled and collectionHasDraft path stays usable when UpdateStore is damaged")
+        try check(model.beginGeometryDraft(tab: .perspective), "Editor can still adjust geometry draft when UpdateStore is damaged")
+        model.updateGeometryDraft { $0.perspectiveHorizontal = 0.2 }; try await settle(model)
+        model.applyGeometryDraft(); try await settle(model)
+        try check(model.canExport, "Editor can still export when UpdateStore is damaged")
+        degradedWindow.contentView = nil; degradedWindow.close()
         repair.repairState()
-        try await Task.sleep(for: .milliseconds(100)); repairHost.layoutSubtreeIfNeeded()
-        try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged,
-            "Native state repair preserves damaged bytes and remains blocked until reopening")
+        try await Task.sleep(for: .milliseconds(100))
+        let repairedPNG = try png(repairHost)
+        try check(repair.recoveryNeedsRestart && repair.requiresRecovery && Data(contentsOf: repair.stateArchive!) == damaged &&
+            UpdatePresentation.unavailableNotice(unavailableReason: repair.unavailableReason, storageError: repair.storageError) == nil &&
+            !repairedPNG.isEmpty && repairedPNG != degradedPNG,
+            "Native state repair preserves damaged bytes, updates rendered bitmap and remains blocked until reopening")
         let reopened = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
         await reopened.finishStartupHealthCheck(healthy: model.updateDataHealthy)
         try check(!reopened.requiresRecovery && !reopened.requiresStartupHealthCheck, "Real editor data health completes state repair on a fresh controller")

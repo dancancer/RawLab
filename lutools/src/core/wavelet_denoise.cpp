@@ -12,12 +12,17 @@
 
 #if defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
 #include "wavelet_tile.h"
+#include "processing_cancellation.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <wavelib.h>
 
 namespace {
-struct WaveletGpuFailure {};
+struct WaveletGpuFailure {
+    sony2fuji::GpuFailureKind failure = sony2fuji::GpuFailureKind::ProcessingError;
+    sony2fuji::GpuBackendFault fault = sony2fuji::GpuBackendFault::FilterError;
+    std::string message;
+};
 constexpr int levels = 4, halo = 96, tileSize = 512;
 constexpr int coarseLevels = 6, coarseHalo = 256;
 using Bands = std::array<std::array<float,3>,levels>;
@@ -89,13 +94,29 @@ bool periodic(const cv::Mat& residual) {
 }
 
 std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics,
-                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
+                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2,
+                              sony2fuji::ColorSpace sourceSpace = sony2fuji::ColorSpace::sRGB) {
     std::vector<Sample> samples;
+    sony2fuji::ColorConverter::Matrix3x3 toSRGB{};
+    if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+        toSRGB = sony2fuji::ColorConverter::getConversionMatrix(sourceSpace, sony2fuji::ColorSpace::sRGB);
+    }
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
+        sony2fuji::checkProcessingCancellation();
         ++diagnostics.candidateTiles;
-        const cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
+        cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
         // Calibration uses full 64-pixel tiles, keeping SWT's size contract explicit.
         if (patch.rows<64 || patch.cols<64) { ++diagnostics.rejectedSmall; continue; }
+        if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+            for (int py = 0; py < patch.rows; ++py) {
+                auto* row = patch.ptr<cv::Vec3f>(py);
+                for (int px = 0; px < patch.cols; ++px) {
+                    const auto converted = sony2fuji::ColorConverter::applyMatrix(
+                        sony2fuji::RGB(row[px][0], row[px][1], row[px][2]), toSRGB);
+                    row[px] = cv::Vec3f(converted.r, converted.g, converted.b);
+                }
+            }
+        }
         cv::Mat smooth;
         cv::GaussianBlur(patch,smooth,{},3);
         const cv::Mat residual=patch-smooth;
@@ -423,11 +444,23 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
                 settings.sigma[scale * 3 + direction] = bandSigma(model, channel, sourceLevel, direction);
         }
         cv::Mat result(plane.size(), CV_32F);
+        sony2fuji::lastGpuFilterOutcome() = {};
         if (sony2fuji::gpuWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
             gpuUsed.store(true, std::memory_order_relaxed);
             return result;
         }
-        if (gpuMode == sony2fuji::GpuMode::Force) throw WaveletGpuFailure{};
+        if (gpuMode == sony2fuji::GpuMode::Force) {
+            const auto outcome = sony2fuji::lastGpuFilterOutcome();
+            throw WaveletGpuFailure{
+                outcome.failure != sony2fuji::GpuFailureKind::None
+                    ? outcome.failure
+                    : sony2fuji::GpuFailureKind::ProcessingError,
+                outcome.fault != sony2fuji::GpuBackendFault::None
+                    ? outcome.fault
+                    : sony2fuji::GpuBackendFault::FilterError,
+                outcome.message
+            };
+        }
     }
     StationaryWavelet transform(plane,depth);
     for (int scale=0;scale<depth;++scale) {
@@ -471,8 +504,13 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
     // 大图的六层 SWT 每个 tile 需要约 400 MiB；移动端避免并发叠加。
     if (coarse && transformed.total()>4*1024*1024) stripes=1;
 #endif
+    // OpenCV 工作线程看不到调用线程的 thread_local 取消上下文，照 parallel_pixels.h 显式捕获副本：
+    // worker 只在 tile 边界早退、不跨线程抛异常，取消异常由调用线程在 parallel_for_ 收敛后抛出。
+    // tile 之间互不相交（各写各的 output 矩形），tile 顶就是安全边界；单 tile 的 SWT 有界，取消在下一 tile 返回。
+    const auto cancellation = sony2fuji::processingCancellation;
     cv::parallel_for_(cv::Range(0,columns*rows),[&](const cv::Range& range) {
         for (int index=range.start;index<range.end;++index) {
+            if (cancellation.cancelled()) return;
             const int x=index%columns*centerSize,y=index/columns*centerSize;
             const int w=std::min(centerSize,width-x),h=std::min(centerSize,height-y);
             for (int c=0;c<3;++c) {
@@ -485,6 +523,7 @@ cv::Mat filter(const cv::Mat& transformed,const NoiseModel& model,const sony2fuj
             }
         }
     },stripes);
+    cancellation.check();
     return output;
 }
 
@@ -497,6 +536,8 @@ void filterWorking(cv::Mat& transformed,const sony2fuji::ImageData& source,sony2
     const int centerSize=coarse ? 1024 : tileSize;
     const int margin=coarse ? coarseHalo : halo,alignment=1<<(coarse ? coarseLevels : levels);
     for (int y=0;y<transformed.rows;y+=centerSize) for (int x=0;x<transformed.cols;x+=centerSize) {
+        // 顺序 tile 循环运行于调用线程，tile 顶即安全边界；调用方（reloadable 工作副本）在异常时整体丢弃 image。
+        sony2fuji::checkProcessingCancellation();
         const int w=std::min(centerSize,transformed.cols-x),h=std::min(centerSize,transformed.rows-y);
         // 从不可变 RAW 重建当前 tile，避免保留跨越整图宽度的原始行带。
         // 反射与对齐均按整张源图计算，与 waveletTilePlane 的边界完全一致。
@@ -539,28 +580,35 @@ void restore(cv::Mat& rgb,cv::Mat filtered,const NoiseModel& model,
     cv::subtract(difference,normalized,difference);
     cv::multiply(difference,difference,difference);
     cv::GaussianBlur(difference,difference,{},3);
+    // 同 filter：worker 只在行边界早退不抛异常，调用线程收敛后统一抛出。rgb 此时已被上一步整体替换，
+    // 早退留下的部分恢复行与 ProcessingFailure 同义——调用方异常路径不发布结果。
+    const auto cancellation = sony2fuji::processingCancellation;
     cv::parallel_for_(cv::Range(0,rgb.rows),[&](const cv::Range& range) {
-        for (int y=range.start;y<range.end;++y) for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
-            const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
-            const float value=normalized.at<cv::Vec3f>(y,x)[c];
-            if (version==sony2fuji::ProcessingVersion::Legacy) {
-                const float positive=std::max(value,0.f);
-                rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
-                    (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
-                continue;
-            }
-            const float variance=std::max(difference.at<cv::Vec3f>(y,x)[c],0.f), radius=std::sqrt(variance);
-            const float linear=std::sqrt(b)*value;
-            auto& restored=rgb.at<cv::Vec3f>(y,x)[c];
-            // 对称扰动的逆变换均值在零点附近连续，避免舍入误差触发整项方差补偿。
-            if (value>=radius) restored=linear+.25f*a*value*value+.25f*a*variance;
-            else if (value<=-radius) restored=linear;
-            else {
-                const float positive=value+radius;
-                restored=linear+.125f*a*positive*positive;
+        for (int y=range.start;y<range.end;++y) {
+            if (cancellation.cancelled()) return;
+            for (int x=0;x<rgb.cols;++x) for (int c=0;c<3;++c) {
+                const float a=std::max(model.a[c],1e-12f), b=std::max(model.b[c],1e-12f)+.375f*a*a;
+                const float value=normalized.at<cv::Vec3f>(y,x)[c];
+                if (version==sony2fuji::ProcessingVersion::Legacy) {
+                    const float positive=std::max(value,0.f);
+                    rgb.at<cv::Vec3f>(y,x)[c]=std::sqrt(b)*value+.25f*a*positive*positive+
+                        (value>0 ? .25f*a*difference.at<cv::Vec3f>(y,x)[c] : 0.f);
+                    continue;
+                }
+                const float variance=std::max(difference.at<cv::Vec3f>(y,x)[c],0.f), radius=std::sqrt(variance);
+                const float linear=std::sqrt(b)*value;
+                auto& restored=rgb.at<cv::Vec3f>(y,x)[c];
+                // 对称扰动的逆变换均值在零点附近连续，避免舍入误差触发整项方差补偿。
+                if (value>=radius) restored=linear+.25f*a*value*value+.25f*a*variance;
+                else if (value<=-radius) restored=linear;
+                else {
+                    const float positive=value+radius;
+                    restored=linear+.125f*a*positive*positive;
+                }
             }
         }
     });
+    cancellation.check();
 }
 
 void restoreWorking(cv::Mat& filtered,const sony2fuji::ImageData& source,sony2fuji::ColorSpace space,
@@ -601,6 +649,7 @@ struct WaveletDenoiseAnalysisCache::Impl {
     NoiseModel model{};
     eaw::Analysis eawAnalysis{};
     bool eawReady = false;
+    int fitSampleCount = 0;
     std::vector<Sample> samples;
 #endif
 };
@@ -644,7 +693,7 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
 }
 ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics,
     GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
-    const ImageData* immutableSource, ColorSpace sourceSpace) {
+    const ImageData* immutableSource, ColorSpace sourceSpace, const ImageData* noiseSource) {
     if (diagnostics) *diagnostics = {};
     auto finish = [&](WaveletDenoiseOutcome outcome, ErrorCode code) {
         if (diagnostics) diagnostics->outcome=outcome;
@@ -691,14 +740,32 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
             state = analysis->state.get();
         }
-        if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+        if (!reused) {
+            state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+            std::vector<Sample> sourceSamples;
+            const auto* noiseSamples=&state->samples;
+            if (noiseSource && usesC5Denoise(options.processingVersion)) {
+                // 原生样块拟合噪声；小图的平坦样块只负责 guide/band MAD，不承担拟合的 8 块门槛。
+                // 最多读取 12x12 个 64x64 样块，不复制或滤波完整源图。
+                cv::Mat source(noiseSource->height,noiseSource->width,CV_32FC3,
+                    const_cast<RGB*>(noiseSource->pixels.data()));
+                state->estimate={};
+                sourceSamples=flatSamples(source,state->estimate,options.processingVersion,sourceSpace);
+                noiseSamples=&sourceSamples;
+            }
+            state->fitSampleCount=static_cast<int>(noiseSamples->size());
+            if (state->fitSampleCount>=8) {
+                state->model=fitNoise(*noiseSamples);
+                describeFit(*noiseSamples,state->model,state->estimate);
+            }
+        }
         const auto& samples = state->samples;
         if (diagnostics) {
-            diagnostics->flatTiles=static_cast<int>(samples.size());
+            diagnostics->flatTiles=state->fitSampleCount;
             diagnostics->analysisReused=reused;
             diagnostics->estimate=state->estimate;
         }
-        if (samples.size()<8) {
+        if (state->fitSampleCount<8 || samples.empty()) {
             state->ready=true;
             const auto& estimate=state->estimate;
             const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
@@ -706,19 +773,21 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
                 WaveletDenoiseOutcome::InsufficientSamples;
             return finish(outcome, ErrorCode::Success);
         }
-        if (!reused) {
-            state->model=fitNoise(samples);
-            describeFit(samples,state->model,state->estimate);
-        }
         auto& model = state->model;
         if (diagnostics) {
             diagnostics->estimate=state->estimate;
             for (int c=0;c<3;++c) { diagnostics->a[c]=model.a[c]; diagnostics->b[c]=model.b[c]; }
         }
-        if (options.processingVersion == ProcessingVersion::C5V2) {
+        if (usesC5Denoise(options.processingVersion)) {
             // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
-            if (gpuMode == GpuMode::Force)
-                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            if (gpuMode == GpuMode::Force) {
+                lastGpuFilterOutcome() = {
+                    GpuFailureKind::Unsupported,
+                    GpuBackendFault::UnsupportedCapability,
+                    "C5 wavelet denoise requires CPU"
+                };
+                return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::Unsupported);
+            }
             const float strengthScale=eaw::noiseScale(model);
             if (strengthScale==0) {
                 state->ready=true;
@@ -782,15 +851,25 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
                 transformed.release();
                 restore(rgb,std::move(filtered),model,options.processingVersion);
             }
-        } catch (const WaveletGpuFailure&) {
+        } catch (const WaveletGpuFailure& failure) {
             if (reloadable) { transformed.release(); rgb.release(); image={}; }
-            return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+            const ErrorCode code = failure.failure == GpuFailureKind::Unsupported
+                ? ErrorCode::Unsupported
+                : failure.failure == GpuFailureKind::OutOfMemory
+                    ? ErrorCode::OutOfMemory
+                    : ErrorCode::ProcessingError;
+            return finish(WaveletDenoiseOutcome::GpuFailure, code);
         }
         if (diagnostics) {
             diagnostics->applied=true;
             diagnostics->gpuUsed=gpuUsed.load(std::memory_order_relaxed);
         }
         return finish(WaveletDenoiseOutcome::Applied, ErrorCode::Success);
+    } catch (const ProcessingCancelled&) {
+        // 取消不是处理失败：在 bad_alloc/cv/std::exception 通用捕获之前单独放行，
+        // 让上层的 ProcessingCancelled→CANCELLED 链路原样生效（含 Legacy 之外的所有版本）。
+        throw;
     } catch (const std::bad_alloc&) {
         if (options.processingVersion==ProcessingVersion::Legacy) throw;
         return finish(WaveletDenoiseOutcome::ProcessingFailure, ErrorCode::OutOfMemory);
@@ -806,6 +885,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     (void)image;
     (void)gpuMode;
     (void)analysis;
+    (void)noiseSource;
     (void)sourceKey;
     (void)immutableSource;
     (void)sourceSpace;

@@ -71,20 +71,17 @@ class RumValidationProbeTest {
         }
     }
 
-    // 应用不申请网络状态权限；探针借用 shell 身份只做发送前的 VPN/代理检查
+    // 使用应用实际的网络状态权限做发送前的 VPN/代理检查。
     @RequiresApi(29)
     private fun assertNetworkPreflight(context: Context) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        automation.adoptShellPermissionIdentity(Manifest.permission.ACCESS_NETWORK_STATE)
-        try {
+        check(context.checkSelfPermission(Manifest.permission.ACCESS_NETWORK_STATE) == android.content.pm.PackageManager.PERMISSION_GRANTED) { "network permission missing; probe not sent" }
+        run {
             val connectivity = checkNotNull(context.getSystemService(ConnectivityManager::class.java))
             val network = checkNotNull(connectivity.activeNetwork) { "no active network; probe not sent" }
             val capabilities = checkNotNull(connectivity.getNetworkCapabilities(network)) { "no active network capabilities; probe not sent" }
             check(!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) { "active VPN; probe not sent" }
             val linkProperties = checkNotNull(connectivity.getLinkProperties(network)) { "no active link properties; probe not sent" }
             check(linkProperties.httpProxy == null) { "active HTTP proxy; probe not sent" }
-        } finally {
-            automation.dropShellPermissionIdentity()
         }
     }
 

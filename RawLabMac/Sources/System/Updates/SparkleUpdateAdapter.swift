@@ -108,9 +108,12 @@ import Sparkle
         // 提取期间 SDK 不提供取消入口；准备回调到达后立即回复 skip。
     }
 
+    func prepareInstall() async throws {
+        try await validateHostTrust()
+        guard readyReply != nil, packageVerified, !cancelled else { throw UpdateAdapterError(code: "recheck", detail: "") }
+    }
+
     func install(restart: Bool) async throws {
-        let trust = self.trust
-        try await Task.detached { try trust.validateHost() }.value
         guard let reply = readyReply, packageVerified, !cancelled else { throw UpdateAdapterError(code: "recheck", detail: "") }
         installAuthorized = true; readyReply = nil
         reply(restart ? .install : .dismiss)

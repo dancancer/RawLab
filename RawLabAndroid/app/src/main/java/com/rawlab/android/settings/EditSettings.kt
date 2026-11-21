@@ -2,14 +2,16 @@ package com.rawlab.android.settings
 
 import kotlin.math.ceil
 import kotlin.math.floor
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 
-data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 2, val quality: String = "standard") {
-    init { require(family == "rawlab" && version in 1..2 && quality == "standard") }
+data class ProcessingIdentity(val family: String = "rawlab", val version: Int = 3, val quality: String = "standard") {
+    init { require(family == "rawlab" && version in 1..3 && quality == "standard") }
     fun encode() = "$family,$version,$quality"
     companion object {
         val LEGACY = ProcessingIdentity(version = 1)
+        val C5 = ProcessingIdentity(version = 2)
         val CURRENT = ProcessingIdentity()
         fun decode(value: String?): ProcessingIdentity {
             if (value == null) return LEGACY
@@ -65,20 +67,25 @@ data class EditSettings(
     val proRAWDecodeVersion: Int? = null,
 ) {
     init {
+        val f = AdjustmentFieldSpec.Fields
         require(masterRecipeSettingsVersion in 2..4)
-        require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
-        require(exposureMode in 0..2)
-        require(strength.isFinite() && strength in 0f..2f)
-        require(exposure.isFinite() && exposure in -4f..4f)
-        require(highlights.isFinite() && highlights in -1f..1f)
-        require(shadows.isFinite() && shadows in -1f..1f)
-        require(contrast.isFinite() && contrast in -1f..1f)
-        require(toneCurve.isFinite() && toneCurve in -1f..1f)
-        require(saturation.isFinite() && saturation in -1f..1f)
-        require(temperature.isFinite() && temperature in 2000f..50000f)
-        require(tint.isFinite() && tint in -150f..150f)
-        require(sharpening.isFinite() && sharpening in 0f..2f)
-        require(displayChromaDenoise in 0..2)
+        require(blackPoint.isFinite() && blackPoint in f.TONE_BLACK_POINT.androidModel.floatRange!!)
+        require(whitePoint.isFinite() && whitePoint in f.TONE_WHITE_POINT.androidModel.floatRange!!)
+        require(vibrance.isFinite() && vibrance in f.COLOR_VIBRANCE.androidModel.floatRange!!)
+        require(clarity.isFinite() && clarity in f.EFFECTS_CLARITY.androidModel.floatRange!!)
+        require(dehaze.isFinite() && dehaze in f.EFFECTS_DEHAZE.androidModel.floatRange!!)
+        require(exposureMode in f.LIGHT_EXPOSURE_MODE.androidModel.min!!.toInt()..f.LIGHT_EXPOSURE_MODE.androidModel.max!!.toInt())
+        require(strength.isFinite() && strength in f.LOOKS_STRENGTH.androidModel.floatRange!!)
+        require(exposure.isFinite() && exposure in f.LIGHT_EXPOSURE.androidModel.floatRange!!)
+        require(highlights.isFinite() && highlights in f.LIGHT_HIGHLIGHTS.androidModel.floatRange!!)
+        require(shadows.isFinite() && shadows in f.LIGHT_SHADOWS.androidModel.floatRange!!)
+        require(contrast.isFinite() && contrast in f.LIGHT_CONTRAST.androidModel.floatRange!!)
+        require(toneCurve.isFinite() && toneCurve in f.LIGHT_S_CURVE.androidModel.floatRange!!)
+        require(saturation.isFinite() && saturation in f.COLOR_SATURATION.androidModel.floatRange!!)
+        require(temperature.isFinite() && temperature in f.COLOR_WHITE_BALANCE_TEMPERATURE_KELVIN.androidModel.floatRange!!)
+        require(tint.isFinite() && tint in f.COLOR_WHITE_BALANCE_TINT.androidModel.floatRange!!)
+        require(sharpening.isFinite() && sharpening in f.DETAIL_SHARPENING.androidModel.floatRange!!)
+        require(displayChromaDenoise in f.DETAIL_DENOISE_CHROMA_MODE.androidModel.min!!.toInt()..f.DETAIL_DENOISE_CHROMA_MODE.androidModel.max!!.toInt())
         if (hdr == null) require(sdrSnapshot == null)
         else require(sdrSnapshot == null || sdrSnapshot.startsWith("v2:"))
     }
@@ -88,13 +95,17 @@ data class EditSettings(
     else EditSettings(film = film, processing = processing, x3fMode = x3fMode, hdr = hdr,
         proRAWDecodeVersion = proRAWDecodeVersion)
 
+    fun selectX3fMode(mode: X3fMode): EditSettings = if (mode == X3fMode.NORMAL) copy(
+        x3fMode = mode,
+        lens = lens.copy(distortion = false, tca = false, vignetting = false),
+    ) else copy(x3fMode = mode)
+
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(
         exposureMode = 2,
         customWb = false,
         temperature = 6500f,
         tint = 0f,
-        lens = LensSettings(),
     ) else this
     fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
         customWb = false,
@@ -124,20 +135,29 @@ data class EditSettings(
 }
 
 data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
-    val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null) {
-    val enabled: Boolean get() = distortion || tca
+    val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null,
+    val focalLength: Float? = null, val cropFactor: Float? = null, val vignetting: Boolean = false) {
+    init {
+        require(focalLength == null || focalLength.isFinite() && focalLength in 0.1f..10000f)
+        require(cropFactor == null || cropFactor.isFinite() && cropFactor in 0.1f..100f)
+    }
+    val enabled: Boolean get() = distortion || tca || vignetting
     val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
     fun encode(): String = listOf(if (distortion) 1 else 0, if (tca) 1 else 0,
         if (autoCrop) 1 else 0, if (manual) 1 else 0,
-        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "")
+        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "",
+        focalLength?.toString() ?: "", cropFactor?.toString() ?: "", if (vignetting) "1" else "0")
         .joinToString("|")
     companion object {
         fun decode(value: String?): LensSettings {
             if (value == null) return LensSettings()
             val fields = value.split('|')
-            require(fields.size == 5 && fields.take(4).all { it == "0" || it == "1" })
+            require(fields.size in setOf(5, 7, 8) && fields.take(4).all { it == "0" || it == "1" })
+            require(fields.size < 8 || fields[7] in setOf("0", "1"))
             return LensSettings(fields[0] == "1", fields[1] == "1", fields[2] == "1", fields[3] == "1",
-                fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) })
+                fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) },
+                fields.getOrNull(5)?.takeIf { it.isNotEmpty() }?.toFloat(),
+                fields.getOrNull(6)?.takeIf { it.isNotEmpty() }?.toFloat(), fields.getOrNull(7) == "1")
         }
     }
 }
@@ -180,35 +200,35 @@ enum class PhotoEffectParameter(
     val range: ClosedFloatingPointRange<Float>,
     val defaultValue: Float,
 ) {
-    VIGNETTE_AMOUNT(true, -100f..100f, 0f),
-    VIGNETTE_MIDPOINT(true, 0f..100f, 50f),
-    VIGNETTE_ROUNDNESS(true, -100f..100f, 0f),
-    VIGNETTE_FEATHER(true, 0f..100f, 50f),
-    VIGNETTE_HIGHLIGHTS(true, 0f..100f, 0f),
-    GRAIN_AMOUNT(false, 0f..100f, 0f),
-    GRAIN_SIZE(false, 0f..100f, 25f),
-    GRAIN_ROUGHNESS(false, 0f..100f, 50f),
+    VIGNETTE_AMOUNT(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_AMOUNT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_AMOUNT.androidModel.defaultFloat!!),
+    VIGNETTE_MIDPOINT(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_MIDPOINT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_MIDPOINT.androidModel.defaultFloat!!),
+    VIGNETTE_ROUNDNESS(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_ROUNDNESS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_ROUNDNESS.androidModel.defaultFloat!!),
+    VIGNETTE_FEATHER(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_FEATHER.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_FEATHER.androidModel.defaultFloat!!),
+    VIGNETTE_HIGHLIGHTS(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_HIGHLIGHTS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_HIGHLIGHTS.androidModel.defaultFloat!!),
+    GRAIN_AMOUNT(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_AMOUNT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_AMOUNT.androidModel.defaultFloat!!),
+    GRAIN_SIZE(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_SIZE.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_SIZE.androidModel.defaultFloat!!),
+    GRAIN_ROUGHNESS(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_ROUGHNESS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_ROUGHNESS.androidModel.defaultFloat!!),
 }
 
 data class PhotoEffectsSettings(
-    val vignetteAmount: Float = 0f,
-    val vignetteMidpoint: Float = 50f,
-    val vignetteRoundness: Float = 0f,
-    val vignetteFeather: Float = 50f,
-    val vignetteHighlights: Float = 0f,
-    val grainAmount: Float = 0f,
-    val grainSize: Float = 25f,
-    val grainRoughness: Float = 50f,
+    val vignetteAmount: Float = PhotoEffectParameter.VIGNETTE_AMOUNT.defaultValue,
+    val vignetteMidpoint: Float = PhotoEffectParameter.VIGNETTE_MIDPOINT.defaultValue,
+    val vignetteRoundness: Float = PhotoEffectParameter.VIGNETTE_ROUNDNESS.defaultValue,
+    val vignetteFeather: Float = PhotoEffectParameter.VIGNETTE_FEATHER.defaultValue,
+    val vignetteHighlights: Float = PhotoEffectParameter.VIGNETTE_HIGHLIGHTS.defaultValue,
+    val grainAmount: Float = PhotoEffectParameter.GRAIN_AMOUNT.defaultValue,
+    val grainSize: Float = PhotoEffectParameter.GRAIN_SIZE.defaultValue,
+    val grainRoughness: Float = PhotoEffectParameter.GRAIN_ROUGHNESS.defaultValue,
 ) {
     init {
-        require(vignetteAmount.isFinite() && vignetteAmount in -100f..100f)
-        require(vignetteMidpoint.isFinite() && vignetteMidpoint in 0f..100f)
-        require(vignetteRoundness.isFinite() && vignetteRoundness in -100f..100f)
-        require(vignetteFeather.isFinite() && vignetteFeather in 0f..100f)
-        require(vignetteHighlights.isFinite() && vignetteHighlights in 0f..100f)
-        require(grainAmount.isFinite() && grainAmount in 0f..100f)
-        require(grainSize.isFinite() && grainSize in 0f..100f)
-        require(grainRoughness.isFinite() && grainRoughness in 0f..100f)
+        require(vignetteAmount.isFinite() && vignetteAmount in PhotoEffectParameter.VIGNETTE_AMOUNT.range)
+        require(vignetteMidpoint.isFinite() && vignetteMidpoint in PhotoEffectParameter.VIGNETTE_MIDPOINT.range)
+        require(vignetteRoundness.isFinite() && vignetteRoundness in PhotoEffectParameter.VIGNETTE_ROUNDNESS.range)
+        require(vignetteFeather.isFinite() && vignetteFeather in PhotoEffectParameter.VIGNETTE_FEATHER.range)
+        require(vignetteHighlights.isFinite() && vignetteHighlights in PhotoEffectParameter.VIGNETTE_HIGHLIGHTS.range)
+        require(grainAmount.isFinite() && grainAmount in PhotoEffectParameter.GRAIN_AMOUNT.range)
+        require(grainSize.isFinite() && grainSize in PhotoEffectParameter.GRAIN_SIZE.range)
+        require(grainRoughness.isFinite() && grainRoughness in PhotoEffectParameter.GRAIN_ROUGHNESS.range)
     }
 
     /** Numeric controls clamp finite input and ignore non-finite drafts. */
@@ -300,7 +320,7 @@ internal fun EditSettings.resetRenderValues(
         if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList() +
         listOf(renderBlackPoint, renderWhitePoint, renderVibrance, renderClarity, renderDehaze) +
         ColorGradingZone.entries.flatMap { listOf(renderColorGrading[it].hue, renderColorGrading[it].saturation) } +
-        listOf(renderCurve.mode.nativeValue.toFloat()) + renderCurve.packed().map(Double::toFloat), kelvin, wbTint)
+        ToneCurveChannel.entries.flatMap { channel -> renderCurve.shape(channel).let { listOf(it.mode.nativeValue.toFloat()) + it.packed().map(Double::toFloat) } }, kelvin, wbTint)
 }
 
 // Float 上先加 0.5 会把 0.49999997 提前进位；转成 Double 后再取整才能对应 std::round(float)。
@@ -318,7 +338,7 @@ internal fun EditSettings.independentForReset(
     val scaledContrast = contrast * recipeScale
     val scaledSaturation = saturation * recipeScale
     val convertWb = input == PhotoInputKind.RAW && recipeID != null && (customWb || tint * strength != 0f)
-    if (scaledExposure !in -4f..4f ||
+    if (scaledExposure !in -5f..5f ||
         listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
         (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
     val candidate = copy(film = "neutral", recipeID = null, strength = 1f, masterRecipeSettingsVersion = 3,

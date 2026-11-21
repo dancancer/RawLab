@@ -171,8 +171,7 @@ python3 lutools/tests/run_denoise_experiment_controls.py \
 
 实验 Python 环境需要 NumPy、OpenCV、Pillow；AI 另需 ONNX Runtime。工具不安装依赖、
 不下载权重，`denoise_ai_adapter.py` 固定并检查两个已选 RawNIND 权重的 SHA-256、
-静态张量形状及 CPU FP32 provider。`test_denoise_experiments.py` 验证归一化、CFA 相位、
-短尾分块、方向、矩阵、浮点读取、锐化及指标。原探针测试可显式加 `--display-gpu`
+静态张量形状及 CPU FP32 provider。原探针测试可显式加 `--display-gpu`
 检查实际 Metal 导出；默认测试不要求这项 GPU 实验。
 
 - AI 保持权重、512 输入 tile 和 64 halo 不变，只对比四平面均值、等权 camera RGB
@@ -221,8 +220,6 @@ Metal 构建可用 `denoise_display_probe` 从明确声明的线性 sRGB 浮点�
 
 ```sh
 cmake --build /path/to/configured-build --target denoise_display_probe
-python3 lutools/tests/test_denoise_p3.py \
-  --display-probe /path/to/configured-build/bin/denoise_display_probe
 python3 lutools/tests/run_denoise_p3_scenarios.py \
   --display-probe /path/to/configured-build/bin/denoise_display_probe \
   --previous /path/to/previous-experiments --output /path/to/new-scenarios
@@ -275,9 +272,6 @@ tile 实际完成 Metal。`Force` 要求所有 tile 成功。任何失败均不�
 ```sh
 ctest --test-dir /path/to/configured-build -R '^noise_aware_sharpen' --output-on-failure
 cmake --build /path/to/configured-build --target denoise_sharpen_probe
-python3 lutools/tests/test_denoise_p3_native.py \
-  --probe /path/to/configured-build/bin/denoise_sharpen_probe \
-  --matrix /path/to/retained-actual-display-matrix
 python3 lutools/tests/run_denoise_p3_native.py \
   --probe /path/to/configured-build/bin/denoise_sharpen_probe \
   --matrix /path/to/retained-actual-display-matrix \

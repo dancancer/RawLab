@@ -21,12 +21,17 @@ struct UpdateAdapterError: LocalizedError {
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws
     func download(_ release: UpdateDescriptor, token: UUID) throws
     func cancel()
+    func prepareInstall() async throws
     func install(restart: Bool) async throws
 }
 
 extension UpdateAdapter {
     func validateHostTrust() async throws {
         if let unavailableReason { throw UpdateAdapterError(code: unavailableReason, detail: "") }
+    }
+    func prepareInstall() async throws {
+        try await validateHostTrust()
+        guard hasPreparedInstaller else { throw UpdateAdapterError(code: "recheck", detail: "") }
     }
 }
 
@@ -40,5 +45,6 @@ extension UpdateAdapter {
     func check(token: UUID, emit: @escaping (UUID, UpdateAdapterEvent) -> Void) throws { throw UpdateAdapterError(code: "unsupported", detail: "") }
     func download(_ release: UpdateDescriptor, token: UUID) throws { throw UpdateAdapterError(code: "unsupported", detail: "") }
     func cancel() {}
+    func prepareInstall() async throws { throw UpdateAdapterError(code: "unsupported", detail: "") }
     func install(restart: Bool) async throws { throw UpdateAdapterError(code: "unsupported", detail: "") }
 }

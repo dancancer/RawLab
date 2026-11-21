@@ -1,12 +1,12 @@
 using System.ComponentModel;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 internal static class PreviewChecks
 {
@@ -14,15 +14,13 @@ internal static class PreviewChecks
     {
         var app=TestWindowState.CreateApplication();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-        var window=new MainWindow{Width=1280,Height=820};
-        TestWindowState.Isolate(window,Path.Combine(repo,"build","viewport-reuse"));
+        var window=TestWindowState.CreateIsolatedWindow(Path.Combine(repo,"build","viewport-reuse"),width:1280,height:820);
         window.GpuMode.SelectedIndex=1;
         window.Show();
-        var field=typeof(MainWindow).GetField("result",BindingFlags.Instance|BindingFlags.NonPublic)!;
         RenderedImage Ready()
         {
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled);
-            return (RenderedImage)field.GetValue(window)!;
+            WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled);
+            return window.CurrentResult!;
         }
         var status=DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock));
         var developments=0;
@@ -45,16 +43,15 @@ internal static class PreviewChecks
                 "Returning to Actual pixels reuses the native frame without a developing status");
             window.MenuCompareSwipe.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check(ReferenceEquals(actual,Ready()) &&
-                (bool)typeof(MainWindow).GetProperty("ReferenceCurrent",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!,
+                window.ReferenceCurrentForTests,
                 "Turning comparison on develops only the missing reference");
             window.MenuCompareOff.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             check(ReferenceEquals(actual,Ready()),"Turning comparison off retains the edited WPF pixels");
-            var maskField=typeof(PhotoCanvas).GetField("mask",BindingFlags.Instance|BindingFlags.NonPublic)!;
-            BitmapSource? Mask()=>maskField.GetValue(window.ResultCanvas) as BitmapSource;
+            BitmapSource? Mask()=>window.ResultCanvas.MaskSource;
             void ToggleClipping()=>window.ClippingButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             developments=0;
             ToggleClipping();
-            InteractionChecks.PumpUntil(()=>window.ExportPng.IsEnabled && Mask()!=null);
+            WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled && Mask()!=null);
             var mask=Mask();
             check(ReferenceEquals(actual,Ready()) && developments==0,
                 "Turning clipping on generates only the overlay and leaves the current WPF frame ready");
@@ -62,19 +59,19 @@ internal static class PreviewChecks
             check(!window.ResultCanvas.ShowClipping && ReferenceEquals(actual,Ready()) && developments==0,
                 "Turning clipping off hides the overlay without developing the image");
             ToggleClipping();
-            InteractionChecks.PumpUntil(()=>Mask()!=null);
+            WpfTestHost.PumpUntil(()=>Mask()!=null);
             check(ReferenceEquals(mask,Mask()) && ReferenceEquals(actual,Ready()),
                 "Re-enabling clipping reuses the current overlay and image");
-            using var oracle=new RenderEngine(0);
-            var settings=(Adjustments)typeof(MainWindow).GetField("settings",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+            using var oracle=new RenderEngine(0,appPaths:window.Paths);
+            var settings=window.Settings;
             var expected=oracle.Render(raw,settings,null,0,statistics:false,clipping:true,viewportPreview:true)!.Clipping!;
             check(SameMask(expected,mask!),"The displayed RAW clipping overlay matches the native highlight and shadow mask");
             viewport.ToggleActualPixels();
             check(ReferenceEquals(fit,Ready()),"Clipping remains a display option when the viewport reuses a different frame");
-            InteractionChecks.PumpUntil(()=>Mask()?.PixelWidth==fit.Image.PixelWidth);
+            WpfTestHost.PumpUntil(()=>Mask()?.PixelWidth==fit.Image.PixelWidth);
             check(!ReferenceEquals(mask,Mask()),"A new preview size receives its own clipping mask");
         }
-        finally {status.RemoveValueChanged(window.Status,onStatus);window.Close();app.Shutdown();}
+        finally {status.RemoveValueChanged(window.Status,onStatus);window.Close();}
     }
 
     internal static bool SameMask(BitmapSource expected,BitmapSource actual)
@@ -148,5 +145,54 @@ internal static class PreviewChecks
             check(!ReferenceEquals(original,Frame()),"Replacing a RAW invalidates managed and native cached data");
         }
         finally{File.SetLastWriteTimeUtc(raw,originalTime);}
+
+        var cancelSettings = settings.Clone();
+        cancelSettings.Set(Parameter.Exposure, .72);
+        var polls = 0;
+        var cancelledMidRender = false;
+        try
+        {
+            _ = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false,
+                shouldCancel: () => Interlocked.Increment(ref polls) > 2);
+        }
+        catch (OperationCanceledException)
+        {
+            cancelledMidRender = true;
+        }
+        check(cancelledMidRender && polls >= 3, "Per-ticket shouldCancel cooperatively cancels RenderPreview");
+
+        var afterCancel = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false, shouldCancel: null);
+        check(afterCancel.Result.Image.PixelWidth > 0, "Clearing per-ticket cancellation restores clean RenderPreview on the same engine");
+
+        var cachedCancelled = false;
+        try
+        {
+            _ = engine.RenderPreview(raw, cancelSettings, lut, 800, false, false, false, shouldCancel: () => true);
+        }
+        catch (OperationCanceledException)
+        {
+            cachedCancelled = true;
+        }
+        check(cachedCancelled, "Per-ticket shouldCancel cancels even on a cached preview hit");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        engine.SetCancellation(cts.Token);
+        var engineTokenCancelled = false;
+        try
+        {
+            var tokenSettings = settings.Clone();
+            tokenSettings.Set(Parameter.Exposure, .83);
+            _ = engine.RenderPreview(raw, tokenSettings, lut, 800, false, false, false);
+        }
+        catch (OperationCanceledException)
+        {
+            engineTokenCancelled = true;
+        }
+        finally
+        {
+            engine.SetCancellation(CancellationToken.None);
+        }
+        check(engineTokenCancelled, "Engine-level SetCancellation remains active when shouldCancel is omitted");
     }
 }

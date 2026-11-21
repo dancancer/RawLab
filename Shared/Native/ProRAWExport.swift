@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreImage
 import CryptoKit
 import Darwin
@@ -5,11 +6,25 @@ import Foundation
 import Metal
 
 enum ProRAWExporter {
+    enum Format { case sdrJPEG, hdrJPEG, hdrHEIF, renderedDNG }
+
     @discardableResult
     static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
                        longEdge: Int? = nil, keepHDR: Bool, session: OpaquePointer,
                        temporaryRoot: URL = FileManager.default.temporaryDirectory,
-                       cancelled: () -> Bool = { false }) throws -> sony2fuji_hdr_stream_result_v1 {
+                       cancelled: () -> Bool = { false },
+                       progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
+        try export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
+                   format: keepHDR ? .hdrJPEG : .sdrJPEG, session: session, temporaryRoot: temporaryRoot,
+                   cancelled: cancelled, progress: progress)
+    }
+
+    @discardableResult
+    static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
+                       longEdge: Int? = nil, format: Format, session: OpaquePointer,
+                       temporaryRoot: URL = FileManager.default.temporaryDirectory,
+                       cancelled: () -> Bool = { false },
+                       progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
         guard let source = info.proRAW, let stamp = info.cameraStamp, settings.cameraDevelopmentSettings.isDefault else {
             throw HDRSettings.ModeError.unsupportedSource
         }
@@ -17,7 +32,9 @@ enum ProRAWExporter {
         return try withoutActuallyEscaping(cancelled) { cancellation in
             let reader = Reader(url: url, source: source, stamp: stamp, cancelled: cancellation)
             defer { reader.releaseDecoder() }
+            progress?(0)
             let digest = try reader.fingerprint()
+            progress?(0.02)
             var input = sony2fuji_hdr_stream_source_v1()
             input.version = 1; input.struct_size = UInt32(MemoryLayout.size(ofValue: input))
             input.native_width = UInt32(source.width); input.native_height = UInt32(source.height)
@@ -42,21 +59,32 @@ enum ProRAWExporter {
             var config = sony2fuji_hdr_export_config_v1()
             config.version = 1; config.struct_size = UInt32(MemoryLayout.size(ofValue: config))
             config.jpeg_quality = 95; config.base_color = UInt32(SONY2FUJI_HDR_COLOR_DISPLAY_P3)
-            config.metadata_policy = UInt32(SONY2FUJI_HDR_METADATA_ISO_XMP)
+            let tiled = format == .hdrHEIF || format == .renderedDNG
+            config.metadata_policy = UInt32(tiled ? SONY2FUJI_HDR_METADATA_ISO : SONY2FUJI_HDR_METADATA_ISO_XMP)
             config.source_sha256 = input.source_sha256
             var result = sony2fuji_hdr_stream_result_v1()
             result.version = 1; result.struct_size = UInt32(MemoryLayout.size(ofValue: result))
             var diagnostic = sony2fuji_hdr_diagnostic_v1()
             diagnostic.version = 1; diagnostic.struct_size = UInt32(MemoryLayout.size(ofValue: diagnostic))
-            let status = source.decoder.withCString { decoder in
-                url.path.withCString { sourcePath in
-                    output.path.withCString { outputPath in
-                        temporaryRoot.path.withCString { temporaryPath in
-                            input.decoder_identifier = decoder
-                            config.metadata_source_path = sourcePath
-                            return withHDRRequestPrefix(request) {
-                                sony2fuji_hdr_export_stream(session, &input, $0, &config, keepHDR ? 1 : 0,
-                                    temporaryPath, outputPath, &result, &diagnostic)
+            let scaledProgress: ((Double) -> Void)? = progress.map { report in
+                { fraction in report(0.02 + fraction * 0.98) }
+            }
+            let status = try HDRImage.withSessionCallbacks(session, cancelled: cancellation, progress: scaledProgress) {
+                source.decoder.withCString { decoder in
+                    url.path.withCString { sourcePath in
+                        output.path.withCString { outputPath in
+                            temporaryRoot.path.withCString { temporaryPath in
+                                input.decoder_identifier = decoder
+                                config.metadata_source_path = sourcePath
+                                return withHDRRequestPrefix(request) {
+                                    if tiled {
+                                        return sony2fuji_hdr_export_tiled(session, nil, &input, sourcePath, $0, &config,
+                                            UInt32(format == .hdrHEIF ? SONY2FUJI_HDR_TILED_HEIF : SONY2FUJI_HDR_TILED_SDR_DNG),
+                                            temporaryPath, outputPath, &result, &diagnostic)
+                                    }
+                                    return sony2fuji_hdr_export_stream(session, &input, $0, &config, format == .hdrJPEG ? 1 : 0,
+                                        temporaryPath, outputPath, &result, &diagnostic)
+                                }
                             }
                         }
                     }
@@ -98,6 +126,11 @@ enum ProRAWExporter {
 
         func fingerprint() throws -> Data {
             try validateSource()
+            if let hex = FileDigestCache.shared.cachedDigest(for: url),
+               let cached = Self.hexBytes(hex) {
+                try validateSource()
+                return cached
+            }
             let file = try FileHandle(forReadingFrom: url)
             defer { try? file.close() }
             var hash = SHA256()
@@ -106,6 +139,20 @@ enum ProRAWExporter {
             }
             try validateSource()
             return Data(hash.finalize())
+        }
+
+        private static func hexBytes(_ hex: String) -> Data? {
+            guard hex.count == 64 else { return nil }
+            var out = Data()
+            out.reserveCapacity(32)
+            var idx = hex.startIndex
+            while idx < hex.endIndex {
+                let next = hex.index(idx, offsetBy: 2)
+                guard let byte = UInt8(hex[idx..<next], radix: 16) else { return nil }
+                out.append(byte)
+                idx = next
+            }
+            return out
         }
 
         func perform(_ operation: () throws -> Void) -> sony2fuji_status {

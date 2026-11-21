@@ -661,13 +661,20 @@ int main(int argc, char** argv) {
         addMpfThumbnail(jpeg, root / "camera-mpf-vga.jpg", 0x010001);
         check(decode(root / "camera-mpf-vga.jpg", 12, 8) == upright,
             "An MPF VGA thumbnail also leaves the primary JPEG unchanged");
-        for (const auto& trailing : {std::vector<uint8_t>{0}, read(jpeg)}) {
-            auto unindexed = read(root / "camera-mpf.jpg");
-            unindexed.insert(unindexed.end(), trailing.begin(), trailing.end());
-            write(root / "mpf-unindexed-trailer.jpg", unindexed);
-            reject(root / "mpf-unindexed-trailer.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
-                "MPF rejects bytes and JPEG images beyond its indexed ranges");
-        }
+        auto cameraVariant = read(root / "camera-mpf.jpg");
+        cameraVariant[63] = 0x80; // LE primary attributes without the representative flag.
+        cameraVariant.insert(cameraVariant.end(), {0xdc, 0xff, 0x00, 0x36});
+        const auto variantPath = root / "mpf-camera-trailer.jpg";
+        write(variantPath, cameraVariant);
+        check(decode(variantPath, 12, 8) == upright,
+            "An MPF JPEG without the representative flag can carry a camera trailer");
+        checkPreview(variantPath, 6, 12, 8, 6, 4);
+        auto unindexed = read(root / "camera-mpf.jpg");
+        const auto trailing = read(jpeg);
+        unindexed.insert(unindexed.end(), trailing.begin(), trailing.end());
+        write(root / "mpf-unindexed-trailer.jpg", unindexed);
+        reject(root / "mpf-unindexed-trailer.jpg", SONY2FUJI_STATUS_UNSUPPORTED,
+            "MPF rejects an unindexed JPEG immediately after its indexed ranges");
         addMpfThumbnail(jpeg, root / "camera-mpf-two-thumbnails.jpg", 0x010002, true, thumbnail, 0x010001);
         check(decode(root / "camera-mpf-two-thumbnails.jpg", 12, 8) == upright,
             "An MPF primary can have one thumbnail of each supported class");
@@ -882,6 +889,23 @@ int main(int argc, char** argv) {
         // A bare MPF marker without its required index remains invalid.
         auto gain = read(jpeg); gain.insert(gain.begin() + 2, {255,226,0,6,'M','P','F',0});
         write(root / "gain-map.jpg", gain); reject(root / "gain-map.jpg", SONY2FUJI_STATUS_UNSUPPORTED);
+        // APP1 段长 6/7 时内容只有 "Exif"/"Exif\0"，不足 6 字节标识，不能按 EXIF 解析或越界读。
+        for (const uint8_t length : {uint8_t{6}, uint8_t{7}}) {
+            std::vector<uint8_t> segment = {255, 225, 0, length, 'E', 'x', 'i', 'f'};
+            segment.resize(2u + length, 0);
+            auto shortExif = read(jpeg);
+            shortExif.insert(shortExif.begin() + 2, segment.begin(), segment.end());
+            const auto path = root / ("short-exif-" + std::to_string(length) + ".jpg");
+            write(path, shortExif);
+            sony2fuji_buffer probe{};
+            const auto status = sony2fuji_load_display_image(path.u8string().c_str(), &probe);
+            sony2fuji_release_buffer(&probe);
+            if (status == SONY2FUJI_STATUS_OK)
+                check(decode(path, 12, 8) == upright, "A truncated Exif APP1 segment is ignored");
+            else
+                rejectEither(path, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_STATUS_PROCESSING_ERROR,
+                    "A truncated Exif APP1 segment is rejected cleanly");
+        }
 
         const auto oversized = root / "over-128m.png";
         writePngHeader(oversized, 16001, 8000);

@@ -67,7 +67,8 @@ class BatchWorkflowInstrumentedTest {
             val reopened = EditStore(File(context.filesDir, "edits"))
             assertEquals(settings, reopened.load(PhotoIdentity(Uri.fromFile(source).toString())))
             compose.runOnUiThread { model.beginBatch() }
-            val batch = model.batch.value!!
+            compose.waitUntil(60_000) { model.batch.value != null }
+            val batch = requireNotNull(model.batch.value)
             cleanup.trackJob(batch.state.value.job.id)
             compose.waitUntil(60_000) { batch.state.value.phase == BatchPhase.SELECTING }
             compose.onNodeWithText("导出 0 张").assertIsNotEnabled()

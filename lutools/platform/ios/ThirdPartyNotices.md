@@ -13,7 +13,7 @@ and inverse-transform optimizations are in `lutools/cmake/wavelib-swt-columns.c.
 and `wavelib-iswt2.c.inc`.
 
 libtiff 4.7.1 is statically linked for the structured rendered-DNG writer. The
-writer stores baked display-sRGB output as float32 LinearRaw and does not embed
+writer stores baked display-sRGB output as 16-bit unsigned LinearRaw and does not embed
 original sensor data or claim reversible RAW edits. See `libtiff-LICENSE.md`.
 Source: https://download.osgeo.org/libtiff/tiff-4.7.1.tar.gz
 

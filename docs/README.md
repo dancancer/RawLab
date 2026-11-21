@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-The current release is [v0.10.0, build 19](releases/v0.10/v0.10.0.md).
+The current release is [v0.11.0, build 20](releases/v0.11/v0.11.0.md).
 The [GitHub release record](https://github.com/dancancer/RawLab/releases) owns
 published packages, checksums and package provenance.
 
@@ -32,15 +32,18 @@ published packages, checksums and package provenance.
 
 ## Architecture And Design
 
+- [Sony Wi-Fi photo transfer design](design/camera-transfer/sony-wifi-design.md), [experimental desktop tool](../tools/camera-transfer/README.md) and [camera vendor SDK survey](design/camera-transfer/vendor-sdk-survey.md): Sony α7C II protocol and macOS import experiment; other platforms and brands remain outside the implementation
 - [UI/UX interaction contract](design/editor-workspace/ui-ux-interaction-contract.md): scope summaries, quick presets, one-action export, adaptive workspace and look browsing; [iteration record](archive/integration/ui-ux-optimization-20261030.md)
+- [Edited-photo markers and previews](design/editor-workspace/edited-photo-previews.md): four-platform pencil markers, saved-effect thumbnails, mobile filters and iOS Recently Opened
 - [Product scope](../PRODUCT.md), [desktop design](../DESIGN.md) and [product roadmap](architecture/roadmap.md)
 - [Maintained design assets](design/README.md), including the [four-platform app prototype and coverage](design/editor-workspace/README.md)
 - [Iteration requirements](design/editing-iteration/requirements.md) and [technical design](design/editing-iteration/technical-design.md): phase-one remaining work, all of phase two and desktop updates
 - [Workspace sub-requirements](design/editor-workspace/requirements.md) and [native sub-design](design/editor-workspace/technical-design.md), ITER-02 based on the r4 four-platform prototype
 - [Active architecture and performance review, 2026-10-18](architecture/architecture-and-performance-review-2026-10-18.md), with separate historical measurements and current-code static recheck
 - [Active cross-camera preset roadmap](architecture/cross-camera-presets-roadmap.md), including outstanding quality gates
+- [Owner transformation ADR, 2026-11-19](architecture/adr-2026-11-19-owner-transformation.md): root causes, overturned decisions, four-wave roadmap exit criteria and settled D1-D7 rulings
 - [Edit memory and batch export design](design/2026-10-09-edit-memory-batch-export/README.md)
-- [Phone HDR photo design](design/hdr-photos/technical-design.md) and [Android/Windows scope](design/hdr-photos/android-windows.md): four-client gain-map import, basic editing, HDR/SDR previews and compatible JPEG output; supported systems and remaining device coverage are listed in the [0.10.0 release notes](releases/v0.10/v0.10.0.md)
+- [Phone HDR photo design](design/hdr-photos/technical-design.md) and [Android/Windows scope](design/hdr-photos/android-windows.md): four-client gain-map import, basic editing, HDR/SDR previews and compatible JPEG output; supported systems and remaining device coverage are listed in the [0.11.0 release notes](releases/v0.11/v0.11.0.md)
 - [Normal X3F rendering](../lutools/docs/x3f-rendering.md): supported Sigma camera families, rendering modes, CPU execution and compatibility limits
 
 ## Releases
@@ -51,6 +54,7 @@ deliverables.
 
 | Release line | Notes and source instructions |
 | --- | --- |
+| 0.11 | [0.11.0](releases/v0.11/v0.11.0.md) |
 | 0.10 | [0.10.0](releases/v0.10/v0.10.0.md) |
 | 0.9 | [0.9.3](releases/v0.9/v0.9.3.md); [0.9.2](releases/v0.9/v0.9.2.md); [0.9.1](releases/v0.9/v0.9.1.md); [0.9.0](releases/v0.9/v0.9.0.md) |
 | 0.8 | [0.8.2](releases/v0.8/v0.8.2.md), [source](releases/v0.8/v0.8.2-source.md), [Chinese announcement](releases/v0.8/v0.8.2-xiaohongshu.md); [0.8.1](releases/v0.8/v0.8.1.md), [source](releases/v0.8/v0.8.1-source.md); [0.8.0](releases/v0.8/v0.8.0.md), [source](releases/v0.8/v0.8.0-source.md) |

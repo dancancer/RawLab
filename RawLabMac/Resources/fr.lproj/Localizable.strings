@@ -92,6 +92,7 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "Le dernier look utilisé n’est pas disponible. Choisissez ou importez de nouveau un look.";
 "上次批量任务尚未完成" = "La dernière exportation par lots n’est pas terminée";
 "下次退出时安装" = "Installer à la prochaine fermeture";
+"不可读外观" = "Looks illisibles";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
 "不支持此 X3F 显影模式。" = "Ce mode de développement X3F n’est pas pris en charge.";
 "不支持此处理版本，原有记录未被覆盖。" = "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.";
@@ -216,6 +217,7 @@
 "原始文件已被替换，请重新选择照片。" = "Le fichier original a été remplacé. Sélectionnez à nouveau la photo.";
 "原始比例" = "Format d’origine";
 "原始照片已变化，请重新导入。" = "La photo d’origine a changé. Importez-la à nouveau.";
+"原始预览" = "Aperçu original";
 "原尺寸" = "Taille d’origine";
 "去噪优先" = "Priorité à la réduction du bruit";
 "去朦胧" = "Correction du voile";
@@ -248,6 +250,7 @@
 "向左旋转 90°" = "Pivoter de 90° à gauche";
 "向左滚动%@" = "Faire défiler %@ vers la gauche";
 "四面体" = "Tétraédrique";
+"回到迁移前" = "Restaurer les réglages d’origine";
 "圆度" = "Rondeur";
 "在 Finder 中打开" = "Ouvrir dans le Finder";
 "在照片上取色并上下拖动" = "Prélevez une couleur dans la photo, puis faites glisser vers le haut ou le bas";
@@ -263,8 +266,10 @@
 "基础曝光偏移" = "Décalage d'exposition de base";
 "处理 v1（旧版）" = "Traitement v1 (ancien)";
 "处理 v2" = "Traitement v2";
+"处理 v3" = "Traitement v3";
 "处理失败：%@" = "Échec du traitement : %@";
 "处理版本" = "Version de traitement";
+"处理版本与来源不同，已沿用当前照片的处理版本" = "Version de traitement différente de la source ; la version de traitement de la photo actuelle est conservée";
 "处理结果为空" = "Le résultat du traitement est vide";
 "复制范围" = "Éléments à copier";
 "复制调整" = "Copier les réglages";
@@ -314,6 +319,7 @@
 "导出长边必须为 1-65535 像素。" = "Le bord long doit être compris entre 1 et 65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Les éléments suivants seront convertis en réglages indépendants pour préserver le rendu actuel des autres groupes : %@";
 "将在下次正常退出时重新检查并安装" = "La mise à jour sera vérifiée à nouveau et installée lors de la prochaine fermeture normale";
+"将恢复迁移前的全部调整，之后的修改会被替换。" = "Tous les réglages antérieurs à la mise à jour seront restaurés. Les modifications ultérieures seront remplacées.";
 "将按每张照片已保存的调整导出。跳过只影响本次导出。" = "Chaque photo utilise ses réglages enregistrés. L’exclusion ne concerne que cette exportation.";
 "将替换目标照片的本机调整记录，不改写原始 RAW。" = "Remplace les réglages locaux des photos cibles sans modifier le RAW d’origine.";
 "将替换目标照片的本机调整记录，不改写原始文件。" = "Les réglages locaux des photos cibles seront remplacés. Les fichiers d’origine ne seront pas modifiés.";
@@ -345,6 +351,7 @@
 "已匹配配置 · 校正尚未开启" = "Profil identifié · Correction désactivée";
 "已匹配镜头" = "Objectif identifié";
 "已启用" = "Activé";
+"已回退，保留旧版本。" = "Réglages restaurés. La version précédente est conservée.";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importés : %@ ; fichiers non importés : %@\n";
 "已导出" = "Exporté";
 "已导出 %@ 个渲染型 DNG" = "Fichiers DNG développés exportés : %@";
@@ -356,6 +363,9 @@
 "已应用" = "Appliqué";
 "已应用 AI 降噪；曝光和外观调整复用结果。" = "Débruitage IA appliqué. Les réglages d’exposition et de rendu réutilisent le résultat.";
 "已开启" = "Activé";
+"已忽略旧版 RAW 降噪（FBDD）" = "Réduction du bruit RAW héritée (FBDD) ignorée";
+"已忽略渲染后 RGB 降噪" = "Réduction du bruit RVB post-rendu ignorée";
+"已忽略目标不支持的普通降噪设置" = "Les réglages de réduction du bruit standard non pris en charge par la cible ont été ignorés";
 "已恢复上次调整" = "Réglages précédents restaurés";
 "已撤销" = "Annulé";
 "已撤销 %@ 张 · 未完成 %@ 张" = "Annulées %@ · Inachevées %@";
@@ -367,6 +377,8 @@
 "已生成 %@ 个渲染型 DNG" = "Fichiers DNG développés créés : %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Fichiers DNG développés créés : %@ (non enregistrés à l’emplacement choisi)";
 "已生成渲染型 DNG，未另存到所选位置。" = "DNG développé créé, mais non enregistré à l’emplacement choisi.";
+"已编辑" = "Modifiée";
+"已自动升级，原设置已保留。" = "Mise à jour automatique. Les réglages d’origine sont conservés.";
 "已调整" = "Ajusté";
 "已跳过" = "Ignorée";
 "已选" = "Sélectionnée";
@@ -404,6 +416,7 @@
 "当前显示 SDR 兼容预览。" = "L’aperçu compatible SDR est affiché.";
 "当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
 "当前照片" = "Photo actuelle";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.";
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前照片的设置尚不可用。" = "Les paramètres de la photo actuelle ne sont pas encore disponibles.";
 "当前通道 %@，修改仅作用于该颜色。" = "Canal actuel : %@. Les modifications s’appliquent uniquement à cette couleur.";
@@ -443,6 +456,8 @@
 "按实际生效值应用，已包含配方强度。" = "Application des valeurs effectives, intensité de la recette comprise.";
 "按已确认条件比较缩小后的 sRGB 像素；差异越小表示越接近此参考，效果仍未验证。" = "Compare des pixels sRGB réduits selon les conditions confirmées ; un écart plus faible indique une plus grande proximité avec cette référence, mais le rendu reste non vérifié.";
 "按每张照片" = "Par photo";
+"损坏的外观" = "Look endommagé";
+"损坏的预设" = "Préréglage endommagé";
 "排列顺序不代表准确度。未识别的颜色空间、范围和基础图像仍属于假设。" = "L’ordre n’indique pas la précision. Les espaces colorimétriques, plages et images de base non identifiés restent des hypothèses.";
 "控制点 %d" = "Point %d";
 "插值方式" = "Interpolation";
@@ -516,11 +531,13 @@
 "无法解码普通图片：%@" = "Impossible de décoder l’image : %@";
 "无法计算直方图" = "Impossible de calculer l'histogramme";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "Le profil de caméra HDR est illisible ou ne correspond pas à cet appareil.";
+"无法读取 X3F 显影模式：%@" = "Impossible de lire le mode de développement X3F : %@";
 "无法读取上次批量任务：%@" = "Impossible de lire la dernière exportation par lots : %@";
 "无法读取基础曝光" = "Impossible de lire l'exposition de base";
 "无法读取外观文件。" = "Impossible de lire le fichier de look.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "La bibliothèque de looks enregistrée est illisible ; les enregistrements d’origine n’ont pas été écrasés.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Impossible de lire ou d’écrire le fichier. Vérifiez le chemin et les autorisations d’accès.";
+"无法读取此条目，原文已保留" = "Cette entrée n'a pas pu être lue ; le texte d'origine est conservé.";
 "无法读取照片，请检查文件和访问权限。" = "Impossible de lire la photo. Vérifiez le fichier et les autorisations d’accès.";
 "无法读取统计设置，已保持关闭。" = "Le réglage d’analyse n’a pas pu être lu. L’analyse reste désactivée.";
 "无法读取调整记录：%@" = "Impossible de lire l'enregistrement d'ajustement : %@";
@@ -551,6 +568,7 @@
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
 "暖金光影 · 质感人像" = "Lumière dorée chaude · portrait texturé";
 "暗角" = "Vignettage";
+"暗角校正" = "Correction du vignetage";
 "暮色黄昏 · 相邻色过渡" = "Crépuscule · transition de couleurs voisines";
 "曝光" = "Exposition";
 "曝光基准" = "Référence d'exposition";
@@ -626,6 +644,7 @@
 "正在准备 AI 降噪" = "Préparation du débruitage IA";
 "正在准备导出…" = "Préparation de l’exportation…";
 "正在准备编辑画布…" = "Préparation du canevas de retouche…";
+"正在匹配原画面…" = "Correspondance avec le rendu original…";
 "正在取色…" = "Échantillonnage…";
 "正在处理 RAW 噪声" = "Traitement du bruit RAW";
 "正在处理更新，编辑暂不可用。" = "Une mise à jour est en cours. La retouche est temporairement indisponible.";
@@ -655,6 +674,7 @@
 "此 X3F 显影模式不支持 AI 降噪。" = "La réduction du bruit par IA n’est pas prise en charge dans ce mode de développement X3F.";
 "此像素不可取样。" = "Ce pixel ne peut pas être échantillonné.";
 "此外观已不在外观库中。" = "Ce look n'est plus dans la bibliothèque de looks.";
+"此外观无法读取，可能已损坏或来自不兼容版本。" = "Ce look ne peut pas être lu. Il est peut-être endommagé ou provient d’une version incompatible.";
 "此安装暂不支持自动安装更新" = "Cette installation ne prend pas encore en charge les mises à jour automatiques";
 "此操作只恢复%@组内的调整，其他分组保持不变。" = "Seuls les réglages du groupe %@ seront réinitialisés. Les autres groupes resteront inchangés.";
 "此操作已过期，请重新操作。" = "Cette opération n’est plus à jour. Relancez-la.";
@@ -667,6 +687,7 @@
 "此照片没有可编辑的 HDR 增益图。" = "Cette photo ne contient pas de carte de gain HDR modifiable.";
 "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。" = "La retouche HDR de cette photo nécessite macOS 15. Elle sera exportée en SDR.";
 "此照片的 HDR 需 macOS 15 才能编辑，已按 SDR 打开。" = "La retouche HDR de cette photo nécessite macOS 15. Elle a été ouverte en SDR.";
+"此照片的调整保留原处理版本。" = "Cette photo conserve sa version de traitement précédente.";
 "此目录没有 RAW 照片。" = "Ce dossier ne contient aucune photo RAW.";
 "此目录没有照片。" = "Ce dossier ne contient aucune photo.";
 "此输入不支持镜头校正" = "Correction optique non prise en charge pour cette image";
@@ -722,6 +743,7 @@
 "用户外观 · %@" = "Look personnel · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Texture cinématographique grand écran, lumière et ombres très contrastées, noirs profonds et lumière dorée de projecteur";
 "电影夜景胶片色调，红色灯光与深邃冷青绿暗部" = "Tons de film de nuit cinématographique, lumières rouges et ombres cyan-vert froid profond";
+"画面差异较大，已保留旧版本。" = "Le rendu est trop différent. La version précédente est conservée.";
 "画面比例" = "Format de l’image";
 "畸变" = "Distorsion";
 "畸变未应用" = "Correction de la distorsion non appliquée";
@@ -742,6 +764,7 @@
 "相对白平衡" = "Balance des blancs relative";
 "相机白平衡（按目标照片）" = "Balance des blancs de l’appareil (pour chaque photo cible)";
 "省略自动黑位" = "Ignorer le rendu automatique du noir";
+"确定" = "OK";
 "确认兼容导入" = "Importer avec ces réglages";
 "确认并冻结任务" = "Confirmer et figer la tâche";
 "移除" = "Supprimer";
@@ -797,6 +820,7 @@
 "自动下载并在退出时安装" = "Télécharger automatiquement et installer à la fermeture";
 "自动匹配" = "Correspondance automatique";
 "自动安装默认关闭。安装前会保存已提交的编辑，并等待草稿和任务处理完成。" = "L’installation automatique est désactivée par défaut. Avant l’installation, les modifications validées sont enregistrées et l’application attend la fin des brouillons et des tâches.";
+"自动更新不可用，请手动下载" = "Les mises à jour automatiques ne sont pas disponibles. Veuillez télécharger manuellement.";
 "自动检查更新" = "Rechercher automatiquement les mises à jour";
 "自动添加序号" = "Ajouter automatiquement des numéros de séquence";
 "自动裁切" = "Recadrage automatique";
@@ -1007,6 +1031,7 @@
 "预览尚未就绪，请稍后重试。" = "L’aperçu n’est pas encore prêt. Réessayez dans un instant.";
 "预览已变化，请重新取色。" = "L’aperçu a changé. Prélevez à nouveau la couleur.";
 "预览已更新" = "Aperçu actualisé";
+"预览待更新" = "Mise à jour de l’aperçu";
 "预览方式" = "Mode aperçu";
 "预览方式不会改变编辑或导出。" = "Le mode aperçu ne modifie ni les réglages ni l’export.";
 "预览未更新" = "Aperçu non actualisé";

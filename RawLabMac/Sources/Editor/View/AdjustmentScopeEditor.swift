@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 struct AdjustmentScopeEditor: View {

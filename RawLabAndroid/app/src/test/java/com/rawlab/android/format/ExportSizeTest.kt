@@ -20,15 +20,15 @@ class ExportSizeTest {
 
     @Test fun customLongEdgeAcceptsOnlyTheContractRange() {
         assertEquals(1, ExportSize.parseCustom("1"))
-        assertEquals(65535, ExportSize.parseCustom("65535"))
+        assertEquals(65500, ExportSize.parseCustom("65500"))
         assertNull(ExportSize.parseCustom("0"))
-        assertNull(ExportSize.parseCustom("65536"))
+        assertNull(ExportSize.parseCustom("65501"))
         assertNull(ExportSize.parseCustom("100000"))
         assertNull(ExportSize.parseCustom("-2048"))
         assertNull(ExportSize.parseCustom("not-a-size"))
         assertTrue(ExportSize.isValid(null))
         assertFalse(ExportSize.isValid(0))
-        assertFalse(ExportSize.isValid(65536))
+        assertFalse(ExportSize.isValid(65501))
     }
 
     @Test fun oldBatchJobsDefaultToOriginalSize() {

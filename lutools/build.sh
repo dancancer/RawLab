@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Sony2Fuji 构建脚本
-# 支持: Linux, macOS, iOS, Android
+# 支持: Linux, macOS, iOS
 
 set -e
 
@@ -39,8 +39,8 @@ check_dependencies() {
         exit 1
     fi
 
-    if ! pkg-config --exists libraw; then
-        print_error "libraw 未安装"
+    if ! pkg-config --exists libraw_r; then
+        print_error "libraw_r 未安装"
         if [[ "$OSTYPE" == "darwin"* ]]; then
             print_info "请运行: brew install libraw"
         elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -87,51 +87,11 @@ build_ios() {
     bash platform/ios/build-framework.sh
 }
 
-# 构建 Android
-build_android() {
-    print_header "构建 Android 库"
-
-    if [ -z "$ANDROID_NDK" ]; then
-        print_error "请设置 ANDROID_NDK 环境变量"
-        print_info "例如: export ANDROID_NDK=\$HOME/Android/Sdk/ndk/25.2.9519653"
-        exit 1
-    fi
-
-    for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
-        print_info "构建架构: $ABI"
-
-        BUILD_DIR="build-android-$ABI"
-        rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR"
-        cd "$BUILD_DIR"
-
-        cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=$ABI \
-            -DANDROID_PLATFORM=android-24 \
-            -DANDROID_STL=c++_shared \
-            -DBUILD_SHARED_LIB=ON \
-            -DBUILD_CLI=OFF
-
-        cmake --build . --config Release -j$(nproc)
-
-        cd ..
-
-        # 复制到 jniLibs
-        mkdir -p platform/android/jniLibs/$ABI
-        cp $BUILD_DIR/libsony2fuji.so platform/android/jniLibs/$ABI/
-    done
-
-    print_info "Android 库构建完成"
-    print_info "位置: platform/android/jniLibs/"
-}
-
 # 清理
 clean() {
     print_header "清理构建文件"
 
     rm -rf build build-*
-    rm -rf platform/android/jniLibs
 
     print_info "清理完成"
 }
@@ -162,7 +122,6 @@ show_help() {
     echo "选项:"
     echo "  desktop     构建桌面版本 (默认)"
     echo "  ios         构建 iOS Framework"
-    echo "  android     构建 Android 库"
     echo "  all         构建所有平台"
     echo "  clean       清理构建文件"
     echo "  test        运行测试"
@@ -171,7 +130,6 @@ show_help() {
     echo "示例:"
     echo "  $0              # 构建桌面版本"
     echo "  $0 ios          # 构建 iOS"
-    echo "  $0 android      # 构建 Android"
     echo "  $0 all          # 构建所有平台"
 }
 
@@ -187,18 +145,11 @@ main() {
         ios)
             build_ios
             ;;
-        android)
-            check_dependencies
-            build_android
-            ;;
         all)
             check_dependencies
             build_desktop
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 build_ios
-            fi
-            if [ -n "$ANDROID_NDK" ]; then
-                build_android
             fi
             ;;
         clean)

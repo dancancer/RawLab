@@ -1,30 +1,175 @@
 #include "sony2fuji/lut_parser.h"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
-#include <mutex>
+#include <locale.h>
+#ifdef __APPLE__
+#include <xlocale.h>
+#endif
 #include <set>
-#include <sstream>
+#include <string_view>
 #include <sys/stat.h>
 #include "../../third_party/nlohmann/json.hpp"
 #include "sha256.h"
+#include "parsed_resource_cache.h"
 #include "lut_compatibility.h"
 #include "lut_contract_json.h"
 
 namespace sony2fuji {
 namespace {
-std::string compact(std::string text) {
+constexpr bool isAsciiSpace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+}
+
+std::string compact(std::string_view text) {
     std::string result;
-    for (unsigned char c : text) if (std::isalnum(c)) result += std::tolower(c);
+    result.reserve(text.size());
+    for (unsigned char c : text) {
+        if (c >= '0' && c <= '9') {
+            result += static_cast<char>(c);
+        } else if (c >= 'A' && c <= 'Z') {
+            result += static_cast<char>(c + ('a' - 'A'));
+        } else if (c >= 'a' && c <= 'z') {
+            result += static_cast<char>(c);
+        }
+    }
     return result;
 }
-bool readRGB(std::istringstream& line, RGB& p) {
-    if (!(line >> p.r >> p.g >> p.b) ||
-        !std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b)) return false;
-    line >> std::ws;
-    return line.eof() || line.peek() == '#';
+
+bool parseFloatCLocale(const char* token, size_t len, float& out) {
+#ifdef _WIN32
+    struct LocaleHolder {
+        _locale_t loc = _create_locale(LC_ALL, "C");
+        ~LocaleHolder() {
+            if (loc) _free_locale(loc);
+        }
+    };
+    static const LocaleHolder holder;
+#else
+    struct LocaleHolder {
+        locale_t loc = newlocale(LC_NUMERIC_MASK, "C", nullptr);
+        ~LocaleHolder() {
+            if (loc) freelocale(loc);
+        }
+    };
+    static const LocaleHolder holder;
+#endif
+    char stackBuf[128];
+    std::string heapBuf;
+    const char* buf = nullptr;
+    if (len < sizeof(stackBuf)) {
+        std::memcpy(stackBuf, token, len);
+        stackBuf[len] = '\0';
+        buf = stackBuf;
+    } else {
+        heapBuf.assign(token, len);
+        buf = heapBuf.c_str();
+    }
+    char* endPtr = nullptr;
+#ifdef _WIN32
+    out = holder.loc ? _strtof_l(buf, &endPtr, holder.loc) : std::strtof(buf, &endPtr);
+#else
+    out = holder.loc ? strtof_l(buf, &endPtr, holder.loc) : std::strtof(buf, &endPtr);
+#endif
+    return endPtr == buf + len && std::isfinite(out);
+}
+
+bool fastParseFloat(const char*& cur, const char* end, float& out) {
+    while (cur < end && isAsciiSpace(*cur)) ++cur;
+    if (cur == end) return false;
+    const char* const tokenStart = cur;
+    bool neg = false;
+    if (*cur == '-') {
+        neg = true;
+        ++cur;
+    } else if (*cur == '+') {
+        ++cur;
+    }
+    uint64_t mantissa = 0;
+    int sigDigits = 0;
+    int exp10 = 0;
+    bool anyDigit = false;
+    bool needsFallback = false;
+    while (cur < end && *cur >= '0' && *cur <= '9') {
+        anyDigit = true;
+        const unsigned d = static_cast<unsigned>(*cur - '0');
+        if (mantissa != 0 || d != 0) {
+            if (sigDigits < 15) {
+                mantissa = mantissa * 10 + d;
+                ++sigDigits;
+            } else {
+                needsFallback = true;
+            }
+        }
+        ++cur;
+    }
+    if (cur < end && *cur == '.') {
+        ++cur;
+        while (cur < end && *cur >= '0' && *cur <= '9') {
+            anyDigit = true;
+            const unsigned d = static_cast<unsigned>(*cur - '0');
+            if (mantissa != 0 || d != 0) {
+                if (sigDigits < 15) {
+                    mantissa = mantissa * 10 + d;
+                    ++sigDigits;
+                    --exp10;
+                } else {
+                    needsFallback = true;
+                }
+            } else {
+                // Leading fractional zeros when mantissa == 0 still shift the decimal point.
+                if (exp10 > -100000) --exp10;
+            }
+            ++cur;
+        }
+    }
+    if (!anyDigit) return false;
+    if (cur < end && (*cur == 'e' || *cur == 'E')) {
+        ++cur;
+        bool expNeg = false;
+        if (cur < end && (*cur == '-' || *cur == '+')) {
+            expNeg = (*cur == '-');
+            ++cur;
+        }
+        if (cur == end || *cur < '0' || *cur > '9') return false;
+        int parsedExp = 0;
+        while (cur < end && *cur >= '0' && *cur <= '9') {
+            if (parsedExp < 100000) parsedExp = parsedExp * 10 + (*cur - '0');
+            ++cur;
+        }
+        exp10 += expNeg ? -parsedExp : parsedExp;
+    }
+    if (cur < end && !isAsciiSpace(*cur) && *cur != '#') return false;
+
+    if (mantissa == 0 && !needsFallback) {
+        out = neg ? -0.0f : 0.0f;
+        return true;
+    }
+    if (!needsFallback && exp10 >= -22 && exp10 <= 22) {
+        static constexpr double kPow10[23] = {
+            1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+            1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
+        };
+        double d = static_cast<double>(mantissa);
+        if (exp10 > 0) d *= kPow10[exp10];
+        else if (exp10 < 0) d /= kPow10[-exp10];
+        out = static_cast<float>(neg ? -d : d);
+        return std::isfinite(out);
+    }
+    return parseFloatCLocale(tokenStart, static_cast<size_t>(cur - tokenStart), out);
+}
+
+bool readRGB(const char* cur, const char* end, RGB& p) {
+    if (!fastParseFloat(cur, end, p.r) ||
+        !fastParseFloat(cur, end, p.g) ||
+        !fastParseFloat(cur, end, p.b)) return false;
+    while (cur < end && isAsciiSpace(*cur)) ++cur;
+    return cur == end || *cur == '#';
 }
 LUTTransfer logTransfer(const std::string& name) {
     if (name == "flog") return LUTTransfer::FLog;
@@ -120,10 +265,9 @@ ErrorCode LUT3D::parseCubeFile(const std::string& path) {
 
 ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
     *this = LUT3D();
-    if(bytes.size()>256u*1024u*1024u) return ErrorCode::InvalidFormat;
-    std::istringstream file(bytes);
+    if (bytes.size() > 256u * 1024u * 1024u) return ErrorCode::InvalidFormat;
     vlt_ = vlt;
-    std::string line, gamma, gamut, style, compatibility, contractText;
+    std::string gamma, gamut, style, compatibility, contractText;
     std::streamoff compatibilityOffset = -1;
     std::vector<RGB> values;
     bool minSeen = false, maxSeen = false, vltHeader = false, vltSource = false, duplicateContract = false;
@@ -131,81 +275,109 @@ ErrorCode LUT3D::loadFromData(const std::string& bytes, bool vlt) {
     std::set<std::string> colorKeys;
     bool duplicateColor = false;
     size_t bytesRead = 0;
-    while (file) {
-        const auto lineOffset = file.tellg();
-        if (!std::getline(file, line)) break;
+    const std::string_view sv(bytes);
+    size_t pos = 0;
+    while (pos < sv.size()) {
+        const size_t lineOffset = pos;
+        const size_t nl = sv.find('\n', pos);
+        std::string_view line = (nl == std::string_view::npos) ? sv.substr(pos) : sv.substr(pos, nl - pos);
+        pos = (nl == std::string_view::npos) ? sv.size() : nl + 1;
         // 兼容记录必须是最后一行；原文件的所有字节都在该记录之前。
         if (compatibilityOffset >= 0) return ErrorCode::InvalidFormat;
         bytesRead += line.size() + 1;
-        if (bytesRead > 256u*1024u*1024u || line.size() > 65536) return ErrorCode::InvalidFormat;
-        if (bytesRead == line.size()+1 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
-        auto first = line.find_first_not_of(" \t\r");
-        if (first == std::string::npos) continue;
-        line.erase(0, first);
+        if (bytesRead > 256u * 1024u * 1024u || line.size() > 65536) return ErrorCode::InvalidFormat;
+        if (lineOffset == 0 && line.size() >= 3 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.remove_prefix(3);
+        const auto first = line.find_first_not_of(" \t\r");
+        if (first == std::string_view::npos) continue;
+        line.remove_prefix(first);
         if (line.front() == '#') {
-            if (line.back() == '\r') line.pop_back();
+            if (line.back() == '\r') line.remove_suffix(1);
             if (line == "# panasonic vlt file version 1.0") vltHeader = true;
-            if (line.rfind("# source vlt file \"", 0) == 0 && line.back() == '"') vltSource = true;
-            if (line.rfind("#LUMIXPHOTOSTYLE ", 0) == 0) {
+            if (line.size() >= 19 && line.compare(0, 19, "# source vlt file \"") == 0 && line.back() == '"') vltSource = true;
+            if (line.size() >= 17 && line.compare(0, 17, "#LUMIXPHOTOSTYLE ") == 0) {
                 duplicateColor |= !colorKeys.insert("lumixphotostyle").second;
                 style = compact(line.substr(17));
             }
             const auto colon = line.find(':');
-            if (colon == std::string::npos) continue;
-            auto key = compact(line.substr(1, colon-1));
-            auto value = line.substr(colon+1);
+            if (colon == std::string_view::npos) continue;
+            const auto key = compact(line.substr(1, colon - 1));
+            const auto value = line.substr(colon + 1);
             if (key == "gamma" || key == "gamut") duplicateColor |= !colorKeys.insert(key).second;
             if (key == "rawlabcolorcontract") {
                 duplicateContract |= explicitContract_;
                 explicitContract_ = true;
-                contractText = value;
-                contractState_ = readContract(value, colorContract_);
+                contractText.assign(value);
+                contractState_ = readContract(contractText, colorContract_);
             }
             if (key == "rawlabhdrlook") {
                 const auto start = value.find_first_not_of(" \t");
                 const auto end = value.find_last_not_of(" \t");
-                if (hdrLook || size_ || start == std::string::npos ||
+                if (hdrLook || size_ || start == std::string_view::npos ||
                     value.substr(start, end - start + 1) != "display-linear-srgb-v1") return ErrorCode::InvalidFormat;
                 hdrLook = true;
             }
             if (key == "rawlabcompatibility") {
-                compatibility = value;
-                compatibilityOffset = lineOffset;
+                compatibility.assign(value);
+                compatibilityOffset = static_cast<std::streamoff>(lineOffset);
             }
             if (key == "gamma") gamma = compact(value);
             if (key == "gamut") gamut = compact(value);
-            if (key == "title") title_ = value;
+            if (key == "title") title_.assign(value);
             continue;
         }
-        std::istringstream input(line);
-        std::string key;
-        input >> key;
-        if (key == "TITLE") {
-            std::getline(input, title_);
-        } else if (key == "LUT_3D_SIZE") {
-            if (size_ || !(input >> size_) || size_ < 2 || size_ > (hdrLook ? 65 : 256)) return ErrorCode::InvalidFormat;
-            if (vlt_ && size_ != 17) return ErrorCode::InvalidFormat;
-            values.reserve(static_cast<size_t>(size_) * size_ * size_);
-        } else if (key == "DOMAIN_MIN") {
-            if (vlt_) return ErrorCode::InvalidFormat;
-            if (minSeen || !readRGB(input, domainMin_)) return ErrorCode::ParseError;
-            minSeen = true;
-        } else if (key == "DOMAIN_MAX") {
-            if (vlt_) return ErrorCode::InvalidFormat;
-            if (maxSeen || !readRGB(input, domainMax_)) return ErrorCode::ParseError;
-            maxSeen = true;
-        } else {
-            RGB value;
-            std::istringstream numbers(line);
-            if (!size_ || !readRGB(numbers, value)) return ErrorCode::ParseError;
-            if (vlt_) {
-                for (float n : {value.r, value.g, value.b})
-                    if (n < 0 || n > 4095 || std::floor(n) != n) return ErrorCode::InvalidFormat;
-                value = RGB(value.r/4095.f, value.g/4095.f, value.b/4095.f);
+        const char* const lineStart = line.data();
+        const char* const lineEnd = lineStart + line.size();
+        const char firstChar = *lineStart;
+        const bool looksNumeric = (firstChar >= '0' && firstChar <= '9') ||
+            firstChar == '-' || firstChar == '+' || firstChar == '.';
+        if (!looksNumeric) {
+            const char* ks = lineStart;
+            while (ks < lineEnd && isAsciiSpace(*ks)) ++ks;
+            const char* ke = ks;
+            while (ke < lineEnd && !isAsciiSpace(*ke)) ++ke;
+            const std::string_view key(ks, static_cast<size_t>(ke - ks));
+            const std::string_view rest(ke, static_cast<size_t>(lineEnd - ke));
+            if (key == "TITLE") {
+                title_.assign(rest);
+                continue;
             }
-            if (values.size() >= static_cast<size_t>(size_)*size_*size_) return ErrorCode::ParseError;
-            values.push_back(value);
+            if (key == "LUT_3D_SIZE") {
+                const char* s = rest.data();
+                const char* const restEnd = s + rest.size();
+                while (s < restEnd && isAsciiSpace(*s)) ++s;
+                if (size_ || s == restEnd) return ErrorCode::InvalidFormat;
+                if (*s == '+' && s + 1 < restEnd && s[1] >= '0' && s[1] <= '9') ++s;
+                int parsedSize = 0;
+                const auto [ptr, ec] = std::from_chars(s, restEnd, parsedSize);
+                if (ec != std::errc() || parsedSize < 2 || parsedSize > (hdrLook ? 65 : 256))
+                    return ErrorCode::InvalidFormat;
+                size_ = parsedSize;
+                if (vlt_ && size_ != 17) return ErrorCode::InvalidFormat;
+                values.reserve(static_cast<size_t>(size_) * size_ * size_);
+                continue;
+            }
+            if (key == "DOMAIN_MIN") {
+                if (vlt_) return ErrorCode::InvalidFormat;
+                if (minSeen || !readRGB(ke, lineEnd, domainMin_)) return ErrorCode::ParseError;
+                minSeen = true;
+                continue;
+            }
+            if (key == "DOMAIN_MAX") {
+                if (vlt_) return ErrorCode::InvalidFormat;
+                if (maxSeen || !readRGB(ke, lineEnd, domainMax_)) return ErrorCode::ParseError;
+                maxSeen = true;
+                continue;
+            }
         }
+        RGB value;
+        if (!size_ || !readRGB(lineStart, lineEnd, value)) return ErrorCode::ParseError;
+        if (vlt_) {
+            for (float n : {value.r, value.g, value.b})
+                if (n < 0 || n > 4095 || std::floor(n) != n) return ErrorCode::InvalidFormat;
+            value = RGB(value.r / 4095.f, value.g / 4095.f, value.b / 4095.f);
+        }
+        if (values.size() >= static_cast<size_t>(size_) * size_ * size_) return ErrorCode::ParseError;
+        values.push_back(value);
     }
     if (!size_ || values.size() != static_cast<size_t>(size_)*size_*size_ ||
         domainMin_.r >= domainMax_.r || domainMin_.g >= domainMax_.g || domainMin_.b >= domainMax_.b)
@@ -306,22 +478,22 @@ std::unique_ptr<LUT3D> LUTParser::loadLUT(const std::string& path) {
 }
 
 std::shared_ptr<LUT3D> LUTParser::loadLUTCached(const std::string& path) {
-    std::error_code error;
-    const auto filePath = std::filesystem::u8path(path);
-    const auto stamp = std::filesystem::last_write_time(filePath, error);
-    if (error) return nullptr;
-    const auto bytes = std::filesystem::file_size(filePath, error);
-    if (error) return nullptr;
-    static std::mutex mutex;
-    static std::string previous;
-    static std::filesystem::file_time_type modified;
-    static uintmax_t size = 0;
-    static std::shared_ptr<LUT3D> cached;
-    std::lock_guard<std::mutex> lock(mutex);
-    if (previous == path && modified == stamp && size == bytes && cached) return cached;
-    cached = loadLUT(path);
-    previous = path; modified = stamp; size = bytes;
-    return cached;
+    const auto format = detectFormat(path);
+    if (format != "cube" && format != "vlt") return nullptr;
+    std::ifstream file(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
+    if (!file) return nullptr;
+    const auto length = file.tellg();
+    if (length < 0 || length > 256u * 1024u * 1024u) return nullptr;
+    file.seekg(0);
+    std::string bytes(static_cast<size_t>(length), '\0');
+    if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof()) return nullptr;
+    // 文件可能被同大小内容覆盖且时间戳不变；缓存命中必须基于实际字节。
+    const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
+    static ParsedResourceCache<std::shared_ptr<LUT3D>> cache;
+    if (auto cached = cache.find(path, digest)) return *cached;
+    auto parsed = std::make_shared<LUT3D>();
+    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success) return nullptr;
+    return cache.put(path, digest, std::move(parsed));
 }
 
 std::string LUTParser::detectFormat(const std::string& path) {

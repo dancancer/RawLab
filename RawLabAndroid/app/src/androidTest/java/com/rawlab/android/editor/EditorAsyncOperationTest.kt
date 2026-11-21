@@ -13,6 +13,8 @@ import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.settings.EditStore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,6 +63,148 @@ class EditorAsyncOperationTest {
         queue.submit({ entered.countDown(); check(release.await(30, TimeUnit.SECONDS)) }) {}
         assertTrue(entered.await(5, TimeUnit.SECONDS)); return release
     }
+    @Test fun cancelledLookDraftKeepsImportedLibraryButDoesNotCommitSelection() {
+        val source = fixture(); val owner = ViewModelStore()
+        val look = File(context.cacheDir, "cancelled-${UUID.randomUUID()}.cube").apply {
+            writeText("#Gamma:F-Log2 to Synthetic Look\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n")
+        }
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        try {
+            lateinit var model: EditorViewModel
+            main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
+                model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready(model)
+            val original = model.state.value.edits
+            val identity = model.state.value.photo!!.identity
+            val persisted = EditStore(File(context.filesDir, "edits")).readState(identity)
+            val existing = model.state.value.looks.map { it.id }.toSet()
+            main { model.beginDraft(AdjustmentGroup.LOOK) }
+            model.lookQueue.performAfterPending {
+                entered.countDown(); check(release.await(30, TimeUnit.SECONDS))
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            main { model.importLook(Uri.fromFile(look)); model.discardDraft() }
+            release.countDown()
+            await { model.state.value.operation == Operation.NONE && !model.state.value.rendering &&
+                !model.state.value.committingAdjustments && model.state.value.looks.any { it.managed && it.id !in existing } }
+            assertNull(model.state.value.draft)
+            assertEquals(original, model.state.value.edits)
+            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(identity))
+            val added = model.state.value.looks.first { it.managed && it.id !in existing }.id
+            main { model.deleteLook(added) }
+            await { model.state.value.looks.none { it.id == added } }
+        } finally { release.countDown(); main { owner.clear() }; source.delete(); look.delete() }
+    }
+
+    @Test fun repeatedUnchangedAutoExposureKeepsAnExactDraftApplicable() {
+        val source = fixture(); val owner = ViewModelStore()
+        try {
+            lateinit var model: EditorViewModel
+            main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
+                model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready(model)
+            main { model.edit(model.state.value.edits.copy(exposure = 1.25f)) }
+            ready(model)
+            main { model.beginDraft(AdjustmentGroup.EXPOSURE) }
+            await { model.state.value.draftReady }
+            main { model.autoExposure() }
+            await { model.state.value.draftReady }
+            val exposure = model.state.value.visibleEdits.exposure
+            val preview = model.state.value.preview
+            assertNotEquals(1.25f, exposure)
+            assertTrue(model.state.value.canApplyDraft)
+            main { model.autoExposure(); assertFalse(model.state.value.canApplyDraft) }
+            await { !model.state.value.rendering }
+            assertEquals(exposure, model.state.value.visibleEdits.exposure)
+            assertSame(preview, model.state.value.preview)
+            assertTrue("An unchanged auto result retains the accepted exact preview", model.state.value.exact)
+            assertTrue(model.state.value.canApplyDraft)
+            assertTrue(callbackResult<Boolean> { model.applyDraft(it) })
+            assertNull(model.state.value.draft)
+            assertEquals(exposure, model.state.value.edits.exposure)
+            ready(model)
+            main { model.beginDraft(AdjustmentGroup.EXPOSURE)
+                model.changeDraft(model.state.value.visibleEdits.copy(exposure = exposure + .25f), interactive = true) }
+            await { !model.state.value.rendering }
+            main { model.changeDraft(model.state.value.visibleEdits.copy(exposure = exposure), interactive = true) }
+            await { !model.state.value.rendering }
+            assertFalse(model.state.value.exact)
+            val interactivePreview = model.state.value.preview
+            main { model.autoExposure() }
+            await { !model.state.value.rendering }
+            assertEquals(exposure, model.state.value.visibleEdits.exposure)
+            assertSame(interactivePreview, model.state.value.preview)
+            assertFalse("Auto exposure must not promote an interactive preview to exact", model.state.value.exact)
+            assertFalse(model.state.value.canApplyDraft)
+            main { model.discardDraft() }
+        } finally { main { owner.clear() }; source.delete() }
+    }
+
+    @Test fun backgroundDiscardsPendingAutoExposureWithoutChangingSavedDraft() {
+        val source = fixture(); val owner = ViewModelStore()
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        try {
+            lateinit var model: EditorViewModel
+            main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
+                model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
+            ready(model)
+            main { model.edit(model.state.value.edits.copy(exposure = 1.25f)) }
+            ready(model)
+            val photo = model.state.value.photo!!
+            val before = model.state.value.edits
+            val computed = com.rawlab.android.engine.NativeProcessor(com.rawlab.android.engine.NativeProcessor.CPU).use {
+                it.autoExposure(photo.file, before, photo.inputKind)
+            }
+            assertTrue("The pending result would change exposure", kotlin.math.abs(computed - before.exposure) > .01f)
+            main { model.beginDraft(AdjustmentGroup.EXPOSURE) }
+            await { !model.state.value.rendering }
+            val draft = model.state.value.draft
+            val persisted = EditStore(File(context.filesDir, "edits")).readState(photo.identity)
+            (field(model, "queue") as RenderQueue<*, *>).performAfterPending {
+                entered.countDown(); check(release.await(30, TimeUnit.SECONDS))
+            }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            main { model.autoExposure(); model.onBackground() }
+            release.countDown()
+            await { !model.state.value.rendering && !model.state.value.committingAdjustments }
+            assertEquals(draft, model.state.value.draft)
+            assertEquals(before, model.state.value.edits)
+            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(photo.identity))
+            main { model.discardDraft() }
+        } finally { release.countDown(); main { owner.clear() }; source.delete() }
+    }
+
+    @Test fun completedPreviewIsCachedAfterDelayedSave() {
+        val source = fixture(); val owner = ViewModelStore(); val delay = AtomicBoolean(false)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val cached = CountDownLatch(1)
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+        var observer: kotlinx.coroutines.Job? = null
+        try {
+            lateinit var model: EditorViewModel
+            main {
+                model = EditorViewModel(context.applicationContext as Application, editStoreFactory = { directory ->
+                    EditStore(directory) { from, to ->
+                        if (delay.get()) { entered.countDown(); check(release.await(30, TimeUnit.SECONDS)) }
+                        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
+                }); owner.put("editor", model); model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source))
+            }
+            ready(model)
+            val identity = model.state.value.photo!!.identity
+            observer = scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                com.rawlab.android.photo.EditedPhotoPreviews.ready.first { it == identity }
+                cached.countDown()
+            }
+            delay.set(true)
+            main { model.edit(model.state.value.edits.copy(exposure = 1f)) }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            await { model.state.value.exact && !model.state.value.rendering }
+            assertEquals("The effect frame completes before persistence", 1L, cached.count)
+            release.countDown()
+            assertTrue("The successful save seeds the completed frame without another render", cached.await(15, TimeUnit.SECONDS))
+        } finally { release.countDown(); observer?.cancel(); main { owner.clear() }; source.delete() }
+    }
     @Test fun resetSaveFailureSurvivesLatePreview() {
         val source = fixture(); val owner = ViewModelStore(); val fail = AtomicBoolean(false)
         val renderRelease = CountDownLatch(1)
@@ -108,7 +252,7 @@ class EditorAsyncOperationTest {
             main { model.closeAdjustmentOperation() }
             release.countDown(); blocker.join(5000)
             // Drain the queue that owns preparation, then the UI callbacks.
-            val preparation = runCatching { field(model, "adjustmentPreparationQueue") as SerialWorkQueue }.getOrElse { queue(model) }
+            val preparation = model.adjustmentPreparationQueue
             val drained = CountDownLatch(1); preparation.submit({}) { drained.countDown() }
             assertTrue(drained.await(10, TimeUnit.SECONDS)); main {}
             assertNull(model.adjustmentTransfer.value.prepared)
@@ -128,7 +272,7 @@ class EditorAsyncOperationTest {
                 model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready(model)
             release = block(queue(model))
             main { model.edit(model.state.value.edits.copy(exposure = .3f)); model.importLook(Uri.fromFile(look)) }
-            val lookQueue = field(model, "lookQueue") as RenderQueue<*, *>
+            val lookQueue = model.lookQueue
             val loaded = CountDownLatch(1); lookQueue.performAfterPending { loaded.countDown() }
             assertTrue(loaded.await(10, TimeUnit.SECONDS)); main {}
             release.countDown()
@@ -147,7 +291,7 @@ class EditorAsyncOperationTest {
             lateinit var model: EditorViewModel
             main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
                 model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready(model)
-            val collection = field(model, "collections") as EditorCollections
+            val collection = model.collections
             main { collection.add(listOf(Uri.fromFile(target))) }
             await { !collection.state.value.busy }
             val imported = collection.photo(Uri.fromFile(target).toString())!!.file
@@ -190,7 +334,7 @@ class EditorAsyncOperationTest {
             main { model.prepareAdjustmentPaste(model.copyAdjustments(AdjustmentScope.All)!!, listOf(Uri.fromFile(target))) }
             await { model.adjustmentTransfer.value.prepared != null }
             val prepared = model.adjustmentTransfer.value.prepared!!
-            @Suppress("UNCHECKED_CAST") val owned = (field(model, "adjustmentOwnedFiles") as Map<String, File>).values.toList()
+            val owned = model.adjustmentOwnedFiles.values.toList()
             assertEquals(1, owned.size); assertTrue(owned.single().exists())
             release = block(queue(model))
             var calls = 0

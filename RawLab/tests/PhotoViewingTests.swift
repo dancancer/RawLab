@@ -4,14 +4,14 @@ import Foundation
 @main
 struct PhotoViewingTests {
     static func main() {
-        // 留白关闭不能裁照片；默认留白必须真正减去可用 fit 区，而非只画背景。
+        // 留白关闭不能裁照片；启用留白时必须真正减去可用 fit 区，而非只画背景。
         let geometry = PhotoZoomGeometry(pixels: CGSize(width: 2400, height: 1600),
-                                         viewport: CGSize(width: 400, height: 600), displayScale: 3)
+                                         viewport: CGSize(width: 400, height: 600), displayScale: 3, margin: 16)
         guard abs(geometry.fitScale - 0.46) < 0.000001 else {
-            print("FAIL: default photo margin must leave 16pt on each horizontal side; fit=\(geometry.fitScale), expected=0.46")
+            print("FAIL: enabled photo margin must leave 16pt on each horizontal side; fit=\(geometry.fitScale), expected=0.46")
             exit(1)
         }
-        print("PASS: default margin fits the complete photograph inside the inset viewport")
+        print("PASS: enabled margin fits the complete photograph inside the inset viewport")
         let noMargin = PhotoZoomGeometry(pixels: CGSize(width: 2400, height: 1600),
                                         viewport: CGSize(width: 400, height: 600), displayScale: 3, margin: 0)
         precondition(abs(noMargin.fitScale - 0.5) < 0.000001)
@@ -26,7 +26,9 @@ struct PhotoViewingTests {
         let tall = PhotoComparisonLayout(size: CGSize(width: 300, height: 600), enabled: true)
         precondition(!tall.horizontal && tall.paneSize == CGSize(width: 300, height: 300))
         var state = PhotoViewingState()
-        precondition(!state.enabled && state.preferredMode == .sideBySide && state.split == 0.5 && state.photoMargin)
+        precondition(!state.enabled && state.preferredMode == .sideBySide && state.split == 0.5 && !state.photoMargin)
+        state.photoMargin.toggle()
+        precondition(state.photoMargin)
         state.selectMode(.wipe)
         state.setSplit(1.3)
         precondition(state.enabled && state.split == 1)

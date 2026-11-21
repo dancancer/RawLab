@@ -6,6 +6,7 @@
 #include "core/sha256.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -51,7 +52,9 @@ struct SourceMetadata {
     bool cacheable = true;
     std::string stamp() const { return digestJson({identity, changed, sequence}); }
 };
+std::atomic<bool> metadataFallbackForced{false};
 SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = false) {
+    const bool forced = model && metadataFallbackForced.load(std::memory_order_relaxed);
 #ifdef _WIN32
     // 允许其他程序同时打开写句柄；变更租约与摘要前后校验负责检测实际修改。
     const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
@@ -61,7 +64,7 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = fa
     FILE_BASIC_INFO basic{};
     const bool valid = GetFileInformationByHandle(file, &info) != 0 &&
         GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) != 0;
-    const auto generation = valid ? fileChangeGeneration(path, model) : std::nullopt;
+    const auto generation = valid && !forced ? fileChangeGeneration(path, model) : std::nullopt;
     CloseHandle(file);
     if (!valid) throw std::runtime_error("Cannot identify AI source file");
     return {{{"file", path.u8string()}, {"volume", info.dwVolumeSerialNumber},
@@ -79,15 +82,51 @@ SourceMetadata sourceMetadata(const std::filesystem::path& path, bool model = fa
 #endif
     return {{{"file", path.u8string()}, {"device", info.st_dev}, {"index", info.st_ino},
         {"modified", {modified.tv_sec, modified.tv_nsec}}, {"bytes", info.st_size}},
-        {changed.tv_sec, changed.tv_nsec}};
+        {changed.tv_sec, changed.tv_nsec}, Json(), !forced};
 #endif
 }
 }
 
+namespace {
+struct MetadataFallbackEntry { std::string stamp, key; uint64_t used; };
+// 非 USN 卷（无变更通知）退路要整文件哈希；packageStamp() 每帧对每个模型文件调用本函数，
+// 单槽会被逐文件轮转打穿，故沿用 sourceIdentityKey 的有界 LRU 形态，按 stat 身份
+// （卷/索引/创建/修改/变更时间与字节数构成的 stamp）复用完整摘要；stat 身份变化即回退全量哈希。
+std::mutex metadataFallbackMutex;
+std::map<std::string, MetadataFallbackEntry> metadataFallback;
+uint64_t metadataFallbackAccess = 0;
+}
+
+void forceMetadataFallbackForTests(bool enabled) {
+    metadataFallbackForced.store(enabled, std::memory_order_relaxed);
+}
+
 std::string sourceMetadataKey(const std::string& path) {
-    const auto metadata = sourceMetadata(std::filesystem::canonical(std::filesystem::u8path(path)), true);
-    // 不支持变更通知的文件系统不能安全复用元数据；只在该退路读取内容。
-    return metadata.cacheable ? metadata.stamp() : digestJson({metadata.stamp(), sha256File(path)});
+    const auto file = std::filesystem::canonical(std::filesystem::u8path(path));
+    const auto metadata = sourceMetadata(file, true);
+    // 可建立变更租约（或 POSIX 正常 stat）时直接复用元数据快照；无通知卷退路仅用于只读模型文件，
+    // 在整文件哈希前后 stat 一致时按 stat 身份缓存摘要（无 ChangeTime 卷同秒同尺寸保 mtime 改写不在检测范围内）。
+    if (metadata.cacheable) return metadata.stamp();
+    const auto canonicalPath = file.u8string();
+    std::lock_guard<std::mutex> lock(metadataFallbackMutex);
+    const auto before = sourceMetadata(file, true);
+    const auto stamp = before.stamp();
+    const auto found = metadataFallback.find(canonicalPath);
+    if (found != metadataFallback.end() && found->second.stamp == stamp) {
+        found->second.used = ++metadataFallbackAccess;
+        return found->second.key;
+    }
+    const auto key = digestJson({stamp, sha256File(canonicalPath)});
+    const auto after = sourceMetadata(file, true);
+    if (after.identity == before.identity && after.changed == before.changed) {
+        if (found == metadataFallback.end() && metadataFallback.size() >= 128) {
+            const auto oldest = std::min_element(metadataFallback.begin(), metadataFallback.end(),
+                [](const auto& left, const auto& right) { return left.second.used < right.second.used; });
+            metadataFallback.erase(oldest);
+        }
+        metadataFallback[canonicalPath] = {stamp, key, ++metadataFallbackAccess};
+    }
+    return key;
 }
 
 std::string sourceIdentityKey(const std::string& path, void (*checkpoint)()) {
@@ -121,15 +160,18 @@ std::string sourceIdentityKey(const std::string& path, void (*checkpoint)()) {
     return key;
 }
 
-std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend) {
+std::string rawCacheKeyFromIdentity(const std::string& sourceIdentity, const std::string& modelDigest, int backend,
+                                    bool legacySonyCrop) {
     if (!validKey(modelDigest) || !validKey(sourceIdentity)) throw std::invalid_argument("invalid AI cache digest");
-    return digestJson({{"source", sourceIdentity},
+    Json key = {{"source", sourceIdentity},
         {"model", modelDigest}, {"backend", backend}, {"protocol", "rawlab-dualdn-v1"},
-        {"decoder", "rawlab-bayer-v2"}, {"noise", noiseProtocol}});
+        {"decoder", "rawlab-bayer-v3"}, {"noise", noiseProtocol}};
+    if (legacySonyCrop) key["legacySonyCrop"] = true;
+    return digestJson(key);
 }
 
-std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend) {
-    return rawCacheKeyFromIdentity(sourceIdentityKey(path), modelDigest, backend);
+std::string rawCacheKey(const std::string& path, const std::string& modelDigest, int backend, bool legacySonyCrop) {
+    return rawCacheKeyFromIdentity(sourceIdentityKey(path), modelDigest, backend, legacySonyCrop);
 }
 
 std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
@@ -152,10 +194,63 @@ std::string rgbCacheKey(const std::string& rawKey, const RAWProcessOptions& opti
 std::string sceneRGBCacheKey(const std::string& rawKey, const RAWProcessOptions& options) {
     Json key = {{"source_wb", rgbCacheKey(rawKey,options)}, {"adapter", sceneRGBProtocol}};
     const auto& lens = options.lensCorrection;
-    if (lens.active()) key["lens"] = {lens.distortion,lens.tca,lens.autoCrop,lens.profileID,
+    if (lens.active()) key["lens"] = {lens.distortion,lens.tca,lens.autoCrop,lens.vignetting,lens.profileID,
         options.lensDatabase ? options.lensDatabase->cacheIdentity() : "missing"};
     return digestJson(key);
 }
+
+namespace {
+struct CacheMeta {
+    int width = 0;
+    int height = 0;
+    size_t count = 0;
+    std::string expectedDigest;
+    std::string savedProducer;
+};
+
+constexpr size_t kCacheStreamChunkFloats = 65536;
+
+bool readAndValidateHeader(CacheReader& input, const std::string& key, CacheKind kind,
+                           int width, int height, bool readDimensions,
+                           const std::string& dependency, CacheMeta& meta) {
+    if (!input) return false;
+    uint32_t length = 0;
+    input.read(reinterpret_cast<char*>(&length), sizeof(length));
+    if (!input || length == 0 || length > 4096) return false;
+    std::string text(length, '\0');
+    input.read(text.data(), length);
+    if (!input) return false;
+    auto header = Json::parse(text);
+    if (kind == CacheKind::SceneRGB || header.contains("header_sha256")) {
+        const auto expected = header.at("header_sha256").get<std::string>();
+        header.erase("header_sha256");
+        if (digestJson(header) != expected) return false;
+    }
+    if (readDimensions) {
+        width = header.at("width").get<int>();
+        height = header.at("height").get<int>();
+    }
+    const size_t count = countFor(kind, width, height);
+    if (input.size() != 4 + uint64_t(length) + count * 4) return false;
+    if (header.at("format") != "rawlab-dualdn-cache-v1" || header.at("key") != key ||
+        header.at("width") != width || header.at("height") != height ||
+        header.at("channels") != (kind == CacheKind::Raw ? 1 : 3) ||
+        header.value("dependency", std::string()) != dependency) return false;
+    const auto savedProducer = header.value("producer", std::string());
+    if (savedProducer.size() > 128) return false;
+    meta.width = width;
+    meta.height = height;
+    meta.count = count;
+    meta.expectedDigest = header.at("sha256").get<std::string>();
+    meta.savedProducer = savedProducer;
+    return true;
+}
+
+void touchCacheEntry(const std::filesystem::path& file) noexcept {
+    std::error_code ignored;
+    std::filesystem::last_write_time(file, std::filesystem::file_time_type::clock::now(), ignored);
+}
+} // namespace
 
 DenoiseCache::DenoiseCache(std::string directory) : directory_(std::move(directory)) {
     const uint16_t endian = 1;
@@ -165,40 +260,106 @@ DenoiseCache::DenoiseCache(std::string directory) : directory_(std::move(directo
 }
 
 std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind, int width, int height,
-                                       const std::string& dependency, std::string* producer) const {
+                                       const std::string& dependency, std::string* producer,
+                                       std::string* payloadDigest) const {
     if (producer) producer->clear();
+    if (payloadDigest) payloadDigest->clear();
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency))) throw std::invalid_argument("invalid AI cache key");
     const bool readDimensions = kind == CacheKind::SceneRGB && width == 0 && height == 0;
     if (!readDimensions) countFor(kind, width, height);
     const auto file = std::filesystem::u8path(directory_) / (key + suffix(kind));
     try {
         CacheReader input(file);
-        if (!input) return {};
-        uint32_t length = 0; input.read(reinterpret_cast<char*>(&length), sizeof(length));
-        if (!input || length == 0 || length > 4096) return {};
-        std::string text(length, '\0'); input.read(text.data(), length);
-        auto header = Json::parse(text);
-        if (kind == CacheKind::SceneRGB || header.contains("header_sha256")) {
-            const auto expected = header.at("header_sha256").get<std::string>();
-            header.erase("header_sha256");
-            if (digestJson(header) != expected) return {};
-        }
-        if (readDimensions) { width = header.at("width").get<int>(); height = header.at("height").get<int>(); }
-        const size_t count = countFor(kind, width, height);
-        if (input.size() != 4 + uint64_t(length) + count * 4) return {};
-        if (header.at("format") != "rawlab-dualdn-cache-v1" || header.at("key") != key ||
-            header.at("width") != width || header.at("height") != height ||
-            header.at("channels") != (kind == CacheKind::Raw ? 1 : 3) ||
-            header.value("dependency", std::string()) != dependency) return {};
-        Tensor result{width, height, kind == CacheKind::Raw ? 1 : 3, std::vector<float>(count)};
-        input.read(reinterpret_cast<char*>(result.values.data()), count * sizeof(float));
-        if (!input || sha256Bytes(result.values.data(), count * 4) != header.at("sha256")) return {};
+        CacheMeta meta;
+        if (!readAndValidateHeader(input, key, kind, width, height, readDimensions, dependency, meta)) return {};
+        Tensor result{meta.width, meta.height, kind == CacheKind::Raw ? 1 : 3, std::vector<float>(meta.count)};
+        input.read(reinterpret_cast<char*>(result.values.data()), meta.count * sizeof(float));
+        const auto digest = sha256Bytes(result.values.data(), meta.count * 4);
+        if (!input || digest != meta.expectedDigest) return {};
         validateTensor(result);
-        const auto savedProducer = header.value("producer", std::string());
-        if (savedProducer.size() > 128) return {};
-        std::error_code ignored;
-        std::filesystem::last_write_time(file, std::filesystem::file_time_type::clock::now(), ignored);
-        if (producer) *producer = savedProducer;
+        touchCacheEntry(file);
+        if (producer) *producer = meta.savedProducer;
+        if (payloadDigest) *payloadDigest = digest;
+        return result;
+    } catch (const std::bad_alloc&) { throw; }
+    catch (const std::exception&) { return {}; }
+}
+
+bool DenoiseCache::verify(const std::string& key, CacheKind kind, int width, int height,
+                          const std::string& dependency, std::string* producer,
+                          std::string* payloadDigest) const {
+    if (producer) producer->clear();
+    if (payloadDigest) payloadDigest->clear();
+    if (!validKey(key) || (!dependency.empty() && !validKey(dependency))) throw std::invalid_argument("invalid AI cache key");
+    const bool readDimensions = kind == CacheKind::SceneRGB && width == 0 && height == 0;
+    if (!readDimensions) countFor(kind, width, height);
+    const auto file = std::filesystem::u8path(directory_) / (key + suffix(kind));
+    try {
+        CacheReader input(file);
+        CacheMeta meta;
+        if (!readAndValidateHeader(input, key, kind, width, height, readDimensions, dependency, meta)) return false;
+        std::vector<float> chunk(std::min(meta.count, kCacheStreamChunkFloats));
+        hash::Sha256 hasher;
+        size_t offset = 0;
+        while (offset < meta.count) {
+            const size_t n = std::min(chunk.size(), meta.count - offset);
+            input.read(reinterpret_cast<char*>(chunk.data()), n * sizeof(float));
+            if (!input) return false;
+            hasher.update(chunk.data(), n * sizeof(float));
+            for (size_t i = 0; i < n; ++i) {
+                if (!std::isfinite(chunk[i])) return false;
+            }
+            offset += n;
+        }
+        const auto digest = hasher.finish();
+        if (digest != meta.expectedDigest) return false;
+        touchCacheEntry(file);
+        if (producer) *producer = meta.savedProducer;
+        if (payloadDigest) *payloadDigest = digest;
+        return true;
+    } catch (const std::bad_alloc&) { throw; }
+    catch (const std::exception&) { return false; }
+}
+
+std::optional<std::vector<RGB>> DenoiseCache::loadRGBCorrection(const std::string& key, int width, int height,
+                                                                const std::string& dependency,
+                                                                std::string* producer,
+                                                                std::string* payloadDigest) const {
+    if (producer) producer->clear();
+    if (payloadDigest) payloadDigest->clear();
+    if (!validKey(key) || (!dependency.empty() && !validKey(dependency))) throw std::invalid_argument("invalid AI cache key");
+    countFor(CacheKind::RGB, width, height);
+    const auto file = std::filesystem::u8path(directory_) / (key + suffix(CacheKind::RGB));
+    try {
+        CacheReader input(file);
+        CacheMeta meta;
+        if (!readAndValidateHeader(input, key, CacheKind::RGB, width, height, false, dependency, meta)) return {};
+        const size_t pixels = size_t(meta.width) * meta.height;
+        std::vector<RGB> result(pixels);
+        std::vector<float> chunk(std::min(pixels, kCacheStreamChunkFloats));
+        hash::Sha256 hasher;
+        for (int plane = 0; plane < 3; ++plane) {
+            size_t offset = 0;
+            while (offset < pixels) {
+                const size_t n = std::min(chunk.size(), pixels - offset);
+                input.read(reinterpret_cast<char*>(chunk.data()), n * sizeof(float));
+                if (!input) return {};
+                hasher.update(chunk.data(), n * sizeof(float));
+                for (size_t i = 0; i < n; ++i) {
+                    const float value = chunk[i];
+                    if (!std::isfinite(value)) return {};
+                    if (plane == 0) result[offset + i].r = value;
+                    else if (plane == 1) result[offset + i].g = value;
+                    else result[offset + i].b = value;
+                }
+                offset += n;
+            }
+        }
+        const auto digest = hasher.finish();
+        if (digest != meta.expectedDigest) return {};
+        touchCacheEntry(file);
+        if (producer) *producer = meta.savedProducer;
+        if (payloadDigest) *payloadDigest = digest;
         return result;
     } catch (const std::bad_alloc&) { throw; }
     catch (const std::exception&) { return {}; }
@@ -206,7 +367,9 @@ std::optional<Tensor> DenoiseCache::load(const std::string& key, CacheKind kind,
 
 void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
                          const std::string& dependency, const std::string& producer,
-                         const std::function<void()>& beforePublish) const {
+                         const std::function<void()>& beforePublish,
+                         std::string* payloadDigest) const {
+    if (payloadDigest) payloadDigest->clear();
     if (!validKey(key) || (!dependency.empty() && !validKey(dependency)) || !values || count != countFor(kind, width, height) ||
         producer.size() > 128 || !std::all_of(values, values + count, [](float x) { return std::isfinite(x); }))
         throw std::invalid_argument("invalid AI cache payload");
@@ -215,8 +378,9 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
     const auto target = root / (key + suffix(kind));
     std::random_device random;
     const auto temporary = root / (key + suffix(kind) + ".part-" + std::to_string(random()) + "-" + std::to_string(random()));
+    const auto digest = sha256Bytes(values, count * 4);
     Json header = {{"format", "rawlab-dualdn-cache-v1"}, {"key", key}, {"width", width}, {"height", height},
-        {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", sha256Bytes(values, count * 4)},
+        {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", digest},
         {"dependency", dependency}, {"producer", producer}};
     header["header_sha256"] = digestJson(header);
     const auto text = header.dump(); const uint32_t length = static_cast<uint32_t>(text.size());
@@ -242,6 +406,7 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
 #else
         std::filesystem::rename(temporary, target);
 #endif
+        if (payloadDigest) *payloadDigest = digest;
     } catch (...) {
         std::error_code ignored; std::filesystem::remove(temporary, ignored); throw;
     }

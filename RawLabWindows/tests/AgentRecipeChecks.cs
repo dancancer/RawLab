@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows.Media;
@@ -11,13 +10,11 @@ internal static class AgentRecipeChecks
 {
     internal static void Run(string repo,string raw,string cli,Action<bool,string> check)
     {
-        var method=typeof(RenderEngine).GetMethod("AgentRecipe",BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic);
-        check(method!=null,"Windows exposes effective-state Agent v5 serialization");
         var output=Path.Combine(repo,"build","windows-agent-recipe",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(output);var hash=SHA256.HashData(File.ReadAllBytes(raw));
-        using var engine=new RenderEngine(0);
+        using var engine=new RenderEngine(0,appPaths:AppPaths.CreateIsolated(output));
         string Recipe(string input,Adjustments state,string? look,string target,int? edge)=>
-            (string)method!.Invoke(engine,[input,state,look,target,edge])!;
+            engine.AgentRecipe(input,state,look,target,edge);
         var unicodeRecipe=Path.Combine(output,"recipe-\u6D4B\u8BD5-\U0001F308.json");
         File.WriteAllText(unicodeRecipe,Recipe(raw,new Adjustments(),null,Path.Combine(output,"unicode.png"),128));
         RunCli("--recipe",unicodeRecipe,"--print-recipe");
@@ -54,7 +51,7 @@ internal static class AgentRecipeChecks
         {
             var rejected=false;
             try{_=Recipe(raw,new Adjustments(),null,Path.Combine(output,"invalid.png"),edge);}
-            catch(TargetInvocationException error) when(error.InnerException is ArgumentOutOfRangeException){rejected=true;}
+            catch(ArgumentOutOfRangeException){rejected=true;}
             check(rejected && !File.Exists(Path.Combine(output,"invalid.png")),"Agent rejects invalid FINAL size before creating output: "+edge);
         }
         var stored=mixed.Capture();var store=new EditStore(Path.Combine(output,"edits"));
@@ -65,7 +62,8 @@ internal static class AgentRecipeChecks
         var job=BatchJob.Create(raw,targetMaster.Capture(),tintRecipe.LutPath,"Frozen");job.Format=ExportFormat.Png;job.LongEdge=128;
         job.OutputDirectory=Path.Combine(output,"batch-output");Directory.CreateDirectory(job.OutputDirectory);
         job.Items=[BatchItem.Create(raw) with{Selected=true},BatchItem.Create(target) with{Selected=true}];journal.FreezeLook(job);journal.Save(job);
-        mixed.ResetAll();targetMaster.ResetAll();
+        mixed=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(raw),mixed.Capture(),null)).Candidate!.Settings.Restore();
+        targetMaster=EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All),new(OriginalIdentity.Read(target),targetMaster.Capture(),null)).Candidate!.Settings.Restore();
         BatchRunner.Run(job,journal,false,CancellationToken.None,(_,_)=>{},(input,state,film,target,edge)=>engine.Render(input,state,film,0,output:target,longEdge:edge));
         foreach(var item in job.Items)
         {

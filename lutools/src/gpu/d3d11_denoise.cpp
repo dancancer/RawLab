@@ -1,5 +1,8 @@
 #include "compute_denoise.h"
 #include "compute_denoise_shader.h"
+#include "filter_buffer_pool.h"
+#include "d3d11_recovery.h"
+#include "d3d11_shader_cache.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi.h>
@@ -10,11 +13,14 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#if defined(RAWLAB_D3D11_TESTING)
+#include "d3d11_test_hooks.h"
+#endif
 
 namespace sony2fuji {
 namespace {
 using Microsoft::WRL::ComPtr;
-void checked(HRESULT result) { if (FAILED(result)) throw std::runtime_error("D3D11 filter error " + std::to_string(result)); }
+void checked(HRESULT result) { if (FAILED(result)) throw D3D11Failure(result); }
 struct Buffer final : FilterBuffer {
     ComPtr<ID3D11Buffer> data;
     ComPtr<ID3D11ShaderResourceView> srv;
@@ -44,10 +50,49 @@ class Device final : public FilterDevice {
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11ComputeShader> shader;
     ComPtr<ID3D11Buffer> constants;
+    ComPtr<ID3D11Buffer> staging;
+    size_t stagingBytes = 0;
     FilterBufferPtr dummy;
+    FilterBufferPool pool;
+    FilterBufferPtr createBuffer(size_t count, const float* input) {
+        if (!count || count > UINT32_MAX / sizeof(float)) throw GpuCapabilityLimitError("D3D11 filter buffer too large");
+#if defined(RAWLAB_D3D11_TESTING)
+        if (count > 1 && d3d11_test::allocationFailures > 0) {
+            --d3d11_test::allocationFailures;
+            throw std::runtime_error("Injected filter allocation failure");
+        }
+#endif
+        auto buffer = std::make_unique<Buffer>();
+        D3D11_BUFFER_DESC desc{}; desc.ByteWidth = static_cast<UINT>(count * sizeof(float)); desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = sizeof(float);
+        D3D11_SUBRESOURCE_DATA data{}; data.pSysMem = input;
+        checked(device->CreateBuffer(&desc, input ? &data : nullptr, &buffer->data));
+#if defined(RAWLAB_D3D11_TESTING)
+        ++d3d11_test::filterAllocations;
+#endif
+        checked(device->CreateShaderResourceView(buffer->data.Get(), nullptr, &buffer->srv));
+        checked(device->CreateUnorderedAccessView(buffer->data.Get(), nullptr, &buffer->uav));
+        return buffer;
+    }
+    struct TrimContext final : FilterContext {
+        FilterBufferPool* pool = nullptr;
+        explicit TrimContext(FilterBufferPool* p) : pool(p) {}
+        ~TrimContext() override {
+            if (pool) {
+                pool->trimIdleToBudget();
+#if defined(RAWLAB_D3D11_TESTING)
+                d3d11_test::idleFilterFloats = pool->idleFloats();
+#endif
+            }
+        }
+    };
 public:
     void initialize() {
-        if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw std::runtime_error("D3D11 filters disabled");
+        if (GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0) throw GpuUnavailableError("D3D11 filters disabled");
+#if defined(RAWLAB_D3D11_TESTING)
+        d3d11_test::createDevice(device, context, true);
+#else
         ComPtr<IDXGIFactory1> factory; checked(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())));
         std::vector<ComPtr<IDXGIAdapter1>> adapters;
         for (UINT i = 0;; ++i) {
@@ -65,35 +110,49 @@ public:
         const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
         for (const auto& adapter : adapters) if (SUCCEEDED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN,
             nullptr, 0, &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
-        if (!device) throw std::runtime_error("No D3D11 hardware filter adapter");
+        if (!device) throw GpuUnavailableError("No D3D11 hardware filter adapter");
+#endif
         const std::string source = std::string(prefix) + kFilterShaderBody +
             "\n[numthreads(128,1,1)] void main(uint3 id : SV_DispatchThreadID) { filterPixel(baseIndex + id.x); }\n";
-        ComPtr<ID3DBlob> code, errors;
-        const auto compiled = D3DCompile(source.c_str(), source.size(), "RawLab filters", nullptr, nullptr,
-            "main", "cs_5_0", D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &code, &errors);
-        if (FAILED(compiled) && errors) throw std::runtime_error(std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()));
-        checked(compiled); checked(device->CreateComputeShader(code->GetBufferPointer(), code->GetBufferSize(), nullptr, &shader));
+        const auto bytecode = compileD3D11Shader(
+            "RawLab filters", source, "main", "cs_5_0",
+            D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, checked);
+        checked(device->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &shader));
         D3D11_BUFFER_DESC desc{}; desc.ByteWidth = sizeof(FilterParams); desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER; checked(device->CreateBuffer(&desc, nullptr, &constants));
-        dummy = allocate(1);
+        dummy = createBuffer(1, nullptr);
     }
-    std::unique_ptr<FilterContext> activate() override { return {}; }
+    std::unique_ptr<FilterContext> activate() override { return std::make_unique<TrimContext>(&pool); }
+    bool deviceLost() const override { return device.Get() && FAILED(d3d11DeviceStatus(*device.Get())); }
+    void trimPool() override {
+        pool.trimIdleToBudget();
+        constexpr size_t kMaxIdleStagingBytes = 16 * 1024 * 1024;
+        if (stagingBytes > kMaxIdleStagingBytes) {
+            staging.Reset();
+            stagingBytes = 0;
+        }
+    }
     FilterBufferPtr allocate(size_t count, const float* input = nullptr) override {
-        if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter buffer too large");
-        auto buffer = std::make_unique<Buffer>();
-        D3D11_BUFFER_DESC desc{}; desc.ByteWidth = static_cast<UINT>(count * sizeof(float)); desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
-        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = sizeof(float);
-        D3D11_SUBRESOURCE_DATA data{}; data.pSysMem = input;
-        checked(device->CreateBuffer(&desc, input ? &data : nullptr, &buffer->data));
-        checked(device->CreateShaderResourceView(buffer->data.Get(), nullptr, &buffer->srv));
-        checked(device->CreateUnorderedAccessView(buffer->data.Get(), nullptr, &buffer->uav));
-        return buffer;
+        if (!count || count > UINT32_MAX / sizeof(float)) throw GpuCapabilityLimitError("D3D11 filter buffer too large");
+        return pool.acquire(count, input,
+            [this](size_t n, const float* data) { return createBuffer(n, data); },
+            [this](FilterBuffer& buf, size_t n, const float* data) { write(buf, n, data); });
+    }
+    void write(FilterBuffer& buffer, size_t count, const float* input) override {
+        if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter write out of range");
+        if (!input) return;
+        D3D11_BOX box{};
+        box.right = static_cast<UINT>(count * sizeof(float));
+        box.bottom = box.back = 1;
+        context->UpdateSubresource(static_cast<Buffer&>(buffer.underlying()).data.Get(), 0, &box, input, 0, 0);
+        checked(d3d11DeviceStatus(*device.Get()));
     }
     void dispatch(FilterParams params, FilterBuffer& source, FilterBuffer* other,
                   FilterBuffer& output, FilterBuffer* second = nullptr) override {
-        auto& a = static_cast<Buffer&>(source); auto& b = static_cast<Buffer&>(other ? *other : *dummy);
-        auto& c = static_cast<Buffer&>(output); auto& d = static_cast<Buffer&>(second ? *second : *dummy);
+        auto& a = static_cast<Buffer&>(source.underlying());
+        auto& b = static_cast<Buffer&>((other ? *other : *dummy).underlying());
+        auto& c = static_cast<Buffer&>(output.underlying());
+        auto& d = static_cast<Buffer&>((second ? *second : *dummy).underlying());
         context->CSSetShader(shader.Get(), nullptr, 0);
         auto cb = constants.Get(); context->CSSetConstantBuffers(0, 1, &cb);
         ID3D11ShaderResourceView* views[] = {a.srv.Get(), b.srv.Get()};
@@ -107,18 +166,25 @@ public:
         }
         ID3D11ShaderResourceView* emptyViews[2]{}; ID3D11UnorderedAccessView* emptyOutputs[2]{};
         context->CSSetShaderResources(0, 2, emptyViews); context->CSSetUnorderedAccessViews(0, 2, emptyOutputs, nullptr);
-        checked(device->GetDeviceRemovedReason());
+        checked(d3d11DeviceStatus(*device.Get()));
     }
     void read(FilterBuffer& buffer, size_t count, float* output) override {
-        ComPtr<ID3D11Buffer> staging;
-        D3D11_BUFFER_DESC desc{}; desc.ByteWidth = static_cast<UINT>(count * sizeof(float));
-        desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-        checked(device->CreateBuffer(&desc, nullptr, &staging));
-        D3D11_BOX box{}; box.right = desc.ByteWidth; box.bottom = box.back = 1;
-        context->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, static_cast<Buffer&>(buffer).data.Get(), 0, &box);
+        if (!count || count > UINT32_MAX / sizeof(float)) throw std::runtime_error("D3D11 filter read out of range");
+        const size_t bytes = count * sizeof(float);
+        if (!staging || stagingBytes < bytes) {
+            staging.Reset();
+            stagingBytes = 0;
+            D3D11_BUFFER_DESC desc{}; desc.ByteWidth = static_cast<UINT>(bytes);
+            desc.Usage = D3D11_USAGE_STAGING; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            checked(device->CreateBuffer(&desc, nullptr, &staging));
+            stagingBytes = bytes;
+        }
+        D3D11_BOX box{}; box.right = static_cast<UINT>(bytes); box.bottom = box.back = 1;
+        context->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0,
+            static_cast<Buffer&>(buffer.underlying()).data.Get(), 0, &box);
         D3D11_MAPPED_SUBRESOURCE mapped{}; checked(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped));
-        std::memcpy(output, mapped.pData, desc.ByteWidth); context->Unmap(staging.Get(), 0);
-        checked(device->GetDeviceRemovedReason());
+        std::memcpy(output, mapped.pData, bytes); context->Unmap(staging.Get(), 0);
+        checked(d3d11DeviceStatus(*device.Get()));
     }
 };
 } // namespace

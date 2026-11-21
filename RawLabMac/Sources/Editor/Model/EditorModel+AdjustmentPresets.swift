@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 enum QuickPresetState {
@@ -140,7 +141,7 @@ extension EditorModel {
     func previewAdjustmentPayload(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {
         guard canUsePresetPhoto, let file, let committedEdit,
               committedEdit.identity.path == file.resolvingSymlinksInPath().standardizedFileURL.path,
-              !dirty, geometryDraft == nil, !scheduler.interacting,
+              !dirty, !hasPendingEditCommits, geometryDraft == nil, !scheduler.interacting,
               !ParameterValueField.hasPendingInputs, saveError == nil else {
             throw AdjustmentTransferError.draftRequiresPreflight
         }

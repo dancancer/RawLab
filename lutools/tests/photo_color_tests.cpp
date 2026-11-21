@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -92,7 +94,12 @@ static void hslSession() {
     if (available) {
         assert(status == SONY2FUJI_STATUS_OK);
         assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
-    } else assert(status == SONY2FUJI_STATUS_PROCESSING_ERROR);
+    // Without a compiled GPU backend a Force request must say "unsupported",
+    // never fake a CPU result and never report a processing failure.
+    } else {
+        assert(status == SONY2FUJI_STATUS_UNSUPPORTED);
+        assert(sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU);
+    }
     sony2fuji_release_buffer(&buffer);
     gpu.mode = SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
@@ -215,7 +222,20 @@ static void rawExposure(const char* path) {
 
 int main(int argc, char** argv) {
     hslAlgorithm(); hslNearGrayContinuity(); hslSession(); autoExposure();
-    if (argc > 1) rawExposure(argv[1]);
-    else std::cout << "Real RAW fixture not supplied; RAW coverage skipped\n";
+    if (argc > 1) {
+        const char* argRaw = *argv[1] ? argv[1] : nullptr;
+        const char* envRaw = std::getenv("RAWLAB_TEST_RAW");
+        if (envRaw && !*envRaw) envRaw = nullptr;
+        const char* rawPath = argRaw ? argRaw : envRaw;
+        if (!rawPath) {
+            std::cout << "SKIP photo_color_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+            return 77;
+        }
+        if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+            std::cerr << "FAIL photo_color_raw: RAW sample does not exist: " << rawPath << '\n';
+            return 1;
+        }
+        rawExposure(rawPath);
+    } else std::cout << "Real RAW fixture not supplied; RAW coverage skipped\n";
     std::cout << "HSL and automatic exposure tests passed\n";
 }

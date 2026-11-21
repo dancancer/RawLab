@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -255,6 +256,7 @@ private struct WorkspaceFolderHeading: View {
 }
 
 private struct WorkspacePhotoGrid: View {
+    @EnvironmentObject private var previews: MacEditedPhotoPreviews
     let library: PhotoLibrary
     @ObservedObject var folder: PhotoFolder
     let location: MacWorkspaceBrowserState.Location
@@ -281,7 +283,25 @@ private struct WorkspacePhotoGrid: View {
                 Text(L10n.text("无照片")).font(.caption).foregroundStyle(.secondary)
                     .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                photos
+                VStack(spacing: 0) {
+                    if let ai = previews.aiPreparationProgress {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(ai.total > 0 ? "\(ai.fileName) · \(ai.title) · \(ai.done)/\(ai.total)" : "\(ai.fileName) · \(ai.title)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .monospacedDigit()
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, grid ? 12 : 7)
+                        .padding(.vertical, 5)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65))
+                        .accessibilityIdentifier("workspace.thumbnails.aiProgress")
+                    }
+                    photos
+                }
             }
         }
     }
@@ -303,6 +323,7 @@ private struct WorkspacePhotoGrid: View {
                 if let next { navigation.remember(next, in: location, grid: grid) }
             }
             .onChange(of: folder.photos) { _, _ in restoreAnchor() }
+            .onChange(of: folder.contentRevision) { _, _ in previews.refresh() }
     }
 
     private func restoreAnchor() {
@@ -329,10 +350,6 @@ private struct WorkspacePhotoGrid: View {
         } label: {
             WorkspacePhotoTile(url: url, active: active, checked: checked, grid: grid)
         }.buttonStyle(.plain).help(url.lastPathComponent).accessibilityLabel(url.lastPathComponent)
-            .accessibilityValue([
-                checked ? L10n.text("已选") : nil,
-                active ? L10n.text("当前照片") : nil
-            ].compactMap { $0 }.joined(separator: " · "))
             .accessibilityAddTraits(checked || active ? .isSelected : [])
             .accessibilityIdentifier("workspace.photo.\(url.lastPathComponent)")
             .contextMenu {
@@ -345,18 +362,131 @@ private struct WorkspacePhotoGrid: View {
     }
 }
 
+struct WorkspacePhotoTileState {
+    var thumbnail: NSImage?
+    var edited = false
+    var notice: String?
+    var adjustedThumbnail = false
+    var sourceIdentity: OriginalFileIdentity?
+
+    @MainActor mutating func appear(url: URL, previews: MacEditedPhotoPreviews) {
+        if thumbnail == nil, let cached = previews.cachedThumbnail(for: url) {
+            thumbnail = cached.image
+            edited = cached.isEdited
+            adjustedThumbnail = cached.isEdited
+            sourceIdentity = cached.identity
+            notice = nil
+        }
+    }
+
+    @MainActor mutating func refresh(url: URL, previews: MacEditedPhotoPreviews) async {
+        var current = self
+        await Self.refresh(url: url, previews: previews, get: { current }, set: { current = $0 })
+        self = current
+    }
+
+    @MainActor static func refresh(
+        url: URL,
+        previews: MacEditedPhotoPreviews,
+        get: () -> WorkspacePhotoTileState,
+        set: (WorkspacePhotoTileState) -> Void
+    ) async {
+        do {
+            let record = try await previews.record(for: url)
+            try Task.checkCancellation()
+            var next = get()
+            next.edited = MacPhotoPreviewPlan.isEdited(record)
+            if next.sourceIdentity != record.identity {
+                next.sourceIdentity = record.identity
+                previews.refreshWatch(url)
+                next.adjustedThumbnail = false
+                next.thumbnail = nil
+            } else if !next.edited && next.adjustedThumbnail {
+                next.adjustedThumbnail = false
+                next.thumbnail = nil
+            }
+            set(next)
+            if next.edited, let cached = await previews.cachedImage(for: record) {
+                try Task.checkCancellation()
+                var hit = get()
+                hit.thumbnail = cached; hit.adjustedThumbnail = true; hit.notice = nil
+                set(hit)
+                return
+            }
+            next = get()
+            next.notice = next.edited ? "预览待更新" : nil
+            let needsOriginal = next.thumbnail == nil
+            let isEdited = next.edited
+            set(next)
+            if needsOriginal {
+                let original = await previews.originalImage(for: url, identity: record.identity, recordAsActive: !isEdited)
+                try Task.checkCancellation()
+                var withOriginal = get()
+                withOriginal.thumbnail = original
+                set(withOriginal)
+            }
+            if isEdited {
+                if previews.isEditorBusy {
+                    previews.noteDeferredEditedRefresh()
+                } else {
+                    let result = try await previews.image(for: record)
+                    try Task.checkCancellation()
+                    var rendered = get()
+                    rendered.thumbnail = result; rendered.adjustedThumbnail = true; rendered.notice = nil
+                    set(rendered)
+                }
+            }
+        } catch is CancellationError { }
+        catch {
+            guard !Task.isCancelled else { return }
+            var failed = get()
+            if failed.adjustedThumbnail {
+                let identity = failed.sourceIdentity
+                failed.adjustedThumbnail = false
+                failed.thumbnail = nil
+                set(failed)
+                if let identity {
+                    let fallback = await previews.originalImage(for: url, identity: identity, recordAsActive: false)
+                    if !Task.isCancelled {
+                        failed = get()
+                        failed.thumbnail = fallback
+                        set(failed)
+                    }
+                }
+            }
+            if !Task.isCancelled {
+                failed = get()
+                failed.notice = "预览未更新"
+                set(failed)
+            }
+        }
+    }
+}
+
 private struct WorkspacePhotoTile: View {
     let url: URL
     let active: Bool
     let checked: Bool
     let grid: Bool
-    @State private var thumbnail: NSImage?
+    @EnvironmentObject private var previews: MacEditedPhotoPreviews
+    @State private var state = WorkspacePhotoTileState()
+    private var activeAIProgress: AIPreparationProgress? {
+        guard state.edited, !state.adjustedThumbnail,
+              let ai = previews.aiPreparationProgress,
+              ai.path == PhotoThumbnailCacheKey.canonicalPath(for: url) else { return nil }
+        return ai
+    }
+    private var accessibilityStatus: String {
+        [checked ? L10n.text("已选") : nil, active ? L10n.text("当前照片") : nil,
+         state.edited ? L10n.text("已编辑") : nil, activeAIProgress?.title ?? state.notice.map { L10n.text($0) }]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
 
     var body: some View {
         VStack(spacing: 4) {
             Color.black.opacity(0.35).aspectRatio(1.55, contentMode: .fit)
                 .overlay {
-                    if let thumbnail { Image(nsImage: thumbnail).resizable().scaledToFit() }
+                    if let thumbnail = state.thumbnail { Image(nsImage: thumbnail).resizable().scaledToFit() }
                     else { Image(systemName: "photo").foregroundStyle(.secondary) }
                 }.clipShape(RoundedRectangle(cornerRadius: 3))
                 .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(active ? .yellow : .clear, lineWidth: 2) }
@@ -364,6 +494,28 @@ private struct WorkspacePhotoTile: View {
                     if checked {
                         Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.black)
                             .padding(4).background(.yellow, in: RoundedRectangle(cornerRadius: 3)).padding(4)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if state.edited {
+                        Image(systemName: "pencil").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                            .padding(4).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 3)).padding(4)
+                            .help(L10n.text("已编辑")).accessibilityHidden(true)
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if let ai = activeAIProgress {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text(ai.title).font(.system(size: 9))
+                        }
+                        .padding(3).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 3)).padding(4)
+                        .help(ai.total > 0 ? "\(ai.title) · \(ai.done)/\(ai.total)" : ai.title)
+                        .accessibilityHidden(true)
+                    } else if state.edited, let notice = state.notice {
+                        Text(L10n.text(state.adjustedThumbnail ? notice : "原始预览")).font(.system(size: 9))
+                            .padding(3).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 3)).padding(4)
+                            .help(L10n.text(notice)).accessibilityHidden(true)
                     }
                 }
                 .overlay(alignment: .bottomLeading) {
@@ -377,9 +529,16 @@ private struct WorkspacePhotoTile: View {
         }.padding(2).frame(maxWidth: .infinity)
             .background(checked ? Color.yellow.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 4))
             .contentShape(Rectangle())
-            .task(id: url) {
-                let loaded = await PhotoThumbnails.shared.image(for: url)
-                if !Task.isCancelled { thumbnail = loaded }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(url.lastPathComponent)
+            .accessibilityValue(accessibilityStatus)
+            .onAppear {
+                state.appear(url: url, previews: previews)
+                previews.watch(url)
+            }
+            .onDisappear { previews.unwatch(url) }
+            .task(id: "\(url.path):\(previews.revision)", priority: .utility) {
+                await WorkspacePhotoTileState.refresh(url: url, previews: previews, get: { state }, set: { state = $0 })
             }
     }
 }

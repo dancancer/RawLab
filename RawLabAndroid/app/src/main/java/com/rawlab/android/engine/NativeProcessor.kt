@@ -1,12 +1,19 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.settings.requireProRAWDecoder
+import com.rawlab.android.settings.ToneCurveSettings
 
 import android.graphics.Bitmap
 import java.io.IOException
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.CancellationException
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.format.ExportFormat
@@ -24,6 +31,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.X3fMode
+import com.rawlab.android.settings.ProcessingMigrationOutcome
 
 // 原生层对外观文件的识别结果：格式与 RLOOK 版本
 enum class LookFormat(val extension: String) {
@@ -42,16 +50,53 @@ enum class LookFormat(val extension: String) {
 data class LookValidation(val format: LookFormat, val version: Int, val colorState: Int = 5)
 class LUTColorContractException(val reason: Int) : IllegalArgumentException("LUT color contract requires attention")
 
-class NativeProcessingException(val status: Int, message: String) : IOException(message) {
+class NativeProcessingException @JvmOverloads constructor(
+    val status: Int,
+    message: String,
+    val unsupportedReason: Int = UNSUPPORTED_NONE
+) : IOException(
+    if (status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU && AppStrings.isInitialized()) {
+        AppStrings.text(R.string.force_gpu_unsupported)
+    } else {
+        message
+    }
+) {
+    val isForceGpuUnsupported: Boolean
+        get() = status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU
+
     companion object {
+        const val UNSUPPORTED = 2
         const val IO_ERROR = 3
         const val OUTPUT_IO_ERROR = 6
         const val CANCELLED = 7
+        const val UNSUPPORTED_NONE = 0
+        const val UNSUPPORTED_FORCE_GPU = 1
     }
 }
 
-class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int,
-    histogram: IntArray? = null) {
+internal data class NativeRoiBounds(
+    val x0: Int,
+    val y0: Int,
+    val x1: Int,
+    val y1: Int,
+    val fullWidth: Int,
+    val fullHeight: Int,
+)
+
+internal class NativeRoiFrame(
+    val frame: NativeFrame,
+    val bounds: NativeRoiBounds,
+)
+
+class NativeFrame(
+    val width: Int,
+    val height: Int,
+    private val backingBitmap: Bitmap,
+    val temperature: Float,
+    val tint: Float,
+    val backend: Int,
+    histogram: IntArray? = null,
+) {
     val histogram: RgbHistogram? = RgbHistogram.fromNative(width, height, histogram)
     var lens: LensInfo? = null
         internal set
@@ -59,8 +104,23 @@ class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val te
         internal set
     var geometryHeight: Int = height
         internal set
-    fun bitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-        it.copyPixelsFromBuffer(ByteBuffer.wrap(pixels))
+    fun bitmap(): Bitmap = backingBitmap
+    val pixels: ByteArray by lazy(LazyThreadSafetyMode.NONE) {
+        ByteArray(width * height * 4).also { out ->
+            backingBitmap.copyPixelsToBuffer(ByteBuffer.wrap(out))
+        }
+    }
+
+    internal companion object {
+        @JvmStatic
+        fun allocateBitmap(width: Int, height: Int, reusable: Bitmap? = null): Bitmap {
+            if (reusable != null && reusable.isMutable && !reusable.isRecycled &&
+                reusable.config == Bitmap.Config.ARGB_8888 &&
+                reusable.width == width && reusable.height == height) {
+                return reusable
+            }
+            return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
     }
 }
 
@@ -72,6 +132,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private var raster: DecodedRaster? = null
     private var rasterEdge = -1
     private var rasterHDRSource: com.rawlab.android.photo.HDRSourceInfo? = null
+    private var displayLensMetadata: DisplayLensMetadata? = null
     init {
         try { if (lensDatabase != null) nativeSetLensDatabase(handle, lensDatabase.path) }
         catch (error: Throwable) { close(); throw error }
@@ -87,9 +148,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
-        cancellationGeneration: Long = -1L): NativeFrame {
+        cancellationGeneration: Long = -1L, reusableBitmap: Bitmap? = null): NativeFrame {
         val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind,
-            cancellationGeneration = cancellationGeneration))
+            cancellationGeneration = cancellationGeneration, reusableBitmap = reusableBitmap))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -98,8 +159,54 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             val nativeSize = NativeHDRBridge.geometrySize(info, settings.geometry)
             frame.geometryWidth = nativeSize[0]; frame.geometryHeight = nativeSize[1]
         }
-        frame.lens = if (inputKind == PhotoInputKind.RAW) readLens(input) else null
+        frame.lens = if (inputKind == PhotoInputKind.RAW || rasterHDRSource == null) readLens(input) else null
         return frame
+    }
+
+    @Synchronized
+    internal fun previewRoi(
+        input: File,
+        lut: File?,
+        settings: EditSettings,
+        x0: Float,
+        y0: Float,
+        x1: Float,
+        y1: Float,
+        maxOutputLongEdge: Int,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L,
+    ): NativeRoiFrame {
+        check(handle != 0L) { "Processor is closed" }
+        val clampedEdge = maxOutputLongEdge.coerceIn(1, 2048)
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind, 0)
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = true,
+        ))
+        val roiBounds = IntArray(6)
+        val frame = checkNotNull(nativeProcessRoi(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = 1600,
+                interactive = false,
+                cancellationGeneration = cancellationGeneration,
+            ),
+            x0, y0, x1, y1, clampedEdge, roiBounds,
+        ))
+        require(roiBounds[4] > 0 && roiBounds[5] > 0 && roiBounds[2] > roiBounds[0] && roiBounds[3] > roiBounds[1]) {
+            "Invalid native ROI bounds"
+        }
+        frame.geometryWidth = roiBounds[4]
+        frame.geometryHeight = roiBounds[5]
+        return NativeRoiFrame(
+            frame = frame,
+            bounds = NativeRoiBounds(roiBounds[0], roiBounds[1], roiBounds[2], roiBounds[3], roiBounds[4], roiBounds[5]),
+        )
     }
 
     // 仅供独立兼容预览实例使用，固定基础处理，不接触编辑器的调整或外观库。
@@ -111,30 +218,42 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, configuration)
     }
 
+    @Synchronized
+    internal fun migrateProcessing(input: File, lut: File?, settings: EditSettings, inputKind: PhotoInputKind,
+        cancellationGeneration: Long): ProcessingMigrationOutcome {
+        require(settings.processing.version in 1..2 && !settings.isHDREditing && settings.recipeID == null)
+        val result = FloatArray(20)
+        previewRequest(input, lut, settings, 0, false, inputKind,
+            cancellationGeneration = cancellationGeneration, migration = result)
+        return ProcessingMigrationOutcome.decode(settings, result)
+    }
+
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
-        cancellationGeneration: Long = -1L): NativeFrame? {
+        cancellationGeneration: Long = -1L, migration: FloatArray? = null, reusableBitmap: Bitmap? = null): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, edge)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        return nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
-            pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, null, effective.strength,
-            effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-            effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
-            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, null,
-            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration)
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = true,
+        ))
+        return nativeProcess(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = edge,
+                interactive = interactive,
+                revision = revision,
+                probe = probe,
+                cancellationGeneration = cancellationGeneration,
+                migrationOut = migration,
+                reusableBitmap = reusableBitmap,
+            ),
+        )
     }
 
     @Synchronized
@@ -166,34 +285,52 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
-        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW): Int {
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+        cancellationGeneration: Long = -1L): Int {
         check(handle != 0L) { "Processor is closed" }
         require(format != ExportFormat.HDR_JPEG) { "HDR JPEG requires HDR editing" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
-        val effective = settings.effectiveFor(inputKind)
-        val pixels = rasterInput(input, inputKind)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        val backend = intArrayOf(-1)
-        nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
-            pixels?.pixelFormat ?: 0, lut?.path, output.path, effective.strength,
-            effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-            effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
-            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, backend)
-        check(backend[0] >= 0) { "Native export did not report a backend" }
-        if (format != ExportFormat.DNG) ExportMetadata.preserve(input, output, allowUnreadableSource = PhotoFiles.isX3f(input))
-        return backend[0]
+        val generation = if (cancellationGeneration >= 0L) cancellationGeneration else -1L
+        val cancelled = { generation >= 0L && cancellationGeneration() != generation }
+        return executeExport(
+                output = output,
+                suffix = format.suffix,
+                isCancelled = cancelled,
+                renderToStaging = { staging ->
+                    val effective = settings.effectiveFor(inputKind)
+                    val pixels = rasterInput(input, inputKind)
+                    if (cancelled()) {
+                        throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
+                    }
+                    configureDisplayLens(effective.lens)
+                    nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+                        isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+                        includeDenoise = true,
+                    ))
+                    val backend = intArrayOf(-1)
+                    nativeProcess(
+                        handle,
+                        effective.toNativeProcessRequest(
+                            inputPath = input.path,
+                            pixels = pixels,
+                            lutPath = lut?.path,
+                            outputPath = staging.path,
+                            format = format,
+                            longEdge = longEdge ?: 0,
+                            backendOut = backend,
+                            cancellationGeneration = generation,
+                        ),
+                    )
+                    check(backend[0] >= 0) { "Native export did not report a backend" }
+                    backend[0]
+                },
+                preserveMetadata = { staging ->
+                    if (format != ExportFormat.DNG) {
+                        ExportMetadata.preserve(input, staging, allowUnreadableSource = PhotoFiles.isX3f(input))
+                    }
+                },
+        )
     }
 
     @Synchronized
@@ -202,13 +339,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, 1280)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        nativeSetToneCurve(handle, effective.renderCurve.mode.nativeValue, effective.renderCurve.packed())
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = false,
+        ))
         return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
             pixels?.pixelFormat ?: 0, effective.customWb, effective.temperature, effective.tint,
             effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version, effective.x3fMode.nativeValue)
@@ -229,27 +364,66 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
-        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRImage {
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null,
+        progress: HDRProgressListener? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
-        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory, progress)
+    }
+
+    @Synchronized
+    internal fun renderHDRRoi(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings,
+        x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, baseContentHeadroom: Float,
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderRoi(handle, source, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory)
+    }
+
+    @Synchronized
+    internal fun renderHDRCameraRawRoi(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
+        settings: com.rawlab.android.settings.HDRSettings, x0: Float, y0: Float, x1: Float, y1: Float,
+        maxOutputLongEdge: Int, baseContentHeadroom: Float, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null, profileDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderCameraRawRoi(handle, file, info, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory, profileDirectory)
+    }
+
+    @Synchronized
+    internal fun renderHDRFileRoi(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
+        settings: com.rawlab.android.settings.HDRSettings, x0: Float, y0: Float, x1: Float, y1: Float,
+        maxOutputLongEdge: Int, baseContentHeadroom: Float, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null): NativeHDRRoiImage {
+        check(handle != 0L) { "Processor is closed" }
+        return NativeHDRBridge.renderFileRoi(handle, file, info, settings, x0, y0, x1, y1,
+            maxOutputLongEdge, baseContentHeadroom, cancellationGeneration, lookDirectory)
+    }
+
+    @Synchronized
+    internal fun clearHDRSessionCache() {
+        if (handle != 0L) NativeHDRBridge.clearSessionCache(handle)
     }
 
     internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
         cancellationGeneration: Long = -1L,
         camera: com.rawlab.android.settings.HDRCameraDevelopmentSettings = com.rawlab.android.settings.HDRCameraDevelopmentSettings(),
-        profileDirectory: File? = null): NativeHDRImage {
+        profileDirectory: File? = null,
+        progress: HDRProgressListener? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
-        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory)
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory, progress)
     }
 
     internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
-        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L, lookDirectory: File? = null) {
+        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null, progress: HDRProgressListener? = null) {
         check(handle != 0L) { "Processor is closed" }
         edits.requireProRAWDecoder()
         NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
-            output, keepHDR, edge, cancellationGeneration, lookDirectory)
+            output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
     }
+
+    internal fun sessionHandle(): Long = handle
 
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
     internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)
@@ -261,6 +435,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     internal fun releaseRasterCache() {
         raster?.close(); raster = null; rasterKey = null; rasterHDRSource = null; rasterEdge = -1
+        displayLensMetadata = null
+        if (handle != 0L) {
+            nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+            NativeHDRBridge.clearSessionCache(handle)
+        }
     }
 
     private fun rasterInput(input: File, kind: PhotoInputKind, edge: Int = 0): DecodedRaster? {
@@ -273,10 +452,12 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             releaseRasterCache()
             rasterHDRSource = if (com.rawlab.android.photo.HDRSourceInfo.mayContainGainMap(input))
                 NativeHDRBridge.probe(input) else null
+            displayLensMetadata = DisplayLensMetadata.read(input)
             rasterKey = key
         }
+        displayLensMetadata?.let { nativeSetDisplayLensMetadata(handle, it.names, it.numbers, it.sourceOrientation) }
         val hdr = rasterHDRSource
-        if (raster == null || (hdr != null && rasterEdge != edge)) {
+        if (raster == null || (hdr != null && rasterEdge != 0 && rasterEdge != edge)) {
             val decoded = if (hdr == null) RasterImageDecoder.decode(input) else {
                 NativeHDRBridge.decode(input, hdr, edge).use { DecodedRaster(it.sdrBitmap()) }
             }
@@ -285,25 +466,76 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return checkNotNull(raster)
     }
 
-    private fun configureLens(settings: LensSettings) = nativeSetLensCorrection(handle,
-        settings.distortion, settings.tca, settings.autoCrop, settings.coreProfileId.toByteArray(Charsets.UTF_8))
-
-    private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
-        settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
-        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees,
-        settings.perspectiveHorizontal, settings.perspectiveVertical)
+    private fun configureDisplayLens(settings: LensSettings) {
+        displayLensMetadata?.let { source ->
+            val metadata = source.copy(focalLength = settings.focalLength ?: source.focalLength,
+                cropFactor = settings.cropFactor ?: source.cropFactor)
+            nativeSetDisplayLensMetadata(handle, metadata.names, metadata.numbers, metadata.sourceOrientation)
+        }
+    }
 
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
         if (key != catalogKey) {
-            val profiles = nativeLensProfiles(handle, input.path)
-            require(profiles.size % 6 == 0) { "Invalid native lens catalog" }
-            candidates = profiles.asList().chunked(6).map { LensCandidate(it[0], it[1], it[2], it[3] == "1", it[4] == "1", it[5] == "1") }
+            val profiles = nativeLensProfiles(handle, if (displayLensMetadata == null) input.path else null)
+            require(profiles.size % 7 == 0) { "Invalid native lens catalog" }
+            candidates = profiles.asList().chunked(7).map { LensCandidate(it[0], it[1], it[2], it[3] == "1", it[4] == "1", it[5] == "1", it[6] == "1") }
             catalogKey = key
         }
         val report = nativeLensReport(handle)
-        require(report.size == 6) { "Invalid native lens report" }
-        return LensInfo(report[0].toInt(), report[1], report[2], report[3] == "1", report[4] == "1", report[5].toFloat(), candidates)
+        require(report.size == 7) { "Invalid native lens report" }
+        return LensInfo(report[0].toInt(), report[1], report[2], report[3] == "1", report[4] == "1", report[5].toFloat(), candidates,
+            displayLensMetadata?.let { listOf(it.cameraMake, it.cameraModel).filter(String::isNotBlank).distinct().joinToString(" ") },
+            displayLensMetadata?.focalLength?.takeIf { it > 0 }, displayLensMetadata?.aperture?.takeIf { it > 0 }, report[6] == "1")
+    }
+
+    @Synchronized
+    internal fun inspectLens(input: File, settings: EditSettings, inputKind: PhotoInputKind): LensInfo {
+        check(handle != 0L) { "Processor is closed" }
+        val effective = settings.effectiveFor(inputKind)
+        val metadata = if (inputKind == PhotoInputKind.RASTER) {
+            DisplayLensMetadata.read(input).also {
+                val configured = it.copy(
+                    focalLength = effective.lens.focalLength ?: it.focalLength,
+                    cropFactor = effective.lens.cropFactor ?: it.cropFactor,
+                )
+                nativeSetDisplayLensMetadata(handle, configured.names, configured.numbers, configured.sourceOrientation)
+            }
+        } else {
+            nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+            null
+        }
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = inputKind != PhotoInputKind.RAW,
+            includeDenoise = false,
+        ))
+        val applied = nativeInspectLens(handle, if (metadata == null) input.path else null)
+        require(applied.size == 3) { "Invalid native lens inspection" }
+        return LensInfo(0, "", "", applied[0], applied[1], 1f, emptyList(),
+            appliedVignetting = applied[2])
+    }
+
+    @Synchronized
+    internal fun resolveCameraWhiteBalance(
+        input: File,
+        settings: EditSettings,
+        inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    ): Pair<Float, Float>? {
+        check(handle != 0L) { "Processor is closed" }
+        if (inputKind != PhotoInputKind.RAW) return null
+        val effective = settings.effectiveFor(inputKind)
+        val result = nativeResolveCameraWhiteBalance(
+            handle,
+            input.path,
+            effective.processing.version,
+            effective.x3fMode.nativeValue,
+            effective.exposureMode,
+        ) ?: return null
+        require(result.size == 2) { "Invalid native camera white balance" }
+        val temp = result[0]
+        val tint = result[1]
+        if (!temp.isFinite() || !tint.isFinite()) return null
+        return temp to tint
     }
 
     private external fun nativeCreate(mode: Int): Long
@@ -311,33 +543,20 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         pixelFormat: Int, lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
-    private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, profile: ByteArray)
-    private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
-        midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
-    private external fun nativeSetAtmosphere(handle: Long, clarity: Float, dehaze: Float)
-    private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
-    private external fun nativeSetToneCurve(handle: Long, mode: Int, points: DoubleArray)
-    private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
-        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
-        perspectiveHorizontal: Float, perspectiveVertical: Float)
+    private external fun nativeSetDisplayLensMetadata(handle: Long, names: Array<String>?, numbers: FloatArray, orientation: Int)
+    private external fun nativeApplyParams(handle: Long, recipeJson: String)
     private external fun nativeGeometrySize(handle: Long): IntArray
-    private external fun nativeLensProfiles(handle: Long, input: String): Array<String>
+    private external fun nativeLensProfiles(handle: Long, input: String?): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
+    private external fun nativeInspectLens(handle: Long, input: String?): BooleanArray
+    private external fun nativeResolveCameraWhiteBalance(handle: Long, input: String, processingVersion: Int, x3fMode: Int, exposureMode: Int): FloatArray?
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
-    private external fun nativeProcess(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
-        pixelFormat: Int, lut: String?, output: String?,
-        strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
-        highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
-        edge: Int, interactive: Boolean, format: Int, longEdge: Int,
-        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
-        vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
-        vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, x3fMode: Int, backend: IntArray? = null,
-        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
-        cancellationGeneration: Long = -1L): NativeFrame?
+    private external fun nativeProcess(handle: Long, request: NativeProcessRequest): NativeFrame?
+    private external fun nativeProcessRoi(handle: Long, request: NativeProcessRequest,
+        x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, roiBoundsOut: IntArray): NativeFrame?
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean
@@ -403,4 +622,61 @@ private object NativeLookBridge {
 
 private object NativeDcpBridge {
     @JvmStatic external fun compile(source: ByteArray, sourceNameUtf8: ByteArray, toneCurve: ByteArray?, omitAutomaticBlack: Boolean): ByteArray
+}
+
+internal fun exportStagingFile(
+    parent: File,
+    outputName: String,
+    suffix: String,
+    id: UUID = UUID.randomUUID(),
+): File = File(parent, ".$outputName.$id.part$suffix")
+
+internal fun executeExport(
+    output: File,
+    suffix: String = output.extension.takeIf { it.isNotEmpty() }?.let { ".$it" }.orEmpty(),
+    isCancelled: () -> Boolean,
+    renderToStaging: (File) -> Int,
+    preserveMetadata: (File) -> Unit = {},
+): Int {
+    val emptyPlaceholder = output.exists() && output.length() == 0L
+    val parent = output.absoluteFile.parentFile ?: File(".")
+    val staging = exportStagingFile(parent, output.name, suffix)
+        .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
+    fun throwIfCancelled() {
+        if (isCancelled()) throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
+    }
+    // Q12 裁定（g-product-decisions）：提交点 = 核心 staged write 的原子替换发布。
+    // renderToStaging 正常返回即已过提交点（nativeProcess 仅在核心提交点前的检查点取消时抛 CANCELLED）；
+    // 提交点之后迟到的取消不删已渲染文件，导出继续发布并按「已完成」收尾。
+    // 提交点之前的取消维持 #289/#293 语义：抛 CANCELLED、删除暂存、空占位符复位。
+    var committed = false
+    var completed = false
+    try {
+        throwIfCancelled()
+        val backend = renderToStaging(staging)
+        committed = true
+        preserveMetadata(staging)
+        try {
+            Files.move(staging.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        } catch (error: IOException) {
+            throw NativeProcessingException(
+                NativeProcessingException.OUTPUT_IO_ERROR,
+                error.message ?: "Cannot write exported image",
+            )
+        }
+        completed = true
+        return backend
+    } catch (error: Throwable) {
+        val cancelled = (error is NativeProcessingException && error.status == NativeProcessingException.CANCELLED) ||
+            error is CancellationException || (!committed && isCancelled())
+        if (cancelled && emptyPlaceholder && output.exists() && output.length() == 0L) {
+            output.delete()
+        }
+        if (cancelled && (error !is NativeProcessingException || error.status != NativeProcessingException.CANCELLED)) {
+            throw NativeProcessingException(NativeProcessingException.CANCELLED, error.message ?: "Processing cancelled")
+        }
+        throw error
+    } finally {
+        if (!completed) staging.delete()
+    }
 }

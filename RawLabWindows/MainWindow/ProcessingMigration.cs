@@ -1,0 +1,223 @@
+using System.IO;
+using System.Windows;
+
+namespace RawLab.Windows;
+
+public partial class MainWindow
+{
+    private CancellationTokenSource? processingMigrationCancellation;
+    private ProcessingMigrationReceipt? processingMigrationReceipt;
+    private bool processingMigrationBusy;
+    private sealed record PendingProcessingMigration(string Path,OriginalIdentity Source,SavedEdit Before,
+        AdjustmentSnapshot ExpectedSettings,string? ExpectedLook,OriginalIdentity? LookIdentity,long Opened,long Revision,
+        Native.ProcessingMigrationResult Result,CancellationTokenSource Cancellation);
+    private PendingProcessingMigration? processingMigrationPending;
+
+    private void CancelProcessingMigration()
+    {
+        processingMigrationCancellation?.Cancel();
+        processingMigrationCancellation=null;
+        processingMigrationPending=null;
+        processingMigrationBusy=false;
+        RefreshProcessingMigrationControls();
+    }
+
+    private void BeginProcessingMigration(string path)
+    {
+        var gpu=RequestedGpuMode;
+        if (processingMigrationBusy || closing || exporting || editDirty || file != path || currentEditRecord?.Edit is not { } before ||
+            !ProcessingMigration.ShouldAttempt(before,processingMigrationReceipt,gpu) || !LookAvailable)
+            return;
+        var source=before.Identity;
+        if (CurrentViewSource is { } cachedSource && !source.SameFile(cachedSource)) return;
+        var snapshot=settings.Clone();
+        var expectedSettings=snapshot.Capture();
+        var opened=openRevision;var revision=editRevision;var expectedLook=lut;
+        var cancellation=new CancellationTokenSource();processingMigrationCancellation=cancellation;processingMigrationBusy=true;
+        RefreshProcessingMigrationControls();
+        _=Task.Run(() =>
+        {
+            try
+            {
+                if (!source.SameFile(OriginalIdentity.Read(path))) return;
+                var lookIdentity = expectedLook == null ? null : OriginalIdentity.Read(expectedLook);
+                using var worker=CreateRenderEngine(gpuMode:gpu);
+                var result=worker.MigrateProcessing(path,snapshot,expectedLook,cancellation.Token);
+                if (!source.SameFile(OriginalIdentity.Read(path)) ||
+                    (lookIdentity != null && !lookIdentity.SameFile(OriginalIdentity.Read(expectedLook!))))
+                    return;
+                Dispatcher.BeginInvoke(new Action(() => FinishProcessingMigration(path,source,before,expectedSettings,expectedLook,lookIdentity,opened,revision,result,cancellation)));
+            }
+            catch (OperationCanceledException)
+            {
+                Dispatcher.BeginInvoke(new Action(() => {
+                    if (processingMigrationCancellation == cancellation) CancelProcessingMigration();
+                }));
+            }
+            catch (Exception error)
+            {
+                Dispatcher.BeginInvoke(new Action(() => FailProcessingMigration(path,opened,revision,cancellation,error)));
+            }
+        },cancellation.Token);
+    }
+
+    private bool MigrationIsCurrent(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,long opened,long revision)
+    {
+        if (closing || file != path || openRevision != opened || editRevision != revision || editDirty ||
+            editGesture != null || transform.Active || exporting || aiJob.State.IsRunning || lut != expectedLook ||
+            currentEditRecord?.Edit is not { } current || !current.SameAs(before)) return false;
+        try
+        {
+            var currentSettings=settings.Capture();
+            // Native WB metadata may hydrate AsShot after the old frame is displayed;
+            // it is not a user edit and is intentionally excluded from this guard.
+            currentSettings=currentSettings with { AsShotTemperature=expectedSettings.AsShotTemperature, AsShotTint=expectedSettings.AsShotTint };
+            if (!currentSettings.SameAs(expectedSettings)) return false;
+        }
+        catch (InvalidDataException) { return false; }
+        if (CurrentViewSource is not { } currentSource || !source.SameFile(currentSource)) return false;
+        return lookIdentity == null ||
+            (LookAvailable && ViewSourceState.TryReadIdentity(lookIdentity.Path) is { } currentLook && lookIdentity.SameFile(currentLook));
+    }
+
+    private async void FinishProcessingMigration(string path,OriginalIdentity source,SavedEdit before,AdjustmentSnapshot expectedSettings,string? expectedLook,OriginalIdentity? lookIdentity,
+        long opened,long revision,Native.ProcessingMigrationResult nativeResult,CancellationTokenSource cancellation)
+    {
+        if (processingMigrationCancellation != cancellation) return;
+        if (!MigrationIsCurrent(path,source,before,expectedSettings,expectedLook,lookIdentity,opened,revision))
+        {
+            processingMigrationCancellation=null;processingMigrationBusy=false;RefreshProcessingMigrationControls();return;
+        }
+        if (result == null || !exactReady)
+        {
+            processingMigrationPending=new(path,source,before,expectedSettings,expectedLook,lookIdentity,opened,revision,nativeResult,cancellation);
+            RefreshProcessingMigrationControls();return;
+        }
+        try
+        {
+            var isRejected = ProcessingMigration.IsRejectedResult(before, nativeResult);
+            SavedEdit? candidate = null;
+            if (!isRejected && !(ProcessingMigration.TryBuildCandidate(before, nativeResult, out candidate) && candidate != null))
+            {
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                RefreshProcessingMigrationControls(); return;
+            }
+            var targetEdit = isRejected ? before : candidate!;
+            var status = isRejected ? ProcessingMigrationReceipt.Kept : ProcessingMigrationReceipt.Migrated;
+            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
+            {
+                var committed = editStore!.CommitProcessingMigration(source, before, targetEdit, status);
+                return (committed, editStore.ReadProcessingMigration(path));
+            });
+            if (processingMigrationCancellation != cancellation ||
+                !MigrationIsCurrent(path, source, before, expectedSettings, expectedLook, lookIdentity, opened, revision))
+            {
+                if (processingMigrationCancellation == cancellation)
+                {
+                    processingMigrationCancellation=null;processingMigrationBusy=false;
+                    RefreshProcessingMigrationControls();
+                }
+                return;
+            }
+            processingMigrationCancellation=null;processingMigrationBusy=false;
+            if (isRejected)
+            {
+                TransferSession.RememberExternalSave(saved);
+            }
+            else
+            {
+                TransferSession.AdoptExternalProcessingMigration(saved);
+                currentEditRecord=saved;settings=candidate!.Settings.Restore();editDirty=false;++editRevision;
+                ResetAITask();RefreshControls();Schedule();
+            }
+            currentEditRecord=saved;processingMigrationReceipt=receipt;
+            RefreshControls();
+        }
+        catch (AdjustmentOperationExpiredException)
+        {
+            if (processingMigrationCancellation == cancellation)
+            {
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                RefreshProcessingMigrationControls();
+            }
+        }
+        catch (Exception error)
+        {
+            if (processingMigrationCancellation == cancellation)
+            {
+                processingMigrationCancellation=null;processingMigrationBusy=false;
+                Report(error);RefreshProcessingMigrationControls();
+            }
+        }
+    }
+
+    private void FailProcessingMigration(string path,long opened,long revision,CancellationTokenSource cancellation,Exception error)
+    {
+        if (processingMigrationCancellation != cancellation) return;
+        processingMigrationCancellation=null;processingMigrationBusy=false;
+        processingMigrationPending=null;
+        if (!closing && file == path && openRevision == opened && editRevision == revision) Report(error);
+        RefreshProcessingMigrationControls();
+    }
+
+    private void TryFinishPendingProcessingMigration()
+    {
+        if (processingMigrationPending is not { } pending || result == null || !exactReady) return;
+        processingMigrationPending=null;
+        FinishProcessingMigration(pending.Path,pending.Source,pending.Before,pending.ExpectedSettings,pending.ExpectedLook,pending.LookIdentity,
+            pending.Opened,pending.Revision,pending.Result,pending.Cancellation);
+    }
+
+    private void ClearProcessingMigrationReceiptState()
+    {
+        processingMigrationReceipt=null;
+        RefreshProcessingMigrationControls();
+    }
+
+    private void RefreshProcessingMigrationControls()
+    {
+        if (ProcessingMigrationState == null || RollbackProcessingMigrationButton == null) return;
+        var currentOld=settings.Processing.Version is 1 or 2;
+        var receiptVisible=processingMigrationReceipt?.Status == ProcessingMigrationReceipt.Migrated ||
+            currentOld && processingMigrationReceipt?.Status is ProcessingMigrationReceipt.Kept or ProcessingMigrationReceipt.RolledBack;
+        var visible=processingMigrationBusy || receiptVisible;
+        ProcessingMigrationState.Visibility=visible ? Visibility.Visible : Visibility.Collapsed;
+        ProcessingMigrationState.Text=processingMigrationBusy ? Loc.Text("正在匹配原画面…") : processingMigrationReceipt?.Status switch {
+            ProcessingMigrationReceipt.Migrated => Loc.Text("已自动升级，原设置已保留。"),
+            ProcessingMigrationReceipt.Kept => Loc.Text("画面差异较大，已保留旧版本。"),
+            ProcessingMigrationReceipt.RolledBack => Loc.Text("已回退，保留旧版本。"),
+            _ => ""
+        };
+        RollbackProcessingMigrationButton.Visibility=!processingMigrationBusy && processingMigrationReceipt?.Status == ProcessingMigrationReceipt.Migrated
+            ? Visibility.Visible : Visibility.Collapsed;
+        RollbackProcessingMigrationButton.IsEnabled=file != null && !processingMigrationBusy && !exporting && !transform.Active &&
+            !interacting && editGesture == null;
+    }
+
+    private async void RollbackProcessingMigrationClicked(object sender,RoutedEventArgs e)
+    {
+        if (file == null || processingMigrationBusy || processingMigrationReceipt?.Status != ProcessingMigrationReceipt.Migrated ||
+            exporting || transform.Active || interacting || editGesture != null || currentEditRecord == null) return;
+        if (MessageBox.Show(this,Loc.Text("将恢复迁移前的全部调整，之后的修改会被替换。"),Loc.Text("回到迁移前"),
+            MessageBoxButton.YesNo,MessageBoxImage.Warning,MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        var path = file;
+        var opened = openRevision;
+        try
+        {
+            if (!await FlushSaveEditsAsync()) return;
+            if (closing || file != path || openRevision != opened || processingMigrationBusy ||
+                processingMigrationReceipt?.Status != ProcessingMigrationReceipt.Migrated ||
+                exporting || transform.Active || interacting || editGesture != null || currentEditRecord == null) return;
+            var before=currentEditRecord;var identity=before.Identity;
+            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
+            {
+                var rolledBack = editStore!.RollbackProcessingMigration(identity, before);
+                return (rolledBack, editStore.ReadProcessingMigration(path));
+            });
+            if (closing || file != path || openRevision != opened) return;
+            TransferSession.AdoptExternalProcessingMigration(saved);
+            currentEditRecord=saved;processingMigrationReceipt=receipt;AdoptSavedEdit(saved);
+        }
+        catch (Exception error) { if (!closing && file == path && openRevision == opened) Report(error); }
+    }
+}

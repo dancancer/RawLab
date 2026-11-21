@@ -5,8 +5,11 @@ import com.rawlab.android.adjustments.AdjustmentFailure
 import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.photo.WorkingCopy
 import com.rawlab.android.settings.*
 import java.io.File
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.util.UUID
 
 /** 集合只持有会话选择；跳过项属于具体操作，不能回写这里。 */
@@ -95,32 +98,49 @@ class BatchSelectionExport(private val directory: File,
 
     fun freeze(selection: BatchSelectionState, review: CollectionExportReview, validateActive: (String) -> Unit): BatchJob {
         check(review.ready && selection.selectedPhotos.map { it.id } == review.selectionIDs) { "Review the selected photos again" }
-        fun validate() {
+        fun validateMetadata() {
             for (row in review.rows) {
                 validateActive(row.target.id); validateSource(row.target)
                 if (editGeneration(row.target.identity) != row.editGeneration)
                     throw AdjustmentOperationExpiredException()
-                check(BatchFrozenSettings.checksum(row.target.sourceFile) == row.inputSHA256) { "Photo source changed" }
-                check(row.look?.let(BatchFrozenSettings::checksum) == row.lookSHA256) { "Photo look changed" }
             }
         }
-        validate()
+        validateMetadata()
+        val seenLooks = mutableSetOf<String>()
+        var totalBytes = 0L
+        for (row in review.rows) {
+            val srcBytes = row.target.sourceFile.length()
+            totalBytes = if (Long.MAX_VALUE - totalBytes < srcBytes) Long.MAX_VALUE else totalBytes + srcBytes
+            val lookSha = row.lookSHA256
+            val lookFile = row.look
+            if (lookFile != null && lookSha != null && seenLooks.add(lookSha)) {
+                val lookBytes = lookFile.length()
+                totalBytes = if (Long.MAX_VALUE - totalBytes < lookBytes) Long.MAX_VALUE else totalBytes + lookBytes
+            }
+        }
+        WorkingCopy.requireTotalSpace(directory, totalBytes)
         val id = UUID.randomUUID().toString()
-        val folder = File(directory, id)
+        val folder = File(directory, id).also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         check(!folder.exists() && folder.mkdirs()) { "Cannot create batch inputs" }
         val journal = BatchJournal(directory)
         try {
             val targets = review.rows.mapIndexed { index, row ->
                 val extension = row.target.displayName.substringAfterLast('.', "raw").replace(Regex("[^A-Za-z0-9]"), "").ifEmpty { "raw" }
-                val input = row.target.sourceFile.copyTo(File(folder, "input-$index.$extension"))
-                val look = row.look?.copyTo(File(folder, "look-$index.${row.look.extension}"))
+                val input = File(folder, "input-$index.$extension")
+                copyAndVerifySha256(row.target.sourceFile, input, row.inputSHA256!!, directory, "Photo source changed")
+                val look = row.look?.let { source ->
+                    File(folder, "${row.lookSHA256}.${source.extension}").also {
+                        if (!it.exists()) {
+                            copyAndVerifySha256(source, it, row.lookSHA256!!, directory, "Photo look changed")
+                        }
+                    }
+                }
                 val frozen = BatchFrozenSettings(ordinal = index, settings = row.settings!!,
-                    inputSHA256 = row.inputSHA256!!, lookFile = look, lookSHA256 = row.lookSHA256,
+                    inputSHA256 = row.inputSHA256, lookFile = look, lookSHA256 = row.lookSHA256,
                     outputFormat = review.format, longEdge = review.longEdge)
-                frozen.verifyFiles(input)
                 row.target.copy(sourceFile = input, frozen = frozen)
             }
-            validate()
+            validateMetadata()
             val first = targets.first()
             val source = BatchSourceSnapshot(first.identity, first.sourceFile, first.frozen!!.settings,
                 first.displayName, inputKind = first.inputKind)
@@ -130,4 +150,35 @@ class BatchSelectionExport(private val directory: File,
             return job
         } catch (error: Throwable) { journal.discard(id); throw error }
     }
+
+    private fun copyAndVerifySha256(
+        source: File,
+        destination: File,
+        expectedSha256: String,
+        spaceDirectory: File,
+        changedMessage: String,
+    ) {
+        val digest = MessageDigest.getInstance("SHA-256")
+        source.inputStream().use { raw ->
+            WorkingCopy.copyTo(
+                destination = destination,
+                input = DigestInputStream(raw, digest),
+                expectedBytes = source.length(),
+                spaceDirectory = spaceDirectory,
+            )
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expectedSha256) { changedMessage }
+    }
+}
+
+internal suspend fun prepareCollectionReview(
+    awaitPending: suspend () -> Unit = {},
+    captureActiveValidation: () -> (String) -> Unit,
+    runPrepare: suspend ((String) -> Unit) -> CollectionExportReview,
+): CollectionExportReview {
+    // 预检必须在已提交的编辑落盘后再捕获活动状态与读盘，避免读到旧/空记录。
+    awaitPending()
+    val validateActive = captureActiveValidation()
+    return runPrepare(validateActive)
 }

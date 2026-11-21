@@ -45,7 +45,7 @@ class EditorResetTransactionTest {
     }
 
     @Test fun geometryGroupResetProjectsBothFieldsWithoutChangingCommittedAndKeepsSingleKindUpdates() {
-        for (group in AdjustmentGroup.entries) {
+        for (group in listOf(AdjustmentGroup.GEOMETRY, AdjustmentGroup.LENS)) {
             val draft = AdjustmentDraft.begin(group, original)
             val initial = session(draft)
             val prepared = EditorResetTransaction.prepare(EditorResetScope.Group(EditorAdjustmentGroup.GEOMETRY), initial).prepared!!
@@ -66,7 +66,7 @@ class EditorResetTransactionTest {
     }
 
     @Test fun currentGeometryAndLensResetOnlyTheMatchingDraftObjectAndRetainProcessingIdentity() {
-        for (group in AdjustmentGroup.entries) {
+        for (group in listOf(AdjustmentGroup.GEOMETRY, AdjustmentGroup.LENS)) {
             val source = original.copy(processing = com.rawlab.android.settings.ProcessingIdentity.LEGACY)
             val initial = session(AdjustmentDraft.begin(group, source)).copy(edits = source)
             val tool = if (group == AdjustmentGroup.GEOMETRY) 17 else 16

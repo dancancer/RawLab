@@ -107,17 +107,44 @@ GLuint createProgram() {
     return program;
 }
 
-bool ensureContextCurrent(const GlesContext& context) {
-    return eglMakeCurrent(context.display, context.surface, context.surface, context.context) == EGL_TRUE;
-}
+struct Binding {
+    EGLDisplay previousDisplay = eglGetCurrentDisplay();
+    EGLContext previousContext = eglGetCurrentContext();
+    EGLSurface previousRead = eglGetCurrentSurface(EGL_READ);
+    EGLSurface previousDraw = eglGetCurrentSurface(EGL_DRAW);
+    EGLenum previousApi = eglQueryAPI();
+    EGLDisplay display = EGL_NO_DISPLAY;
+    bool bound = false;
 
-bool initContext(GlesContext& context) {
+    explicit Binding(const GlesContext& context) : display(context.display) {
+        bound = eglBindAPI(EGL_OPENGL_ES_API) == EGL_TRUE &&
+            eglMakeCurrent(context.display, context.surface, context.surface, context.context) == EGL_TRUE;
+    }
+
+    Binding(const Binding&) = delete;
+    Binding& operator=(const Binding&) = delete;
+
+    ~Binding() {
+        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
+        if (bound) {
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        }
+        if (previousApi != EGL_NONE) {
+            eglBindAPI(previousApi);
+        }
+        if (bound && previousContext != EGL_NO_CONTEXT) {
+            eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
+        }
+    }
+};
+
+sony2fuji::ErrorCode initContext(GlesContext& context) {
     context.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (context.display == EGL_NO_DISPLAY) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     if (!eglInitialize(context.display, nullptr, nullptr)) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     const EGLint config_attribs[] = {
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -132,7 +159,7 @@ bool initContext(GlesContext& context) {
     EGLint num_configs = 0;
     if (!eglChooseConfig(context.display, config_attribs, &config, 1, &num_configs) ||
         num_configs == 0) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     const EGLint pbuffer_attribs[] = {
         EGL_WIDTH, 1,
@@ -141,25 +168,30 @@ bool initContext(GlesContext& context) {
     };
     context.surface = eglCreatePbufferSurface(context.display, config, pbuffer_attribs);
     if (context.surface == EGL_NO_SURFACE) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     const EGLint context_attribs[] = {
         EGL_CONTEXT_CLIENT_VERSION, 3,
         EGL_NONE
     };
-    context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
-    if (context.context == EGL_NO_CONTEXT) {
-        return false;
+    const auto previousApi = eglQueryAPI();
+    if (eglBindAPI(EGL_OPENGL_ES_API)) {
+        context.context = eglCreateContext(context.display, config, EGL_NO_CONTEXT, context_attribs);
     }
-    if (!ensureContextCurrent(context)) {
-        return false;
+    if (previousApi != EGL_NONE) eglBindAPI(previousApi);
+    if (context.context == EGL_NO_CONTEXT) {
+        return sony2fuji::ErrorCode::ProcessingError;
+    }
+    Binding binding(context);
+    if (!binding.bound) {
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     GLint major = 0;
     GLint minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
     if (major < 3 || (major == 3 && minor < 1)) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     GLint invocations = 0, group_size = 0, groups = 0;
     GLint64 block_size = 0;
@@ -168,9 +200,12 @@ bool initContext(GlesContext& context) {
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &groups);
     glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &block_size);
     glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &context.texture_limit);
-    if (glGetError() != GL_NO_ERROR || invocations < GLint(kWorkgroup) ||
+    if (glGetError() != GL_NO_ERROR) {
+        return sony2fuji::ErrorCode::ProcessingError;
+    }
+    if (invocations < GLint(kWorkgroup) ||
         group_size < GLint(kWorkgroup) || groups <= 0 || block_size < GLint64(sizeof(sony2fuji::RGB))) {
-        return false;
+        return sony2fuji::ErrorCode::Unsupported;
     }
     // 先限制字节数，避免整张大图超过 SSBO 上限，也避免窄平台上的乘法溢出。
     const size_t tile_bytes = static_cast<size_t>(std::min<GLint64>(block_size, kTileBytes));
@@ -178,20 +213,38 @@ bool initContext(GlesContext& context) {
         tile_bytes / sizeof(sony2fuji::RGB), uint64_t(groups) * kWorkgroup));
     context.program = createProgram();
     if (context.program == 0) {
-        return false;
+        return sony2fuji::ErrorCode::ProcessingError;
     }
     context.pixel_count_loc = glGetUniformLocation(context.program, "pixel_count");
     context.lut_size_loc = glGetUniformLocation(context.program, "lut_size");
     context.lut_loc = glGetUniformLocation(context.program, "lut");
     context.ready = context.pixel_count_loc >= 0 && context.lut_size_loc >= 0 && context.lut_loc >= 0 &&
         glGetError() == GL_NO_ERROR;
-    return context.ready;
+    if (!context.ready) {
+        glDeleteProgram(context.program);
+        context.program = 0;
+        return sony2fuji::ErrorCode::ProcessingError;
+    }
+    return sony2fuji::ErrorCode::Success;
 }
 
-GlesContext* getGlesContext() {
+GlesContext* getGlesContext(sony2fuji::ErrorCode& status) {
     static GlesContext context;
-    static std::once_flag once;
-    std::call_once(once, [&]() { context.ready = initContext(context); });
+    status = sony2fuji::ErrorCode::Success;
+    // 调用方持有 gles_mutex。失败不缓存比 TTL 少一套计时状态，下一次调用即可重试；
+    // 释放失败尝试的资源，避免连续失败耗尽 EGL 资源后无法恢复。
+    if (!context.ready) {
+        status = initContext(context);
+        if (status != sony2fuji::ErrorCode::Success) {
+            if (context.context != EGL_NO_CONTEXT) {
+                eglDestroyContext(context.display, context.context);
+            }
+            if (context.surface != EGL_NO_SURFACE) {
+                eglDestroySurface(context.display, context.surface);
+            }
+            context = GlesContext{};
+        }
+    }
     return context.ready ? &context : nullptr;
 }
 
@@ -234,7 +287,7 @@ bool dispatchCompute(
     GLuint lut_texture,
     uint32_t pixel_count,
     int lut_size,
-    sony2fuji::RGB* pixels
+    sony2fuji::RGB* readback
 ) {
     glUseProgram(context.program);
     glUniform1i(context.pixel_count_loc, static_cast<GLint>(pixel_count));
@@ -265,7 +318,7 @@ bool dispatchCompute(
         if (mapped) glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         return false;
     }
-    std::memcpy(pixels, mapped, static_cast<size_t>(bytes));
+    std::memcpy(readback, mapped, static_cast<size_t>(bytes));
     const auto unmapped = glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     return glGetError() == GL_NO_ERROR && unmapped == GL_TRUE;
 }
@@ -274,23 +327,32 @@ bool dispatchCompute(
 
 namespace sony2fuji {
 
-bool applyLutGles(const LUT3D& lut, ImageData& image) {
-    std::lock_guard<std::mutex> lock(gles_mutex);
-    GlesContext* context = getGlesContext();
-    if (!context) {
-        return false;
+ErrorCode applyLutGlesStatus(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    if (completedPixels) {
+        *completedPixels = 0;
     }
-    if (!ensureContextCurrent(*context)) {
-        return false;
+    size_t completed = 0;
+    std::lock_guard<std::mutex> lock(gles_mutex);
+    ErrorCode initStatus = ErrorCode::Success;
+    GlesContext* context = getGlesContext(initStatus);
+    if (!context) {
+        return initStatus == ErrorCode::Success ? ErrorCode::Unsupported : initStatus;
+    }
+    Binding binding(*context);
+    if (!binding.bound) {
+        return ErrorCode::ProcessingError;
     }
     const size_t pixel_count = image.pixels.size();
-    if (pixel_count == 0 || lut.getSize() > context->texture_limit || glGetError() != GL_NO_ERROR) {
-        return false;
+    if (pixel_count == 0 || glGetError() != GL_NO_ERROR) {
+        return ErrorCode::ProcessingError;
+    }
+    if (lut.getSize() > context->texture_limit) {
+        return ErrorCode::Unsupported;
     }
 
     GLuint lut_texture = createLutTexture(lut);
     if (!lut_texture) {
-        return false;
+        return ErrorCode::ProcessingError;
     }
     GLuint ssbo = 0;
     const size_t tile_pixels = std::min(pixel_count, context->tile_pixels);
@@ -301,6 +363,9 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
                  nullptr,
                  GL_DYNAMIC_DRAW);
 
+    // 瓦片只有完整成功（计算 + 读回 + unmap 全部通过）才提交回写；host 侧复用一块
+    // 瓦片大小的回读暂存，失败的瓦片连同之后的尾部留给调用方（Auto 回退只补尾部）。
+    std::vector<sony2fuji::RGB> readback(tile_pixels);
     bool ok = glGetError() == GL_NO_ERROR && ssbo != 0;
     for (size_t offset = 0; ok && offset < pixel_count; offset += tile_pixels) {
         const auto count = static_cast<uint32_t>(std::min(tile_pixels, pixel_count - offset));
@@ -309,12 +374,23 @@ bool applyLutGles(const LUT3D& lut, ImageData& image) {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
             static_cast<GLsizeiptr>(count * sizeof(sony2fuji::RGB)), pixels);
         ok = glGetError() == GL_NO_ERROR &&
-            dispatchCompute(*context, ssbo, lut_texture, count, lut.getSize(), pixels);
+            dispatchCompute(*context, ssbo, lut_texture, count, lut.getSize(), readback.data());
+        if (ok) {
+            std::memcpy(pixels, readback.data(), static_cast<size_t>(count) * sizeof(sony2fuji::RGB));
+            completed = offset + count;
+        }
     }
 
+    if (completedPixels) {
+        *completedPixels = ok ? pixel_count : completed;
+    }
     glDeleteTextures(1, &lut_texture);
     glDeleteBuffers(1, &ssbo);
-    return ok;
+    return ok ? ErrorCode::Success : ErrorCode::ProcessingError;
+}
+
+bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+    return applyLutGlesStatus(lut, image, completedPixels) == ErrorCode::Success;
 }
 
 }

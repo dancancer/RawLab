@@ -4,10 +4,9 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 import kotlin.math.abs
-import kotlin.math.pow
 
 // ============================================================================
-//  ICC 描述文件的读取与识别（只供容器检查使用）
+//  ICC 描述文件的读取与识别（容器结构检查与 iCCP 提取，像素色彩转换交由原生 lcms2）
 // ============================================================================
 
 internal object IccProfiles {
@@ -22,16 +21,15 @@ internal object IccProfiles {
     private const val D50_Z = 0.8249
     private const val D50_TOLERANCE = 0.009
     private val jpegProfileName = "ICC_PROFILE".toByteArray(Charsets.US_ASCII)
+    private val lutTagSignatures = setOf(
+        "A2B0", "A2B1", "A2B2", "B2A0", "B2A1", "B2A2",
+        "D2B0", "D2B1", "D2B2", "D2B3", "B2D0", "B2D1", "B2D2", "B2D3",
+    )
+    private val forwardLutSignatures = setOf("A2B0", "A2B1", "A2B2", "D2B0", "D2B1", "D2B2", "D2B3")
 
     private data class IccTag(val signature: String, val offset: Int, val size: Int)
 
-    private data class TrcDescriptor(
-        val kind: Int,
-        val parameters: List<Int> = emptyList(),
-        val samples: IntArray? = null,
-    )
-
-    fun validatePngChunk(chunk: ByteArray, requireParametric: Boolean = false): Boolean {
+    fun decodePngChunk(chunk: ByteArray): ByteArray? {
         var nameEnd = -1
         for (index in chunk.indices) {
             if (chunk[index] == 0.toByte()) {
@@ -39,17 +37,19 @@ internal object IccProfiles {
                 break
             }
         }
-        if (nameEnd !in 1..79 || nameEnd + 2 >= chunk.size) return false
+        if (nameEnd !in 1..79 || nameEnd + 2 >= chunk.size) return null
         for (index in 0 until nameEnd) {
             val value = chunk[index].toInt() and 0xFF
             if ((value !in 0x20..0x7E && value !in 0xA0..0xFF) ||
                 (value == 0x20 && (index == 0 || index == nameEnd - 1 || chunk[index - 1] == 0x20.toByte()))) {
-                return false
+                return null
             }
         }
-        if (chunk[nameEnd + 1].toInt() and 0xFF != 0) return false
-        return inflateAndValidate(chunk, nameEnd + 2, requireParametric)
+        if (chunk[nameEnd + 1].toInt() and 0xFF != 0) return null
+        return inflateAndValidate(chunk, nameEnd + 2)
     }
+
+    fun validatePngChunk(chunk: ByteArray): Boolean = decodePngChunk(chunk) != null
 
     fun validateJpegChunks(chunks: Map<Int, ByteArray>, total: Int?): Boolean {
         if (total == null || total !in 1..255 || chunks.size != total) return false
@@ -76,8 +76,8 @@ internal object IccProfiles {
         return true
     }
 
-    private fun inflateAndValidate(chunk: ByteArray, compressedOffset: Int, requireParametric: Boolean): Boolean {
-        if (compressedOffset !in 0 until chunk.size) return false
+    private fun inflateAndValidate(chunk: ByteArray, compressedOffset: Int): ByteArray? {
+        if (compressedOffset !in 0 until chunk.size) return null
         val inflater = Inflater()
         return try {
             inflater.setInput(chunk, compressedOffset, chunk.size - compressedOffset)
@@ -86,23 +86,23 @@ internal object IccProfiles {
             while (!inflater.finished()) {
                 val count = inflater.inflate(buffer)
                 if (count > 0) {
-                    if (profile.size() > MAX_PROFILE_BYTES - count) return false
+                    if (profile.size() > MAX_PROFILE_BYTES - count) return null
                     profile.write(buffer, 0, count)
                     continue
                 }
-                if (inflater.needsDictionary() || inflater.needsInput()) return false
-                return false
+                if (inflater.needsDictionary() || inflater.needsInput()) return null
+                return null
             }
-            if (inflater.remaining != 0) return false
-            validateProfile(profile.toByteArray(), requireParametric)
+            if (inflater.remaining != 0) return null
+            profile.toByteArray().takeIf(::validateProfile)
         } catch (_: DataFormatException) {
-            false
+            null
         } finally {
             inflater.end()
         }
     }
 
-    private fun validateProfile(profile: ByteArray, requireParametric: Boolean = false): Boolean {
+    private fun validateProfile(profile: ByteArray): Boolean {
         if (profile.size < 132) return false
         val declaredSize = readU32(profile, 0)
         if (declaredSize < ICC_HEADER_BYTES + TAG_TABLE_HEADER_BYTES ||
@@ -110,8 +110,9 @@ internal object IccProfiles {
         val majorVersion = profile[8].toInt() and 0xFF
         if (majorVersion !in 2..4 || readSignature(profile, 12) !in setOf("mntr", "scnr", "prtr", "spac"))
             return false
+        val pcs = readSignature(profile, 20)
         if (!hasSignature(profile, 36, "acsp") || !hasSignature(profile, 16, "RGB ") ||
-            !hasSignature(profile, 20, "XYZ ") || !isD50(profile)) return false
+            pcs !in setOf("XYZ ", "Lab ") || !isD50(profile)) return false
 
         val tagCount = readU32(profile, 128)
         if (tagCount == 0L || tagCount > MAX_TAGS) return false
@@ -127,17 +128,65 @@ internal object IccProfiles {
             val tag = IccTag(readSignature(profile, entry), offset.toInt(), size.toInt())
             if (tags.put(tag.signature, tag) != null) return false
         }
-        // PNG16 只能使用平台的参数化 RGB 描述，不能忽略 LUT 转换而静默采用备用矩阵。
-        if (requireParametric && tags.keys.any {
-            it in setOf("A2B0", "A2B1", "A2B2", "B2A0", "B2A1", "B2A2",
-                "D2B0", "D2B1", "D2B2", "D2B3", "B2D0", "B2D1", "B2D2", "B2D3")
-        }) return false
-        return validateRgbMatrixAndTrc(profile, tags, requireParametric)
-    }
-
-    private fun validateRgbMatrixAndTrc(profile: ByteArray, tags: Map<String, IccTag>, requireParametric: Boolean): Boolean {
+        tags["cicp"]?.let { cicp ->
+            if (cicp.size < 12 || !hasSignature(profile, cicp.offset, "cicp")) return false
+            val primaries = profile[cicp.offset + 8].toInt() and 0xFF
+            val transfer = profile[cicp.offset + 9].toInt() and 0xFF
+            val matrix = profile[cicp.offset + 10].toInt() and 0xFF
+            val fullRange = profile[cicp.offset + 11].toInt() and 0xFF
+            if (primaries == 9 || transfer in setOf(8, 16, 18) || matrix != 0 || fullRange != 1) return false
+        }
         val mediaWhitePoint = readXyzTag(profile, tags["wtpt"]) ?: return false
         if (mediaWhitePoint.any { it <= 0.0 }) return false
+        for ((signature, tag) in tags) {
+            if (signature in lutTagSignatures && !validLutTag(profile, signature, tag)) return false
+        }
+        if (forwardLutSignatures.any(tags::containsKey)) return true
+        return pcs == "XYZ " && validateRgbMatrixAndTrc(profile, tags)
+    }
+
+    private fun validLutTag(profile: ByteArray, signature: String, tag: IccTag): Boolean {
+        if (hasSignature(profile, tag.offset, "mft1")) {
+            if (tag.size < 48) return false
+            val inCh = profile[tag.offset + 8].toInt() and 0xFF
+            val outCh = profile[tag.offset + 9].toInt() and 0xFF
+            val grid = profile[tag.offset + 10].toInt() and 0xFF
+            if (inCh != 3 || outCh != 3 || grid < 2) return false
+            val clut = grid.toLong() * grid * grid * outCh
+            return 48L + 256L * inCh + clut + 256L * outCh <= tag.size
+        }
+        if (hasSignature(profile, tag.offset, "mft2")) {
+            if (tag.size < 52) return false
+            val inCh = profile[tag.offset + 8].toInt() and 0xFF
+            val outCh = profile[tag.offset + 9].toInt() and 0xFF
+            val grid = profile[tag.offset + 10].toInt() and 0xFF
+            val inEntries = readU16(profile, tag.offset + 48)
+            val outEntries = readU16(profile, tag.offset + 50)
+            if (inCh != 3 || outCh != 3 || grid < 2 || inEntries !in 2..4096 || outEntries !in 2..4096) return false
+            val clut = grid.toLong() * grid * grid * outCh
+            return 52L + 2L * (inCh.toLong() * inEntries + clut + outCh.toLong() * outEntries) <= tag.size
+        }
+        if ((signature.startsWith("A2B") && hasSignature(profile, tag.offset, "mAB ")) ||
+            (signature.startsWith("B2A") && hasSignature(profile, tag.offset, "mBA "))) {
+            if (tag.size < 32) return false
+            val inCh = profile[tag.offset + 8].toInt() and 0xFF
+            val outCh = profile[tag.offset + 9].toInt() and 0xFF
+            if (inCh != 3 || outCh != 3) return false
+            val bCurves = readU32(profile, tag.offset + 12)
+            if (bCurves < 32L || bCurves >= tag.size) return false
+            for (subOffset in intArrayOf(16, 20, 24, 28)) {
+                val off = readU32(profile, tag.offset + subOffset)
+                if (off != 0L && (off < 32L || off >= tag.size)) return false
+            }
+            return true
+        }
+        if (hasSignature(profile, tag.offset, "mpet")) {
+            return tag.size >= 16 && readU16(profile, tag.offset + 8) == 3 && readU16(profile, tag.offset + 10) == 3
+        }
+        return false
+    }
+
+    private fun validateRgbMatrixAndTrc(profile: ByteArray, tags: Map<String, IccTag>): Boolean {
         val red = readXyzTag(profile, tags["rXYZ"]) ?: return false
         val green = readXyzTag(profile, tags["gXYZ"]) ?: return false
         val blue = readXyzTag(profile, tags["bXYZ"]) ?: return false
@@ -147,12 +196,9 @@ internal object IccProfiles {
             green[0] * (red[1] * blue[2] - red[2] * blue[1]) +
             blue[0] * (red[1] * green[2] - red[2] * green[1])
         if (!determinant.isFinite() || determinant <= 1.0e-6) return false
-
-        val redTrc = readTrcTag(profile, tags["rTRC"]) ?: return false
-        val greenTrc = readTrcTag(profile, tags["gTRC"]) ?: return false
-        val blueTrc = readTrcTag(profile, tags["bTRC"]) ?: return false
-        if (requireParametric && listOf(redTrc, greenTrc, blueTrc).any { it.samples != null }) return false
-        return equivalentTrc(redTrc, greenTrc) && equivalentTrc(redTrc, blueTrc)
+        return validTrcTag(profile, tags["rTRC"]) &&
+            validTrcTag(profile, tags["gTRC"]) &&
+            validTrcTag(profile, tags["bTRC"])
     }
 
     private fun readXyzTag(profile: ByteArray, tag: IccTag?): DoubleArray? {
@@ -166,36 +212,15 @@ internal object IccProfiles {
         return result
     }
 
-    private fun readTrcTag(profile: ByteArray, tag: IccTag?): TrcDescriptor? {
-        if (tag == null || tag.size < 12) return null
-        return when {
-            hasSignature(profile, tag.offset, "curv") -> readCurveTag(profile, tag)
-            hasSignature(profile, tag.offset, "para") -> readParametricTag(profile, tag)
-            else -> null
+    private fun validTrcTag(profile: ByteArray, tag: IccTag?): Boolean {
+        if (tag == null || tag.size < 12) return false
+        if (hasSignature(profile, tag.offset, "curv")) {
+            val count = readU32(profile, tag.offset + 8)
+            if (count == 0L) return true
+            if (count > MAX_CURVE_SAMPLES || count > (tag.size - 12L) / 2L) return false
+            return count != 1L || readU16(profile, tag.offset + 12) in 1..0x1000
         }
-    }
-
-    private fun readCurveTag(profile: ByteArray, tag: IccTag): TrcDescriptor? {
-        val count = readU32(profile, tag.offset + 8)
-        if (count == 0L) return TrcDescriptor(kind = 0)
-        if (count > MAX_CURVE_SAMPLES || count > (tag.size - 12L) / 2L) return null
-        if (count == 1L) {
-            val gamma = readU16(profile, tag.offset + 12)
-            if (gamma == 0 || gamma > 0x1000) return null
-            return TrcDescriptor(kind = 1, parameters = listOf(gamma))
-        }
-        val samples = IntArray(count.toInt())
-        var previous = -1
-        for (index in samples.indices) {
-            val sample = readU16(profile, tag.offset + 12 + index * 2)
-            if (sample < previous) return null
-            samples[index] = sample
-            previous = sample
-        }
-        return TrcDescriptor(kind = 2, samples = samples)
-    }
-
-    private fun readParametricTag(profile: ByteArray, tag: IccTag): TrcDescriptor? {
+        if (!hasSignature(profile, tag.offset, "para")) return false
         val functionType = readU16(profile, tag.offset + 8)
         val parameterCount = when (functionType) {
             0 -> 1
@@ -203,56 +228,17 @@ internal object IccProfiles {
             2 -> 4
             3 -> 5
             4 -> 7
-            else -> return null
+            else -> return false
         }
-        if (tag.size < 12L + parameterCount * 4L) return null
-        val parameters = IntArray(parameterCount)
-        for (index in parameters.indices) {
+        if (tag.size < 12L + parameterCount * 4L) return false
+        for (index in 0 until parameterCount) {
             val raw = readS32(profile, tag.offset + 12 + index * 4)
             val value = raw / 65536.0
-            if (raw == Int.MIN_VALUE || !value.isFinite() || abs(value) > 64.0) return null
-            parameters[index] = raw
-        }
-        val values = parameters.map { it / 65536.0 }
-        if (values[0] <= 0.0 || (functionType != 0 && values[1] <= 0.0) ||
-            !validParametricRange(functionType, values)) return null
-        return TrcDescriptor(kind = 3 + functionType, parameters = parameters.toList())
-    }
-
-    private fun validParametricRange(functionType: Int, parameters: List<Double>): Boolean {
-        val gamma = parameters[0]
-        val a = if (functionType == 0) 1.0 else parameters[1]
-        val b = if (functionType == 0) 0.0 else parameters[2]
-        val c = when (functionType) {
-            0, 1 -> 0.0
-            else -> parameters[3]
-        }
-        val d = if (functionType >= 3) parameters[4] else 0.0
-        val e = if (functionType == 4) parameters[5] else 0.0
-        val f = if (functionType == 4) parameters[6] else 0.0
-        if (functionType >= 3 && (d < 0.0 || d > 1.0)) return false
-        var previous = -1.0
-        for (x in doubleArrayOf(0.0, 0.25, 0.5, 0.75, 1.0)) {
-            val value = when (functionType) {
-                0 -> x.pow(gamma)
-                1 -> if (x >= -b / a) (a * x + b).coerceAtLeast(0.0).pow(gamma) else 0.0
-                2 -> if (x >= -b / a) (a * x + b).coerceAtLeast(0.0).pow(gamma) + c else c
-                else -> if (x >= d) (a * x + b).coerceAtLeast(0.0).pow(gamma) + e else c * x + f
-            }
-            if (!value.isFinite() || value < -1.0e-4 || value > 1.0001 || value + 1.0e-9 < previous)
-                return false
-            previous = value
+            if (raw == Int.MIN_VALUE || !value.isFinite() || abs(value) > 64.0) return false
+            if ((index == 0 || (functionType != 0 && index == 1)) && value <= 0.0) return false
+            if (functionType >= 3 && index == 4 && (value < 0.0 || value > 1.0)) return false
         }
         return true
-    }
-
-    private fun equivalentTrc(first: TrcDescriptor, second: TrcDescriptor): Boolean {
-        if (first.kind != second.kind || first.parameters != second.parameters) return false
-        return when {
-            first.samples == null && second.samples == null -> true
-            first.samples == null || second.samples == null -> false
-            else -> first.samples.contentEquals(second.samples)
-        }
     }
 
     private fun isD50(profile: ByteArray): Boolean {

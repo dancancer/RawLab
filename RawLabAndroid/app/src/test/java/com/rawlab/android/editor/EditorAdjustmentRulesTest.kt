@@ -138,8 +138,13 @@ class EditorAdjustmentRulesTest {
     }
 
     @Test fun sixGroupsRetainToolIdsAndTintAliasIsNotVisible() {
-        assertEquals(listOf("looks", "light", "color", "effects", "detail", "geometry"), EditorAdjustmentGroup.entries.map { it.id })
-        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 18, 19, 5, 6), listOf(8, 7, 20, 14, 21), listOf(22, 23, 12, 13), listOf(11, 10), listOf(17, 16))
+        assertEquals(listOf("looks", "light", "color", "effects", "detail", "geometry"),
+            rules.visibleGroups(isHDREditing = false).map { it.id })
+        assertEquals(listOf("looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"),
+            EditorAdjustmentGroup.entries.map { it.id })
+        assertEquals(EditorAdjustmentGroup.entries, rules.visibleGroups(isHDREditing = true))
+        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 18, 19, 5, 6), listOf(8, 7, 20, 14, 21),
+            listOf(22, 23, 12, 13), listOf(11, 10), listOf(17, 16), listOf(24, 25, 26, 27))
         EditorAdjustmentGroup.entries.zip(expected).forEach { (group, tools) ->
             assertEquals(tools, rules.tools(group)); tools.forEach { assertEquals(group, rules.groupFor(it)) }
         }
@@ -272,5 +277,80 @@ class EditorAdjustmentRulesTest {
         assertEquals(.25f, independent.hsl.value(2, 7))
         assertEquals(independent, SettingsCodec.decode(SettingsCodec.encode(independent)))
         assertEquals(old, SettingsCodec.decode(SettingsCodec.encode(old)))
+    }
+
+    @Test fun workspaceOverviewExposesHdrRenditionGroupAndAllResetAndCommitsIsolatedReset() {
+        val photo = com.rawlab.android.photo.ImportedPhoto(
+            android.net.TestUri.value,
+            "hdr.dng",
+            java.io.File("hdr.dng"),
+            identity = PhotoIdentity("hdr-rendition-overview"),
+        )
+        val baseHdr = EditSettings().withHDRMode(true, true)
+        val hdrEdited = baseHdr.copy(
+            hdr = baseHdr.hdr!!.copy(exposure = .4f).withRendition(HDRRenditionSettings(peakLimitEV = 1.8f, sdrExposureEV = -.5f)),
+        )
+        val readyState = EditorState(photo = photo, edits = hdrEdited, exact = true)
+
+        assertNull(
+            EditorWorkspaceResetPresentation.make(
+                state = readyState,
+                toolOpen = false,
+                quickPresetsVisible = true,
+                tool = 24,
+            ),
+        )
+
+        val renditionOverview = EditorWorkspaceResetPresentation.make(
+            state = readyState,
+            toolOpen = false,
+            quickPresetsVisible = false,
+            tool = 24,
+        )
+        assertNotNull(renditionOverview)
+        assertTrue(renditionOverview!!.isEnabled)
+        val renditionMenu = renditionOverview.style as EditorWorkspaceResetStyle.Menu
+        assertEquals(
+            listOf(EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION), EditorResetScope.All),
+            renditionMenu.items.map { it.scope },
+        )
+        assertEquals(listOf("editor-reset-group", "editor-reset-all"), renditionMenu.items.map { it.id })
+        assertTrue(renditionMenu.items[0].isEnabled)
+        assertTrue(renditionMenu.items[1].isEnabled)
+        assertTrue(renditionMenu.items[1].isDestructive)
+
+        val renditionOnlyEdited = baseHdr.copy(
+            hdr = baseHdr.hdr!!.withRendition(HDRRenditionSettings(sdrContrast = 15f)),
+        )
+        val lightOverview = EditorWorkspaceResetPresentation.make(
+            state = readyState.copy(edits = renditionOnlyEdited),
+            toolOpen = false,
+            quickPresetsVisible = false,
+            tool = 2,
+        )!!
+        assertTrue(lightOverview.isEnabled)
+        val lightMenu = lightOverview.style as EditorWorkspaceResetStyle.Menu
+        assertFalse(lightMenu.items[0].isEnabled)
+        assertTrue(lightMenu.items[1].isEnabled)
+
+        val prepared = EditorResetTransaction.prepare(
+            EditorResetScope.Group(EditorAdjustmentGroup.HDR_RENDITION),
+            EditorResetSession(photo.identity, photo.file.absolutePath, 1L, 1L, hdrEdited, null, 0L, readyState.resetContext()),
+        )
+        val ready = prepared.result as EditorResetResult.Ready
+        assertTrue(ready.requiresConfirmation)
+        assertEquals(HDRRenditionSettings(), ready.candidate.hdr!!.renditionSettings)
+        assertEquals(.4f, ready.candidate.hdr!!.exposure, 0f)
+
+        val draftState = readyState.copy(draft = AdjustmentDraft.begin(AdjustmentGroup.HDR_PEAK_LIMIT, hdrEdited))
+        val toolPresentation = EditorWorkspaceResetPresentation.make(
+            state = draftState,
+            toolOpen = true,
+            quickPresetsVisible = false,
+            tool = 24,
+        )!!
+        val toolMenu = toolPresentation.style as EditorWorkspaceResetStyle.Menu
+        assertEquals(listOf(EditorResetScope.Tool(24), EditorResetScope.All), toolMenu.items.map { it.scope })
+        assertTrue(toolMenu.items.all { it.isEnabled })
     }
 }

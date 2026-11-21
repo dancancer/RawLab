@@ -4,35 +4,66 @@
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/lut_parser.h"
 #include "sony2fuji/dcp_look.h"
-#include "sony2fuji/ffi/sony2fuji_c.h"
-#include "core/photo_effects.h"
-#include "core/photo_color.h"
-#include "core/photo_tone_controls.h"
-#include "core/photo_color_grading.h"
-#include "core/photo_tone_curve.h"
+#include "core/render_params.h"
 
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 namespace sony2fuji {
+
+enum class GpuFailureKind : int32_t {
+    None = 0,
+    Unsupported = 1,
+    OutOfMemory = 2,
+    ProcessingError = 3
+};
+
+enum class GpuBackendFault : int32_t {
+    None = 0,
+    GpuDisabled = 1,
+    NoAdapter = 2,
+    Cooldown = 3,
+    DeviceError = 4,
+    FilterError = 5,
+    UnsupportedCapability = 6
+};
+
+struct GpuRenderOutcome {
+    GpuFailureKind failure = GpuFailureKind::None;
+    GpuBackendFault fault = GpuBackendFault::None;
+    std::string message;
+
+    bool succeeded() const noexcept { return failure == GpuFailureKind::None; }
+};
+
+class GpuUnavailableError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class GpuCapabilityLimitError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+GpuRenderOutcome renderPhotoMetalWithOutcome(
+    const ImageData& input,
+    ColorSpace inputSpace,
+    const RenderParams& params,
+    uint32_t targetWidth,
+    uint32_t targetHeight,
+    ImageData& output
+);
 
 bool renderPhotoMetal(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const RenderParams& params,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp = {},
-    const PhotoEffectsOptions& effects = {},
-    int chromaDenoise = 0,
-    bool preserveSourceResolution = false,
-    const HslOptions& hsl = {},
-    const ToneControlsOptions& toneControls = {},
-    const ColorGradingOptions& colorGrading = {},
-    const ToneCurve& customCurve = {}
+    ImageData& output
 );
 
 } // namespace sony2fuji

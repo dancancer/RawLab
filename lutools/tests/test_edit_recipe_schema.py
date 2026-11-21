@@ -19,6 +19,68 @@ except ImportError:  # pragma: no cover - exercised by environments without the 
 
 
 class EditRecipeSchema(unittest.TestCase):
+    def test_channel_curves_and_vignetting_schema_round_trip(self):
+        channel = {"mode": "custom", "points": [[0, 0], [.5, .65], [1, 1]]}
+        for version in (5, 7, 15):
+            with self.subTest(version=version):
+                document = self.hdr_v14() if version == 15 else self.base()
+                document["schema_version"] = version
+                document["processing"] = {"family": "rawlab_hdr" if version == 15 else "rawlab",
+                                          "version": 8 if version == 15 else 1, "quality": "standard"}
+                if version == 7:
+                    document["x3f_mode"] = "normal-v1"
+                curve = {"mode": "legacy", "points": [], "channels": {"red": channel}}
+                document["edits"]["tone"] = {"curve": curve}
+                if version == 15:
+                    document["input"]["camera_development"] = {"lens_vignetting": True, "lens_profile": "camera/lens"}
+                else:
+                    document["edits"]["lens_correction"] = {"vignetting": True}
+                normalized = self.normalize(document)
+                self.assertEqual(normalized["edits"]["tone"]["curve"]["channels"]["red"], channel)
+                self.assertEqual(normalized["edits"]["tone"]["curve"]["channels"]["green"], {"mode": "legacy", "points": []})
+                self.assertEqual(self.normalize(normalized), normalized)
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                if jsonschema:
+                    jsonschema.Draft202012Validator.check_schema(schema)
+                    validator = jsonschema.Draft202012Validator(schema)
+                    validator.validate(document)
+                    validator.validate(normalized)
+                for channels in (None, {"yellow": channel}, {"red": None}, {"red": {**channel, "channels": {}}}):
+                    invalid = copy.deepcopy(document)
+                    invalid["edits"]["tone"]["curve"]["channels"] = channels
+                    self.reject(invalid, "curve")
+                    if jsonschema:
+                        self.assertFalse(validator.is_valid(invalid))
+                if version == 15:
+                    document["schema_version"] = 14
+                    document["processing"]["version"] = 7
+                    self.reject(document, "schema_version 15")
+
+    def test_vignetting_preserves_legacy_shapes_and_raster_rejection(self):
+        for version in (4, 5):
+            document = self.base()
+            document["schema_version"] = version
+            if version == 5:
+                document["processing"] = {"family": "rawlab", "version": 1, "quality": "standard"}
+            self.assertNotIn("vignetting", self.normalize(document)["edits"]["lens_correction"])
+            document["edits"]["lens_correction"] = {"vignetting": True}
+            if jsonschema:
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                jsonschema.Draft202012Validator(schema).validate(self.normalize(document))
+            document["input"]["type"] = "raster"
+            document["edits"]["exposure"]["mode"] = "sensor"
+            self.reject(document, "lens correction")
+            if jsonschema:
+                schema = json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text())
+                self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
+        document = self.hdr_v14()
+        document["input"]["camera_development"] = {"lens_vignetting": True, "lens_profile": "camera/lens"}
+        normalized = self.normalize(document)
+        self.assertTrue(normalized["input"]["camera_development"]["lens_vignetting"])
+        if jsonschema:
+            schema = json.loads((ROOT / "docs/edit-json-v14.schema.json").read_text())
+            jsonschema.Draft202012Validator(schema).validate(normalized)
+
     def hdr_v14(self):
         return {
             "schema_version": 14,
@@ -80,6 +142,28 @@ class EditRecipeSchema(unittest.TestCase):
             document["input"]["type"] = source
             document["input"]["camera_development"] = {}
             self.reject(document, "camera_development")
+
+    def test_v14_v15_lens_profile_multiline_catalog_id(self):
+        catalog = "RawLab\nTest 24mm f/2.8\nRawLab Test\n1.000000"
+        for version, processing in ((14, 7), (15, 8)):
+            with self.subTest(version=version):
+                document = self.hdr_v14()
+                document["schema_version"] = version
+                document["processing"]["version"] = processing
+                document["input"]["camera_development"] = {"lens_distortion": True, "lens_profile": catalog}
+                normalized = self.normalize(document)
+                self.assertEqual(normalized["input"]["camera_development"]["lens_profile"], catalog)
+                if jsonschema:
+                    validator = jsonschema.Draft202012Validator(
+                        json.loads((ROOT / f"docs/edit-json-v{version}.schema.json").read_text()))
+                    validator.validate(document)
+                    validator.validate(normalized)
+                for broken in ("a\rb", "a\u0001b"):
+                    invalid = copy.deepcopy(document)
+                    invalid["input"]["camera_development"]["lens_profile"] = broken
+                    self.reject(invalid, "lens_profile")
+                    if jsonschema:
+                        self.assertFalse(validator.is_valid(invalid))
 
     def test_old_hdr_schemas_reject_v14_extensions(self):
         for version, processing in ((6, 1), (8, 2), (9, 3), (10, 4), (11, 5), (12, 6), (13, 7)):
@@ -394,7 +478,7 @@ class EditRecipeSchema(unittest.TestCase):
         schema = json.loads((ROOT / "docs" / "edit-json-v5.schema.json").read_text())
         document = self.full()
         document["schema_version"] = 5
-        for version in (1, 2):
+        for version in (1, 2, 3):
             document["processing"] = {"family": "rawlab", "version": version, "quality": "standard"}
             normalized = self.normalize(document)
             self.assertEqual(normalized["processing"], document["processing"])
@@ -676,4 +760,10 @@ if __name__ == "__main__":
     parser.add_argument("--cli", type=pathlib.Path, required=True)
     arguments, remaining = parser.parse_known_args()
     CLI = arguments.cli.resolve()
-    unittest.main(argv=[__file__, *remaining])
+    result = unittest.main(argv=[__file__, *remaining], exit=False).result
+    if not result.wasSuccessful():
+        raise SystemExit(1)
+    if jsonschema is None:
+        # 可选依赖只降级 schema-validate 分支（ctest SKIP_RETURN_CODE 77），CLI 规范化测试照常执行完毕。
+        print("SKIP: python jsonschema is not installed; the schema contract branches did not run")
+        raise SystemExit(77)

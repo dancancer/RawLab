@@ -14,6 +14,7 @@ extern "C" {
 #define SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION 5u
 #define SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION 6u
 #define SONY2FUJI_HDR_PROCESSING_LOOK_VERSION 7u
+#define SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION 8u
 
 // 独立枚举；不重解释旧 request v2 的 pixel_format/input_type。
 enum {
@@ -84,7 +85,7 @@ enum {
     SONY2FUJI_HDR_CAMERA_WB_AS_SHOT = 0, SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE = 1,
     SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA = 0, SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR = 1,
     SONY2FUJI_HDR_CAMERA_LENS_DISTORTION = 1, SONY2FUJI_HDR_CAMERA_LENS_TCA = 2,
-    SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP = 4
+    SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP = 4, SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING = 8
 };
 
 // Applies only to the ordinary camera RAW decoder. A zero tail keeps the
@@ -131,6 +132,8 @@ typedef struct sony2fuji_hdr_image_pair_v1 {
     uint64_t decode_revision;
     float source_headroom;
     uint32_t source_headroom_kind;
+    /* Camera RAW decode leaves this zero; its exports use metadata_source_path == NULL.
+       HDR raster and ProRAW decode retain the source content digest for metadata validation. */
     uint8_t source_sha256[32];
     uint64_t owner_token;
     /* 当前几何在原片分辨率上的输出尺寸；忽略预览和导出 long_edge。 */
@@ -200,6 +203,13 @@ typedef struct sony2fuji_hdr_request_v7 {
     char look_sha256[65];
 } sony2fuji_hdr_request_v7;
 
+// Processing version 8; master remains in the v2 base. No session curve state is inherited.
+// Channels map normalized -8..+8 exposure stops after the master luminance curve.
+typedef struct sony2fuji_hdr_request_v8 {
+    sony2fuji_hdr_request_v7 base;
+    sony2fuji_tone_curve_config channels[3]; // red, green, blue
+} sony2fuji_hdr_request_v8;
+
 typedef struct sony2fuji_hdr_look_info_v1 {
     uint32_t version, struct_size, grid_size, reserved;
     float domain_min[3], domain_max[3];
@@ -257,21 +267,40 @@ sony2fuji_status sony2fuji_hdr_probe(const char* path, sony2fuji_hdr_source_info
     sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_probe_look(const char* path, sony2fuji_hdr_look_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// HDR 进度回调：completed ∈ [0, total]（total > 0），仅在同步进入核心 API 的调用方线程触发。
+typedef void (*sony2fuji_hdr_progress_callback)(
+    void* context,
+    uint32_t completed,
+    uint32_t total);
+sony2fuji_status sony2fuji_session_set_hdr_progress_callback(sony2fuji_session* session,
+    sony2fuji_hdr_progress_callback callback, void* context);
+
 sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_decode_options_v1* options,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 允许绑定可选会话以支持解码进度与取消；session 为 NULL 时等价于 sony2fuji_hdr_decode。
+sony2fuji_status sony2fuji_hdr_decode_with_session(sony2fuji_session* session, const char* path,
+    const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Explicit camera RAW development. Probe inspects the header only and does not hash
-// or unpack the file. Decode returns the oriented canvas and the source digest.
+// or unpack the file. Decode returns the oriented canvas with source_sha256 zero.
+// Camera RAW exports require metadata_source_path == NULL; source stamp checks bracket decode.
 // Pass the base of sony2fuji_hdr_camera_source_info_v1 to also get sensor capabilities.
+// The unversioned probe uses the same Legacy canvas as a default session.
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* path, sony2fuji_hdr_source_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// Probe a saved edit's canvas. Processing versions 1 and 2 retain legacy Sony
+// framing; set the same version on the session before decoding.
+sony2fuji_status sony2fuji_hdr_probe_camera_raw_with_processing(const char* path, sony2fuji_processing_version processing,
+    sony2fuji_hdr_source_info_v1* info, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Compile only the D65 camera matrices and model identity. The caller owns the
 // blob and releases it with sony2fuji_release_blob.
 sony2fuji_status sony2fuji_compile_hdr_camera_dcp(const void* data, size_t size_bytes,
     sony2fuji_blob* out_blob, sony2fuji_dcp_error* out_reason);
 sony2fuji_status sony2fuji_hdr_probe_camera_profile(const char* path, sony2fuji_hdr_camera_profile_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
-// PREVIEW requires a positive long edge. An optional session supplies cancellation
-// and the GPU policy. Release the result with sony2fuji_hdr_release_pair.
+// PREVIEW requires a positive long edge. A session supplies the processing version,
+// cancellation and GPU policy. A null session uses Legacy framing for both decode
+// functions below. Release the result with sony2fuji_hdr_release_pair.
 sony2fuji_status sony2fuji_hdr_decode_camera_raw(sony2fuji_session* session, const char* path,
     const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
@@ -301,6 +330,7 @@ sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const c
     const sony2fuji_hdr_decode_options_v1* options, const char* temporary_root,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 完整来源由原生后端分块读取；config 的路径和 SHA 必须对应冻结的原片。
+// source_sha256 全零表示调用方未预冻结：导出在内部单次读取时自采摘要并贯穿发布校验。
 sony2fuji_status sony2fuji_hdr_export_proraw(sony2fuji_session* session, const char* source_path,
     const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
     uint32_t keep_hdr, const char* temporary_root, const char* path,
@@ -323,14 +353,23 @@ sony2fuji_status sony2fuji_hdr_estimate_auto_exposure(const sony2fuji_hdr_image_
     float temperature, float tint, float* exposure_ev, sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_export_jpeg(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_jpeg_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Adaptive HDR HEIF with an 8-bit SDR primary image and ISO gain map.
 // The same export config uses SONY2FUJI_HDR_METADATA_ISO for this container.
 // Apple availability requires a successful in-memory encode and gain-map readback on the current runtime.
 uint32_t sony2fuji_hdr_heif_export_available(void);
 sony2fuji_status sony2fuji_hdr_export_heif(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_heif_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_export_sdr(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_sdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_sdr_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_sdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 跨平台流式 JPEG 导出。keep_hdr=1 为 ISO/XMP HDR JPEG，0 为 sRGB SDR JPEG。
 // config 必须指定冻结的原片路径和 SHA-256；temporary_root 必须是可写现有目录。
 // 先颜色、后几何、再 resize，完整成功后才原子替换单个目标。失败清空 result 并保留旧目标。
@@ -339,6 +378,80 @@ sony2fuji_status sony2fuji_hdr_export_stream(sony2fuji_session* session,
     const sony2fuji_hdr_stream_source_v1* source, const sony2fuji_hdr_request_v1* request,
     const sony2fuji_hdr_export_config_v1* config, uint32_t keep_hdr, const char* temporary_root,
     const char* path, sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+enum { SONY2FUJI_HDR_TILED_HEIF = 1, SONY2FUJI_HDR_TILED_SDR_DNG = 2 };
+// Apple 分块导出：source/stream 均为 NULL 时从冻结的 HDR JPEG/HEIF 原片逐行读取。
+// 非 NULL source 必须是该 source_path 已完整显影的 owned FINAL camera RAW pair，
+// 原始尺寸与画布一致，config.metadata_source_path 必须为 NULL；不改变 RAW 显影算法。
+// 非 NULL stream 复用完整 FINAL 行源契约（如 ProRAW），不得同时提供 source。
+// HEIF 使用 ISO metadata policy；DNG 仅烘焙 SDR，不复制原相机校准/EXIF。
+// 完整源与渲染中间结果使用 temporary_root 下的私有文件；成功只原子发布一个成片。
+sony2fuji_status sony2fuji_hdr_export_tiled(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source, const sony2fuji_hdr_stream_source_v1* stream, const char* source_path,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
+    uint32_t output_format, const char* temporary_root, const char* path,
+    sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+typedef struct sony2fuji_hdr_roi_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+    uint32_t max_output_long_edge;
+    float base_content_headroom;
+    uint32_t source_x0;
+    uint32_t source_y0;
+    uint32_t full_source_width;
+    uint32_t full_source_height;
+} sony2fuji_hdr_roi_v1;
+
+typedef struct sony2fuji_hdr_roi_result_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+    uint32_t is_proxy;
+} sony2fuji_hdr_roi_result_v1;
+
+typedef struct sony2fuji_hdr_roi_source_bounds_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t source_x0;
+    uint32_t source_y0;
+    uint32_t source_x1;
+    uint32_t source_y1;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+    uint32_t output_width;
+    uint32_t output_height;
+} sony2fuji_hdr_roi_source_bounds_v1;
+
+sony2fuji_status sony2fuji_hdr_roi_source_bounds(uint32_t native_width, uint32_t native_height,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_roi_source_bounds_v1* out_bounds, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_roi(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_camera_raw_roi(sony2fuji_session* session, const char* file,
+    const sony2fuji_hdr_camera_development_v1* development, uint32_t use_ai,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_file_roi(sony2fuji_session* session, const char* file,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+void sony2fuji_hdr_clear_session_cache(sony2fuji_session* session);
+
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image);
 
 #ifdef __cplusplus

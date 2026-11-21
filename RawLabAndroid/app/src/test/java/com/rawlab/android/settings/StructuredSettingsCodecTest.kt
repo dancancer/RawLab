@@ -127,11 +127,17 @@ class StructuredSettingsCodecTest {
                 else assertTrue(updated.getProperty(key).startsWith("v2:"))
             }
             val key = updated.stringPropertyNames().single { it.endsWith(".values") && updated.getProperty(it).startsWith("v2:") }
-            updated.setProperty(key, updated.getProperty(key).replaceFirst("v2:", "v3:"))
+            val futureValue = updated.getProperty(key).replaceFirst("v2:", "v3:")
+            updated.setProperty(key, futureValue)
             file.outputStream().use { updated.store(it, null) }
             val protected = file.readBytes()
-            assertThrows(Exception::class.java) { store.save(PhotoIdentity("other"), EditSettings()) }
+            assertThrows(UnusableEditRecordException::class.java) { store.save(identity, EditSettings()) }
             assertArrayEquals(protected, file.readBytes())
+            val other = PhotoIdentity("other")
+            store.save(other, EditSettings(exposure = .25f))
+            assertEquals(.25f, EditStore(directory).readState(other).settings?.exposure)
+            val afterOtherSave = Properties().also { file.inputStream().use(it::load) }
+            assertEquals(futureValue, afterOtherSave.getProperty(key))
         } finally { directory.deleteRecursively() }
     }
 
@@ -186,10 +192,29 @@ class StructuredSettingsCodecTest {
                 Properties().apply { setProperty("record.YQ.values", fields.joinToString(",")) }
                     .also { props -> file.outputStream().use { props.store(it, null) } }
                 val bytes = file.readBytes()
-                assertThrows(Exception::class.java) { EditStore(directory) }
+                val reopened = EditStore(directory)
+                assertThrows(UnusableEditRecordException::class.java) { reopened.load(PhotoIdentity("a")) }
+                assertThrows(UnusableEditRecordException::class.java) { reopened.readState(PhotoIdentity("a")) }
+                assertThrows(UnusableEditRecordException::class.java) { reopened.save(PhotoIdentity("a"), EditSettings()) }
                 assertArrayEquals(bytes, file.readBytes())
             }
         } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun structuredNumericValuesRemainFiniteAndNullableFieldsRoundTrip() {
+        val settings = EditSettings(exposure = .25f, film = "特殊\n\"look\\", recipeID = null)
+        for (format in listOf("photo_edit", "batch_settings")) {
+            val encoded = StructuredSettingsCodec.encode(settings, format)
+            assertEquals(settings, StructuredSettingsCodec.decode(encoded, format))
+            val scientific = encoded.replace("\"exposure\":0.25", "\"exposure\":2.5e-1")
+            assertNotEquals(encoded, scientific)
+            assertEquals(settings, StructuredSettingsCodec.decode(scientific, format))
+            for (number in listOf("1e309", "-1e309", "NaN", "Infinity", "\"0.25\"", "true", "null")) {
+                val invalid = encoded.replace("\"exposure\":0.25", "\"exposure\":$number")
+                assertNotEquals(encoded, invalid)
+                assertThrows(Exception::class.java) { StructuredSettingsCodec.decode(invalid, format) }
+            }
+        }
     }
 
     @Test fun toneBoundsAreCheckedBeforeFloatRounding() {

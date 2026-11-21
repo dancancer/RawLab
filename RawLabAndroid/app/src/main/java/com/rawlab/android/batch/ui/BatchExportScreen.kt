@@ -1,10 +1,14 @@
 package com.rawlab.android.batch.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import com.rawlab.android.editor.controls.formatAdjustment
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -16,8 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -189,8 +191,8 @@ private fun BatchConfirmContent(
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onAlbum, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_from_album)) }
-                OutlinedButton(onClick = onFiles, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_files)) }
+                OutlinedButton(onClick = onAlbum, modifier = Modifier.weight(1f)) { Icon(AppIcons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_from_album)) }
+                OutlinedButton(onClick = onFiles, modifier = Modifier.weight(1f)) { Icon(AppIcons.Outlined.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text(AppStrings.text(R.string.message_select_multiple_files)) }
             }
         }
         item {
@@ -225,7 +227,7 @@ private fun BatchConfirmContent(
                 if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
                     FilterChip(selected = destination == null, onClick = onAlbumOutput, label = { Text(AppStrings.text(R.string.message_photo_gallery)) })
                 }
-                OutlinedButton(onClick = onDirectory) { Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(4.dp)); Text(AppStrings.text(R.string.message_choose_directory)) }
+                OutlinedButton(onClick = onDirectory) { Icon(AppIcons.Outlined.FolderOpen, null); Spacer(Modifier.width(4.dp)); Text(AppStrings.text(R.string.message_choose_directory)) }
             }
             ExportSizeControls(
                 selected = sizeChoice,
@@ -260,11 +262,24 @@ private fun exportSizeChoice(longEdge: Int?): ExportSizeChoice = when (longEdge)
 
 @Composable
 private fun BatchProgressContent(state: BatchExportState, onCancel: () -> Unit) {
+    val context = LocalContext.current
+    val reduceMotion = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    val fraction = state.completionFraction.coerceIn(0f, 1f)
+    val animatedFraction by animateFloatAsState(targetValue = fraction, label = "batchExportProgress")
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
-        LinearProgressIndicator(progress = { state.completionFraction }, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!reduceMotion) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
+            Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
+        }
+        if (!reduceMotion && (state.phase == BatchPhase.PREPARING || (fraction <= 0f && !state.stopping))) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else {
+            LinearProgressIndicator(progress = { if (reduceMotion) fraction else animatedFraction }, modifier = Modifier.fillMaxWidth())
+        }
         Text(AppStrings.format(R.string.message_completed, state.successCount.toString(), state.job.rows.size.toString()))
-        LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row) } }
+        LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row, reduceMotion = reduceMotion) } }
         OutlinedButton(onClick = onCancel, enabled = !state.stopping, modifier = Modifier.fillMaxWidth()) { Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else stringResource(R.string.cancel)) }
     }
 }
@@ -287,7 +302,7 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
                 }
             }
         } }
-        if (state.unfinishedCount > 0 && state.job.settingsMode == BatchSettingsMode.UNIFORM_FROZEN) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
+        if (state.unfinishedCount > 0 && state.job.settingsMode == BatchSettingsMode.UNIFORM_FROZEN) OutlinedButton(onClick = onDirectory, modifier = Modifier.fillMaxWidth()) { Icon(AppIcons.Outlined.FolderOpen, null); Text(AppStrings.text(R.string.message_choose_output_directory_again)) }
         if (state.failedCount > 0) Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
             Text(AppStrings.text(R.string.message_retry_failed_items))
         }
@@ -300,14 +315,18 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
 }
 
 @Composable
-private fun BatchRowLine(row: BatchRow) {
+private fun BatchRowLine(row: BatchRow, reduceMotion: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        val icon = when (row.status) {
-            BatchRowStatus.SUCCESS -> Icons.Outlined.CheckCircle
-            BatchRowStatus.FAILED -> Icons.Outlined.Close
-            else -> Icons.Outlined.Refresh
+        if ((row.status == BatchRowStatus.PROCESSING || row.status == BatchRowStatus.PUBLISHING) && !reduceMotion) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            val icon = when (row.status) {
+                BatchRowStatus.SUCCESS -> Icons.Outlined.CheckCircle
+                BatchRowStatus.FAILED -> Icons.Outlined.Close
+                else -> Icons.Outlined.Refresh
+            }
+            Icon(icon, null, tint = if (row.status == BatchRowStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
-        Icon(icon, null, tint = if (row.status == BatchRowStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(row.target.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -348,12 +367,17 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.highlights * 100))
         SettingLine(AppStrings.text(R.string.message_shadows), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.shadows * 100))
         SettingLine(AppStrings.text(R.string.message_contrast), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.contrast * 100))
-        if (settings.curve.isDefault) {
+        if (settings.curve.mode == com.rawlab.android.settings.ToneCurveMode.LEGACY) {
             SettingLine(AppStrings.text(R.string.message_s_curve), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.toneCurve * 100))
-        } else {
-            SettingLine(stringResource(R.string.curve_title), stringResource(R.string.curve_summary, settings.curve.points.size))
-            settings.curve.points.forEachIndexed { index, point ->
-                SettingLine(stringResource(R.string.curve_point_number, index + 1), String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f → %.2f", point.x, point.y))
+        }
+        com.rawlab.android.settings.ToneCurveChannel.entries.forEach { channel ->
+            val shape = settings.curve.shape(channel)
+            if (shape.mode == com.rawlab.android.settings.ToneCurveMode.CUSTOM) {
+                val name = if (channel == com.rawlab.android.settings.ToneCurveChannel.RGB) "RGB" else channel.name.take(1)
+                SettingLine(name, stringResource(R.string.curve_summary, shape.points.size))
+                shape.points.forEachIndexed { index, point ->
+                    SettingLine(stringResource(R.string.curve_point_number, index + 1), String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f → %.2f", point.x, point.y))
+                }
             }
         }
         SettingLine(AppStrings.text(R.string.black_point), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.blackPoint))
@@ -375,6 +399,7 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.lens_matching), if (settings.lens.manual) AppStrings.text(R.string.lens_manual) else AppStrings.text(R.string.lens_automatic))
         SettingLine(AppStrings.text(R.string.lens_distortion_short), if (settings.lens.distortion) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.lens_tca), if (settings.lens.tca) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
+        SettingLine(AppStrings.text(R.string.lens_vignetting), if (settings.lens.vignetting) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.lens_auto_crop), if (settings.lens.autoCrop) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         Text(AppStrings.text(R.string.geometry), style = MaterialTheme.typography.labelLarge)
         Text(AppStrings.format(R.string.geometry_summary,
@@ -421,7 +446,7 @@ internal fun BatchThumbnail(storage: PhotoStorage, uri: String?, file: java.io.F
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         thumbnail?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-            ?: Icon(Icons.Outlined.PhotoLibrary, null)
+            ?: Icon(AppIcons.Outlined.PhotoLibrary, null)
     }
 }
 

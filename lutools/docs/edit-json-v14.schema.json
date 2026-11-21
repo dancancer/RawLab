@@ -106,7 +106,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 1024,
-                  "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  "pattern": "^[^\\u0000-\\u0009\\u000b-\\u001f\\u007f]+$"
                 },
                 {
                   "type": "null"
@@ -138,6 +138,9 @@
                   "type": "null"
                 }
               ]
+            },
+            "lens_vignetting": {
+              "type": "boolean"
             }
           },
           "allOf": [
@@ -199,6 +202,16 @@
                     ],
                     "properties": {
                       "lens_tca": {
+                        "const": true
+                      }
+                    }
+                  },
+                  {
+                    "required": [
+                      "lens_vignetting"
+                    ],
+                    "properties": {
+                      "lens_vignetting": {
                         "const": true
                       }
                     }

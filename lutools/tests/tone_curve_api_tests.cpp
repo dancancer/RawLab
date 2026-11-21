@@ -3,6 +3,8 @@
 #include "native_gpu_test_support.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -51,7 +53,9 @@ int main(int argc, char** argv) {
         r.tone_curve=0;
         const auto changed=render(s,r);
         require(changed!=pixels,"custom curve reaches rendering");
-        sony2fuji::ToneCurve reference(custom);
+        sony2fuji::ToneCurveConfig coreCustom{sony2fuji::ToneCurveMode::Custom, 4,
+            {{{0,0},{.25,.12},{.75,.88},{1,1}}}};
+        sony2fuji::ToneCurve reference(coreCustom);
         double positions[]{0,.125,.25,.5,.75,.875,1}, samples[7]{};
         require(sony2fuji_sample_tone_curve(&custom,positions,samples,7)==SONY2FUJI_STATUS_OK,"shared curve canvas samples");
         for (int i=0;i<7;++i) require(samples[i]==reference.evaluate(positions[i]),"canvas matches rendered curve");
@@ -73,6 +77,30 @@ int main(int argc, char** argv) {
         require(sony2fuji_session_set_tone_curve(s,&reset)==SONY2FUJI_STATUS_OK,"reset reused session");
         require(render(s,r)==pixels,"next photo clears curve");
         r.tone_curve=.65f;require(render(s,r)==legacy,"return to original legacy pixels");r.tone_curve=0;
+        sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
+            {reset, custom, reset, reset}};
+        require(sony2fuji_session_set_tone_curves(s,&curves)==SONY2FUJI_STATUS_OK,"red channel setter");
+        const auto redOnly=render(s,r);
+        for(size_t i=0;i<pixels.size();++i) {
+            const auto expected=i%3==0 ? std::lround(reference.evaluate(pixels[i]/255.0)*255) : pixels[i];
+            require(std::abs(int(redOnly[i])-int(expected))<=1,"red curve preserves green and blue");
+        }
+        auto badSet=curves;badSet.curves[2].count=1;
+        require(sony2fuji_session_set_tone_curves(s,&badSet)==SONY2FUJI_STATUS_INVALID_ARGUMENT,"invalid channel rejected");
+        require(render(s,r)==redOnly,"invalid set is atomic");
+        curves.curves[0]=custom;curves.curves[2]=custom;curves.curves[3]=custom;
+        require(sony2fuji_session_set_tone_curves(s,&curves)==SONY2FUJI_STATUS_OK,"all channels setter");
+        const auto combined=render(s,r);
+        for(size_t i=0;i<pixels.size();++i)
+            require(std::abs(int(combined[i])-int(std::lround(reference.evaluate(reference.evaluate(pixels[i]/255.0))*255)))<=1,
+                "master precedes independent channels");
+        gpu.mode=SONY2FUJI_GPU_AUTO;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(render(s,r)==combined && sony2fuji_session_get_last_backend(s)==SONY2FUJI_BACKEND_CPU,"channel GPU Auto fallback");
+        gpu.mode=SONY2FUJI_GPU_FORCE;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(sony2fuji_process(s,&r,&buffer)==SONY2FUJI_STATUS_UNSUPPORTED,"channel Force reports unsupported");
+        gpu.mode=SONY2FUJI_GPU_OFF;sony2fuji_session_set_gpu_config(s,&gpu);
+        require(sony2fuji_session_set_tone_curve(s,&reset)==SONY2FUJI_STATUS_OK,"old setter clears all channels");
+        require(render(s,r)==pixels,"old caller cannot inherit channel state");
         require(sony2fuji_session_set_tone_curve(s,&custom)==SONY2FUJI_STATUS_OK,"probe curve");
         sony2fuji_hsl_probe* probe=nullptr;
         require(sony2fuji_session_create_hsl_probe(s,&r,9,10,&probe)==SONY2FUJI_STATUS_OK,"probe captures curve");
@@ -101,7 +129,21 @@ int main(int argc, char** argv) {
         require(sony2fuji_process(s,&scene,&buffer)==SONY2FUJI_STATUS_UNSUPPORTED,"precision-limited Force is honest");
         gpu.mode=SONY2FUJI_GPU_OFF;sony2fuji_session_set_gpu_config(s,&gpu);
         if (argc>1) {
-            r.input_type=SONY2FUJI_INPUT_RAW;r.input_path=argv[1];r.input_pixels=nullptr;r.input_width=r.input_height=0;
+            const char* argRaw=*argv[1] ? argv[1] : nullptr;
+            const char* envRaw=std::getenv("RAWLAB_TEST_RAW");
+            if (envRaw && !*envRaw) envRaw=nullptr;
+            const char* rawPath=argRaw ? argRaw : envRaw;
+            if (!rawPath) {
+                sony2fuji_session_destroy(s);
+                std::cout << "SKIP tone_curve_raw: supply SONY2FUJI_TEST_RAW or RAWLAB_TEST_RAW\n";
+                return 77;
+            }
+            if (!std::filesystem::is_regular_file(std::filesystem::u8path(rawPath))) {
+                sony2fuji_session_destroy(s);
+                std::cerr << "FAIL tone_curve_raw: RAW sample does not exist: " << rawPath << '\n';
+                return 1;
+            }
+            r.input_type=SONY2FUJI_INPUT_RAW;r.input_path=rawPath;r.input_pixels=nullptr;r.input_width=r.input_height=0;
             r.size_mode=SONY2FUJI_SIZE_LIMIT_LONG_EDGE;r.long_edge=192;
             sony2fuji_session_set_tone_curve(s,&reset);const auto before=render(s,r);
             custom.points[1]={.25,.12};custom.points[2]={.75,.88};

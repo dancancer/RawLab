@@ -15,7 +15,10 @@ class VersionedEditPersistenceTest {
         try { block(directory) } finally { directory.deleteRecursively() }
     }
 
-    @Test fun cachedReadsDetectSameSizePreservedTimeOverwriteAndSaveUsesIdentityOnly() = inStore { directory ->
+    // stat 短路上线后的既定契约（票 perf/edit-ledger-cache）：缓存读取信任 (lastModified,length)；
+    // 同长度、mtime 复原的 in-place 外部覆写走快路径返回快照（接受的弱化窗口，Android stat API 仅此两维），
+    // 长度或 mtime 任一变化（含 rename 替换与跨实例保存）仍必须被重读观察到。
+    @Test fun cachedReadsReuseSnapshotForSameSizePreservedTimeOverwriteAndDetectChangedSizeOverwrite() = inStore { directory ->
         val identity = PhotoIdentity("a"); val store = EditStore(directory)
         store.save(identity, EditSettings(exposure = .5f))
         val file = File(directory, "edits.properties")
@@ -24,7 +27,10 @@ class VersionedEditPersistenceTest {
         val replacement = before.replace("0.5", "0.9")
         assertNotEquals(before, replacement)
         file.writeText(replacement); Files.setLastModifiedTime(file.toPath(), modified)
-        assertEquals(.9f, store.readState(identity).settings!!.exposure)
+        assertEquals(.5f, store.readState(identity).settings!!.exposure)
+        val longer = before.replace("0.5", "0.95")
+        file.writeText(longer); Files.setLastModifiedTime(file.toPath(), modified)
+        assertEquals(.95f, store.readState(identity).settings!!.exposure)
         // 外部调整变化不再阻挡普通按身份保存。
         assertEquals(1f, store.save(identity, EditSettings(exposure = 1f)).settings!!.exposure)
     }
@@ -74,12 +80,15 @@ class VersionedEditPersistenceTest {
 
     @Test fun strictReadsNeverUseLastReadableCacheDuringStorageFailure() = inStore { root ->
         val directory = File(root, "store")
+        File(directory.apply { mkdirs() }, "edits.properties").writeText("format.version=1\nrecord.YnJva2Vu.values=broken\n")
         val store = EditStore(directory)
         val identity = PhotoIdentity("a")
+        val broken = PhotoIdentity("broken")
         val saved = store.save(identity, EditSettings(exposure = .5f))
         assertTrue(directory.renameTo(File(root, "backup")))
         directory.writeText("unavailable")
         assertEquals(saved.settings, store.load(identity))
+        assertThrows(UnusableEditRecordException::class.java) { store.load(broken) }
         assertThrows(IOException::class.java) { store.readState(identity) }
         assertThrows(IOException::class.java) { store.save(identity, EditSettings()) }
     }
@@ -88,11 +97,179 @@ class VersionedEditPersistenceTest {
         val store = EditStore(directory)
         val identity = PhotoIdentity("a")
         val file = File(directory, "edits.properties")
-        for (contents in listOf("format.version=999", "record.YQ.values=broken")) {
-            file.writeText(contents)
-            assertThrows(Exception::class.java) { store.readState(identity) }
-            assertThrows(Exception::class.java) { store.save(identity, EditSettings()) }
-            assertEquals(contents, file.readText())
+        file.writeText("format.version=999")
+        assertThrows(IllegalArgumentException::class.java) { store.readState(identity) }
+        assertThrows(IllegalArgumentException::class.java) { store.save(identity, EditSettings()) }
+        assertEquals("format.version=999", file.readText())
+
+        file.writeText("record.YQ.values=broken")
+        assertThrows(UnusableEditRecordException::class.java) { store.readState(identity) }
+        assertThrows(UnusableEditRecordException::class.java) { store.save(identity, EditSettings()) }
+        assertEquals("record.YQ.values=broken", file.readText())
+    }
+
+    @Test fun perRecordIsolationPreservesBrokenEntryVerbatimAndResetToUnmodifiedClearsOnlyTarget() = inStore { directory ->
+        val healthyA = PhotoIdentity("photo-a")
+        val healthyB = PhotoIdentity("photo-b")
+        val brokenProcessing = PhotoIdentity("photo-future-processing")
+        val brokenSubSetting = PhotoIdentity("photo-bad-subsetting")
+        val store = EditStore(directory)
+        val c5 = EditSettings(processing = ProcessingIdentity.C5, exposure = .5f)
+        store.save(healthyA, c5)
+        store.save(healthyB, EditSettings(exposure = -.25f))
+        store.save(brokenProcessing, c5)
+        val quality = ProcessingMigrationQuality(.001f, .002f, .001f, .001f, 80)
+        store.commitProcessingMigration(store.readState(healthyA), EditSettings(exposure = .6f), quality)
+        store.commitProcessingMigration(store.readState(brokenProcessing), EditSettings(exposure = .6f), quality)
+
+        val file = File(directory, "edits.properties")
+        val keyFuture = "record.${java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(brokenProcessing.value.toByteArray())}.values"
+        val keyBadSub = "record.${java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(brokenSubSetting.value.toByteArray())}.values"
+        val rawFutureLine = "$keyFuture=v2:{\"kind\":\"photo_edit\",\"version\":2,\"processing\":{\"engine\":\"rawlab\",\"version\":99,\"profile\":\"standard\"},\"settings\":{}}"
+        val baseV2 = StructuredSettingsCodec.encode(EditSettings(), "photo_edit")
+        val rawBadSubLine = "$keyBadSub=" + baseV2.replace("\"blackPoint\":0", "\"blackPoint\":999")
+        val existingLines = file.readLines().filterNot { it.startsWith("$keyFuture=") }
+        file.writeText((existingLines + rawFutureLine + rawBadSubLine).joinToString("\n", postfix = "\n"))
+
+        val reopened = EditStore(directory)
+        assertEquals(.6f, reopened.readState(healthyA).settings?.exposure)
+        assertEquals(-.25f, reopened.readState(healthyB).settings?.exposure)
+        assertThrows(UnusableEditRecordException::class.java) { reopened.load(brokenProcessing) }
+        assertThrows(UnusableEditRecordException::class.java) { reopened.load(brokenSubSetting) }
+        val unseen = PhotoIdentity("photo-unseen")
+        assertNull(reopened.load(unseen))
+        val batchStates = reopened.readStates(listOf(healthyA, unseen, brokenProcessing, brokenSubSetting))
+        assertEquals(.6f, (batchStates[healthyA] as PhotoEditReadResult.Usable).state.settings?.exposure)
+        assertNull((batchStates[unseen] as PhotoEditReadResult.Usable).state.settings)
+        assertTrue(batchStates[brokenProcessing] is PhotoEditReadResult.Unusable)
+        assertTrue(batchStates[brokenSubSetting] is PhotoEditReadResult.Unusable)
+        assertThrows(UnusableEditRecordException::class.java) { batchStates.getValue(brokenProcessing).getOrThrow() }
+        assertThrows(UnusableEditRecordException::class.java) { batchStates.getValue(brokenSubSetting).getOrThrow() }
+
+        assertThrows(UnusableEditRecordException::class.java) { reopened.readState(brokenProcessing) }
+        assertThrows(UnusableEditRecordException::class.java) { reopened.readState(brokenSubSetting) }
+        assertThrows(UnusableEditRecordException::class.java) { reopened.save(brokenProcessing, EditSettings()) }
+        assertThrows(UnusableEditRecordException::class.java) { reopened.reset(brokenProcessing) }
+
+        // D1/b: Saving another photo preserves both broken entries verbatim on disk.
+        reopened.save(healthyB, EditSettings(exposure = 1.25f))
+        val afterHealthySave = file.readLines()
+        assertTrue(rawFutureLine in afterHealthySave)
+        assertTrue(rawBadSubLine in afterHealthySave)
+        assertEquals(1.25f, EditStore(directory).readState(healthyB).settings?.exposure)
+        assertNotNull(EditStore(directory).processingMigration(healthyA))
+        assertNotNull(EditStore(directory).processingMigration(brokenProcessing))
+
+        // D3/c: resetToUnmodified clears ONLY the target photo's record and migration receipt.
+        val session = com.rawlab.android.adjustments.AdjustmentTransferSession(reopened)
+        val cleared = session.resetToUnmodified(brokenProcessing)
+        assertNull(cleared.settings)
+        assertNull(reopened.readState(brokenProcessing).settings)
+        assertNull(reopened.processingMigration(brokenProcessing))
+        assertNotNull(reopened.processingMigration(healthyA))
+        assertEquals(.6f, reopened.readState(healthyA).settings?.exposure)
+        assertEquals(1.25f, reopened.readState(healthyB).settings?.exposure)
+        assertTrue(rawBadSubLine in file.readLines())
+        assertThrows(UnusableEditRecordException::class.java) { reopened.readState(brokenSubSetting) }
+
+        // Recovered photo can be edited and saved again normally.
+        reopened.save(brokenProcessing, EditSettings(exposure = .35f))
+        assertEquals(.35f, EditStore(directory).readState(brokenProcessing).settings?.exposure)
+    }
+
+    @Test fun futureVersionRemainsFailClosedWhileRootCorruptionQuarantinesAndRecovers() = inStore { directory ->
+        val file = File(directory, "edits.properties")
+        for (future in listOf("format.version=999", "format.version=2\nfuture.key=1")) {
+            file.writeText(future)
+            val bytes = file.readBytes()
+            assertThrows("Expected future version rejection for: $future", IllegalArgumentException::class.java) {
+                EditStore(directory)
+            }
+            assertArrayEquals(bytes, file.readBytes())
+            assertTrue(directory.listFiles()!!.none { ".corrupt-" in it.name })
+        }
+
+        val corruptVariants = listOf(
+            "",
+            "format.version=",
+            "format.version=0",
+            "format.version=-1",
+            "format.version=1.5",
+            "format.version=bad",
+            "=broken",
+            "{\"version\":1}",
+            "corrupt-non-record-line",
+            "record.YQ.values=\\uZZZZ",
+            "record..values=1.0",
+            "record.!!!.values=1.0",
+            "format.version=1\nrecord.YQ.values=broken\nrecord.YQ.values=duplicate",
+        )
+        for (corrupt in corruptVariants) {
+            file.writeText(corrupt)
+            val bytes = file.readBytes()
+            var diagnostics = 0
+            val store = EditStore(directory, { from, to -> com.rawlab.android.io.replaceFileAtomically(from, to) }) { _, _ ->
+                diagnostics += 1
+            }
+            val archivedName = store.lastQuarantinedPath
+            assertNotNull("Expected quarantine for: $corrupt", archivedName)
+            assertTrue(archivedName!!.startsWith("edits.properties.corrupt-"))
+            val archived = File(directory, archivedName)
+            assertTrue(archived.isFile)
+            assertArrayEquals(bytes, archived.readBytes())
+            assertFalse("Active file should be moved away: $corrupt", file.exists())
+            assertEquals(1, diagnostics)
+            assertNull(store.readState(PhotoIdentity("a")).settings)
+            assertNull(store.load(PhotoIdentity("a")))
+            assertEquals(1, diagnostics)
+        }
+
+        val recovered = EditStore(directory)
+        val saved = recovered.save(PhotoIdentity("recovered"), EditSettings(exposure = 0.75f))
+        assertEquals(0.75f, saved.settings?.exposure)
+        assertEquals(0.75f, EditStore(directory).readState(PhotoIdentity("recovered")).settings?.exposure)
+    }
+
+    @Test fun concurrentCorruptReadersQuarantineOnceAndClearStaleCache() = inStore { directory ->
+        val identity = PhotoIdentity("warm")
+        val warmStore = EditStore(directory)
+        warmStore.save(identity, EditSettings(exposure = 1.25f))
+        assertEquals(1.25f, warmStore.load(identity)?.exposure)
+
+        val file = File(directory, "edits.properties")
+        val payload = "corrupt-non-record-line".toByteArray()
+        file.writeBytes(payload)
+
+        // Warm instance clears lastReadableRecords and quarantines once
+        assertNull(warmStore.readState(identity).settings)
+        assertNull(warmStore.load(identity))
+        val firstArchive = warmStore.lastQuarantinedPath
+        assertNotNull(firstArchive)
+        assertArrayEquals(payload, File(directory, firstArchive!!).readBytes())
+
+        // Concurrent readers hitting a new corrupt file quarantine exactly once
+        file.writeBytes(payload)
+        val diagnostics = java.util.concurrent.atomic.AtomicInteger(0)
+        val pool = Executors.newFixedThreadPool(8)
+        val ready = CountDownLatch(8)
+        val go = CountDownLatch(1)
+        try {
+            val jobs = (0 until 8).map {
+                pool.submit {
+                    ready.countDown()
+                    check(go.await(10, TimeUnit.SECONDS))
+                    val store = EditStore(directory, { from, to -> com.rawlab.android.io.replaceFileAtomically(from, to) }) { _, _ ->
+                        diagnostics.incrementAndGet()
+                    }
+                    assertNull(store.readState(identity).settings)
+                }
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS))
+            go.countDown()
+            jobs.forEach { it.get(15, TimeUnit.SECONDS) }
+            assertEquals(1, diagnostics.get())
+        } finally {
+            pool.shutdownNow()
         }
     }
 

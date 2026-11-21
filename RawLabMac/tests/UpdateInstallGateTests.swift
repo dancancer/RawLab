@@ -30,6 +30,8 @@ import Foundation
         check(gate.prepare().isEmpty && other.saveCalls == 2, "Explicit admission saves committed edits and rechecks status")
         other.status.journalFailed = true
         check(gate.prepare().contains("journal"), "Finished worker with unsaved journal still blocks installation")
+        other.status.journalFailed = false; other.status.presetsFailed = true; other.status.looksFailed = true
+        check(gate.prepare() == ["looks", "presets"], "Unreadable preset or look library blocks installation with explicit reasons")
         gate.unregister(other)
         check(gate.blockers().isEmpty, "Closed sessions are removed from the gate")
     }

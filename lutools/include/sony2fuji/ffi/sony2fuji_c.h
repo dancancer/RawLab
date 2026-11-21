@@ -31,6 +31,29 @@ typedef enum sony2fuji_status {
     SONY2FUJI_STATUS_AI_NOT_READY = 8
 } sony2fuji_status;
 
+typedef enum sony2fuji_unsupported_reason {
+    SONY2FUJI_UNSUPPORTED_NONE = 0,
+    SONY2FUJI_UNSUPPORTED_FORCE_GPU = 1
+} sony2fuji_unsupported_reason;
+
+typedef enum sony2fuji_gpu_fallback_reason {
+    SONY2FUJI_GPU_FALLBACK_NONE = 0,
+    SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS = 1,
+    SONY2FUJI_GPU_FALLBACK_ATMOSPHERE = 2,
+    SONY2FUJI_GPU_FALLBACK_CURVES = 3,
+    SONY2FUJI_GPU_FALLBACK_C5_WAVELET = 4,
+    SONY2FUJI_GPU_FALLBACK_DCP_LOOK = 5,
+    SONY2FUJI_GPU_FALLBACK_LUT_CONTRACT = 6,
+    SONY2FUJI_GPU_FALLBACK_GEOMETRY = 7,
+    SONY2FUJI_GPU_FALLBACK_DISPLAY_INPUT = 8,
+    SONY2FUJI_GPU_FALLBACK_GPU_DISABLED = 9,
+    SONY2FUJI_GPU_FALLBACK_NO_ADAPTER = 10,
+    SONY2FUJI_GPU_FALLBACK_COOLDOWN = 11,
+    SONY2FUJI_GPU_FALLBACK_DEVICE_ERROR = 12,
+    SONY2FUJI_GPU_FALLBACK_FILTER_ERROR = 13,
+    SONY2FUJI_GPU_FALLBACK_UNSUPPORTED_CAPABILITY = 14
+} sony2fuji_gpu_fallback_reason;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -147,7 +170,8 @@ typedef enum sony2fuji_raw_exposure_mode {
 
 typedef enum sony2fuji_processing_version {
     SONY2FUJI_PROCESSING_LEGACY = 1,
-    SONY2FUJI_PROCESSING_C5_V2 = 2
+    SONY2FUJI_PROCESSING_C5_V2 = 2,
+    SONY2FUJI_PROCESSING_BASIC_V3 = 3
 } sony2fuji_processing_version;
 
 typedef enum sony2fuji_x3f_mode {
@@ -300,6 +324,13 @@ typedef struct sony2fuji_tone_curve_config {
     sony2fuji_curve_point points[SONY2FUJI_TONE_CURVE_MAX_POINTS];
 } sony2fuji_tone_curve_config;
 
+#define SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION 1u
+typedef struct sony2fuji_tone_curve_set_config {
+    uint32_t version, struct_size;
+    // RGB master, red, green, blue. Each entry must be initialized, including legacy entries.
+    sony2fuji_tone_curve_config curves[4];
+} sony2fuji_tone_curve_set_config;
+
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
     uint32_t version;
@@ -331,6 +362,27 @@ typedef struct sony2fuji_lens_correction_config {
     int32_t auto_crop;
     const char* profile_id; // NULL/empty: automatic; otherwise a catalog ID. Copied by setter.
 } sony2fuji_lens_correction_config;
+
+#define SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION 2u
+typedef struct sony2fuji_lens_correction_config_v2 {
+    sony2fuji_lens_correction_config base; // version 2, struct_size sizeof(v2).
+    int32_t vignetting;
+} sony2fuji_lens_correction_config_v2;
+
+#define SONY2FUJI_LENS_METADATA_VERSION 1u
+typedef struct sony2fuji_lens_metadata {
+    uint32_t version;
+    uint32_t struct_size;
+    const char* camera_make;
+    const char* camera_model;
+    const char* lens_make;
+    const char* lens_model;
+    float focal_length; // Millimeters; 0 means missing.
+    float aperture;     // F-number; 0 means missing.
+    float crop_factor;  // 0 uses the matched camera database entry, never an inferred model family.
+    int32_t embedded_geometry;
+    int32_t source_orientation; // Original EXIF 1..8. Display pixels are already oriented.
+} sony2fuji_lens_metadata;
 
 typedef enum sony2fuji_lens_state {
     SONY2FUJI_LENS_OFF = 0,
@@ -365,6 +417,18 @@ typedef struct sony2fuji_lens_report {
     int32_t applied_tca;
     float crop_scale; // Inscribed zoom; source dimensions/aspect are unchanged.
 } sony2fuji_lens_report;
+
+typedef struct sony2fuji_lens_profile_v2 {
+    sony2fuji_lens_profile base;
+    int32_t has_vignetting;
+} sony2fuji_lens_profile_v2;
+
+// Separate output type preserves the size of the original unversioned report ABI.
+typedef struct sony2fuji_lens_report_v2 {
+    sony2fuji_lens_report base;
+    int32_t has_vignetting;
+    int32_t applied_vignetting;
+} sony2fuji_lens_report_v2;
 // ============================================================================
 // Opaque Session
 // ============================================================================
@@ -375,6 +439,8 @@ typedef struct sony2fuji_session sony2fuji_session;
 int32_t sony2fuji_x3f_available(void);
 // Identifies a source and chooses the renderer for a new edit.
 sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode);
+// Returns 1 when mode is NORMAL and input_path begins with the X3F "FOVb" header, else 0.
+int32_t sony2fuji_is_normal_x3f(const char* input_path, sony2fuji_x3f_mode mode);
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
 // Last normal-X3F error on this session; owned by the session until its next render.
 const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
@@ -441,6 +507,18 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
+// Atomically validates and replaces all session-level edit state from a canonical
+// SDR edit-recipe JSON document (schema_version 1..5 or 7). Omitted edit groups
+// reset to their canonical neutral defaults so prior photo or legacy setter state
+// cannot bleed across renders. Invalid or unsupported payloads leave existing
+// session state intact. Runtime configuration (GPU mode, lens database, display
+// lens metadata, AI denoise, preview proxy hints, cancellation) is preserved.
+sony2fuji_status sony2fuji_apply_params(
+    sony2fuji_session* session,
+    const char* recipe_json
+);
+
+// Legacy compatibility wrapper — frozen in W2-2. New callers must use sony2fuji_apply_params.
 // New sessions use LEGACY. Unsupported versions leave the session unchanged.
 sony2fuji_status sony2fuji_session_set_processing_version(
     sony2fuji_session* session, sony2fuji_processing_version version
@@ -455,6 +533,8 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
+// Inspects a display file for JPEG MPF secondary images (image count > 1 for MPF, 0 for single-image/non-MPF, -1 = error).
+int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 
@@ -462,6 +542,19 @@ sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 sony2fuji_status sony2fuji_session_set_lens_database(sony2fuji_session* session, const char* path);
 sony2fuji_status sony2fuji_session_set_lens_correction(
     sony2fuji_session* session, const sony2fuji_lens_correction_config* config);
+sony2fuji_status sony2fuji_session_set_lens_correction_v2(
+    sony2fuji_session* session, const sony2fuji_lens_correction_config_v2* config);
+sony2fuji_status sony2fuji_session_get_lens_report_v2(sony2fuji_session* session, sony2fuji_lens_report_v2* report);
+sony2fuji_status sony2fuji_session_inspect_lens_v2(sony2fuji_session* session, const char* input_path,
+    sony2fuji_lens_report_v2* report, sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count);
+sony2fuji_status sony2fuji_session_inspect_lens_metadata_v2(sony2fuji_session* session, const sony2fuji_lens_metadata* metadata,
+    sony2fuji_lens_report_v2* report, sony2fuji_lens_profile_v2* profiles, uint32_t capacity, uint32_t* count);
+// Metadata strings are copied. NULL clears display metadata; RAW input never consumes it.
+sony2fuji_status sony2fuji_session_set_display_lens_metadata(
+    sony2fuji_session* session, const sony2fuji_lens_metadata* metadata);
+sony2fuji_status sony2fuji_session_inspect_lens_metadata(
+    sony2fuji_session* session, const sony2fuji_lens_metadata* metadata,
+    sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count);
 // Metadata-only: does not unpack/develop RAW. count returns required capacity; NULL profiles queries size.
 sony2fuji_status sony2fuji_session_inspect_lens(sony2fuji_session* session, const char* input_path,
     sony2fuji_lens_report* report, sony2fuji_lens_profile* profiles, uint32_t capacity, uint32_t* count);
@@ -520,7 +613,49 @@ sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* se
 // Only PREVIEW buffer requests use it; FINAL and file outputs remain exact.
 // Disabled by default; the request layout and existing preview mode are unchanged.
 sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
+
+// Optional normalized region-of-interest rendering in post-geometry native coordinates.
+// Only PREVIEW + BUFFER requests apply this ROI; FINAL, file exports, and HSL probes ignore it.
+typedef struct sony2fuji_viewport_roi {
+    uint32_t struct_size;
+    uint32_t enabled;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+    uint32_t max_output_long_edge;
+} sony2fuji_viewport_roi;
+
+typedef struct sony2fuji_viewport_roi_result {
+    uint32_t struct_size;
+    uint32_t active;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+} sony2fuji_viewport_roi_result;
+
+sony2fuji_status sony2fuji_session_set_viewport_roi(
+    sony2fuji_session* session,
+    const sony2fuji_viewport_roi* roi
+);
+
+sony2fuji_status sony2fuji_session_get_viewport_roi_result(
+    const sony2fuji_session* session,
+    sony2fuji_viewport_roi_result* out_result
+);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
+sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session* session);
+sony2fuji_gpu_fallback_reason sony2fuji_session_get_gpu_fallback_reason(const sony2fuji_session* session);
+// UTF-8 diagnostic detail for the last GPU fallback or Force GPU failure on this session.
+// Valid until the next getter call on the calling thread; always returns a non-null string.
+const char* sony2fuji_session_get_gpu_error(const sony2fuji_session* session);
+// RAW decodes stored into this session's cache, including half-size proxy and exposure-anchor decodes.
+// A render that reuses the decoded cache does not increment it, so repeated previews and the export
+// that follows can be checked for re-decoding.
+uint64_t sony2fuji_session_get_raw_decode_count(const sony2fuji_session* session);
 
 // Exact 256-bin channel-major RGB counts and an optional packed RGBA8 clipping mask.
 // Auto prefers CPU for CPU-resident bytes to avoid upload/readback overhead.
@@ -560,6 +695,12 @@ sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, co
 // Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
 // Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.
 // Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
+// Cancellation: the AI progress callback returning 0 and the session cancellation callback
+// (sony2fuji_session_set_cancellation_callback) are equivalent channels; with progress==nullptr the session
+// callback is the only one. A cancelled prepare returns CANCELLED without publishing the final renderable
+// AI cache (.scenecache/.rgbcache stay unpublished, so process/export still return AI_NOT_READY); the
+// reusable Bayer first-stage .rawcache may remain on disk. Every publish-time check runs in beforePublish,
+// strictly before the rename commit point.
 sony2fuji_status sony2fuji_session_prepare_ai(sony2fuji_session* session, const sony2fuji_request* request,
     sony2fuji_ai_progress_callback progress, void* context);
 // Valid until the next AI operation on this session. Always returns a non-null string.
@@ -655,6 +796,10 @@ sony2fuji_status sony2fuji_session_set_color_grading(
 sony2fuji_status sony2fuji_session_set_tone_curve(
     sony2fuji_session* session, const sony2fuji_tone_curve_config* config
 );
+// Atomically replaces all four curves. The single-curve setter clears R/G/B.
+// Independent channels follow the master and currently require CPU rendering.
+sony2fuji_status sony2fuji_session_set_tone_curves(
+    sony2fuji_session* session, const sony2fuji_tone_curve_set_config* config);
 // Stateless custom-curve samples for editor canvases; same evaluator as render.
 // Custom mode, nonzero count and finite x are required. Invalid input leaves y
 // untouched. x and y may be the same array; no session/render lock is needed.
@@ -689,9 +834,8 @@ sony2fuji_status sony2fuji_session_set_perspective(
 );
 
 // Native canvas from the last successful process, after geometry and before
-// output resizing. Identity records the decoded input dimensions even when
-// its preview is reduced later. Active geometry reports the full-source canvas
-// even when a viewport preview reduced its source.
+// output resizing. Viewport previews and active geometry report the full-source
+// canvas. With viewport preview disabled, identity reports the decoded input size.
 // Successful geometry/perspective setters and every new process clear the size.
 // Failed processes, including output I/O failures, leave the size unavailable.
 // Returns UNSUPPORTED when unset; all errors zero any supplied output pointers.
@@ -722,19 +866,70 @@ sony2fuji_status sony2fuji_session_get_raw_white_balance(
     const sony2fuji_session* session, float* temperature, float* tint
 );
 
+// Effective as-shot RAW white balance rounded half-away-from-zero for UI display
+// (returns fixed 6500/0 for normal X3F; UNSUPPORTED for raster or uncalibrated files).
+sony2fuji_status sony2fuji_session_get_effective_raw_white_balance(
+    const sony2fuji_session* session, float* temperature, float* tint
+);
+
+#define SONY2FUJI_RECIPE_WB_REQUEST_VERSION 1u
+typedef struct sony2fuji_recipe_wb_request {
+    uint32_t version;
+    uint32_t struct_size;
+    const char* input_path;
+    sony2fuji_processing_version processing_version;
+    sony2fuji_x3f_mode x3f_mode;
+    sony2fuji_raw_exposure_mode exposure_mode;
+    int32_t recipe_active;
+    float recipe_strength;
+    int32_t custom_wb;
+    float temperature;
+    float tint;
+} sony2fuji_recipe_wb_request;
+
+#define SONY2FUJI_RECIPE_WB_RESULT_VERSION 1u
+typedef struct sony2fuji_recipe_wb_result {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_wb_mode wb_mode;
+    float temperature;
+    float tint;
+    float camera_temperature;
+    float camera_tint;
+    int32_t camera_calibrated;
+} sony2fuji_recipe_wb_result;
+
+// Resolves recipe white balance for a RAW file, using session file-identity cache and
+// a temporary 32px neutral RAW probe when calibration has not been read yet.
+// Normal X3F files resolve directly to calibrated 6500/0 without probing.
+// Uncalibrated RAW files return SONY2FUJI_STATUS_UNSUPPORTED (with camera_calibrated = 0).
+sony2fuji_status sony2fuji_session_resolve_recipe_wb(
+    sony2fuji_session* session,
+    const sony2fuji_recipe_wb_request* request,
+    sony2fuji_recipe_wb_result* result
+);
+
 sony2fuji_status sony2fuji_session_set_gpu_config(
     sony2fuji_session* session,
     const sony2fuji_gpu_config* config
 );
 
-// Optional cooperative cancellation for sony2fuji_process PREVIEW+BUFFER calls
-// and sony2fuji_session_create_hsl_probe. Compatibility previews are independent.
-// Return nonzero to cancel. Set/clear only on the session's serialized worker;
-// the callback may read an atomic signal updated by another thread. It must not
-// throw, reenter the session, or outlive its context. Null disables cancellation.
-// Legacy file output ignores this callback; streamed HDR export checks it before
-// publishing. Cancelled previews return CANCELLED without
-// publishing a partial output buffer; the session can render another request.
+// Optional cooperative cancellation for sony2fuji_process calls that render into a
+// buffer (preview or final) and for every FINAL call, including file exports.
+// sony2fuji_session_create_hsl_probe always honours it. Compatibility previews are
+// independent. Return nonzero to cancel. Set/clear only on the session's serialized
+// worker; the callback may read an atomic signal updated by another thread. During
+// a single operation, the callback may be invoked concurrently on multiple internal
+// worker threads (for example OpenCV/OpenMP parallel pixel loops or decoder monitor
+// threads), so its implementation must be lock-free or synchronize itself. It must
+// not throw, reenter the session, or outlive its context. Null disables cancellation. Streamed HDR export
+// checks it before publishing. sony2fuji_session_prepare_ai honours it on every tile, source-identity and
+// cache-publish checkpoint even when its AI progress callback is null. A cancelled call returns CANCELLED
+// without publishing partial output: a buffer stays empty, and a FINAL file export
+// keeps the destination byte-identical because every encoder writes a staging file,
+// checks cancellation during encoding and at the pre-publish commit point, and never
+// rolls back or alters status after the atomic replace succeeds. The session can
+// render another request.
 typedef int32_t (*sony2fuji_cancel_callback)(void* context);
 sony2fuji_status sony2fuji_session_set_cancellation_callback(
     sony2fuji_session* session, sony2fuji_cancel_callback callback, void* context);
@@ -743,6 +938,52 @@ sony2fuji_status sony2fuji_process(
     sony2fuji_session* session,
     const sony2fuji_request* request,
     sony2fuji_buffer* out_buffer
+);
+
+#define SONY2FUJI_PROCESSING_MIGRATION_VERSION 1u
+typedef enum sony2fuji_migration_disposition {
+    SONY2FUJI_MIGRATION_UNCHANGED = 0,
+    SONY2FUJI_MIGRATION_ACCEPTED = 1,
+    SONY2FUJI_MIGRATION_REJECTED = 2
+} sony2fuji_migration_disposition;
+
+typedef struct sony2fuji_processing_migration_result {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t source_version;
+    int32_t target_version;
+    int32_t disposition;
+    uint32_t evaluation_count;
+    // Canonical core values, including the core's reversed highlight sign.
+    float exposure_ev;
+    float contrast;
+    float highlights;
+    float shadows;
+    float saturation;
+    float black_point;
+    float white_point;
+    float vibrance;
+    float clarity;
+    float dehaze;
+    // Normalized display-sRGB errors over all full-source pixels (16-bit snapshots).
+    // Worst tile uses native 64x64 regions; detail uses all horizontal/vertical gradients.
+    float rgb_rmse;
+    float p99_error;
+    float worst_tile_rmse;
+    float detail_rmse;
+} sony2fuji_processing_migration_result;
+
+// Fits supported v1/v2 SDR edits to v3 in a private session. No source/session/file
+// is changed and no output file is created. All configured edits and the request's
+// input/look are retained; only the ten result scalars are fitted. ACCEPTED requires
+// full-source validation after the bounded proxy search. Failure or REJECTED must
+// retain the saved source identity/settings. AI sessions and Force are unsupported.
+// The session cancellation callback applies throughout this operation, including
+// validation. The caller keeps input/look bytes stable and commits with its own CAS.
+sony2fuji_status sony2fuji_session_migrate_processing(
+    const sony2fuji_session* session,
+    const sony2fuji_request* request,
+    sony2fuji_processing_migration_result* result
 );
 
 sony2fuji_status sony2fuji_compute_histogram(

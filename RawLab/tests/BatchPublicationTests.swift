@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import Photos
 import CoreGraphics
@@ -70,7 +71,7 @@ struct BatchPublicationTests {
                     "Batch model receives both raster and RAW targets")
         let preview = try await BatchExportModel(job: BatchExportJob(source: source, targets: targets),
                                                   journalStore: journal).preview(target: rasterTarget)
-        try require(preview.cgImage != nil, "Batch model previews a strict-loaded raster target")
+        try require(preview.image.cgImage != nil, "Batch model previews a strict-loaded raster target")
 
         let jpegDirectory = root.appendingPathComponent("jpeg-output", isDirectory: true)
         try FileManager.default.createDirectory(at: jpegDirectory, withIntermediateDirectories: true)

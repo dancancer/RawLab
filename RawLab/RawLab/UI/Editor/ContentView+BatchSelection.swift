@@ -1,87 +1,80 @@
+import RawLabKit
 import SwiftUI
-
-enum IOSCollectionNavigation { case edit(String), returnToCollection }
 
 extension ContentView {
     func openBatchSelection() {
-        cancelHSLTarget()
-        if let photo = viewModel.currentAdjustmentPhoto { viewModel.batchSelection.append(photo) }
-        showingBatchSelection = true
+        coordinator.openBatchSelection()
     }
 
     func finishBatchSelection() {
-        if collectionBatchHandoff.promote(sceneIsActive: scenePhase == .active, configure: { model in
+        if coordinator.collectionBatchHandoff.promote(as: BatchExportModel.self, sceneIsActive: scenePhase == .active, configure: { model in
             batchModel = model
+            testHooks.onBatchModelCreated?(model)
             model.onUsage = { UsageAnalytics.shared.record($0) }
             model.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
-        }) != nil {
+        }, start: { $0.start() }) != nil {
             showingBatchExport = true
-        } else if let id = queuedCollectionEdit {
-            queuedCollectionEdit = nil
+        } else if let id = coordinator.queuedCollectionEdit {
+            coordinator.queuedCollectionEdit = nil
             requestCollectionNavigation(.edit(id))
-        } else if queuedCollectionExistingBatch {
-            queuedCollectionExistingBatch = false
+        } else if coordinator.queuedCollectionExistingBatch {
+            coordinator.queuedCollectionExistingBatch = false
             showingBatchExport = true
         }
     }
 
     func requestCollectionNavigation(_ action: IOSCollectionNavigation) {
-        guard !editorBusy else { return }
-        cancelSliderInteraction()
-        pendingCollectionNavigation = action
-        if isEditorDraftChanged { draftExitPresented = true; return }
-        if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
-        continueCollectionNavigation()
+        coordinator.requestCollectionNavigation(action, onEdit: { openCollectionPhotoByID($0) })
     }
 
     func continueCollectionNavigation() {
-        guard let action = pendingCollectionNavigation, viewModel.saveCurrentSettings(settings) else { return }
-        pendingCollectionNavigation = nil
-        switch action {
-        case .returnToCollection:
-            viewModel.batchSelection.selection.returnToCollection()
-            showingBatchSelection = true
-        case .edit(let id):
-            guard let stored = viewModel.batchSelection.photos[id] else { return }
-            do {
-                try stored.validate()
-                guard let file = stored.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
-                if viewModel.sourceIdentity?.key == id {
-                    _ = viewModel.batchSelection.selection.beginEditing(id)
-                    return
-                }
-                isImporting = true
-                file.withReadAccess { url in
-                    viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity,
-                                          diagnosticContext: ["entryPoint": "batchSelection"], onSettingsRestored: { restored in
+        coordinator.continueCollectionNavigation(onEdit: { openCollectionPhotoByID($0) })
+    }
+
+    private func openCollectionPhotoByID(_ id: String) {
+        guard let stored = viewModel.batchSelection.photos[id] else { return }
+        coordinator.isImporting = true
+        Task { await openCollectionPhoto(stored) }
+    }
+
+    @MainActor
+    private func openCollectionPhoto(_ stored: IOSCollectionPhoto) async {
+        do {
+            try stored.validate()
+            guard let file = stored.photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+            let resolved = try await resolveLegacyAssetEdit(for: stored.photo.identity)
+            try Task.checkCancellation()
+            if resolved { try stored.validate() }
+            if !resolved, viewModel.sourceIdentity == stored.photo.identity {
+                _ = viewModel.batchSelection.selection.beginEditing(stored.id)
+                coordinator.isImporting = false
+                return
+            }
+            file.withReadAccess { url in
+                viewModel.importImage(from: stored.photo.isRaw ? .raw(url) : .raster(url), identity: stored.photo.identity,
+                    retainedInput: file, diagnosticContext: ["entryPoint": "batchSelection"], onSettingsRestored: { restored in
                         settings = restored
                         viewModel.sourceDisplayName = stored.photo.displayName
-                        _ = viewModel.batchSelection.selection.beginEditing(id)
+                        _ = viewModel.batchSelection.selection.beginEditing(stored.id)
                     })
-                }
-            } catch {
-                viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
-                                      context: ["entryPoint": "batchSelection"])
             }
+        } catch is CancellationError {
+            coordinator.isImporting = false
+        } catch {
+            coordinator.isImporting = false
+            viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
+                                  context: ["entryPoint": "batchSelection"])
         }
     }
 
     func resolveCollectionDraft(_ key: String, apply: Bool) -> Bool {
         guard viewModel.sourceIdentity?.key == key, !editorBusy else { return false }
         if apply {
-            if viewModel.adjustmentInteraction != nil {
-                guard viewModel.endAdjustmentInteraction(settings: settings) else { return false }
-                isAdjustingSlider = false
-            }
-            if isEditorDraftChanged && !commitEditorDraft() { return false }
-            if isEditorDraftActive { activateEditorTool(.adjustment(.exposure)) }
-            viewModel.hasAdjustmentDraft = false
-            return viewModel.saveCurrentSettings(settings)
+            return coordinator.resolveCollectionDraft(key, apply: true)
         }
         cancelSliderInteraction()
         discardEditorDraft()
-        activateEditorTool(.adjustment(.exposure))
-        viewModel.hasAdjustmentDraft = false
+        finishEditorTool()
         do {
             let restored = try viewModel.restoreCommittedSettings()
             settings = restored

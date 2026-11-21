@@ -29,7 +29,9 @@ int main(int argc, char** argv) {
         RAWProcessOptions options;
         fileReads = 0;
         const auto initialKey = session.renderKey(source.string(), options);
-        require(fileReads == validationReads + 1, "model content read outside package validation");
+        // 进程级包缓存后，session 构造不再整包重哈希：本步只允许 1 次源文件内容读取（源标识）。
+        // 撤掉缓存时此处回升为 validationReads+1，必红。
+        require(validationReads > 1 && fileReads == 1, "session preparation must reuse the validated package");
         fileReads = 0;
         require(session.renderKey(source.string(), options) == initialKey && fileReads == 0,
             "render cache hit reread model or source content");
@@ -42,8 +44,10 @@ int main(int argc, char** argv) {
                 values, 3, {}, "test-gpu");
         };
         storeResult();
+        require(session.residentBytes() == 0, "fresh AISession had resident bytes before result()");
         const auto& loaded = session.result(source.string(), options, nullptr);
-        require(loaded.isSceneRGB(), "complete GPU result was not loaded");
+        require(loaded.isSceneRGB() && session.residentBytes() == 3 * sizeof(float),
+                "complete GPU result was not loaded or residentBytes mismatch");
         session.beginOperation("preview");
         require(session.result(source.string(), options, nullptr).isSceneRGB(), "reused preview lost its prepared result");
         session.beginOperation("export");
@@ -57,7 +61,8 @@ int main(int argc, char** argv) {
                 "reused export failure lost its operation or model context");
         session.enabled = false;
         session.configure(argv[1], argv[2], Backend::CoreML);
-        require(loaded.scene.values.empty() && loaded.bayer.normalizedMosaic.empty(), "disabled AI retained full result memory");
+        require(loaded.scene.values.empty() && loaded.bayer.normalizedMosaic.empty() && session.residentBytes() == 0,
+                "disabled AI retained full result memory");
         session.enabled = true;
         runtime = "test-gpu-runtime-b";
         storeResult();
@@ -67,8 +72,15 @@ int main(int argc, char** argv) {
         const auto raw = rawCacheKey(changedSource.string(), sha256Bytes(identity.data(), identity.size()), int(Backend::CoreML));
         const float result[] = {.3f, .2f, .1f};
         DenoiseCache(argv[2]).store(sceneRGBCacheKey(raw, options), CacheKind::SceneRGB, 1, 1, result, 3, {}, "test-gpu");
+        {
+            const auto taken = session.takeResult(changedSource.string(), options, nullptr);
+            require(taken.isSceneRGB() && taken.scene.values[0] == .3f && session.residentBytes() == 0,
+                    "takeResult did not load SceneRGB without retaining session residency");
+        }
         require(session.result(changedSource.string(), options, nullptr).scene.values[0] == .3f,
             "render session did not refresh changed GPU runtime identity on miss");
+        session.releaseResult();
+        require(session.residentBytes() == 0, "releaseResult did not drop resident AI result");
         session.beginOperation("export");
         session.recordFailure(6,"Cannot write output: disk full");
         require(nlohmann::json::parse(session.diagnosticsJSON()).value("runtime_identity",std::string()) == runtime,

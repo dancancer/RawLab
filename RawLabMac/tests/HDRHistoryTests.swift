@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import ImageIO
 
@@ -29,7 +30,7 @@ import ImageIO
                 missing.hdr?.lookSettings = HDRLookSettings(sha256: String(repeating: "e", count: 64), name: "Missing look", strength: 1)
             }
             _ = try model.requireAdjustmentSession()
-            try model.editStore!.save(recoveryInput, state: PhotoEditState(settings: missing, filmID: ""))
+            try model.editStore!.save(recoveryInput, state: MacPhotoEditState(settings: missing, filmID: ""))
             model.open(recoveryInput)
             wait("Missing HDR resource blocked opening") { !model.importing && !model.busy }
             check(model.file == recoveryInput && model.result != nil && model.settings.hdr == missing.hdr && !model.canExport,
@@ -69,7 +70,7 @@ import ImageIO
         CGImageDestinationAddImage(destination,model.result!.image,nil)
         check(CGImageDestinationFinalize(destination),"SDR replacement fixture could not be written")
         var invalid=Adjustments(); invalid.hdr=HDRSettings()
-        try model.editStore!.save(sdr,state:PhotoEditState(settings:invalid,filmID:""))
+        try model.editStore!.save(sdr,state:MacPhotoEditState(settings:invalid,filmID:""))
         model.open(sdr)
         check(model.file==input && model.sourceIsHDR,"an HDR record on a non-HDR file replaced the current canvas before decode failed")
         let next=root.appendingPathComponent("next.jpg")
@@ -115,5 +116,29 @@ import ImageIO
         check(saved.state?.settings.hdr?.cameraDevelopmentSettings.fbddLevel == 2 &&
               saved.state?.settings.hdr?.processingVersion == 1, "Camera paste did not persist the FBDD edit at rendering version 1")
         print("PASS Mac camera HDR clipboard, Bayer native preflight, incompatible target blocking and persisted FBDD")
+
+        let hslInput = root.appendingPathComponent("hsl-target.jpg")
+        try FileManager.default.copyItem(at: input, to: hslInput)
+        let hslModel = EditorModel(lookDirectory: root.appendingPathComponent("hsl-looks"),
+            editDirectory: root.appendingPathComponent("hsl-edits"), batchDirectory: root.appendingPathComponent("hsl-batch"))
+        hslModel.open(hslInput)
+        wait("HDR target source did not open") { !hslModel.importing && !hslModel.busy && hslModel.result != nil }
+        check(hslModel.settings.isHDREditing && hslModel.referenceSource(hslInput).hdrFingerprint != nil,
+              "the gain-map fixture has no HDR fingerprint")
+        hslModel.schedule(forceExact: true)
+        wait("HDR target preview was not accepted") { !hslModel.busy && !hslModel.previewOutdated && hslModel.hslAcceptedRequest != nil }
+        hslModel.selectAdjustmentTool(.hsl); hslModel.hslTargetEnabled = true
+        hslModel.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        check(hslModel.hslTargetNotice != .stale && hslModel.hslTargetInteraction.isWaiting,
+              "an accepted gain-map preview was reported as changed before target sampling")
+        wait("HDR target sampling did not finish") { !hslModel.hslTargetInteraction.isWaiting }
+        check(hslModel.hslTargetNotice != .stale, "HDR target sampling reported a changed preview")
+        hslModel.endHSLTarget()
+        wait("HDR target edit did not render") { !hslModel.busy && !hslModel.previewOutdated && hslModel.hslAcceptedSettings == hslModel.settings }
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: hslInput.path)
+        hslModel.beginHSLTarget(CGPoint(x: 0.5, y: 0.5))
+        check(hslModel.hslTargetNotice == .stale && !hslModel.hslTargetInteraction.isWaiting,
+              "a rewritten gain-map source did not report a changed preview")
+        print("PASS Mac HDR gain-map target sampling uses the HDR source identity")
     }
 }

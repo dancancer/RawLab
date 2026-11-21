@@ -98,14 +98,14 @@ public partial class MainWindow
 
         Task<(string Path,string Name,bool AppearanceUnverified,int CompatibilityMode)> ImportOne(string path,LUTCompatibility? compatibility,DcpImportOptions? dcpOptions=null) => Task.Run(()=>{
             var suffix=Path.GetExtension(path).ToLowerInvariant();
-            if(compatibility!=null || dcpOptions!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && PInvokeNative.InspectLutColor(path) is 4 or 7 or 8)
+            if(compatibility!=null || dcpOptions!=null || suffix is ".dcp" or ".vlt" || suffix==".cube" && Native.InspectLutColor(path) is 4 or 7 or 8)
             {
                 if(library==null) throw libraryLoadError ?? new LookLibraryException(LookLibraryError.InvalidRegistry);
                 var imported=library.ImportLook(path,compatibility,dcpOptions);
                 return (imported.Path,imported.Name,imported.AppearanceUnverified,imported.CompatibilityMode);
             }
             _=LookLibrary.ValidateExternal(path);
-            if(input is not null) { using var validator=new RenderEngine(0);validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true); }
+            if(input is not null) { using var validator=CreateRenderEngine(0);validator.Render(input,new Adjustments(),path,64,statistics:false,clipping:false,viewportPreview:true); }
             return (path,library?.DisplayName(path,Path.GetFileNameWithoutExtension(path)) ?? Path.GetFileNameWithoutExtension(path),false,0);
         });
     }
@@ -123,6 +123,16 @@ public partial class MainWindow
             await Task.Run(()=>lookLibrary.RenamePath(path,newName));
             for(var index=0;index<films.Count;index++)
                 if(StringComparer.OrdinalIgnoreCase.Equals(films[index].Path,path))films[index]=films[index] with { Name=lookLibrary.DisplayName(path,newName) };
+            BuildFilms();
+        } catch(Exception error){Report(error);}
+        finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();}
+    }
+    private async void RemoveUnreadableLook(UnreadableLook bad)
+    {
+        if(exporting || foregroundBusy || transform.Active || lookLibrary==null)return;
+        foregroundBusy=true;RefreshControls();
+        try {
+            await Task.Run(()=>lookLibrary.RemoveUnreadable(bad));
             BuildFilms();
         } catch(Exception error){Report(error);}
         finally{foregroundBusy=false;RefreshControls();if(closing)FinishClose();}
@@ -312,34 +322,45 @@ public partial class MainWindow
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         { SetStatus(() => Loc.Format("无法读取目录：{0}", error.Message), true); }
     }
-    private void LibraryDragOver(object sender,DragEventArgs e)
+    internal DragDropEffects HandleLibraryDragOver(IDataObject data, DragDropEffects allowedEffects)
     {
-        e.Handled=true;e.Effects=DragDropEffects.None;
-        if(exporting || closing)return;
-        if(e.Data.GetDataPresent(DataFormats.FileDrop,false))
-            e.Effects=e.AllowedEffects & DragDropEffects.Copy;
+        if(exporting || closing)return DragDropEffects.None;
+        return data.GetDataPresent(DataFormats.FileDrop,false) ? allowedEffects & DragDropEffects.Copy : DragDropEffects.None;
     }
-    private void LibraryDropped(object sender,DragEventArgs e)
+    internal DragDropEffects HandleLibraryDrop(IDataObject data, DragDropEffects allowedEffects)
     {
-        e.Handled=true;e.Effects=DragDropEffects.None;
-        if(UpdateInstallationActive || exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
+        if(UpdateInstallationActive || exporting || closing || (allowedEffects & DragDropEffects.Copy)==0 || data.GetData(DataFormats.FileDrop) is not string[] paths)return DragDropEffects.None;
         var folders=paths.Where(Directory.Exists).ToArray();
         if(folders.Length>0)
         {
-            try{foreach(var folder in folders)library.Add(folder);e.Effects=DragDropEffects.Copy;}
-            catch(Exception error){Report(error);}
+            try{foreach(var folder in folders)library.Add(folder);return DragDropEffects.Copy;}
+            catch(Exception error){Report(error);return DragDropEffects.None;}
         }
-        else if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw)
+        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw)
         {
-            OpenFile(raw);e.Effects=DragDropEffects.Copy;
+            OpenFile(raw);return DragDropEffects.Copy;
         }
+        return DragDropEffects.None;
+    }
+    internal DragDropEffects HandleFilesDrop(IDataObject data, DragDropEffects allowedEffects)
+    {
+        if(UpdateInstallationActive || exporting || closing || (allowedEffects & DragDropEffects.Copy)==0 || data.GetData(DataFormats.FileDrop) is not string[] paths)return DragDropEffects.None;
+        var effects=DragDropEffects.None;
+        var folders=paths.Where(Directory.Exists).ToArray();
+        try{foreach(var path in folders)library.Add(path);if(folders.Length>0)effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
+        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw){OpenFile(raw);effects=DragDropEffects.Copy;}
+        return effects;
+    }
+    private void LibraryDragOver(object sender,DragEventArgs e)
+    {
+        e.Handled=true;e.Effects=HandleLibraryDragOver(e.Data,e.AllowedEffects);
+    }
+    private void LibraryDropped(object sender,DragEventArgs e)
+    {
+        e.Handled=true;e.Effects=HandleLibraryDrop(e.Data,e.AllowedEffects);
     }
     private void FilesDropped(object sender,DragEventArgs e)
     {
-        e.Handled=true;e.Effects=DragDropEffects.None;
-        if(UpdateInstallationActive || exporting || closing || (e.AllowedEffects & DragDropEffects.Copy)==0 || e.Data.GetData(DataFormats.FileDrop) is not string[] paths)return;
-        var folders=paths.Where(Directory.Exists).ToArray();
-        try{foreach(var path in folders)library.Add(path);if(folders.Length>0)e.Effects=DragDropEffects.Copy;}catch(Exception ex){Report(ex);}
-        if(paths.FirstOrDefault(path=>File.Exists(path) && LibraryEntry.IsImage(path)) is {} raw){OpenFile(raw);e.Effects=DragDropEffects.Copy;}
+        e.Handled=true;e.Effects=HandleFilesDrop(e.Data,e.AllowedEffects);
     }
 }

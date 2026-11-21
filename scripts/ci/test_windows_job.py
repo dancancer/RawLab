@@ -38,19 +38,17 @@ class WindowsJobEnvironmentTests(unittest.TestCase):
                 "EXISTING": "kept", "DOTNET_INSTALL_DIR": directory + "\\rawlab-ci\\dotnet",
                 "RAWLAB_LENS_SOURCE_CACHE": directory + "\\rawlab-ci\\cache\\lens-sources",
                 "RAWLAB_AI_SHARED_CACHE": directory + "\\rawlab-ci\\cache",
+                "RAWLAB_SOURCE_ARCHIVE_CACHE": directory + "\\rawlab-ci\\cache\\rawlab-deps",
+                "RAWLAB_HDR_SOURCE_CACHE": directory + "\\rawlab-ci\\cache",
                 "JOBS": "4", "CMAKE_BUILD_PARALLEL_LEVEL": "4", "CL_MPCount": "4",
             })
 
-    def test_dedicated_jobs_preserve_the_data_volume_and_existing_limits(self):
+    def test_self_hosted_environment_is_rejected_without_changing_the_job(self):
         with tempfile.TemporaryDirectory() as directory:
             result, values = self.configure("self-hosted", Path(directory))
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(values, {
-                "EXISTING": "kept", "DOTNET_INSTALL_DIR": "E:\\RawLabCI\\dotnet",
-                "RAWLAB_LENS_SOURCE_CACHE": "E:\\RawLabCI\\cache\\lens-sources",
-                "RAWLAB_AI_SHARED_CACHE": "E:\\RawLabCI\\cache",
-                "JOBS": "16", "CMAKE_BUILD_PARALLEL_LEVEL": "16", "CL_MPCount": "24",
-            })
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Unknown Windows runner environment.", result.stderr)
+            self.assertEqual(values, {"EXISTING": "kept"})
 
     def test_unknown_runner_environment_fails_without_changing_the_job(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/lut_parser.h"
 #include "sony2fuji/lut_applicator.h"
 #include <chrono>
@@ -11,10 +12,7 @@
 using namespace sony2fuji;
 using nlohmann::json;
 namespace {
-int failures = 0;
-void check(bool value, const std::string& label) {
-    if (!value) { ++failures; std::cerr << "FAIL " << label << '\n'; }
-}
+using rawlab::test::check;
 json contract() {
     return {{"version", 1},
         {"input", {{"space", "vlog-vgamut"}, {"reference", "scene"}, {"range", "full"}}},
@@ -132,6 +130,6 @@ int main() {
         }
     }
     std::filesystem::remove_all(directory);
-    std::cout << "LUT contract failures: " << failures << '\n';
-    return failures ? 1 : 0;
+    std::cout << "LUT contract failures: " << rawlab::test::failureCount() << '\n';
+    return rawlab::test::exitCode();
 }

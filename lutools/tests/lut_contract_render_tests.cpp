@@ -1,4 +1,7 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "sony2fuji/gpu/lut_gpu.h"
+#include "sony2fuji/lut_parser.h"
 #include "core/photo_rendering.h"
 #include "nlohmann/json.hpp"
 #include <array>
@@ -10,8 +13,7 @@
 #include <vector>
 using nlohmann::json;
 namespace {
-int failures=0;
-void check(bool value,const char* label) { if (!value) { ++failures; std::cerr<<"FAIL "<<label<<'\n'; } }
+using rawlab::test::check;
 json contract(std::string input, std::string output="srgb", std::string reference="scene", std::string base="none") {
     return {{"version",1},{"input",{{"space",input},{"reference",reference},{"range","full"}}},
         {"output",{{"space",output},{"reference",output=="linear-srgb"?"scene":"display"},{"range","full"}}},
@@ -53,8 +55,19 @@ int main() {
     sony2fuji_session* session=nullptr;sony2fuji_session_create(&session);
     const auto neutral=render(session,r,SONY2FUJI_GPU_OFF);
     r.lut_path=filename.c_str();r.lut_strength=1;
+    std::filesystem::file_time_type linearStamp;
+    uintmax_t linearSize = 0;
     for (const auto* name : {"linear-srgb","vlog-vgamut","slog3-sgamut3","slog3-sgamut3-cine"}) {
-        write(path,contract(name));auto actual=render(session,r,SONY2FUJI_GPU_OFF);
+        write(path,contract(name));
+        if (std::string(name) == "linear-srgb") {
+            linearStamp = std::filesystem::last_write_time(path);
+            linearSize = std::filesystem::file_size(path);
+        } else if (std::string(name) == "vlog-vgamut") {
+            check(std::filesystem::file_size(path) == linearSize, "Replacement LUT has the same size");
+            std::filesystem::last_write_time(path, linearStamp);
+            check(std::filesystem::last_write_time(path) == linearStamp, "Replacement LUT has the same timestamp");
+        }
+        auto actual=render(session,r,SONY2FUJI_GPU_OFF);
         check(actual.size()==12,"Explicit contract renders on CPU");
         for(size_t i=0;i<actual.size();++i) {
             const double x=pixels[i]/255.;double expected=x;
@@ -65,17 +78,33 @@ int main() {
         auto automatic=render(session,r,SONY2FUJI_GPU_AUTO);
         check(automatic==actual && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU,"Auto uses the verified CPU contract");
         sony2fuji_status status;render(session,r,SONY2FUJI_GPU_FORCE,&status);
-        check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Force never silently evaluates an unsupported contract on GPU");
+        check(status==SONY2FUJI_STATUS_UNSUPPORTED &&
+              sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_FORCE_GPU,
+              "Force never silently evaluates an unsupported contract on GPU and reports Force GPU reason");
     }
     write(path,contract("linear-srgb","linear-srgb"));
     check(render(session,r,SONY2FUJI_GPU_OFF)==neutral,"Scene-output identity receives neutral once");
+    check(sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_NONE,
+          "Successful render clears any previous unsupported reason");
     write(path,contract("rec709-gamma24","rec709-gamma24","display","rawlab-neutral-v1"));
     check(render(session,r,SONY2FUJI_GPU_OFF)==neutral,"Display Gamma 2.4 identity preserves the neutral reference");
     write(path,contract("srgb","srgb","display","source-display"));
     sony2fuji_status status;render(session,r,SONY2FUJI_GPU_OFF,&status);
-    check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Source-display base cannot be invented from RAW/scene input");
+    check(status==SONY2FUJI_STATUS_UNSUPPORTED &&
+          sony2fuji_session_get_unsupported_reason(session)==SONY2FUJI_UNSUPPORTED_NONE,
+          "Source-display base cannot be invented from RAW/scene input and does not blame Force GPU");
     r.input_type=SONY2FUJI_INPUT_DISPLAY_BUFFER;r.input_is_linear=0;
     check(render(session,r,SONY2FUJI_GPU_OFF)==std::vector<unsigned char>(pixels.begin(),pixels.end()),"Source-display identity preserves already rendered input");
+    {
+        auto displayNoLut = r;
+        displayNoLut.lut_path = nullptr;
+        displayNoLut.lut_strength = 0;
+        sony2fuji_status displayForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, displayNoLut, SONY2FUJI_GPU_FORCE, &displayForceStatus).empty() &&
+                  displayForceStatus == SONY2FUJI_STATUS_UNSUPPORTED &&
+                  sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU,
+              "Display buffer without LUT under Force returns UNSUPPORTED with Force GPU reason");
+    }
     write(path,contract("vlog-vgamut"));render(session,r,SONY2FUJI_GPU_OFF,&status);
     check(status==SONY2FUJI_STATUS_UNSUPPORTED,"Scene Log contract cannot recover scene light from a display image");
     {
@@ -132,6 +161,231 @@ int main() {
         }
         sony2fuji_release_blob(&info);sony2fuji_release_blob(&prepared);
     }
+    if (auto cpuLut = sony2fuji::LUTParser::loadLUT(vlt.u8string())) {
+        std::shared_ptr<sony2fuji::LUT3D> sharedLut(std::move(cpuLut));
+        sony2fuji::ImageData forceImg;
+        forceImg.width = 1;
+        forceImg.height = 1;
+        forceImg.pixels = {{0.2f, 0.4f, 0.6f}};
+        const auto untouched = forceImg.pixels;
+        check(sony2fuji::applyLUTWithConfig(sharedLut, forceImg, {sony2fuji::GpuMode::Force}) ==
+                  sony2fuji::ErrorCode::Unsupported &&
+              forceImg.pixels.size() == untouched.size() &&
+              forceImg.pixels[0].r == untouched[0].r &&
+              forceImg.pixels[0].g == untouched[0].g &&
+              forceImg.pixels[0].b == untouched[0].b,
+              "applyLUTWithConfig returns UNSUPPORTED on CPU-only LUT under Force without modifying pixels");
+        check(sony2fuji::applyLUTWithConfig(sharedLut, forceImg, {sony2fuji::GpuMode::Auto}) ==
+                  sony2fuji::ErrorCode::Success,
+              "applyLUTWithConfig retains Auto CPU fallback for CPU-only LUT");
+    } else {
+        check(false, "Load temporary VLT fixture for applyLUTWithConfig check");
+    }
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
+    {
+        r.lut_path = nullptr;
+        r.lut_strength = 0;
+        r.input_type = SONY2FUJI_INPUT_BUFFER;
+        r.input_is_linear = 1;
+        sony2fuji_status neutralForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, r, SONY2FUJI_GPU_FORCE, &neutralForceStatus).empty() &&
+                  neutralForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Neutral request under Force without a GPU backend returns UNSUPPORTED");
+        sony2fuji_status neutralAutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(render(session, r, SONY2FUJI_GPU_AUTO, &neutralAutoStatus) == neutral &&
+                  neutralAutoStatus == SONY2FUJI_STATUS_OK &&
+                  sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+              "Neutral request retains Auto CPU fallback without a GPU backend");
+
+        r.exposure_ev = 0.5f;
+        const auto offExposed = render(session, r, SONY2FUJI_GPU_OFF);
+        sony2fuji_status exposedForceStatus = SONY2FUJI_STATUS_OK;
+        check(render(session, r, SONY2FUJI_GPU_FORCE, &exposedForceStatus).empty() &&
+                  exposedForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Exposure-only request under Force without a GPU backend returns UNSUPPORTED");
+        sony2fuji_status exposedAutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(render(session, r, SONY2FUJI_GPU_AUTO, &exposedAutoStatus) == offExposed &&
+                  exposedAutoStatus == SONY2FUJI_STATUS_OK &&
+                  sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU,
+              "Exposure-only request retains Auto CPU fallback without a GPU backend");
+        r.exposure_ev = 0;
+
+        r.lut_path = nullptr;
+        r.lut_strength = 0;
+        r.input_width = 0;
+        sony2fuji_status invalidStatus = SONY2FUJI_STATUS_OK;
+        render(session, r, SONY2FUJI_GPU_FORCE, &invalidStatus);
+        check(invalidStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+              "Invalid request still returns INVALID_ARGUMENT under Force without a GPU backend");
+        r.input_width = 4;
+
+        const auto legacy = dir / "legacy.cube";
+        {
+            std::ofstream file(legacy);
+            file << "#Gamma: FLog2toDisplay\n#Gamut: FGamuttoITURBT709\nLUT_3D_SIZE 2\n";
+            for (int b = 0; b < 2; ++b)
+                for (int g = 0; g < 2; ++g)
+                    for (int ri = 0; ri < 2; ++ri)
+                        file << ri << ' ' << g << ' ' << b << '\n';
+        }
+        const auto legacyName = legacy.u8string();
+        r.lut_path = legacyName.c_str();
+        r.input_type = SONY2FUJI_INPUT_BUFFER;
+        r.input_is_linear = 1;
+        sony2fuji_status legacyStatus = SONY2FUJI_STATUS_OK;
+        render(session, r, SONY2FUJI_GPU_FORCE, &legacyStatus);
+        check(legacyStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Legacy LUT under Force without a GPU backend returns UNSUPPORTED through C ABI");
+        sony2fuji_status autoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+        check(!render(session, r, SONY2FUJI_GPU_AUTO, &autoStatus).empty() &&
+                  autoStatus == SONY2FUJI_STATUS_OK,
+              "Legacy LUT retains Auto CPU fallback through C ABI without a GPU backend");
+    }
+#endif
+    {
+        sony2fuji_session* c5Session = nullptr;
+        check(sony2fuji_session_create(&c5Session) == SONY2FUJI_STATUS_OK && c5Session != nullptr,
+              "Create session for BasicV3 C5 Force check");
+        if (c5Session) {
+            check(sony2fuji_session_set_processing_version(c5Session, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                  "Configure BASIC_V3 processing version");
+            sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 40, 46, 50};
+            const auto waveletStatus = sony2fuji_session_set_wavelet_denoise(c5Session, &wavelet);
+#ifdef SONY2FUJI_ENABLE_WAVELET_DENOISE
+            check(waveletStatus == SONY2FUJI_STATUS_OK, "Enable C5 wavelet denoise");
+            auto c5Req = r;
+            c5Req.lut_path = nullptr;
+            c5Req.lut_strength = 0;
+            c5Req.input_type = SONY2FUJI_INPUT_BUFFER;
+            c5Req.input_is_linear = 1;
+            sony2fuji_status c5ForceStatus = SONY2FUJI_STATUS_OK;
+            check(render(c5Session, c5Req, SONY2FUJI_GPU_FORCE, &c5ForceStatus).empty() &&
+                      c5ForceStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "BasicV3 C5 wavelet under Force returns UNSUPPORTED across GPU=ON and GPU=OFF");
+            sony2fuji_status c5AutoStatus = SONY2FUJI_STATUS_PROCESSING_ERROR;
+            check(!render(c5Session, c5Req, SONY2FUJI_GPU_AUTO, &c5AutoStatus).empty() &&
+                      c5AutoStatus == SONY2FUJI_STATUS_OK,
+                  "BasicV3 C5 wavelet retains Auto rendering");
+#else
+            check(waveletStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+                  "Disabled wavelet backend rejects C5 configuration as UNSUPPORTED");
+#endif
+            sony2fuji_session_destroy(c5Session);
+        }
+    }
+    {
+        sony2fuji_session* smallSession = nullptr;
+        check(sony2fuji_session_create(&smallSession) == SONY2FUJI_STATUS_OK && smallSession != nullptr,
+              "Create session for small raster neighborhood preview check");
+        if (smallSession) {
+            check(sony2fuji_session_set_processing_version(smallSession, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                  "Configure BASIC_V3 for small raster neighborhood preview");
+            check(sony2fuji_session_set_viewport_preview(smallSession, 1) == SONY2FUJI_STATUS_OK,
+                  "Enable viewport preview for small raster");
+            sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.3f, 0.2f};
+            check(sony2fuji_session_set_atmosphere(smallSession, &atmo) == SONY2FUJI_STATUS_OK,
+                  "Enable atmosphere for small raster");
+            std::vector<unsigned char> smallPixels(19 * 13 * 3);
+            for (size_t i = 0; i < smallPixels.size(); ++i) smallPixels[i] = static_cast<unsigned char>((i * 37) % 256);
+            sony2fuji_request smallReq{};
+            smallReq.version = SONY2FUJI_REQUEST_VERSION;
+            smallReq.struct_size = sizeof(smallReq);
+            smallReq.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+            smallReq.input_pixels = smallPixels.data();
+            smallReq.input_width = 19;
+            smallReq.input_height = 13;
+            smallReq.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+            smallReq.input_color_space = SONY2FUJI_COLOR_SRGB;
+            smallReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            smallReq.temperature = 6500;
+            smallReq.brightness = smallReq.contrast = smallReq.saturation = 1;
+            smallReq.highlights = -0.3f;
+            smallReq.shadows = 0.3f;
+            smallReq.size_mode = SONY2FUJI_SIZE_NATIVE;
+            smallReq.output_target = SONY2FUJI_TARGET_BUFFER;
+            smallReq.output_format = SONY2FUJI_OUTPUT_RGB8;
+            smallReq.intent = SONY2FUJI_INTENT_PREVIEW;
+            smallReq.preview_long_edge = 1600;
+            sony2fuji_buffer outBuf{};
+            const auto smallStatus = sony2fuji_process(smallSession, &smallReq, &outBuf);
+            check(smallStatus == SONY2FUJI_STATUS_OK && outBuf.width == 19 && outBuf.height == 13 &&
+                      outBuf.size_bytes == 19u * 13u * 3u,
+                  "Small raster preview with neighborhood active clamps preview_long_edge to native 19x13 without upscaling");
+            sony2fuji_release_buffer(&outBuf);
+            sony2fuji_session_destroy(smallSession);
+        }
+    }
+    {
+        // k159: 纯几何小图预览（仅裁剪/旋转，无 neighborhood）同样不得上变换。
+        sony2fuji_session* geomSession = nullptr;
+        check(sony2fuji_session_create(&geomSession) == SONY2FUJI_STATUS_OK && geomSession != nullptr,
+              "Create session for small raster pure geometry preview check");
+        if (geomSession) {
+            sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+            check(sony2fuji_session_set_gpu_config(geomSession, &gpu) == SONY2FUJI_STATUS_OK,
+                  "Configure CPU for small raster geometry preview");
+            check(sony2fuji_session_set_viewport_preview(geomSession, 1) == SONY2FUJI_STATUS_OK,
+                  "Enable viewport preview for small raster geometry");
+            std::vector<unsigned char> smallPixels(19 * 13 * 3);
+            for (size_t i = 0; i < smallPixels.size(); ++i) smallPixels[i] = static_cast<unsigned char>((i * 37) % 256);
+            sony2fuji_request geomReq{};
+            geomReq.version = SONY2FUJI_REQUEST_VERSION;
+            geomReq.struct_size = sizeof(geomReq);
+            geomReq.input_type = SONY2FUJI_INPUT_BUFFER;
+            geomReq.input_pixels = smallPixels.data();
+            geomReq.input_width = 19;
+            geomReq.input_height = 13;
+            geomReq.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+            geomReq.input_color_space = SONY2FUJI_COLOR_SRGB;
+            geomReq.input_is_linear = 1;
+            geomReq.wb_mode = SONY2FUJI_WB_CAMERA;
+            geomReq.temperature = 6500;
+            geomReq.brightness = geomReq.contrast = geomReq.saturation = 1;
+            geomReq.size_mode = SONY2FUJI_SIZE_NATIVE;
+            geomReq.output_target = SONY2FUJI_TARGET_BUFFER;
+            geomReq.output_format = SONY2FUJI_OUTPUT_RGB8;
+            geomReq.intent = SONY2FUJI_INTENT_PREVIEW;
+            geomReq.preview_long_edge = 1600;
+            sony2fuji_geometry_config rotate{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(rotate), 0, 0, 1, 1, 2, 0, 0, 0};
+            check(sony2fuji_session_set_geometry(geomSession, &rotate) == SONY2FUJI_STATUS_OK,
+                  "Enable rotate-only geometry for small raster");
+            sony2fuji_buffer rotateBuf{};
+            const auto rotateStatus = sony2fuji_process(geomSession, &geomReq, &rotateBuf);
+            check(rotateStatus == SONY2FUJI_STATUS_OK && rotateBuf.width == 19 && rotateBuf.height == 13 &&
+                      rotateBuf.size_bytes == 19u * 13u * 3u,
+                  "Small raster preview with rotate-only geometry clamps preview_long_edge to native 19x13 without upscaling");
+            sony2fuji_release_buffer(&rotateBuf);
+            // 封顶基准是裁剪旋转后的 native 长边（17x11），不是源长边。
+            sony2fuji_geometry_config cropRotate{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(cropRotate),
+                0.1f, 0.1f, 0.8f, 0.8f, 2, 0, 0, 0};
+            check(sony2fuji_session_set_geometry(geomSession, &cropRotate) == SONY2FUJI_STATUS_OK,
+                  "Enable crop+rotate geometry for small raster");
+            sony2fuji_buffer cropBuf{};
+            const auto cropStatus = sony2fuji_process(geomSession, &geomReq, &cropBuf);
+            check(cropStatus == SONY2FUJI_STATUS_OK && cropBuf.width == 17 && cropBuf.height == 11 &&
+                      cropBuf.size_bytes == 17u * 11u * 3u,
+                  "Cropped small raster preview clamps to post-crop native 17x11 without upscaling");
+            sony2fuji_release_buffer(&cropBuf);
+            // 显式语义不动：FINAL 的 EXACT 与 FIT_LONG_EDGE 仍允许上变换。
+            geomReq.intent = SONY2FUJI_INTENT_FINAL;
+            geomReq.size_mode = SONY2FUJI_SIZE_EXACT;
+            geomReq.target_width = 64;
+            geomReq.target_height = 48;
+            sony2fuji_buffer exactBuf{};
+            const auto exactStatus = sony2fuji_process(geomSession, &geomReq, &exactBuf);
+            check(exactStatus == SONY2FUJI_STATUS_OK && exactBuf.width == 64 && exactBuf.height == 48,
+                  "FINAL exact 64x48 still upscales above native geometry");
+            sony2fuji_release_buffer(&exactBuf);
+            geomReq.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            geomReq.long_edge = 1600;
+            sony2fuji_buffer fitBuf{};
+            const auto fitStatus = sony2fuji_process(geomSession, &geomReq, &fitBuf);
+            check(fitStatus == SONY2FUJI_STATUS_OK && fitBuf.width == 1600 && fitBuf.height == 1035,
+                  "FINAL explicit FIT_LONG_EDGE keeps upscale semantics");
+            sony2fuji_release_buffer(&fitBuf);
+            sony2fuji_session_destroy(geomSession);
+        }
+    }
     sony2fuji_session_destroy(session);std::filesystem::remove_all(dir);
-    std::cout<<"LUT contract render failures: "<<failures<<'\n';return failures?1:0;
+    std::cout<<"LUT contract render failures: "<<rawlab::test::failureCount()<<'\n';return rawlab::test::exitCode();
 }

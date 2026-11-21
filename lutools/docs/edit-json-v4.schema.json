@@ -143,6 +143,7 @@
           "properties": {
             "distortion": { "type": "boolean", "default": false },
             "tca": { "type": "boolean", "default": false },
+            "vignetting": { "type": "boolean", "default": false },
             "auto_crop": { "type": "boolean", "default": true },
             "profile_id": { "type": ["string", "null"], "minLength": 1, "default": null }
           }
@@ -203,6 +204,7 @@
                 "properties": {
                   "distortion": { "const": false },
                   "tca": { "const": false },
+                  "vignetting": { "const": false },
                   "profile_id": { "const": null }
                 }
               }

@@ -1,4 +1,5 @@
 """Exercise exact-hit dependency reuse without downloading third-party code."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -58,48 +59,146 @@ class CachedLensTests(unittest.TestCase):
 
 
 class CachedMacTests(unittest.TestCase):
-    def build(self, hit):
+    def build(self, hit, python=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             scripts = root / "RawLabMac"
             scripts.mkdir()
+            (root / "scripts/ci").mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/ci/apple-sdk-env.sh", root / "scripts/ci/apple-sdk-env.sh")
             for name in ("build.sh", "build-env.sh", "release-config.sh"):
                 shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
+            libraw_dir = root / "lutools/cmake/libraw"
+            libraw_dir.mkdir(parents=True)
+            for name in ("manifest.json", "manifest.py"):
+                shutil.copy2(ROOT / "lutools/cmake/libraw" / name, libraw_dir / name)
             for name in ("build-dependencies.sh", "build-chroma-dependency.sh",
                          "build-wavelet-dependency.sh", "build-tiff-dependency.sh"):
                 (scripts / name).write_text(f"echo 'Dependency build requested: {name}' >&2\nexit 29\n")
             (scripts / "build-lens-dependency.sh").write_text("echo 'Lensfun validation retained'\n")
             # 本测试在产品配置处终止；Sparkle 打包由独立 bundle 检查负责。
-            (scripts / "prepare-sparkle.sh").write_text("printf '%s\\n' /unused/Sparkle.framework\n")
+            (scripts / "prepare-sparkle.sh").write_text(
+                "echo 'Sparkle prepared' >&2\nprintf '%s\\n' /unused/Sparkle.framework\n")
             tools = root / "tools"
             tools.mkdir()
             for name, content in (("pkg-config", "exit 0"),
-                                  ("cmake", "echo 'Product configure reached'; exit 31")):
+                                  ("cmake", "echo 'Product configure reached'\n"
+                                            'echo "cmake args: $*"\nexit 31')):
                 executable = tools / name
                 executable.write_text("#!/bin/sh\n" + content + "\n")
                 executable.chmod(0o755)
-            return subprocess.run(
+            env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                   "RAWLAB_RUM": "0", "RAWLAB_RUM_LOCAL": "0", "RAWLAB_ARCH": "arm64",
+                   "MACOSX_DEPLOYMENT_TARGET": "14.0", "RAWLAB_CI_CACHE_HIT": hit}
+            env.pop("PYTHON", None)
+            expected = shutil.which("python3")
+            if python is not None:
+                env["PYTHON"] = python
+                if not os.path.isabs(python):
+                    interpreter = root / python
+                    interpreter.parent.mkdir(parents=True, exist_ok=True)
+                    interpreter.write_text("#!/bin/sh\nexit 0\n")
+                    interpreter.chmod(0o755)
+                    expected = str(interpreter.resolve())
+            result = subprocess.run(
                 ["bash", str(scripts / "build.sh")], text=True, capture_output=True,
-                env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
-                     "RAWLAB_RUM": "0", "RAWLAB_RUM_LOCAL": "0", "RAWLAB_ARCH": "arm64",
-                     "MACOSX_DEPLOYMENT_TARGET": "14.0", "RAWLAB_CI_CACHE_HIT": hit})
+                cwd=root, env=env)
+            return result, expected
 
     def test_exact_hit_still_configures_product_and_validates_lensfun(self):
-        result = self.build("true")
+        result, _ = self.build("true")
         self.assertEqual(result.returncode, 31, result.stdout + result.stderr)
         self.assertIn("Lensfun validation retained", result.stdout)
         self.assertIn("Product configure reached", result.stdout)
         self.assertNotIn("Dependency build requested", result.stderr)
 
-    def test_miss_still_builds_dependencies(self):
-        result = self.build("")
-        self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
-        self.assertIn("Dependency build requested", result.stderr)
-
     def test_local_build_does_not_reuse_libraw_without_current_patch_stamp(self):
-        result = self.build("")
+        result, _ = self.build("")
         self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
         self.assertIn("Dependency build requested: build-dependencies.sh", result.stderr)
+
+    def test_missing_python_exits_2_before_any_download_or_build(self):
+        for hit in ("", "true"):
+            with self.subTest(hit=hit):
+                result, _ = self.build(hit, python="/no/such/python")
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("Python interpreter not found", result.stderr)
+                combined = result.stdout + result.stderr
+                for marker in ("Sparkle prepared", "Dependency build requested",
+                               "Lensfun validation retained", "Product configure reached"):
+                    self.assertNotIn(marker, combined)
+
+    @unittest.skipUnless(shutil.which("python3"), "python3 is required on PATH")
+    def test_default_python_reaches_cmake_as_absolute_executable(self):
+        result, expected = self.build("true")
+        self.assertEqual(result.returncode, 31, result.stdout + result.stderr)
+        self.assertTrue(os.path.isabs(expected))
+        self.assertIn(f"-DPython3_EXECUTABLE={expected}", result.stdout)
+
+    def test_relative_python_is_resolved_to_absolute_for_cmake_and_not_dropped(self):
+        result, expected = self.build("true", python=".venv/bin/python3")
+        self.assertEqual(result.returncode, 31, result.stdout + result.stderr)
+        self.assertTrue(os.path.isabs(expected))
+        self.assertIn(f"-DPython3_EXECUTABLE={expected}", result.stdout)
+
+
+@unittest.skipUnless(shutil.which("cmake"), "CMake is required")
+class CachedSourceArchiveTests(unittest.TestCase):
+    """稳定归档根跨 run 复用；命中归档仍过 SHA256；损坏自动重下；未设环境变量时位置不变。"""
+
+    def configure(self, root, build, cache=None):
+        environment = dict(os.environ)
+        if cache is None:
+            environment.pop("RAWLAB_SOURCE_ARCHIVE_CACHE", None)
+        else:
+            environment["RAWLAB_SOURCE_ARCHIVE_CACHE"] = str(cache)
+        return subprocess.run(["cmake", "-S", str(root), "-B", str(root / build)],
+                              env=environment, text=True, capture_output=True)
+
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.root = Path(self._directory.name)
+        shutil.copy2(ROOT / "lutools/cmake/download-archive.cmake", self.root / "download-archive.cmake")
+        self.remote = self.root / "remote"
+        self.remote.mkdir()
+        self.archive = self.remote / "demo-1.0.tar.gz"
+        self.archive.write_text("payload v1")
+        digest = hashlib.sha256(b"payload v1").hexdigest()
+        url = "file:///" + self.archive.resolve().as_posix().lstrip("/")
+        self.root.joinpath("CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.22)\nproject(ArchiveTest NONE)\n"
+            'set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps")\n'
+            'include("${CMAKE_CURRENT_SOURCE_DIR}/download-archive.cmake")\n'
+            "rawlab_archive_path(rawlab_demo demo-1.0.tar.gz demo_archive)\n"
+            f'rawlab_download_archive("{url}" {digest} "${{demo_archive}}")\n'
+            'file(WRITE "${CMAKE_BINARY_DIR}/archive-path.txt" "${demo_archive}")\n')
+        self.addCleanup(self._directory.cleanup)
+
+    def test_default_archive_location_stays_under_fetchcontent_base(self):
+        result = self.configure(self.root, "build-default")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        recorded = (self.root / "build-default" / "archive-path.txt").read_text()
+        self.assertEqual(recorded, str(self.root / "build-default" / "_deps" / "rawlab_demo-cache" / "demo-1.0.tar.gz"))
+
+    def test_stable_root_serves_verified_archives_without_network(self):
+        cache = self.root / "cache"
+        result = self.configure(self.root, "build-first", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        cached = cache / "demo-1.0.tar.gz"
+        self.assertTrue(cached.is_file())
+        self.assertEqual((self.root / "build-first" / "archive-path.txt").read_text(), str(cached))
+        self.archive.unlink()  # 断网：URL 不再可达，唯一可能来自缓存复用
+        result = self.configure(self.root, "build-second", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_corrupted_cached_archive_is_not_trusted(self):
+        cache = self.root / "cache"
+        self.assertEqual(self.configure(self.root, "build-first", cache=cache).returncode, 0)
+        (cache / "demo-1.0.tar.gz").write_text("corrupt")
+        result = self.configure(self.root, "build-second", cache=cache)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # 撤掉"既有归档仍验 SHA"则损坏副本被盲信：内容会保持 corrupt 并通过 configure。
+        self.assertEqual((cache / "demo-1.0.tar.gz").read_text(), "payload v1")
 
 
 if __name__ == "__main__":

@@ -271,8 +271,13 @@ without requiring the source camera's white-balance calibration to be valid.
 required lowercase SHA-256 fingerprint to the v1 prefix. Probe the resource
 with `sony2fuji_hdr_probe_camera_profile`. Decoding uses the same bytes it
 hashes and rejects a different fingerprint before publishing a pair. Keep the
-profile fingerprint in any cache key for the developed source. The photo
-digest in the pair continues to identify the original RAW.
+profile fingerprint in any cache key for the developed source. An eight-entry LRU
+reuses parsed calibration when the current byte digest matches, evicting the path
+entry when a digest check fails; every decode still hashes current bytes and checks
+the requested profile fingerprint. Camera RAW pairs
+leave `source_sha256` zero and exports use a null `metadata_source_path`;
+file stamps bracket decoding and decode revisions identify the resulting pixels.
+HDR raster and ProRAW source digests retain their metadata-validation contract.
 
 The first subset extracts the unique D65 ColorMatrix and ForwardMatrix from
 a standalone DCP with Adobe's extended profile magic `0x4352`.
@@ -357,6 +362,27 @@ of the metadata source when provided, then publishes atomically. The encoder
 uses full-frame memory admission. `sony2fuji_hdr_heif_export_available` requires
 a successful in-memory encode and ISO HDR readback on the current Apple runtime.
 Windows and Android use the portable HEIF reader and export gain-map JPEG.
+
+### Tiled HEIF and rendered DNG export on Apple
+
+`sony2fuji_hdr_export_tiled` reuses complete-source stream color, geometry,
+resize, detail and effects processing. HDR JPEG/HEIF inputs provide bounded
+decoded rows; ProRAW uses the existing FINAL row-source contract. Camera RAW
+uses its complete owned FINAL pair from the existing LibRaw development path,
+without adding camera-model or ImageIO-format requirements.
+
+Both source renditions and rendered output use task-owned float files. HEIF
+consumes output tiles and retains the ISO gain-map and readback checks above.
+Rendered DNG consumes SDR rows through the existing 16-bit LinearRaw writer;
+it does not copy camera RAW calibration or EXIF. Source identity, cancellation,
+scratch cleanup and atomic publication follow the streamed JPEG contract.
+Camera RAW uses file stamps and does not read or hash unused source metadata.
+
+Reducing the output size still processes the complete original. This bounds
+intermediate pixel memory, but camera RAW development and the system HEIF codec
+retain their own memory requirements. Disk admission includes source planes,
+rendered planes and the encoded file. The original JPEG APIs remain unchanged;
+the tiled entry reports unsupported on non-Apple platforms.
 
 
 ## Complete-source streamed JPEG export

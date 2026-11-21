@@ -10,6 +10,31 @@ import org.junit.Test
 class ToneCurveSettingsTest {
     private val curve = ToneCurveSettings.identity.inserting(.25, .125).inserting(.75, .875)
 
+    @Test fun independentChannelsSurviveStorageTransferAndRefinement() {
+        val channels = ToneCurveSettings().replacing(ToneCurveChannel.RED, curve.master)
+            .replacing(ToneCurveChannel.BLUE, curve.master)
+        assertFalse(channels.isDefault)
+        assertFalse(channels.isIdentity)
+        assertEquals(ToneCurveSettings(), ToneCurveSettings.decode(JSONObject("{\"mode\":\"legacy\",\"points\":[]}")))
+        val source = EditSettings(curve = channels)
+        val hdr = HDRSettings().withTone(HDRToneSettings(curve = channels))
+        assertEquals(8, hdr.processingVersion); assertEquals(9, hdr.recordVersion)
+        assertEquals(hdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = hdr))).hdr)
+        assertTrue(hdr.reset().toneSettings.curve.channels.isDefault)
+        assertEquals(source, SettingsCodec.decode(SettingsCodec.encode(source)))
+        val context = AdjustmentTransferContext("channels", false)
+        val payload = AdjustmentTransfer.capture(AdjustmentScope.Custom(setOf(AdjustmentField.CURVE)), source, context)
+        assertEquals(channels, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), context).curve)
+        val scaled = channels.scaled(.5)
+        assertTrue(scaled.master.isDefault)
+        assertTrue(scaled.channels.green.isDefault)
+        assertEquals(.1875, scaled.channels.red.points[1].y, 0.0)
+        assertEquals(channels, channels.inserting(.3, .3))
+        val nested = channels.json()
+        nested.getJSONObject("channels").getJSONObject("red").put("channels", JSONObject())
+        assertThrows(Exception::class.java) { ToneCurveSettings.decode(nested) }
+    }
+
     @Test fun pointsAreImmutableOrderedAndBounded() {
         val points = mutableListOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(1.0, 1.0))
         val frozen = ToneCurveSettings(ToneCurveMode.CUSTOM, points)

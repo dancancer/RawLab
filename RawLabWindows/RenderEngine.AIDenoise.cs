@@ -76,7 +76,7 @@ internal sealed partial class RenderEngine
             throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
         if(detail.Contains("887A0001",StringComparison.OrdinalIgnoreCase))
             throw new AIDenoiseException(Loc.Text("AI 显卡执行失败，请更换 AI 显卡或导出诊断包。")+" (0x887A0001)");
-        if(detail.Length==0)Native.Check(status);
+        if(detail.Length==0)Native.Check(status, session);
         throw new AIDenoiseException(Loc.Format("AI 降噪失败：{0}",detail));
     }
     internal void PrepareAI(string path,Adjustments settings,AIPreparation progress)
@@ -89,13 +89,14 @@ internal sealed partial class RenderEngine
     private void PrepareAICore(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
+        PreparedRecipeSettings? prepared = null;
         if (!settings.IsHDREditing)
         {
-            if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+            if(Native.sony2fuji_is_normal_x3f(path,settings.X3fMode)!=0)throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
             if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-            settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetX3f(path,settings);
-            SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);
-            SetCurve(settings.RenderCurve);SetGrading(settings.RenderGrading);SetLens(settings.Lens);
+            prepared=PrepareRecipe(path,settings);
+            settings=prepared.Value.Settings;
+            ApplyParams(path,settings,includeDenoise:false,validateAiX3f:true);
         }
         ConfigureAI(true);
         Exception? callbackError=null;
@@ -109,12 +110,13 @@ internal sealed partial class RenderEngine
             aiNativeOperationStarted=true;
             if (settings.IsHDREditing)
             {
+                ApplyProcessingOnly(settings.Processing);
                 var diagnostic=HDRNative.Diagnostic();
                 status=Native.sony2fuji_hdr_prepare_camera_raw_ai(session,path,callback,IntPtr.Zero,ref diagnostic);
             }
             else
             {
-                var request=settings.Request(path,null,0,null);
+                var request=prepared!.Value.Request(path,null,0,null);
                 status=Native.sony2fuji_session_prepare_ai(session,ref request,callback,IntPtr.Zero);
             }
         }
@@ -125,9 +127,11 @@ internal sealed partial class RenderEngine
 
     private HDRSourceLease AcquireHDRSource(string path,HDRSourceInfo info,bool final,uint edge,Adjustments settings)
     {
+        if (info.IsCameraRaw && !info.IsProRAW) ApplyProcessingOnly(settings.Processing);
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
-            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase);
+            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
+                temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory);
         if (!PhotoInput.IsHDRCameraAICandidate(info))
             throw new AIDenoiseException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
         ConfigureAI(true);
@@ -138,7 +142,7 @@ internal sealed partial class RenderEngine
         try
         {
             return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
-                System.Text.Encoding.ASCII.GetString(key,0,64));
+                System.Text.Encoding.ASCII.GetString(key,0,64),appPaths.HdrCacheDirectory,appPaths.HdrCameraProfilesDirectory);
         }
         catch (HDRSourceException error) when (error.Status==8 || error.Reason==HDRNative.ReasonCameraAI)
         {

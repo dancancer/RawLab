@@ -71,12 +71,16 @@ local editing and adjustment reuse, not a general photo catalog or cloud library
   bit depth or the shared core. Its boundaries are recorded in the
   [HDR design](docs/design/hdr-photos/technical-design.md).
 - Source photos remain read-only. Persisted edits, presets and batch settings
-  preserve their versioned meaning; migrations or rendering changes must be
-  explicit rather than silently reinterpreting saved work. Compatibility details
-  belong in the contracts and release notes.
+  preserve their versioned meaning. Opening an old edit can start an automatic
+  appearance-preserving migration: fit the new parameters, validate the full-source
+  render, and atomically retain the original settings before adoption. Excessive
+  error keeps the old version; a persistent rollback restores the entire original
+  edit and stops automatic retries for that photo. See the
+  [migration contract](lutools/docs/processing-migration.md).
 - Preview and export follow the same processing semantics. A reduced preview is
   not evidence of full-resolution quality, and numerical correctness is distinct
   from a subjective preference for a look.
+- Photo browsers expose saved non-default edits with a pencil marker and rendered thumbnails. iOS Recently Opened retains bounded local copies; removing a recent record preserves the original photo and saved adjustments. See the [edited-photo preview contract](docs/design/editor-workspace/edited-photo-previews.md).
 - Ordinary GPU Auto processing retains CPU fallback; Force requires actual GPU
   execution. Desktop AI denoising instead requires a supported hardware GPU
   backend (Mac Core ML or Windows DirectML), reports unavailability and does not
@@ -103,8 +107,7 @@ components retain the attribution and usage limits recorded in
 
 - [Product overview](README.md), [release records](docs/releases/) and the
   [documentation index](docs/README.md) describe capabilities and their evidence.
-- The repository includes a [DJI DNG](lutools/examples/DJI_20250602164503_0444_D.DNG)
-  and [synthetic regression fixtures](lutools/tests/fixtures/), including JPEG XL
+- Externalized asset packs ([`Shared/assets-manifest.json`](Shared/assets-manifest.json), materialized into the shared `.cache/shared/assets/` cache via `python3 scripts/assets/prepare.py --group all`) provide the externalized `lutools/examples/DJI_20250602164503_0444_D.DNG` fixture (in `assets-v1`) and bundled `.cube` LUTs alongside [synthetic regression fixtures](lutools/tests/fixtures/), including JPEG XL
   DNG inputs. Other camera RAWs are external test inputs; these fixtures do not
   establish camera-wide calibration or image-quality claims.
 - [Bundled looks](Shared/BundledLooks/), [master recipes](Shared/master-recipes.json)

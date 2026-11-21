@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform as host_platform
+import re
 import shutil
 import subprocess
 import sys
@@ -54,7 +55,7 @@ def dependency_inputs(root, platform, arch=None):
 
 
 def workflow_identity(root, platform, arch=None):
-    workflow = yaml.load((root / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
+    workflow = yaml.load((root / ".github/workflows/ci.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     job = workflow.get("jobs", {}).get(platform)
     if not isinstance(job, dict):
         raise ValueError(f"Native cache job is missing: {platform}")
@@ -82,7 +83,47 @@ def cache_key(platform, arch, inputs, environment):
     return f"native-deps-v1-{platform}-{arch}-{digest}"
 
 
-def cache_paths(platform, arch):
+# configure 期下载的归档集合(URL+SHA256)只随 pin 变化；独立于 toolchain 精确键,
+# 让 actions/cache 的 key 在 ci.yml/工具链抖动时保持命中。cmake pin 成对提取,
+# 缺对即报错——键不得静默缩水。hdr-codec-dependencies.json 是 hdr 归档的 pin 源。
+ARCHIVE_PIN_FILES = ("lutools/cmake/dng-sdk.cmake", "lutools/cmake/tiff-dependencies.cmake",
+                     "lutools/cmake/denoise-dependencies.cmake")
+ARCHIVE_MANIFEST_FILES = ("lutools/cmake/hdr-codec-dependencies.json",)
+
+
+def dependency_archives(root):
+    pairs = set()
+    for name in ARCHIVE_PIN_FILES:
+        text = (root / name).read_text(encoding="utf-8")
+        shas = dict(re.findall(r"set\((\w+)_sha256 ([0-9a-f]{64})\)", text))
+        found = re.findall(r"set\((\w+)_url (https?://\S+)\)", text)
+        if not found:
+            raise ValueError(f"Dependency archive pin is missing: {name}")
+        for name, url in found:
+            if name not in shas:
+                raise ValueError(f"Dependency archive SHA256 pin is missing: {name}")
+            pairs.add((url, shas[name]))
+    for name in ARCHIVE_MANIFEST_FILES:
+        manifest = json.loads((root / name).read_text(encoding="utf-8"))
+        for entry in manifest.values():
+            if isinstance(entry, dict) and "url" in entry and "sha256" in entry:
+                pairs.add((entry["url"], entry["sha256"]))
+    return sorted(pairs)
+
+
+def archives_key(platform, arch, pairs):
+    if not pairs:
+        raise ValueError("Dependency archive list is empty")
+    identity = "\n".join(f"{url} {sha256}" for url, sha256 in pairs)
+    return f"rawlab-dep-archives-v1-{platform}-{arch}-{hashlib.sha256(identity.encode()).hexdigest()}"
+
+
+def libraw_version(root=ROOT):
+    manifest = json.loads((root / "lutools/cmake/libraw/manifest.json").read_text(encoding="utf-8"))
+    return manifest["libraw"]["version"]
+
+
+def cache_paths(platform, arch, root=ROOT):
     if platform == "macos":
         if arch not in ("arm64", "x86_64"):
             raise ValueError(f"Unsupported Mac architecture: {arch}")
@@ -97,7 +138,7 @@ def cache_paths(platform, arch):
                              ".ninja_deps", ".ninja_log", "configure_fingerprint.bin",
                              "metadata_generation_command.txt", *OPENCV_HEADERS)]
     if platform == "ios":
-        base = "lutools/build-ios-libraw/0.22.2"
+        base = f"lutools/build-ios-libraw/{libraw_version(root)}"
         paths = [f"{base}/sources"]
         for config in ("iphoneos-arm64", "iphonesimulator-arm64", "iphonesimulator-x86_64"):
             core = f"{base}/core-{config}"
@@ -157,7 +198,7 @@ def toolchain_identity(platform):
         installation = command(str(vswhere), "-latest", "-products", "*", "-requires",
                                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath")
         vs = Path(installation)
-        version = (vs / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt").read_text().strip()
+        version = (vs / "VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt").read_text(encoding="utf-8").strip()
         compiler = vs / "VC/Tools/MSVC" / version / "bin/Hostx64/x64"
         identity["msvc"] = {"path": str(compiler), "version": version,
                             **hash_inputs(compiler, [compiler / name for name in ("cl.exe", "link.exe", "lib.exe")])}
@@ -165,7 +206,7 @@ def toolchain_identity(platform):
     elif platform == "android":
         sdk = Path(os.environ["ANDROID_HOME"])
         ndk = sdk / "ndk/27.2.12479018"
-        identity["ndk"] = (ndk / "source.properties").read_text()
+        identity["ndk"] = (ndk / "source.properties").read_text(encoding="utf-8")
         identity["compiler"] = command(str(ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin/clang"), "--version")
         identity["android_cmake"] = command(str(sdk / "cmake/3.22.1/bin/cmake"), "--version")
         identity["android_home"] = str(sdk)
@@ -175,16 +216,32 @@ def toolchain_identity(platform):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("key", "inventory"))
+    parser.add_argument("mode", choices=("key", "inventory", "archives"))
     parser.add_argument("--platform", choices=tuple(PLATFORM_INPUTS), required=True)
     parser.add_argument("--arch", required=True)
     args = parser.parse_args()
+    if args.mode == "archives":
+        pairs = dependency_archives(ROOT)
+        key = archives_key(args.platform, args.arch, pairs)
+        path = os.environ.get("RAWLAB_SOURCE_ARCHIVE_CACHE", "")
+        report = {"key": key, "path": path,
+                  "archives": [{"url": url, "sha256": sha256} for url, sha256 in pairs]}
+        print(json.dumps(report, indent=2))
+        output = ROOT / "build/ci/native-archives.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        if os.environ.get("GITHUB_OUTPUT"):
+            if not path:
+                raise ValueError("RAWLAB_SOURCE_ARCHIVE_CACHE must be set to cache dependency archives")
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+                stream.write(f"key={key}\npath={path}\n")
+        return
     paths = cache_paths(args.platform, args.arch)
     if args.mode == "inventory":
         files = selected_files(ROOT, paths)
         report = {"files": len(files), "bytes": sum(path.lstat().st_size for path in files)}
         print(json.dumps(report, indent=2))
-        (ROOT / "build/ci/native-cache-size.json").write_text(json.dumps(report, indent=2) + "\n")
+        (ROOT / "build/ci/native-cache-size.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         return
     inputs = dependency_inputs(ROOT, args.platform, args.arch)
     environment = toolchain_identity(args.platform)
@@ -193,9 +250,9 @@ def main():
     print(json.dumps(report, indent=2))
     output = ROOT / "build/ci/native-cache.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2) + "\n")
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     if os.environ.get("GITHUB_OUTPUT"):
-        with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
             stream.write(f"key={key}\npaths<<RAWLAB_CACHE_PATHS\n" + "\n".join(paths) + "\nRAWLAB_CACHE_PATHS\n")
 
 

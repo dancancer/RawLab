@@ -3,6 +3,7 @@ package com.rawlab.android.editor.storage
 import com.rawlab.android.editor.EditSaveState
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.UnusableEditRecordException
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -12,7 +13,7 @@ import org.junit.Test
 class EditorEditStoreTest {
     @Test fun readFailureKeepsItsCauseAndCanBeRetriedWithoutOverwritingTheRecord() {
         val root = Files.createTempDirectory("rawlab-edit-read").toFile()
-        val record = File(root, "edits.properties").apply { writeText("record.YQ.values=broken") }
+        val record = File(root, "edits.properties").apply { writeText("format.version=999") }
         val original = record.readBytes()
         try {
             val store = EditorEditStore(root)
@@ -23,6 +24,47 @@ class EditorEditStoreTest {
             record.delete()
             assertEquals(EditSaveState.NONE, store.reopen().state)
             assertTrue(store.available)
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun rootCorruptionSelfHealsOnOpenAndAllowsSaving() {
+        val root = Files.createTempDirectory("rawlab-edit-heal").toFile()
+        val record = File(root, "edits.properties").apply { writeText("corrupt-non-record-line") }
+        val original = record.readBytes()
+        try {
+            val store = EditorEditStore(root)
+            assertEquals(EditSaveState.NONE, store.initialResult.state)
+            assertTrue(store.available)
+            assertFalse(record.exists())
+            val archived = root.listFiles()!!.single { it.name.startsWith("edits.properties.corrupt-") }
+            assertArrayEquals(original, archived.readBytes())
+            val id = PhotoIdentity("healed-photo")
+            assertEquals(EditSaveState.SAVED, store.save(id, EditSettings(exposure = 0.5f)).state)
+            assertEquals(0.5f, store.readState(id).settings?.exposure)
+            assertArrayEquals(original, archived.readBytes())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun perRecordCorruptionKeepsStoreAvailableAndAllowsTargetedResetToUnmodified() {
+        val root = Files.createTempDirectory("rawlab-edit-isolated").toFile()
+        val broken = PhotoIdentity("a")
+        val sibling = PhotoIdentity("b")
+        try {
+            File(root, "edits.properties").writeText("format.version=1\nrecord.YQ.values=broken\n")
+            val store = EditorEditStore(root)
+            assertEquals(EditSaveState.NONE, store.initialResult.state)
+            assertTrue(store.available)
+            assertEquals(EditSaveState.SAVED, store.save(sibling, EditSettings(exposure = .5f)).state)
+            assertThrows(UnusableEditRecordException::class.java) { store.load(broken) }
+            assertThrows(UnusableEditRecordException::class.java) { store.readState(broken) }
+            val failedSave = store.save(broken, EditSettings())
+            assertEquals(EditSaveState.FAILED, failedSave.state)
+            assertTrue(failedSave.error is UnusableEditRecordException)
+            assertNull(store.resetToUnmodified(broken).settings)
+            assertNull(store.readState(broken).settings)
+            assertEquals(.5f, store.readState(sibling).settings?.exposure)
+            assertEquals(EditSaveState.SAVED, store.save(broken, EditSettings(exposure = -.25f)).state)
+            assertEquals(-.25f, store.readState(broken).settings?.exposure)
         } finally { root.deleteRecursively() }
     }
 

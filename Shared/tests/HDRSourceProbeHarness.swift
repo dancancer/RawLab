@@ -14,8 +14,9 @@ func unusedNativeProbe(_ path: UnsafePointer<CChar>?, _ info: UnsafeMutablePoint
     fatalError("native probe must be injected")
 }
 
-@_cdecl("sony2fuji_hdr_probe_camera_raw")
-func unusedCameraProbe(_ path: UnsafePointer<CChar>?, _ info: UnsafeMutablePointer<sony2fuji_hdr_source_info_v1>?,
+@_cdecl("sony2fuji_hdr_probe_camera_raw_with_processing")
+func unusedCameraProbe(_ path: UnsafePointer<CChar>?, _ processing: sony2fuji_processing_version,
+                       _ info: UnsafeMutablePointer<sony2fuji_hdr_source_info_v1>?,
                        _ diagnostic: UnsafeMutablePointer<sony2fuji_hdr_diagnostic_v1>?) -> sony2fuji_status {
     fatalError("unexpected camera RAW probe")
 }

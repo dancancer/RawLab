@@ -23,6 +23,38 @@ import com.rawlab.android.settings.LookChoice
 
 class LookLibraryTest {
     @Test
+    fun unreadableRowsReachEditorStateAndDeletionSurvivesRestart() {
+        val root = Files.createTempDirectory("rawlab-look-ui").toFile()
+        try {
+            val library = LookLibrary(root, validator)
+            val good = library.importLook("valid".byteInputStream(), "Good.cube")
+            val registry = File(root, "registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            val badId = UUID.randomUUID().toString()
+            val badFile = File(root, "$badId.rlook").apply { writeText("future") }
+            properties.setProperty("count", "3")
+            properties.setProperty("item.1.id", badId)
+            properties.setProperty("item.1.name", "Future look")
+            properties.setProperty("item.1.path", badFile.name)
+            properties.setProperty("item.1.version", "99")
+            properties.setProperty("item.2.id", "invalid")
+            registry.outputStream().use { properties.store(it, null) }
+            val loaded = LookLibraryEntries.load(library)
+            val state = com.rawlab.android.editor.EditorStateReducer.looksLoaded(com.rawlab.android.editor.EditorState(), loaded)
+            assertEquals(listOf(good.id), state.looks.filter { it.managed }.map { it.id })
+            assertEquals(listOf("Future look", null), state.unreadableLooks.map { it.name })
+            val remaining = LookLibraryEntries.removeUnreadable(library, state.unreadableLooks.first())
+            val refreshed = com.rawlab.android.editor.EditorStateReducer.looksLoaded(state, remaining)
+            assertEquals(1, refreshed.unreadableLooks.size)
+            assertFalse(badFile.exists())
+            val restart = LookLibraryEntries.load(LookLibrary(root, validator))
+            assertEquals(refreshed.unreadableLooks, restart.unreadable)
+            assertEquals(listOf(good.id), restart.looks.map { it.id })
+            assertTrue(LookLibraryEntries.removeUnreadable(library, refreshed.unreadableLooks.single()).unreadable.isEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test
     fun compatibilityBadgeSurvivesRestart() {
         val root = Files.createTempDirectory("rawlab-compatible-library").toFile()
         val validate = LookValidator { LookValidation(LookFormat.CUBE, 0, 8) }
@@ -80,6 +112,8 @@ class LookLibraryTest {
             assertEquals(LookFormat.RLOOK, imported.format)
             assertEquals(2, imported.version)
             assertEquals("profile.dcp", imported.originalName)
+            assertFalse(imported.appearanceUnverified)
+            assertEquals(0, imported.compatibilityMode)
             assertTrue(imported.file(root).name.endsWith(".rlook"))
             assertArrayEquals("RLOOKDCP".toByteArray(), imported.file(root).readBytes())
             assertEquals(listOf(imported.id), LookLibrary(root, validator, compiler).list().map { it.id })
@@ -328,6 +362,155 @@ class LookLibraryTest {
     }
 
     @Test
+    fun oneBadRegistryItemDegradesOnlyItselfAndCanBeRemoved() {
+        val root = Files.createTempDirectory("rawlab-look-mixed").toFile()
+        val sourceA = File(root.parentFile, "mixed-a.cube").apply { writeText("valid") }
+        val sourceB = File(root.parentFile, "mixed-b.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val goodA = library.importLook(sourceA)
+            val goodB = library.importLook(sourceB)
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            val badID = "00000000-0000-0000-0000-000000000002"
+            properties.setProperty("count", "3")
+            properties.setProperty("item.2.id", badID)
+            properties.setProperty("item.2.name", "Broken")
+            properties.setProperty("item.2.originalName", "broken.cube")
+            properties.setProperty("item.2.format", "cube")
+            properties.setProperty("item.2.version", "0")
+            properties.setProperty("item.2.path", "mismatch.cube")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(goodA.id, goodB.id), reloaded.list().map { it.id })
+            val unreadable = reloaded.listUnreadable()
+            assertEquals(1, unreadable.size)
+            assertEquals(badID, unreadable[0].id); assertEquals("Broken", unreadable[0].name)
+            reloaded.rename(goodA.id, "Renamed")
+            assertTrue(registry.readText().contains("item.2.id=$badID"))
+            assertTrue(registry.readText().contains("item.2.path=mismatch.cube"))
+            reloaded.removeUnreadable(unreadable[0])
+            assertFalse(registry.readText().contains(badID))
+            assertEquals(listOf("Renamed", "mixed-b.cube"), reloaded.list().map { it.name })
+            assertThrows(NoSuchElementException::class.java) { reloaded.removeUnreadable(unreadable[0]) }
+        } finally { root.deleteRecursively() }
+    }
+
+    // 红锚点 B3：删除坏外观条目先校验文件归属与安全路径——不得因路径恰好撞上而删掉存活外观文件或 registry.properties 自身。
+    @Test
+    fun removingUnreadableKeepsForeignAndRegistryFiles() {
+        val root = Files.createTempDirectory("rawlab-look-ownership").toFile()
+        val sourceA = File(root.parentFile, "owned-a.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val owned = library.importLook(sourceA)
+            val orphanName = "11111111-2222-3333-4444-555555555555.cube"
+            root.resolve(orphanName).writeText("valid")
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            fun ghost(index: Int, id: String, path: String, name: String) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", id)
+                properties.setProperty(prefix + "name", name)
+                properties.setProperty(prefix + "originalName", "$name.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", path)
+            }
+            properties.setProperty("count", "4")
+            ghost(1, "00000000-0000-0000-0000-000000000001", owned.relativePath, "Shadow")
+            ghost(2, "00000000-0000-0000-0000-000000000002", orphanName, "Orphan")
+            ghost(3, "00000000-0000-0000-0000-000000000003", "registry.properties", "Selfish")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+            assertEquals(3, reloaded.listUnreadable().size)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Shadow" })
+            assertTrue("live look file must survive", owned.file(root).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Selfish" })
+            assertTrue("registry.properties must not delete itself", registry.isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Orphan" })
+            assertFalse("orphan UUID file is cleaned with its own entry", root.resolve(orphanName).exists())
+            assertTrue(reloaded.listUnreadable().isEmpty())
+            assertTrue(owned.file(root).isFile)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+        } finally { root.deleteRecursively(); sourceA.delete() }
+    }
+
+    // 红锚点 B3：两条同键坏条目只删被点名的那一条，不得按键组一次删光。
+    @Test
+    fun removingUnreadableDeletesOnlyOneOfIdenticalKeyEntries() {
+        val root = Files.createTempDirectory("rawlab-look-twins").toFile()
+        try {
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply {
+                setProperty("version", "1")
+                setProperty("count", "2")
+            }
+            for (index in 0..1) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", "00000000-0000-0000-0000-000000000009")
+                properties.setProperty(prefix + "name", "Twin")
+                properties.setProperty(prefix + "originalName", "twin.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", "twin.cube")
+            }
+            registry.outputStream().use { properties.store(it, null) }
+            val library = LookLibrary(root, validator)
+            assertEquals(2, library.listUnreadable().size)
+            library.removeUnreadable(library.listUnreadable()[0])
+            assertEquals(1, library.listUnreadable().size)
+            assertEquals(1, LookLibrary(root, validator).listUnreadable().size)
+        } finally { root.deleteRecursively() }
+    }
+
+    // r2 红锚点 B3/S5：大小写不敏感卷上坏条目 path `<id>.CUBE` 与存活条目 `<id>.cube` 是同一
+    // 实体文件，归属判重必须 ignoreCase；共享文件只在最后一条引用删除后清理；非 UUID 遗留名不删。
+    @Test
+    fun removingUnreadableKeepsCaseVariantAndUnmanagedFiles() {
+        val root = Files.createTempDirectory("rawlab-look-casefold").toFile()
+        val sourceA = File(root.parentFile, "casefold-a.cube").apply { writeText("valid") }
+        try {
+            val library = LookLibrary(root, validator)
+            val owned = library.importLook(sourceA)
+            val sharedName = "9f1e2d3c-4b5a-4678-9abc-def012345678.cube"
+            root.resolve(sharedName).writeText("valid")
+            root.resolve("legacy.cube").writeText("valid")
+            val registry = root.resolve("registry.properties")
+            val properties = Properties().apply { registry.inputStream().use { load(it) } }
+            fun ghost(index: Int, id: String, path: String, name: String) {
+                val prefix = "item.$index."
+                properties.setProperty(prefix + "id", id)
+                properties.setProperty(prefix + "name", name)
+                properties.setProperty(prefix + "originalName", "$name.cube")
+                properties.setProperty(prefix + "format", "cube")
+                properties.setProperty(prefix + "version", "0")
+                properties.setProperty(prefix + "path", path)
+            }
+            properties.setProperty("count", "5")
+            ghost(1, "00000000-0000-0000-0000-000000000011", "${owned.id}.CUBE", "UpperExt")
+            ghost(2, "00000000-0000-0000-0000-000000000012", sharedName, "TwinA")
+            ghost(3, "00000000-0000-0000-0000-000000000013", sharedName, "TwinB")
+            ghost(4, "00000000-0000-0000-0000-000000000014", "legacy.cube", "Legacy")
+            registry.outputStream().use { properties.store(it, null) }
+            val reloaded = LookLibrary(root, validator)
+            assertEquals(listOf(owned.id), reloaded.list().map { it.id })
+            assertEquals(4, reloaded.listUnreadable().size)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "UpperExt" })
+            assertTrue("case-variant ghost must not delete the live managed file", owned.file(root).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "TwinA" })
+            assertTrue("shared file stays while the twin ghost still references it", root.resolve(sharedName).isFile)
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "TwinB" })
+            assertFalse("the last ghost referencing the shared file cleans it", root.resolve(sharedName).exists())
+            reloaded.removeUnreadable(reloaded.listUnreadable().first { it.name == "Legacy" })
+            assertTrue("non-UUID managed-style file is left to the user", root.resolve("legacy.cube").isFile)
+            assertTrue(reloaded.listUnreadable().isEmpty())
+            assertTrue(owned.file(root).isFile)
+        } finally { root.deleteRecursively(); sourceA.delete() }
+    }
+
+    @Test
     fun missingManagedFileRemainsRemovableAndIsMarkedUnavailable() {
         val root = Files.createTempDirectory("rawlab-looks").toFile()
         val source = File(root.parentFile, "missing.cube").apply { writeText("valid") }
@@ -371,6 +554,59 @@ class LookLibraryTest {
         } finally {
             root.deleteRecursively()
             source.delete()
+        }
+    }
+
+    @Test
+    fun listSkipsValidationWhenFileStatIsUnchangedAndDetectsModificationAndDeletion() {
+        val root = Files.createTempDirectory("rawlab-look-stat-cache").toFile()
+        try {
+            val validations = java.util.concurrent.atomic.AtomicInteger()
+            val countingValidator = LookValidator { file ->
+                validations.incrementAndGet()
+                validator.validate(file)
+            }
+            val library = LookLibrary(root, countingValidator)
+            val imported = library.importLook("valid".byteInputStream(), "cached.cube")
+            assertEquals(1, validations.get())
+
+            // Same instance & fresh instance (simulating process restart): 0 full-file validations in list().
+            assertTrue(library.list().single().available)
+            assertTrue(library.list().single().available)
+            assertTrue(LookLibrary(root, countingValidator).list().single().available)
+            assertEquals(1, validations.get())
+
+            // Legacy registry entries without validatedSize/validatedModified still decode cleanly, validate once, and cache in memory.
+            val registry = File(root, "registry.properties")
+            val legacyProps = Properties().apply { registry.inputStream().use { load(it) } }
+            legacyProps.remove("item.0.validatedSize")
+            legacyProps.remove("item.0.validatedModified")
+            registry.outputStream().use { legacyProps.store(it, null) }
+            val legacyLibrary = LookLibrary(root, countingValidator)
+            assertTrue(legacyLibrary.list().single().available)
+            assertEquals(2, validations.get())
+            assertTrue(legacyLibrary.list().single().available)
+            assertEquals(2, validations.get())
+
+            // Modify managed file on disk (different length & bumped mtime) -> re-validated once and marked unavailable.
+            val managedFile = imported.file(root)
+            val oldModified = managedFile.lastModified()
+            managedFile.writeText("corrupted-look")
+            managedFile.setLastModified(oldModified + 5_000L)
+            val afterModify = legacyLibrary.list().single()
+            assertFalse(afterModify.available)
+            assertEquals(3, validations.get())
+
+            // Unchanged corrupted file stays cached as unavailable without re-validating.
+            assertFalse(legacyLibrary.list().single().available)
+            assertEquals(3, validations.get())
+
+            // Delete file on disk -> marked unavailable with 0 validator calls.
+            assertTrue(managedFile.delete())
+            assertFalse(legacyLibrary.list().single().available)
+            assertEquals(3, validations.get())
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

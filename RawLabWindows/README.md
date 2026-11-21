@@ -5,14 +5,16 @@
 原生 WPF / .NET 8 Windows x64 客户端，复用 Mac 版的 C++ / LibRaw 显影管线。
 支持 Windows 10/11 x64，默认使用 Direct3D 11 硬件加速，失败自动回退 CPU。
 
-0.8 编辑器与 Agent 已合入集成源码。统一参数行、原生菜单、几何/镜头草稿及各轮验证边界见 [Windows 0.8 验证记录](VERIFICATION-v08.md)。实际发布状态、包版本和校验和以 GitHub Release 及随包 provenance 为准。
+0.8 编辑器与 Agent 已合入集成源码。统一参数行、原生菜单、几何/镜头草稿及各轮验证边界见 [Windows 0.8 验证记录](../docs/archive/verification/windows/VERIFICATION-v08.md)。实际发布状态、包版本和校验和以 GitHub Release 及随包 provenance 为准。
 
 Agent v08 接入了共享 v4 JSON/CLI、普通 JPEG/PNG/经典 TIFF 和默认单张预览。
 Windows 也可用随包 libheif 导入普通 SDR HEIF/HEIC。普通图像输入接受不透明的 8 位 SDR RGB 和 16 位整数 RGB PNG/经典 TIFF，
 源图上限为 1.28 亿像素。导入应用图像方向，并将带色彩标记的图像转为 sRGB。
 带增益图的 HDR HEIF 使用下述 HDR 入口。
 新窗口、重新打开及历史恢复默认关闭对比；同图手动选择的并排/滑动会保留到切图。
-Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
+Windows 各轮实测源码快照、限制及物理项目见 [Agent v08 验证记录](../docs/archive/verification/windows/VERIFICATION-agent-v08.md)；历史源码验证不替代最终候选包验收。
+配方生成器 `AgentRecipe` 按整改决策 Q9 定位为测试工具：仅 `tests/AgentRecipe.cs` 与托管回归使用，
+不编译进应用，界面没有独立的复制配方入口。
 
 v0.5.0 新增逐照片本机调整记忆和独立批量导出窗口。任务固定当前参数、降噪设置和外观，多选 RAW 后输出 JPEG/16-bit PNG；当前版本还支持渲染型 DNG，支持效果检查、逐项结果、取消、失败重试与启动恢复；不改写 RAW 或目标编辑记录。验证范围见[验收记录](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-edit-memory-batch-export-2026-10-10.md)。
 
@@ -34,13 +36,13 @@ SDR rendition 和 SDR/HDR JPEG 使用共享 DNG profile/增益表后端及有界
 decoder revision 在恢复或进入 HDR 前拒绝。预设、同步和批量 HDR 仅对实际探测为 ProRAW 的
 RAW 放行，不能因 `.dng` 扩展名把普通 Bayer RAW 提升到该路径。
 
-## 下载 v0.10.0 Windows 包
+## 下载 v0.11.0 Windows 包
 
-[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Windows-0.10.0-x64.zip) · [发布说明](../docs/releases/v0.10/v0.10.0.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.10.0/SHA256SUMS.txt)
+[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Windows-0.11.0-x64.zip) · [发布说明](../docs/releases/v0.11/v0.11.0.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt)
 
-版本 `0.10.0` / build `19`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
+版本 `0.11.0` / build `20`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
 
-本次扩展 HDR 曲线、色彩、细节、效果和外观，增加 Edit、Select、Preview 桌面工作区；从系统打开的文件会转交已运行的应用。新增 16 位整数 RGB PNG/TIFF 和普通 SDR HEIF 输入，并修复普通图像批量目标因来源启用 AI 降噪而无法导出的问题。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
+本次引入 Processing v3（±5 EV SDR 曝光及校验后可回滚升级）、已编辑铅笔标记与效果缩略图、Sony RAW 全传感器画幅显影、16 位渲染型 DNG 内嵌预览、移动端 RGB 分通道曲线与镜头暗角开关保留，并修复手动安装版更新检测、更新失败锁死、HDR 显示、D3D11 设备丢失恢复及大图分块渲染。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 
@@ -106,7 +108,7 @@ DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependenc
 批量与集合导出保留 AI 启用状态、请求后端和冻结参数。预检只检查 RAW 类型与 AI 可用性；
 导出时自动准备缺失结果，显示进度并支持取消。取消准备后当前照片保留为待处理，已完成的输出保留。
 批量任务同时保存所选 AI 显卡，恢复任务时沿用该选择。
-Agent JSON v5 暂不表达 AI 降噪，复制配方会要求先关闭 AI。
+Agent JSON v5 暂不表达 AI 降噪，Agent 配方测试工具会要求先关闭 AI。
 
 AI 准备、预览和导出失败时自动保存本地诊断，最近 20 份存放在
 `%LOCALAPPDATA%/RawLab/Diagnostics/AI`。降噪面板的失败状态可导出对应诊断，设置页可导出
@@ -209,7 +211,7 @@ LibRaw 去马赛克和 RAW 颜色转换启用多核 CPU，发行目录随附 Ope
 
 本机 Sony ARW 的前后测试中，首次出现画面从 1059 ms 降至 43 ms（相机内嵌预览），重复原尺寸放大从约 410 ms 降至 4 ms，拖动期间合成回调平均间隔从 60.7 ms 降至 31.5 ms。
 首次原尺寸细节仍约需 0.4 秒；测试使用本地文件且未清空文件缓存，远程显示为约 32 Hz，不能据此推断网络盘冷读取速度或本地高刷新率表现。
-测量方法、输出一致性与验证范围见 [性能记录](performance.md)。
+测量方法、输出一致性与验证范围见 [性能记录](../docs/archive/verification/windows/performance.md)。
 
 ## 硬件加速
 
@@ -293,14 +295,16 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 除上述纯托管 `--white-balance` 外，主测试程序的共同入口在分派默认或专项套件前检查 `%LOCALAPPDATA%/RawLab/Batch/job.json`，
 存在即拒绝运行；默认套件完成 native 检查后、WPF 初始化前再检查一次。使用没有产品任务并发运行的独立测试账号，
 不要为运行测试删除或移动已有 journal。默认窗口的 EditStore 仍使用每次运行独立的目录。
-`run-v08.ps1` 的 `default-isolation` 回归也可直接运行
-`RawLabWindows.Tests.dll --default-isolation <output>`，不需要 RAW 或系统目录重定向。
+`run-v08.ps1` 的 `default-isolation` 回归也可通过
+`dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --filter "Suite=default-isolation"`
+在子进程中以 `--run-isolated default-isolation <output>` 运行，不需要 RAW 或系统目录重定向。
 它对同一共同入口传入任务私有的 journal 路径，覆盖 Running/Publishing、完整与 UI-only
 参数、photo-features/interactions 分派、文件锁和损坏 JSON，检查拒绝后 journal、staging、成片的文件列表、字节和修改时间不变，
 且不创建输出或 WPF Application。另一个私有对照调用真实恢复清理，证明 fixture 确实能触发风险。
 
-独立 `localization-ui/LocalizationUiChecks.csproj` 也在任何偏好处理或 WPF 启动前执行同一保护。
-其 `--default-isolation <output>` 回归使用私有 Running/Publishing、文件锁和损坏 JSON，
+同一测试工程中的 `localization-admission` 与 `localization-ui` 回归也通过子进程隔离
+(`--run-isolated localization-admission` / `--run-isolated localization-ui`) 在任何偏好处理或 WPF 启动前执行同一保护。
+其 `localization-admission` 回归使用私有 Running/Publishing、文件锁和损坏 JSON，
 确认 journal/staging/源文件/成片的文件列表、字节、修改时间保持，且未进入启动或语言处理。
 正常六语测试改用私有语言文件，不再备份、覆盖或恢复真实 `language.txt`。
 测试保留真实 App.OnStartup、StartupUri 自动创建窗口和语言订阅；测试侧的 Loaded 类处理器
@@ -309,7 +313,7 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 直接构造 WPF 主窗口的测试在 Show 前通过 `TestWindowState` 使用私有 Edits、Batch、目录库和禁用自动更新的配置；
 独立 StartupUri 路径在 Loaded 类处理器中完成同样隔离，先于产品的 Loaded 实例处理器。
 防止 Loaded 写入默认 `updates.json` 或发起后台网络请求。窗口构造仍读取默认配置，所以入口保护和独立账号要求继续有效；
-这不是跨进程锁或完整用户配置虚拟化。`run-v08.ps1` 会构建两种可执行程序，并包含
+这不是跨进程锁或完整用户配置虚拟化。`run-v08.ps1` 构建统一测试工程 `RawLabWindows.Tests.csproj`，并包含
 `localization-admission`、`profile-isolation`、`localization-ui`、`status-layout` 和 `updates` 检查。
 状态栏布局回归覆盖六语言、两种窗口尺寸、普通/放大文字及保存/重试/导出/批量提示显隐，
 不替代物理 DPI、辅助功能或 Explorer/OLE 验收。
@@ -339,7 +343,7 @@ journal 清理失败后的恢复与重试、Running 批量的当前项完成后�
 该验收默认仅 CPU；测试环境变量 `RAWLAB_COMPARISON_GPU=Cpu|Auto|Force` 可选择两次启动的加速模式，
 运行后应恢复原环境变量。Force 会核对 RAW 实际 GPU backend，PNG/JPEG 必须显示 CPU，返回 RAW 后恢复原模式。
 原生 UIA 本身仍不代表 Explorer/OLE 拖入、真实鼠标/触控笔、物理 GPU 或多显示器验收。
-VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及未覆盖项目见 [验证记录](VERIFICATION-agent-v08.md#native-desktop-follow-up-2026-10-16)。
+VM 和 125 真实主机的原生通过结果、独立 PID/LUID 显存采样及未覆盖项目见 [验证记录](../docs/archive/verification/windows/VERIFICATION-agent-v08.md#native-desktop-follow-up-2026-10-16)。
 
 `editor-review` 还覆盖空闲批量窗口同步关闭失败时的 pending viewport resize：锁住私有 journal，
 分别保留和不保留前台导入，确认无需额外输入即可恢复精确预览，且独立 CPU 像素一致。
@@ -387,7 +391,7 @@ dotnet ./RawLabWindows/tests/bin/Release/net8.0-windows/RawLabWindows.Tests.dll 
 
 历史版本验证通过 119 项 Windows 检查；Sony/DJI 共 38 组输出像素哈希与优化前一致。共享核心当时 11 项 CTest 通过；这些结果不替代[本轮跨平台验证](https://github.com/dancancer/RawLab/blob/a38ac6065f747cc43ddbee1c8df232c049b288d2/docs/archive/verification/verification-cross-platform-effects-gpu-denoise-2026-10-10.md)。
 
-本机样片、GPU 像素差异和性能结果见 [验证记录](verification.md)。
+本机样片、GPU 像素差异和性能结果见 [验证记录](../docs/archive/verification/windows/verification.md)。
 
 ### 恢复、入口及资源回归
 

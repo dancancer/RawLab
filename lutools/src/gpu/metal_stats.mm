@@ -1,4 +1,5 @@
 #include "gpu/image_stats.h"
+#include "core/processing_cancellation.h"
 
 #import <Metal/Metal.h>
 
@@ -38,14 +39,14 @@ bool checkedAdd(size_t left, size_t right, size_t& result) {
     return true;
 }
 
-bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
+bool validateBuffer(const sony2fuji::PixelBufferView& buffer, ImageLayout& layout) {
     if (!buffer.data || buffer.width == 0 || buffer.height == 0) {
         return false;
     }
 
-    if (buffer.pixel_format == SONY2FUJI_PIXEL_RGB8) {
+    if (buffer.format == sony2fuji::PixelBufferFormat::RGB8) {
         layout.channels = 3;
-    } else if (buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8) {
+    } else if (buffer.format == sony2fuji::PixelBufferFormat::RGBA8) {
         layout.channels = 4;
     } else {
         return false;
@@ -53,15 +54,15 @@ bool validateBuffer(const sony2fuji_buffer& buffer, ImageLayout& layout) {
 
     size_t rowBytes = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.width), layout.channels, rowBytes) ||
-        buffer.stride_bytes < rowBytes) {
+        buffer.strideBytes < rowBytes) {
         return false;
     }
 
     size_t lastRowOffset = 0;
     if (!checkedMultiply(static_cast<size_t>(buffer.height - 1),
-                         static_cast<size_t>(buffer.stride_bytes), lastRowOffset) ||
+                         static_cast<size_t>(buffer.strideBytes), lastRowOffset) ||
         !checkedAdd(lastRowOffset, rowBytes, layout.requiredBytes) ||
-        layout.requiredBytes > buffer.size_bytes) {
+        layout.requiredBytes > buffer.sizeBytes) {
         return false;
     }
 
@@ -171,7 +172,7 @@ struct StatsParams {
 };
 
 bool runKernel(MetalContext& context, const ImageLayout& layout,
-               const sony2fuji_buffer& buffer, sony2fuji::ImageStats& result) {
+               const sony2fuji::PixelBufferView& buffer, sony2fuji::ImageStats& result) {
     id<MTLBuffer> pixels = [context.device newBufferWithBytes:layout.data
                                                          length:layout.requiredBytes
                                                         options:MTLResourceStorageModeShared];
@@ -188,7 +189,7 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
     const StatsParams params{
         buffer.width,
         buffer.height,
-        buffer.stride_bytes,
+        buffer.strideBytes,
         layout.channels,
         static_cast<uint32_t>(layout.pixelCount)
     };
@@ -237,7 +238,22 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
         std::memcpy(candidate.clipping.data(), clipping.contents, layout.maskBytes);
         result = std::move(candidate);
         return true;
+    } catch (const sony2fuji::ProcessingCancelled&) {
+        // Cancellation is not a stats failure: rethrow it unchanged (the #329
+        // semantics). Forward-looking defence: the only FFI caller today,
+        // sony2fuji_analyze_image, is FORCE-only and installs no cancellation
+        // scope, so a stray cancellation maps to PROCESSING_ERROR there; what the
+        // rethrow prevents is this fallback turning a cancelled run into a plain
+        // `false` and inviting an AUTO caller to redo the whole image on CPU.
+        throw;
+    } catch (const std::exception&) {
+        return false;
     } catch (...) {
+        // Restore the catch-all fallback: computeImageStatsMetal has a no-throw
+        // promise, and a throw object that does not derive from std::exception
+        // escaped it toward direct C++ callers and the internal-API tests (G-N5).
+        // The sony2fuji_analyze_image boundary happens to map such a throw to
+        // PROCESSING_ERROR anyway; the promise belongs to this function.
         return false;
     }
 }
@@ -246,16 +262,22 @@ bool runKernel(MetalContext& context, const ImageLayout& layout,
 
 namespace sony2fuji {
 
-bool computeImageStatsMetal(const sony2fuji_buffer& buffer, ImageStats& output) {
+bool computeImageStatsMetal(const PixelBufferView& buffer, ImageStats& output) {
     ImageLayout layout;
     if (!validateBuffer(buffer, layout)) {
         return false;
     }
-    MetalContext* context = getMetalContext();
-    if (!context) {
-        return false;
+    @autoreleasepool {
+        @try {
+            MetalContext* context = getMetalContext();
+            if (!context) {
+                return false;
+            }
+            return runKernel(*context, layout, buffer, output);
+        } @catch (NSException*) {
+            return false;
+        }
     }
-    return runKernel(*context, layout, buffer, output);
 }
 
 } // namespace sony2fuji

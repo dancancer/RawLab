@@ -8,6 +8,7 @@ internal sealed class AdjustmentScopeEditor : Grid
 {
     private readonly ComboBox scope = new() { MinWidth = 180, Margin = new Thickness(0, 4, 0, 12) };
     private readonly Dictionary<AdjustmentField, CheckBox> fields = [];
+    internal IReadOnlyDictionary<AdjustmentField, CheckBox> Fields => fields;
     private readonly bool hdr;
     private readonly Func<AdjustmentScope, AdjustmentPayload>? capture;
     private readonly Func<string, string, string?>? lookName;
@@ -38,7 +39,7 @@ internal sealed class AdjustmentScopeEditor : Grid
         clear.HorizontalAlignment = HorizontalAlignment.Left; content.Children.Add(clear);
         var allowed=hdr ? AdjustmentFields.HDRTransferFields(cameraRaw) : AdjustmentFields.All.ToHashSet();
         var defaults=hdr ? AdjustmentFields.HDRCommon : AdjustmentFields.Common;
-        foreach (var group in allowed.OrderBy(field=>(int)field).GroupBy(field => field.IsHDRRelative() ? "color" : field.Group())) {
+        foreach (var group in allowed.OrderBy(field=>(int)field).GroupBy(field => field.Group())) {
             var title = AdjustmentDialogLayout.Text(AdjustmentTransferPresentation.Group(group.Key));
             title.FontWeight = FontWeights.SemiBold; title.Margin = new Thickness(0, 14, 0, 6); content.Children.Add(title);
             var members = group.ToArray();

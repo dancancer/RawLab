@@ -8,7 +8,6 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.settings.*
 import java.io.File
-import java.util.UUID
 import java.util.concurrent.CancellationException
 
 /** HDR 统一批量只读目标记录，转换结果归任务所有，不改变来源或目标的编辑模式。 */
@@ -76,7 +75,7 @@ internal class BatchHDRPreparation(
             val rows=job.rows.mapIndexed { index,row ->
                 val value=candidates[index].frozen
                 val copy=value.lookFile?.let { original ->
-                    File(folder,"hdr-look-${UUID.randomUUID()}.${original.extension}").also { file -> owned+=file;original.copyTo(file) }
+                    File(folder,"hdr-look-${value.lookSHA256}.${original.extension}").also { file -> owned+=file;if(!file.exists())original.copyTo(file) }
                 }
                 val frozen=value.copy(lookFile=copy)
                 frozen.verifyFiles(row.target.sourceFile)

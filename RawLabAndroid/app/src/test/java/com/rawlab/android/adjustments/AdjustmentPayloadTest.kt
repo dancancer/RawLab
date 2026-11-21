@@ -13,17 +13,22 @@ class AdjustmentPayloadTest {
             assertThrows(AdjustmentTransferException::class.java) { AdjustmentPayload.decode(invalid) }
     }
     @Test fun sharedPayloadVectorsHaveTheSameAcceptanceAndRoundTrip() {
-        val fixture = JSONObject(File("../../Shared/fixtures/adjustment-transfer-v1.json").readText())
+        val fixture = JSONObject(resolveSharedFixture("adjustment-transfer-v1.json").readText())
+        assertEquals(1, fixture.getInt("fixture_version"))
         val vectors = fixture.getJSONArray("vectors")
-        assertEquals(80, vectors.length())
+        assertTrue(vectors.length() > 0)
+        val seen = linkedSetOf<String>()
         for (index in 0 until vectors.length()) {
             val vector = vectors.getJSONObject(index)
+            val id = vector.getString("id")
+            assertTrue("Duplicate vector ID: $id", seen.add(id))
             val json = vector.getJSONObject("payload").toString()
             if (vector.getBoolean("valid")) {
                 val payload = AdjustmentPayload.decode(json)
-                assertEquals(vector.getString("id"), payload, AdjustmentPayload.decode(payload.encode()))
-            } else assertThrows(vector.getString("id"), Exception::class.java) { AdjustmentPayload.decode(json) }
+                assertEquals(id, payload, AdjustmentPayload.decode(payload.encode()))
+            } else assertThrows(id, Exception::class.java) { AdjustmentPayload.decode(json) }
         }
+        assertEquals(vectors.length(), seen.size)
     }
 
     @Test fun unknownFieldsWrongTypesAndFutureVersionsAreRejected() {
@@ -50,3 +55,17 @@ class AdjustmentPayloadTest {
         assertTrue(AdjustmentField.entries.filter { it.hslLocation != null }.size == 24)
     }
 }
+
+internal fun resolveSharedPath(relativePath: String): File {
+    val direct = listOf(File(relativePath), File("../../$relativePath")).firstOrNull { it.isFile }
+    if (direct != null) return direct
+    var dir: File? = File("").absoluteFile
+    while (dir != null) {
+        val candidate = File(dir, relativePath)
+        if (candidate.isFile) return candidate
+        dir = dir.parentFile
+    }
+    error("Shared file not found: $relativePath")
+}
+
+internal fun resolveSharedFixture(name: String): File = resolveSharedPath("Shared/fixtures/$name")

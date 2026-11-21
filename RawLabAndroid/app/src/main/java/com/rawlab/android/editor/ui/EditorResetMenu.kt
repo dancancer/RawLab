@@ -30,28 +30,20 @@ internal fun resetScopeTitle(scope: EditorResetScope): String = when (scope) {
 }
 
 @Composable
-internal fun EditorResetMenu(state: EditorState, tool: Int, channel: Int, gradingZone: ColorGradingZone, onDismiss: () -> Unit,
-    onSelect: (EditorResetScope) -> Unit) {
-    val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
-    val scopes = if (tool == 14) listOf(EditorResetScope.HslChannel(channel), EditorResetScope.AllHsl,
-        EditorResetScope.Group(group), EditorResetScope.All)
-    else if (tool == 21) listOf(EditorResetScope.GradingZone(gradingZone), EditorResetScope.AllGrading, EditorResetScope.Group(group), EditorResetScope.All)
-    else listOf(EditorResetScope.Tool(tool), EditorResetScope.Group(group), EditorResetScope.All)
+internal fun EditorResetMenu(
+    presentation: EditorWorkspaceResetPresentation,
+    onDismiss: () -> Unit,
+    onSelect: (EditorResetScope) -> Unit,
+) {
+    val menu = presentation.style as? EditorWorkspaceResetStyle.Menu ?: return
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        scopes.forEach { scope ->
-            val changed = EditorAdjustmentRules.isModified(scope, state.visibleEdits, state.resetContext())
-            DropdownMenuItem(text = { Text(resetScopeTitle(scope)) },
-                modifier = Modifier.testTag("editor-reset-${when (scope) {
-                    is EditorResetScope.Tool -> "tool"
-                    is EditorResetScope.Group -> "group"
-                    is EditorResetScope.HslChannel -> "channel"
-                    is EditorResetScope.GradingZone -> "grading-zone"
-                    EditorResetScope.AllGrading -> "grading"
-                    EditorResetScope.AllHsl -> "hsl"
-                    EditorResetScope.All -> "all"
-                }}"), enabled = state.controlsEnabled && (changed || scope == EditorResetScope.All && state.draft != null) &&
-                    state.exact && !state.rendering && !state.previewResizePending,
-                onClick = { onSelect(scope) })
+        menu.items.forEach { item ->
+            DropdownMenuItem(
+                text = { Text(resetScopeTitle(item.scope)) },
+                modifier = Modifier.testTag(item.id),
+                enabled = item.isEnabled,
+                onClick = { onSelect(item.scope) },
+            )
         }
     }
 }

@@ -7,6 +7,8 @@ import com.rawlab.android.batch.*
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.photo.PhotoStorage
+import com.rawlab.android.photo.SystemPhotoStorageFull
+import com.rawlab.android.photo.WorkingCopyStorageFull
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.HDRModeError
 import com.rawlab.android.settings.PhotoEditState
@@ -21,6 +23,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
     private val journalRoot: File, readRecord: (PhotoIdentity) -> PhotoEditState,
     editGeneration: (PhotoIdentity) -> Long,
     private val captureActiveValidation: () -> (String) -> Unit,
+    private val awaitPendingEdits: suspend () -> Unit = {},
     private val canRelease: (ImportedPhoto) -> Boolean,
 ) {
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
@@ -84,8 +87,23 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         scope.launch {
             val additions = mutableListOf<BatchTarget>()
             val failures = mutableMapOf<String, String>()
+            var globalError: String? = null
             withContext(Dispatchers.IO) { synchronized(storage) {
-                for (uri in uris.distinct()) {
+                val distinctUris = uris.distinct()
+                val pendingImportUris = distinctUris.filter { uri ->
+                    val id = uri.toString()
+                    imported[id] == null && current?.takeIf { it.identity.value == id } == null
+                }
+                try {
+                    storage.preflightImportSpace(pendingImportUris)
+                } catch (_: WorkingCopyStorageFull) {
+                    globalError = com.rawlab.android.i18n.AppStrings.text(com.rawlab.android.R.string.system_open_storage_full)
+                    return@synchronized
+                } catch (_: SystemPhotoStorageFull) {
+                    globalError = com.rawlab.android.i18n.AppStrings.text(com.rawlab.android.R.string.system_open_storage_full)
+                    return@synchronized
+                }
+                for (uri in distinctUris) {
                     try {
                         val id = uri.toString()
                         val photo = imported[id] ?: current?.takeIf { it.identity.value == id } ?: storage.import(uri)
@@ -110,7 +128,10 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
                     }
                 }
             } }
-            mutable.update { it.acceptImports(additions, failures).copy(busy = false) }
+            mutable.update {
+                if (globalError != null) it.copy(busy = false, error = globalError)
+                else it.acceptImports(additions, failures).copy(busy = false)
+            }
         }
     }
     fun refresh() {
@@ -127,13 +148,14 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         completed: (CollectionExportReview?) -> Unit) {
         if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
-        val validateActive = captureActiveValidation()
         mutable.update { it.copy(busy = true, error = null) }
         scope.launch {
             val review = try {
-                withContext(Dispatchers.IO) { synchronized(storage) {
-                    exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
-                } }
+                prepareCollectionReview(awaitPendingEdits, captureActiveValidation) { validateActive ->
+                    withContext(Dispatchers.IO) { synchronized(storage) {
+                        exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
+                    } }
+                }
             } catch (error: Exception) { failure(error.message); null }
             finally { mutable.update { it.copy(busy = false) } }
             completed(review)

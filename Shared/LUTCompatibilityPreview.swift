@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import CoreGraphics
 import Combine
@@ -5,15 +6,26 @@ import UniformTypeIdentifiers
 
 struct LUTPreviewSource {
     let name: String
+    /* 本地常规文件（非跨进程流、非安全作用域一次性 URL）：向导会话期间直接只读引用该路径，
+     不再把 30–100 MB 原片整片拷进临时目录；文件生命周期由 copyTo 闭包或调用方持有的令牌保证。 */
+    let localURL: URL?
     let copyTo: (URL) throws -> Void
-    init(name: String, copyTo: @escaping (URL) throws -> Void) { self.name = name; self.copyTo = copyTo }
+    init(name: String, localURL: URL? = nil, copyTo: @escaping (URL) throws -> Void) {
+        self.name = name; self.localURL = localURL; self.copyTo = copyTo
+    }
     init(url: URL) {
         name = url.lastPathComponent
+        localURL = nil
         copyTo = { destination in
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             try FileManager.default.copyItem(at: url, to: destination)
         }
+    }
+    init(localURL url: URL) {
+        name = url.lastPathComponent
+        localURL = url
+        copyTo = { destination in try FileManager.default.copyItem(at: url, to: destination) }
     }
 }
 
@@ -82,25 +94,28 @@ struct LUTPreviewFrame {
 }
 
 // 仅由串行预览队列使用；源文件副本与 native 会话一起释放。
+// 引用模式（localURL）的临时目录只含 look 副本；原片保持原位，随 worker 释放的只有引用。
 final class LUTPreviewWorker {
     let directory: URL
     let sourceURL: URL
     let displayInput: Bool
     private let lutURL: URL
+    private let previewSource: LUTPreviewSource
     private var session: OpaquePointer?
     private var display = sony2fuji_buffer()
 
     init(lut: URL, source: LUTPreviewSource) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-LUT-preview-\(UUID().uuidString)", isDirectory: true)
-        sourceURL = directory.appendingPathComponent("source").appendingPathExtension((source.name as NSString).pathExtension)
+        sourceURL = source.localURL ?? directory.appendingPathComponent("source").appendingPathExtension((source.name as NSString).pathExtension)
         lutURL = directory.appendingPathComponent("look").appendingPathExtension(lut.pathExtension)
+        previewSource = source
         let type = UTType(filenameExtension: sourceURL.pathExtension)
         displayInput = type?.conforms(to: .image) == true && type?.conforms(to: .rawImage) != true
         session = try Self.newSession()
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try LUTPreviewSource(url: lut).copyTo(lutURL)
-            try source.copyTo(sourceURL)
+            if source.localURL == nil { try source.copyTo(sourceURL) }
             if displayInput {
                 if let info = try HDRSourceInfo.probe(sourceURL) {
                     // 向导只使用原片的 SDR 映射；先限制解码尺寸，转换后立即释放 HDR 双图。
@@ -132,9 +147,10 @@ final class LUTPreviewWorker {
         var session: OpaquePointer?
         guard sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, let session else { throw LUTPreviewError.failed }
         var gpu = sony2fuji_gpu_config(version: SONY2FUJI_GPU_CONFIG_VERSION, struct_size: UInt32(MemoryLayout<sony2fuji_gpu_config>.size), mode: SONY2FUJI_GPU_OFF)
+        let paramsStatus = CanonicalEditRecipe.processingOnlyJSON(processingVersion: 2, exposureMode: "scene")
+            .withCString { sony2fuji_apply_params(session, $0) }
         guard sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK,
-              sony2fuji_session_set_processing_version(session, SONY2FUJI_PROCESSING_C5_V2) == SONY2FUJI_STATUS_OK,
-              sony2fuji_session_set_raw_exposure_mode(session, SONY2FUJI_EXPOSURE_SCENE) == SONY2FUJI_STATUS_OK else {
+              paramsStatus == SONY2FUJI_STATUS_OK else {
             sony2fuji_session_destroy(session); throw LUTPreviewError.failed
         }
         return session

@@ -32,13 +32,13 @@ public partial class MainWindow
         => TransferSession.Copy(scope,CaptureVerifiedAdjustmentSource(),CurrentTransferContext());
     private async void PasteAdjustmentsClicked(object sender,RoutedEventArgs e)
     {
-        if(!PrepareAdjustmentCommand())return;
+        if(!await PrepareAdjustmentCommandAsync())return;
         if(TransferSession.Clipboard is not {} payload){SetStatus(()=>Loc.Text("尚未复制调整。请先从一张照片复制所需范围。"),true);return;}
         await ShowAdjustmentPreflight(payload,[file!]);
     }
     private async void PasteAdjustmentsToPhotosClicked(object sender,RoutedEventArgs e)
     {
-        if(!PrepareAdjustmentCommand())return;
+        if(!await PrepareAdjustmentCommandAsync())return;
         if(TransferSession.Clipboard is not {} payload){SetStatus(()=>Loc.Text("尚未复制调整。请先从一张照片复制所需范围。"),true);return;}
         var picker=new OpenFileDialog{Title=Loc.Text("选择目标照片"),Filter=Loc.Text("照片|")+LibraryEntry.ImageFilter,Multiselect=true};
         if(picker.ShowDialog(this)==true)await ShowAdjustmentPreflight(payload,picker.FileNames);
@@ -71,9 +71,10 @@ public partial class MainWindow
                         var record=editStore!.ReadState(path);
                         if(!record.Identity.SameFile(identity))throw new PhotoChangedException();
                         var defaults=record.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(path);
+                        defaults.RepairLegacyNormalX3f(path);
                         (double Temperature,double Tint)? calibration=null;
                         if(raw) {
-                            using var native=new RenderEngine(1);
+                            using var native=CreateRenderEngine(1);
                             calibration=native.Render(path,defaults,null,32,statistics:false,clipping:false)?.WhiteBalance;
                         }
                         if(!OriginalIdentity.Read(path).SameFile(identity))throw new PhotoChangedException();
@@ -83,14 +84,15 @@ public partial class MainWindow
                                 if (PhotoInput.ProbeCameraRaw(path,out var source) != HDRProbeState.Supported ||
                                     source is not { IsCameraRaw: true, IsProRAW: false })
                                     throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
-                                using var native = new RenderEngine(1);
+                                using var native = CreateRenderEngine(1);
                                 var preflight=candidate.Clone();
                                 preflight.HDRCameraAIEnabled=false;
                                 _ = native.Render(path,preflight,null,128,statistics:false,clipping:false);
                             },ValidateLens:lens=>{
-                            using var native=new RenderEngine(1);var probe=new Adjustments{Lens=lens};
+                            var probe=X3fModeReset.CreateLensProbe(path,defaults,lens);
+                            using var native=CreateRenderEngine(1);
                             var report=native.Render(path,probe,null,32,statistics:false,clipping:false)?.Lens;
-                            if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca)
+                            if(report==null || lens.Distortion && !report.AppliedDistortion || lens.Tca && !report.AppliedTca || lens.Vignetting && !report.AppliedVignetting)
                                 throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"target lens calibration unavailable");
                         });
                         if(calibration!=null)defaults.ResolveWhiteBalance(calibration);
@@ -112,17 +114,65 @@ public partial class MainWindow
     {
         if(transferPreparing)return;
         try {
+            BeginTransferPrepare();
             var operation=await PrepareAdjustmentTargets(payload,paths,action);if(operation==null)return;
             if(operation.Targets.Count==0){SetStatus(()=>Loc.Text("此目录没有照片。"),true);return;}
             var initial=operation.Targets.Select(t=>new AdjustmentOutcome(t.ID,t.Unchanged ? AdjustmentStatus.Unchanged : AdjustmentStatus.Blocked,
                 Error:t.Error,RequiresHistoryDecision:t.Error!=null)).ToArray();
-            var adopted=new Dictionary<string,Exception?>();
+            var adopted=new Dictionary<string,Exception?>(StringComparer.OrdinalIgnoreCase);
             var session=TransferSession;AdjustmentResultDialog? dialog=null;
-            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted),
+            dialog=new AdjustmentResultDialog(this,action==AdjustmentHistoryAction.Preset ? "应用预设" : "粘贴调整",initial,true,skipping=>{var adoptedOutcomes=AdoptAdjustmentOutcomes(session.Apply(operation,skipping),adopted);ShowAdjustmentTransferNotices(operation,adoptedOutcomes,AdjustmentTransferNoticeOrigin.Dialog,CurrentAdoptedSuccessfully(adoptedOutcomes));return adoptedOutcomes;},
                 Loc.Format("来源：{0} · {1} 项调整",sourceName ?? Path.GetFileName(payload.Source.Identifier),payload.Fields.Count),
-                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName);
+                ()=>session.Transactions.FirstOrDefault(t=>t.ID==operation.ID)?.Parts ?? [],undo=>RunAdjustmentHistory(operation.ID,null,undo,dialog!),payload,AdjustmentSummaryLookName,
+                resolveNotices:operation.EffectiveNotices,onInvalidateNotices:InvalidateDialogTransferNotices,onDisposeNotices:DisposeDialogTransferNotices);
             dialog.ShowDialog();
         }catch(Exception error){ShowAdjustmentError(error);}
+    }
+    // W1（#301 收口）：按生命周期统一收口粘贴提示，并将横幅状态机放在纯模型 AdjustmentTransferNoticeBannerState：
+    // 弹窗提示仅显示在结果弹窗内，快速预设提示在 prepare/invalidate/dispose/换图/用户编辑时主动清理；
+    // 稳态帧交付后继续保持活跃横幅引用，直到关面板或后续编辑/渲染清除。
+    private AdjustmentTransferNoticeBannerState transferNoticeBanner = AdjustmentTransferNoticeBannerState.Empty;
+
+    private static string FormatTransferNotices(IReadOnlyList<AdjustmentTransferNotice> notices) =>
+        string.Join("；", notices.Select(notice => Loc.Text(notice.PromptKey())));
+
+    private bool CurrentAdoptedSuccessfully(IReadOnlyList<AdjustmentOutcome> outcomes) =>
+        file != null && outcomes.Any(outcome =>
+            outcome.Status == AdjustmentStatus.Applied && outcome.Error == null &&
+            outcome.Saved is { } saved && StringComparer.OrdinalIgnoreCase.Equals(saved.Identity.Path, file));
+
+    private void ApplyTransferBannerAction(AdjustmentTransferBannerAction action)
+    {
+        transferNoticeBanner = action.NextState;
+        if (action.StatusToApply is { } status) SetStatus(status);
+        else if (action.ClearStatusToEmpty) SetStatus("");
+    }
+
+    private void BeginTransferPrepare() =>
+        ApplyTransferBannerAction(transferNoticeBanner.BeginPrepare(localizedStatus));
+
+    private void InvalidateDialogTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.Invalidate(localizedStatus));
+
+    private void DisposeDialogTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.DisposeDialog(localizedStatus));
+
+    private void DisposeQuickPresetTransferNotices() =>
+        ApplyTransferBannerAction(transferNoticeBanner.DisposeQuickPreset(localizedStatus));
+
+    private void ClearTransferNoticesOnSourceChange() =>
+        ApplyTransferBannerAction(transferNoticeBanner.AfterSourceChange());
+
+    private void ClearTransferNoticesOnUserEdit() =>
+        ApplyTransferBannerAction(transferNoticeBanner.AfterUserEdit(localizedStatus));
+
+    private void ShowAdjustmentTransferNotices(PreparedAdjustmentTransfer operation,IReadOnlyList<AdjustmentOutcome>? outcomes,
+        AdjustmentTransferNoticeOrigin origin,bool appliedCurrentPhoto){
+        var notices=outcomes==null
+            ? operation.Targets.Where(target=>target.Error==null).SelectMany(target=>target.Notices??[]).Distinct().ToArray()
+            : operation.EffectiveNotices(outcomes);
+        ApplyTransferBannerAction(transferNoticeBanner.Show(notices,origin,appliedCurrentPhoto,openRevision,editRevision,localizedStatus,
+            visibleNotices=>()=>FormatTransferNotices(visibleNotices)));
     }
     private IReadOnlyList<AdjustmentOutcome> AdoptAdjustmentOutcomes(IReadOnlyList<AdjustmentOutcome> outcomes,Dictionary<string,Exception?> adopted)
     {
@@ -154,7 +204,8 @@ public partial class MainWindow
     }
     private void RunAdjustmentHistory(Guid id,string? photo,bool undo,Window owner)
     {
-        var adopted=new Dictionary<string,Exception?>();
+        ClearTransferNoticesOnUserEdit();
+        var adopted=new Dictionary<string,Exception?>(StringComparer.OrdinalIgnoreCase);
         IReadOnlyList<AdjustmentOutcome> Run(IReadOnlySet<string> skipped) {
             var results=photo!=null ? skipped.Contains(photo) ? new[]{new AdjustmentOutcome(photo,AdjustmentStatus.Skipped)} :
                 undo ? TransferSession.UndoPhoto(photo,id,HistoryTargetIsCurrent) : TransferSession.RedoPhoto(photo,id,HistoryTargetIsCurrent)

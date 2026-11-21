@@ -786,6 +786,10 @@
       "formats": [],
       "source": "处理 v2"
     },
+    "处理 v3": {
+      "formats": [],
+      "source": "处理 v3"
+    },
     "处理失败：%@": {
       "formats": [
         "%@"
@@ -1922,6 +1926,10 @@
     "自动匹配": {
       "formats": [],
       "source": "自动匹配"
+    },
+    "自动更新不可用，请手动下载": {
+      "formats": [],
+      "source": "自动更新不可用，请手动下载"
     },
     "自动检查更新": {
       "formats": [],
@@ -3397,6 +3405,10 @@
       "formats": [],
       "source": "添加照片…"
     },
+    "确定": {
+      "formats": [],
+      "source": "确定"
+    },
     "确认并冻结任务": {
       "formats": [],
       "source": "确认并冻结任务"
@@ -4375,6 +4387,96 @@
     "请按历史顺序撤销或重做。": {
       "source": "请按历史顺序撤销或重做。",
       "formats": []
+    },
+    "正在匹配原画面…": {
+      "formats": [],
+      "source": "正在匹配原画面…"
+    },
+    "已自动升级，原设置已保留。": {
+      "formats": [],
+      "source": "已自动升级，原设置已保留。"
+    },
+    "画面差异较大，已保留旧版本。": {
+      "formats": [],
+      "source": "画面差异较大，已保留旧版本。"
+    },
+    "已回退，保留旧版本。": {
+      "formats": [],
+      "source": "已回退，保留旧版本。"
+    },
+    "回到迁移前": {
+      "formats": [],
+      "source": "回到迁移前"
+    },
+    "将恢复迁移前的全部调整，之后的修改会被替换。": {
+      "formats": [],
+      "source": "将恢复迁移前的全部调整，之后的修改会被替换。"
+    },
+    "此照片的调整保留原处理版本。": {
+      "formats": [],
+      "source": "此照片的调整保留原处理版本。"
+    },
+    "已编辑": {
+      "formats": [],
+      "source": "已编辑"
+    },
+    "预览待更新": {
+      "formats": [],
+      "source": "预览待更新"
+    },
+    "原始预览": {
+      "formats": [],
+      "source": "原始预览"
+    },
+    "暗角校正": {
+      "formats": [],
+      "source": "暗角校正"
+    },
+    "已忽略旧版 RAW 降噪（FBDD）": {
+      "formats": [],
+      "source": "已忽略旧版 RAW 降噪（FBDD）"
+    },
+    "已忽略渲染后 RGB 降噪": {
+      "formats": [],
+      "source": "已忽略渲染后 RGB 降噪"
+    },
+    "处理版本与来源不同，已沿用当前照片的处理版本": {
+      "formats": [],
+      "source": "处理版本与来源不同，已沿用当前照片的处理版本"
+    },
+    "损坏的预设": {
+      "formats": [],
+      "source": "损坏的预设"
+    },
+    "无法读取此条目，原文已保留": {
+      "formats": [],
+      "source": "无法读取此条目，原文已保留"
+    },
+    "已忽略目标不支持的普通降噪设置": {
+      "formats": [],
+      "source": "已忽略目标不支持的普通降噪设置"
+    },
+    "不可读外观": {
+      "source": "不可读外观",
+      "formats": []
+    },
+    "损坏的外观": {
+      "source": "损坏的外观",
+      "formats": []
+    },
+    "此外观无法读取，可能已损坏或来自不兼容版本。": {
+      "source": "此外观无法读取，可能已损坏或来自不兼容版本。",
+      "formats": []
+    },
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+      "formats": [],
+      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+    },
+    "无法读取 X3F 显影模式：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法读取 X3F 显影模式：{0}"
     }
   },
   "overrides": {},
@@ -5714,6 +5816,14 @@
       "es": "Editar esta foto en HDR requiere macOS 15. Se exportará en SDR.",
       "ja": "この写真を HDR で編集するには macOS 15 が必要です。SDR で書き出します。",
       "zh-Hans": "此照片的 HDR 需 macOS 15 才能编辑，将按 SDR 导出。"
+    },
+    "无法读取 X3F 显影模式：{0}": {
+      "de": "X3F-Entwicklungsmodus konnte nicht gelesen werden: {0}",
+      "en": "Unable to read X3F rendering mode: {0}",
+      "es": "No se pudo leer el modo de revelado X3F: {0}",
+      "fr": "Impossible de lire le mode de développement X3F : {0}",
+      "ja": "X3F 現像モードを読み取れません：{0}",
+      "zh-Hans": "无法读取 X3F 显影模式：{0}"
     }
   }
 }

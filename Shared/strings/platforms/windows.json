@@ -284,6 +284,10 @@
       "formats": [],
       "source": "处理 v2"
     },
+    "处理 v3": {
+      "formats": [],
+      "source": "处理 v3"
+    },
     "处理版本": {
       "formats": [],
       "source": "处理版本"
@@ -932,6 +936,10 @@
     "当前构建未配置使用统计，未采集或上报。": {
       "formats": [],
       "source": "当前构建未配置使用统计，未采集或上报。"
+    },
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+      "formats": [],
+      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
     },
     "当前项完成后停止，已完成的输出会保留。": {
       "formats": [],
@@ -1698,6 +1706,10 @@
     "自动": {
       "formats": [],
       "source": "自动"
+    },
+    "自动更新不可用，请手动下载": {
+      "formats": [],
+      "source": "自动更新不可用，请手动下载"
     },
     "自动检查更新": {
       "formats": [],
@@ -2864,6 +2876,20 @@
         "{0}"
       ],
       "source": "已选 {0} 项"
+    },
+    "{0}（损坏）": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "{0}（损坏）"
+    },
+    "损坏的预设": {
+      "formats": [],
+      "source": "损坏的预设"
+    },
+    "此预设无法读取，可能已损坏或来自不兼容版本。": {
+      "formats": [],
+      "source": "此预设无法读取，可能已损坏或来自不兼容版本。"
     },
     "应用预设": {
       "formats": [],
@@ -4243,6 +4269,165 @@
     "原始文件已被替换。是否放弃未保存的调整并重新打开照片？": {
       "formats": [],
       "source": "原始文件已被替换。是否放弃未保存的调整并重新打开照片？"
+    },
+    "正在匹配原画面…": {
+      "formats": [],
+      "source": "正在匹配原画面…"
+    },
+    "已自动升级，原设置已保留。": {
+      "formats": [],
+      "source": "已自动升级，原设置已保留。"
+    },
+    "画面差异较大，已保留旧版本。": {
+      "formats": [],
+      "source": "画面差异较大，已保留旧版本。"
+    },
+    "已回退，保留旧版本。": {
+      "formats": [],
+      "source": "已回退，保留旧版本。"
+    },
+    "回到迁移前": {
+      "formats": [],
+      "source": "回到迁移前"
+    },
+    "将恢复迁移前的全部调整，之后的修改会被替换。": {
+      "formats": [],
+      "source": "将恢复迁移前的全部调整，之后的修改会被替换。"
+    },
+    "此照片的调整保留原处理版本。": {
+      "formats": [],
+      "source": "此照片的调整保留原处理版本。"
+    },
+    "已编辑": {
+      "formats": [],
+      "source": "已编辑"
+    },
+    "预览待更新": {
+      "formats": [],
+      "source": "预览待更新"
+    },
+    "原始预览": {
+      "formats": [],
+      "source": "原始预览"
+    },
+    "暗角校正": {
+      "formats": [],
+      "source": "暗角校正"
+    },
+    "更新包未通过验证，已拒绝": {
+      "formats": [],
+      "source": "更新包未通过验证，已拒绝"
+    },
+    "已将损坏的上次批量任务记录移出为：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "已将损坏的上次批量任务记录移出为：{0}"
+    },
+    "已忽略旧版 RAW 降噪（FBDD）": {
+      "formats": [],
+      "source": "已忽略旧版 RAW 降噪（FBDD）"
+    },
+    "已忽略渲染后 RGB 降噪": {
+      "formats": [],
+      "source": "已忽略渲染后 RGB 降噪"
+    },
+    "处理版本与来源不同，已沿用当前照片的处理版本": {
+      "formats": [],
+      "source": "处理版本与来源不同，已沿用当前照片的处理版本"
+    },
+    "已忽略目标不支持的普通降噪设置": {
+      "formats": [],
+      "source": "已忽略目标不支持的普通降噪设置"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "formats": [],
+      "source": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "formats": [],
+      "source": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "退出码 {0}。"
+    },
+    "照片处理失败：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "照片处理失败：{0}"
+    },
+    "GPU 已回退至 CPU：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "GPU 已回退至 CPU：{0}"
+    },
+    "GPU 已回退至 CPU：{0}（{1}）": {
+      "formats": [
+        "{0}",
+        "{1}"
+      ],
+      "source": "GPU 已回退至 CPU：{0}（{1}）"
+    },
+    "已启用基础 v3 色调或对比度控制（需在 CPU 上运行）": {
+      "formats": [],
+      "source": "已启用基础 v3 色调或对比度控制（需在 CPU 上运行）"
+    },
+    "已启用清晰度或去朦胧（需在 CPU 上运行）": {
+      "formats": [],
+      "source": "已启用清晰度或去朦胧（需在 CPU 上运行）"
+    },
+    "已启用通道曲线或不受支持的色调曲线（需在 CPU 上运行）": {
+      "formats": [],
+      "source": "已启用通道曲线或不受支持的色调曲线（需在 CPU 上运行）"
+    },
+    "已启用 C5 小波降噪（需在 CPU 上运行）": {
+      "formats": [],
+      "source": "已启用 C5 小波降噪（需在 CPU 上运行）"
+    },
+    "当前 DCP 外观（.rlook）需要 CPU 显影": {
+      "formats": [],
+      "source": "当前 DCP 外观（.rlook）需要 CPU 显影"
+    },
+    "当前 LUT 色彩契约需要 CPU 显影": {
+      "formats": [],
+      "source": "当前 LUT 色彩契约需要 CPU 显影"
+    },
+    "当前几何变换在强制 GPU 下不支持": {
+      "formats": [],
+      "source": "当前几何变换在强制 GPU 下不支持"
+    },
+    "普通显示图像或 Normal X3F 在 CPU 上显影": {
+      "formats": [],
+      "source": "普通显示图像或 Normal X3F 在 CPU 上显影"
+    },
+    "Direct3D 11 已被禁用（RAWLAB_DISABLE_D3D11）": {
+      "formats": [],
+      "source": "Direct3D 11 已被禁用（RAWLAB_DISABLE_D3D11）"
+    },
+    "未检测到可用的 Direct3D 11 硬件 GPU": {
+      "formats": [],
+      "source": "未检测到可用的 Direct3D 11 硬件 GPU"
+    },
+    "Direct3D 11 设备正在恢复冷却中": {
+      "formats": [],
+      "source": "Direct3D 11 设备正在恢复冷却中"
+    },
+    "Direct3D 11 设备或着色器执行失败": {
+      "formats": [],
+      "source": "Direct3D 11 设备或着色器执行失败"
+    },
+    "Direct3D 11 滤镜执行失败": {
+      "formats": [],
+      "source": "Direct3D 11 滤镜执行失败"
+    },
+    "图像尺寸、纹理或缓冲区超出 Direct3D 11 能力限制": {
+      "formats": [],
+      "source": "图像尺寸、纹理或缓冲区超出 Direct3D 11 能力限制"
     }
   },
   "overrides": {
@@ -4292,6 +4477,22 @@
     }
   },
   "unique": {
+    "{0}（损坏）": {
+      "zh-Hans": "{0}（损坏）",
+      "en": "{0} (damaged)",
+      "de": "{0} (beschädigt)",
+      "fr": "{0} (endommagé)",
+      "ja": "{0}（破損）",
+      "es": "{0} (dañado)"
+    },
+    "此预设无法读取，可能已损坏或来自不兼容版本。": {
+      "zh-Hans": "此预设无法读取，可能已损坏或来自不兼容版本。",
+      "en": "This preset cannot be read. It may be damaged or from an incompatible version.",
+      "de": "Diese Vorgabe kann nicht gelesen werden. Sie ist möglicherweise beschädigt oder stammt aus einer inkompatiblen Version.",
+      "fr": "Ce préréglage est illisible. Il est peut-être endommagé ou issu d’une version incompatible.",
+      "ja": "このプリセットは読み取れません。破損しているか、互換性のないバージョンの可能性があります。",
+      "es": "Este preajuste no se puede leer. Puede estar dañado o proceder de una versión incompatible."
+    },
     "不支持此相机 RAW 的 HDR 显影。": {
       "zh-Hans": "不支持此相机 RAW 的 HDR 显影。",
       "en": "HDR development is not supported for this camera RAW.",
@@ -5891,6 +6092,182 @@
       "fr": "Le fichier original a été remplacé. Abandonner les réglages non enregistrés et rouvrir la photo ?",
       "ja": "元のファイルが置き換えられました。未保存の調整を破棄して写真を開き直しますか？",
       "es": "El archivo original se ha reemplazado. ¿Descartar los ajustes sin guardar y volver a abrir la foto?"
+    },
+    "更新包未通过验证，已拒绝": {
+      "zh-Hans": "更新包未通过验证，已拒绝",
+      "en": "The update package failed verification and was rejected.",
+      "de": "Das Update-Paket hat die Prüfung nicht bestanden und wurde abgelehnt.",
+      "fr": "Le paquet de mise à jour n’a pas passé la vérification et a été refusé.",
+      "es": "El paquete de actualización no superó la verificación y se rechazó.",
+      "ja": "更新パッケージは検証に合格しなかったため、拒否されました。"
+    },
+    "已将损坏的上次批量任务记录移出为：{0}": {
+      "zh-Hans": "已将损坏的上次批量任务记录移出为：{0}",
+      "en": "Moved the corrupt last batch task record to: {0}",
+      "de": "Beschädigten letzten Stapelauftrag verschoben nach: {0}",
+      "fr": "Enregistrement de la dernière tâche par lots endommagé, déplacé vers : {0}",
+      "ja": "破損した前回の一括タスク記録を次に移動しました: {0}",
+      "es": "Registro dañado de la última tarea por lotes movido a: {0}"
+    },
+    "EXIF 参数不能包含 -execute。": {
+      "de": "EXIF-Argumente dürfen kein -execute enthalten.",
+      "en": "EXIF arguments cannot contain -execute.",
+      "es": "Los argumentos EXIF no pueden contener -execute.",
+      "fr": "Les arguments EXIF ne peuvent pas contenir -execute.",
+      "ja": "EXIF引数に-executeは使用できません。",
+      "zh-Hans": "EXIF 参数不能包含 -execute。"
+    },
+    "EXIF 导出进程意外中断，未确认写入结果。": {
+      "de": "Der EXIF-Exportprozess wurde unerwartet unterbrochen; das Schreibergebnis ist nicht bestätigt.",
+      "en": "The EXIF export process stopped unexpectedly; the write result is unconfirmed.",
+      "es": "El proceso de exportación de EXIF se interrumpió inesperadamente; el resultado de escritura no está confirmado.",
+      "fr": "Le processus d’export EXIF s’est interrompu de façon inattendue ; résultat d’écriture non confirmé.",
+      "ja": "EXIF書き出しプロセスが予期せず中断され、書き込み結果を確認できませんでした。",
+      "zh-Hans": "EXIF 导出进程意外中断，未确认写入结果。"
+    },
+    "退出码 {0}。": {
+      "de": "Exit-Code {0}.",
+      "en": "Exit code {0}.",
+      "es": "Código de salida {0}.",
+      "fr": "Code de sortie {0}.",
+      "ja": "終了コード {0}。",
+      "zh-Hans": "退出码 {0}。"
+    },
+    "照片处理失败：{0}": {
+      "zh-Hans": "照片处理失败：{0}",
+      "en": "Photo processing failed: {0}",
+      "de": "Fotoverarbeitung fehlgeschlagen: {0}",
+      "fr": "Échec du traitement de la photo : {0}",
+      "ja": "写真の処理に失敗しました：{0}",
+      "es": "Error al procesar la foto: {0}"
+    },
+    "GPU 已回退至 CPU：{0}": {
+      "zh-Hans": "GPU 已回退至 CPU：{0}",
+      "en": "GPU fell back to CPU: {0}",
+      "de": "GPU auf CPU zurückgefallen: {0}",
+      "fr": "Le GPU s’est replié sur le CPU : {0}",
+      "ja": "GPU は CPU にフォールバックしました：{0}",
+      "es": "La GPU recurrió a la CPU: {0}"
+    },
+    "GPU 已回退至 CPU：{0}（{1}）": {
+      "zh-Hans": "GPU 已回退至 CPU：{0}（{1}）",
+      "en": "GPU fell back to CPU: {0} ({1})",
+      "de": "GPU auf CPU zurückgefallen: {0} ({1})",
+      "fr": "Le GPU s’est replié sur le CPU : {0} ({1})",
+      "ja": "GPU は CPU にフォールバックしました：{0}（{1}）",
+      "es": "La GPU recurrió a la CPU: {0} ({1})"
+    },
+    "已启用基础 v3 色调或对比度控制（需在 CPU 上运行）": {
+      "zh-Hans": "已启用基础 v3 色调或对比度控制（需在 CPU 上运行）",
+      "en": "Basic v3 tone or contrast controls active (requires CPU)",
+      "de": "Basis-v3-Tonwert- oder Kontrastregler aktiv (erfordert CPU)",
+      "fr": "Réglages de tonalité ou contraste de base v3 actifs (CPU requis)",
+      "ja": "基本 v3 トーンまたはコントラスト調整が有効（CPU が必要）",
+      "es": "Controles básicos v3 de tono o contraste activos (requiere CPU)"
+    },
+    "已启用清晰度或去朦胧（需在 CPU 上运行）": {
+      "zh-Hans": "已启用清晰度或去朦胧（需在 CPU 上运行）",
+      "en": "Clarity or Dehaze active (requires CPU)",
+      "de": "Klarheit oder Dunst entfernen aktiv (erfordert CPU)",
+      "fr": "Clarté ou Correction du voile active (CPU requis)",
+      "ja": "明瞭度またはかすみの除去が有効（CPU が必要）",
+      "es": "Claridad o Borrar neblina activo (requiere CPU)"
+    },
+    "已启用通道曲线或不受支持的色调曲线（需在 CPU 上运行）": {
+      "zh-Hans": "已启用通道曲线或不受支持的色调曲线（需在 CPU 上运行）",
+      "en": "Channel curves or unsupported tone curve active (requires CPU)",
+      "de": "Kanalkurven oder nicht unterstützte Tonwertkurve aktiv (erfordert CPU)",
+      "fr": "Courbes de canaux ou courbe de tonalité non prise en charge active (CPU requis)",
+      "ja": "チャンネルカーブまたは非対応トーンカーブが有効（CPU が必要）",
+      "es": "Curvas de canal o curva de tonos no compatible activa (requiere CPU)"
+    },
+    "已启用 C5 小波降噪（需在 CPU 上运行）": {
+      "zh-Hans": "已启用 C5 小波降噪（需在 CPU 上运行）",
+      "en": "C5 wavelet denoise active (requires CPU)",
+      "de": "C5-Wavelet-Rauschreduzierung aktiv (erfordert CPU)",
+      "fr": "Réduction du bruit par ondelettes C5 active (CPU requis)",
+      "ja": "C5 ウェーブレットノイズ低減が有効（CPU が必要）",
+      "es": "Reducción de ruido wavelet C5 activa (requiere CPU)"
+    },
+    "当前 DCP 外观（.rlook）需要 CPU 显影": {
+      "zh-Hans": "当前 DCP 外观（.rlook）需要 CPU 显影",
+      "en": "DCP look (.rlook) requires CPU processing",
+      "de": "DCP-Look (.rlook) erfordert CPU-Verarbeitung",
+      "fr": "Le look DCP (.rlook) nécessite un traitement CPU",
+      "ja": "DCP ルック（.rlook）は CPU 現像が必要です",
+      "es": "El look DCP (.rlook) requiere procesamiento en CPU"
+    },
+    "当前 LUT 色彩契约需要 CPU 显影": {
+      "zh-Hans": "当前 LUT 色彩契约需要 CPU 显影",
+      "en": "LUT color contract requires CPU processing",
+      "de": "LUT-Farbkontrakt erfordert CPU-Verarbeitung",
+      "fr": "Le contrat colorimétrique LUT nécessite un traitement CPU",
+      "ja": "LUT カラーコントラクトは CPU 現像が必要です",
+      "es": "El contrato de color LUT requiere procesamiento en CPU"
+    },
+    "当前几何变换在强制 GPU 下不支持": {
+      "zh-Hans": "当前几何变换在强制 GPU 下不支持",
+      "en": "Geometry transforms are unsupported in Force GPU mode",
+      "de": "Geometrietransformationen werden im Modus „GPU erzwingen“ nicht unterstützt",
+      "fr": "Les transformations géométriques ne sont pas prises en charge en mode GPU forcé",
+      "ja": "強制 GPU モードではジオメトリ変換に対応していません",
+      "es": "Las transformaciones de geometría no son compatibles con GPU forzada"
+    },
+    "普通显示图像或 Normal X3F 在 CPU 上显影": {
+      "zh-Hans": "普通显示图像或 Normal X3F 在 CPU 上显影",
+      "en": "Display image or Normal X3F processes on CPU",
+      "de": "Anzeigebild oder normales X3F wird auf der CPU verarbeitet",
+      "fr": "L’image affichée ou le X3F normal est traité sur le CPU",
+      "ja": "表示画像または通常 X3F は CPU で現像されます",
+      "es": "La imagen de pantalla o X3F normal se procesa en CPU"
+    },
+    "Direct3D 11 已被禁用（RAWLAB_DISABLE_D3D11）": {
+      "zh-Hans": "Direct3D 11 已被禁用（RAWLAB_DISABLE_D3D11）",
+      "en": "Direct3D 11 is disabled (RAWLAB_DISABLE_D3D11)",
+      "de": "Direct3D 11 ist deaktiviert (RAWLAB_DISABLE_D3D11)",
+      "fr": "Direct3D 11 est désactivé (RAWLAB_DISABLE_D3D11)",
+      "ja": "Direct3D 11 は無効化されています（RAWLAB_DISABLE_D3D11）",
+      "es": "Direct3D 11 está deshabilitado (RAWLAB_DISABLE_D3D11)"
+    },
+    "未检测到可用的 Direct3D 11 硬件 GPU": {
+      "zh-Hans": "未检测到可用的 Direct3D 11 硬件 GPU",
+      "en": "No usable Direct3D 11 hardware GPU adapter found",
+      "de": "Kein nutzbarer Direct3D-11-Hardware-GPU-Adapter gefunden",
+      "fr": "Aucun adaptateur GPU matériel Direct3D 11 utilisable détecté",
+      "ja": "利用可能な Direct3D 11 ハードウェア GPU アダプターが見つかりません",
+      "es": "No se encontró un adaptador GPU de hardware Direct3D 11 utilizable"
+    },
+    "Direct3D 11 设备正在恢复冷却中": {
+      "zh-Hans": "Direct3D 11 设备正在恢复冷却中",
+      "en": "Direct3D 11 device is in recovery cooldown",
+      "de": "Direct3D-11-Gerät befindet sich in der Wiederherstellungs-Abkühlphase",
+      "fr": "Le périphérique Direct3D 11 est en délai de récupération",
+      "ja": "Direct3D 11 デバイスは復旧クールダウン中です",
+      "es": "El dispositivo Direct3D 11 está en espera de recuperación"
+    },
+    "Direct3D 11 设备或着色器执行失败": {
+      "zh-Hans": "Direct3D 11 设备或着色器执行失败",
+      "en": "Direct3D 11 device or shader execution failed",
+      "de": "Direct3D-11-Geräte- oder Shader-Ausführung fehlgeschlagen",
+      "fr": "Échec de l’exécution du périphérique ou du shader Direct3D 11",
+      "ja": "Direct3D 11 デバイスまたはシェーダーの実行に失敗しました",
+      "es": "Error de ejecución del dispositivo o shader Direct3D 11"
+    },
+    "Direct3D 11 滤镜执行失败": {
+      "zh-Hans": "Direct3D 11 滤镜执行失败",
+      "en": "Direct3D 11 filter execution failed",
+      "de": "Direct3D-11-Filterausführung fehlgeschlagen",
+      "fr": "Échec de l’exécution du filtre Direct3D 11",
+      "ja": "Direct3D 11 フィルターの実行に失敗しました",
+      "es": "Error de ejecución del filtro Direct3D 11"
+    },
+    "图像尺寸、纹理或缓冲区超出 Direct3D 11 能力限制": {
+      "zh-Hans": "图像尺寸、纹理或缓冲区超出 Direct3D 11 能力限制",
+      "en": "Image dimensions, texture, or buffer exceed Direct3D 11 limits",
+      "de": "Bildabmessungen, Textur oder Puffer überschreiten Direct3D-11-Grenzwerte",
+      "fr": "Les dimensions, la texture ou le tampon dépassent les limites Direct3D 11",
+      "ja": "画像サイズ、テクスチャ、またはバッファーが Direct3D 11 の上限を超えています",
+      "es": "Las dimensiones, textura o búfer superan los límites de Direct3D 11"
     }
   }
 }

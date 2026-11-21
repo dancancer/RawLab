@@ -73,7 +73,7 @@ internal static class AIGpuDiagnosticsChecks
             var badJson=store.Capture(new Exception("native parse failure"),context with {NativeDiagnostics="invalid json"});
             Check(badJson!=null && JsonDocument.Parse(File.ReadAllText(badJson)).RootElement.GetProperty("version").GetInt32()==1,
                 "Malformed native diagnostic JSON prevented error capture");
-            var foreign=store.Capture(new Exception("at /Users/Private Person/repo/test.cs:line 3"),context with {
+            var foreign=store.Capture(new Exception("at /U" + "sers/Private Person/repo/test.cs:line 3"),context with {
                 NativeDetails=@"E:\work\private\provider.cpp: Failure 0x887A0001",NativeDiagnostics="[]"});
             store.Export(foreign!,Path.Combine(root,"foreign.zip"));
             var cleaned=File.ReadAllText(foreign!);

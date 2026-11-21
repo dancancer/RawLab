@@ -76,11 +76,11 @@ make -j$(nproc)
 
 #### Android
 
-详见 [Android 集成指南](../platform/android/README.md)
+详见 [Android 集成指南](../../RawLabAndroid/README.md)
 
 主要步骤:
-1. 使用 NDK 构建 .so 库
-2. 创建 JNI wrapper
+1. 通过 `RawLabAndroid` 的 Gradle + CMake + NDK 构建原生库
+2. 创建/维护 JNI wrapper
 3. 在 Kotlin/Java 中使用
 
 ## 核心功能
@@ -179,7 +179,7 @@ sony2fuji_session_set_gpu_config(session, &gpu_config);
 
 ### 核心依赖
 - **libraw**: RAW 文件处理
-- **stb_image_write**: 图像编码 (已包含)
+- **libjpeg-turbo / libspng**: 生产 JPEG / 16-bit PNG 图像编码（`stb_image_write.h` 仅保留在 `lutools/tests/` 作测试参考编码器）
 - C++17 编译器
 
 ### 平台特定依赖

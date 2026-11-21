@@ -161,6 +161,7 @@ internal data class ParsedDng(
     val samplesPerPixel: Int,
     val photometric: Int,
     val sampleFormat: LongArray,
+    val stripCount: Int,
     val pixels: FloatArray,
 )
 
@@ -175,8 +176,6 @@ internal class TiffReader(private val bytes: ByteArray) {
 
     fun u32(offset: Int): Long = ByteBuffer.wrap(bytes, offset, 4).order(order).int.toLong() and 0xFFFFFFFFL
 
-    fun float(offset: Int): Float = Float.fromBits(ByteBuffer.wrap(bytes, offset, 4).order(order).int)
-
     fun checkedOffset(offset: Long, count: Int): Int {
         require(offset in 0..Int.MAX_VALUE)
         val start = offset.toInt()
@@ -189,13 +188,10 @@ internal fun parseRenderedDng(bytes: ByteArray): ParsedDng {
     val reader = TiffReader(bytes)
     val magic = reader.u16(2)
     require(magic == 42) { "not classic TIFF" }
-    val ifd = reader.checkedOffset(reader.u32(4), 2)
-    val entries = reader.u16(ifd)
-    val fields = mutableMapOf<Int, Pair<Int, LongArray>>()
     fun typeSize(type: Int): Int = when (type) {
         1, 2, 6, 7 -> 1
         3, 8 -> 2
-        4, 9, 11 -> 4
+        4, 9, 11, 13 -> 4
         5, 10, 12 -> 8
         else -> throw AssertionError("unsupported TIFF field type $type")
     }
@@ -205,40 +201,49 @@ internal fun parseRenderedDng(bytes: ByteArray): ParsedDng {
         val offset = if (total <= 4) entry + 8 else reader.checkedOffset(reader.u32(entry + 8), total)
         return when (type) {
             3 -> LongArray(count) { reader.u16(offset + it * 2).toLong() }
-            4 -> LongArray(count) { reader.u32(offset + it * 4) }
+            4, 13 -> LongArray(count) { reader.u32(offset + it * 4) }
             else -> throw AssertionError("unexpected TIFF test field type $type")
         }
     }
-    for (index in 0 until entries) {
-        val entry = ifd + 2 + index * 12
-        val tag = reader.u16(entry)
-        val type = reader.u16(entry + 2)
-        val count = reader.u32(entry + 4).toInt()
-        if (tag in setOf(256, 257, 258, 259, 262, 273, 277, 278, 279, 339))
-            fields[tag] = type to readValues(type, count, entry)
+    fun readFields(offset: Long): Map<Int, LongArray> {
+        val ifd = reader.checkedOffset(offset, 2)
+        val entries = reader.u16(ifd)
+        val fields = mutableMapOf<Int, LongArray>()
+        for (index in 0 until entries) {
+            val entry = ifd + 2 + index * 12
+            val tag = reader.u16(entry)
+            val type = reader.u16(entry + 2)
+            val count = reader.u32(entry + 4).toInt()
+            if (tag in setOf(256, 257, 258, 259, 262, 273, 277, 278, 279, 330, 339))
+                fields[tag] = readValues(type, count, entry)
+        }
+        return fields
     }
-    fun values(tag: Int): LongArray = fields[tag]?.second ?: throw AssertionError("missing TIFF tag $tag")
+    val rootFields = readFields(reader.u32(4))
+    val subIfds = rootFields[330] ?: throw AssertionError("missing DNG SubIFDs")
+    require(subIfds.size == 2)
+    val fields = readFields(subIfds[0])
+    fun values(tag: Int): LongArray = fields[tag] ?: throw AssertionError("missing TIFF tag $tag")
     val width = values(256).single().toInt()
     val height = values(257).single().toInt()
     val bits = values(258)
-    require(bits.isNotEmpty() && bits.all { it == 32L })
+    require(bits.isNotEmpty() && bits.all { it == 16L })
     val compression = values(259).single().toInt()
     val stripOffsets = values(273)
     val rowsPerStrip = values(278).single().toInt()
     val stripByteCounts = values(279)
     require(width > 0 && height > 0 && rowsPerStrip == 64 && compression == 1)
     require(stripOffsets.size == stripByteCounts.size)
-    require(stripOffsets.size == 1)
     val samplesPerPixel = values(277).single().toInt()
     val pixels = FloatArray(width * height * samplesPerPixel)
     var destination = 0
     for (strip in stripOffsets.indices) {
         val offset = reader.checkedOffset(stripOffsets[strip], stripByteCounts[strip].toInt())
         val byteCount = stripByteCounts[strip].toInt()
-        require(byteCount % 4 == 0)
-        repeat(byteCount / 4) {
+        require(byteCount % 2 == 0)
+        repeat(byteCount / 2) {
             require(destination < pixels.size)
-            pixels[destination++] = reader.float(offset + it * 4)
+            pixels[destination++] = reader.u16(offset + it * 2) / 65535f
         }
     }
     require(destination == pixels.size)
@@ -251,6 +256,7 @@ internal fun parseRenderedDng(bytes: ByteArray): ParsedDng {
         samplesPerPixel = samplesPerPixel,
         photometric = values(262).single().toInt(),
         sampleFormat = values(339),
+        stripCount = stripOffsets.size,
         pixels = pixels,
     )
 }

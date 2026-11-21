@@ -24,6 +24,8 @@ internal static class AdjustmentPresetChecks
             Lifecycle(Path.Combine(root, "lifecycle"));
             IdentityAndStaleConfirmation(Path.Combine(root, "identity"));
             FailureAndConcurrency(Path.Combine(root, "failures"));
+            UnreadableEntry(Path.Combine(root, "unreadable"));
+            UnreadableIdentityOverlaps(Path.Combine(root, "unreadable-overlaps"));
             Vectors(Path.Combine(root, "vectors"));
             Application(Path.Combine(root, "application"));
             Console.WriteLine($"PASS: {checks} user preset store checks with 55 shared vectors");
@@ -92,6 +94,68 @@ internal static class AdjustmentPresetChecks
         Check(File.ReadAllText(path) == "{broken", "malformed bytes preserved");
     }
 
+    // 新版本写入的预设（未知字段、未来版本）只让这一条不可用，其余照常列出、应用和修改。
+    private static void UnreadableEntry(string directory)
+    {
+        var store = new AdjustmentPresetStore(directory); var valid = store.Create("Valid", Payload());
+        var path = Path.Combine(directory, "presets.json"); var text = File.ReadAllText(path); var future = Guid.NewGuid().ToString();
+        var raw = "{ \"id\": \"" + future + "\", \"name\": \"Future\", \"created_at\": 1, \"updated_at\": 1,\n  \"payload\": { \"payload_version\": 9 }, \"future_field\": \"caf\\u00e9\" }";
+        Check(text.Contains("\"presets\":["), "library splice point");
+        File.WriteAllText(path, text.Replace("\"presets\":[", "\"presets\":[" + raw + ","));
+        var listed = store.List().Single();
+        Check(listed.SameAs(valid) && AdjustmentPayload.Number(listed.Payload[AdjustmentField.Exposure]) == 1.25,
+            "unreadable entry leaves the remaining preset usable");
+        var unreadable = store.ListUnreadable().Single();
+        Check(unreadable.ID == future && unreadable.Name == "Future" && unreadable.Json == raw, "unreadable entry keeps identity and original text");
+        var created = store.Create("Created", Payload(.5));
+        var updated = store.Overwrite(store.Rename(valid, "Renamed"), Payload(2));
+        Check(File.ReadAllText(path).Contains(raw) && store.ListUnreadable().Single().Json == raw && store.List().Count == 2,
+            "create, rename and overwrite pass the unreadable entry through unchanged");
+        Reject(() => store.Create("Future", Payload()), "unreadable entry name stays reserved", PresetFailure.DuplicateName);
+        Reject(() => new AdjustmentPresetStore(directory, makeID: () => future).Create("Collision", Payload()),
+            "unreadable entry ID stays reserved", PresetFailure.IdentityCollision);
+        var dialogItems = PresetLibraryDataSource.Load(store);
+        Check(dialogItems.Count == 3 && dialogItems.Any(item => item.IsCorrupt && item.DisplayName == Loc.Format("{0}（损坏）", "Future") && item.ID == future),
+            "corrupt preset is surfaced in preset library dialog data source with damaged label");
+        store.Delete(updated); store.Delete(created);
+        Check(store.List().Count == 0 && File.ReadAllText(path).Contains(raw), "deleting readable presets keeps the unreadable entry");
+        var onlyCorrupt = PresetLibraryDataSource.Load(store);
+        Check(onlyCorrupt.Count == 1 && onlyCorrupt.Single().IsCorrupt && onlyCorrupt.Single().Unreadable == unreadable,
+            "dialog data source contains only the corrupt item when all valid presets deleted");
+        store.Delete(unreadable);
+        Check(store.ListUnreadable().Count == 0 && PresetLibraryDataSource.Load(store).Count == 0 && !File.ReadAllText(path).Contains(raw),
+            "corrupt preset can be removed and clears from dialog data source and disk");
+    }
+
+    // 红锚点：坏预设与有效预设共用身份、或多条坏预设共用非法 id 时的删除语义。
+    private static void UnreadableIdentityOverlaps(string directory)
+    {
+        var store = new AdjustmentPresetStore(directory);
+        var valid = store.Create("Valid", Payload());
+        var path = Path.Combine(directory, "presets.json");
+        var twin = "{ \"id\": \"" + valid.ID + "\", \"name\": \"Twin\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 }, \"future_field\": \"keep\" }";
+        var alpha = "{ \"id\": \"0\", \"name\": \"Alpha\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 } }";
+        var beta = "{ \"id\": \"0\", \"name\": \"Beta\", \"created_at\": 1, \"updated_at\": 1, \"payload\": { \"payload_version\": 9 } }";
+        File.WriteAllText(path, File.ReadAllText(path).Replace("\"presets\":[", "\"presets\":[" + twin + "," + alpha + "," + beta + ","));
+        Check(store.List().Single().SameAs(valid) && store.ListUnreadable().Count == 3, "twin ID and duplicate illegal IDs load side by side");
+
+        // 删除与有效预设同 id 的坏预设：id 未真正退场，不得写进 retired_ids 把整库判死。
+        var twinEntry = store.ListUnreadable().Single(item => item.Json == twin);
+        store.Delete(twinEntry);
+        Check(store.List().Single().SameAs(valid) && store.ListUnreadable().Select(item => item.Json).SequenceEqual([alpha, beta]),
+            "deleting the same-ID corrupt preset keeps the whole library readable");
+        using (var after = JsonDocument.Parse(File.ReadAllText(path)))
+            Check(!after.RootElement.GetProperty("retired_ids").EnumerateArray().Any(item => item.GetString() == valid.ID),
+                "same-ID corrupt preset does not retire the live identity");
+
+        // 两条非法 id 相同的坏预设：删除第二条必须精确命中自身，不得误删同 id 的第一条。
+        var betaEntry = store.ListUnreadable().Single(item => item.Json == beta);
+        store.Delete(betaEntry);
+        Check(store.ListUnreadable().Single().Json == alpha && File.ReadAllText(path).Contains(alpha) && !File.ReadAllText(path).Contains(beta),
+            "deleting the second duplicate-ID corrupt preset removes it, not its same-ID sibling");
+        Reject(() => store.Delete(betaEntry), "already deleted corrupt preset needs a fresh confirmation", PresetFailure.Changed);
+    }
+
     private static void Application(string directory)
     {
         Directory.CreateDirectory(directory);
@@ -125,11 +189,20 @@ internal static class AdjustmentPresetChecks
             store.ReadState(target).SameAs(prior), "missing preset look blocks before any write");
     }
 
+    // 注册表本身无法解读的向量仍让整个库失败；其余无效向量只是单条预设读不懂。
+    private static readonly HashSet<string> RegistryFailures = [
+        "future-registry", "unknown-registry-field", "duplicate-id", "duplicate-name", "invalid-retired-id", "overlapping-retired-id",
+        "duplicate-retired-id", "registry-decimal", "registry-exponent", "registry-rounded-fraction", "registry-boolean", "registry-string",
+        "registry-null", "json-unquoted-metadata-key", "json-single-quoted-key", "json-trailing-document", "json-trailing-comma", "json-comment",
+        "duplicate-root-key", "duplicate-escaped-root-key"
+    ];
+
     private static void Vectors(string directory)
     {
         Directory.CreateDirectory(directory);
         var store = new AdjustmentPresetStore(directory); var path = Path.Combine(directory, "presets.json");
-        using var fixtures = JsonDocument.Parse(File.ReadAllText("Shared/fixtures/adjustment-presets-v1.json"));
+        using var fixtures = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/adjustment-presets-v1.json")));
         Check(fixtures.RootElement.GetArrayLength() == 55, "complete shared fixture catalog");
         foreach (var fixture in fixtures.RootElement.EnumerateArray()) {
             var id = fixture.GetProperty("id").GetString()!;
@@ -138,6 +211,12 @@ internal static class AdjustmentPresetChecks
             if (fixture.GetProperty("valid").GetBoolean()) {
                 var entry = store.List().Single();
                 Check(AdjustmentPayload.Number(entry.Payload[AdjustmentField.Exposure]) == 1.25, id);
+            } else if (!RegistryFailures.Contains(id)) {
+                using var registry = JsonDocument.Parse(json);
+                var entryJson = registry.RootElement.GetProperty("presets")[0].GetRawText();
+                Check(store.List().Count == 0 && store.ListUnreadable().Single().Json == entryJson, id + " isolated as unreadable entry");
+                var created = store.Create("Writable", Payload());
+                Check(store.List().Single().SameAs(created) && File.ReadAllText(path).Contains(entryJson), id + " entry passed through unchanged");
             } else {
                 Reject(() => store.List(), id);
                 Reject(() => store.Create("Blocked", Payload()), id + " write blocked");

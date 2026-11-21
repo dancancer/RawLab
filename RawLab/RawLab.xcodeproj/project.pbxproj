@@ -7,41 +7,40 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        70225C4235E6456CAD81B158 /* LookBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DC94959DC146C68231286E; };
+		W34U00000000000000000001 /* LibraryImportRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000011 /* LibraryImportRobot.swift */; };
+		W34U00000000000000000002 /* EditorRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000012 /* EditorRobot.swift */; };
+		W34U00000000000000000003 /* BatchRobot.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000013 /* BatchRobot.swift */; };
+		W34U00000000000000000004 /* ImportAndDocumentSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */; };
+		W34U00000000000000000005 /* EditorWorkflowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */; };
+		W34U00000000000000000006 /* BatchWorkflowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */; };
+		W34U00000000000000000007 /* HdrAndX3fSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */; };
+		AA1100000000000000000003 /* RawLabKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000002 /* RawLabKit */; };
+		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
+		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
+		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
         B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B020A0000000000000000002 /* IOSQuickPresetView.swift */; };
         B010A0000000000000000011 /* IOSAdjustmentSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */; };
         D00800000000000000000005 /* IOSBatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000015; };
         D00800000000000000000004 /* ContentView+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000014; };
         D00800000000000000000003 /* RawEditorViewModel+BatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000013; };
-        D00800000000000000000002 /* IOSBatchSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000012; };
-        D00800000000000000000001 /* BatchSelectionSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00800000000000000000011; };
         D00700000000000000000006 /* PhotoHSLTargetInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000016; };
         D00700000000000000000005 /* ContentView+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000015; };
         D00700000000000000000004 /* RawEditorViewModel+HSLTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000014; };
         D00700000000000000000003 /* HSLTargetControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000013; };
         D00700000000000000000002 /* HSLTargetNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000012; };
-        D00700000000000000000001 /* HSLTargetAdjustment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000011; };
         D00600000000000000000004 /* ColorGradingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000014; };
         D00600000000000000000003 /* ColorGradingWheelControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000013; };
 		9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */; };
 		909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */; };
 		14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */; };
-		7259547D00CAB296D381D32C /* AdjustmentPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */; };
 		2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A9CCDE92A83F42EA3761179 /* ContentView+AdjustmentTransfer.swift */; };
 		288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCB040D1B1FA68911E790E9 /* IOSAdjustmentTransferView.swift */; };
 		B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */; };
 		EC14BD5D2B2BC66F70E833AC /* RawEditorViewModel+AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */; };
 		D6F055FF2048FFEF4ED1FBFA /* RawEditorViewModel+AdjustmentHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */; };
-		17BF47482993E867097D4453 /* IOSAdjustmentTransferSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */; };
-		4380F87E87760C793F311583 /* IOSAdjustmentTransferWB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */; };
-		5B805538A93E3A876472B198 /* IOSAdjustmentTransferValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */; };
-		EBB461C838403C5D4A5E6168 /* IOSAdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */; };
-		E204508795BC931CB03A6448 /* AdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */; };
-		D15100000000000000000001 /* AdjustmentTransferSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15100000000000000000011 /* AdjustmentTransferSummary.swift */; };
 		AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2300000000000000000002 /* EditorResetTransaction.swift */; };
-		AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2200000000000000000002 /* EditorAdjustmentRules.swift */; };
-        A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000002; };
-        A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
+		AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2400000000000000000002 /* HDRResourceNotice.swift */; };
+        A8D1A6000000000000000001 /* ErrorDiagnostics+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
         A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000004; };
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
         D12000000000000000000001 /* DCPCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000011; };
@@ -49,39 +48,84 @@
         D12000000000000000000003 /* LUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000013; };
         D12000000000000000000004 /* LUTCompatibilityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000014; };
         D12100000000000000000001 /* LookImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12100000000000000000011; };
-        D01100000000000000000001 /* BundledLooks in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000011; };
+		D01200000000000000000201 /* catalog.json in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000101 /* catalog.json */; };
+		D01200000000000000000202 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */; };
+		D01200000000000000000203 /* RawLab_camera_contax_nd_std_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */; };
+		D01200000000000000000204 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */; };
+		D01200000000000000000205 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */; };
+		D01200000000000000000206 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */; };
+		D01200000000000000000207 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */; };
+		D01200000000000000000208 /* RawLab_look_2383_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */; };
+		D01200000000000000000209 /* RawLab_look_2393_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */; };
+		D0120000000000000000020A /* RawLab_look_bw_400_cn_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */; };
+		D0120000000000000000020B /* RawLab_look_e100_gx_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */; };
+		D0120000000000000000020C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */; };
+		D0120000000000000000020D /* RawLab_look_ektar_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */; };
+		D0120000000000000000020E /* RawLab_look_elite_100_xpro_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */; };
+		D0120000000000000000020F /* RawLab_look_elite_chrome_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */; };
+		D01200000000000000000210 /* RawLab_look_elite_chrome_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */; };
+		D01200000000000000000211 /* RawLab_look_elite_color_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */; };
+		D01200000000000000000212 /* RawLab_look_elite_color_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */; };
+		D01200000000000000000213 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */; };
+		D01200000000000000000214 /* RawLab_look_hie_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */; };
+		D01200000000000000000215 /* RawLab_look_kodachrome_200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */; };
+		D01200000000000000000216 /* RawLab_look_kodachrome_25_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */; };
+		D01200000000000000000217 /* RawLab_look_kodachrome_64_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */; };
+		D01200000000000000000218 /* RawLab_look_portra_160_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */; };
+		D01200000000000000000219 /* RawLab_look_portra_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */; };
+		D0120000000000000000021A /* RawLab_look_portra_800_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */; };
+		D0120000000000000000021B /* RawLab_look_tmax_100_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */; };
+		D0120000000000000000021C /* RawLab_look_tmax_3200_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */; };
+		D0120000000000000000021D /* RawLab_look_tmax_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */; };
+		D0120000000000000000021E /* RawLab_look_trix_400_sRGB_v1.cube in Copy BundledLooks */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */; };
+		D0120000000000000000021F /* camera-contax-nd-std.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000011F /* camera-contax-nd-std.png */; };
+		D01200000000000000000220 /* camera-lumix-s1r-vivid.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000120 /* camera-lumix-s1r-vivid.png */; };
+		D01200000000000000000221 /* camera-pentax-k5-reversal.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000121 /* camera-pentax-k5-reversal.png */; };
+		D01200000000000000000222 /* camera-ricoh-gr2-hibw.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */; };
+		D01200000000000000000223 /* camera-ricoh-gr2-vivid.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */; };
+		D01200000000000000000224 /* look-2383.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000124 /* look-2383.png */; };
+		D01200000000000000000225 /* look-2393.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000125 /* look-2393.png */; };
+		D01200000000000000000226 /* look-bw-400-cn.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000126 /* look-bw-400-cn.png */; };
+		D01200000000000000000227 /* look-e100-gx.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000127 /* look-e100-gx.png */; };
+		D01200000000000000000228 /* look-ektachrome-100-vs.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000128 /* look-ektachrome-100-vs.png */; };
+		D01200000000000000000229 /* look-ektar-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000129 /* look-ektar-100.png */; };
+		D0120000000000000000022A /* look-elite-100-xpro.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012A /* look-elite-100-xpro.png */; };
+		D0120000000000000000022B /* look-elite-chrome-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012B /* look-elite-chrome-200.png */; };
+		D0120000000000000000022C /* look-elite-chrome-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012C /* look-elite-chrome-400.png */; };
+		D0120000000000000000022D /* look-elite-color-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012D /* look-elite-color-200.png */; };
+		D0120000000000000000022E /* look-elite-color-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012E /* look-elite-color-400.png */; };
+		D0120000000000000000022F /* look-elite-extracolor-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000012F /* look-elite-extracolor-100.png */; };
+		D01200000000000000000230 /* look-hie.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000130 /* look-hie.png */; };
+		D01200000000000000000231 /* look-kodachrome-200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000131 /* look-kodachrome-200.png */; };
+		D01200000000000000000232 /* look-kodachrome-25.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000132 /* look-kodachrome-25.png */; };
+		D01200000000000000000233 /* look-kodachrome-64.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000133 /* look-kodachrome-64.png */; };
+		D01200000000000000000234 /* look-portra-160.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000134 /* look-portra-160.png */; };
+		D01200000000000000000235 /* look-portra-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000135 /* look-portra-400.png */; };
+		D01200000000000000000236 /* look-portra-800.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000136 /* look-portra-800.png */; };
+		D01200000000000000000237 /* look-tmax-100.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000137 /* look-tmax-100.png */; };
+		D01200000000000000000238 /* look-tmax-3200.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000138 /* look-tmax-3200.png */; };
+		D01200000000000000000239 /* look-tmax-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D01200000000000000000139 /* look-tmax-400.png */; };
+		D0120000000000000000023A /* look-trix-400.png in Copy BundledLooks Artwork */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013A /* look-trix-400.png */; };
+		D0120000000000000000023B /* HDR Silver Master.json in Copy BundledLooks HDR */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013B /* HDR Silver Master.json */; };
+		D0120000000000000000023C /* HDR Silver.cube in Copy BundledLooks HDR */ = {isa = PBXBuildFile; fileRef = D0120000000000000000013C /* HDR Silver.cube */; };
         D01100000000000000000002 /* Ektar Phuket artwork in Resources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000012; };
-        D01100000000000000000003 /* BundledLook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01100000000000000000013; };
-        D01000000000000000000001 /* PickerAcquisitionCancelUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01000000000000000000011; };
-        D00300000000000000000001 /* GeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000011; };
-        D14000000000000000000001 /* HDRSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14000000000000000000011; };
-        D00500000000000000000001 /* ToneControlsSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000011; };
-        B1536143952C400DB68B26A0 /* AtmosphereSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D8E964BDD254CC5B38B55CD; };
-        D00600000000000000000001 /* ColorGradingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000011; };
         D00300000000000000000002 /* GeometryControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00300000000000000000012; };
 		D00200000000000000000001 /* Sony2FujiProcessor+Lens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000011; };
 		D00200000000000000000002 /* LensControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00200000000000000000012; };
         AB2000000000000000000001 /* master-recipes.json in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000011; };
         AB2000000000000000000002 /* MasterRecipes in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000012; };
         AB2000000000000000000003 /* MasterRecipeIcons in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000013; };
-        AB1900000000000000000001 /* HSLSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000011; };
         AB1900000000000000000002 /* HSLMixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000012; };
         AB1900000000000000000003 /* HSLNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000013; };
         D00500000000000000000002 /* ToneControlsNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000012; };
         41C5E5C8C1BF433C837BBFA1 /* AtmosphereNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEBF5C6C72A477B93B716E6; };
         D00600000000000000000002 /* ColorGradingNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000012; };
-		AB2100000000000000000001 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000002; };
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
 		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
-		AB3900000000000000000001 /* UsageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000002 /* UsageAnalytics.swift */; };
-		AB3900000000000000000003 /* RUMConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000004 /* RUMConfiguration.swift */; };
 		AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000006 /* RUMUsageTransport.swift */; };
 		AB3900000000000000000007 /* RUMValidationProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000008 /* RUMValidationProbe.swift */; };
-		AB3900000000000000000009 /* SerialUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB390000000000000000000A /* SerialUsageTransport.swift */; };
 		AB1800000000000000000001 /* PhotoZoomGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000011 /* PhotoZoomGeometry.swift */; };
 		AB1800000000000000000002 /* ZoomablePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1800000000000000000012 /* ZoomablePhoto.swift */; };
-		AB1700000000000000000001 /* ExportMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000002 /* ExportMetadata.swift */; };
-		AB1700000000000000000003 /* PhotoInformation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1700000000000000000004 /* PhotoInformation.swift */; };
 		AB1400000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */; };
 		AB1400000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */; };
 		AB1400000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube */; };
@@ -100,35 +144,27 @@
 		AB1400000000000000000011 /* provia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000011 /* provia.png */; };
 		AB1400000000000000000012 /* reala-ace.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000012 /* reala-ace.png */; };
 		AB1400000000000000000013 /* velvia.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1500000000000000000013 /* velvia.png */; };
-		AB1300000000000000000001 /* EditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1300000000000000000002 /* EditorUITests.swift */; };
 		AB1200000000000000000001 /* EditorComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000011 /* EditorComponents.swift */; };
-		AB1200000000000000000002 /* FilmPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000012 /* FilmPresentation.swift */; };
 		AB1200000000000000000003 /* eterna.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000013 /* eterna.png */; };
 		AB1200000000000000000004 /* eterna-bb.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000014 /* eterna-bb.png */; };
 		0B1A0382CA7A4764A8AD3A12 /* UI/ContentView+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */; };
 		26F51EBF7B154D2F744F8B60 /* Resources/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */; };
 		2A9B3E15E0704167ABE93960 /* Core/ViewModel/RawEditorViewModel+IO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4383A5710944379318C704 /* Core/ViewModel/RawEditorViewModel+IO.swift */; };
 		2C5BFAB858B74B81AFAC16D0 /* Core/Models/PhotoImportTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */; };
-		366A9A71BB194587A8AECB5A /* Core/Models/AdjustmentKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */; };
 		474AC2ED2640F238B875DFBA /* App/RawLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7B52131DB065AE51B1A552B /* App/RawLabApp.swift */; };
 		54CCF4B9CD4492224FC36730 /* UI/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADA8D603BB120B2616B82E8 /* UI/ContentView.swift */; };
 		568E6B659A004F7792056543 /* UI/ContentView+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */; };
 		5925D383E992E267E84A557D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BCB01F09DF53FD6D170136CB /* Foundation.framework */; };
 		7A32C02543E94D8D8AD059DA /* Core/ViewModel/RawEditorViewModel+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893AFB855B8D4C46BF182760 /* Core/ViewModel/RawEditorViewModel+Rendering.swift */; };
 		D883E2F5F205AC0EFBF9C319 /* Core/ViewModel/RawEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */; };
-		EDCB99B43F3C4149B2F7622B /* Core/Models/RawSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */; };
 		F985B27612A241E0BF2D3B6E /* Core/ViewModel/RawEditorViewModel+LUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */; };
 		8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */; };
 		8F3A1B2C3D4E5F678901234F /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F6789012350 /* Core/RawProcessing/Sony2FujiProcessor+Helpers.swift */; };
 		8F3A1B2C3D4E5F678901234B /* sony2fuji.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; };
 		8F3A1B2C3D4E5F678901234C /* sony2fuji.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C9A1B2C3D4E5F60718293A4B /* Support/RawMetadataBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */; };
-		D00100000000000000000001 /* Core/Persistence/EditPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */; };
-		D00100000000000000000002 /* Core/Batch/BatchExportCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000012 /* Core/Batch/BatchExportCore.swift */; };
 		D00100000000000000000003 /* Core/Batch/BatchExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000013 /* Core/Batch/BatchExport.swift */; };
-		A0D17B5E0000000000000001 /* Core/Batch/BatchSettingsSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000002 /* Core/Batch/BatchSettingsSummary.swift */; };
 		D00100000000000000000004 /* UI/BatchExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000014 /* UI/BatchExportView.swift */; };
-		D00100000000000000000005 /* Core/Models/ExportSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000015 /* Core/Models/ExportSize.swift */; };
 		D00100000000000000000006 /* UI/ContentView+PhotoInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000016 /* UI/ContentView+PhotoInfo.swift */; };
 		D00100000000000000000007 /* UI/ExportSizePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00100000000000000000017 /* UI/ExportSizePicker.swift */; };
 		B1A96AA5B2105EE294EE532E /* AdjustmentScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA770F5886885926B9D64E9C /* AdjustmentScale.swift */; };
@@ -139,26 +175,16 @@
 		EA054B21750151F8A61960F0 /* LookPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0C49C5B9A35219B440639F /* LookPanels.swift */; };
 		4A5D819653CC5BEC83C83458 /* PhotoEffectPanels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B66B134CB4D50238C320F70 /* PhotoEffectPanels.swift */; };
 		B3D998046DAF5568B14233EF /* EditorLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */; };
+		D8A16E4C92B04F35817CC001 /* EditorWorkspaceResetControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */; };
 		6BD98E141C695971B42798C6 /* EditorDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */; };
+		E2C000010000000000000001 /* EditorCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000010000000000000011 /* EditorCoordinator.swift */; };
+		E2C000020000000000000001 /* EditorCoordinator+ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */; };
+		E2C000030000000000000001 /* EditorTestHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C000030000000000000011 /* EditorTestHooks.swift */; };
 		C3A803626CF750D1B9AFFCDA /* EditorCropOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */; };
-		39E615609C9D5AC1B16063C7 /* EditorV4UITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC236099D6C65BBF9F3BBE58 /* EditorV4UITests.swift */; };
-		D00900000000000000000001 /* CropLockUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00900000000000000000011 /* CropLockUITests.swift */; };
-		A0D17B5E0000000000000003 /* ReleaseDetailUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */; };
+		A7894D11E1234B7FBE0F0CC1 /* GeometryDraftCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */; };
 		5D16F3E6AA9AE3153F10EA01 = {
 			isa = PBXBuildFile;
 			fileRef = 6408B0D9CC3B88C973EB26A9;
-		};
-		8B29EC7278F7B9FF41EB8BF0 = {
-			isa = PBXBuildFile;
-			fileRef = 38F6D63A9E8C8B655383DC1A;
-		};
-		8281CB7C705607A246377749 = {
-			isa = PBXBuildFile;
-			fileRef = 02C6D1C4DAC4E804B2A93EBF;
-		};
-		EAB9B7988845FE05C9C227C3 = {
-			isa = PBXBuildFile;
-			fileRef = 1D71FD88C2035DEAC81AC8D3;
 		};
 		22C5A9E739A2E127D0BA221C = {
 			isa = PBXBuildFile;
@@ -168,112 +194,78 @@
 			isa = PBXBuildFile;
 			fileRef = 239F602BE6955B7CAF23FFF9;
 		};
-		BE2C8A1B49C3F8091E3DC5CB = {
-			isa = PBXBuildFile;
-			fileRef = 69A9A4EA951B4CA321073C55;
-		};
 		0E6B7E1E203B3E3190BDC7E0 = {
 			isa = PBXBuildFile;
 			fileRef = CE718EBE66711A945E3F2F52;
 		};
-		8FC75E90CDC70C4708EB37A2 = {
-			isa = PBXBuildFile;
-			fileRef = 33FD6D1FFB7FCA01FF8E9FA8;
-		};
-		5E0132EABC243650B81956BA = {
-			isa = PBXBuildFile;
-			fileRef = 4F82DBD62C72A8DCF70884F1;
-		};
-		CE05C93906EE52BFDBEDD0AD = {
-			isa = PBXBuildFile;
-			fileRef = 60E62AF53FA54F2397437053;
-		};
-		881EC6B68800480C33FA6A33 = {
-			isa = PBXBuildFile;
-			fileRef = D653887C2ACBF01DE4AD60E6;
-		};
-		56190FF87AB7690F650D76EB = {
-			isa = PBXBuildFile;
-			fileRef = 111E539CB5BD4F8DA9C774E4;
-		};
-		4B2CA505E383F8656138A49F = {
-			isa = PBXBuildFile;
-			fileRef = 477C25ABC8A28D46040EB0ED;
-		};
-		25D258CC273B1BA6C8C96D64 = {
-			isa = PBXBuildFile;
-			fileRef = E6783FA2C1DCB791AAE3D175;
-		};
-		59F7471A20043B7473775365 = {
-			isa = PBXBuildFile;
-			fileRef = E72BF8F2A61849225F7BDC85;
-		};
-		D49D2474508D587986BF07B8 = {
-			isa = PBXBuildFile;
-			fileRef = 90808E94AB71C094544966D4;
-		};
-        B113946A33D6E7CA01F7A684 /* ToneCurveSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121C57F16BC998BA385F1EA6; };
         2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD125F07D1C4D65DADBADB20; };
         2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A3E4C709437DACC0D1D46F; };
-        BA13EBD0673C922006A7B4B1 /* ToneCurveInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DAAAD88BE5F6F4ABA164EB9; };
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
         B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
         591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
-        D14100000000000000000001 /* HDRAdjustmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14100000000000000000011; };
         D14200000000000000000001 /* HDRRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14200000000000000000011; };
         D14300000000000000000001 /* HDRSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14300000000000000000011; };
         D15E00000000000000000001 /* ProRAWSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15E00000000000000000011; };
         D15F00000000000000000001 /* ProRAWExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000011; };
-        D14400000000000000000001 /* HDRRecipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14400000000000000000011; };
-        D14500000000000000000001 /* HDRDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14500000000000000000011; };
         D14600000000000000000001 /* HDRImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14600000000000000000011; };
         D14700000000000000000001 /* HDRPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14700000000000000000011; };
         D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
         D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
-        D15000000000000000000001 /* HDRPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15000000000000000000011; };
-        D16000000000000000000001 /* ProRAWStreamUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16000000000000000000011; };
-        A8F400000000000000000001 /* DocumentImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F400000000000000000011; };
-        A8F300000000000000000001 /* X3fRenderingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F300000000000000000011; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
+		FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9E40BC0C5EEE673454CF3; };
+		DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA9FA3A0CD1617F35B39A4E; };
+		C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5145FB279D152EA89CD80D /* CameraNetwork.swift */; };
+		9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */; };
+		FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */; };
+		B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */; };
+		6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */; };
+		F35ECE6734FE3B21A26B07D9 /* IOSCameraConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */; };
+		240439165FD0DAF67872690B /* SonyCameraSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */; };
+		FCEEE25742781A5EA12FD364 /* IOSCameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */; };
+		5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */; };
+		019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */; };
+		C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */; };
+		D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */; };
+		D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */; };
+		D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */; };
+		D71100000000000000000001 /* EditorToolBackGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71100000000000000000002 /* EditorToolBackGesture.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-        25DC94959DC146C68231286E /* LookBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/LookBrowser.swift"; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000011 /* LibraryImportRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/LibraryImportRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000012 /* EditorRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/EditorRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000013 /* BatchRobot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/Robots/BatchRobot.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/ImportAndDocumentSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/EditorWorkflowSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/BatchWorkflowSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HdrAndX3fSmokeTests.swift; sourceTree = SOURCE_ROOT; };
+		B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+RecentPhotos.swift"; sourceTree = SOURCE_ROOT; };
+		BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Library/RecentPhotosView.swift"; sourceTree = SOURCE_ROOT; };
+		DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/IOSPhotoPreviews.swift"; sourceTree = SOURCE_ROOT; };
         B020A0000000000000000002 /* IOSQuickPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSQuickPresetView.swift"; sourceTree = "<group>"; };
         B010A0000000000000000012 /* IOSAdjustmentSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Editor/IOSAdjustmentSummaryView.swift"; sourceTree = "<group>"; };
         D00800000000000000000015 /* IOSBatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelectionView.swift"; path = "RawLab/UI/Export/IOSBatchSelectionView.swift"; sourceTree = SOURCE_ROOT; };
         D00800000000000000000014 /* ContentView+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+BatchSelection.swift"; path = "RawLab/UI/Editor/ContentView+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
         D00800000000000000000013 /* RawEditorViewModel+BatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+BatchSelection.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+BatchSelection.swift"; sourceTree = SOURCE_ROOT; };
-        D00800000000000000000012 /* IOSBatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSBatchSelection.swift"; path = "RawLab/Core/Batch/Model/IOSBatchSelection.swift"; sourceTree = SOURCE_ROOT; };
-        D00800000000000000000011 /* BatchSelectionSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "BatchSelectionSession.swift"; path = "../Shared/BatchSelectionSession.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000016 /* PhotoHSLTargetInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PhotoHSLTargetInput.swift"; path = "RawLab/UI/Preview/PhotoHSLTargetInput.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000015 /* ContentView+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+HSLTarget.swift"; path = "RawLab/UI/Editor/ContentView+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000014 /* RawEditorViewModel+HSLTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+HSLTarget.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+HSLTarget.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000013 /* HSLTargetControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "HSLTargetControls.swift"; path = "../Shared/HSLTargetControls.swift"; sourceTree = SOURCE_ROOT; };
         D00700000000000000000012 /* HSLTargetNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLTargetNative.swift; path = "../Shared/HSLTargetNative.swift"; sourceTree = SOURCE_ROOT; };
-        D00700000000000000000011 /* HSLTargetAdjustment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLTargetAdjustment.swift; path = "../Shared/HSLTargetAdjustment.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000014 /* ColorGradingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingControls.swift; path = "RawLab/UI/Panels/ColorGradingControls.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000013 /* ColorGradingWheelControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingWheelControl.swift; path = "../Shared/ColorGradingWheelControl.swift"; sourceTree = SOURCE_ROOT; };
 		D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentScopeEditor.swift"; path = "RawLab/UI/Editor/IOSAdjustmentScopeEditor.swift"; sourceTree = SOURCE_ROOT; };
 		8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentPresetView.swift"; path = "RawLab/UI/Editor/IOSAdjustmentPresetView.swift"; sourceTree = SOURCE_ROOT; };
 		FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentPresets.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentPresets.swift"; sourceTree = SOURCE_ROOT; };
-		956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentPresetStore.swift"; path = "../Shared/AdjustmentPresetStore.swift"; sourceTree = SOURCE_ROOT; };
 		5A9CCDE92A83F42EA3761179 /* ContentView+AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ContentView+AdjustmentTransfer.swift"; path = "RawLab/UI/Editor/ContentView+AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		4DCB040D1B1FA68911E790E9 /* IOSAdjustmentTransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferView.swift"; path = "RawLab/UI/Editor/IOSAdjustmentTransferView.swift"; sourceTree = SOURCE_ROOT; };
 		1E7D6A79DDC0DBE91962D492 /* IOSAdjustmentTransferPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferPresentation.swift"; path = "RawLab/UI/Editor/IOSAdjustmentTransferPresentation.swift"; sourceTree = SOURCE_ROOT; };
 		224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentTransfer.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
 		3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentHistory.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentHistory.swift"; sourceTree = SOURCE_ROOT; };
-		A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferSession.swift"; path = "RawLab/Core/Persistence/IOSAdjustmentTransferSession.swift"; sourceTree = SOURCE_ROOT; };
-		87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferWB.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransferWB.swift"; sourceTree = SOURCE_ROOT; };
-		EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransferValues.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransferValues.swift"; sourceTree = SOURCE_ROOT; };
-		14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentTransfer.swift"; path = "RawLab/Core/Models/IOSAdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
-		4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentTransfer.swift"; path = "../Shared/AdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
-		D15100000000000000000011 /* AdjustmentTransferSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AdjustmentTransferSummary.swift"; path = "../Shared/AdjustmentTransferSummary.swift"; sourceTree = SOURCE_ROOT; };
 		AB2300000000000000000002 /* EditorResetTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorResetTransaction.swift; sourceTree = "<group>"; };
-		AB2200000000000000000002 /* EditorAdjustmentRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorAdjustmentRules.swift; sourceTree = "<group>"; };
-        A8CACE000000000000000002 /* CachedPhotoFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/CachedPhotoFile.swift"; sourceTree = SOURCE_ROOT; };
-        A8D1A6000000000000000002 /* ErrorDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics.swift"; sourceTree = SOURCE_ROOT; };
+		AB2400000000000000000002 /* HDRResourceNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDRResourceNotice.swift; sourceTree = "<group>"; };
+        A8D1A6000000000000000002 /* ErrorDiagnostics+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics+iOS.swift"; sourceTree = SOURCE_ROOT; };
         A8CACE000000000000000004 /* ContentView+AutoExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+AutoExposure.swift"; sourceTree = SOURCE_ROOT; };
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
         D12000000000000000000011 /* DCPCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DCPCompiler.swift; path = "../Shared/DCPCompiler.swift"; sourceTree = SOURCE_ROOT; };
@@ -281,15 +273,67 @@
         D12000000000000000000013 /* LUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityView.swift; path = "../Shared/LUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
         D12000000000000000000014 /* LUTCompatibilityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityPreview.swift; path = "../Shared/LUTCompatibilityPreview.swift"; sourceTree = SOURCE_ROOT; };
         D12100000000000000000011 /* LookImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/LookImportCoordinator.swift"; sourceTree = SOURCE_ROOT; };
-        D01100000000000000000011 /* BundledLooks */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../Shared/BundledLooks"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000101 /* catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "catalog.json"; path = "../Shared/BundledLooks/catalog.json"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube"; path = "../Shared/BundledLooks/EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_contax_nd_std_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_contax_nd_std_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_pentax_k5_reversal_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_pentax_k5_reversal_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_2383_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_2393_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_2393_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_bw_400_cn_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_bw_400_cn_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_e100_gx_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_e100_gx_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_ektachrome_100_vs_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_ektachrome_100_vs_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_ektar_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_ektar_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_100_xpro_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_100_xpro_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_chrome_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_chrome_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_chrome_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_chrome_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_color_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_color_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_color_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_color_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_elite_extracolor_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_elite_extracolor_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_hie_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_hie_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_25_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_25_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_kodachrome_64_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_kodachrome_64_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_160_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_160_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_portra_800_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_portra_800_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_100_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_100_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_3200_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_3200_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_tmax_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_tmax_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "RawLab_look_trix_400_sRGB_v1.cube"; path = "../Shared/BundledLooks/RawLab_look_trix_400_sRGB_v1.cube"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000011F /* camera-contax-nd-std.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-contax-nd-std.png"; path = "../Shared/BundledLooks/Artwork/camera-contax-nd-std.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000120 /* camera-lumix-s1r-vivid.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-lumix-s1r-vivid.png"; path = "../Shared/BundledLooks/Artwork/camera-lumix-s1r-vivid.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000121 /* camera-pentax-k5-reversal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-pentax-k5-reversal.png"; path = "../Shared/BundledLooks/Artwork/camera-pentax-k5-reversal.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-ricoh-gr2-hibw.png"; path = "../Shared/BundledLooks/Artwork/camera-ricoh-gr2-hibw.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "camera-ricoh-gr2-vivid.png"; path = "../Shared/BundledLooks/Artwork/camera-ricoh-gr2-vivid.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000124 /* look-2383.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-2383.png"; path = "../Shared/BundledLooks/Artwork/look-2383.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000125 /* look-2393.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-2393.png"; path = "../Shared/BundledLooks/Artwork/look-2393.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000126 /* look-bw-400-cn.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-bw-400-cn.png"; path = "../Shared/BundledLooks/Artwork/look-bw-400-cn.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000127 /* look-e100-gx.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-e100-gx.png"; path = "../Shared/BundledLooks/Artwork/look-e100-gx.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000128 /* look-ektachrome-100-vs.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-ektachrome-100-vs.png"; path = "../Shared/BundledLooks/Artwork/look-ektachrome-100-vs.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000129 /* look-ektar-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-ektar-100.png"; path = "../Shared/BundledLooks/Artwork/look-ektar-100.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012A /* look-elite-100-xpro.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-100-xpro.png"; path = "../Shared/BundledLooks/Artwork/look-elite-100-xpro.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012B /* look-elite-chrome-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-chrome-200.png"; path = "../Shared/BundledLooks/Artwork/look-elite-chrome-200.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012C /* look-elite-chrome-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-chrome-400.png"; path = "../Shared/BundledLooks/Artwork/look-elite-chrome-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012D /* look-elite-color-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-color-200.png"; path = "../Shared/BundledLooks/Artwork/look-elite-color-200.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012E /* look-elite-color-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-color-400.png"; path = "../Shared/BundledLooks/Artwork/look-elite-color-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000012F /* look-elite-extracolor-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-elite-extracolor-100.png"; path = "../Shared/BundledLooks/Artwork/look-elite-extracolor-100.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000130 /* look-hie.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-hie.png"; path = "../Shared/BundledLooks/Artwork/look-hie.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000131 /* look-kodachrome-200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-200.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-200.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000132 /* look-kodachrome-25.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-25.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-25.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000133 /* look-kodachrome-64.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-kodachrome-64.png"; path = "../Shared/BundledLooks/Artwork/look-kodachrome-64.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000134 /* look-portra-160.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-160.png"; path = "../Shared/BundledLooks/Artwork/look-portra-160.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000135 /* look-portra-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-400.png"; path = "../Shared/BundledLooks/Artwork/look-portra-400.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000136 /* look-portra-800.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-portra-800.png"; path = "../Shared/BundledLooks/Artwork/look-portra-800.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000137 /* look-tmax-100.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-100.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-100.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000138 /* look-tmax-3200.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-3200.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-3200.png"; sourceTree = SOURCE_ROOT; };
+		D01200000000000000000139 /* look-tmax-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-tmax-400.png"; path = "../Shared/BundledLooks/Artwork/look-tmax-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013A /* look-trix-400.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "look-trix-400.png"; path = "../Shared/BundledLooks/Artwork/look-trix-400.png"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013B /* HDR Silver Master.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "HDR Silver Master.json"; path = "../Shared/BundledLooks/HDR/HDR Silver Master.json"; sourceTree = SOURCE_ROOT; };
+		D0120000000000000000013C /* HDR Silver.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "HDR Silver.cube"; path = "../Shared/BundledLooks/HDR/HDR Silver.cube"; sourceTree = SOURCE_ROOT; };
         D01100000000000000000012 /* Ektar Phuket artwork */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "../RawLabMac/Resources/FilmIcons/ektar-100-phuket.png"; sourceTree = SOURCE_ROOT; };
-        D01100000000000000000013 /* BundledLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../Shared/BundledLook.swift"; sourceTree = SOURCE_ROOT; };
-        D01000000000000000000011 /* PickerAcquisitionCancelUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/PickerAcquisitionCancelUITests.swift; sourceTree = SOURCE_ROOT; };
-        D00300000000000000000011 /* GeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeometrySettings.swift; path = "../Shared/GeometrySettings.swift"; sourceTree = SOURCE_ROOT; };
-        D14000000000000000000011 /* HDRSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSettings.swift; path = "../Shared/HDRSettings.swift"; sourceTree = SOURCE_ROOT; };
-        D00500000000000000000011 /* ToneControlsSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsSettings.swift; path = "../Shared/ToneControlsSettings.swift"; sourceTree = SOURCE_ROOT; };
-        1D8E964BDD254CC5B38B55CD /* AtmosphereSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereSettings.swift; path = "../Shared/AtmosphereSettings.swift"; sourceTree = SOURCE_ROOT; };
-        D00600000000000000000011 /* ColorGradingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingSettings.swift; path = "../Shared/ColorGradingSettings.swift"; sourceTree = SOURCE_ROOT; };
 		D00300000000000000000012 = {
 			path = "RawLab/UI/Controls/GeometryControls.swift";
 			isa = PBXFileReference;
@@ -306,13 +350,11 @@
         AB2000000000000000000011 /* master-recipes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../Shared/master-recipes.json"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000012 /* MasterRecipes */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipes"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000013 /* MasterRecipeIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipeIcons"; sourceTree = SOURCE_ROOT; };
-        AB1900000000000000000011 /* HSLSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLSettings.swift; path = "../Shared/HSLSettings.swift"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000012 /* HSLMixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLMixer.swift; path = "../Shared/HSLMixer.swift"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000013 /* HSLNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLNative.swift; path = "../Shared/HSLNative.swift"; sourceTree = SOURCE_ROOT; };
         D00500000000000000000012 /* ToneControlsNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsNative.swift; path = "../Shared/ToneControlsNative.swift"; sourceTree = SOURCE_ROOT; };
         AEEBF5C6C72A477B93B716E6 /* AtmosphereNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereNative.swift; path = "../Shared/AtmosphereNative.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000012 /* ColorGradingNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingNative.swift; path = "../Shared/ColorGradingNative.swift"; sourceTree = SOURCE_ROOT; };
-		AB2100000000000000000002 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Localization.swift; path = "../Shared/Localization.swift"; sourceTree = SOURCE_ROOT; };
 		AB210000000000000000000A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB210000000000000000000B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB210000000000000000000C /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -325,11 +367,8 @@
 		AB2100000000000000000013 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "ja"; path = "ja.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000014 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB2100000000000000000015 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "es"; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		AB3900000000000000000002 /* UsageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageAnalytics.swift; path = "../Shared/UsageAnalytics.swift"; sourceTree = SOURCE_ROOT; };
-		AB3900000000000000000004 /* RUMConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMConfiguration.swift; sourceTree = "<group>"; };
 		AB3900000000000000000006 /* RUMUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMUsageTransport.swift; sourceTree = "<group>"; };
 		AB3900000000000000000008 /* RUMValidationProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RUMValidationProbe.swift; sourceTree = "<group>"; };
-		AB390000000000000000000A /* SerialUsageTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SerialUsageTransport.swift; path = "../Shared/SerialUsageTransport.swift"; sourceTree = SOURCE_ROOT; };
 		AB1800000000000000000011 = {
 			path = "RawLab/UI/Preview/PhotoZoomGeometry.swift";
 			isa = PBXFileReference;
@@ -342,8 +381,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		AB1700000000000000000002 /* ExportMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExportMetadata.swift; path = "../Shared/ExportMetadata.swift"; sourceTree = SOURCE_ROOT; };
-		AB1700000000000000000004 /* PhotoInformation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhotoInformation.swift; path = "../Shared/PhotoInformation.swift"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000001 /* FLog2_to_ACROS_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ACROS_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000002 /* FLog2_to_ASTIA_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_ASTIA_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000003 /* FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube */ = {isa = PBXFileReference; lastKnownFileType = text; name = "FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube"; path = "../lutools/flog-2-new/FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube"; sourceTree = SOURCE_ROOT; };
@@ -362,12 +399,6 @@
 		AB1500000000000000000011 /* provia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "provia.png"; path = "../RawLabMac/Resources/FilmIcons/provia.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000012 /* reala-ace.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "reala-ace.png"; path = "../RawLabMac/Resources/FilmIcons/reala-ace.png"; sourceTree = SOURCE_ROOT; };
 		AB1500000000000000000013 /* velvia.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "velvia.png"; path = "../RawLabMac/Resources/FilmIcons/velvia.png"; sourceTree = SOURCE_ROOT; };
-		AB1300000000000000000002 = {
-			path = "RawLabUITests/EditorUITests/Support/EditorUITests.swift";
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
 		AB1300000000000000000003 /* RawLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = RawLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB1200000000000000000011 = {
 			path = "RawLab/UI/Controls/EditorComponents.swift";
@@ -375,7 +406,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		AB1200000000000000000012 /* FilmPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmPresentation.swift; sourceTree = "<group>"; };
 		AB1200000000000000000013 /* eterna.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = eterna.png; path = "../RawLabMac/Resources/FilmIcons/eterna.png"; sourceTree = SOURCE_ROOT; };
 		AB1200000000000000000014 /* eterna-bb.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "eterna-bb.png"; path = "../RawLabMac/Resources/FilmIcons/eterna-bb.png"; sourceTree = SOURCE_ROOT; };
 		5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawEditorViewModel.swift; sourceTree = "<group>"; };
@@ -386,7 +416,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AdjustmentKind.swift; sourceTree = "<group>"; };
 		7ADA789EA8FD48A0A2CFE618 = {
 			path = "RawLab/UI/Editor/ContentView+Panels.swift";
 			isa = PBXFileReference;
@@ -414,7 +443,6 @@
 		BCB01F09DF53FD6D170136CB /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		CA5CD9BDDDA592CD1F77CFCB /* Resources/Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawSettings.swift; sourceTree = "<group>"; };
 		ED52E5E1D6C957F64808BB11 /* RawLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RawLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "RawEditorViewModel+LUT.swift"; sourceTree = "<group>"; };
 		8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Sony2FujiProcessor.swift; sourceTree = "<group>"; };
@@ -423,23 +451,8 @@
 		8F3A1B2C3D4E5F678901234A /* sony2fuji.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = sony2fuji.xcframework; path = "../lutools/build-ios/sony2fuji.xcframework"; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4C /* Support/RawMetadataBridge.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = RawMetadataBridge.h; sourceTree = "<group>"; };
 		C9A1B2C3D4E5F60718293A4D /* Support/RawMetadataBridge.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; path = RawMetadataBridge.mm; sourceTree = "<group>"; };
-		D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EditPersistence.swift; sourceTree = "<group>"; };
-		D00100000000000000000012 = {
-			path = "RawLab/Core/Batch/Model/BatchExportModels.swift";
-			isa = PBXFileReference;
-			includeInIndex = 1;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
 		D00100000000000000000013 = {
 			path = "RawLab/Core/Batch/Execution/BatchExport.swift";
-			isa = PBXFileReference;
-			includeInIndex = 1;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
-		A0D17B5E0000000000000002 = {
-			path = "RawLab/Core/Batch/Model/BatchSettingsSummary.swift";
 			isa = PBXFileReference;
 			includeInIndex = 1;
 			lastKnownFileType = sourcecode.swift;
@@ -452,7 +465,6 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = SOURCE_ROOT;
 		};
-		D00100000000000000000015 /* Core/Models/ExportSize.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExportSize.swift; sourceTree = "<group>"; };
 		D00100000000000000000016 = {
 			path = "RawLab/UI/Editor/ContentView+PhotoInfo.swift";
 			isa = PBXFileReference;
@@ -475,38 +487,17 @@
 		BC0C49C5B9A35219B440639F /* LookPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/LookPanels.swift"; sourceTree = SOURCE_ROOT; };
 		9B66B134CB4D50238C320F70 /* PhotoEffectPanels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/PhotoEffectPanels.swift"; sourceTree = SOURCE_ROOT; };
 		C33A1CD0D88E5254A47F3CA5 /* EditorLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorLayout.swift"; sourceTree = SOURCE_ROOT; };
+		D8A16E4C92B04F35817CC002 /* EditorWorkspaceResetControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorWorkspaceResetControl.swift"; sourceTree = SOURCE_ROOT; };
 		2F40F7AA6DE556A4A238F267 /* EditorDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorDrafts.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000010000000000000011 /* EditorCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCoordinator.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCoordinator+ViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		E2C000030000000000000011 /* EditorTestHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorTestHooks.swift"; sourceTree = SOURCE_ROOT; };
 		442ED03D4FD75EBCA83B9DFE /* EditorCropOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorCropOverlay.swift"; sourceTree = SOURCE_ROOT; };
-		BC236099D6C65BBF9F3BBE58 = {
-			path = "RawLabUITests/EditorV4UITests/EditorV4UITests.swift";
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			sourceTree = SOURCE_ROOT;
-		};
-		D00900000000000000000011 /* CropLockUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/CropLockUITests.swift"; sourceTree = SOURCE_ROOT; };
-		A0D17B5E0000000000000004 /* ReleaseDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLabUITests/ReleaseDetailUITests.swift"; sourceTree = SOURCE_ROOT; };
+		A7894D11E1234B7FBE0F0CC2 /* GeometryDraftCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/GeometryDraftCanvas.swift"; sourceTree = SOURCE_ROOT; };
 		6408B0D9CC3B88C973EB26A9 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+PersistenceAndExport.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		38F6D63A9E8C8B655383DC1A = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/ViewModel/IO/RawEditorViewModel+IOHelpers.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		02C6D1C4DAC4E804B2A93EBF = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/Batch/Storage/BatchExportStorage.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		1D71FD88C2035DEAC81AC8D3 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/Batch/Execution/BatchExportRunner.swift";
 			sourceTree = SOURCE_ROOT;
 		};
 		9D3527EB23A8B1C5D02BC890 = {
@@ -521,96 +512,44 @@
 			path = "RawLab/Core/Batch/Storage/PhotoLibraryBatchWriter.swift";
 			sourceTree = SOURCE_ROOT;
 		};
-		69A9A4EA951B4CA321073C55 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift";
-			sourceTree = SOURCE_ROOT;
-		};
 		CE718EBE66711A945E3F2F52 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			path = "RawLab/UI/Export/ContentView+FileExport.swift";
 			sourceTree = SOURCE_ROOT;
 		};
-		33FD6D1FFB7FCA01FF8E9FA8 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/NativeControls.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		4F82DBD62C72A8DCF70884F1 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/ImportAndAccessibility.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		60E62AF53FA54F2397437053 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorV4UITests/EditorV4Support.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		D653887C2ACBF01DE4AD60E6 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/PublicationAndPrivacy.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		111E539CB5BD4F8DA9C774E4 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Support/EditorSupport.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		477C25ABC8A28D46040EB0ED = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/LanguageAndLooks.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		E6783FA2C1DCB791AAE3D175 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Workflows/BatchWorkflow.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		E72BF8F2A61849225F7BDC85 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Controls/PanelControls.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-		90808E94AB71C094544966D4 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "RawLabUITests/EditorUITests/Workflows/PhotoWorkflow.swift";
-			sourceTree = SOURCE_ROOT;
-		};
-        121C57F16BC998BA385F1EA6 /* ToneCurveSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSettings.swift; path = "../Shared/ToneCurveSettings.swift"; sourceTree = SOURCE_ROOT; };
         DD125F07D1C4D65DADBADB20 /* ToneCurveNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveNative.swift; path = "../Shared/ToneCurveNative.swift"; sourceTree = SOURCE_ROOT; };
         00A3E4C709437DACC0D1D46F /* ToneCurveSampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSampling.swift; path = "../Shared/ToneCurveSampling.swift"; sourceTree = SOURCE_ROOT; };
-        8DAAAD88BE5F6F4ABA164EB9 /* ToneCurveInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveInteraction.swift; path = "../Shared/ToneCurveInteraction.swift"; sourceTree = SOURCE_ROOT; };
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
         8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
         4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
-        D14100000000000000000011 /* HDRAdjustmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRAdjustmentTransfer.swift; path = "../Shared/HDRAdjustmentTransfer.swift"; sourceTree = SOURCE_ROOT; };
         D14200000000000000000011 /* HDRRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRequest.swift; path = "../Shared/Native/HDRRequest.swift"; sourceTree = SOURCE_ROOT; };
         D14300000000000000000011 /* HDRSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSource.swift; path = "../Shared/Native/HDRSource.swift"; sourceTree = SOURCE_ROOT; };
         D15E00000000000000000011 /* ProRAWSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWSource.swift; path = "../Shared/Native/ProRAWSource.swift"; sourceTree = SOURCE_ROOT; };
         D15F00000000000000000011 /* ProRAWExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWExport.swift; path = "../Shared/Native/ProRAWExport.swift"; sourceTree = SOURCE_ROOT; };
-        D14400000000000000000011 /* HDRRecipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRecipe.swift; path = "../Shared/HDRRecipe.swift"; sourceTree = SOURCE_ROOT; };
-        D14500000000000000000011 /* HDRDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRDisplay.swift; path = "../Shared/HDRDisplay.swift"; sourceTree = SOURCE_ROOT; };
         D14600000000000000000011 /* HDRImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRImage.swift; path = "../Shared/Native/HDRImage.swift"; sourceTree = SOURCE_ROOT; };
         D14700000000000000000011 /* HDRPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRPresentation.swift; path = "../Shared/Native/HDRPresentation.swift"; sourceTree = SOURCE_ROOT; };
         D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
         D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
-        D15000000000000000000011 /* HDRPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/HDRPhotoUITests.swift; sourceTree = SOURCE_ROOT; };
-        D16000000000000000000011 /* ProRAWStreamUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/ProRAWStreamUITests.swift; sourceTree = SOURCE_ROOT; };
-        A8F400000000000000000011 /* DocumentImportUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/DocumentImportUITests.swift; sourceTree = SOURCE_ROOT; };
-        A8F300000000000000000011 /* X3fRenderingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RawLabUITests/X3fRenderingUITests.swift; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
+		CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigrationNative.swift"; path = "../Shared/Native/ProcessingMigrationNative.swift"; sourceTree = SOURCE_ROOT; };
+		8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+ProcessingMigration.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+ProcessingMigration.swift"; sourceTree = SOURCE_ROOT; };
+		AD5145FB279D152EA89CD80D /* CameraNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraNetwork.swift"; sourceTree = "<group>"; };
+		53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraOriginalStore.swift"; sourceTree = "<group>"; };
+		6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraPTPClient.swift"; sourceTree = "<group>"; };
+		0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraProtocol.swift"; sourceTree = "<group>"; };
+		136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraWorkspaceBackend.swift"; sourceTree = "<group>"; };
+		2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraConnection.swift"; sourceTree = "<group>"; };
+		C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SonyCameraSession.swift"; sourceTree = "<group>"; };
+		9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraController.swift"; sourceTree = "<group>"; };
+		D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraBrowser.swift"; sourceTree = "<group>"; };
+		2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraTether.swift"; sourceTree = "<group>"; };
+		93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraWorkspace.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraIncrementalImport.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraJPEGProcessing.swift"; sourceTree = "<group>"; };
+		D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraIncrementalImport.swift"; sourceTree = "<group>"; };
+		D71100000000000000000002 /* EditorToolBackGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/EditorToolBackGesture.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -620,6 +559,7 @@
 			files = (
 				5925D383E992E267E84A557D /* Foundation.framework in Frameworks */,
 				8F3A1B2C3D4E5F678901234B /* sony2fuji.xcframework in Frameworks */,
+				AA1100000000000000000003 /* RawLabKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -637,15 +577,107 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D01200000000000000000001 /* Copy BundledLooks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = BundledLooks;
+			dstSubfolderSpec = 7;
+			files = (
+				D01200000000000000000201 /* catalog.json in Copy BundledLooks */,
+				D01200000000000000000202 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube in Copy BundledLooks */,
+				D01200000000000000000203 /* RawLab_camera_contax_nd_std_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000204 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000205 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000206 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000207 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000208 /* RawLab_look_2383_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000209 /* RawLab_look_2393_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020A /* RawLab_look_bw_400_cn_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020B /* RawLab_look_e100_gx_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020D /* RawLab_look_ektar_100_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020E /* RawLab_look_elite_100_xpro_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000020F /* RawLab_look_elite_chrome_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000210 /* RawLab_look_elite_chrome_400_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000211 /* RawLab_look_elite_color_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000212 /* RawLab_look_elite_color_400_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000213 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000214 /* RawLab_look_hie_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000215 /* RawLab_look_kodachrome_200_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000216 /* RawLab_look_kodachrome_25_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000217 /* RawLab_look_kodachrome_64_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000218 /* RawLab_look_portra_160_sRGB_v1.cube in Copy BundledLooks */,
+				D01200000000000000000219 /* RawLab_look_portra_400_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021A /* RawLab_look_portra_800_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021B /* RawLab_look_tmax_100_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021C /* RawLab_look_tmax_3200_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021D /* RawLab_look_tmax_400_sRGB_v1.cube in Copy BundledLooks */,
+				D0120000000000000000021E /* RawLab_look_trix_400_sRGB_v1.cube in Copy BundledLooks */,
+			);
+			name = "Copy BundledLooks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D01200000000000000000002 /* Copy BundledLooks Artwork */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "BundledLooks/Artwork";
+			dstSubfolderSpec = 7;
+			files = (
+				D0120000000000000000021F /* camera-contax-nd-std.png in Copy BundledLooks Artwork */,
+				D01200000000000000000220 /* camera-lumix-s1r-vivid.png in Copy BundledLooks Artwork */,
+				D01200000000000000000221 /* camera-pentax-k5-reversal.png in Copy BundledLooks Artwork */,
+				D01200000000000000000222 /* camera-ricoh-gr2-hibw.png in Copy BundledLooks Artwork */,
+				D01200000000000000000223 /* camera-ricoh-gr2-vivid.png in Copy BundledLooks Artwork */,
+				D01200000000000000000224 /* look-2383.png in Copy BundledLooks Artwork */,
+				D01200000000000000000225 /* look-2393.png in Copy BundledLooks Artwork */,
+				D01200000000000000000226 /* look-bw-400-cn.png in Copy BundledLooks Artwork */,
+				D01200000000000000000227 /* look-e100-gx.png in Copy BundledLooks Artwork */,
+				D01200000000000000000228 /* look-ektachrome-100-vs.png in Copy BundledLooks Artwork */,
+				D01200000000000000000229 /* look-ektar-100.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022A /* look-elite-100-xpro.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022B /* look-elite-chrome-200.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022C /* look-elite-chrome-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022D /* look-elite-color-200.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022E /* look-elite-color-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000022F /* look-elite-extracolor-100.png in Copy BundledLooks Artwork */,
+				D01200000000000000000230 /* look-hie.png in Copy BundledLooks Artwork */,
+				D01200000000000000000231 /* look-kodachrome-200.png in Copy BundledLooks Artwork */,
+				D01200000000000000000232 /* look-kodachrome-25.png in Copy BundledLooks Artwork */,
+				D01200000000000000000233 /* look-kodachrome-64.png in Copy BundledLooks Artwork */,
+				D01200000000000000000234 /* look-portra-160.png in Copy BundledLooks Artwork */,
+				D01200000000000000000235 /* look-portra-400.png in Copy BundledLooks Artwork */,
+				D01200000000000000000236 /* look-portra-800.png in Copy BundledLooks Artwork */,
+				D01200000000000000000237 /* look-tmax-100.png in Copy BundledLooks Artwork */,
+				D01200000000000000000238 /* look-tmax-3200.png in Copy BundledLooks Artwork */,
+				D01200000000000000000239 /* look-tmax-400.png in Copy BundledLooks Artwork */,
+				D0120000000000000000023A /* look-trix-400.png in Copy BundledLooks Artwork */,
+			);
+			name = "Copy BundledLooks Artwork";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D01200000000000000000003 /* Copy BundledLooks HDR */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "BundledLooks/HDR";
+			dstSubfolderSpec = 7;
+			files = (
+				D0120000000000000000023B /* HDR Silver Master.json in Copy BundledLooks HDR */,
+				D0120000000000000000023C /* HDR Silver.cube in Copy BundledLooks HDR */,
+			);
+			name = "Copy BundledLooks HDR";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
 		03C5C556CA624B7388F5A53F /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				346D48B8686C639559AF6E9B /* Camera */,
 				967181A1C76B4194B0C0185F /* Models */,
 				D00100000000000000000021 /* Persistence */,
 				D00100000000000000000022 /* Batch */,
+				D00100000000000000000031 /* Storage */,
 				AB390000000000000000000B /* Usage */,
 				8F3A1B2C3D4E5F6789012347 /* RawProcessing */,
 				234ED6798A8A4780851F1B79 /* ViewModel */,
@@ -656,19 +688,22 @@
 		AB390000000000000000000B /* Usage */ = {
 			isa = PBXGroup;
 			children = (
-				AB3900000000000000000004 /* RUMConfiguration.swift */,
 				AB3900000000000000000006 /* RUMUsageTransport.swift */,
 				AB3900000000000000000008 /* RUMValidationProbe.swift */,
-				AB390000000000000000000A /* SerialUsageTransport.swift */,
 			);
 			path = Usage;
+			sourceTree = "<group>";
+		};
+		D00100000000000000000031 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Storage;
 			sourceTree = "<group>";
 		};
 		D00100000000000000000021 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
-				A9C525ED8676B61E6978BA9D /* IOSAdjustmentTransferSession.swift */,
-				D00100000000000000000011 /* Core/Persistence/EditPersistence.swift */,
 			);
 			path = Persistence;
 			sourceTree = "<group>";
@@ -688,48 +723,33 @@
 			isa = PBXGroup;
 			children = (
 				D01800000000000000000011,
-				AB1700000000000000000002,
-				D00300000000000000000011,
-				D14000000000000000000011,
-				D14100000000000000000011,
 				D14200000000000000000011,
 				D14300000000000000000011,
 				D15E00000000000000000011,
 				D15F00000000000000000011,
-				D14400000000000000000011,
-				D14500000000000000000011,
 				D14600000000000000000011,
 				D14700000000000000000011,
 				D14800000000000000000011,
 				D14900000000000000000011,
-				D00500000000000000000011,
-				1D8E964BDD254CC5B38B55CD,
-				D00600000000000000000011, 00A3E4C709437DACC0D1D46F, DD125F07D1C4D65DADBADB20, 121C57F16BC998BA385F1EA6, 8DAAAD88BE5F6F4ABA164EB9, 0324C679CADE139F72163211, 8D20BB7F1FC842F0DA927634, 4BD8A49A9293229AE363C138,
+				CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */,
 				D00700000000000000000016,
 				D00700000000000000000015,
 				D00700000000000000000014,
 				D00700000000000000000013,
 				D00700000000000000000012,
-				D00800000000000000000011,
-				D00800000000000000000012,
 				D00800000000000000000013,
 				D00800000000000000000014,
 				D00800000000000000000015,
-				D00700000000000000000011,
 				D00600000000000000000014,
 				D00600000000000000000013,
-				AB1900000000000000000011,
 				AB1900000000000000000012,
 				AB1900000000000000000013,
 				D00500000000000000000012,
 				AEEBF5C6C72A477B93B716E6,
 				D00600000000000000000012,
-				AB1700000000000000000004,
-				AB3900000000000000000002,
 				8F3A1B2C3D4E5F6789012346,
 				8F3A1B2C3D4E5F6789012350,
 				D00200000000000000000011,
-				69A9A4EA951B4CA321073C55,
 			);
 			sourceTree = "<group>";
 		};
@@ -754,6 +774,7 @@
 			path = UI;
 			isa = PBXGroup;
 			children = (
+				E57960B83124473A6F2B0E3A /* Camera */,
 				EA770F5886885926B9D64E9C,
 				536A50CF0FFD53F88EDE1B5B,
 				0BD8A983271153D1B8DC7FBD,
@@ -761,9 +782,15 @@
 				F6EB4A58E1F35560B145D655,
 				BC0C49C5B9A35219B440639F,
 				9B66B134CB4D50238C320F70,
+				D71100000000000000000002,
 				C33A1CD0D88E5254A47F3CA5,
+				D8A16E4C92B04F35817CC002,
 				2F40F7AA6DE556A4A238F267,
+				E2C000010000000000000011 /* EditorCoordinator.swift */,
+				E2C000020000000000000011 /* EditorCoordinator+ViewModel.swift */,
+				E2C000030000000000000011 /* EditorTestHooks.swift */,
 				442ED03D4FD75EBCA83B9DFE,
+				A7894D11E1234B7FBE0F0CC2,
 				BFDCFB6A137F996DD48D076B,
 				0E2D0EEF39E86136EF2B8850,
 				4929D5873644FF7ABA4DE756,
@@ -777,7 +804,9 @@
 			children = (
 				224CEF0627771E199495F46F /* RawEditorViewModel+AdjustmentTransfer.swift */,
 				3DEF2D58795BEAC7AE14A5A5 /* RawEditorViewModel+AdjustmentHistory.swift */,
+				8CA9FA3A0CD1617F35B39A4E /* RawEditorViewModel+ProcessingMigration.swift */,
 				AB2300000000000000000002 /* EditorResetTransaction.swift */,
+				AB2400000000000000000002 /* HDRResourceNotice.swift */,
 				5BBA826F203D41BCC1DF31C0,
 				893AFB855B8D4C46BF182760,
 				FEE59480F18546D2BD9AEB9E,
@@ -789,16 +818,14 @@
 		2F109479FD08681A1F30E85C /* RawLab */ = {
 			isa = PBXGroup;
 			children = (
-				4F8BB9466E8CAD133844D3A8 /* AdjustmentTransfer.swift */,
-				D15100000000000000000011 /* AdjustmentTransferSummary.swift */,
 				D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */,
 				8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */,
 				FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */,
-				956EBF18B976027FAEED40C9 /* AdjustmentPresetStore.swift */,
-				A8CACE000000000000000002 /* CachedPhotoFile.swift */,
-				A8D1A6000000000000000002 /* ErrorDiagnostics.swift */,
+				B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */,
+				BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */,
+				DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */,
+				A8D1A6000000000000000002 /* ErrorDiagnostics+iOS.swift */,
 				A8CACE000000000000000004 /* ContentView+AutoExposure.swift */,
-				AB2100000000000000000002 /* Localization.swift */,
 				8F7749DA9EDF45519E2428F1 /* App */,
 				1CBDC5191AF9405F9B637414 /* UI */,
 				03C5C556CA624B7388F5A53F /* Core */,
@@ -830,10 +857,8 @@
 		55B1D2570BE3466BB45F7CD5 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-                D01100000000000000000011,
+                D01200000000000000000010 /* BundledLooks */,
                 D01100000000000000000012,
-                D01100000000000000000013,
-                25DC94959DC146C68231286E,
                 AB2000000000000000000011,
                 AB2000000000000000000012,
                 AB2000000000000000000013,
@@ -876,15 +901,7 @@
 		967181A1C76B4194B0C0185F /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				87613FC36F404D09822FA31B /* IOSAdjustmentTransferWB.swift */,
-				EB49823420B960FDF2917352 /* IOSAdjustmentTransferValues.swift */,
-				14D8851AD07EDAA484BE9D53 /* IOSAdjustmentTransfer.swift */,
-				AB1200000000000000000012 /* FilmPresentation.swift */,
-				75200EAB73DE45D5AC8120CC /* Core/Models/AdjustmentKind.swift */,
-				E032598E21034CC384DC2993 /* Core/Models/RawSettings.swift */,
-				AB2200000000000000000002 /* EditorAdjustmentRules.swift */,
 				99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */,
-				D00100000000000000000015 /* Core/Models/ExportSize.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -893,20 +910,18 @@
 			isa = PBXGroup;
 			sourceTree = "<group>";
 			children = (
+				W34U00000000000000000011 /* LibraryImportRobot.swift */,
+				W34U00000000000000000012 /* EditorRobot.swift */,
+				W34U00000000000000000013 /* BatchRobot.swift */,
+				W34U00000000000000000014 /* ImportAndDocumentSmokeTests.swift */,
+				W34U00000000000000000015 /* EditorWorkflowSmokeTests.swift */,
+				W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */,
+				W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */,
 				AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */,
 				82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */,
-				D00900000000000000000011,
-				A0D17B5E0000000000000004,
-				D01000000000000000000011,
-				D15000000000000000000011,
-				D16000000000000000000011,
-                A8F400000000000000000011,
-                A8F300000000000000000011,
 				2F6D48C6086EC660301E288B,
 				0DAA7689F37A5648D3C8F238,
 				2F109479FD08681A1F30E85C,
-				EEC9B8836A6EF167E6349DB4,
-				BFCE5D6FC318755022B5AEA1,
 			);
 		};
 		BFDCFB6A137F996DD48D076B = {
@@ -957,8 +972,6 @@
 		E2EC8543F458F8B7AC1FA561 = {
 			isa = PBXGroup;
 			children = (
-				A0D17B5E0000000000000002,
-				D00100000000000000000012,
 			);
 			name = Model;
 			sourceTree = "<group>";
@@ -966,7 +979,6 @@
 		D5B491DB91C6308BADC2E23D = {
 			isa = PBXGroup;
 			children = (
-				02C6D1C4DAC4E804B2A93EBF,
 				239F602BE6955B7CAF23FFF9,
 			);
 			name = Storage;
@@ -976,7 +988,6 @@
 			isa = PBXGroup;
 			children = (
 				D00100000000000000000013,
-				1D71FD88C2035DEAC81AC8D3,
 				9D3527EB23A8B1C5D02BC890,
 			);
 			name = Execution;
@@ -987,58 +998,119 @@
 			children = (
 				AE4383A5710944379318C704,
 				6408B0D9CC3B88C973EB26A9,
-				38F6D63A9E8C8B655383DC1A,
 			);
 			name = IO;
 			sourceTree = "<group>";
 		};
-		4F6AD0C446BB498AFEC65B20 = {
+		346D48B8686C639559AF6E9B /* Camera */ = {
 			isa = PBXGroup;
 			children = (
-				D653887C2ACBF01DE4AD60E6,
-				477C25ABC8A28D46040EB0ED,
-				E72BF8F2A61849225F7BDC85,
+				C46E4D4CB536F1307DAD7A67 /* SonyCameraSession.swift */,
+				2BD88DED20FFEE606F5B8381 /* IOSCameraConnection.swift */,
+				136F78F134845242CCB6AFB6 /* CameraWorkspaceBackend.swift */,
+				0A50FBFBD3F02F6FD4228523 /* CameraProtocol.swift */,
+				6014BEE4F866B5BA78F1E06E /* CameraPTPClient.swift */,
+				53627A6503E7BB06434FD338 /* CameraOriginalStore.swift */,
+				D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */,
+				D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */,
+				AD5145FB279D152EA89CD80D /* CameraNetwork.swift */,
 			);
-			name = Controls;
+			path = Camera;
 			sourceTree = "<group>";
 		};
-		3655CD4328507D5021477DC2 = {
+		E57960B83124473A6F2B0E3A /* Camera */ = {
 			isa = PBXGroup;
 			children = (
-				AB1300000000000000000002,
-				111E539CB5BD4F8DA9C774E4,
+				93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */,
+				2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */,
+				D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */,
+				D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */,
+				9F5A2BFFD01F5CE86BF629DC /* IOSCameraController.swift */,
 			);
-			name = Support;
+			path = Camera;
 			sourceTree = "<group>";
 		};
-		5D90405F73D0A8E896FE3448 = {
+		D01200000000000000000010 /* BundledLooks */ = {
 			isa = PBXGroup;
 			children = (
-				E6783FA2C1DCB791AAE3D175,
-				90808E94AB71C094544966D4,
+				D01200000000000000000101 /* catalog.json */,
+				D01200000000000000000102 /* EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube */,
+				D01200000000000000000103 /* RawLab_camera_contax_nd_std_sRGB_v1.cube */,
+				D01200000000000000000104 /* RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube */,
+				D01200000000000000000105 /* RawLab_camera_pentax_k5_reversal_sRGB_v1.cube */,
+				D01200000000000000000106 /* RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube */,
+				D01200000000000000000107 /* RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube */,
+				D01200000000000000000108 /* RawLab_look_2383_sRGB_v1.cube */,
+				D01200000000000000000109 /* RawLab_look_2393_sRGB_v1.cube */,
+				D0120000000000000000010A /* RawLab_look_bw_400_cn_sRGB_v1.cube */,
+				D0120000000000000000010B /* RawLab_look_e100_gx_sRGB_v1.cube */,
+				D0120000000000000000010C /* RawLab_look_ektachrome_100_vs_sRGB_v1.cube */,
+				D0120000000000000000010D /* RawLab_look_ektar_100_sRGB_v1.cube */,
+				D0120000000000000000010E /* RawLab_look_elite_100_xpro_sRGB_v1.cube */,
+				D0120000000000000000010F /* RawLab_look_elite_chrome_200_sRGB_v1.cube */,
+				D01200000000000000000110 /* RawLab_look_elite_chrome_400_sRGB_v1.cube */,
+				D01200000000000000000111 /* RawLab_look_elite_color_200_sRGB_v1.cube */,
+				D01200000000000000000112 /* RawLab_look_elite_color_400_sRGB_v1.cube */,
+				D01200000000000000000113 /* RawLab_look_elite_extracolor_100_sRGB_v1.cube */,
+				D01200000000000000000114 /* RawLab_look_hie_sRGB_v1.cube */,
+				D01200000000000000000115 /* RawLab_look_kodachrome_200_sRGB_v1.cube */,
+				D01200000000000000000116 /* RawLab_look_kodachrome_25_sRGB_v1.cube */,
+				D01200000000000000000117 /* RawLab_look_kodachrome_64_sRGB_v1.cube */,
+				D01200000000000000000118 /* RawLab_look_portra_160_sRGB_v1.cube */,
+				D01200000000000000000119 /* RawLab_look_portra_400_sRGB_v1.cube */,
+				D0120000000000000000011A /* RawLab_look_portra_800_sRGB_v1.cube */,
+				D0120000000000000000011B /* RawLab_look_tmax_100_sRGB_v1.cube */,
+				D0120000000000000000011C /* RawLab_look_tmax_3200_sRGB_v1.cube */,
+				D0120000000000000000011D /* RawLab_look_tmax_400_sRGB_v1.cube */,
+				D0120000000000000000011E /* RawLab_look_trix_400_sRGB_v1.cube */,
+				D01200000000000000000011 /* Artwork */,
+				D01200000000000000000012 /* HDR */,
 			);
-			name = Workflows;
+			name = BundledLooks;
 			sourceTree = "<group>";
 		};
-		EEC9B8836A6EF167E6349DB4 = {
+		D01200000000000000000011 /* Artwork */ = {
 			isa = PBXGroup;
 			children = (
-				4F6AD0C446BB498AFEC65B20,
-				3655CD4328507D5021477DC2,
-				5D90405F73D0A8E896FE3448,
+				D0120000000000000000011F /* camera-contax-nd-std.png */,
+				D01200000000000000000120 /* camera-lumix-s1r-vivid.png */,
+				D01200000000000000000121 /* camera-pentax-k5-reversal.png */,
+				D01200000000000000000122 /* camera-ricoh-gr2-hibw.png */,
+				D01200000000000000000123 /* camera-ricoh-gr2-vivid.png */,
+				D01200000000000000000124 /* look-2383.png */,
+				D01200000000000000000125 /* look-2393.png */,
+				D01200000000000000000126 /* look-bw-400-cn.png */,
+				D01200000000000000000127 /* look-e100-gx.png */,
+				D01200000000000000000128 /* look-ektachrome-100-vs.png */,
+				D01200000000000000000129 /* look-ektar-100.png */,
+				D0120000000000000000012A /* look-elite-100-xpro.png */,
+				D0120000000000000000012B /* look-elite-chrome-200.png */,
+				D0120000000000000000012C /* look-elite-chrome-400.png */,
+				D0120000000000000000012D /* look-elite-color-200.png */,
+				D0120000000000000000012E /* look-elite-color-400.png */,
+				D0120000000000000000012F /* look-elite-extracolor-100.png */,
+				D01200000000000000000130 /* look-hie.png */,
+				D01200000000000000000131 /* look-kodachrome-200.png */,
+				D01200000000000000000132 /* look-kodachrome-25.png */,
+				D01200000000000000000133 /* look-kodachrome-64.png */,
+				D01200000000000000000134 /* look-portra-160.png */,
+				D01200000000000000000135 /* look-portra-400.png */,
+				D01200000000000000000136 /* look-portra-800.png */,
+				D01200000000000000000137 /* look-tmax-100.png */,
+				D01200000000000000000138 /* look-tmax-3200.png */,
+				D01200000000000000000139 /* look-tmax-400.png */,
+				D0120000000000000000013A /* look-trix-400.png */,
 			);
-			name = EditorUITests;
+			name = Artwork;
 			sourceTree = "<group>";
 		};
-		BFCE5D6FC318755022B5AEA1 = {
+		D01200000000000000000012 /* HDR */ = {
 			isa = PBXGroup;
 			children = (
-				BC236099D6C65BBF9F3BBE58,
-				33FD6D1FFB7FCA01FF8E9FA8,
-				4F82DBD62C72A8DCF70884F1,
-				60E62AF53FA54F2397437053,
+				D0120000000000000000013B /* HDR Silver Master.json */,
+				D0120000000000000000013C /* HDR Silver.cube */,
 			);
-			name = EditorV4UITests;
+			name = HDR;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1064,13 +1136,20 @@
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
+				AB4000000000000000000003 /* Prepare Externalized LUTs */,
 				DBB0E1C42A7E409E830998F8 /* Resources */,
+				D01200000000000000000001 /* Copy BundledLooks */,
+				D01200000000000000000002 /* Copy BundledLooks Artwork */,
+				D01200000000000000000003 /* Copy BundledLooks HDR */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = RawLab;
+			packageProductDependencies = (
+				AA1100000000000000000002 /* RawLabKit */,
+			);
 			productName = RawLab;
 			productReference = ED52E5E1D6C957F64808BB11 /* RawLab.app */;
 			productType = "com.apple.product-type.application";
@@ -1085,7 +1164,6 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					4CAC4510D72097AAADB14698 = {
-						DevelopmentTeam = 26C49A5JKY;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -1104,6 +1182,9 @@
 				Base,
 			);
 			mainGroup = E067DA409E66CF448AAA9059;
+			packageReferences = (
+				AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */,
+			);
 			productRefGroup = 2F6D48C6086EC660301E288B /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -1119,7 +1200,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-                D01100000000000000000001,
                 D01100000000000000000002,
                 AB2000000000000000000001,
                 AB2000000000000000000002,
@@ -1170,6 +1250,77 @@
 			shellScript = "bash \"$SRCROOT/../scripts/ci/check-ios-sdk.sh\" \"$SDKROOT\"\n";
 			showEnvVarsInLog = 0;
 		};
+		AB4000000000000000000003 /* Prepare Externalized LUTs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../Shared/assets-manifest.json",
+			);
+			name = "Prepare Externalized LUTs";
+			outputPaths = (
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_CLASSIC-Neg._65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ETERNA-BB_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ETERNA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_PRO-Neg.Std_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_REALA-ACE_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_Velvia_65grid_V.1.00.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_contax_nd_std_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_pentax_k5_reversal_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_2393_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_bw_400_cn_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_e100_gx_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_ektachrome_100_vs_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_ektar_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_100_xpro_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_chrome_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_chrome_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_color_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_color_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_extracolor_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_hie_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_25_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_64_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_160_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_800_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_3200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_trix_400_sRGB_v1.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/billy_dinh_cinema.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/cinestill_800t.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/daniel_casson_autumn.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/hamada_daylight_pro_v2.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/ivan_ivanchenko_twilight.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/iwona_fairy_tale.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/jungraphy_neon.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/luizclas_portrait.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/rkrkrk_cyberpunk.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/samalive_vintage.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/takahiro_sakai_blue.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/takashi_yasui_zen.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/wilson_lee_golden.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/withluke_epic.cube",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\npython3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts --check >/dev/null 2>&1 || \\\n    python3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts\n";
+			showEnvVarsInLog = 0;
+		};
 		AB4000000000000000000001 /* Embed RUM SDK */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -1193,24 +1344,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB1300000000000000000001,
-				39E615609C9D5AC1B16063C7,
-				D00900000000000000000001,
-				A0D17B5E0000000000000003,
-				D01000000000000000000001,
-				D15000000000000000000001,
-				D16000000000000000000001,
-                A8F400000000000000000001,
-                A8F300000000000000000001,
-				8FC75E90CDC70C4708EB37A2,
-				5E0132EABC243650B81956BA,
-				CE05C93906EE52BFDBEDD0AD,
-				881EC6B68800480C33FA6A33,
-				56190FF87AB7690F650D76EB,
-				4B2CA505E383F8656138A49F,
-				25D258CC273B1BA6C8C96D64,
-				59F7471A20043B7473775365,
-				D49D2474508D587986BF07B8,
+				W34U00000000000000000001 /* LibraryImportRobot.swift in Sources */,
+				W34U00000000000000000002 /* EditorRobot.swift in Sources */,
+				W34U00000000000000000003 /* BatchRobot.swift in Sources */,
+				W34U00000000000000000004 /* ImportAndDocumentSmokeTests.swift in Sources */,
+				W34U00000000000000000005 /* EditorWorkflowSmokeTests.swift in Sources */,
+				W34U00000000000000000006 /* BatchWorkflowSmokeTests.swift in Sources */,
+				W34U00000000000000000007 /* HdrAndX3fSmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1218,6 +1358,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */,
+				019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */,
+				5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */,
+				D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */,
+				FCEEE25742781A5EA12FD364 /* IOSCameraController.swift in Sources */,
+				240439165FD0DAF67872690B /* SonyCameraSession.swift in Sources */,
+				F35ECE6734FE3B21A26B07D9 /* IOSCameraConnection.swift in Sources */,
+				6208FA71281BCB63523F125B /* CameraWorkspaceBackend.swift in Sources */,
+				B44A9E6604A3A18F80319647 /* CameraProtocol.swift in Sources */,
+				FC3E1C413D8FDDFD08580028 /* CameraPTPClient.swift in Sources */,
+				9A367BE919FBC80E921A8A14 /* CameraOriginalStore.swift in Sources */,
+				D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */,
+				D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */,
+				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
 				2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */,
 				288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */,
 				B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */,
@@ -1225,21 +1379,14 @@
                 B020A0000000000000000001 /* IOSQuickPresetView.swift in Sources */,
 				EC14BD5D2B2BC66F70E833AC /* RawEditorViewModel+AdjustmentTransfer.swift in Sources */,
 				D6F055FF2048FFEF4ED1FBFA /* RawEditorViewModel+AdjustmentHistory.swift in Sources */,
-				17BF47482993E867097D4453 /* IOSAdjustmentTransferSession.swift in Sources */,
-				4380F87E87760C793F311583 /* IOSAdjustmentTransferWB.swift in Sources */,
-				5B805538A93E3A876472B198 /* IOSAdjustmentTransferValues.swift in Sources */,
-				EBB461C838403C5D4A5E6168 /* IOSAdjustmentTransfer.swift in Sources */,
-				E204508795BC931CB03A6448 /* AdjustmentTransfer.swift in Sources */,
-				D15100000000000000000001 /* AdjustmentTransferSummary.swift in Sources */,
 				9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */,
 				909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */,
 				14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */,
-				7259547D00CAB296D381D32C /* AdjustmentPresetStore.swift in Sources */,
-				A8CACE000000000000000001 /* CachedPhotoFile.swift in Sources */,
-				A8D1A6000000000000000001 /* ErrorDiagnostics.swift in Sources */,
+				D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */,
+				48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */,
+				A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */,
+				A8D1A6000000000000000001 /* ErrorDiagnostics+iOS.swift in Sources */,
 				A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */,
-				D01100000000000000000003,
-                70225C4235E6456CAD81B158,
 				B1A96AA5B2105EE294EE532E,
 				0993BD6D24DC56B2A37EE51B,
 				905511E55B785785A2181EC4,
@@ -1247,37 +1394,33 @@
 				F0F35CB910A955F5B883934F,
 				EA054B21750151F8A61960F0,
 				4A5D819653CC5BEC83C83458,
+				D71100000000000000000001,
 				B3D998046DAF5568B14233EF,
+				D8A16E4C92B04F35817CC001,
 				6BD98E141C695971B42798C6,
+				E2C000010000000000000001 /* EditorCoordinator.swift in Sources */,
+				E2C000020000000000000001 /* EditorCoordinator+ViewModel.swift in Sources */,
+				E2C000030000000000000001 /* EditorTestHooks.swift in Sources */,
 				C3A803626CF750D1B9AFFCDA,
-				AB1700000000000000000001,
-				D00300000000000000000001,
-				D14000000000000000000001,
-				D14100000000000000000001,
+				A7894D11E1234B7FBE0F0CC1,
 				D14200000000000000000001,
 				D14300000000000000000001,
 				D15E00000000000000000001,
 				D15F00000000000000000001,
-				D14400000000000000000001,
-				D14500000000000000000001,
 				D14600000000000000000001,
 				D14700000000000000000001,
 				D14800000000000000000001,
 				D14900000000000000000001,
-				D00500000000000000000001,
-				B1536143952C400DB68B26A0,
-				D00600000000000000000001, 2DA4DF4798D881C25F72C798, 2413F38498878607A82822FF, B113946A33D6E7CA01F7A684, BA13EBD0673C922006A7B4B1, 2DCD5783547984E860773E97, B6C0A774BB3BFD64F1F06174, 591EBC8F57FFA39BB60C77B4,
+				DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */,
+				FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */,
 				D00700000000000000000006,
 				D00700000000000000000005,
 				D00700000000000000000004,
 				D00700000000000000000003,
 				D00700000000000000000002,
-				D00800000000000000000001,
-				D00800000000000000000002,
 				D00800000000000000000003,
 				D00800000000000000000004,
 				D00800000000000000000005,
-				D00700000000000000000001,
 				D00600000000000000000004,
 				D00600000000000000000003,
 				D00300000000000000000002,
@@ -1286,23 +1429,21 @@
 				D12000000000000000000003,
 				D12000000000000000000004,
 				D12100000000000000000001,
-				AB1900000000000000000001,
 				AB1900000000000000000002,
 				AB1900000000000000000003,
 				D00500000000000000000002,
 				41C5E5C8C1BF433C837BBFA1,
 				D00600000000000000000002,
-				AB1700000000000000000003,
-				AB2100000000000000000001,
-				AB3900000000000000000001,
-				AB3900000000000000000003,
+				2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */,
+				2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */,
+				2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */,
+				B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */,
+				591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */,
 				AB3900000000000000000005,
 				AB3900000000000000000007,
-				AB3900000000000000000009,
 				AB1200000000000000000001,
 				AB1800000000000000000001,
 				AB1800000000000000000002,
-				AB1200000000000000000002,
 				474AC2ED2640F238B875DFBA,
 				025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */,
 				4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */,
@@ -1310,21 +1451,15 @@
 				0B1A0382CA7A4764A8AD3A12,
 				568E6B659A004F7792056543,
 				C9A1B2C3D4E5F60718293A4B,
-				366A9A71BB194587A8AECB5A,
-				EDCB99B43F3C4149B2F7622B,
-				AB2200000000000000000001 /* EditorAdjustmentRules.swift in Sources */,
 				AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */,
+				AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
 				D883E2F5F205AC0EFBF9C319,
 				7A32C02543E94D8D8AD059DA,
 				F985B27612A241E0BF2D3B6E,
 				2A9B3E15E0704167ABE93960,
-				D00100000000000000000001,
-				D00100000000000000000002,
 				D00100000000000000000003,
-				A0D17B5E0000000000000001,
 				D00100000000000000000004,
-				D00100000000000000000005,
 				D00100000000000000000006,
 				D00100000000000000000007,
 				8F3A1B2C3D4E5F6789012345,
@@ -1333,12 +1468,8 @@
 				D00200000000000000000001,
 				D00200000000000000000002,
 				5D16F3E6AA9AE3153F10EA01,
-				8B29EC7278F7B9FF41EB8BF0,
-				8281CB7C705607A246377749,
-				EAB9B7988845FE05C9C227C3,
 				22C5A9E739A2E127D0BA221C,
 				794E01A20D65C985C5B77449,
-				BE2C8A1B49C3F8091E3DC5CB,
 				0E6B7E1E203B3E3190BDC7E0,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1458,10 +1589,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 26C49A5JKY;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
@@ -1481,10 +1612,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 26C49A5JKY;
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../lutools/include";
 				INFOPLIST_FILE = RawLab/Resources/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
@@ -1558,6 +1689,21 @@
 			name = Debug;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA1100000000000000000002 /* RawLabKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */;
+			productName = RawLabKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		AB1300000000000000000005 = {

@@ -2,13 +2,14 @@
 // Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
 // See third_party/Adobe-DNG-SDK-LICENSE.txt for the retained Adobe license.
 #include "sony2fuji/dcp_look.h"
+#include "core/parsed_resource_cache.h"
+#include "core/resource_file_stamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
-#include <mutex>
 #include <type_traits>
 
 namespace sony2fuji {
@@ -63,24 +64,23 @@ bool tableCells(const DcpTable& table, bool optional, uint64_t& count) {
 } // namespace
 
 std::shared_ptr<const DcpLook> DcpLook::loadCached(const std::string& path) {
-    std::error_code error;
+    static ParsedResourceCache<std::shared_ptr<const DcpLook>> cache;
     const auto file = std::filesystem::u8path(path);
-    const auto stamp = std::filesystem::last_write_time(file, error);
-    if (error) return nullptr;
-    const auto bytes = std::filesystem::file_size(file, error);
-    if (error || bytes < 40 || bytes > maxBytes) return nullptr;
-    static std::mutex mutex;
-    static std::string previous;
-    static std::filesystem::file_time_type modified;
-    static uintmax_t size = 0;
-    static std::shared_ptr<const DcpLook> cached;
-    std::lock_guard<std::mutex> lock(mutex);
-    if (previous == path && modified == stamp && size == bytes && cached) return cached;
+    const auto stamp = resourceFileStamp(file);
+    if (!stamp || stamp->size < 40 || stamp->size > maxBytes) {
+        cache.evict(path);
+        return nullptr;
+    }
+    std::string fingerprint = std::to_string(stamp->size);
+    for (const auto& fields : {stamp->modified, stamp->changed, stamp->identity})
+        for (const auto value : fields) fingerprint += ":" + std::to_string(value);
+    if (auto cached = cache.find(path, fingerprint)) return *cached;
     auto result = std::shared_ptr<DcpLook>(new DcpLook);
-    if (!result->load(path, bytes)) return nullptr;
-    cached = result;
-    previous = path; modified = stamp; size = bytes;
-    return cached;
+    if (!result->load(path, stamp->size) || !(resourceFileStamp(file) == stamp)) {
+        cache.evict(path);
+        return nullptr;
+    }
+    return cache.put(path, std::move(fingerprint), std::move(result));
 }
 
 bool DcpLook::load(const std::string& path, uintmax_t size) {

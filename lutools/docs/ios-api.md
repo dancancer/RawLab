@@ -59,12 +59,30 @@ sony2fuji_session_set_gpu_config(session, &gpu_config);
 
 ### Input
 
-- `input_type`: `SONY2FUJI_INPUT_RAW` or `SONY2FUJI_INPUT_BUFFER`.
+- `input_type`: `SONY2FUJI_INPUT_RAW`, scene `SONY2FUJI_INPUT_BUFFER`, or
+  `SONY2FUJI_INPUT_DISPLAY_BUFFER` for decoded display-sRGB pixels.
 - `input_path`: required for RAW input.
 - `input_pixels`, `input_width`, `input_height`, `input_pixel_format`:
   required for buffer input.
 - `input_color_space`: applies only to buffer input.
 - `input_is_linear`: non-zero if buffer data is already linear.
+
+### Display-input lens metadata
+
+`sony2fuji_session_set_display_lens_metadata(session, metadata)` supplies
+camera/lens identity, focal length, aperture, crop factor and original EXIF
+orientation for a display input. Set `version = SONY2FUJI_LENS_METADATA_VERSION`
+and `struct_size = sizeof(sony2fuji_lens_metadata)`. The setter copies string data;
+pass NULL when clearing/reusing the session for a different source. RAW rendering
+uses its own metadata and does not consume display metadata.
+
+Use `sony2fuji_session_inspect_lens_metadata` to obtain the match report and catalog
+candidates before enabling corrections. Load the lens database and set the existing
+lens correction config, then supply the same metadata for preview and final render.
+Display pixels must already be oriented once; `source_orientation` describes the
+original EXIF orientation so calibration coordinates can be mapped correctly.
+Missing focal/crop metadata remains an unavailable calibration, not a success.
+The request-v2 memory layout is unchanged.
 
 ### LUT
 

@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreImage
 import CryptoKit
 import Darwin
@@ -120,16 +121,41 @@ struct ProRAWSource: Hashable {
 
     func decode(_ url: URL, stamp: HDRSourceInfo.CameraStamp, longEdge: Int?,
                 cancelled: () -> Bool) throws -> (pair: sony2fuji_hdr_image_pair_v1, hdr: Data, sdr: Data) {
+        let longEdge = longEdge.map { min($0, Self.previewLimit) }
+        return try decodeRegion(url, stamp: stamp, longEdge: longEdge, region: nil, cancelled: cancelled)
+    }
+
+    func decodeROI(_ url: URL, stamp: HDRSourceInfo.CameraStamp,
+                   sourceX0: Int, sourceY0: Int, sourceX1: Int, sourceY1: Int,
+                   cancelled: () -> Bool = { false }) throws -> (pair: sony2fuji_hdr_image_pair_v1, hdr: Data, sdr: Data) {
+        guard sourceX0 >= 0, sourceY0 >= 0, sourceX1 <= width, sourceY1 <= height,
+              sourceX0 < sourceX1, sourceY0 < sourceY1 else {
+            throw HDRSettings.ModeError.invalidSettings
+        }
+        return try decodeRegion(url, stamp: stamp, longEdge: nil,
+                                region: (sourceX0, sourceY0, sourceX1, sourceY1), cancelled: cancelled)
+    }
+
+    private func decodeRegion(
+        _ url: URL,
+        stamp: HDRSourceInfo.CameraStamp,
+        longEdge: Int?,
+        region: (x0: Int, y0: Int, x1: Int, y1: Int)?,
+        cancelled: () -> Bool
+    ) throws -> (pair: sony2fuji_hdr_image_pair_v1, hdr: Data, sdr: Data) {
         try autoreleasepool {
             func checkCancellation() throws {
                 if cancelled() || Task.isCancelled { throw CancellationError() }
             }
             try checkCancellation()
-            let longEdge = longEdge.map { min($0, Self.previewLimit) }
             let edge = max(width, height)
-            let final = longEdge == nil
+            let final = longEdge == nil && region == nil
             let scale = min(1, Double(longEdge ?? edge) / Double(edge))
-            let expectedPixels = Int(ceil(Double(width) * scale)) * Int(ceil(Double(height) * scale))
+            let expectedPixels = if let region {
+                (region.x1 - region.x0) * (region.y1 - region.y0)
+            } else {
+                Int(ceil(Double(width) * scale)) * Int(ceil(Double(height) * scale))
+            }
             try Self.checkMemory(pixels: expectedPixels, final: final)
             guard try HDRSourceInfo.CameraStamp(url) == stamp else { throw Self.changedSource }
             let file = try FileHandle(forReadingFrom: url)
@@ -142,7 +168,7 @@ struct ProRAWSource: Hashable {
             guard let raw = CIRAWFilter(imageURL: url), raw.decoderVersion.rawValue == decoder else {
                 throw HDRSettings.ModeError.unsupportedSource
             }
-            raw.scaleFactor = Float(scale)
+            raw.scaleFactor = region == nil ? Float(scale) : 1
             let color = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
             let context = CIContext(options: [.workingColorSpace: color, .cacheIntermediates: true])
             raw.extendedDynamicRangeAmount = 1
@@ -150,11 +176,14 @@ struct ProRAWSource: Hashable {
             let bounds = hdrImage.extent.integral
             guard bounds.width >= 1, bounds.height >= 1,
                   bounds.width * bounds.height <= 128_000_000,
-                  final ? (bounds.width == CGFloat(width) && bounds.height == CGFloat(height)) :
+                  (longEdge == nil) ? (bounds.width == CGFloat(width) && bounds.height == CGFloat(height)) :
                     max(bounds.width, bounds.height) <= CGFloat(longEdge!) else {
                 throw HDRSettings.ModeError.unsupportedSource
             }
-            let w = Int(bounds.width), h = Int(bounds.height)
+            let cropX = region?.x0 ?? 0
+            let cropY = region?.y0 ?? 0
+            let w = region.map { $0.x1 - $0.x0 } ?? Int(bounds.width)
+            let h = region.map { $0.y1 - $0.y0 } ?? Int(bounds.height)
             func pack(_ image: CIImage, isHDR: Bool) throws -> (Data, Float) {
                 let count = w * h * 3 * MemoryLayout<Float>.stride
                 guard let memory = malloc(count) else { throw Self.memoryError }
@@ -167,7 +196,9 @@ struct ProRAWSource: Hashable {
                     try checkCancellation()
                     let height = min(rows, h - row)
                     // Core Image bounds count upward; bitmap rows start at the top of each tile.
-                    let tile = CGRect(x: bounds.minX, y: bounds.maxY - CGFloat(row + height), width: CGFloat(w), height: CGFloat(height))
+                    let tile = CGRect(x: bounds.minX + CGFloat(cropX),
+                                      y: bounds.maxY - CGFloat(cropY + row + height),
+                                      width: CGFloat(w), height: CGFloat(height))
                     try rgba.withUnsafeMutableBufferPointer { values in
                         for i in 0..<(w * height) { values[i * 4 + 3] = .nan }
                         context.render(image, toBitmap: values.baseAddress!, rowBytes: w * 16,
@@ -228,11 +259,11 @@ struct ProRAWSource: Hashable {
             pair.output_native_width = pair.native_width
             pair.output_native_height = pair.native_height
             pair.orientation_applied = 1
-            pair.source_intent = (final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW).rawValue
+            pair.source_intent = (longEdge == nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW).rawValue
             pair.render_intent = pair.source_intent
-            pair.is_proxy = final ? 0 : 1
+            pair.is_proxy = longEdge == nil ? 0 : 1
             pair.decode_revision = UInt64(Self.decodeVersion)
-            if final {
+            if longEdge == nil {
                 pair.source_headroom = headroom
                 pair.source_headroom_kind = UInt32(SONY2FUJI_HDR_HEADROOM_MEASURED)
             }

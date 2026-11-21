@@ -1,388 +1,237 @@
+import RawLabKit
 import SwiftUI
 import UIKit
 
-enum RulerFocusPhase: Equatable {
-    case idle, dragging, holding, restoring
-}
-
 extension ContentView {
-    var effectivePreviewSettings: RawSettings {
-        editorDraftSnapshot.projecting(on: settings)
+    var settings: RawSettings {
+        get { coordinator.settings }
+        nonmutating set { coordinator.settings = newValue }
     }
 
-    var editorDraftSnapshot: EditorDraftSnapshot {
-        EditorDraftSnapshot(geometry: geometryDraft, lens: lensDraft,
-                            tool: resetDraftSuspended || collapsedEditorTool != nil ? .film : currentEditorTool, destination: pendingToolSelection)
+    var workspaceDraft: EditorToolDraft? {
+        get { coordinator.workspaceDraft }
+        nonmutating set { coordinator.workspaceDraft = newValue }
     }
 
-    var draftPreviewSettings: RawSettings {
-        var result = effectivePreviewSettings
-        if geometrySelected {
-            result.geometrySettings.cropX = 0
-            result.geometrySettings.cropY = 0
-            result.geometrySettings.cropWidth = 1
-            result.geometrySettings.cropHeight = 1
-        }
-        return result
+    var toolWorkspaceOpen: Bool {
+        get { coordinator.toolWorkspaceOpen }
+        nonmutating set { coordinator.toolWorkspaceOpen = newValue }
+    }
+
+    var workspaceDraftID: UUID { coordinator.workspaceDraftID }
+    var settingsRevision: UUID { coordinator.settingsRevision }
+    var photoViewing: PhotoViewingState {
+        get { coordinator.photoViewing }
+        nonmutating set { coordinator.photoViewing = newValue }
+    }
+    var photoViewport: PhotoViewport {
+        get { coordinator.photoViewport }
+        nonmutating set { coordinator.photoViewport = newValue }
+    }
+    var selectedAdjustment: AdjustmentKind? {
+        get { coordinator.selectedAdjustment }
+        nonmutating set { coordinator.selectedAdjustment = newValue }
+    }
+    var selectedHDRRenditionTool: EditorToolSelection? {
+        get { coordinator.selectedHDRRenditionTool }
+        nonmutating set { coordinator.selectedHDRRenditionTool = newValue }
+    }
+    var lensSelected: Bool { coordinator.lensSelected }
+    var geometrySelected: Bool { coordinator.geometrySelected }
+    var choosingMasterRecipe: Bool { coordinator.choosingMasterRecipe }
+    var adjustmentsExpanded: Bool {
+        get { coordinator.adjustmentsExpanded }
+        nonmutating set { coordinator.adjustmentsExpanded = newValue }
+    }
+    var isAdjustingSlider: Bool { coordinator.isAdjustingSlider }
+    var geometryDraft: GeometrySettings? {
+        get { coordinator.geometryDraft }
+        nonmutating set { coordinator.geometryDraft = newValue }
+    }
+    var lensDraft: RawSettings? {
+        get { coordinator.lensDraft }
+        nonmutating set { coordinator.lensDraft = newValue }
+    }
+    var draftExitPresented: Bool {
+        get { coordinator.draftExitPresented }
+        nonmutating set { coordinator.draftExitPresented = newValue }
+    }
+    var pendingToolSelection: EditorToolSelection? { coordinator.pendingToolSelection }
+    var pendingAdjustmentExpansion: Bool? { coordinator.pendingAdjustmentExpansion }
+    var selectedGroup: EditorAdjustmentGroup {
+        get { coordinator.selectedGroup }
+        nonmutating set { coordinator.selectedGroup = newValue }
+    }
+    var hslChannel: Int {
+        get { coordinator.hslChannel }
+        nonmutating set { coordinator.hslChannel = newValue }
+    }
+    var adjustmentFine: Bool { coordinator.adjustmentFine }
+    var collapsedEditorTool: EditorToolSelection? { coordinator.collapsedEditorTool }
+    var preparedReset: PreparedEditorReset? { coordinator.preparedReset }
+    var resetConfirmationPresented: Bool {
+        get { coordinator.resetConfirmationPresented }
+        nonmutating set { coordinator.resetConfirmationPresented = newValue }
+    }
+    var adjustmentSheet: IOSAdjustmentSheet? {
+        get { coordinator.adjustmentSheet }
+        nonmutating set { coordinator.adjustmentSheet = newValue }
+    }
+    var showingBatchSelection: Bool {
+        get { coordinator.showingBatchSelection }
+        nonmutating set { coordinator.showingBatchSelection = newValue }
+    }
+    var pendingCollectionNavigation: IOSCollectionNavigation? {
+        get { coordinator.pendingCollectionNavigation }
+        nonmutating set { coordinator.pendingCollectionNavigation = newValue }
+    }
+    var showingBatchExport: Bool {
+        get { coordinator.showingBatchExport }
+        nonmutating set { coordinator.showingBatchExport = newValue }
+    }
+    var batchModel: BatchExportModel? {
+        get { coordinator.batchExportHandle as? BatchExportModel }
+        nonmutating set { coordinator.batchExportHandle = newValue }
+    }
+    var showingExportSize: Bool {
+        get { coordinator.showingExportSize }
+        nonmutating set { coordinator.showingExportSize = newValue }
+    }
+    var singleExportFormat: BatchOutputFormat { coordinator.singleExportFormat }
+
+    var workingSettings: RawSettings {
+        get { coordinator.workingSettings }
+        nonmutating set { coordinator.workingSettings = newValue }
+    }
+
+    var workingSettingsBinding: Binding<RawSettings> {
+        Binding(get: { workingSettings }, set: { workingSettings = $0 })
+    }
+
+    var geometryDraftState: EditorGeometryDraftState { coordinator.geometryDraftState }
+
+    func syncGeometryDraft() { coordinator.syncGeometryDraft() }
+    func undoEditorDraft() { coordinator.undoEditorDraft() }
+    func redoEditorDraft() { coordinator.redoEditorDraft() }
+    func restoreDraftControls() { coordinator.restoreDraftControls() }
+
+    var effectivePreviewSettings: RawSettings { coordinator.effectivePreviewSettings }
+    var editorDraftSnapshot: EditorDraftSnapshot { coordinator.editorDraftSnapshot }
+    var draftPreviewSettings: RawSettings { coordinator.draftPreviewSettings }
+
+    func previewSettings(for draft: EditorDraftSnapshot) -> RawSettings {
+        coordinator.previewSettings(for: draft)
+    }
+
+    func geometryProjection(for image: UIImage) -> GeometryDraftProjection? {
+        var base = effectivePreviewSettings
+        let geometry = base.geometrySettings
+        guard geometrySelected || !geometry.isIdentity else { return nil }
+        base.setGeometrySettings(GeometrySettings())
+        // 只投影已经交付的无几何底图；应用或取消后用它承接到精确帧到达。
+        guard viewModel.acceptedPreviewRequest?.settings == base else { return nil }
+        return GeometryDraftProjection(source: viewModel.nativeImageSize ?? image.size, settings: geometry)
     }
 
     var geometryDraftBinding: Binding<GeometrySettings> {
         let sourceRevision = viewModel.sourceRevision
-        return Binding(get: { geometryDraft ?? settings.geometrySettings }, set: { value in
+        return Binding(get: { coordinator.geometryDraft ?? settings.geometrySettings }, set: { value in
             guard !editorBusy, geometrySelected, viewModel.sourceRevision == sourceRevision else { return }
-            geometryDraft = value
+            coordinator.geometryDraft = value
         })
     }
 
     var lensDraftBinding: Binding<RawSettings> {
         let sourceRevision = viewModel.sourceRevision
-        return Binding(get: { lensDraft ?? settings }, set: { value in
+        return Binding(get: { coordinator.lensDraft ?? settings }, set: { value in
             guard !editorBusy, lensSelected, viewModel.sourceRevision == sourceRevision else { return }
-            lensDraft = value
+            coordinator.lensDraft = value
         })
     }
 
-    var isEditorDraftActive: Bool { geometrySelected || lensSelected }
+    var isEditorDraftActive: Bool { coordinator.isEditorDraftActive }
+    var isEditorDraftChanged: Bool { coordinator.isEditorDraftChanged }
 
-    var isEditorDraftChanged: Bool {
-        editorDraftSnapshot.isChanged(from: settings)
-    }
+    func preserveEditorDraft() { coordinator.preserveEditorDraft() }
+    func restoreEditorDraft() { coordinator.restoreEditorDraft() }
+    func clearRecoverableDraft() { coordinator.clearRecoverableDraft() }
 
     var rulerFocusOpacity: Double {
-        guard rulerFocusPhase == .dragging || rulerFocusPhase == .holding else { return 1 }
+        guard coordinator.rulerFocusPhase == .dragging || coordinator.rulerFocusPhase == .holding else { return 1 }
         return UIDevice.current.userInterfaceIdiom == .pad ? 0.42 : 0.08
     }
 
-    func selectEditorTool(_ selection: EditorToolSelection) {
-        guard !editorBusy else { return }
-        closeQuickPresets()
-        if selection == currentEditorTool {
-            if !adjustmentsExpanded { requestAdjustmentExpansion(true) }
-            return
-        }
-        if isEditorDraftChanged {
-            pendingToolSelection = selection
-            draftExitPresented = true
-            return
-        }
-        activateEditorTool(selection)
+    func selectEditorTool(_ selection: EditorToolSelection) { coordinator.selectEditorTool(selection) }
+    var currentEditorTool: EditorToolSelection { coordinator.currentEditorTool }
+
+    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true, leavingWorkspace: Bool = false) {
+        coordinator.activateEditorTool(selection, resettingFine: resettingFine, leavingWorkspace: leavingWorkspace)
     }
 
-    var currentEditorTool: EditorToolSelection {
-        if let collapsedEditorTool { return collapsedEditorTool }
-        if geometrySelected { return .geometry }
-        if lensSelected { return .lens }
-        if choosingMasterRecipe { return .recipe }
-        return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
-    }
-
-    func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true) {
-        viewModel.closeQuickPresets()
-        cancelSliderInteraction()
-        if resettingFine && selection != currentEditorTool { adjustmentFine = false }
-        collapsedEditorTool = nil
-        let leavingDraft = geometrySelected || lensSelected
-        if leavingDraft { viewModel.discardDraftSaveFailure(settings: settings) }
-        pendingToolSelection = nil
-        draftExitPresented = false
-        cancelRulerFocus()
-        geometryDraft = nil
-        lensDraft = nil
-        geometrySelected = selection == .geometry
-        lensSelected = selection == .lens
-        choosingMasterRecipe = selection == .recipe
-        selectedGroup = EditorAdjustmentRules.groupFor(selection)
-        if case .adjustment(let adjustment) = selection { selectedAdjustment = adjustment }
-        else { selectedAdjustment = nil }
-        if geometrySelected {
-            geometryAspectPreset = .free; geometryLockedRatio = nil; geometryAspectSwapped = false
-            geometryDraft = settings.geometrySettings
-        }
-        if lensSelected { lensDraft = settings }
-        if leavingDraft && !geometrySelected && !lensSelected {
-            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
-        }
-    }
-
-    func applyEditorDraft() {
-        guard commitEditorDraft() else { return }
-        activateEditorTool(.adjustment(.exposure))
-    }
-
-    func commitEditorDraft() -> Bool {
-        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !viewModel.previewFailed, !isAdjustingSlider,
-              let prepared = viewModel.prepareDraft(settings: settings, revision: settingsRevision, draft: editorDraftSnapshot),
-              viewModel.saveDraft(prepared, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot) else { return false }
-        // 退出草稿会立即请求预览，不能等待 settings observer 才更新参考构图。
-        viewModel.committedPreviewSettings = prepared.candidate.settings
-        settings = prepared.candidate.settings
-        geometryDraft = nil
-        lensDraft = nil
-        cancelRulerFocus()
-        return true
-    }
-
-    func cancelEditorDraft() {
-        discardEditorDraft()
-        activateEditorTool(.adjustment(.exposure))
-    }
-
-    func discardEditorDraft() {
-        geometryDraft = nil
-        lensDraft = nil
-        viewModel.discardDraftSaveFailure(settings: settings)
-        cancelRulerFocus()
-    }
+    func applyEditorDraft() { coordinator.applyEditorDraft() }
+    func finishEditorTool() { coordinator.finishEditorTool() }
+    func commitEditorDraft() -> Bool { coordinator.commitEditorDraft() }
+    func cancelEditorDraft() { coordinator.cancelEditorDraft() }
+    func closeEditorDraftCleanly() -> Bool { coordinator.closeEditorDraftCleanly() }
+    func discardEditorDraft() { coordinator.discardEditorDraft() }
 
     func finishDraftNavigation(apply: Bool) {
-        if apply {
-            guard commitEditorDraft() else { return }
-        } else { discardEditorDraft() }
-        if pendingCollectionNavigation != nil {
-            activateEditorTool(.adjustment(.exposure))
-            continueCollectionNavigation()
-            return
-        }
-        if pendingAdjustmentAction != nil {
-            activateEditorTool(.adjustment(.exposure))
-            continueAdjustmentAction()
-            return
-        }
-        if !pendingSystemPhotoURLs.isEmpty {
-            activateEditorTool(.adjustment(.exposure))
-            continueSystemPhotoImport()
-            return
-        }
-        if pendingFileImport || pendingPhotoImport {
-            activateEditorTool(.adjustment(.exposure))
-            continueEditorImport()
-            return
-        }
-        if resetRestoreTool != nil {
-            resetDraftSuspended = true
-            resetWaitingForReady = true
-            draftExitPresented = false
-            // Apply/Discard 已结束；最终确认取消也不回退这一步。
-            viewModel.updatePreview(settings: settings, includeHistogram: true, quality: .final)
-            continuePendingAllReset()
-            return
-        }
-        let selection = pendingToolSelection
-        let expansion = pendingAdjustmentExpansion
-        pendingToolSelection = nil
-        pendingAdjustmentExpansion = nil
-        if expansion == false { completeAdjustmentExpansion(false); return }
-        if let selection { activateEditorTool(selection) }
-        if let expansion { completeAdjustmentExpansion(expansion) }
+        coordinator.finishDraftNavigation(
+            apply: apply,
+            continueImport: { continueEditorImport() },
+            continueCollection: { continueCollectionNavigation() }
+        )
     }
 
     func retryEditorSave() {
-        if isEditorDraftActive && viewModel.hasFailedDraftSave {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || resetRestoreTool != nil || pendingFileImport || pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil || pendingCollectionNavigation != nil { finishDraftNavigation(apply: true) }
-            else { applyEditorDraft() }
-        } else if !pendingSystemPhotoURLs.isEmpty {
-            continueSystemPhotoImport()
-        } else if pendingFileImport || pendingPhotoImport {
-            continueEditorImport()
-        } else if pendingCollectionNavigation != nil {
-            continueCollectionNavigation()
-        } else if pendingAdjustmentAction != nil {
-            continueAdjustmentAction()
-        } else { viewModel.retrySave(settings: settings) }
+        coordinator.retryEditorSave(
+            continueImport: {
+                if !coordinator.pendingSystemPhotoURLs.isEmpty { continueSystemPhotoImport() }
+                else { continueEditorImport() }
+            },
+            continueCollection: { continueCollectionNavigation() }
+        )
     }
 
     func prepareEditorReset(_ scope: EditorAdjustmentScope) -> EditorResetPreparation {
-        viewModel.prepareReset(scope, settings: settings, revision: settingsRevision, draft: editorDraftSnapshot)
+        coordinator.prepareEditorReset(scope)
     }
 
     @discardableResult
     func commitEditorReset(_ prepared: PreparedEditorReset) -> Bool {
-        guard !editorBusy,
-              let candidate = viewModel.commitReset(prepared, settings: settings, revision: settingsRevision,
-                                                   draft: editorDraftSnapshot) else { return false }
-        if prepared.updatesDraft {
-            geometryDraft = candidate.settings.geometrySettings
-            lensDraft = candidate.settings
-        } else {
-            let parametersChanged = settings != candidate.settings
-            applySettingsChange(candidate.settings)
-            if !parametersChanged {
-                // 仅外部外观身份改变时，SwiftUI 不会发出 settings onChange。
-                settingsRevision = UUID()
-                queueEditorSettingsChange(candidate.settings)
-            }
-        }
-        return true
+        coordinator.commitEditorReset(prepared)
     }
 
-    func previewEditorDraft() {
-        guard !editorBusy, viewModel.hasImage else { return }
-        showingBefore = false
-        if isAdjustingSlider {
-            viewModel.schedulePreviewUpdate(settings: draftPreviewSettings, delay: 0.08,
-                                           includeHistogram: false, quality: .interactive)
-        } else {
-            viewModel.updatePreview(settings: draftPreviewSettings, includeHistogram: true, quality: .final)
-        }
-    }
+    func previewEditorDraft() { coordinator.previewEditorDraft() }
 
     func selectedScalarBadge(_ adjustment: AdjustmentKind) -> String? {
         guard selectedAdjustment == adjustment, !geometrySelected, !lensSelected else { return nil }
         return adjustment.badge(for: adjustment.value(from: settings))
     }
 
-    func selectEditorGroup(_ group: EditorAdjustmentGroup) {
-        guard !editorBusy, !resetDraftSuspended else { return }
-        let wasQuickPresets = viewModel.quickPresetsVisible
-        if group == .looks && settings.isHDREditing {
-            if viewModel.quickPresetsVisible { requestAdjustmentExpansion(!adjustmentsExpanded) } else { showQuickPresets() }
-            return
-        }
-        if group != .looks { closeQuickPresets() }
-        if group == selectedGroup && !wasQuickPresets {
-            requestAdjustmentExpansion(!adjustmentsExpanded)
-        } else {
-            let target = EditorAdjustmentRules.defaultTool(group)
-            if isEditorDraftChanged {
-                pendingToolSelection = target
-                pendingAdjustmentExpansion = true
-                draftExitPresented = true
-            } else {
-                activateEditorTool(target)
-                adjustmentsExpanded = true
-            }
-        }
-    }
+    func selectEditorGroup(_ group: EditorAdjustmentGroup) { coordinator.selectEditorGroup(group) }
+    func normalizeHDRNavigation(isHDREditing: Bool) { coordinator.normalizeHDRNavigation(isHDREditing: isHDREditing) }
+    func requestToolWorkspaceExit() { coordinator.requestToolWorkspaceExit() }
+    func requestAdjustmentExpansion(_ expanded: Bool) { coordinator.requestAdjustmentExpansion(expanded) }
 
-    func requestAdjustmentExpansion(_ expanded: Bool) {
-        guard !editorBusy, !resetDraftSuspended else { return }
-        if !expanded && isEditorDraftChanged {
-            pendingToolSelection = currentEditorTool
-            pendingAdjustmentExpansion = false
-            draftExitPresented = true
-        } else { completeAdjustmentExpansion(expanded) }
-    }
-
-    func completeAdjustmentExpansion(_ expanded: Bool) {
-        if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
-        if expanded {
-            if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if isEditorDraftActive {
-            let tool = currentEditorTool
-            let group = selectedGroup
-            // 收起结束实际草稿并恢复 committed 画面；记住的工具只属于导航会话。
-            activateEditorTool(.film, resettingFine: false)
-            collapsedEditorTool = tool
-            selectedGroup = group
-        }
-        adjustmentsExpanded = expanded
+    func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
+        coordinator.completeAdjustmentExpansion(expanded, closingWorkspace: closingWorkspace)
     }
 
     func cancelDraftNavigation() {
-        let skippedSystemPhoto = !pendingSystemPhotoURLs.isEmpty
-        if skippedSystemPhoto {
-            let skipped = pendingSystemPhotoURLs.removeFirst()
-            for url in skipped { PhotoImportFile.release(url) }
-        }
-        pendingCollectionNavigation = nil
-        pendingAdjustmentAction = nil
-        pendingFileImport = false
-        pendingPhotoImport = false
-        pendingToolSelection = nil
-        pendingAdjustmentExpansion = nil
-        resetRestoreTool = nil
-        resetIntentSource = nil
-        resetWaitingForReady = false
-        if skippedSystemPhoto {
-            // 让确认框先完成 dismiss，再尝试下一条系统事件，避免同一轮重开确认框。
-            DispatchQueue.main.async { continueSystemPhotoImport() }
-        }
+        coordinator.cancelDraftNavigation(onSystemPhotoSkipped: { continueSystemPhotoImport() })
     }
 
-    var resetSnapshot: PhotoEditState {
-        let state = viewModel.currentEditState(settings: settings)
-        return state.replacing(settings: effectivePreviewSettings, preservingFilmID: state.filmID)
-    }
-
-    var resetContext: EditorAdjustmentContext {
-        EditorAdjustmentContext(isRaw: viewModel.sourceKind == .raw,
-            defaultExposureMode: RawSettings.default.exposureMode,
-            cameraTemperature: viewModel.rawWhiteBalance?.isCalibrated == true ? viewModel.rawWhiteBalance?.temperature : nil,
-            cameraTint: viewModel.rawWhiteBalance?.isCalibrated == true ? viewModel.rawWhiteBalance?.tint : nil)
-    }
-
-    func resetModified(_ scope: EditorAdjustmentScope) -> Bool {
-        EditorAdjustmentRules.isModified(scope, snapshot: resetSnapshot, context: resetContext)
-    }
-
-    func requestEditorReset(_ scope: EditorAdjustmentScope) {
-        guard !editorBusy else { return }
-        if scope == .all && isEditorDraftActive {
-            resetRestoreTool = currentEditorTool
-            resetIntentSource = viewModel.editorEditSource
-            if isEditorDraftChanged { draftExitPresented = true; return }
-            resetDraftSuspended = true
-            resetWaitingForReady = true
-            continuePendingAllReset()
-        } else { presentEditorReset(scope) }
-    }
-
-    func continuePendingAllReset() {
-        guard resetWaitingForReady else { return }
-        guard resetIntentSource == viewModel.editorEditSource else { cancelEditorReset(); return }
-        guard !editorBusy, !viewModel.previewRendering, !viewModel.previewResizePending, !isAdjustingSlider else { return }
-        resetWaitingForReady = false
-        presentEditorReset(.all)
-    }
-
-    func presentEditorReset(_ scope: EditorAdjustmentScope) {
-        switch prepareEditorReset(scope) {
-        case .unchanged: restoreResetDraft()
-        case .blocked(let reason):
-            viewModel.statusMessage = resetBlockedMessage(reason)
-            restoreResetDraft()
-        case .prepared(let candidate):
-            preparedResetScope = scope
-            preparedReset = candidate
-            if candidate.requiresConfirmation { resetConfirmationPresented = true }
-            else { confirmEditorReset() }
-        }
-    }
-
-    func confirmEditorReset() {
-        guard let candidate = preparedReset else { restoreResetDraft(); return }
-        if !commitEditorReset(candidate) { viewModel.statusMessage = L10n.text("照片或调整已变化，请重新确认重置。") }
-        preparedReset = nil
-        preparedResetScope = nil
-        restoreResetDraft(preview: false)
-    }
-
-    func cancelEditorReset() {
-        preparedReset = nil
-        preparedResetScope = nil
-        restoreResetDraft()
-    }
-
-    func restoreResetDraft(preview: Bool = true) {
-        guard let tool = resetRestoreTool else { return }
-        let sameSource = resetIntentSource == viewModel.editorEditSource
-        resetRestoreTool = nil
-        resetIntentSource = nil
-        resetDraftSuspended = false
-        resetWaitingForReady = false
-        guard sameSource else { return }
-        let freshGeometry = tool == .geometry ? settings.geometrySettings : nil
-        let freshLens = tool == .lens ? settings : nil
-        if geometryDraft != freshGeometry || lensDraft != freshLens {
-            // 确认后的 settings observer 已负责预览；取消时重进几何要恢复 uncropped 画面。
-            suppressNextDraftPreview = !preview
-        }
-        geometryDraft = freshGeometry
-        lensDraft = freshLens
-    }
+    var resetSnapshot: PhotoEditState { coordinator.resetSnapshot }
+    var resetContext: EditorAdjustmentContext { coordinator.resetContext }
+    func resetModified(_ scope: EditorAdjustmentScope) -> Bool { coordinator.resetModified(scope) }
+    func requestEditorReset(_ scope: EditorAdjustmentScope) { coordinator.requestEditorReset(scope) }
+    func presentEditorReset(_ scope: EditorAdjustmentScope) { coordinator.presentEditorReset(scope) }
+    func confirmEditorReset() { coordinator.confirmEditorReset() }
+    func cancelEditorReset() { coordinator.cancelEditorReset() }
 
     var resetConfirmationTitle: String {
-        switch preparedResetScope {
+        switch coordinator.preparedResetScope {
         case .all: return L10n.text("重置全部调整？")
         case .allGrading, .tool(.adjustment(.colorGrading)): return L10n.text("重置颜色分级")
         case .allHSL, .tool(.adjustment(.hsl)): return L10n.text("重置全部 HSL？")
@@ -394,7 +243,7 @@ extension ContentView {
 
     var resetConfirmationMessage: String {
         let base: String
-        switch preparedResetScope {
+        switch coordinator.preparedResetScope {
         case .all: base = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
         case .allGrading, .tool(.adjustment(.colorGrading)): base = L10n.text("恢复阴影、中间调和高光的颜色分级默认值？")
         case .allHSL, .tool(.adjustment(.hsl)):
@@ -402,48 +251,23 @@ extension ContentView {
         case .group(let group): base = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
         default: base = ""
         }
-        guard let preparedReset else { return base }
+        guard let preparedReset = coordinator.preparedReset else { return base }
         let fields = EditorAdjustmentRules.materializedFields(before: preparedReset.original.committed.settings,
             after: preparedReset.candidate.settings)
         let wasRecipe = preparedReset.original.committed.settings.masterRecipeID != nil
         let removesRecipe = preparedReset.candidate.settings.masterRecipeID == nil
-        guard wasRecipe && removesRecipe && preparedResetScope != .all && !fields.isEmpty else { return base }
+        guard !preparedReset.original.committed.settings.isHDREditing,
+              wasRecipe && removesRecipe && coordinator.preparedResetScope != .all && !fields.isEmpty else { return base }
         return [base, L10n.format("将以下项目转为独立调整，以保留其他分组的当前效果：%@",
                                 fields.map { L10n.text($0) }.joined(separator: ", "))].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
 
-    func resetBlockedMessage(_ reason: EditorAdjustmentResetBlock?) -> String {
-        switch reason {
-        case .invalidInput: return L10n.text("当前照片或调整记录无效，无法安全重置。")
-        case .unknownRecipe: return L10n.text("当前配方不可用，无法安全重置外观。")
-        case .missingCameraWhiteBalance: return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
-        case .unrepresentable: return L10n.text("现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。")
-        case nil: return L10n.text("预览尚未就绪，请稍后重试。")
-        }
-    }
-
-    // MARK: - Interruptible focus return
+    func resetBlockedMessage(_ reason: EditorResetBlock) -> String { reason.message }
+    func resetBlockedMessage(_ reason: EditorAdjustmentResetBlock) -> String { reason.message }
 
     func updateRulerFocus(editing: Bool, wasEditing: Bool) {
-        rulerFocusTask?.cancel()
-        if editing {
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) { rulerFocusPhase = .dragging }
-            return
-        }
-        guard wasEditing, !reduceMotion else { rulerFocusPhase = .idle; return }
-        rulerFocusPhase = .holding
-        rulerFocusTask = Task { @MainActor in
-            do { try await Task.sleep(for: .milliseconds(160)) } catch { return }
-            withAnimation(.easeOut(duration: 0.18)) { rulerFocusPhase = .restoring }
-            do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
-            rulerFocusPhase = .idle
-        }
+        coordinator.updateRulerFocus(editing: editing, wasEditing: wasEditing, reduceMotion: reduceMotion)
     }
 
-    func cancelRulerFocus() {
-        rulerFocusTask?.cancel()
-        rulerFocusTask = nil
-        rulerFocusPhase = .idle
-        isAdjustingSlider = false
-    }
+    func cancelRulerFocus() { coordinator.cancelRulerFocus() }
 }

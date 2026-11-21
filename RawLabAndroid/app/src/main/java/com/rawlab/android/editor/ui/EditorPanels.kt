@@ -1,10 +1,14 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import com.rawlab.android.editor.controls.HslTargetActions
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,6 +35,8 @@ import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.canvas.PhotoCanvas
 import com.rawlab.android.editor.canvas.PhotoCanvasState
+import com.rawlab.android.editor.canvas.photoViewMargin
+import com.rawlab.android.editor.canvas.rememberPhotoHDRPreview
 import com.rawlab.android.editor.geometry.GeometryCropCanvas
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.settings.EditSettings
@@ -45,28 +51,40 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onAlbum: () -> Unit, onFile: () -> Unit, onLicenses: () -> Unit, onPreviewSizeChange: (Int) -> Unit,
     onDraftEdit: (EditSettings, Boolean) -> Unit, onSaveRetry: () -> Unit,
     view: PhotoViewOptions = PhotoViewOptions(), onCanvasTap: () -> Unit = {}, onHoldBefore: (Boolean) -> Unit = {},
-    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false) {
+    onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {},
+    workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
+    onCancelExport: () -> Unit = {},
+    onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
-            if (state.draft?.group == AdjustmentGroup.GEOMETRY) GeometryCropCanvas(it, state.visibleEdits.geometry,
-                enabled = state.draftReady, physicalAspect = state.draft.geometryAspect, showsGrid = state.draft.geometryGrid) { value ->
+            val hdrPreview = rememberPhotoHDRPreview(it.hdr?.result)
+            val geometryDraft = state.draft?.takeIf { draft -> draft.group == AdjustmentGroup.GEOMETRY }
+            if (it.renderedGeometry.isIdentity && (geometryDraft != null || !state.edits.geometry.isIdentity))
+                GeometryCropCanvas(it, state.visibleEdits.geometry, editing = geometryDraft != null,
+                    enabled = state.draftReady, photoMargin = if (view.margins) photoViewMargin else 0.dp,
+                    bitmap = hdrPreview.bitmap ?: it.result, physicalAspect = geometryDraft?.geometryAspect,
+                    showsGrid = geometryDraft?.geometryGrid ?: true) { value ->
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
-            else PhotoCanvas(it, compare && state.draft == null, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
-                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft == null && hslTarget == null, hslTarget = hslTarget,
-                showOverlays = !view.purePreview, margins = view.margins,
-                onCanvasTap = { if (state.draft == null) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft == null) },
-                onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft == null && state.controlsEnabled,
+            else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null, hslTarget = hslTarget,
+                showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
+                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview,
+                detail = state.detail.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY },
+                detailTiles = state.detailTiles.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY }.orEmpty(),
+                onDetailRequest = if (state.draft?.group == AdjustmentGroup.GEOMETRY) ({}) else onDetailRequest,
+                onCanvasTap = { if (state.draft?.group != AdjustmentGroup.GEOMETRY) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft?.group != AdjustmentGroup.GEOMETRY) },
+                onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
                     Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })
-        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE)
+        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE, onCamera)
         val busy = state.rendering || state.previewResizePending
         val previewStatus = stringResource(when {
             busy -> R.string.rendering
@@ -84,14 +102,76 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
             }
         }
         if (!view.purePreview) {
-            val operation = when (state.operation) {
-                Operation.EXPORT -> R.string.exporting
-                Operation.IMPORT -> R.string.importing
-                Operation.IMPORT_LOOK -> R.string.look_importing
-                else -> null
+            if (state.operation == Operation.EXPORT) {
+                val progress = state.exportProgress?.coerceIn(0f, 1f)
+                val animatedProgress by animateFloatAsState(targetValue = progress ?: 0f, label = "exportProgress")
+                Column(
+                    Modifier.align(Alignment.TopStart).padding(12.dp)
+                        .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(10.dp))
+                        .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!reduceMotion) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp).testTag("export-loading"),
+                                strokeWidth = 2.dp,
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(stringResource(R.string.exporting), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        if (progress != null) {
+                            Text(
+                                " ${(progress * 100).toInt().coerceIn(0, 100)}%",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        TextButton(
+                            onClick = onCancelExport,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.testTag("export-cancel"),
+                        ) {
+                            Text(stringResource(R.string.cancel), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (progress != null && (progress > 0f || reduceMotion)) {
+                        LinearProgressIndicator(
+                            progress = { if (reduceMotion) progress else animatedProgress },
+                            modifier = Modifier.width(140.dp).height(3.dp).padding(end = 6.dp).testTag("export-progress"),
+                        )
+                    } else if (!reduceMotion) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.width(140.dp).height(3.dp).padding(end = 6.dp).testTag("export-progress"),
+                        )
+                    }
+                }
+            } else {
+                val operation = when (state.operation) {
+                    Operation.IMPORT -> R.string.importing
+                    Operation.IMPORT_LOOK -> R.string.look_importing
+                    Operation.PREPARE_EXPORT -> R.string.exporting
+                    else -> null
+                }
+                operation?.let {
+                    Row(
+                        Modifier.align(Alignment.TopStart).padding(12.dp)
+                            .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!reduceMotion) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(stringResource(it), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
-            operation?.let { Text(stringResource(it), Modifier.align(Alignment.TopStart).padding(12.dp)
-                .background(Color.Black.copy(alpha = .6f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
             if (state.error != null) RenderError(state, onRetry, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
         }
         if (state.preview == null || (state.draft?.group == AdjustmentGroup.GEOMETRY && state.saveState == EditSaveState.FAILED)) EditorSaveNotice(state, onSaveRetry, Modifier.align(Alignment.BottomCenter)
@@ -137,11 +217,12 @@ internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modi
 }
 
 @Composable
-internal fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean) {
+internal fun EmptyEditor(onAlbum: () -> Unit, onFile: () -> Unit, enabled: Boolean, onCamera: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = onAlbum, enabled = enabled) { Icon(Icons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
+        Button(onClick = onAlbum, enabled = enabled) { Icon(AppIcons.Outlined.PhotoLibrary, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.select_photo)) }
         TextButton(onClick = onFile, enabled = enabled) { Text(stringResource(R.string.open_file)) }
+        TextButton(onClick = onCamera, enabled = enabled, modifier = Modifier.testTag("camera-entry")) { Text(stringResource(R.string.camera_import)) }
         Text(stringResource(R.string.empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
     }
 }

@@ -1,10 +1,13 @@
 #include "gpu/gles_photo.h"
+#include "gpu/gles_pixel_contract.h"
+#include "gpu/gles_recovery.h"
 #include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
 #include "gpu/lut_gpu_internal.h"
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
 #include "gpu/denoise.h"
+#include "gpu/photo_bands.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
 #include <android/log.h>
@@ -13,14 +16,14 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <new>
 #include <stdexcept>
 
 namespace sony2fuji {
 namespace {
-constexpr size_t kTileBytes = 16 * 1024 * 1024;
 constexpr size_t kCacheBytes = 64 * 1024 * 1024;
-constexpr GLuint kWorkgroup = 128;
-static_assert(sizeof(RGB) == 3 * sizeof(float));
+constexpr GLuint kWorkgroup = GlesPhotoPixelContract::kWorkgroupSize;
+static_assert(sizeof(RGB) == GlesPhotoPixelContract::kSsboPixelBytes);
 
 EGLDisplay sharedDisplay() {
     // Android's display is shared with HWUI. Keep one process-level initialization;
@@ -43,22 +46,28 @@ struct Binding {
     EGLenum previousApi = eglQueryAPI();
     EGLDisplay display;
     bool bound;
+    EGLint error = EGL_SUCCESS;
     Binding(EGLDisplay d, EGLSurface s, EGLContext c) : display(d) {
         bound = eglBindAPI(EGL_OPENGL_ES_API) && eglMakeCurrent(d, s, s, c);
+        if (!bound) error = eglGetError();
     }
     ~Binding() {
+        // EGL_NO_CONTEXT 按当前 API 解绑：先释放 ES，再恢复调用方 API 和非空 context。
         if (bound) {
-            if (previousContext != EGL_NO_CONTEXT)
-                eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
-            else eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         }
-        eglBindAPI(previousApi);
+        if (previousApi != EGL_NONE) {
+            eglBindAPI(previousApi);
+        }
+        if (bound && previousContext != EGL_NO_CONTEXT) {
+            eglMakeCurrent(previousDisplay, previousDraw, previousRead, previousContext);
+        }
     }
 };
 
 void checkGL() {
     const auto error = glGetError();
-    if (error != GL_NO_ERROR) throw std::runtime_error("OpenGL error " + std::to_string(error));
+    if (error != GL_NO_ERROR) throw GlesFailure(error);
 }
 
 GLuint makeProgram() {
@@ -110,30 +119,34 @@ struct GlesPhotoRenderer::Impl {
 
     void initialize() {
         display = sharedDisplay();
-        if (display == EGL_NO_DISPLAY) throw std::runtime_error("EGL display unavailable");
+        if (display == EGL_NO_DISPLAY) throw GpuUnavailableError("EGL display unavailable");
         const EGLint configAttributes[] = { EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL_NONE };
         EGLConfig config{}; EGLint count = 0;
         if (!eglChooseConfig(display, configAttributes, &config, 1, &count) || count == 0)
-            throw std::runtime_error("EGL compute config unavailable");
+            throw GpuUnavailableError("EGL compute config unavailable");
         const EGLint surfaceAttributes[] = { EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE };
         surface = eglCreatePbufferSurface(display, config, surfaceAttributes);
         const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
-        context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
+        const auto previousApi = eglQueryAPI();
+        if (eglBindAPI(EGL_OPENGL_ES_API)) {
+            context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttributes);
+        }
+        if (previousApi != EGL_NONE) eglBindAPI(previousApi);
         if (surface == EGL_NO_SURFACE || context == EGL_NO_CONTEXT) throw std::runtime_error("EGL context creation failed");
         Binding binding(display, surface, context);
         if (!binding.bound) throw std::runtime_error("EGL binding failed");
         GLint major = 0, minor = 0, invocations = 0, groupSize = 0, groups = 0;
         GLint64 block = 0;
         glGetIntegerv(GL_MAJOR_VERSION, &major); glGetIntegerv(GL_MINOR_VERSION, &minor);
-        if (major < 3 || (major == 3 && minor < 1)) throw std::runtime_error("OpenGL ES 3.1 required");
+        if (major < 3 || (major == 3 && minor < 1)) throw GpuUnavailableError("OpenGL ES 3.1 required");
         glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &invocations);
         glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &groupSize);
         glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &groups);
         glGetInteger64v(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &block);
         glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &textureLimit);
         if (invocations < int(kWorkgroup) || groupSize < int(kWorkgroup) || groups < 1 || block <= 0)
-            throw std::runtime_error("Insufficient compute limits");
+            throw GpuUnavailableError("Insufficient compute limits");
         blockLimit = static_cast<size_t>(block);
         dispatchLimit = std::min<size_t>(static_cast<size_t>(groups) * kWorkgroup, UINT32_MAX);
         program = makeProgram();
@@ -153,9 +166,10 @@ struct GlesPhotoRenderer::Impl {
         glUniformMatrix3fv(uniform(name), 1, GL_FALSE, values);
     }
     void allocate(int index, size_t bytes) {
-        if (bytes == 0 || bytes > blockLimit) throw std::runtime_error("SSBO size exceeds device limit");
+        if (bytes == 0 || bytes > blockLimit) throw GpuCapabilityLimitError("SSBO size exceeds device limit");
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[index]);
         if (capacities[index] != bytes) {
+            capacities[index] = 0;
             glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr, GL_DYNAMIC_COPY);
             checkGL(); capacities[index] = bytes;
         }
@@ -168,7 +182,7 @@ struct GlesPhotoRenderer::Impl {
     }
     void dispatch(int source, int destination, size_t count, uint32_t inputRow, uint32_t outputRow, uint32_t offset, int stage) {
         checkProcessingCancellation();
-        if (count > dispatchLimit) throw std::runtime_error("Dispatch exceeds device limit");
+        if (count > dispatchLimit) throw GpuCapabilityLimitError("Dispatch exceeds device limit");
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffers[source]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffers[destination]);
         glUniform1ui(uniform("sourceStartRow"), inputRow);
@@ -184,16 +198,29 @@ struct GlesPhotoRenderer::Impl {
         checkProcessingCancellation();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffers[2]);
         auto mapped = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), GL_MAP_READ_BIT);
-        if (!mapped) throw std::runtime_error("GPU readback failed");
+        if (!mapped) {
+            checkGL();
+            throw std::runtime_error("GPU readback failed");
+        }
         std::memcpy(destination, mapped, bytes);
-        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) throw std::runtime_error("GPU buffer contents lost");
+        if (!glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)) {
+            checkGL();
+            throw std::runtime_error("GPU buffer contents lost");
+        }
         checkProcessingCancellation();
         checkGL();
+    }
+    void clearStickyErrors() {
+        Binding binding(display, surface, context);
+        if (binding.bound) {
+            while (glGetError() != GL_NO_ERROR) {}
+        }
     }
     void setLut(const std::shared_ptr<LUT3D>& lut) {
         glActiveTexture(GL_TEXTURE0);
         if (lut && cachedLut != lut) {
-            if (lut->getSize() > textureLimit) throw std::runtime_error("LUT exceeds device texture limit");
+            cachedLut.reset();
+            if (lut->getSize() > textureLimit) throw GpuCapabilityLimitError("LUT exceeds device texture limit");
             if (!texture) glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_3D, texture);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -203,12 +230,17 @@ struct GlesPhotoRenderer::Impl {
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
             const auto data = buildLutTextureDataRGBA(*lut);
             const int size = lut->getSize();
+            if (!validGlesLut3DContract(*lut, textureLimit, data.size())) {
+                throw std::runtime_error("LUT texture contract invalid");
+            }
+            glPixelStorei(GL_UNPACK_ALIGNMENT, GlesPhotoPixelContract::kLutUnpackAlignment);
             glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA32F, size, size, size, 0, GL_RGBA, GL_FLOAT, data.data());
             checkGL(); cachedLut = lut;
         }
         glBindTexture(GL_TEXTURE_3D, texture);
         glUniform1i(uniform("useLut"), lut ? 1 : 0);
         if (lut) {
+            glUniform1i(uniform("inputIsSRGB"), lut->inputTransfer() == LUTTransfer::SRGB);
             glUniform1i(uniform("inputIsFLog"), lut->inputTransfer() == LUTTransfer::FLog);
             glUniform1i(uniform("outputIsLog"), lut->outputTransfer() != LUTTransfer::Display);
             glUniform1i(uniform("outputIsFLog"), lut->outputTransfer() == LUTTransfer::FLog);
@@ -220,26 +252,14 @@ struct GlesPhotoRenderer::Impl {
     }
 
     void bands(const ImageData& input, uint32_t width, uint32_t height, int stage, ImageData* output) {
-        const size_t limit = std::min(kTileBytes, blockLimit);
+        const PhotoBands plan(input.width, input.height, width, height, std::min(kPhotoTileBytes, blockLimit), dispatchLimit);
         const size_t sourceRowBytes = static_cast<size_t>(input.width) * sizeof(RGB);
         const size_t outputRowBytes = static_cast<size_t>(width) * sizeof(RGB);
-        if (sourceRowBytes * 2 > limit || outputRowBytes > limit || width > dispatchLimit)
-            throw std::runtime_error("Image row exceeds compute limits");
-        const float scale = height == 1 ? 0.f : float(input.height - 1) / float(height - 1);
-        const uint32_t maxRows = static_cast<uint32_t>(std::min(limit / outputRowBytes, dispatchLimit / width));
         sizeUniform("sourceSize", input.width, input.height);
         sizeUniform("destinationSize", width, height);
         for (uint32_t row = 0; row < height;) {
-            uint32_t rows = std::min(maxRows, height - row);
-            // One extra row on each side covers GPU/CPU float rounding at boundaries.
-            const uint32_t first = uint32_t(float(row) * scale) > 0 ? uint32_t(float(row) * scale) - 1 : 0;
-            auto lastRow = [&](uint32_t n) {
-                return std::min<uint32_t>(input.height - 1, uint32_t(float(row + n - 1) * scale) + 2);
-            };
-            while (rows > 1 && size_t(lastRow(rows) - first + 1) * sourceRowBytes > limit) rows = (rows + 1) / 2;
-            const auto last = lastRow(rows);
-            if (size_t(last - first + 1) * sourceRowBytes > limit)
-                throw std::runtime_error("Source halo exceeds the bounded upload budget");
+            const auto band = plan.at(row);
+            const auto rows = band.rows, first = band.first, last = band.last;
             upload(input.pixels.data() + size_t(first) * input.width, size_t(last - first + 1) * sourceRowBytes);
             const auto bytes = size_t(rows) * outputRowBytes;
             if (output) allocate(2, bytes);
@@ -253,61 +273,132 @@ struct GlesPhotoRenderer::Impl {
 GlesPhotoRenderer::GlesPhotoRenderer() = default;
 GlesPhotoRenderer::~GlesPhotoRenderer() = default;
 
+GpuRenderOutcome GlesPhotoRenderer::renderWithOutcome(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    GpuRenderOutcome outcome;
+    try {
+        (void)renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+    } catch (const std::bad_alloc& error) {
+        outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::DeviceError, error.what()};
+    }
+    return outcome;
+}
+
 bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
-    const sony2fuji_request& request, const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
-    const PhotoEffectsOptions& effects, int chromaDenoise, bool preserveSourceResolution, const HslOptions& hsl, const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading, const ToneCurve& customCurve) {
-    if (lut && (lut->requiresCPU() || lut->inputTransfer() == LUTTransfer::SRGB)) return false;
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output) {
+    GpuRenderOutcome outcome;
+    return renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
+}
+
+bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace,
+    const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
+    GpuRenderOutcome& outcome) {
+    outcome = {};
+    if (params.lut && params.lut->requiresCPU()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, "LUT requires CPU evaluation"};
+        return false;
+    }
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 ||
         width > INT32_MAX || height > INT32_MAX || uint64_t(width) * height > INT32_MAX ||
         input.pixels.size() != size_t(input.width) * input.height ||
-        !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) return false;
+        !params.validForGpu()) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability,
+            "Image dimensions or parameters exceed OpenGL ES limits"};
+        return false;
+    }
+    if (!impl_ && !retry_.ready(glesRetryNow())) {
+        if (initUnavailable_) {
+            outcome = {GpuFailureKind::Unsupported, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "OpenGL ES 3.1 unavailable (retry cooldown)" : lastInitError_};
+        } else {
+            outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::Cooldown,
+                lastInitError_.empty() ? "OpenGL ES device recovery cooldown" : lastInitError_};
+        }
+        return false;
+    }
+    bool initializing = !impl_;
     try {
         if (!impl_) { impl_ = std::make_unique<Impl>(); impl_->initialize(); }
+        initializing = false;
         auto& context = *impl_;
         Binding binding(context.display, context.surface, context.context);
-        if (!binding.bound) throw std::runtime_error("EGL context lost or owned by another thread");
+        if (!binding.bound) throw EglFailure(binding.error);
         glUseProgram(context.program);
         context.matrixUniform("toSrgb", ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
-        context.matrixUniform("toFGamut", photoLUTInputMatrix(lut ? lut->inputTransfer() : LUTTransfer::FLog2));
-        const float exposure = std::exp2(request.exposure_ev) * request.brightness;
-        glUniform3f(context.uniform("exposureWB"), exposure * relativeWB.r, exposure * relativeWB.g, exposure * relativeWB.b);
-        glUniform1f(context.uniform("strength"), request.lut_strength);
-        glUniform4f(context.uniform("tone"), std::clamp(request.contrast, 0.f, 2.f), std::clamp(request.saturation, 0.f, 2.f),
-            std::clamp(request.highlights, -1.f, 1.f), std::clamp(request.shadows, -1.f, 1.f));
-        glUniform1f(context.uniform("curve"), request.tone_curve);
-        const auto custom = toneCurveGpuParameters(customCurve);
+        context.matrixUniform("toFGamut", photoLUTInputMatrix(params.lut ? params.lut->inputTransfer() : LUTTransfer::FLog2));
+        const float exposure = std::exp2(params.exposureEV) * params.brightness;
+        glUniform3f(context.uniform("exposureWB"),
+            exposure * params.relativeWB.r, exposure * params.relativeWB.g, exposure * params.relativeWB.b);
+        glUniform1f(context.uniform("strength"), params.lutStrength);
+        glUniform4f(context.uniform("tone"), std::clamp(params.contrast, 0.f, 2.f), std::clamp(params.saturation, 0.f, 2.f),
+            std::clamp(params.highlights, -1.f, 1.f), std::clamp(params.shadows, -1.f, 1.f));
+        glUniform1f(context.uniform("curve"), params.toneCurve);
+        const auto custom = toneCurveGpuParameters(params.customCurve);
         glUniform1i(context.uniform("customCurveCount"), custom.count);
         glUniform4fv(context.uniform("curveRanges[0]"), 32, &custom.ranges[0][0]);
         glUniform4fv(context.uniform("curveTangents[0]"), 32, &custom.tangents[0][0]);
-        glUniform1i(context.uniform("hslActive"), hsl.active());
-        glUniform3f(context.uniform("toneControls"), toneControls.blackPoint, toneControls.whitePoint, toneControls.vibrance);
-        const auto grading=colorGradingCoefficients(colorGrading);
+        glUniform1i(context.uniform("hslActive"), params.hsl.active());
+        glUniform3f(context.uniform("toneControls"),
+            params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);
+        const auto grading=colorGradingCoefficients(params.colorGrading);
         const float coefficients[]={grading[0].r,grading[0].g,grading[0].b,grading[1].r,grading[1].g,grading[1].b,grading[2].r,grading[2].g,grading[2].b};
         glUniform3fv(context.uniform("colorGrading[0]"),3,coefficients);
-        glUniform4fv(context.uniform("hslHue[0]"), 2, hsl.hue.data());
-        glUniform4fv(context.uniform("hslSaturation[0]"), 2, hsl.saturation.data());
-        glUniform4fv(context.uniform("hslLightness[0]"), 2, hsl.lightness.data());
-        context.setLut(request.lut_strength > 0 ? lut : nullptr);
-        if (effects.active() || chromaDenoise != 0 || request.noise_reduction > 0 || request.sharpening > 0 || preserveSourceResolution) {
+        glUniform4fv(context.uniform("hslHue[0]"), 2, params.hsl.hue.data());
+        glUniform4fv(context.uniform("hslSaturation[0]"), 2, params.hsl.saturation.data());
+        glUniform4fv(context.uniform("hslLightness[0]"), 2, params.hsl.lightness.data());
+        context.setLut(params.lutStrength > 0 ? params.lut : nullptr);
+        if (params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
+            params.sharpening > 0 || params.preserveSourceResolution) {
             context.cachedRevision = 0;
             ImageData native(input.width, input.height);
             context.bands(input, input.width, input.height, 2, &native);
-            if (applyChromaDenoise(native, chromaDenoise, nullptr, GpuMode::Force) != ErrorCode::Success ||
-                ((request.noise_reduction > 0 || request.sharpening > 0) &&
-                 !gpuDetailFilter(native, request.noise_reduction, request.sharpening)) ||
-                (effects.active() && !gpuPhotoEffects(native, effects))) return false;
+            auto failFilter = [&](const char* fallbackMessage, ErrorCode err = ErrorCode::ProcessingError) {
+                const auto filterOutcome = lastGpuFilterOutcome();
+                if (err == ErrorCode::OutOfMemory || filterOutcome.failure == GpuFailureKind::OutOfMemory) {
+                    outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else if (err == ErrorCode::Unsupported || filterOutcome.failure == GpuFailureKind::Unsupported) {
+                    outcome = {GpuFailureKind::Unsupported,
+                        filterOutcome.fault != GpuBackendFault::None ? filterOutcome.fault : GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                } else {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? fallbackMessage : filterOutcome.message};
+                }
+                return false;
+            };
+            if (params.chromaDenoise != 0) {
+                lastGpuFilterOutcome() = {};
+                const auto chromaErr = applyChromaDenoiseWorking(native, params.chromaDenoise, nullptr, GpuMode::Force);
+                if (chromaErr != ErrorCode::Success) {
+                    return failFilter("GLES chroma denoise failed", chromaErr);
+                }
+            }
+            if (params.noiseReduction > 0 || params.sharpening > 0) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
+                    return failFilter("GLES detail filter failed");
+                }
+            }
+            if (params.effects.active()) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuPhotoEffects(native, params.effects)) {
+                    return failFilter("GLES photo effects failed");
+                }
+            }
             if (width != static_cast<uint32_t>(native.width) || height != static_cast<uint32_t>(native.height)) {
                 ImageData resized(static_cast<int>(width), static_cast<int>(height));
                 context.bands(native, width, height, 4, &resized);
                 output = std::move(resized);
             } else output = std::move(native);
+            retry_.succeeded();
+            initUnavailable_ = false;
+            lastInitError_.clear();
             return true;
         }
         ImageData result(static_cast<int>(width), static_cast<int>(height));
         const size_t bytes = result.pixels.size() * sizeof(RGB);
-        const bool preview = request.intent == SONY2FUJI_INTENT_PREVIEW;
+        const bool preview = params.intent == RenderIntent::Preview;
         const bool cache = preview && revision != 0 && bytes <= std::min(kCacheBytes, context.blockLimit) && result.pixels.size() <= context.dispatchLimit;
         if (cache) {
             if (context.cachedRevision != revision || context.cachedWidth != width || context.cachedHeight != height) {
@@ -323,12 +414,40 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
             context.read(result.pixels.data(), bytes);
         } else context.bands(input, width, height, preview ? 3 : 2, &result);
         output = std::move(result);
+        retry_.succeeded();
+        initUnavailable_ = false;
+        lastInitError_.clear();
         return true;
     } catch (const ProcessingCancelled&) {
+        if (impl_) impl_->clearStickyErrors();
         throw;
+    } catch (const std::bad_alloc&) {
+        if (impl_) impl_->clearStickyErrors();
+        throw;
+    } catch (const GpuUnavailableError& error) {
+        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
+        initUnavailable_ = true;
+        lastInitError_ = error.what();
+        retry_.failed(glesRetryNow());
+        impl_.reset();
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::NoAdapter, error.what()};
+        return false;
+    } catch (const GpuCapabilityLimitError& error) {
+        __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
+        if (impl_) impl_->clearStickyErrors();
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, error.what()};
+        return false;
     } catch (const std::exception& error) {
         __android_log_print(ANDROID_LOG_WARN, "RawLabGPU", "%s; falling back when Auto is selected", error.what());
-        impl_.reset();
+        if (initializing || glesLostDevice(error)) {
+            initUnavailable_ = false;
+            lastInitError_ = error.what();
+            retry_.failed(glesRetryNow());
+            impl_.reset();
+        } else if (impl_) {
+            impl_->clearStickyErrors();
+        }
+        outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, error.what()};
         return false;
     }
 }

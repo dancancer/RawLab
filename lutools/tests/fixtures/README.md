@@ -112,3 +112,17 @@ compile it with `RAWLAB_LEGACY_REFERENCE` against v0.8.2 to compare released
 CPU/forced-native-GPU output with the current legacy path. External camera
 files and generated full-image exports remain outside Git. These compatibility
 checks do not establish image quality or untested GPU-platform parity.
+
+## Edit-JSON Pixel Goldens (W1-8)
+
+`edit-pixel-goldens-v1.json` records deterministic Edit-JSON recipes and expected
+RGB8 output metrics (whole-image channel mean/RMS, 4x4 block means, and 16
+stratified sample pixels) for both CPU (`SONY2FUJI_GPU_OFF`) and Metal
+(`SONY2FUJI_GPU_FORCE`) rendering paths. `edit_pixel_golden` and
+`metal_edit_pixel_golden` verify these recipes using synthetic inputs only:
+
+- `bayer-demosaic.dng`, `linear-lens.dng`, and `lenses.xml` (existing synthetic DNG/lens fixtures)
+- `golden-flog2-look.cube`: synthetic 5x5x5 F-Log2 / F-Gamut -> ETERNA CUBE LUT
+- `golden-srgb-look.cube`: synthetic 5x5x5 sRGB -> sRGB display CUBE LUT
+- `golden-dcp-look.rlook`: synthetic v2 compiled DCP look (`RLOOKDCP`)
+- `golden-raster.png`: synthetic 32x24 opaque RGB8 PNG for display-referred `raster` recipes

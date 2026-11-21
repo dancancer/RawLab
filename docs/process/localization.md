@@ -63,14 +63,14 @@ translated; localize them only at display sites.
 ```bash
 python3 -m unittest discover -s tests -p test_localization.py
 bash RawLabMac/tests/localization.sh
-build/tools/dotnet/dotnet run --project RawLabWindows/tests/localization/LocalizationChecks.csproj -c Release
+build/tools/dotnet/dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --filter "Suite=localization"
 ```
 
 On Windows, the focused native WPF regression does not require a RAW fixture or
 the processing DLL:
 
 ```powershell
-dotnet run --project RawLabWindows/tests/localization-ui/LocalizationUiChecks.csproj -c Release
+dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --filter "Suite=localization-ui"
 ```
 
 It exercises application resource refresh, tool and HSL accessibility labels,

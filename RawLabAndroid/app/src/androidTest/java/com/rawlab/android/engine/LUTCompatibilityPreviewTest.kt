@@ -83,12 +83,15 @@ class LUTCompatibilityPreviewTest {
             instrumentation.runOnMainSync {
                 assertArrayEquals("Advanced settings must still preview A after B becomes stale and C fails",
                     expected, preview!!.state.frames.getValue(configured.previewKey()).frame.pixels)
+                assertEquals("The local photo must be referenced in place, not copied",
+                    Uri.fromFile(a.file), preview!!.sourceURL)
             }
             val owned = context.cacheDir.listFiles()!!.single { it !in before && it.name.startsWith("lut-preview-") }
-            assertArrayEquals(a.file.readBytes(), owned.listFiles()!!.single { it.extension == "png" }.readBytes())
-            assertEquals("Stale source copies must be removed", 2, owned.listFiles()!!.size)
+            assertTrue("The referenced source must not be copied into the wizard directory",
+                owned.listFiles()!!.none { it.extension == "png" })
             instrumentation.runOnMainSync { preview!!.close() }
             awaitState { !owned.exists() }
+            assertTrue("Releasing a referencing preview must keep the original photo", a.file.exists())
         } finally {
             releaseB.countDown()
             instrumentation.runOnMainSync { preview?.close() }
@@ -135,11 +138,17 @@ class LUTCompatibilityPreviewTest {
             awaitState { !preview!!.state.loading }
             instrumentation.runOnMainSync { preview!!.loadReference(Uri.fromFile(photo)); preview!!.loadInitial(source) }
             awaitState { !preview!!.state.loading }
-            instrumentation.runOnMainSync { assertNull(preview!!.state.reference); assertNull(preview!!.state.referenceName) }
+            instrumentation.runOnMainSync {
+                assertNull(preview!!.state.reference); assertNull(preview!!.state.referenceName)
+                assertEquals("The local photo must be referenced in place, not copied",
+                    Uri.fromFile(photo), preview!!.sourceURL)
+            }
             val owned = context.cacheDir.listFiles()!!.single { it !in before && it.name.startsWith("lut-preview-") }
-            assertEquals("Only the current source and LUT copy should remain", 2, owned.listFiles()!!.size)
+            assertTrue("The referenced source must not be copied into the wizard directory",
+                owned.listFiles()!!.none { it.extension == "png" })
             instrumentation.runOnMainSync { preview!!.close() }
             awaitState { !owned.exists() }
+            assertTrue("Releasing the preview must keep the referenced photo", photo.exists())
         } finally {
             instrumentation.runOnMainSync { preview?.close() }
             root.deleteRecursively()

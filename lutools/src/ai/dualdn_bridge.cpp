@@ -1,4 +1,5 @@
 #include "dualdn_bridge.h"
+#include "../core/parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
 #include <deque>
@@ -98,27 +99,41 @@ Tensor rgbCameraCorrection(const Tensor& mosaic, const Tensor& noisy, const Tens
     const auto transform = ColorConverter::invertMatrix(ColorConverter::multiplyMatrices(xyzToRgb(), cameraToXYZ));
     std::vector<float> peak(pixels), horizontal(pixels);
     constexpr int identities[] = {0, 1, 3, 2};
-    for (int y = 0; y < mosaic.height; ++y) for (int x = 0; x < mosaic.width; ++x) {
-        const size_t index = size_t(y) * mosaic.width + x;
-        peak[index] = std::max(mosaic.values[index], noisy.values[index]) *
-            (wb[identities[(y % 2) * 2 + x % 2]] / minimum);
-    }
+    parallelRowRanges(mosaic.height, mosaic.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            for (int x = 0; x < mosaic.width; ++x) {
+                const size_t index = size_t(y) * mosaic.width + x;
+                peak[index] = std::max(mosaic.values[index], noisy.values[index]) *
+                    (wb[identities[(y % 2) * 2 + x % 2]] / minimum);
+            }
+        }
+    });
     // 保护整个邻域，避免 AHD/网络跨越已裁切像素向附近传播不可信的 RGB 修正。
-    for (int y = 0; y < mosaic.height; ++y) maximumLine(peak, horizontal, size_t(y) * mosaic.width, 1, mosaic.width, 8);
-    for (int x = 0; x < mosaic.width; ++x) maximumLine(horizontal, peak, x, mosaic.width, mosaic.height, 8);
+    parallelRowRanges(mosaic.height, mosaic.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            maximumLine(peak, horizontal, size_t(y) * mosaic.width, 1, mosaic.width, 8);
+        }
+    });
+    parallelRowRanges(mosaic.width, mosaic.height, [&](int firstCol, int lastCol) {
+        for (int x = firstCol; x < lastCol; ++x) {
+            maximumLine(horizontal, peak, size_t(x), size_t(mosaic.width), mosaic.height, 8);
+        }
+    });
     Tensor output{mosaic.width, mosaic.height, 3, std::vector<float>(pixels * 3)};
-    for (size_t i = 0; i < pixels; ++i) {
-        const float t = std::clamp((1 - peak[i]) / .15f, 0.f, 1.f);
-        if (t == 0) continue;
-        const float weight = t * t * (3 - 2 * t) * nativeScale;
-        const RGB delta(inverseRec709(result.values[i]) - inverseRec709(skip.values[i]),
-                        inverseRec709(result.values[pixels+i]) - inverseRec709(skip.values[pixels+i]),
-                        inverseRec709(result.values[2*pixels+i]) - inverseRec709(skip.values[2*pixels+i]));
-        const auto camera = ColorConverter::applyMatrix(delta, transform);
-        output.values[i] = weight * camera.r;
-        output.values[pixels+i] = weight * camera.g;
-        output.values[2*pixels+i] = weight * camera.b;
-    }
+    parallelPixelRanges(pixels, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const float t = std::clamp((1 - peak[i]) / .15f, 0.f, 1.f);
+            if (t == 0) continue;
+            const float weight = t * t * (3 - 2 * t) * nativeScale;
+            const RGB delta(inverseRec709(result.values[i]) - inverseRec709(skip.values[i]),
+                            inverseRec709(result.values[pixels + i]) - inverseRec709(skip.values[pixels + i]),
+                            inverseRec709(result.values[2 * pixels + i]) - inverseRec709(skip.values[2 * pixels + i]));
+            const auto camera = ColorConverter::applyMatrix(delta, transform);
+            output.values[i] = weight * camera.r;
+            output.values[pixels + i] = weight * camera.g;
+            output.values[2 * pixels + i] = weight * camera.b;
+        }
+    });
     validateTensor(output);
     return output;
 }

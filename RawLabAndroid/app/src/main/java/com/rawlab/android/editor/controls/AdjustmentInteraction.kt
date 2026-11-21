@@ -74,8 +74,19 @@ internal fun formatCropPercent(value: Float, locale: Locale = Locale.ROOT): Stri
         isGroupingUsed = false; minimumFractionDigits = 0; maximumFractionDigits = 2
     }.format(value)
 
+internal const val EDITOR_SIDE_DOCK_WIDTH = 336f
+
 internal fun editorUsesSideDock(width: Float, height: Float, fontScale: Float = 1f): Boolean =
     width >= 600f && width > height && fontScale < 1.3f
+
+internal fun editorHomeDockHeight(fontScale: Float): Float =
+    if (fontScale > 1.3f) 196f else 164f
+
+internal fun editorGridHeight(fontScale: Float): Float =
+    if (fontScale > 1.3f) 148f else 116f
+
+internal fun editorGridColumns(fontScale: Float): Int =
+    if (fontScale > 1.3f) 3 else 4
 
 internal data class EditorDockLayout(val height: Float, val compactNavigation: Boolean)
 

@@ -19,6 +19,7 @@ import java.util.UUID
 import com.rawlab.android.looks.LookLibrary
 import com.rawlab.android.settings.DenoisePreset
 import com.rawlab.android.settings.DenoiseSettings
+import com.rawlab.android.testing.TestTimeouts
 import com.rawlab.android.testing.assertHistogramMatches
 
 @RunWith(AndroidJUnit4::class)
@@ -66,14 +67,19 @@ class EditorViewModelRaceInstrumentedTest {
                 model.updatePreviewSize(1216)
                 model.edit(model.state.value.edits.copy(exposure = .75f), interactive = true)
             }
-            awaitState(model) { !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 1216 }
+            // 交互帧按 36c9afb04 契约封顶 1000px（min(1216,1000)）；视口 1216 由下一次非交互渲染兑现。
+            awaitState(model) { !it.rendering && maxOf(it.preview!!.result.width, it.preview.result.height) == 1000 }
             assertFalse(model.state.value.exact)
             assertNull(model.state.value.preview!!.resultHistogram)
             assertSame(neutralHistogram, model.state.value.preview!!.neutralHistogram)
             instrumentation.runOnMainSync { model.edit(model.state.value.edits) }
             awaitState(model) { it.canExport }
+            instrumentation.runOnMainSync { model.beginExport { assertTrue(it) } }
+            // beginExport 改为异步提交：persist 落位前 operation 仍为 NONE，cancelExport 空转会把 PICK 留成悬挂态。
+            // 等选择器真正打开再取消。PICK_EXPORT 期 updatePreviewSize 只记 requestedPreviewLongEdge（controlsEnabled=false 早退），
+            // 真正发起 896 渲染靠 cancelExport 末尾 updatePreviewSize(requestedPreviewLongEdge)（e101b798，EditorViewModel.kt:1821）兑现——撤掉该行本用例必红。
+            awaitState(model) { it.operation == Operation.PICK_EXPORT }
             instrumentation.runOnMainSync {
-                model.beginExport { assertTrue(it) }
                 model.updatePreviewSize(896)
                 model.cancelExport()
             }
@@ -165,6 +171,11 @@ class EditorViewModelRaceInstrumentedTest {
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 model.edit(model.state.value.edits.copy(exposure = .5f))
                 assertTrue(model.state.value.rendering)
+            }
+            // edit 提交期 committingAdjustments 单槽会吞 deleteLook（ad1012aff 起 UI 契约）；等提交释放后再删。
+            // 本机实测精确渲染先于提交落位完成，UI 可达窗口内 rendering 已复位，故不再断言删除瞬间仍在渲染。
+            awaitState(model) { !it.committingAdjustments }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 model.deleteLook(importedId)
             }
             awaitState(model) { state ->
@@ -334,7 +345,8 @@ class EditorViewModelRaceInstrumentedTest {
             assertTrue(record.renameTo(recordBackup)); assertTrue(record.mkdir())
             File(record, "occupied").writeText("keep")
             instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = 1f)) }
-            awaitState(model) { it.exact && !it.rendering }
+            // saveState 由提交发布落定；等单槽释放再断言，避免渲染完成先于 FAILED 发布读到旧 SAVED。
+            awaitState(model) { it.exact && !it.rendering && !it.committingAdjustments }
             assertEquals(EditSaveState.FAILED, model.state.value.saveState)
             assertTrue(record.deleteRecursively()); assertTrue(recordBackup.renameTo(record))
             val committedRecord = record.readBytes()
@@ -392,7 +404,8 @@ class EditorViewModelRaceInstrumentedTest {
             assertTrue(record.renameTo(backup)); assertTrue(record.mkdir())
             File(record, "occupied").writeText("keep")
             instrumentation.runOnMainSync { model.edit(model.state.value.edits.copy(exposure = 1f)) }
-            awaitState(model) { it.exact && !it.rendering }
+            // 同上：FAILED 发布须先于断言（viewportDemand 主跑 2/3 竞态红位）。
+            awaitState(model) { it.exact && !it.rendering && !it.committingAdjustments }
             assertEquals(EditSaveState.FAILED, model.state.value.saveState)
             assertTrue(record.deleteRecursively()); assertTrue(backup.renameTo(record))
             val bytes = record.readBytes()
@@ -551,12 +564,15 @@ class EditorViewModelRaceInstrumentedTest {
             instrumentation.runOnMainSync {
                 model.beginDraft(AdjustmentGroup.LENS)
                 assertTrue(model.state.value.draftReady)
-                model.applyDraft { assertFalse(it) }
+                // efb7d12d 起未变更草稿按成功静默丢弃（completed(true)）；零写牙齿由下方 revision/记录断言承担。
+                model.applyDraft { assertTrue(it) }
             }
             assertEquals(unchangedRequest, revision.getLong(model))
             assertArrayEquals(unchangedRecord, File(directory, "edits.properties").readBytes())
             settle(1)
             instrumentation.runOnMainSync {
+                // efb7d12d 起 applyDraft 对未变更草稿按成功关闭（draft=null），后续改草稿须重新 beginDraft。
+                model.beginDraft(AdjustmentGroup.LENS)
                 model.changeDraft(model.state.value.visibleEdits.copy(lens = LensSettings(autoCrop = false)))
             }
             awaitState(model) { it.canApplyDraft }
@@ -599,7 +615,7 @@ class EditorViewModelRaceInstrumentedTest {
             val original = model.state.value.edits
             val identity = model.state.value.photo!!.identity
             val directory = File(context.filesDir, "edits")
-            for (group in AdjustmentGroup.entries) {
+            for (group in listOf(AdjustmentGroup.GEOMETRY, AdjustmentGroup.LENS)) {
                 instrumentation.runOnMainSync { model.beginDraft(group) }
                 awaitState(model) { it.draftReady }
                 assertFalse(model.state.value.canApplyDraft)
@@ -636,7 +652,7 @@ class EditorViewModelRaceInstrumentedTest {
     }
 
     private fun awaitState(model: EditorViewModel, predicate: (EditorState) -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 30_000
+        val deadline = SystemClock.elapsedRealtime() + TestTimeouts.importMs
         while (SystemClock.elapsedRealtime() < deadline && !predicate(model.state.value)) SystemClock.sleep(50)
         assertTrue("Timed out waiting for EditorViewModel state: ${model.state.value}", predicate(model.state.value))
     }

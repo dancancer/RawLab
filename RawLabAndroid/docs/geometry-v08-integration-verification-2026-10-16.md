@@ -33,7 +33,7 @@ New functionality:
 ## Evidence Location
 
 Untracked logs and APK/device artifacts are stored outside build output at
-`/Users/xupeng/mycode/rawtools-worktrees/android-geometry-evidence-20261016/`.
+`../rawtools-worktrees/android-geometry-evidence-20261016/`.
 RAW fixture: `DSC00316.ARW`, SHA-256
 `93a37abeaa3cd199773d25978a1045e580e26dbf884755f5d69c530e0bed5014`.
 No RAW, screenshot or APK is committed.

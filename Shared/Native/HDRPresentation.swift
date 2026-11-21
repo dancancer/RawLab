@@ -1,20 +1,27 @@
+import RawLabKit
 import Foundation
 import CoreGraphics
 
-final class HDRPresentation: HDRDisplayImage {
+final class HDRPresentation: HDRDisplayImage, HDRLinearDisplayImage {
     let image: HDRImage
     let statistics: HDRStatistics
     let sdrImage: CGImage
     var width: Int { image.width }
     var height: Int { image.height }
 
-    init(_ image: HDRImage) throws {
+    init(_ image: HDRImage, headroomOverride: Float? = nil) throws {
         self.image=image
-        statistics=try image.withPair { pair in
+        let measured=try image.withPair { pair in
             let buffer=pair.pointee.hdr
             guard let pointer=buffer.data else { throw HDRDisplayFailure.invalidBuffer }
             return try HDRStatistics.analyze(UnsafeBufferPointer(start:pointer.assumingMemoryBound(to:Float.self),
                 count:Int(buffer.size_bytes)/4),width:Int(buffer.width),height:Int(buffer.height),stride:Int(buffer.stride_bytes)/4)
+        }
+        if let headroomOverride, headroomOverride.isFinite, headroomOverride >= 1 {
+            statistics = HDRStatistics(bins: measured.bins, aboveWhite: measured.aboveWhite,
+                                       headroom: headroomOverride, pixels: measured.pixels)
+        } else {
+            statistics = measured
         }
         sdrImage=try Self.makeSDRImage(image)
     }
@@ -44,6 +51,35 @@ final class HDRPresentation: HDRDisplayImage {
                 throw HDRDisplayFailure.invalidBuffer
             }
             return cg
+        }
+    }
+
+    func withLinearPlanes<T>(
+        _ body: (_ hdr: UnsafeBufferPointer<Float>, _ hdrStrideFloats: Int,
+                 _ sdr: UnsafeBufferPointer<Float>, _ sdrStrideFloats: Int) throws -> T
+    ) throws -> T {
+        try image.withPair { pair in
+            let hdrBuf = pair.pointee.hdr
+            let sdrBuf = pair.pointee.sdr
+            guard let hdrPtr = hdrBuf.data?.assumingMemoryBound(to: Float.self),
+                  let sdrPtr = sdrBuf.data?.assumingMemoryBound(to: Float.self),
+                  hdrBuf.stride_bytes % 4 == 0, sdrBuf.stride_bytes % 4 == 0,
+                  Int(hdrBuf.width) == image.width, Int(hdrBuf.height) == image.height,
+                  Int(sdrBuf.width) == image.width, Int(sdrBuf.height) == image.height else {
+                throw HDRDisplayFailure.invalidBuffer
+            }
+            let hdrStride = Int(hdrBuf.stride_bytes) / MemoryLayout<Float>.size
+            let sdrStride = Int(sdrBuf.stride_bytes) / MemoryLayout<Float>.size
+            let hdrCount = Int(hdrBuf.size_bytes) / MemoryLayout<Float>.size
+            let sdrCount = Int(sdrBuf.size_bytes) / MemoryLayout<Float>.size
+            guard image.width > 0, image.height > 0,
+                  hdrStride >= image.width * 3, sdrStride >= image.width * 3,
+                  hdrCount >= (image.height - 1) * hdrStride + image.width * 3,
+                  sdrCount >= (image.height - 1) * sdrStride + image.width * 3 else {
+                throw HDRDisplayFailure.invalidBuffer
+            }
+            return try body(UnsafeBufferPointer(start: hdrPtr, count: hdrCount), hdrStride,
+                            UnsafeBufferPointer(start: sdrPtr, count: sdrCount), sdrStride)
         }
     }
 

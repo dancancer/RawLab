@@ -84,6 +84,10 @@ bash lutools/platform/ios/verify-framework.sh
 5. 用 USB 连接 iPhone、完成信任电脑，在 Xcode 顶部选择 **RawLab scheme 和真实 iPhone**，不是模拟器，也不是 `Any iOS Device`。等待设备配对和调试支持准备完成；手机在 **设置 > 隐私与安全性 > 开发者模式**开启、重启并再次确认后，点 Xcode 的运行按钮。
 6. 手机能打开 RawLab 后，安装完成。免费账号到期后，再用同一账号和应用标识运行安装一次。
 
+默认的 Debug 和 Release 配置将 **Code Signing Entitlements** 留空，免费 Personal Team 可以按上述流程签名。连接 Sony 相机时，先在 iOS 的 Wi-Fi 设置中加入相机热点，再回到 RawLab 点击 **已连接，继续**。
+
+具备两项 Wi-Fi 能力的团队可选择启用自动加入热点。先为应用标识和签名描述文件启用 **Hotspot Configuration** 与 **Access Wi-Fi Information**，再在 RawLab target 的 Build Settings 中，将需要签名的配置的 **Code Signing Entitlements** 设为 `RawLab/Resources/RawLab.entitlements`。见 [Apple 的 iOS 能力表](https://developer.apple.com/help/account/reference/supported-capabilities-ios)。
+
 Xcode 会处理应用和内嵌框架的签名，不需要手工重复添加框架。构建前提见[仓库 iOS 构建指南](../../lutools/platform/ios/README.md)，设备运行流程见 [Apple Xcode 真机运行说明](https://developer.apple.com/documentation/xcode/running-your-app-on-simulated-or-physical-devices)。
 
 ## 给 AI agent 的执行步骤

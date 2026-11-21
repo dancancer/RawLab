@@ -35,7 +35,7 @@ import com.rawlab.android.settings.withHDRDenoise
 
 /** 工作区导航 ID 不进入持久化，也不替代几何/镜头草稿的 AdjustmentGroup。 */
 enum class EditorAdjustmentGroup(val id: String) {
-    LOOKS("looks"), LIGHT("light"), COLOR("color"), EFFECTS("effects"), DETAIL("detail"), GEOMETRY("geometry")
+    LOOKS("looks"), LIGHT("light"), COLOR("color"), EFFECTS("effects"), DETAIL("detail"), GEOMETRY("geometry"), HDR_RENDITION("hdrRendition")
 }
 
 sealed interface EditorResetScope {
@@ -79,12 +79,19 @@ object EditorAdjustmentRules {
         EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
+        EditorAdjustmentGroup.HDR_RENDITION to listOf(24, 25, 26, 27),
     )
+    fun isGroupVisible(group: EditorAdjustmentGroup, isHDREditing: Boolean): Boolean =
+        group != EditorAdjustmentGroup.HDR_RENDITION || isHDREditing
+    fun visibleGroups(isHDREditing: Boolean): List<EditorAdjustmentGroup> =
+        EditorAdjustmentGroup.entries.filter { isGroupVisible(it, isHDREditing) }
     fun defaultTool(group: EditorAdjustmentGroup): Int = tools(group).first()
     fun tools(group: EditorAdjustmentGroup): List<Int> = toolGroups.getValue(group)
     fun groupFor(tool: Int): EditorAdjustmentGroup? = if (tool == 9) EditorAdjustmentGroup.COLOR
         else toolGroups.entries.firstOrNull { tool in it.value }?.key
-    fun supportsHDR(tool: Int) = tool == 0 || tool in 2..14 || tool in 17..23
+    fun normalizeTool(tool: Int, isHDREditing: Boolean): Int =
+        if (!isHDREditing && groupFor(tool) == EditorAdjustmentGroup.HDR_RENDITION) 2 else tool
+    fun supportsHDR(tool: Int) = tool == 0 || tool in 2..14 || tool in 17..27
 
     fun isModified(scope: EditorResetScope, snapshot: EditSettings, context: EditorResetContext): Boolean =
         valid(scope, snapshot, context) && markerSnapshot(snapshot, context) !=
@@ -147,7 +154,9 @@ object EditorAdjustmentRules {
     }
 
     private fun resetStored(scope: EditorResetScope, s: EditSettings, d: EditSettings): EditSettings = when (scope) {
-        EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f)
+        // 普通模式只复位 SDR 参数；休眠 HDR 快照及其 ProRAW 解码标识原样保留，isModified(All) 因此也忽略它们。
+        EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f,
+            hdr = s.hdr, sdrSnapshot = s.sdrSnapshot, proRAWDecodeVersion = s.proRAWDecodeVersion)
         EditorResetScope.AllGrading -> s.withEditingGrading(d.editingGrading)
         is EditorResetScope.GradingZone -> s.withEditingGrading(s.editingGrading.with(scope.zone, d.editingGrading[scope.zone]))
         EditorResetScope.AllHsl -> s.withEditingHsl(d.editingHsl)
@@ -183,6 +192,10 @@ object EditorAdjustmentRules {
         21 -> s.withEditingGrading(d.editingGrading)
         22 -> s.withEditingClarity(d.editingClarity)
         23 -> s.withEditingDehaze(d.editingDehaze)
+        24 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(peakLimitEV = 0f))) else s
+        25 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrExposureEV = 0f))) else s
+        26 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrContrast = 0f))) else s
+        27 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrSaturation = 0f))) else s
         else -> s
     }
 

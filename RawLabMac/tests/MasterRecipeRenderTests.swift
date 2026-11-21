@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import ImageIO
 
@@ -5,6 +6,9 @@ private func check(_ value: Bool, _ message: String) throws {
     guard value else { throw RenderError.failed(message) }
     print("PASS: \(message)")
 }
+
+// RenderError.processing 对 Force GPU UNSUPPORTED 的固定文案（RenderError.swift）。
+private let forceGpuUnsupportedMessage = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
 
 private func pixels(_ frame: RenderedImage) -> Data {
     frame.image.dataProvider!.data! as Data
@@ -42,6 +46,51 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
 }
 
 @main struct MasterRecipeRenderTests {
+    static func checkDirectRecipeWhiteBalance(root: URL) throws {
+        let x3fURL = root.appendingPathComponent("normal-recipe.X3F")
+        try Data([0x46, 0x4F, 0x56, 0x62, 0, 0, 0, 0]).write(to: x3fURL)
+        let x3fEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        var x3fSettings = Adjustments()
+        x3fSettings.applyMasterRecipe(.hamadaDaylightV2)
+        x3fSettings.x3fMode = .normal
+        x3fSettings.set(.tint, to: 20)
+        x3fSettings.strength = 0.5
+        let decodesBefore = x3fEngine.rawDecodeCount
+        let resolvedX3f = try x3fEngine.resolvedRenderSettings(x3fURL, settings: x3fSettings)
+        var x3fRequest = sony2fuji_request()
+        resolvedX3f.apply(to: &x3fRequest)
+        try check(x3fEngine.rawDecodeCount == decodesBefore &&
+                  resolvedX3f.settings.asShotWhiteBalance == WhiteBalance(temperature: 6500, tint: 0) &&
+                  resolvedX3f.whiteBalance == ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_TEMPERATURE, temperature: 6500, tint: 10) &&
+                  x3fRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE && x3fRequest.temperature == 6500 && x3fRequest.tint == 10,
+                  "normal X3F recipe resolves to core WB (temperature, 6500, 10) with zero RAW decode probes")
+
+        var mismatched = Adjustments()
+        mismatched.applyMasterRecipe(.hamadaDaylightV2)
+        mismatched.resolveWhiteBalance(WhiteBalance(temperature: 3200, tint: -40))
+        mismatched.set(.tint, to: 20)
+        mismatched.strength = 0.5
+        var directRequest = sony2fuji_request()
+        ResolvedRenderSettings(
+            settings: mismatched,
+            whiteBalance: ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_TEMPERATURE, temperature: 5600, tint: 17.5)
+        ).apply(to: &directRequest)
+        try check(directRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+                  directRequest.temperature == 5600 && directRequest.tint == 17.5,
+                  "ResolvedRenderSettings applies core-resolved WB directly without Swift recipe-tint recomputation")
+
+        var customMismatched = mismatched
+        customMismatched.set(.temperature, to: 8000)
+        var cameraRequest = sony2fuji_request()
+        ResolvedRenderSettings(
+            settings: customMismatched,
+            whiteBalance: ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_CAMERA, temperature: 8000, tint: 25)
+        ).apply(to: &cameraRequest)
+        try check(cameraRequest.wb_mode == SONY2FUJI_WB_CAMERA &&
+                  cameraRequest.temperature == 6500 && cameraRequest.tint == 0,
+                  "ResolvedRenderSettings normalizes core camera WB directly without Swift temperature/tint leakage")
+    }
+
     static func removal(_ engine: RenderEngine, input: URL) throws {
         guard let camera = try engine.render(input, settings: Adjustments(), lut: nil, edge: 128)?.asShotWhiteBalance else {
             throw RenderError.failed("Removal fixture needs calibrated white balance")
@@ -78,6 +127,9 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             return
         }
         let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_FORCE)
+        // basic-controls-v3.md「后端、预览与兼容」：基本影调/atmosphere 阶段是 CPU-only，
+        // GPU Auto 返回完整 CPU 路径；Force 明确返回 unsupported。
+        let automatic = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-recipe-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -102,6 +154,7 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
         try check(oldKey.file == replacedKey.file && oldKey.size == replacedKey.size &&
                   oldKey.modified == replacedKey.modified && oldKey != replacedKey,
                   "WB cache invalidates same-path replacement with unchanged size and mtime")
+        try checkDirectRecipeWhiteBalance(root: root)
         if inputs.count >= 2 {
             var firstBytes = try Data(contentsOf: inputs[0])
             var secondBytes = try Data(contentsOf: inputs[1])
@@ -167,22 +220,21 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
             let combinedActual = try combinedColdEngine.render(input, settings: combined, lut: combinedLUT, edge: 128)!
             try check(pixels(combinedActual) == pixels(combinedReference),
                       "\(input.lastPathComponent): recipe WB primer preserves the current HSL controls")
-            let combinedGPU = try metal.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-            let combinedDifference = zip(pixels(combinedGPU), pixels(combinedReference))
-                .map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-            try check(combinedDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                      "\(input.lastPathComponent): display-sRGB recipe plus HSL has forced Metal parity")
+            // 配方 v4 行的基本影调增量（shadows/highlights/contrast/tone；目录内 atmosphere 均为 0）
+            // 激活 CPU-only 阶段：forced-Metal parity 改钉 Auto 诚实回退与像素一致。
+            let combinedFallback = try automatic.render(input, settings: combined, lut: combinedLUT, edge: 128)!
+            try check(pixels(combinedFallback) == pixels(combinedReference) && automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
+                      "\(input.lastPathComponent): display-sRGB recipe plus HSL uses the honest Auto CPU fallback (was forced Metal parity)")
             for strength in [0.5, 2.0] {
                 combined.strength = strength
                 var explicitHSL = manualSettings(.hamadaDaylightV2, camera: camera, strength: strength)
                 explicitHSL.hsl = combined.hslSettings.scaled(by: strength)
                 let expectedHSL = try cpu.render(input, settings: explicitHSL, lut: combinedLUT, edge: 128)!
                 let actualHSL = try combinedColdEngine.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-                let gpuHSL = try metal.render(input, settings: combined, lut: combinedLUT, edge: 128)!
-                let difference = zip(pixels(gpuHSL), pixels(expectedHSL)).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-                try check(pixels(actualHSL) == pixels(expectedHSL) && difference <= 2 &&
-                          metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                          "\(input.lastPathComponent): \(Int(strength * 100))% manually edited HSL scales, clamps and matches Metal")
+                let fallbackHSL = try automatic.render(input, settings: combined, lut: combinedLUT, edge: 128)!
+                try check(pixels(actualHSL) == pixels(expectedHSL) && pixels(fallbackHSL) == pixels(expectedHSL) &&
+                          automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
+                          "\(input.lastPathComponent): \(Int(strength * 100))% manually edited HSL scales, clamps and matches the honest Auto CPU fallback (was Metal parity)")
             }
             let clearedHSL = try cpu.render(input, settings: Adjustments(), lut: nil, edge: 128)!
             try check(pixels(clearedHSL) == pixels(reference),
@@ -207,11 +259,47 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                         recipeOutputs.insert(pixels(actual))
                         try check(pixels(actual) != pixels(reference), "\(label): recipe has a visible non-neutral result")
                     }
-                    let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
-                    let a = pixels(gpu), b = pixels(actual)
-                    let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
-                    try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
-                              "\(label) \(Int(strength * 100))%: forced Metal parity max \(maxDifference) DN")
+                    // 期望独立于被测对象（docs/process/ci.md「独立期望」）：由输入 strength 与契约
+                    // （basic-controls-v3.md L46-47）静态决定，不按运行时 backend 自适应，否则
+                    // cpuOnlyStages 分类回归会让用例跟着换分支静默假绿。
+                    // 14 配方均为 v4 且 shadows/highlights/contrast/tone 增量非零（atmosphere 目录内为 0），
+                    // 非零强度必激活 CPU-only 阶段：Auto 诚实返回完整 CPU 路径，Force 显式 UNSUPPORTED。
+                    let fallback = try automatic.render(input, settings: saved, lut: lut, edge: 128)!
+                    if strength == 0 {
+                        // 纯 neutral 是 GPU 支持面：Auto 与 Force 都必须走 Metal，无条件钉死。
+                        let fallbackPixels = pixels(fallback), expectedPixels = pixels(actual)
+                        let fallbackDifference = zip(fallbackPixels, expectedPixels).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(fallbackPixels.count == expectedPixels.count && fallbackDifference <= 2 &&
+                                  automatic.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label): neutral GPU surface keeps Auto on Metal max \(fallbackDifference) DN")
+                        let gpu = try metal.render(input, settings: saved, lut: lut, edge: 128)!
+                        let a = pixels(gpu), b = pixels(actual)
+                        let maxDifference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(a.count == b.count && maxDifference <= 2 && metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label) 0%: forced Metal parity max \(maxDifference) DN")
+                        // 0% 行 lut_strength=0，核心跳过 .cube（use_lut=false），上面只是纯 neutral；
+                        // neutral+LUT 才是配方 3D-LUT 真正进入 Metal 管线的面，逐配方钉 forced-Metal parity。
+                        let neutralSettings = Adjustments()
+                        let neutralReference = try cpu.render(input, settings: neutralSettings, lut: lut, edge: 128)!
+                        let neutralForced = try metal.render(input, settings: neutralSettings, lut: lut, edge: 128)!
+                        let neutralA = pixels(neutralForced), neutralB = pixels(neutralReference)
+                        let neutralDifference = zip(neutralA, neutralB).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                        try check(neutralA.count == neutralB.count && neutralDifference <= 2 &&
+                                  metal.lastBackend == SONY2FUJI_BACKEND_METAL,
+                                  "\(label): neutral plus LUT keeps forced Metal parity max \(neutralDifference) DN")
+                    } else {
+                        try check(pixels(fallback) == pixels(actual) && automatic.lastBackend == SONY2FUJI_BACKEND_CPU,
+                                  "\(label) \(Int(strength * 100))%: forced Metal parity → honest Auto CPU fallback")
+                        let forcedMessage: String?
+                        do {
+                            _ = try metal.render(input, settings: saved, lut: lut, edge: 128)
+                            forcedMessage = nil
+                        } catch RenderError.failed(let message) {
+                            forcedMessage = message
+                        }
+                        try check(forcedMessage == forceGpuUnsupportedMessage,
+                                  "\(label) \(Int(strength * 100))%: CPU-only stages report Force GPU UNSUPPORTED prompt")
+                    }
                 }
                 saved.strength = 1
                 let expected = manualSettings(recipe, camera: camera, strength: 1)
@@ -239,13 +327,13 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
                     let expectedFile = root.appendingPathComponent("\(UUID()).\(extensionName)")
                     _ = try cpu.render(input, settings: expected, lut: lut, edge: nil,
                                        output: expectedFile, exportLongEdge: 128)
-                    let journal = BatchJournal(directory: root.appendingPathComponent(UUID().uuidString))
-                    var job = BatchExportJob(source: input, settings: saved, look: lut, lookName: recipe.name)
+                    let journal = MacBatchJournal(directory: root.appendingPathComponent(UUID().uuidString))
+                    var job = MacBatchExportJob(source: input, settings: saved, look: lut, lookName: recipe.name)
                     job.outputDirectory = root; job.png = png
-                    var item = try BatchExportItem(url: input); item.selected = true
+                    var item = try MacBatchExportItem(url: input); item.selected = true
                     job.items = [item]
                     let batchEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
-                    try BatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
+                    try MacBatchExportRunner.run(job: &job, journal: journal, scope: .unfinished, shouldCancel: { false }) {
                         target, settings, look, output in
                         _ = try batchEngine.render(target, settings: settings, lut: look, edge: nil,
                                                    output: output, exportLongEdge: 128)

@@ -1,12 +1,13 @@
 package com.rawlab.android.editor.panels
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import com.rawlab.android.settings.LensSettings
 @Composable
 fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading: Boolean = false, onReset: (() -> Unit)? = null, change: (LensSettings) -> Unit) {
     var choosing by remember { mutableStateOf(false) }
+    var metadata by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
@@ -43,7 +45,7 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
                 }
             }
             IconButton(onClick = { onReset?.invoke() ?: change(LensSettings()) }, enabled = enabled && value != LensSettings(),
-                modifier = Modifier.testTag("lens.reset")) { Icon(Icons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
+                modifier = Modifier.testTag("lens.reset")) { Icon(AppIcons.Outlined.RestartAlt, stringResource(R.string.lens_reset)) }
         }
         val candidate = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }
             else info?.candidates?.singleOrNull { it.isMatch }
@@ -54,6 +56,8 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
             unavailable ?: if (candidate?.hasDistortion == true) null else stringResource(R.string.lens_distortion_unavailable)) { change(value.copy(distortion = it)) }
         LensToggle(R.string.lens_tca, value.tca, enabled && (value.tca || inputAllowed && candidate?.hasTca == true), "lens.tca",
             unavailable ?: if (candidate?.hasTca == true) null else stringResource(R.string.lens_tca_unavailable)) { change(value.copy(tca = it)) }
+        LensToggle(R.string.lens_vignetting, value.vignetting, enabled && (value.vignetting || inputAllowed && candidate?.hasVignetting == true), "lens.vignetting",
+            unavailable ?: if (candidate?.hasVignetting == true) null else stringResource(R.string.lens_vignetting_unavailable)) { change(value.copy(vignetting = it)) }
         LensToggle(R.string.lens_auto_crop, value.autoCrop, enabled, "lens.crop") { change(value.copy(autoCrop = it)) }
         val selected = if (value.manual) info?.candidates?.firstOrNull { it.id == value.profileId }?.title
             else info?.selectedLens?.takeIf { it.isNotEmpty() }
@@ -65,11 +69,22 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("lens.status"))
         if (candidate == null || !candidate.hasDistortion || !candidate.hasTca) Text(stringResource(R.string.lens_no_calibration),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (candidate != null && !candidate.hasVignetting) Text(stringResource(R.string.lens_vignetting_unavailable),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         info?.detectedLens?.takeIf { it.isNotEmpty() }?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (info?.camera != null) {
+            Text(listOfNotNull(info.camera.takeIf { it.isNotBlank() }, info.focalLength?.let { "$it mm" },
+                info.aperture?.let { "f/$it" }).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { metadata = true }, enabled = enabled, modifier = Modifier.testTag("lens.metadata")) {
+                Text(stringResource(R.string.lens_metadata_edit))
+            }
+            Text(stringResource(R.string.lens_jpeg_hint), style = MaterialTheme.typography.bodySmall)
+        }
         info?.cropPercent?.let { Text(AppStrings.format(R.string.lens_crop_percent, it), style = MaterialTheme.typography.bodySmall) }
     }
+    if (metadata) LensMetadataDialog(value, { metadata = false }) { change(it); metadata = false }
     if (choosing) LensChooser(info?.candidates.orEmpty(), value.profileId, { choosing = false }) {
         change(value.copy(manual = true, profileId = it.id)); choosing = false
     }
@@ -114,4 +129,27 @@ private fun LensChooser(candidates: List<LensCandidate>, selected: String?, dism
             }
         }
     })
+}
+
+@Composable
+private fun LensMetadataDialog(value: LensSettings, dismiss: () -> Unit, change: (LensSettings) -> Unit) {
+    var focal by remember { mutableStateOf(value.focalLength?.toString().orEmpty()) }
+    var crop by remember { mutableStateOf(value.cropFactor?.toString().orEmpty()) }
+    fun parsed(text: String) = text.trim().replace(',', '.').toFloatOrNull()?.takeIf { it.isFinite() }
+    val valid = (focal.isBlank() || parsed(focal)?.let { it in 0.1f..10000f } == true) &&
+        (crop.isBlank() || parsed(crop)?.let { it in 0.1f..100f } == true)
+    AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.lens_metadata_edit)) }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.lens_metadata_hint))
+            OutlinedTextField(focal, { focal = it }, label = { Text(stringResource(R.string.lens_focal_input)) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                modifier = Modifier.testTag("lens.metadata.focal"))
+            OutlinedTextField(crop, { crop = it }, label = { Text(stringResource(R.string.lens_crop_input)) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                modifier = Modifier.testTag("lens.metadata.crop"))
+        }
+    }, confirmButton = {
+        TextButton(onClick = { change(value.copy(focalLength = parsed(focal), cropFactor = parsed(crop))) }, enabled = valid,
+            modifier = Modifier.testTag("lens.metadata.apply")) { Text(stringResource(R.string.confirm)) }
+    }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } })
 }

@@ -74,6 +74,32 @@ static class BatchSelectionChecks
             var job=exporter.Freeze(selection,review,_=>null);
             Rejected(()=>exporter.Freeze(selection,review,_=>null),"Pending task is preserved until explicitly discarded");
             Check(job.Mode==BatchJob.PerTargetFrozen && job.Items[1].Frozen!.Settings.Restore()[Parameter.Contrast]==30,"Each item keeps its own micro-edit");
+            // 线程锚点：冻结核心（前后双遍全集重验 + look 副本拷贝）整体离开调用线程（异步路径经 Task.Run 调度同一核心）。
+            // 撤掉修复（Freeze 在调用线程内联完成重验与拷贝）时派发用例的 IsThreadPoolThread 记为 false，断言必红；内联用例防止探针恒真假绿。
+            var dispatchedStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            var dispatchedReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
+            var dispatchedIDs=selection.SelectedPhotos.Select(photo=>photo.ID).ToList();
+            string dispatchedLookCopy;
+            {
+                using var dispatched=Task.Run(()=>exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",
+                    stage=>dispatchedStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)))).GetAwaiter().GetResult();
+                Check(dispatchedStages.Count(entry=>entry.Item1=="revalidate")==2 && dispatchedStages.Any(entry=>entry.Item1=="copy") &&
+                    dispatchedStages.All(entry=>entry.Item2),"Collection freeze revalidates twice and copies looks on the dispatched worker thread");
+                Check(dispatched.Job.Items.Count==2 && dispatched.StagedLookCopyCount==1,"Dispatched freeze returns the frozen job with task-owned look copies");
+                dispatchedLookCopy=dispatched.Job.Items[1].Frozen!.Look!;
+                Check(File.Exists(dispatchedLookCopy),"Dispatched staged look copy exists before dispose");
+            }
+            Check(!File.Exists(dispatchedLookCopy),"Disposing uncommitted dispatched frozen export removes staged look copy automatically");
+            var inlineStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            string inlineLookCopy;
+            {
+                using var inline=exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",stage=>inlineStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)));
+                Check(inlineStages.Count==3 && inlineStages.All(entry=>!entry.Item2),"Inline freeze stays on the calling thread");
+                Check(inline.StagedLookCopyCount==1,"Inline freeze stages task-owned look copy");
+                inlineLookCopy=inline.Job.Items[1].Frozen!.Look!;
+                Check(File.Exists(inlineLookCopy),"Inline staged look copy exists before dispose");
+            }
+            Check(!File.Exists(inlineLookCopy),"Disposing uncommitted inline frozen export removes staged look copy automatically");
             settings.Set(Parameter.Exposure,3);store.Save(target,settings.Capture(),look);File.Delete(look);
             var exposures=new List<double>();BatchRunner.Run(journal.Load()!,journal,false,CancellationToken.None,(_,_)=>{},(_,edit,_,path)=>{
                 exposures.Add(edit[Parameter.Exposure]);File.WriteAllText(path,"rendered");
@@ -99,7 +125,167 @@ static class BatchSelectionChecks
             var unavailable=new BatchSelectionExport(store,journal,edit=>edit.Look,_=>throw new InvalidOperationException("GPU unavailable"),transfer.EditGeneration);
             Check(!unavailable.Prepare(selection,[targetKey],ExportFormat.Png,512,output,_=>null).Ready,"Collection preflight reports unavailable AI capability");
             File.Delete(target);selection.RefreshFailures();Check(selection.Failures.ContainsKey(targetKey),"Missing input remains marked per photo");
+
+            // P2-20 Low-Med: Re-adding an existing photo reconciles only its own failure status in place
+            // without running a full O(N) RefreshFailures() sweep across unrelated collection items.
+            var extraA=Path.Combine(root,"extra-a.raw");var extraB=Path.Combine(root,"extra-b.raw");
+            var extraBackup=Path.Combine(root,"extra-a.bak");
+            var initiallyMissing=Path.Combine(root,"missing-first.raw");
+            File.WriteAllText(extraA,"extra-a");File.WriteAllText(extraB,"extra-b");
+            var scoped=new BatchSelectionSession();
+            scoped.Add([extraA,extraB,initiallyMissing]);
+            var keyA=scoped.Photos[0].ID;var keyB=scoped.Photos[1].ID;var keyMissing=scoped.Photos[2].ID;
+            Check(scoped.Failures.ContainsKey(keyMissing),"Missing incoming photo records failure");
+
+            // 1) Delete B quietly, delete A via move-aside, then Add([extraA]):
+            //    A is marked failed in place with no duplicate row; B stays untouched (no full RefreshFailures).
+            File.Delete(extraB);
+            File.Move(extraA,extraBackup);
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && scoped.Failures.ContainsKey(keyA) && !scoped.Failures.ContainsKey(keyB),
+                "Add reconciles missing existing photo in place without full collection scan or duplicate rows");
+
+            // 2) Move exact same file back to extraA, then Add([extraA]): clears failure for keyA in place.
+            File.Move(extraBackup,extraA);
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && !scoped.Failures.ContainsKey(keyA),
+                "Add clears recovered failure for existing photo in place");
+
+            // 3) Overwrite extraA in place with changed size, then Add([extraA]): marks PhotoChangedException failure.
+            File.WriteAllText(extraA,"extra-a-modified-longer-payload");
+            scoped.Add([extraA]);
+            Check(scoped.Photos.Count==3 && scoped.Failures.ContainsKey(keyA),
+                "Add marks content-replaced existing photo as failed in place");
+
+            // 4) Recreate initially-missing photo and re-add: upgrades sentinel row in place and clears failure.
+            File.WriteAllText(initiallyMissing,"now-present");
+            scoped.Add([initiallyMissing]);
+            var upgraded=scoped.Photos.Single(p=>StringComparer.OrdinalIgnoreCase.Equals(p.Path,Path.GetFullPath(initiallyMissing)));
+            Check(scoped.Photos.Count==3 && !scoped.Failures.ContainsKey(keyMissing) && !scoped.Failures.ContainsKey(upgraded.ID),
+                "Add upgrades previously-missing sentinel entry in place and clears failure");
+
+            RunCommitRollbackChecks();
         }finally{Directory.Delete(root,true);}
         Console.WriteLine("PASS: collection identity, navigation, in-memory generation guards and frozen export");
+    }
+
+    static void RunCommitRollbackChecks()
+    {
+        var root=Path.Combine(Path.GetTempPath(),"rawlab-collection-rollback-"+Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try {
+            var photoA=Path.Combine(root,"a.raw");
+            var photoB=Path.Combine(root,"b.raw");
+            var oldLook=Path.Combine(root,"old.cube");
+            var newLook=Path.Combine(root,"new.cube");
+            var output=Path.Combine(root,"output");
+            Directory.CreateDirectory(output);
+            File.WriteAllText(photoA,"photo-a");
+            File.WriteAllText(photoB,"photo-b");
+            File.WriteAllText(oldLook,"old-look-content");
+            File.WriteAllText(newLook,"new-look-content");
+
+            var store=new EditStore(Path.Combine(root,"edits"));
+            var transfer=new AdjustmentTransferSession(store);
+            var journal=new BatchJournal(Path.Combine(root,"batch"));
+            var exporter=new BatchSelectionExport(store,journal,edit=>edit.Look,editGeneration:transfer.EditGeneration);
+
+            var oldSettings=new Adjustments();oldSettings.Set(Parameter.Exposure,0.25);
+            store.Save(photoA,oldSettings.Capture(),oldLook);
+            var oldSelection=new BatchSelectionSession();oldSelection.Add([photoA]);
+            var oldReview=exporter.Prepare(oldSelection,[],ExportFormat.Png,512,output,_=>null);
+            var oldJob=exporter.Freeze(oldSelection,oldReview,_=>null);
+            BatchRunner.Run(oldJob,journal,false,CancellationToken.None,(_,_)=>{},(_,_,_,path)=>File.WriteAllText(path,"rendered"));
+            var persistedOld=journal.Load();
+            Check(persistedOld!=null && persistedOld.Id==oldJob.Id && persistedOld.SelectedCount==1 && persistedOld.SucceededCount==1,
+                "Completed previous batch job is persisted in journal");
+            var oldLookCopy=oldJob.Items[0].Frozen!.Look!;
+            var oldLookBytes=File.ReadAllBytes(oldLookCopy);
+            var jobPath=Path.Combine(journal.DirectoryPath,"job.json");
+            var expectedOldFiles=new[]{Path.GetFullPath(jobPath),Path.GetFullPath(oldLookCopy)}
+                .OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
+
+            var newSettingsA=new Adjustments();newSettingsA.Set(Parameter.Exposure,1.0);
+            var newSettingsB=new Adjustments();newSettingsB.Set(Parameter.Contrast,20);
+            store.Save(photoA,newSettingsA.Capture(),newLook);
+            store.Save(photoB,newSettingsB.Capture(),newLook);
+            var selection=new BatchSelectionSession();selection.Add([photoA,photoB]);
+            var review=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
+            var selectionIDs=selection.SelectedPhotos.Select(photo=>photo.ID).ToList();
+            Check(review.Ready && review.Rows.Count==2,"New 2-photo review with look copies is ready");
+
+            // Case 1: FreezeAsync fails validateBeforeCommit before saving journal.
+            var aborted=false;
+            try {
+                exporter.FreezeAsync(review,selectionIDs,_=>null,
+                    validateBeforeCommit:()=>throw new InvalidOperationException("aborted")).GetAwaiter().GetResult();
+            }catch(InvalidOperationException error) when (error.Message=="aborted") {
+                aborted=true;
+            }
+            Check(aborted,"FreezeAsync propagates validateBeforeCommit failure");
+            var afterAbort=journal.Load();
+            Check(afterAbort!=null && afterAbort.Id==oldJob.Id && afterAbort.SelectedCount==afterAbort.SucceededCount,
+                "Failed validateBeforeCommit preserves the previous completed job");
+            Check(File.Exists(oldLookCopy) && File.ReadAllBytes(oldLookCopy).SequenceEqual(oldLookBytes),
+                "Failed validateBeforeCommit preserves the previous job's frozen look file");
+            var filesAfterAbort=Directory.GetFiles(journal.DirectoryPath).Select(Path.GetFullPath)
+                .OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
+            Check(filesAfterAbort.SequenceEqual(expectedOldFiles,StringComparer.OrdinalIgnoreCase),
+                "Failed validateBeforeCommit leaves zero newly copied look files in journal directory");
+
+            // Case 2: job.json marked ReadOnly causes journal.Save inside Commit to fail.
+            File.SetAttributes(jobPath,FileAttributes.ReadOnly);
+            try {
+                var saveFailed=false;
+                try {
+                    exporter.Freeze(selection,review,_=>null);
+                }catch(Exception error) when (error is UnauthorizedAccessException or IOException) {
+                    saveFailed=true;
+                }
+                Check(saveFailed,"Read-only job.json fails journal.Save during Freeze commit");
+            }finally {
+                if(File.Exists(jobPath))File.SetAttributes(jobPath,FileAttributes.Normal);
+            }
+            var afterSaveFailure=journal.Load();
+            Check(afterSaveFailure!=null && afterSaveFailure.Id==oldJob.Id && afterSaveFailure.SelectedCount==afterSaveFailure.SucceededCount,
+                "Failed journal.Save preserves the previous completed job");
+            Check(File.Exists(oldLookCopy) && File.ReadAllBytes(oldLookCopy).SequenceEqual(oldLookBytes),
+                "Failed journal.Save preserves the previous job's frozen look file");
+            var filesAfterSaveFailure=Directory.GetFiles(journal.DirectoryPath).Select(Path.GetFullPath)
+                .OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
+            Check(filesAfterSaveFailure.SequenceEqual(expectedOldFiles,StringComparer.OrdinalIgnoreCase),
+                "Failed journal.Save leaves zero newly copied look files in journal directory");
+
+            // Transaction guards: Disposed rejects Commit; duplicate Commit rejects; successful FreezeAsync commits new job and releases old look copy.
+            var disposedTransaction=exporter.FreezeCore(review,selectionIDs,_=>null);
+            disposedTransaction.Dispose();
+            var threwDisposed=false;
+            try { disposedTransaction.Commit(); }catch(ObjectDisposedException) { threwDisposed=true; }
+            Check(threwDisposed,"Disposed FrozenCollectionExport rejects Commit");
+
+            var stages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
+            var committedJob=exporter.FreezeAsync(review,selectionIDs,_=>null,
+                observeStage:stage=>stages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread))).GetAwaiter().GetResult();
+            Check(stages.Count(entry=>entry.Item1=="revalidate")==2 && stages.Any(entry=>entry.Item1=="copy") &&
+                stages.All(entry=>entry.Item2),"FreezeAsync runs FreezeCore stages on a thread-pool thread");
+            Check(journal.Load()?.Id==committedJob.Id && !File.Exists(oldLookCopy),
+                "Successful FreezeAsync persists the new job and releases the previous completed job's look file");
+            var expectedNewFiles=committedJob.Items.Select(item=>item.Frozen!.Look!).Append(jobPath)
+                .Select(Path.GetFullPath).OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
+            var filesAfterCommit=Directory.GetFiles(journal.DirectoryPath).Select(Path.GetFullPath)
+                .OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
+            Check(filesAfterCommit.SequenceEqual(expectedNewFiles,StringComparer.OrdinalIgnoreCase),
+                "Successful FreezeAsync retains only the new job's journal and look copies");
+            journal.Discard(committedJob);
+
+            using var singleCommitTx=exporter.FreezeCore(review,selectionIDs,_=>null);
+            var singleCommitJob=singleCommitTx.Commit();
+            var threwDuplicateCommit=false;
+            try { singleCommitTx.Commit(); }catch(InvalidOperationException) { threwDuplicateCommit=true; }
+            Check(threwDuplicateCommit,"Committed FrozenCollectionExport rejects duplicate Commit");
+            journal.Discard(singleCommitJob);
+        }finally {
+            Directory.Delete(root,true);
+        }
     }
 }
