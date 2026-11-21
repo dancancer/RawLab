@@ -60,6 +60,21 @@ extension LensInfo {
     }
 }
 
+struct ResolvedNativeWhiteBalance: Equatable {
+    let wbMode: sony2fuji_wb_mode
+    let temperature: Float
+    let tint: Float
+}
+
+struct ResolvedRenderSettings {
+    let settings: Adjustments
+    let whiteBalance: ResolvedNativeWhiteBalance?
+
+    func apply(to request: inout sony2fuji_request) {
+        settings.apply(to: &request, resolvedWhiteBalance: whiteBalance)
+    }
+}
+
 extension Adjustments {
     var photoEffectsConfig: sony2fuji_photo_effects_config {
         let state = effectSettings
@@ -79,13 +94,19 @@ extension Adjustments {
         return [Float(request.wb_mode.rawValue), request.temperature, request.tint]
     }
 
-    func apply(to request: inout sony2fuji_request) {
+    func apply(to request: inout sony2fuji_request, resolvedWhiteBalance: ResolvedNativeWhiteBalance? = nil) {
         let values = resolvedRenderValues()
         request.exposure_ev = values.exposureEV
         request.brightness = values.brightness
-        request.wb_mode = values.usesTemperatureWB ? SONY2FUJI_WB_TEMPERATURE : SONY2FUJI_WB_CAMERA
-        request.temperature = values.temperature
-        request.tint = values.tint
+        if let wb = resolvedWhiteBalance {
+            request.wb_mode = wb.wbMode
+            request.temperature = wb.wbMode == SONY2FUJI_WB_TEMPERATURE ? wb.temperature : 6500
+            request.tint = wb.wbMode == SONY2FUJI_WB_TEMPERATURE ? wb.tint : 0
+        } else {
+            request.wb_mode = values.usesTemperatureWB ? SONY2FUJI_WB_TEMPERATURE : SONY2FUJI_WB_CAMERA
+            request.temperature = values.temperature
+            request.tint = values.tint
+        }
         request.contrast = values.contrast
         request.saturation = values.saturation
         // The core's positive highlight value compresses light; UI positive brightens.

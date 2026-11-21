@@ -25,9 +25,10 @@ extension RenderEngine {
         if let edge = exportLongEdge, !(1...65535).contains(edge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
-        let state = try resolvedSettings(url, settings: settings)
+        let resolved = try resolvedRenderSettings(url, settings: settings)
+        let state = resolved.settings
         var request = sony2fuji_request()
-        state.apply(to: &request)
+        resolved.apply(to: &request)
         let hsl = state.renderHSLSettings
         let fx = state.photoEffectsConfig
         let geometry = state.geometrySettings

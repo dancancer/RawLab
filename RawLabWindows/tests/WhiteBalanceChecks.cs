@@ -15,7 +15,7 @@ internal static class WhiteBalanceChecks
             using var cancellation=new CancellationTokenSource();
             engine.SetCancellation(cancellation.Token);
             var session=engine.Session;
-            Adjustments Resolve(Adjustments settings)=>engine.PrepareRecipe(source,settings);
+            Adjustments Resolve(Adjustments settings)=>engine.PrepareRecipe(source,settings).Settings;
             var polls=0;
             Native.CancellationCallback countCalls=_=>{Interlocked.Increment(ref polls);return 0;};
             // Replacing the RAW may recreate the native session. Keep the observer registered through that path.
@@ -23,18 +23,33 @@ internal static class WhiteBalanceChecks
             Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero), session);
             var recipe=new Adjustments();recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
             recipe.Set(Parameter.Strength,100);recipe.Set(Parameter.Tint,10);
-            var first=Resolve(recipe);
+            var firstPrepared=engine.PrepareRecipe(source,recipe);
+            var first=firstPrepared.Settings;
             check(polls>0 && first.AsShot!=null,"First recipe reads the target RAW camera white balance with the native probe");
             polls=0;
             recipe.Set(Parameter.Exposure,.5);recipe.Set(Parameter.Tint,-15);recipe.Set(Parameter.Strength,50);
-            var edited=Resolve(recipe);
-            check(polls==0 && edited.AsShot==first.AsShot && edited.Request(source,null,640,null).Tint!=first.Request(source,null,640,null).Tint,
+            var editedPrepared=engine.PrepareRecipe(source,recipe);
+            var edited=editedPrepared.Settings;
+            check(polls==0 && edited.AsShot==first.AsShot &&
+                editedPrepared.Request(source,null,640,null).Tint!=firstPrepared.Request(source,null,640,null).Tint,
                 "Edits reuse the target camera calibration without a native probe and apply the new recipe offset");
             recipe.ExposureMode=recipe.ExposureMode==0 ? 1 : 0;
             check(Resolve(recipe).AsShot!=null && polls>0,"A change of RAW exposure mode refreshes the calibration");
             polls=0;
             File.SetLastWriteTimeUtc(source,File.GetLastWriteTimeUtc(source).AddSeconds(4));
             check(Resolve(recipe).AsShot!=null && polls>0,"A changed RAW identity refreshes the calibration");
+            var x3fSource=Path.Combine(directory,"normal-recipe.X3F");
+            File.WriteAllBytes(x3fSource,[(byte)'F',(byte)'O',(byte)'V',(byte)'b',0,0,0,0]);
+            var x3fRecipe=new Adjustments{X3fMode=X3fMode.Normal};
+            x3fRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+            x3fRecipe.Set(Parameter.Tint,20);
+            x3fRecipe.Set(Parameter.Strength,50);
+            polls=0;
+            var x3fPrepared=engine.PrepareRecipe(x3fSource,x3fRecipe);
+            var x3fRequest=x3fPrepared.Request(x3fSource,null,640,null);
+            check(polls==0 && x3fPrepared.Settings.AsShot is {Temperature:6500,Tint:0} &&
+                x3fRequest is {WbMode:3,Temperature:6500f,Tint:10f},
+                "Normal X3F recipe resolves to core WB (3, 6500, 10) with zero decode probes");
             var lut=recipe.Recipe!.LutPath;
             var original=engine.RenderPreview(source,recipe,lut,384,false,false,false).Result;
             recipe.Set(Parameter.Exposure,1.5);
@@ -44,6 +59,20 @@ internal static class WhiteBalanceChecks
             check(original.WhiteBalance!=null && original.WhiteBalance==updated.WhiteBalance &&
                 updated.WhiteBalance==expected.WhiteBalance && updated.Histogram.SequenceEqual(expected.Histogram),
                 "Real recipe previews use the same camera calibration and output as a fresh render across edits and sizes");
+            var cold=new Adjustments();cold.ApplyMasterRecipe(MasterRecipe.All[0]);
+            cold.Set(Parameter.Tint,7);cold.Set(Parameter.Strength,75);
+            var coldFrame=engine.RenderPreview(source,cold,lut,384,false,false,false);
+            var resolvedCold=cold.Clone();
+            resolvedCold.ResolveWhiteBalance(coldFrame.Result.WhiteBalance!.Value);
+            var warmFrame=engine.RenderPreview(source,resolvedCold,lut,384,false,false,false);
+            check(ReferenceEquals(coldFrame,warmFrame),
+                "RenderPreview cache key matches after ResolveWhiteBalance updates caller metadata");
+            var custom6500=cold.Clone();
+            custom6500.Set(Parameter.Temperature,6500);
+            var custom6500Frame=engine.RenderPreview(source,custom6500,lut,384,false,false,false);
+            if(Math.Round(coldFrame.Result.WhiteBalance!.Value.Temperature)!=6500)
+                check(!ReferenceEquals(coldFrame,custom6500Frame),
+                    "Cold recipe PreviewKey uses core camera temperature instead of colliding on uncalibrated 6500K");
         }
         finally { Directory.Delete(directory,true); }
     }
@@ -85,6 +114,21 @@ internal static class WhiteBalanceChecks
             settings.Set(Parameter.Strength,100);settings.Set(Parameter.Tint,0);
             check(settings.Request("target.ARW",null,32,null).WbMode==0,"Zero recipe offset retains original camera gains");
         }
+        var mismatched=new Adjustments();
+        mismatched.ApplyMasterRecipe(MasterRecipe.All[0]);
+        mismatched.ResolveWhiteBalance((3200.0,-40.0));
+        mismatched.Set(Parameter.Tint,20.0);
+        mismatched.Set(Parameter.Strength,50.0);
+        var direct=new PreparedRecipeSettings(mismatched,new ResolvedNativeWhiteBalance(3,5600f,17.5f))
+            .Request("target.ARW",null,32,null);
+        check(direct is {WbMode:3,Temperature:5600f,Tint:17.5f},
+            "PreparedRecipeSettings writes core-resolved WB directly without C# recipe-tint recomputation");
+        var customMismatched=mismatched.Clone();
+        customMismatched.Set(Parameter.Temperature,8000.0);
+        var cameraDirect=new PreparedRecipeSettings(customMismatched,new ResolvedNativeWhiteBalance(0,8000f,25f))
+            .Request("target.ARW",null,32,null);
+        check(cameraDirect is {WbMode:0,Temperature:6500f,Tint:0f},
+            "PreparedRecipeSettings normalizes camera WB mode directly without C# temperature/tint leakage");
         CheckPersistence(check);
     }
 

@@ -146,11 +146,12 @@ internal sealed partial class RenderEngine : IDisposable
         }
         if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var info) == HDRProbeState.Supported)
             return AutoExposureHDRSource(path, settings,info!);
-        settings = PrepareRecipe(path, settings);
+        var prepared = PrepareRecipe(path, settings);
+        settings = prepared.Settings;
         EnsureInput(path);
         ApplyParams(path, settings, includeDenoise: false, validateAiX3f: true);
         ConfigureAI(settings.AIDenoiseEnabled);
-        var request=settings.Request(path,null,0,null);
+        var request = prepared.Request(path, null, 0, null);
         SetInput(ref request,path);
         aiNativeOperationStarted=true;
         var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
@@ -215,8 +216,12 @@ internal sealed partial class RenderEngine : IDisposable
             else if (settings.IsHDREditing && PhotoInput.IsRaw(path) &&
                 PhotoInput.ProbeCameraRaw(path, out var cameraInfo, settings.Processing.Version) == HDRProbeState.Supported)
                 sourceFingerprint = cameraInfo!.CacheIdentity;
-            var key=new PreviewKey(settings.Request(path,lut,2000,null),settings.Denoise,settings.Effects,settings.ToneControls,settings.Atmosphere,settings.ColorGrading,settings.Curve,settings.DisplayChromaDenoise,
-                settings.ExposureMode,settings.Hsl,settings.Lens,settings.Geometry,settings.Processing,settings.X3fMode,settings.MasterRecipeSettingsVersion,settings[Parameter.Strength],settings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,settings.HDR,settings.ProRAWDecodeVersion,sourceFingerprint);
+            var preparedRecipe = settings.IsHDREditing ? (PreparedRecipeSettings?)null : PrepareRecipe(path, settings);
+            var keySettings = preparedRecipe?.Settings ?? settings;
+            var key=new PreviewKey(
+                preparedRecipe is { } resolved ? resolved.Request(path,lut,2000,null) : settings.Request(path,lut,2000,null),
+                keySettings.Denoise,keySettings.Effects,keySettings.ToneControls,keySettings.Atmosphere,keySettings.ColorGrading,keySettings.Curve,keySettings.DisplayChromaDenoise,
+                keySettings.ExposureMode,keySettings.Hsl,keySettings.Lens,keySettings.Geometry,keySettings.Processing,keySettings.X3fMode,keySettings.MasterRecipeSettingsVersion,keySettings[Parameter.Strength],keySettings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,keySettings.HDR,keySettings.ProRAWDecodeVersion,sourceFingerprint);
             var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
             lastSourceFingerprint = sourceFingerprint;
             // HDR previews have a 2000px ceiling, including the viewport's native-size request.
@@ -489,13 +494,14 @@ internal sealed partial class RenderEngine : IDisposable
 
     private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview,Native.Buffer? inputOverride = null)
     {
-        settings = PrepareRecipe(path, settings);
+        var prepared = PrepareRecipe(path, settings);
+        settings = prepared.Settings;
         if (inputOverride == null) EnsureInput(path);
         ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path));
         ConfigureAI(settings.AIDenoiseEnabled);
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
         Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
-        var request = settings.Request(path,lut,edge,output,longEdge);
+        var request = prepared.Request(path,lut,edge,output,longEdge);
         if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
         return (settings,request);
     }
@@ -590,10 +596,10 @@ internal sealed partial class RenderEngine : IDisposable
             report.AppliedTca != 0, report.CropScale, lensCandidates, extended.AppliedVignetting != 0);
     }
     // internal：tests 的 AgentRecipeTestTool（Q9 测试工具）经 InternalsVisibleTo 复用同一冻结入口。
-    internal Adjustments PrepareRecipe(string path, Adjustments settings)
+    internal PreparedRecipeSettings PrepareRecipe(string path, Adjustments settings)
     {
-        if(LibraryEntry.IsRaster(path))return PrepareInputSettings(path,settings);
-        if (settings.MasterRecipeID == null) return settings;
+        if (LibraryEntry.IsRaster(path)) return new(PrepareInputSettings(path, settings), null);
+        if (settings.MasterRecipeID == null) return new(settings, null);
         var req = new Native.RecipeWbRequest
         {
             Version = 1,
@@ -613,7 +619,11 @@ internal sealed partial class RenderEngine : IDisposable
         Native.Check(status, session);
         var prepared = settings.Clone();
         if (res.CameraCalibrated != 0) prepared.ResolveWhiteBalance((res.CameraTemperature, res.CameraTint));
-        return prepared;
+        var whiteBalance = new ResolvedNativeWhiteBalance(
+            res.WbMode,
+            res.WbMode == 3 ? res.Temperature : 6500f,
+            res.WbMode == 3 ? res.Tint : 0f);
+        return new(prepared, whiteBalance);
     }
     private static unsafe BitmapSource Bitmap(Native.Buffer buffer,bool opaque=true)
     {

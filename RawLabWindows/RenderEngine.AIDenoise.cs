@@ -89,11 +89,13 @@ internal sealed partial class RenderEngine
     private void PrepareAICore(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
+        PreparedRecipeSettings? prepared = null;
         if (!settings.IsHDREditing)
         {
             if(Native.sony2fuji_is_normal_x3f(path,settings.X3fMode)!=0)throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
             if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-            settings=PrepareRecipe(path,settings);
+            prepared=PrepareRecipe(path,settings);
+            settings=prepared.Value.Settings;
             ApplyParams(path,settings,includeDenoise:false,validateAiX3f:true);
         }
         ConfigureAI(true);
@@ -114,7 +116,7 @@ internal sealed partial class RenderEngine
             }
             else
             {
-                var request=settings.Request(path,null,0,null);
+                var request=prepared!.Value.Request(path,null,0,null);
                 status=Native.sony2fuji_session_prepare_ai(session,ref request,callback,IntPtr.Zero);
             }
         }

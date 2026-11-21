@@ -46,6 +46,51 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
 }
 
 @main struct MasterRecipeRenderTests {
+    static func checkDirectRecipeWhiteBalance(root: URL) throws {
+        let x3fURL = root.appendingPathComponent("normal-recipe.X3F")
+        try Data([0x46, 0x4F, 0x56, 0x62, 0, 0, 0, 0]).write(to: x3fURL)
+        let x3fEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        var x3fSettings = Adjustments()
+        x3fSettings.applyMasterRecipe(.hamadaDaylightV2)
+        x3fSettings.x3fMode = .normal
+        x3fSettings.set(.tint, to: 20)
+        x3fSettings.strength = 0.5
+        let decodesBefore = x3fEngine.rawDecodeCount
+        let resolvedX3f = try x3fEngine.resolvedRenderSettings(x3fURL, settings: x3fSettings)
+        var x3fRequest = sony2fuji_request()
+        resolvedX3f.apply(to: &x3fRequest)
+        try check(x3fEngine.rawDecodeCount == decodesBefore &&
+                  resolvedX3f.settings.asShotWhiteBalance == WhiteBalance(temperature: 6500, tint: 0) &&
+                  resolvedX3f.whiteBalance == ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_TEMPERATURE, temperature: 6500, tint: 10) &&
+                  x3fRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE && x3fRequest.temperature == 6500 && x3fRequest.tint == 10,
+                  "normal X3F recipe resolves to core WB (temperature, 6500, 10) with zero RAW decode probes")
+
+        var mismatched = Adjustments()
+        mismatched.applyMasterRecipe(.hamadaDaylightV2)
+        mismatched.resolveWhiteBalance(WhiteBalance(temperature: 3200, tint: -40))
+        mismatched.set(.tint, to: 20)
+        mismatched.strength = 0.5
+        var directRequest = sony2fuji_request()
+        ResolvedRenderSettings(
+            settings: mismatched,
+            whiteBalance: ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_TEMPERATURE, temperature: 5600, tint: 17.5)
+        ).apply(to: &directRequest)
+        try check(directRequest.wb_mode == SONY2FUJI_WB_TEMPERATURE &&
+                  directRequest.temperature == 5600 && directRequest.tint == 17.5,
+                  "ResolvedRenderSettings applies core-resolved WB directly without Swift recipe-tint recomputation")
+
+        var customMismatched = mismatched
+        customMismatched.set(.temperature, to: 8000)
+        var cameraRequest = sony2fuji_request()
+        ResolvedRenderSettings(
+            settings: customMismatched,
+            whiteBalance: ResolvedNativeWhiteBalance(wbMode: SONY2FUJI_WB_CAMERA, temperature: 8000, tint: 25)
+        ).apply(to: &cameraRequest)
+        try check(cameraRequest.wb_mode == SONY2FUJI_WB_CAMERA &&
+                  cameraRequest.temperature == 6500 && cameraRequest.tint == 0,
+                  "ResolvedRenderSettings normalizes core camera WB directly without Swift temperature/tint leakage")
+    }
+
     static func removal(_ engine: RenderEngine, input: URL) throws {
         guard let camera = try engine.render(input, settings: Adjustments(), lut: nil, edge: 128)?.asShotWhiteBalance else {
             throw RenderError.failed("Removal fixture needs calibrated white balance")
@@ -109,6 +154,7 @@ private func manualSettings(_ recipe: MasterRecipe, camera: WhiteBalance, streng
         try check(oldKey.file == replacedKey.file && oldKey.size == replacedKey.size &&
                   oldKey.modified == replacedKey.modified && oldKey != replacedKey,
                   "WB cache invalidates same-path replacement with unchanged size and mtime")
+        try checkDirectRecipeWhiteBalance(root: root)
         if inputs.count >= 2 {
             var firstBytes = try Data(contentsOf: inputs[0])
             var secondBytes = try Data(contentsOf: inputs[1])
