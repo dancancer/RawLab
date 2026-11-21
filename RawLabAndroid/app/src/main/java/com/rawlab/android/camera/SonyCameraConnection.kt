@@ -8,10 +8,12 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanRecord
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -31,6 +33,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
+import com.rawlab.android.BuildConfig
 import com.rawlab.android.camera.protocol.SonyWifiCredentials
 import java.io.Closeable
 import java.net.Inet4Address
@@ -47,6 +51,8 @@ internal class SonyCameraConnection internal constructor(
     private val platform: Platform,
     private val wifiStartingTimeoutMs: Long = WIFI_STARTING_TIMEOUT_MS,
     private val wifiRequestTimeoutMs: Long = WIFI_REQUEST_TIMEOUT_MS,
+    private val wifiScanFallbackMs: Long = WIFI_SCAN_FALLBACK_MS,
+    private val manualWifiTimeoutMs: Long = MANUAL_WIFI_TIMEOUT_MS,
 ) : Closeable {
     constructor(context: Context, listener: Listener) : this(
         context,
@@ -141,15 +147,22 @@ internal class SonyCameraConnection internal constructor(
         fun isWifiAvailable(): Boolean
         fun startWifiScan(): Boolean
         fun wifiScanResults(): List<WifiApResult>
-        fun registerWifiScanReceiver(onScanResults: () -> Unit): Handle
+        fun registerWifiScanReceiver(onScanResults: (updated: Boolean) -> Unit): Handle
         fun isConnectivityAvailable(): Boolean
-        fun requestWifiNetwork(ssid: String, password: String, bssid: String, callbacks: WifiNetworkCallbacks): Handle
+        fun requestWifiNetwork(ssid: String, password: String, bssid: String?, callbacks: WifiNetworkCallbacks): Handle
         fun registerManualWifiNetwork(callbacks: LegacyWifiCallbacks): Handle
-        fun defaultIpv4Gateway(properties: LinkProperties?): Inet4Address? =
-            properties?.routes?.asSequence()
+        fun defaultIpv4Gateway(properties: LinkProperties?): Inet4Address? {
+            val routeGateway = properties?.routes?.asSequence()
                 ?.filter { it.isDefaultRoute }
                 ?.mapNotNull { it.gateway as? Inet4Address }
                 ?.firstOrNull()
+            if (routeGateway != null) return routeGateway
+            return if (sdkInt >= Build.VERSION_CODES.R && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                properties?.dhcpServerAddress
+            } else {
+                null
+            }
+        }
     }
 
     private companion object {
@@ -159,8 +172,11 @@ internal class SonyCameraConnection internal constructor(
         const val BLE_TIMEOUT_MS = 3 * 60 * 1000L
         const val WIFI_STARTING_TIMEOUT_MS = 45 * 1000L
         const val WIFI_REQUEST_TIMEOUT_MS = 60 * 1000L
+        const val WIFI_SCAN_FALLBACK_MS = 4_000L
+        const val MANUAL_WIFI_TIMEOUT_MS = 15_000L
         const val BLE_SCAN_TIMEOUT_MS = 25 * 1000L
-        const val WIFI_SCAN_TIMEOUT_MS = 35 * 1000L
+        const val MAX_GATT_CONNECT_ATTEMPTS = 3
+        const val GATT_RETRY_BASE_DELAY_MS = 400L
         const val WIFI_FRESHNESS_US = 2_000_000L
 
         val CONTROL_SERVICE = UUID.fromString("8000cc00-cc00-ffff-ffff-ffffffffffff")
@@ -173,6 +189,14 @@ internal class SonyCameraConnection internal constructor(
         val PASSWORD_CHARACTERISTIC = sonyCharacteristic("cc07")
         val WIFI_ON_CHARACTERISTIC = sonyCharacteristic("cc08")
         val PAIRING_INIT_CHARACTERISTIC = sonyCharacteristic("ee01")
+
+        fun shortUuid(uuid: UUID): String = uuid.toString().substring(4, 8)
+
+        fun debugLog(message: String) {
+            if (BuildConfig.DEBUG) {
+                runCatching { Log.d("RawLabCamera", message) }
+            }
+        }
     }
 
     private var scanHandle: Handle? = null
@@ -188,6 +212,8 @@ internal class SonyCameraConnection internal constructor(
     private var stage: Stage? = null
     private var wifiCredentialsReady = false
     private var readAttempts = 0
+    private var gattConnectAttempts = 0
+    private var gattConnected = false
     private var scanStartedMicros = 0L
     private var pendingSSID: String? = null
     private var pendingPassword: String? = null
@@ -203,12 +229,15 @@ internal class SonyCameraConnection internal constructor(
     private var wifiScanTimeout: Runnable? = null
     private var wifiRequestTimeout: Runnable? = null
     private var ssidReadRunnable: Runnable? = null
+    private var gattRetryRunnable: Runnable? = null
 
     private val gattCallback = object : GattClientCallback {
         override fun onConnectionStateChange(source: GattHandle, status: Int, newState: Int) {
             platform.post {
                 if (!isCurrentGatt(source)) return@post
+                debugLog("GATT onConnectionStateChange status=$status newState=$newState stage=$stage attempt=$gattConnectAttempts")
                 if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
+                    gattConnected = true
                     val requested = try {
                         source.requestMtu(BLE_MTU)
                     } catch (_: SecurityException) {
@@ -217,7 +246,21 @@ internal class SonyCameraConnection internal constructor(
                     }
                     if (!requested) fail(Failure.BLUETOOTH)
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
-                    if (stage == Stage.BLUETOOTH || (stage == Stage.WIFI_STARTING && !wifiCredentialsReady)) {
+                    if (stage == Stage.BLUETOOTH && !gattConnected &&
+                        status != BluetoothGatt.GATT_SUCCESS && gattConnectAttempts < MAX_GATT_CONNECT_ATTEMPTS
+                    ) {
+                        val current = generation
+                        val delayMs = GATT_RETRY_BASE_DELAY_MS * gattConnectAttempts
+                        debugLog("BLE GATT connect failed status=$status attempt=$gattConnectAttempts; retrying in ${delayMs}ms")
+                        closeGatt()
+                        gattRetryRunnable?.let(platform::removeCallbacks)
+                        gattRetryRunnable = Runnable {
+                            gattRetryRunnable = null
+                            if (current == generation && active && stage == Stage.BLUETOOTH) {
+                                openGatt()
+                            }
+                        }.also { platform.postDelayed(it, delayMs) }
+                    } else if (stage == Stage.BLUETOOTH || (stage == Stage.WIFI_STARTING && !wifiCredentialsReady)) {
                         fail(Failure.BLUETOOTH)
                     }
                 }
@@ -227,6 +270,7 @@ internal class SonyCameraConnection internal constructor(
         override fun onMtuChanged(source: GattHandle, mtu: Int, status: Int) {
             platform.post {
                 if (!isCurrentGatt(source)) return@post
+                debugLog("GATT onMtuChanged mtu=$mtu status=$status")
                 if (status != BluetoothGatt.GATT_SUCCESS || mtu < 67) {
                     fail(Failure.BLUETOOTH)
                     return@post
@@ -244,11 +288,13 @@ internal class SonyCameraConnection internal constructor(
         override fun onServicesDiscovered(source: GattHandle, status: Int) {
             platform.post {
                 if (!isCurrentGatt(source)) return@post
+                val hasRequired = if (status == BluetoothGatt.GATT_SUCCESS) source.hasRequiredCharacteristics() else false
+                debugLog("GATT onServicesDiscovered status=$status hasRequired=$hasRequired")
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail(Failure.BLUETOOTH)
                     return@post
                 }
-                if (!source.hasRequiredCharacteristics()) {
+                if (!hasRequired) {
                     beginOperation()
                     setStage(Stage.MANUAL_WIFI)
                     return@post
@@ -266,6 +312,7 @@ internal class SonyCameraConnection internal constructor(
         override fun onCharacteristicWrite(source: GattHandle, uuid: UUID, status: Int) {
             platform.post {
                 if (!isCurrentGatt(source)) return@post
+                debugLog("GATT onCharacteristicWrite uuid=${shortUuid(uuid)} status=$status")
                 when (uuid) {
                     PAIRING_INIT_CHARACTERISTIC -> {
                         if (status != BluetoothGatt.GATT_SUCCESS) fail(Failure.PAIRING) else activateWifi(source)
@@ -329,8 +376,19 @@ internal class SonyCameraConnection internal constructor(
             try {
                 handle = platform.registerManualWifiNetwork(callbacks)
                 networkHandle = handle
+                debugLog("Manual Wi-Fi registered")
             } catch (_: SecurityException) {
                 fail(Failure.PERMISSION)
+                return@post
+            }
+            if (active && stage == Stage.MANUAL_WIFI && cameraNetwork == null && networkHandle === handle) {
+                val timeoutGeneration = generation
+                wifiRequestTimeout = Runnable {
+                    if (timeoutGeneration == generation && active && stage == Stage.MANUAL_WIFI && cameraNetwork == null) {
+                        debugLog("Manual Wi-Fi timed out waiting for camera network")
+                        fail(Failure.WIFI)
+                    }
+                }.also { platform.postDelayed(it, manualWifiTimeoutMs) }
             }
         }
     }
@@ -437,6 +495,7 @@ internal class SonyCameraConnection internal constructor(
         if (!entry.isSony) return
         if (devices.putIfAbsent(entry.id, entry) == null) {
             deviceNames[entry.id] = entry.name
+            debugLog("BLE candidate discovered (total=${devices.size})")
             emitCandidates()
         }
     }
@@ -449,6 +508,9 @@ internal class SonyCameraConnection internal constructor(
         val device = selectedDevice ?: return fail(Failure.BLUETOOTH)
         setStage(Stage.BLUETOOTH)
         if (!active) return
+        gattConnectAttempts++
+        gattConnected = false
+        debugLog("Opening GATT (attempt=$gattConnectAttempts)")
         try {
             gatt = device.connectGatt(gattCallback)
             if (gatt == null) fail(Failure.BLUETOOTH)
@@ -502,6 +564,7 @@ internal class SonyCameraConnection internal constructor(
         status: Int,
     ) {
         if (!isCurrentGatt(source)) return
+        debugLog("GATT onCharacteristicRead uuid=${shortUuid(key)} status=$status bytes=${value?.size ?: 0}")
         if (status != BluetoothGatt.GATT_SUCCESS) {
             if (key == SSID_CHARACTERISTIC && status == 157 && readAttempts < 8) {
                 scheduleSSIDRead(source)
@@ -535,27 +598,47 @@ internal class SonyCameraConnection internal constructor(
     }
 
     private fun waitForAccessPoint(name: String) {
-        if (pendingPassword == null || !platform.isWifiAvailable()) return fail(Failure.WIFI)
+        val password = pendingPassword ?: return fail(Failure.WIFI)
         if (!active) return
         cancelBleTimeout()
         closeGatt()
         scanStartedMicros = platform.elapsedMicros()
         pendingSSID = name
+        val wifiAvailable = platform.isWifiAvailable()
+        debugLog("Waiting for AP broadcast (wifiAvailable=$wifiAvailable)")
+        if (!wifiAvailable) {
+            requestWiFi(name, password, bssid = null)
+            return
+        }
+        findFreshAccessPoint()
+        if (!active || pendingSSID == null) return
         if (!registerWifiReceiver() || !active) return
         val scanStarted = try {
-            val started = platform.startWifiScan()
-            findFreshAccessPoint()
-            started
+            platform.startWifiScan()
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
             return
         }
+        debugLog("startWifiScan returned $scanStarted")
+        findFreshAccessPoint()
         if (!active || pendingSSID == null) return
-        if (!scanStarted) return fail(Failure.WIFI)
+        if (!scanStarted) {
+            fallbackToSsidOnlyWifi()
+            return
+        }
         val current = generation
         wifiScanTimeout = Runnable {
-            if (current == generation && active && pendingSSID != null) fail(Failure.WIFI)
-        }.also { platform.postDelayed(it, WIFI_SCAN_TIMEOUT_MS) }
+            if (current == generation && active && pendingSSID != null) {
+                fallbackToSsidOnlyWifi()
+            }
+        }.also { platform.postDelayed(it, wifiScanFallbackMs) }
+    }
+
+    private fun fallbackToSsidOnlyWifi() {
+        val ssid = pendingSSID ?: return
+        val password = pendingPassword ?: return fail(Failure.WIFI)
+        debugLog("Wi-Fi scan unavailable/timed out; requesting WifiNetworkSpecifier by SSID only")
+        requestWiFi(ssid, password, bssid = null)
     }
 
     private fun findFreshAccessPoint() {
@@ -568,13 +651,14 @@ internal class SonyCameraConnection internal constructor(
         for (result in results) {
             val bssid = result.bssid ?: continue
             if (result.ssid == name && result.timestampMicros >= scanStartedMicros - WIFI_FRESHNESS_US) {
+                debugLog("Found fresh cached AP; requesting WifiNetworkSpecifier (withBssid=true)")
                 requestWiFi(name, pendingPassword ?: return fail(Failure.WIFI), bssid)
                 return
             }
         }
     }
 
-    private fun requestWiFi(name: String, password: String, bssid: String) {
+    private fun requestWiFi(name: String, password: String, bssid: String?) {
         if (platform.sdkInt < Build.VERSION_CODES.Q) {
             fail(Failure.UNSUPPORTED)
             return
@@ -590,6 +674,7 @@ internal class SonyCameraConnection internal constructor(
             override fun onAvailable(network: Network, properties: LinkProperties?) {
                 platform.post {
                     if (!isCurrentNetwork(current, handle)) return@post
+                    debugLog("WifiNetworkCallbacks.onAvailable hasProps=${properties != null}")
                     inspectNetwork(network, properties, handle)
                 }
             }
@@ -597,24 +682,32 @@ internal class SonyCameraConnection internal constructor(
             override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
                 platform.post {
                     if (!isCurrentNetwork(current, handle)) return@post
+                    debugLog("WifiNetworkCallbacks.onLinkPropertiesChanged")
                     inspectNetwork(network, properties, handle)
                 }
             }
 
             override fun onUnavailable() {
                 platform.post {
-                    if (isCurrentNetwork(current, handle)) fail(Failure.WIFI)
+                    if (isCurrentNetwork(current, handle)) {
+                        debugLog("WifiNetworkCallbacks.onUnavailable")
+                        fail(Failure.WIFI)
+                    }
                 }
             }
 
             override fun onLost(network: Network) {
                 platform.post {
-                    if (isCurrentNetwork(current, handle)) fail(Failure.DISCONNECTED)
+                    if (isCurrentNetwork(current, handle)) {
+                        debugLog("WifiNetworkCallbacks.onLost")
+                        fail(Failure.DISCONNECTED)
+                    }
                 }
             }
         }
         setStage(Stage.WIFI_CONFIRMATION)
         if (!active) return
+        debugLog("Requesting WifiNetworkSpecifier (withBssid=${!bssid.isNullOrBlank()})")
         try {
             handle = platform.requestWifiNetwork(name, password, bssid, callbacks)
             networkHandle = handle
@@ -629,6 +722,7 @@ internal class SonyCameraConnection internal constructor(
             val timeoutGeneration = generation
             wifiRequestTimeout = Runnable {
                 if (timeoutGeneration == generation && active && stage == Stage.WIFI_CONFIRMATION && cameraNetwork == null) {
+                    debugLog("WifiNetworkSpecifier request timed out")
                     fail(Failure.WIFI)
                 }
             }.also { platform.postDelayed(it, wifiRequestTimeoutMs) }
@@ -644,7 +738,9 @@ internal class SonyCameraConnection internal constructor(
         handle: Handle,
     ) {
         if (networkHandle !== handle || cameraNetwork != null) return
-        val gateway = platform.defaultIpv4Gateway(properties) ?: return
+        val gateway = platform.defaultIpv4Gateway(properties)
+        debugLog("inspectNetwork hasGateway=${gateway != null}")
+        gateway ?: return
         cameraNetwork = network
         cameraAddress = gateway
         cancelBleTimeout()
@@ -658,6 +754,7 @@ internal class SonyCameraConnection internal constructor(
     private fun setStage(value: Stage) {
         if (stage == value) return
         stage = value
+        debugLog("Stage -> $value")
         listener.onStage(value)
     }
 
@@ -703,6 +800,7 @@ internal class SonyCameraConnection internal constructor(
 
     private fun fail(reason: Failure) {
         if (!active) return
+        debugLog("Connection failed reason=$reason stage=$stage")
         active = false
         releaseResources()
         listener.onFailure(reason)
@@ -712,6 +810,8 @@ internal class SonyCameraConnection internal constructor(
         scanning = false
         bleScanTimeout?.let(platform::removeCallbacks)
         bleScanTimeout = null
+        gattRetryRunnable?.let(platform::removeCallbacks)
+        gattRetryRunnable = null
         cancelBleTimeout()
         cancelWifiScanTimeout()
         cancelWifiRequestTimeout()
@@ -719,6 +819,8 @@ internal class SonyCameraConnection internal constructor(
         unregisterBondReceiver()
         unregisterWifiReceiver()
         wifiCredentialsReady = false
+        gattConnectAttempts = 0
+        gattConnected = false
         pendingSSID = null
         pendingPassword = null
         selectedDevice = null
@@ -774,8 +876,13 @@ internal class SonyCameraConnection internal constructor(
         if (wifiReceiverHandle != null) return true
         val expectedGeneration = generation
         return try {
-            wifiReceiverHandle = platform.registerWifiScanReceiver {
-                if (expectedGeneration == generation) findFreshAccessPoint()
+            wifiReceiverHandle = platform.registerWifiScanReceiver { updated ->
+                if (expectedGeneration != generation || !active || pendingSSID == null) return@registerWifiScanReceiver
+                debugLog("Wi-Fi scan broadcast updated=$updated")
+                findFreshAccessPoint()
+                if (active && pendingSSID != null && !updated) {
+                    fallbackToSsidOnlyWifi()
+                }
             }
             true
         } catch (_: Exception) {
@@ -820,9 +927,16 @@ internal class SonyCameraConnection internal constructor(
                 override fun onBatchScanResults(results: MutableList<ScanResult>) {
                     results.forEach { toBleEntry(it)?.let(onEntry) }
                 }
-                override fun onScanFailed(errorCode: Int) = onFailed(errorCode)
+                override fun onScanFailed(errorCode: Int) {
+                    debugLog("BLE scan failed errorCode=$errorCode")
+                    onFailed(errorCode)
+                }
             }
-            scanner.startScan(callback)
+            val settings = ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build()
+            scanner.startScan(null, settings, callback)
+            debugLog("BLE scan started (LOW_LATENCY)")
             return object : Handle {
                 override fun close() {
                     scanner.stopScan(callback)
@@ -864,6 +978,14 @@ internal class SonyCameraConnection internal constructor(
                 override fun onCharacteristicWrite(source: BluetoothGatt, item: BluetoothGattCharacteristic, status: Int) {
                     callback.onCharacteristicWrite(handle, item.uuid, status)
                 }
+                override fun onCharacteristicRead(
+                    source: BluetoothGatt,
+                    item: BluetoothGattCharacteristic,
+                    value: ByteArray,
+                    status: Int,
+                ) {
+                    callback.onCharacteristicRead(handle, item.uuid, value, status)
+                }
                 @Suppress("DEPRECATION")
                 override fun onCharacteristicRead(source: BluetoothGatt, item: BluetoothGattCharacteristic, status: Int) {
                     callback.onCharacteristicRead(handle, item.uuid, item.value, status)
@@ -904,10 +1026,13 @@ internal class SonyCameraConnection internal constructor(
         override fun wifiScanResults(): List<WifiApResult> =
             wifi?.scanResults.orEmpty().map { WifiApResult(it.SSID, it.BSSID, it.timestamp) }
 
-        override fun registerWifiScanReceiver(onScanResults: () -> Unit): Handle {
+        override fun registerWifiScanReceiver(onScanResults: (updated: Boolean) -> Unit): Handle {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
-                    if (intent.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) onScanResults()
+                    if (intent.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) {
+                        val updated = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, true)
+                        onScanResults(updated)
+                    }
                 }
             }
             val filter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
@@ -927,7 +1052,7 @@ internal class SonyCameraConnection internal constructor(
         override fun requestWifiNetwork(
             ssid: String,
             password: String,
-            bssid: String,
+            bssid: String?,
             callbacks: WifiNetworkCallbacks,
         ): Handle {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -936,7 +1061,9 @@ internal class SonyCameraConnection internal constructor(
             val manager = checkNotNull(connectivity)
             val specifier = WifiNetworkSpecifier.Builder()
                 .setSsid(ssid)
-                .setBssid(MacAddress.fromString(bssid))
+                .apply {
+                    if (!bssid.isNullOrBlank()) setBssid(MacAddress.fromString(bssid))
+                }
                 .setWpa2Passphrase(password)
                 .build()
             val request = NetworkRequest.Builder()
@@ -973,7 +1100,8 @@ internal class SonyCameraConnection internal constructor(
                     if (Build.VERSION.SDK_INT < 29) return
                     val capabilities = capabilitiesByNetwork[network] ?: return
                     val properties = propertiesByNetwork[network] ?: return
-                    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
+                    val hasWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    if (!hasWifi) return
                     val info = capabilities.transportInfo as? WifiInfo
                     var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
                     // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
@@ -981,6 +1109,8 @@ internal class SonyCameraConnection internal constructor(
                         val legacy = wifi?.connectionInfo
                         identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
                     }
+                    val hasGateway = defaultIpv4Gateway(properties) != null
+                    debugLog("ManualWifiCallback.inspect hasWifi=$hasWifi hasIdentity=${identity != null} hasGateway=$hasGateway")
                     identity ?: return
                     callbacks.onLegacyNetworkReady(network, identity, properties)
                 }
@@ -1038,19 +1168,27 @@ internal class SonyCameraConnection internal constructor(
             characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) != null
 
         @Suppress("DEPRECATION")
-        override fun writePairingInit(): Boolean {
-            val pairing = characteristic(PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC) ?: return false
-            pairing.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            pairing.value = byteArrayOf(6, 8, 1, 0, 0, 0, 0)
-            return source.writeCharacteristic(pairing)
+        private fun writeDefault(item: BluetoothGattCharacteristic, value: ByteArray): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                return source.writeCharacteristic(
+                    item,
+                    value,
+                    BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+                ) == BluetoothStatusCodes.SUCCESS
+            }
+            item.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            item.value = value
+            return source.writeCharacteristic(item)
         }
 
-        @Suppress("DEPRECATION")
+        override fun writePairingInit(): Boolean {
+            val pairing = characteristic(PAIRING_SERVICE, PAIRING_INIT_CHARACTERISTIC) ?: return false
+            return writeDefault(pairing, byteArrayOf(6, 8, 1, 0, 0, 0, 0))
+        }
+
         override fun writeWifiOn(): Boolean {
             val command = characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) ?: return false
-            command.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            command.value = byteArrayOf(1)
-            return source.writeCharacteristic(command)
+            return writeDefault(command, byteArrayOf(1))
         }
 
         override fun readSsid(): Boolean {
