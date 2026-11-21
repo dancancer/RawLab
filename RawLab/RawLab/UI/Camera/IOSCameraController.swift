@@ -79,6 +79,7 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var phase = IOSCameraPhase.idle
     @Published private(set) var device: CameraDeviceIdentity?
     @Published private(set) var assets: [CameraRemoteAsset] = []
+    @Published private(set) var manualAssets: [CameraRemoteAsset] = []
     @Published private(set) var properties: [UInt16: CameraProperty] = [:]
     @Published private(set) var manifest = CameraOriginalManifest()
     @Published private(set) var thumbnails: [String: UIImage] = [:]
@@ -125,7 +126,11 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var originalBrowsingAvailable = true
     @Published private(set) var manualImportRequired = false
     @Published private(set) var listingLimitExceeded = false
+    @Published private(set) var localNetworkDenied = false
+    @Published private(set) var photoLibraryPermissionDenied = false
+    @Published private(set) var lastSavedToPhotoLibraryCount = 0
     @Published private(set) var skippedAssets: [CameraAssetSnapshot] = []
+    private var receivingSavedToPhotoLibraryCount = 0
 
     init(backend: CameraWorkspaceBackend = .shared) {
         self.backend = backend
@@ -158,12 +163,13 @@ struct IOSCameraImportPreferences: Codable {
     }
 
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
-        manualImportRequired = false; listingLimitExceeded = false
+        manualImportRequired = false; listingLimitExceeded = false; localNetworkDenied = false
+        photoLibraryPermissionDenied = false; lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
         skippedCameraKey = nil; skippedAssets = []
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
         customCutoff = nil; includeUndated = false
-        assets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
+        assets = []; manualAssets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
         properties = [:]; device = nil; writable = false; shutterReady = false; parameterBusy = false
         focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
@@ -183,10 +189,20 @@ struct IOSCameraImportPreferences: Codable {
     private func accept(_ event: IOSCameraEvent) {
         switch event {
         case .phase(let value):
+            let previousPhase = phase
             phase = value
             if value == .browsing || value == .ready { pendingThumbnails = [] }
             if value == .paused {
                 focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
+            }
+            if previousPhase == .receiving && value == .browsing {
+                if mode == .importing && receivingSavedToPhotoLibraryCount > 0 {
+                    lastSavedToPhotoLibraryCount = receivingSavedToPhotoLibraryCount
+                }
+                if mode == .importing && !importPreferences.incremental && notice == nil && receivingSavedToPhotoLibraryCount > 0 {
+                    selection = []
+                }
+                receivingSavedToPhotoLibraryCount = 0
             }
         case .device(let value, let family):
             device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
@@ -201,7 +217,9 @@ struct IOSCameraImportPreferences: Codable {
                 customCutoff = nil; includeUndated = false
             }
             listingLimitExceeded = false
-            assets = values; selection.formIntersection(Set(values.map(\.id))); scanning = false
+            assets = values
+            manualAssets = Self.manualBrowseOrder(values)
+            selection.formIntersection(Set(values.map(\.id))); scanning = false
         case .properties(let values, let writable, let shutter, let canCancelTouchFocus):
             let hadCancel = self.canCancelTouchFocus
             properties = values; self.writable = writable; shutterReady = shutter; self.canCancelTouchFocus = canCancelTouchFocus
@@ -250,11 +268,16 @@ struct IOSCameraImportPreferences: Codable {
             }
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
+            if original.photoLibraryAssetID != nil { receivingSavedToPhotoLibraryCount += 1 }
         case .failure(let error):
             parameterBusy = false; focusBusy = false; tapFocusLocked = false; tapFocusPoint = nil
             previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
+            if case CameraProtocolError.localNetworkDenied = error { localNetworkDenied = true }
+            else { localNetworkDenied = false }
+            if case CameraProtocolError.photoLibraryDenied = error { photoLibraryPermissionDenied = true }
+            else { photoLibraryPermissionDenied = false }
             if case CameraProtocolError.photoLimitExceeded = error {
                 listingLimitExceeded = true
                 updatingListingLimitNotice = true
@@ -273,7 +296,7 @@ struct IOSCameraImportPreferences: Codable {
                 notice = nil
             }
         case .notice(let detail):
-            parameterBusy = false
+            parameterBusy = false; photoLibraryPermissionDenied = false
             switch detail {
             case "": notice = nil
             case "Camera live view is unavailable": notice = L10n.text("相机未提供实时取景，其他可用功能仍可使用。")
@@ -283,13 +306,18 @@ struct IOSCameraImportPreferences: Codable {
         }
     }
     func clearNotice() {
-        notice = nil; manualImportRequired = false
+        notice = nil; manualImportRequired = false; localNetworkDenied = false; photoLibraryPermissionDenied = false
+    }
+    func dismissPhotoLibraryBanner() {
+        lastSavedToPhotoLibraryCount = 0
     }
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
         callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; focusBusy = false
         canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil; shutterReady = false
         previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
+        localNetworkDenied = false; photoLibraryPermissionDenied = false
+        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
         backend.stop(previous) { [weak self] in
             Task { @MainActor in self?.reloadHistory(); completion() }
         }
@@ -308,12 +336,16 @@ struct IOSCameraImportPreferences: Codable {
     }
     func importSelected() {
         guard let run, mode == .importing, phase == .browsing, !scanning, selectionAllowed else { return }
-        phase = .receiving; notice = nil
-        backend.importAssets(selectedAssets, run: run)
+        phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
+        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        let jpeg = importPreferences.jpeg.adjust ? importPreferences.jpeg : nil
+        backend.importAssets(selectedAssets, jpeg: jpeg, run: run)
     }
     func resumeImport(_ job: CameraTransferJob) {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
-        phase = .receiving; notice = nil; backend.resumeImport(jobID: job.id, run: run)
+        phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
+        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        backend.resumeImport(jobID: job.id, run: run)
     }
     private func syncSkippedAssets() {
         guard let device, let endpoint else { return }
@@ -446,12 +478,14 @@ struct IOSCameraImportPreferences: Codable {
               scan.assets.allSatisfy({ $0.snapshot.transferable }) else { return }
         let plan = CameraIncrementalPlan(format: importPreferences.format, jpeg: importPreferences.jpeg,
                                          boundary: nil, owner: scan.assets.first?.owner, boundaries: scan.nextBoundaries)
-        phase = .receiving; notice = nil
+        phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
+        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
         backend.importAssets(scan.assets, incremental: plan, run: run)
     }
     func refreshImport() {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
-        scanning = true; notice = nil
+        scanning = true; notice = nil; photoLibraryPermissionDenied = false
+        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
         backend.refreshImport(run)
     }
     func thumbnail(_ asset: CameraRemoteAsset) {
@@ -484,7 +518,7 @@ struct IOSCameraImportPreferences: Codable {
     }
     func capture() {
         guard let run, canCapture else { return }
-        phase = .capturing; tapFocusLocked = false; notice = nil; backend.capture(run)
+        phase = .capturing; tapFocusLocked = false; notice = nil; photoLibraryPermissionDenied = false; backend.capture(run)
     }
     func openOriginal(_ original: CameraStoredOriginal, completion: @escaping (URL) -> Void) {
         stop { [weak self] in
@@ -556,6 +590,8 @@ struct IOSCameraImportPreferences: Codable {
     }
     private func message(_ error: Error) -> String {
         switch error {
+        case CameraProtocolError.localNetworkDenied: return L10n.text("请在系统设置中允许 RawLab 访问本地网络。")
+        case CameraProtocolError.connectionRefused: return L10n.text("未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。")
         case CameraProtocolError.captureUnknown: return L10n.text("拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。")
         case CameraProtocolError.captureNotSent: return L10n.text("请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。")
         case CameraProtocolError.tetherRecoveryRequired: return L10n.text("无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。")
@@ -564,6 +600,8 @@ struct IOSCameraImportPreferences: Codable {
         case CameraProtocolError.jpegGainMapAdjustment: return L10n.text("此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。")
         case CameraProtocolError.importRecoveryRequired: return L10n.text("无法确认上次导入的原始文件，请重新选择照片。")
         case CameraProtocolError.photoLimitExceeded: return L10n.format("%@ · %@", L10n.text("照片"), L10n.text("已到上限"))
+        case CameraProtocolError.photoLibraryDenied: return L10n.text("照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。")
+        case CameraProtocolError.photoLibrarySaveFailed: return L10n.text("照片已保存在 RawLab 内，但部分照片未能保存到手机相册。")
         case CameraProtocolError.itemFailed(let name, _): return L10n.format("保存 %@ 失败。", name)
         case CameraProtocolError.focusUnavailable(.manualFocus):
             return L10n.text("当前为手动对焦（MF），无法选择对焦点。")
@@ -580,5 +618,25 @@ struct IOSCameraImportPreferences: Codable {
             return L10n.text("相机数据或原件校验未通过，已暂停。")
         default: return L10n.text("相机连接已断开。已保存的照片仍可查看。")
         }
+    }
+
+    /// 手动选片按拍摄时间倒序（最新拍摄在前）；同时间戳与无时间戳均按原始枚举逆序并在最后补齐无时间项。
+    static func manualBrowseOrder(_ assets: [CameraRemoteAsset]) -> [CameraRemoteAsset] {
+        assets.enumerated()
+            .map { index, asset in (asset: asset, date: asset.snapshot.captureDate, index: index) }
+            .sorted { lhs, rhs in
+                switch (lhs.date, rhs.date) {
+                case let (l?, r?):
+                    if l != r { return l > r }
+                    return lhs.index > rhs.index
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    return lhs.index > rhs.index
+                }
+            }
+            .map(\.asset)
     }
 }

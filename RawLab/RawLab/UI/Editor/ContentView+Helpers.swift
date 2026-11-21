@@ -180,7 +180,11 @@ extension ContentView {
                 )
             case .failure(let error):
                 isSaving = false
-                viewModel.reportError(error, operation: .photoExport, stage: "renderDNG")
+                if error is CancellationError {
+                    viewModel.statusMessage = L10n.text("导出已取消")
+                } else {
+                    viewModel.reportError(error, operation: .photoExport, stage: "renderDNG")
+                }
             }
         }
     }

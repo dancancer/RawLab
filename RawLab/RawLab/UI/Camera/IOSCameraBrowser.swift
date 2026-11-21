@@ -13,9 +13,10 @@ struct IOSCameraBrowser: View {
     @State private var day: String?
     @State private var onlySelected = false
     @State private var filters = false
+    @State private var showJPEG = false
     @State private var previewAsset: CameraRemoteAsset?
     private var visible: [CameraRemoteAsset] {
-        model.assets.filter { asset in
+        model.manualAssets.filter { asset in
             (format == "all" || asset.snapshot.kind.lowercased() == format) &&
             (day == nil || Self.dayKey(asset.snapshot) == day) &&
             (!onlySelected || model.selection.contains(asset.id))
@@ -50,6 +51,9 @@ struct IOSCameraBrowser: View {
             IOSCameraFilters(format: $format, day: $day, onlySelected: $onlySelected,
                 days: Array(Set(model.assets.compactMap { Self.dayKey($0.snapshot) })).sorted(by: >))
         }
+        .sheet(isPresented: $showJPEG) {
+            IOSCameraJPEGSettings(draft: model.importPreferences.jpeg, apply: model.setJPEGOptions)
+        }
         .sheet(item: $previewAsset) { asset in
             IOSCameraPreview(model: model, name: asset.snapshot.name) {
                 if let original = model.original(for: asset) {
@@ -81,13 +85,57 @@ struct IOSCameraBrowser: View {
                     else { model.selection.formUnion(ids) }
                 }.disabled(visible.isEmpty || model.busy).accessibilityIdentifier("camera.select.all")
             }.font(.callout).frame(minHeight: 44).padding(.horizontal, 14)
+            Button {
+                showJPEG = true
+            } label: {
+                HStack {
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            Text(L10n.text("JPEG 保存"))
+                            Spacer(minLength: 12)
+                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("JPEG 保存"))
+                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }.frame(minHeight: 44).padding(.horizontal, 14).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(model.busy).accessibilityIdentifier("camera.jpeg.settings")
+            Divider()
             if !model.connected {
                 HStack {
                     Text(L10n.text("相机连接已断开。已保存的照片仍可查看。")).font(.caption)
                     Spacer(); Button(L10n.text("重新连接"), action: reconnect)
                 }.padding(12).background(Color(white: 0.17))
             }
-            if let notice = model.notice { Text(notice).font(.caption).foregroundStyle(.orange).padding(.horizontal, 14).padding(.vertical, 6) }
+            if let notice = model.notice {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(notice).font(.caption).foregroundStyle(.orange)
+                    if model.photoLibraryPermissionDenied {
+                        Button(L10n.text("系统权限设置")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }
+                        .font(.caption)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 6)
+            } else if model.lastSavedToPhotoLibraryCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(L10n.format("已保存 %d 张照片到手机相册", model.lastSavedToPhotoLibraryCount)).font(.caption)
+                    Spacer()
+                    Button { model.dismissPhotoLibraryBanner() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel(L10n.text("关闭"))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(Color(white: 0.16))
+            }
             ScrollView {
                 if model.assets.isEmpty {
                     ContentUnavailableView(L10n.text(model.listingLimitExceeded ? "已到上限" : "相机中没有可导入的 RAW 或 JPEG 照片。"),
@@ -286,6 +334,9 @@ struct IOSCameraHistory: View {
                             Text(ByteCountFormatter.string(fromByteCount: Int64(original.size), countStyle: .file)).font(.caption).foregroundStyle(.secondary)
                             if original.jpegSource != nil {
                                 Text(L10n.text("JPEG 已调整")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            if original.photoLibraryAssetID != nil {
+                                Text(L10n.text("已保存到相册")).font(.caption).foregroundStyle(.secondary)
                             }
                             if original.availability != .available {
                                 Text(L10n.text("原片不可用")).font(.caption).foregroundStyle(.orange)

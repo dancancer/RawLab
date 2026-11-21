@@ -156,6 +156,11 @@ void Pipeline::setCancellation(int32_t (*callback)(void*), void* context) {
     cancellation_.context = callback ? context : nullptr;
 }
 
+void Pipeline::setHdrProgress(void (*callback)(void*, uint32_t, uint32_t), void* context) {
+    hdrProgress_.callback = callback;
+    hdrProgress_.context = callback ? context : nullptr;
+}
+
 void Pipeline::setGpuConfig(GpuMode mode) {
     gpuConfig_.mode = mode;
 #if defined(SONY2FUJI_ENABLE_D3D11)

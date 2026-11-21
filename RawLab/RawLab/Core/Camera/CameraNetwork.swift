@@ -40,20 +40,41 @@ final class CameraTCPChannel: CameraByteChannel {
         let parameters = NWParameters(tls: nil, tcp: tcp)
         if !loopbackFixture { parameters.requiredInterfaceType = .wifi }
         self.timeout = timeout
-        connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: parameters)
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: parameters)
+        connection = conn
         let ready = CameraNetworkResult<Void>()
-        connection.stateUpdateHandler = { state in
+        let stateLock = NSLock()
+        var sawLocalNetworkDenied = false
+        conn.stateUpdateHandler = { state in
             switch state {
-            case .ready: ready.finish(.success(()))
-            case .failed(let error): ready.finish(.failure(error))
-            case .cancelled: ready.finish(.failure(CameraProtocolError.cancelled))
-            default: break
+            case .ready:
+                stateLock.lock(); sawLocalNetworkDenied = false; stateLock.unlock()
+                ready.finish(.success(()))
+            case .waiting(let error):
+                if conn.currentPath?.unsatisfiedReason == .localNetworkDenied {
+                    stateLock.lock(); sawLocalNetworkDenied = true; stateLock.unlock()
+                } else if case .posix(.ECONNREFUSED) = error {
+                    ready.finish(.failure(CameraProtocolError.connectionRefused))
+                }
+            case .failed(let error):
+                ready.finish(.failure(error))
+            case .cancelled:
+                ready.finish(.failure(CameraProtocolError.cancelled))
+            default:
+                break
             }
         }
-        connection.start(queue: queue)
-        guard ready.semaphore.wait(timeout: .now() + 10) == .success else { connection.cancel(); throw CameraProtocolError.timeout }
-        do { try ready.value() } catch { connection.cancel(); throw error }
-        connection.stateUpdateHandler = nil
+        conn.start(queue: queue)
+        guard ready.semaphore.wait(timeout: .now() + 15) == .success else {
+            let localDenied: Bool = {
+                stateLock.lock(); defer { stateLock.unlock() }
+                return sawLocalNetworkDenied || conn.currentPath?.unsatisfiedReason == .localNetworkDenied
+            }()
+            conn.cancel()
+            throw localDenied ? CameraProtocolError.localNetworkDenied : CameraProtocolError.timeout
+        }
+        do { try ready.value() } catch { conn.cancel(); throw error }
+        conn.stateUpdateHandler = nil
     }
 
     static func localIPv4(_ host: String) -> Bool {

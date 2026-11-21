@@ -7,6 +7,7 @@
 -keep class com.rawlab.android.engine.NativeLookBridge { *; }
 -keep class com.rawlab.android.engine.NativeDcpBridge { *; }
 -keep class com.rawlab.android.engine.NativeHDRBridge { *; }
+-keep class com.rawlab.android.engine.HDRProgressListener { void onProgress(int); }
 -keep class com.rawlab.android.engine.ToneCurveSampling { *; }
 -keep class com.rawlab.android.raster.NativeMpf { *; }
 -keep class com.rawlab.android.raster.NativePng16 { *; }

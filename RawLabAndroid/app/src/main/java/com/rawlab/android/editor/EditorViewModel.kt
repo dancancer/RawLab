@@ -282,6 +282,14 @@ class EditorViewModel internal constructor(
         editStore.initialResult.let {
             mutable.value = mutable.value.copy(saveState = it.state, saveError = it.formatMessage(strings))
         }
+        renderGateway.setExportProgressListener { work, fraction ->
+            dependencies.mainDelivery {
+                val current = mutable.value
+                if (!disposed && current.operation == Operation.EXPORT && work === latestRender) {
+                    mutable.value = current.copy(exportProgress = fraction.coerceIn(0f, 1f))
+                }
+            }
+        }
         lookHolder.loadInitial()
         batchHolder.refreshPending()
         systemPhotoHolder.restorePending()

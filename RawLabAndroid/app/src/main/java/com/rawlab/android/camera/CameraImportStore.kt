@@ -62,7 +62,8 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     val items: List<CameraImportItem>, val status: CameraJobStatus = CameraJobStatus.ACTIVE,
     val destination: CameraImportDestination = CameraImportDestination(),
     val incremental: CameraIncrementalPlan? = null, val committed: Boolean = false,
-    val hardwareIdentity: CameraHardwareIdentity? = null, val listingOwner: String? = null) {
+    val hardwareIdentity: CameraHardwareIdentity? = null, val listingOwner: String? = null,
+    val jpeg: CameraJPEGOptions? = null) {
     val originalListingOwner: String? get() = listingOwner ?: incremental?.sessionOwner
     val savedCount: Int get() = items.count { it.saved != null }
     val failedCount: Int get() = items.count { it.hasFailure }
@@ -70,12 +71,14 @@ internal data class CameraImportJob(val id: String, val cameraId: String, val cr
     val pendingCount: Int get() = items.count { it.saved == null && !it.skipped && !it.hasFailure }
     val totalBytes: Long get() = items.sumOf { it.photo.size }
     val savedBytes: Long get() = items.filter { it.saved != null }.sumOf { it.photo.size }
+    val effectiveJpeg: CameraJPEGOptions?
+        get() = (jpeg ?: incremental?.jpeg)?.takeIf { it.adjust }
 
     fun matchesCamera(connectionId: String?, device: CameraHardwareIdentity?): Boolean =
         if (hardwareIdentity == null) cameraId == connectionId else hardwareIdentity == device
 
     fun jpegOptions(item: CameraImportItem): CameraJPEGOptions? =
-        incremental?.jpeg?.takeIf { it.adjust && !item.photo.raw && !item.saveOriginalJpeg }
+        effectiveJpeg?.takeIf { !item.photo.raw && !item.saveOriginalJpeg }
 
     fun keepingPendingJpegOriginals(): CameraImportJob = copy(items = items.map { item ->
         if (item.photo.raw || item.saved != null || item.skipped) item
@@ -163,11 +166,14 @@ internal class CameraImportStore(private val directory: File, private val tempor
 
     fun create(cameraId: String, photos: List<CameraPhoto>, destination: CameraImportDestination,
         id: String = UUID.randomUUID().toString(), incremental: CameraIncrementalPlan? = null,
-        hardwareIdentity: CameraHardwareIdentity? = null, listingOwner: String? = null): CameraImportJob {
+        hardwareIdentity: CameraHardwareIdentity? = null, listingOwner: String? = null,
+        jpeg: CameraJPEGOptions? = null): CameraImportJob {
         require(validId(id))
         require(photos.isNotEmpty() && photos.size <= 10000)
         require(photos.map { it.key }.distinct().size == photos.size)
         require(photos.all { it.size in 1..SystemPhotoStore.MAX_BYTES })
+        val manualJpeg = if (incremental == null) jpeg?.takeIf { it.adjust } else null
+        manualJpeg?.let { require(it.isValid) { "Invalid camera JPEG options" } }
         incremental?.let { plan ->
             require(plan.jpeg.isValid)
             require(photos.all(plan.format::includes))
@@ -176,6 +182,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         File(directory, "$id.json").takeIf { it.isFile }?.let { replayWal(readJob(it), it) }?.let { existing ->
             if (existing.cameraId != cameraId || existing.hardwareIdentity != hardwareIdentity ||
                 existing.destination != destination || existing.incremental != incremental ||
+                existing.jpeg != manualJpeg ||
                 existing.listingOwner != listingOwner || existing.items.size != photos.size ||
                 existing.items.zip(photos).any { (stored, current) -> !stored.photo.matchesSnapshot(current) })
                 throw IOException("Reserved camera job identity changed")
@@ -183,7 +190,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         }
         return CameraImportJob(id, cameraId, System.currentTimeMillis(),
             photos.map { CameraImportItem(it) }, destination = destination, incremental = incremental,
-            hardwareIdentity = hardwareIdentity, listingOwner = listingOwner).also(::save)
+            hardwareIdentity = hardwareIdentity, listingOwner = listingOwner, jpeg = manualJpeg).also(::save)
     }
     fun partial(id: String): File { require(validId(id)); return File(temporary, "$id.part") }
 
@@ -452,6 +459,7 @@ internal class CameraImportStore(private val directory: File, private val tempor
         val json = JSONObject().put("version", 2).put("seq", next).put("camera", job.cameraId).put("time", job.createdAt)
             .put("status", job.status.name).put("items", items).put("directory", job.destination.directory)
             .put("grouping", job.destination.grouping.name).put("incremental", job.incremental?.json())
+            .put("jpeg", job.jpeg?.json())
             .put("committed", job.committed).put("listingOwner", job.listingOwner)
         job.hardwareIdentity?.let { json.put("hardwareIdentity", JSONObject().put("model", it.model).put("serial", it.serial)) }
         val part = File(directory, "${job.id}.tmp")
@@ -541,7 +549,8 @@ internal class CameraImportStore(private val directory: File, private val tempor
             CameraJobStatus.valueOf(json.getString("status")), CameraImportDestination(json.getString("directory"),
                 CameraDirectoryGrouping.valueOf(json.getString("grouping"))), json.optJSONObject("incremental")?.incrementalPlan(),
             json.optBoolean("committed", json.getString("status") == CameraJobStatus.COMPLETE.name), hardware,
-            json.optString("listingOwner").takeIf { it.isNotEmpty() })
+            json.optString("listingOwner").takeIf { it.isNotEmpty() },
+            jpeg = json.optJSONObject("jpeg")?.jpegOptions())
     }
 
     private fun itemFromJson(item: JSONObject): CameraImportItem {
@@ -654,12 +663,14 @@ internal class CameraImportStore(private val directory: File, private val tempor
     private fun CameraJPEGOptions.json() = JSONObject().put("adjust", adjust).put("longEdge", longEdge).put("quality", quality)
     private fun CameraImportBoundary.json() = JSONObject().put("date", dateMillis).put("storage", JSONArray(storage.toList()))
         .put("keys", JSONArray(keys.toList())).put("anchors", JSONArray(anchors.toList())).put("owner", owner)
+    private fun JSONObject.jpegOptions(): CameraJPEGOptions = CameraJPEGOptions(
+        optBoolean("adjust"),
+        optInt("longEdge").takeIf { has("longEdge") && !isNull("longEdge") },
+        optInt("quality", 90),
+    )
     private fun JSONObject.incrementalPlan(): CameraIncrementalPlan {
         val format = CameraImportFormat.valueOf(getString("format"))
-        val jpegObject = optJSONObject("jpeg")
-        val jpeg = if (jpegObject == null) CameraJPEGOptions() else CameraJPEGOptions(
-            jpegObject.optBoolean("adjust"), jpegObject.optInt("longEdge").takeIf { jpegObject.has("longEdge") && !jpegObject.isNull("longEdge") },
-            jpegObject.optInt("quality", 90))
+        val jpeg = optJSONObject("jpeg")?.jpegOptions() ?: CameraJPEGOptions()
         val boundary = optJSONObject("boundary")?.boundaryCheckpoint()
         val checkpoints = buildMap {
             val value = optJSONObject("checkpoints")

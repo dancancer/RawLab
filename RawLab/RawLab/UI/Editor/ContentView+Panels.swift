@@ -41,10 +41,31 @@ extension ContentView {
             } label: { Image(systemName: "camera") }
                 .disabled(editorBusy).accessibilityLabel(L10n.text("相机")).accessibilityIdentifier("editor.camera")
             if viewModel.isExportingHDR {
-                Button(action: viewModel.cancelHDRExport) { Image(systemName: "xmark.circle") }
-                    .accessibilityLabel(L10n.text("取消导出"))
-                    .help(L10n.text("取消导出"))
-                    .accessibilityIdentifier("editor.cancelExport")
+                Button(action: viewModel.cancelHDRExport) {
+                    if viewModel.isStoppingHDRExport && !reduceMotion {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "xmark.circle")
+                    }
+                }
+                .disabled(viewModel.isStoppingHDRExport)
+                .accessibilityLabel(L10n.text("取消导出"))
+                .help(L10n.text("取消导出"))
+                .accessibilityIdentifier("editor.cancelExport")
+            } else if isSaving {
+                Group {
+                    if !reduceMotion {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .accessibilityLabel(L10n.text("正在保存"))
+                .accessibilityIdentifier("editor.exportSaving.toolbar")
             } else {
                 Menu {
                     Button(L10n.text("保存当前照片")) {
@@ -218,8 +239,15 @@ extension ContentView {
                 .accessibilityHidden(photoViewing.previewOnly)
             }
             .overlay(alignment: .top) {
-                if viewModel.hasImage && (editorBusy || viewModel.previewRendering || viewModel.previewResizePending) {
-                    previewProgressLine
+                VStack(spacing: 8) {
+                    if viewModel.hasImage && (editorBusy || viewModel.previewRendering || viewModel.previewResizePending) {
+                        previewProgressLine
+                    }
+                    if viewModel.isExportingHDR && !photoViewing.previewOnly {
+                        hdrExportProgressBanner
+                    } else if isSaving && !photoViewing.previewOnly {
+                        exportSavingBanner
+                    }
                 }
             }
             .overlay(alignment: .bottomLeading) {
@@ -300,6 +328,59 @@ extension ContentView {
         Button(L10n.text("重置分割线")) { photoViewing.setSplit(0.5) }
         Button(L10n.text("关闭对比")) { if photoViewing.enabled { photoViewing.toggleComparison() } }
             .accessibilityIdentifier("editor.compare.close")
+    }
+
+    var hdrExportProgressBanner: some View {
+        HStack(spacing: 10) {
+            if !reduceMotion {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(viewModel.isStoppingHDRExport ? L10n.text("正在停止…") : L10n.text("正在导出"))
+                        .font(.caption.weight(.medium))
+                    if let progress = viewModel.hdrExportProgress, !viewModel.isStoppingHDRExport {
+                        Text("\(Int((progress * 100).rounded()))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if !reduceMotion, let progress = viewModel.hdrExportProgress, !viewModel.isStoppingHDRExport {
+                    ProgressView(value: progress, total: 1.0)
+                        .progressViewStyle(.linear)
+                        .frame(width: 140)
+                        .animation(.easeOut(duration: 0.2), value: progress)
+                }
+            }
+            Button(L10n.text("取消导出"), action: viewModel.cancelHDRExport)
+                .font(.caption.weight(.semibold))
+                .disabled(viewModel.isStoppingHDRExport)
+                .accessibilityIdentifier("editor.exportProgress.cancel")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("editor.exportProgress")
+    }
+
+    var exportSavingBanner: some View {
+        HStack(spacing: 8) {
+            if !reduceMotion {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+            }
+            Text(L10n.text("正在保存"))
+                .font(.caption.weight(.medium))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.exportSaving")
     }
 
     var previewProgressLine: some View {

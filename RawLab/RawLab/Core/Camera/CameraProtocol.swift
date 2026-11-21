@@ -45,9 +45,9 @@ struct CameraFocusTapPoint: Equatable {
 
 enum CameraProtocolError: Error, LocalizedError {
     case invalid(String), invalidOriginalHeader, transientTransfer(String), unsupported(String), response(UInt16, UInt16)
-    case disconnected, cancelled, timeout, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
+    case disconnected, cancelled, timeout, localNetworkDenied, connectionRefused, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
-    case photoLimitExceeded, itemFailed(String, String)
+    case photoLimitExceeded, photoLibraryDenied, photoLibrarySaveFailed, itemFailed(String, String)
     case focusUnavailable(CameraFocusUnavailableReason), focusRejected
 
     var errorDescription: String? {
@@ -60,12 +60,16 @@ enum CameraProtocolError: Error, LocalizedError {
         case .disconnected: return "Camera connection closed"
         case .cancelled: return "Camera operation cancelled"
         case .timeout: return "Camera operation timed out"
+        case .localNetworkDenied: return "Local network access is denied"
+        case .connectionRefused: return "Camera endpoint refused connection"
         case .jpegProcessing: return "Could not process the camera JPEG with the selected settings"
         case .jpegGainMapAdjustment: return "JPEG adjustment would discard HDR gain-map metadata"
         case .importRecoveryRequired: return "Cannot verify the camera original; select it again"
         case .captureUnknown: return "Shutter result is unknown; check the camera"
         case .tetherRecoveryRequired: return "Cannot verify the previous camera-card baseline; select originals manually or start a new session"
         case .photoLimitExceeded: return "Camera card exceeds the photo listing limit"
+        case .photoLibraryDenied: return "Photo library add permission is denied"
+        case .photoLibrarySaveFailed: return "Could not save some imported photos to the photo library"
         case .itemFailed(_, let detail): return detail
         case .focusUnavailable(.manualFocus): return "Manual focus is active"
         case .focusUnavailable(.focusAreaFixed): return "Focus area cannot move in the current mode"

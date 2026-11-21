@@ -117,6 +117,7 @@ import Foundation
         try test552IncrementalCursorVerification()
         try testFocusCoordinateMappingAndMetadata()
         try testSonySessionTouchFocusAndFocusArea()
+        try testSequentialPTPIPInitializationAndNetworkErrors()
     }
 
     static func mobileDeviceInfo() -> Data {
@@ -667,6 +668,114 @@ final class MockFocusCameraChannel: CameraByteChannel {
     }
 
     func close() { closed = true }
+}
+
+extension CameraProtocolTests {
+    static func testSequentialPTPIPInitializationAndNetworkErrors() throws {
+        // 1. Sequential handshake: openEvent is called strictly after Init_Command_Request/Ack.
+        var ackPayload = Data()
+        let expectedConnectionNumber: UInt32 = 0x11223344
+        ackPayload.appendLE(expectedConnectionNumber)
+        ackPayload.append(Data(repeating: 0xAA, count: 20))
+        let command = ScriptedCameraChannel(CameraWire.packet(2, ackPayload))
+
+        final class SynchronizedEventChannel: CameraByteChannel {
+            private let lock = NSLock()
+            private let closeSemaphore = DispatchSemaphore(value: 0)
+            private var incoming: Data
+            private(set) var sent: [Data] = []
+            private(set) var isClosed = false
+            private(set) var beganEventLoop = false
+
+            init(_ incoming: Data) { self.incoming = incoming }
+            func beginEventLoop() { lock.lock(); beganEventLoop = true; lock.unlock() }
+            func write(_ data: Data) throws {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !isClosed else { throw CameraProtocolError.disconnected }
+                sent.append(data)
+            }
+            func read(_ count: Int) throws -> Data {
+                lock.lock()
+                if !isClosed, incoming.count >= count {
+                    let data = Data(incoming.prefix(count))
+                    incoming.removeFirst(count)
+                    lock.unlock()
+                    return data
+                }
+                lock.unlock()
+                closeSemaphore.wait()
+                throw CameraProtocolError.disconnected
+            }
+            func close() {
+                lock.lock()
+                if isClosed { lock.unlock(); return }
+                isClosed = true
+                lock.unlock()
+                closeSemaphore.signal()
+            }
+        }
+
+        let event = SynchronizedEventChannel(CameraWire.packet(4, Data()))
+        var openEventCalls = 0
+        let client = CameraPTPClient(command: command, event: nil)
+        try client.initialize(clientID: UUID(), openEvent: {
+            openEventCalls += 1
+            try check(command.sent.count == 1 && command.bytes.isEmpty,
+                      "openEvent is invoked strictly after Init_Command_Request is sent and Init_Command_Ack is consumed")
+            return event
+        })
+        var expectedConnData = Data(); expectedConnData.appendLE(expectedConnectionNumber)
+        try check(openEventCalls == 1 && event.beganEventLoop && event.sent == [CameraWire.packet(3, expectedConnData)],
+                  "Sequential PTP/IP sends ConnectionNumber on lazily opened event channel")
+        try check(!client.isClosed && !command.closed && !event.isClosed,
+                  "Sequential PTP/IP keeps command and event channels open until close()")
+        client.close()
+        try check(client.isClosed && command.closed && event.isClosed,
+                  "Closing CameraPTPClient closes both command and lazily opened event channel")
+
+        // 2. Command init rejection never calls openEvent.
+        let rejectedCommand = ScriptedCameraChannel(CameraWire.packet(5, Data()))
+        var rejectedOpenCalls = 0
+        let rejectedClient = CameraPTPClient(command: rejectedCommand, event: nil)
+        try rejects("Init_Command rejection fails without opening event channel") {
+            try rejectedClient.initialize(clientID: UUID(), openEvent: {
+                rejectedOpenCalls += 1
+                return SynchronizedEventChannel(Data())
+            })
+        }
+        try check(rejectedOpenCalls == 0, "openEvent is skipped when Init_Command_Ack is rejected")
+
+        // 3. Closing client during openEvent closes the newly opened event channel.
+        let cancelCommand = ScriptedCameraChannel(CameraWire.packet(2, ackPayload))
+        let cancelEvent = SynchronizedEventChannel(CameraWire.packet(4, Data()))
+        let cancelClient = CameraPTPClient(command: cancelCommand, event: nil)
+        var gotCancelled = false
+        do {
+            try cancelClient.initialize(clientID: UUID(), openEvent: {
+                cancelClient.close()
+                return cancelEvent
+            })
+        } catch CameraProtocolError.cancelled {
+            gotCancelled = true
+        }
+        try check(gotCancelled && cancelEvent.isClosed && cancelCommand.closed,
+                  "Cancelling client while opening event channel closes newly opened channel")
+
+        // 4. CameraTCPChannel.localIPv4 rejects scoped IPv4 addresses and non-private hosts.
+        try check(CameraTCPChannel.localIPv4("192.168.122.1")
+                  && !CameraTCPChannel.localIPv4("192.168.122.1%en0")
+                  && !CameraTCPChannel.localIPv4("8.8.8.8"),
+                  "CameraTCPChannel.localIPv4 accepts pure private IPv4 and rejects %en0 scope suffix or public IP")
+
+        // 5. Distinct non-empty descriptions for localNetworkDenied and connectionRefused.
+        let timeoutDesc = CameraProtocolError.timeout.errorDescription ?? ""
+        let localDeniedDesc = CameraProtocolError.localNetworkDenied.errorDescription ?? ""
+        let refusedDesc = CameraProtocolError.connectionRefused.errorDescription ?? ""
+        try check(!localDeniedDesc.isEmpty && !refusedDesc.isEmpty
+                  && localDeniedDesc != timeoutDesc && refusedDesc != timeoutDesc && localDeniedDesc != refusedDesc,
+                  "localNetworkDenied and connectionRefused provide distinct error descriptions")
+    }
 }
 
 final class MockMobileCameraChannel: CameraByteChannel {

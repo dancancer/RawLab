@@ -1,7 +1,9 @@
 #include "core/hdr_pipeline.h"
 
 #include "core/hdr_look.h"
+#include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
+#include "core/hdr_srgb_lut.h"
 #include "core/hdr_storage.h"
 #include "core/parallel_pixels.h"
 #include "core/parsed_resource_cache.h"
@@ -50,13 +52,14 @@ float decodeSRGB(uint8_t component) {
 }
 
 void linearToDisplaySRGB(RGB* pixels, size_t count) {
-    for (size_t i = 0; i < count; ++i) {
-        auto& pixel = pixels[i];
-        for (float* component : {&pixel.r, &pixel.g, &pixel.b}) {
-            const float value = std::clamp(*component, 0.0f, 1.0f);
-            *component = value <= 0.0031308f ? 12.92f * value : 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
+    parallelPixelRanges(count, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            auto& pixel = pixels[i];
+            pixel.r = linearToSrgbUnit(pixel.r);
+            pixel.g = linearToSrgbUnit(pixel.g);
+            pixel.b = linearToSrgbUnit(pixel.b);
         }
-    }
+    });
 }
 
 void cameraRawStatus(ErrorCode code) {
@@ -205,16 +208,23 @@ void validateBufferDescriptor(const BufferViewDescriptor& b, bool isHDR) {
     }
     if (linear) {
         const auto* data = static_cast<const uint8_t*>(b.data);
-        for (uint32_t y = 0; y < b.height; ++y) {
-            for (uint32_t x = 0; x < b.width; ++x) {
-                float values[3];
-                std::memcpy(values, data + y * b.strideBytes + x * 12, 12);
-                for (float value : values) {
-                    if (!std::isfinite(value)) {
-                        fail(kHdrReasonNonfinite, field, "Nonfinite HDR input");
+        std::atomic<bool> nonfinite{false};
+        parallelRowRanges(int(b.height), int(b.width), [&](int firstRow, int lastRow) {
+            for (int y = firstRow; y < lastRow; ++y) {
+                if (nonfinite.load(std::memory_order_relaxed)) return;
+                const uint8_t* rowPtr = data + uint64_t(y) * b.strideBytes;
+                for (uint32_t x = 0; x < b.width; ++x) {
+                    float values[3];
+                    std::memcpy(values, rowPtr + x * 12, 12);
+                    if (!std::isfinite(values[0]) || !std::isfinite(values[1]) || !std::isfinite(values[2])) {
+                        nonfinite.store(true, std::memory_order_relaxed);
+                        return;
                     }
                 }
             }
+        });
+        if (nonfinite.load(std::memory_order_relaxed)) {
+            fail(kHdrReasonNonfinite, field, "Nonfinite HDR input");
         }
     }
 }
@@ -222,17 +232,20 @@ void validateBufferDescriptor(const BufferViewDescriptor& b, bool isHDR) {
 ImageData readPixelBuffer(const BufferViewDescriptor& buffer) {
     ImageData result(int(buffer.width), int(buffer.height));
     const auto* bytes = static_cast<const uint8_t*>(buffer.data);
-    for (uint32_t y = 0; y < buffer.height; ++y) {
-        for (uint32_t x = 0; x < buffer.width; ++x) {
-            auto& p = result.at(x, y);
+    parallelRowRanges(int(buffer.height), int(buffer.width), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            const uint8_t* rowSrc = bytes + uint64_t(y) * buffer.strideBytes;
+            RGB* rowDst = result.pixels.data() + size_t(y) * buffer.width;
             if (buffer.isLinearFloat) {
-                std::memcpy(&p, bytes + y * buffer.strideBytes + x * 12, 12);
+                std::memcpy(rowDst, rowSrc, size_t(buffer.width) * 12);
             } else {
-                const auto* c = bytes + y * buffer.strideBytes + x * 3;
-                p = {decodeSRGB(c[0]), decodeSRGB(c[1]), decodeSRGB(c[2])};
+                for (uint32_t x = 0; x < buffer.width; ++x) {
+                    const auto* c = rowSrc + x * 3;
+                    rowDst[x] = {decodeSRGB(c[0]), decodeSRGB(c[1]), decodeSRGB(c[2])};
+                }
             }
         }
-    }
+    });
     return result;
 }
 
@@ -289,11 +302,10 @@ std::shared_ptr<OwnedPairRecord> acquirePairRecord(const PairSnapshot& snapshot)
             exp.sourceSha256 != snapshot.sourceSha256) {
             fail(kHdrReasonInvalidBuffer, kHdrFieldSource, "Owned HDR pair was modified");
         }
-    }
-    validatePairInputs(snapshot.hdr, snapshot.sdr, snapshot.identity);
-    if (owned) {
+        // 已发布的不可变 owned pair 在构造与渲染时已完成全像素有限性及规格校验，免去重复 288M float 扫描。
         return owned;
     }
+    validatePairInputs(snapshot.hdr, snapshot.sdr, snapshot.identity);
     auto record = std::make_shared<OwnedPairRecord>();
     record->pixels.hdr = readPixelBuffer(snapshot.hdr);
     record->pixels.sdr = readPixelBuffer(snapshot.sdr);
@@ -330,9 +342,15 @@ float measureContentHeadroom(const ImageData& image, float measuredContentHeadro
         return measuredContentHeadroom;
     }
     float peak = 1.0f;
-    for (const auto& pixel : image.pixels) {
-        peak = std::max(peak, cameraLuminance(pixel));
-    }
+    std::mutex peakMutex;
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        float localPeak = 1.0f;
+        for (size_t i = first; i < last; ++i) {
+            localPeak = std::max(localPeak, cameraLuminance(image.pixels[i]));
+        }
+        std::lock_guard<std::mutex> lock(peakMutex);
+        peak = std::max(peak, localPeak);
+    });
     return peak;
 }
 
@@ -573,24 +591,31 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
     admitMemory(pair.hdr.pixels.size() * sizeof(RGB));
     pair.sdr = ImageData(pair.hdr.width, pair.hdr.height);
     std::atomic<bool> nonfinite{false};
+    float fusedHeadroom = 1.0f;
+    std::mutex headroomMutex;
     parallelPixelRanges(pair.hdr.pixels.size(), [&](size_t first, size_t last) {
+        float localHeadroom = 1.0f;
         for (size_t i = first; i < last; ++i) {
             const auto& pixel = pair.hdr.pixels[i];
             if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b)) {
                 nonfinite.store(true, std::memory_order_relaxed);
                 return;
             }
+            if (!spec.preview) {
+                localHeadroom = std::max(localHeadroom, cameraLuminance(pixel));
+            }
             pair.sdr.pixels[i] = cameraSDR(pixel);
+        }
+        if (!spec.preview) {
+            std::lock_guard<std::mutex> lock(headroomMutex);
+            fusedHeadroom = std::max(fusedHeadroom, localHeadroom);
         }
     });
     if (nonfinite.load(std::memory_order_relaxed)) {
         fail(kHdrReasonNonfinite, kHdrFieldSource, "Nonfinite camera RAW pixel", RenderStatus::ProcessingError);
     }
     if (!spec.preview) {
-        pair.sourceHeadroom = 1.0f;
-        for (const auto& pixel : pair.hdr.pixels) {
-            pair.sourceHeadroom = std::max(pair.sourceHeadroom, cameraLuminance(pixel));
-        }
+        pair.sourceHeadroom = fusedHeadroom;
         result.sourceHeadroomKind = kHdrHeadroomMeasured;
     }
 
@@ -705,7 +730,12 @@ void exportImagePairJPEG(const HDRImagePair& pixels, const ExportSourceMetadata&
     ensureExportTargetsSafe(meta, targetFile);
     validateMetadataSourceMatch(meta, config.metadataSourcePath, config.sourceSha256);
     admitMemory(uint64_t(pixels.hdr.width) * pixels.hdr.height * 64);
-    exportJPEG(pixels, config, targetFile);
+    reportHdrProgress(50, 1000);
+    {
+        HdrProgressSubrangeScope sub(50, 950);
+        exportJPEG(pixels, config, targetFile);
+    }
+    reportHdrProgress(1000, 1000);
 }
 
 void exportImagePairHEIF(const HDRImagePair& pixels, const ExportSourceMetadata& meta,
@@ -716,7 +746,12 @@ void exportImagePairHEIF(const HDRImagePair& pixels, const ExportSourceMetadata&
     if (!preAdmitted) {
         admitMemory(uint64_t(pixels.hdr.width) * pixels.hdr.height * 64);
     }
-    exportHEIF(pixels, config, targetFile);
+    reportHdrProgress(50, 1000);
+    {
+        HdrProgressSubrangeScope sub(50, 950);
+        exportHEIF(pixels, config, targetFile);
+    }
+    reportHdrProgress(1000, 1000);
 }
 
 void exportImagePairSDR(const HDRImagePair& pixels, const ExportSourceMetadata& meta,
@@ -725,11 +760,14 @@ void exportImagePairSDR(const HDRImagePair& pixels, const ExportSourceMetadata& 
     ensureExportTargetsSafe(meta, targetFile);
     validateMetadataSourceMatch(meta, config.metadataSourcePath, config.sourceSha256);
     admitMemory(uint64_t(pixels.sdr.width) * pixels.sdr.height * 24);
+    reportHdrProgress(50, 1000);
     if (config.outputFormat == kHdrSdrOutputDng) {
         exportSDRDNG(pixels, config.quality, config.metadataSourcePath, config.sourceSha256, targetFile);
     } else {
+        HdrProgressSubrangeScope sub(50, 950);
         exportSDR(pixels, config, targetFile);
     }
+    reportHdrProgress(1000, 1000);
 }
 
 ProRAWStreamExportResult exportProRAWStream(const char* sourceFile, const HDRRenderOptions& options,
@@ -749,15 +787,30 @@ ProRAWStreamExportResult exportProRAWStream(const char* sourceFile, const HDRRen
                                             [](uint8_t value) { return value == 0; });
     const auto info = probeProRAW(sourceFile);
     StreamSourcePin pin;
+    reportHdrProgress(20, 1000);
     validateStreamSource(config, info.width, info.height, targetFile, pin);
     const uint8_t* frozen = internalDigest ? pin.digest : config.sourceSha256;
     const auto streamBytes = streamScratchBytes(info.width, info.height, options, keepHDR);
     storage::requireSpace(std::filesystem::u8path(temporaryRoot),
                           proRAWStageBytes(uint64_t(info.width) * info.height) + streamBytes);
-    auto source = openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), frozen);
-    auto encoded = encodeStream(source, options, keepHDR, config.jpegQuality ? config.jpegQuality : 95,
-                                config.baseColor, std::filesystem::u8path(temporaryRoot));
-    publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, config, keepHDR, targetFile, pin);
+    reportHdrProgress(50, 1000);
+    HDRRowSource source;
+    {
+        HdrProgressSubrangeScope sub(50, 350);
+        source = openProRAW(sourceFile, std::filesystem::u8path(temporaryRoot), frozen);
+    }
+    HDRStreamResult encoded;
+    {
+        HdrProgressSubrangeScope sub(350, 950);
+        auto makeTransform = [&](uint32_t w, uint32_t h) {
+            return keepHDR ? makeStreamBaseTransform(config, w, h, targetFile, pin) : JPEGTransformBase{};
+        };
+        encoded = encodeStream(source, options, keepHDR, config.jpegQuality ? config.jpegQuality : 95,
+                               config.baseColor, std::filesystem::u8path(temporaryRoot), makeTransform);
+    }
+    reportHdrProgress(950, 1000);
+    publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, config, keepHDR, targetFile, pin, keepHDR);
+    reportHdrProgress(1000, 1000);
     return {std::move(encoded), info.width, info.height};
 }
 
@@ -782,10 +835,21 @@ HDRStreamResult exportRowStream(const StreamSourceSpec& source, const HDRRenderO
     ensureDifferentFile(std::string(config.metadataSourcePath), targetFile);
     checkProcessingCancellation();
     StreamSourcePin pin;
+    reportHdrProgress(20, 1000);
     validateStreamSource(config, source.nativeWidth, source.nativeHeight, targetFile, pin);
-    auto encoded = encodeStream(source.rows, options, keepHDR, config.jpegQuality ? config.jpegQuality : 95,
-                                config.baseColor, std::filesystem::u8path(temporaryRoot));
-    publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, config, keepHDR, targetFile, pin);
+    reportHdrProgress(50, 1000);
+    HDRStreamResult encoded;
+    {
+        HdrProgressSubrangeScope sub(50, 950);
+        auto makeTransform = [&](uint32_t w, uint32_t h) {
+            return keepHDR ? makeStreamBaseTransform(config, w, h, targetFile, pin) : JPEGTransformBase{};
+        };
+        encoded = encodeStream(source.rows, options, keepHDR, config.jpegQuality ? config.jpegQuality : 95,
+                               config.baseColor, std::filesystem::u8path(temporaryRoot), makeTransform);
+    }
+    reportHdrProgress(950, 1000);
+    publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, config, keepHDR, targetFile, pin, keepHDR);
+    reportHdrProgress(1000, 1000);
     return encoded;
 }
 
@@ -872,20 +936,35 @@ TiledExportOutput exportTiledStream(const TiledSourceInput& input, const char* s
         }
     }
 
-    auto rendered = renderStreamFiles(rows, options, encodeHeif, std::filesystem::u8path(temporaryRoot));
+    HDRStreamFiles rendered;
+    reportHdrProgress(50, 1000);
+    {
+        HdrProgressSubrangeScope sub(50, 750);
+        rendered = renderStreamFiles(rows, options, encodeHeif, std::filesystem::u8path(temporaryRoot));
+    }
+    reportHdrProgress(750, 1000);
     if (encodeHeif) {
         publishTiledHEIF(rendered, config, targetFile, pin);
     } else {
         storage::File pixels(rendered.sdr);
         std::vector<RGB> row(rendered.result.width);
-        RenderedDNGRows image{rendered.result.width, rendered.result.height, [&](uint32_t y) {
+        const uint32_t dngHeight = rendered.result.height;
+        RenderedDNGRows image{rendered.result.width, dngHeight, [&](uint32_t y) {
             pixels.read(uint64_t(y) * row.size() * sizeof(RGB), row.data(), row.size() * sizeof(RGB));
-            linearToDisplaySRGB(row.data(), row.size());
+            for (auto& px : row) {
+                px.r = linearToSrgbUnit(px.r);
+                px.g = linearToSrgbUnit(px.g);
+                px.b = linearToSrgbUnit(px.b);
+            }
+            if ((y & 63u) == 0 || y + 1 == dngHeight) {
+                reportHdrProgress(750 + uint32_t((uint64_t(y + 1) * 240) / std::max(1u, dngHeight)), 1000);
+            }
             return row.data();
         }};
         const auto status = saveRenderedDNGRows(image, targetFile, [&] {
             verifyStreamSource(pin);
             ensureDifferentFile(std::string(sourceFile), targetFile);
+            checkProcessingCancellation();
         });
         if (status == ErrorCode::OutOfMemory) {
             throw std::bad_alloc();
@@ -894,6 +973,7 @@ TiledExportOutput exportTiledStream(const TiledSourceInput& input, const char* s
             fail(kHdrReasonOutputIo, kHdrFieldExport, "Cannot write tiled SDR DNG", RenderStatus::OutputIoError);
         }
     }
+    reportHdrProgress(1000, 1000);
     return {std::move(rendered.result), rows.width, rows.height, decodeRevision};
 }
 #endif

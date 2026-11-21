@@ -4,8 +4,10 @@
 "%@ · 联机" = "%@ · Tethering";
 "%@ · 质量 %@" = "%@ · Qualität %@";
 "%@数值" = "%@ Wert";
+"1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。" = "1. Kopieren Sie das Passwort unten und treten Sie dem Netzwerk unter „Einstellungen → WLAN“ bei.";
 "16:9" = "16:9";
 "1:1" = "1:1";
+"2. 返回 RawLab，点击“已连接，继续”。" = "2. Kehren Sie zu RawLab zurück und tippen Sie auf „Verbunden, weiter“.";
 "3:2" = "3:2";
 "4:3" = "4:3";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";
@@ -250,6 +252,7 @@
 "在照片上取色并上下拖动" = "Wählen Sie eine Farbe im Foto und ziehen Sie nach oben oder unten";
 "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。" = "Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden.";
 "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。" = "Öffnen Sie die Smartphone-Verbindung an der Kamera und prüfen Sie Wi-Fi-Name und Passwort. Sie können auch in den System-Wi-Fi-Einstellungen verbinden und dann zurückkehren.";
+"在系统 Wi-Fi 设置连接" = "In den System-Wi-Fi-Einstellungen verbinden";
 "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。" = "Suchen und wählen Sie die Kamera. Folgen Sie den Kopplungshinweisen auf beiden Geräten und erlauben Sie die Verbindung mit dem Kamera-Wi-Fi. Bluetooth-Kopplung allein stellt keine Fotoübertragung her.";
 "场景" = "Szene";
 "场景线性" = "Szenenlinear";
@@ -263,6 +266,7 @@
 "增量起点" = "Startzeit";
 "处理失败：%@" = "Verarbeitung fehlgeschlagen: %@";
 "处理版本与来源不同，已沿用当前照片的处理版本" = "Verarbeitungsversion unterscheidet sich von der Quelle; die Verarbeitungsversion des aktuellen Fotos wird beibehalten";
+"复制密码" = "Passwort kopieren";
 "复制范围" = "Kopierumfang";
 "复制调整" = "Anpassungen kopieren";
 "外观" = "Looks";
@@ -286,6 +290,7 @@
 "实时取景" = "Livebild";
 "实时取景、调整参数并拍摄" = "Livebild anzeigen, Einstellungen anpassen und fotografieren";
 "宽度" = "Breite";
+"密码已复制，仅本机可用，2 分钟后自动清除。" = "Passwort kopiert (nur auf diesem Gerät, wird nach 2 Minuten gelöscht).";
 "对比" = "Vergleich";
 "对比度" = "Kontrast";
 "对比方式" = "Vergleichsmodus";
@@ -299,6 +304,7 @@
 "导入方式" = "Importmodus";
 "导入时请保持 RawLab 在前台。" = "Lassen Sie RawLab während des Imports im Vordergrund.";
 "导入照片" = "Foto importieren";
+"导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。" = "Importierte Fotos werden automatisch in deiner Fotomediathek gesichert. Lokale Originale verbleiben zusätzlich in RawLab für Offline-Bearbeitung und inkrementelle Duplikaterkennung.";
 "导入相机配置…" = "Kameraprofil importieren…";
 "导入结果" = "Importergebnis";
 "导入记录" = "Importverlauf";
@@ -332,6 +338,7 @@
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
 "尚未选择 RAW" = "Keine RAW-Fotos ausgewählt";
 "尚未选择照片" = "Keine Fotos ausgewählt";
+"尝试应用内自动加入（需 Hotspot 权限）" = "Automatisches Beitreten in der App (Hotspot-Berechtigung erforderlich)";
 "尺寸" = "Größe";
 "屏幕容量 %@ EV" = "Display-Spielraum %@ EV";
 "展开%@组" = "Gruppe „%@“ aufklappen";
@@ -342,7 +349,10 @@
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Gespeichert %@ · Unverändert %@ · Übersprungen %@ · Rückgängig %@ · Offen %@";
 "已保存 %@ 张到照片图库" = "In Fotos gespeichert: %@";
 "已保存 %d 张" = "%d Fotos gespeichert";
+"已保存 %d 张照片到手机相册" = "%d Fotos in der Fotomediathek gesichert";
+"已保存到手机相册" = "In der Fotomediathek gesichert";
 "已保存到照片。" = "In Fotos gespeichert.";
+"已保存到相册" = "In Fotos gesichert";
 "已保存的原件缺失或已改变，无法打开。" = "Das gespeicherte Original fehlt oder wurde geändert und kann nicht geöffnet werden.";
 "已允许使用统计；可随时关闭。" = "Die Nutzungsanalyse ist erlaubt. Sie können sie jederzeit deaktivieren.";
 "已到上限" = "Obergrenze erreicht";
@@ -352,6 +362,7 @@
 "已回退，保留旧版本。" = "Wiederhergestellt. Die bisherige Version bleibt erhalten.";
 "已在照片图库中确认保存" = "In Fotos als gespeichert bestätigt";
 "已处理 %@ / %@" = "Verarbeitet: %@ / %@";
+"已复制" = "Kopiert";
 "已导入" = "Importiert";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Importierte Looks: %@; nicht importierte Dateien: %@\n";
 "已导出 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien exportiert: %@";
@@ -375,6 +386,7 @@
 "已确认相机同时将原件保存到存储卡。" = "Ich habe bestätigt, dass die Kamera Originale auch auf der Speicherkarte speichert.";
 "已编辑" = "Bearbeitet";
 "已自动升级，原设置已保留。" = "Automatisch aktualisiert. Ursprüngliche Einstellungen sind gespeichert.";
+"已获取相机 Wi-Fi 信息" = "Kamera-Wi-Fi-Daten abgerufen";
 "已调整" = "Bearbeitet";
 "已跳过" = "Übersprungen";
 "已连接 · 自动接收原件" = "Verbunden · Originale empfangen";
@@ -385,6 +397,7 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Mittlere Abweichung %@/255 · Maximale Abweichung %@/255";
 "并排" = "Nebeneinander";
 "应用" = "Anwenden";
+"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。" = "Automatisches Beitreten in der App erfordert die Hotspot-Berechtigung eines kostenpflichtigen Apple-Entwicklerkontos. Nutzen Sie bei kostenloser Signierung bitte die System-Wi-Fi-Methode oben.";
 "应用到多张照片" = "Auf mehrere Fotos anwenden";
 "应用到当前照片" = "Auf aktuelles Foto anwenden";
 "应用并保存" = "Anwenden und speichern";
@@ -410,6 +423,7 @@
 "当前状态下相机未接受对焦点设置。" = "Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert.";
 "当前相机模式不支持远程选择对焦点。" = "Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl.";
 "当前相机模式未提供此功能。" = "Diese Funktion ist im aktuellen Kameramodus nicht verfügbar.";
+"当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。" = "Diese Signierung unterstützt kein automatisches Wi-Fi-Beitreten. Bitte nutzen Sie die System-Wi-Fi-Methode oben.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
 "待处理" = "Aktion erforderlich";
 "待导入 %@ 个文件" = "%@ Dateien zum Importieren";
@@ -433,6 +447,7 @@
 "手动连接 Wi-Fi" = "Manuell mit Wi-Fi verbinden";
 "手动选片" = "Manuelle Auswahl";
 "打开" = "Öffnen";
+"打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。" = "Öffnen Sie die Smartphone-Verbindung an der Kamera, treten Sie dem angezeigten WLAN unter „Einstellungen → WLAN“ bei (kein Internet ist normal) und tippen Sie dann auf „Verbunden, weiter“.";
 "打开系统设置" = "Systemeinstellungen öffnen";
 "打开编辑" = "Im Editor öffnen";
 "批量导出" = "Stapel-Export";
@@ -490,6 +505,8 @@
 "新保存 %@ 个文件，%@ 个已在本机" = "%@ neue Dateien gespeichert, %@ bereits auf dem Gerät";
 "新预设" = "Neue Vorgabe";
 "方向、裁切和构图一致" = "Ausrichtung, Zuschnitt und Bildaufbau stimmen überein";
+"方式一：在系统 Wi-Fi 设置连接（推荐）" = "Methode 1: Über System-Wi-Fi verbinden (Empfohlen)";
+"方式二：蓝牙唤醒并获取密码" = "Methode 2: Per Bluetooth wecken & Passwort abrufen";
 "方案 %@" = "Option %@";
 "旋转" = "Drehung";
 "无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Die Kameraentwicklungseinstellungen (Weißabgleich oder Objektivkorrektur) sind ungültig oder nicht verfügbar.";
@@ -551,6 +568,7 @@
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
 "显示图像" = "Anzeigebild";
+"显示密码" = "Passwort anzeigen";
 "暂停联机" = "Tether-Aufnahme pausieren";
 "暂无可导出的错误日志。" = "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.";
 "暂无编辑历史。" = "Noch kein Bearbeitungsverlauf.";
@@ -585,6 +603,7 @@
 "未匹配镜头，请手动选择" = "Kein passendes Objektiv; bitte manuell auswählen";
 "未发现相机。请打开相机的智能手机连接。" = "Keine Kamera gefunden. Öffnen Sie die Smartphone-Verbindung der Kamera.";
 "未变化" = "Unverändert";
+"未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。" = "Keine Kamera im aktuellen Wi-Fi gefunden. Verbinden Sie zuerst in den System-Wi-Fi-Einstellungen mit dem Kamera-Hotspot und kehren Sie zurück.";
 "未处理" = "Nicht verarbeitet";
 "未应用 LUT" = "LUT nicht angewendet";
 "未找到机身或传感器尺寸信息" = "Kamera- oder Sensorgrößeninformationen fehlen";
@@ -714,6 +733,8 @@
 "照片四周留白" = "Abstand um das Foto";
 "照片图库" = "Fotos";
 "照片处理设置" = "Fotoverarbeitung";
+"照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。" = "Die Fotos wurden in RawLab gesichert, aber nicht in der Fotomediathek. Erlauben Sie RawLab in den Systemeinstellungen das Hinzufügen von Fotos.";
+"照片已保存在 RawLab 内，但部分照片未能保存到手机相册。" = "Die Fotos wurden in RawLab gesichert, aber einige konnten nicht zur Fotomediathek hinzugefügt werden.";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "Das Foto wurde geschrieben, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst das Ergebnis.";
 "照片或调整已变化，请重新确认重置。" = "Das Foto oder seine Anpassungen haben sich geändert. Bestätigen Sie das Zurücksetzen erneut.";
 "照片格式" = "Fotoformat";
@@ -743,6 +764,7 @@
 "直方图" = "Histogramm";
 "相对白平衡" = "Relativer Weißabgleich";
 "相机" = "Kamera";
+"相机 Wi-Fi 正在启动，请稍候…" = "Kamera-Wi-Fi wird gestartet, bitte warten…";
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "Das Kamera-Wi-Fi hat normalerweise keinen Internetzugang. Bleiben Sie verbunden.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.";
 "相机中的原照片会保留。" = "Die Originalfotos auf der Kamera bleiben erhalten.";
@@ -827,6 +849,8 @@
 "范围与插值" = "Bereich und Interpolation";
 "草稿已处理，请开始导出。" = "Entwurf geklärt. Sie können den Export starten.";
 "蓝" = "Blau";
+"蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。" = "Wählen Sie eine per Bluetooth gefundene Kamera aus, um das Kamera-Wi-Fi zu wecken. Mit Hotspot-Berechtigung tritt die App automatisch bei; mit kostenloser Signierung werden SSID und Passwort zum Kopieren angezeigt.";
+"蓝牙发现相机（可选）" = "Kamera über Bluetooth finden (optional)";
 "补充镜头信息" = "Objektivdaten ergänzen";
 "裁切" = "Zuschneiden";
 "裁切上边" = "Zuschnitt oben";
@@ -852,6 +876,7 @@
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
 "请允许系统连接相机 Wi-Fi" = "Erlauben Sie dem System, eine Verbindung mit dem Kamera-WLAN herzustellen";
+"请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。" = "Verbinden Sie sich zuerst unter iOS „Einstellungen → WLAN“ mit dem Kamera-Wi-Fi und tippen Sie dann hier auf „Verbunden, weiter“.";
 "请先在系统 Wi-Fi 设置连接相机，再返回继续。" = "Verbinden Sie zuerst in den System-Wi-Fi-Einstellungen mit der Kamera und kehren Sie zurück.";
 "请先完成或结束已有批量任务，再创建新任务。" = "Schließen Sie die vorhandene Stapelaufgabe ab oder beenden Sie sie, bevor Sie eine neue erstellen.";
 "请先导入一张照片。" = "Importieren Sie zuerst ein Foto.";
@@ -861,6 +886,7 @@
 "请先确认同源图片、处理条件和参考来源。" = "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.";
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Erlauben Sie RawLab die Bluetooth-Nutzung in den Systemeinstellungen.";
+"请在系统设置中允许 RawLab 访问本地网络。" = "Erlauben Sie RawLab den Zugriff auf das lokale Netzwerk in den Systemeinstellungen.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
 "请将对焦区域设为点或区，或在机身开启触控操作。" = "Stellen Sie das Fokusfeld auf Spot oder Feld oder aktivieren Sie die Touch-Bedienung an der Kamera.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Speichere Weißabgleichmodus, Temperatur und Tönung zusammen, bevor du diese Vorgabe anwendest.";
@@ -936,6 +962,7 @@
 "选择镜头配置文件" = "Objektivprofil auswählen";
 "选择预览照片" = "Vorschaubild auswählen";
 "透视" = "Perspektive";
+"通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。" = "Weckt das Kamera-Wi-Fi per Bluetooth auf. Wenn automatisches Beitreten nicht verfügbar ist, können Sie das Passwort kopieren und in den Einstellungen verbinden.";
 "通道边界像素：方案 %@% · 参考 %@%" = "Pixel an Kanalgrenzen: Option %@%% · Referenz %@%%";
 "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。" = "Prüfen Sie bei fehlenden Funktionen den Kameramodus. Geprüfte Modelle dienen nur als Referenz; auch andere Sony-Kameras können verbunden werden.";
 "部分照片导出失败" = "Export einiger Fotos fehlgeschlagen";
@@ -1000,6 +1027,7 @@
 "降噪" = "Rauschreduzierung";
 "降噪参数" = "Rauschminderungseinstellungen";
 "隐私设置" = "Datenschutzeinstellungen";
+"隐藏密码" = "Passwort ausblenden";
 "隐藏照片信息" = "Fotoinformationen ausblenden";
 "霓虹都市 · 冷青粉紫" = "Neonstadt · kühles Cyan und Pinkviolett";
 "青" = "Cyan";

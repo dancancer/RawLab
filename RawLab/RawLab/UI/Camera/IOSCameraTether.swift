@@ -290,10 +290,15 @@ struct IOSCameraTether: View {
             .buttonStyle(.plain).accessibilityLabel(L10n.text("拍摄参数")).accessibilityIdentifier("camera.parameters")
     }
     private var status: some View {
-        VStack(spacing: 4) {
+        let savedCount = model.recentTetherOriginals.count
+        let savedLabel = L10n.format("已保存 %d 张", savedCount)
+        let hasSavedToPhotos = model.recentTetherOriginals.contains { $0.photoLibraryAssetID != nil }
+        return VStack(spacing: 4) {
             HStack {
                 Text(L10n.text(statusTitle)); Spacer(minLength: 4)
-                Text(L10n.format("已保存 %d 张", model.recentTetherOriginals.count))
+                Text(hasSavedToPhotos && !model.photoLibraryPermissionDenied
+                     ? L10n.format("%@ · %@", savedLabel, L10n.text("已保存到相册"))
+                     : savedLabel)
                 if pendingCount > 0 { Text(L10n.format("待接收 %d 张。", pendingCount)) }
             }.font(.caption2).foregroundStyle(.secondary).frame(minHeight: 28)
             if let progress = model.progress, model.phase == .receiving {
@@ -303,6 +308,12 @@ struct IOSCameraTether: View {
             if let notice = model.notice {
                 Text(notice).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camera.tether.notice")
+                if model.photoLibraryPermissionDenied {
+                    Button(L10n.text("系统权限设置")) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                    .font(.caption)
+                }
             } else if model.connected && !model.originalBrowsingAvailable {
                 Text(L10n.text("此连接方式不能接收卡内原件，软件快门已停用。")).font(.caption).foregroundStyle(.secondary)
             }

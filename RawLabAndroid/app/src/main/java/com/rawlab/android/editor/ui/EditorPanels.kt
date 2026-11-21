@@ -5,8 +5,10 @@ import com.rawlab.android.ui.AppIcons
 import com.rawlab.android.editor.controls.HslTargetActions
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -97,28 +99,74 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
         }
         if (!view.purePreview) {
             if (state.operation == Operation.EXPORT) {
-                Row(
+                val progress = state.exportProgress?.coerceIn(0f, 1f)
+                val animatedProgress by animateFloatAsState(targetValue = progress ?: 0f, label = "exportProgress")
+                Column(
                     Modifier.align(Alignment.TopStart).padding(12.dp)
-                        .background(Color.Black.copy(alpha = .6f)).padding(start = 6.dp, end = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(10.dp))
+                        .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 6.dp),
                 ) {
-                    Text(stringResource(R.string.exporting), color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    TextButton(
-                        onClick = onCancelExport,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.testTag("export-cancel"),
-                    ) {
-                        Text(stringResource(R.string.cancel), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!reduceMotion) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp).testTag("export-loading"),
+                                strokeWidth = 2.dp,
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(stringResource(R.string.exporting), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        if (progress != null) {
+                            Text(
+                                " ${(progress * 100).toInt().coerceIn(0, 100)}%",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                        TextButton(
+                            onClick = onCancelExport,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.testTag("export-cancel"),
+                        ) {
+                            Text(stringResource(R.string.cancel), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (progress != null && (progress > 0f || reduceMotion)) {
+                        LinearProgressIndicator(
+                            progress = { if (reduceMotion) progress else animatedProgress },
+                            modifier = Modifier.width(140.dp).height(3.dp).padding(end = 6.dp).testTag("export-progress"),
+                        )
+                    } else if (!reduceMotion) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.width(140.dp).height(3.dp).padding(end = 6.dp).testTag("export-progress"),
+                        )
                     }
                 }
             } else {
                 val operation = when (state.operation) {
                     Operation.IMPORT -> R.string.importing
                     Operation.IMPORT_LOOK -> R.string.look_importing
+                    Operation.PREPARE_EXPORT -> R.string.exporting
                     else -> null
                 }
-                operation?.let { Text(stringResource(it), Modifier.align(Alignment.TopStart).padding(12.dp)
-                    .background(Color.Black.copy(alpha = .6f)).padding(6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                operation?.let {
+                    Row(
+                        Modifier.align(Alignment.TopStart).padding(12.dp)
+                            .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!reduceMotion) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(stringResource(it), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
             if (state.error != null) RenderError(state, onRetry, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
         }

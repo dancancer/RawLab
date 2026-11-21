@@ -304,27 +304,32 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     @Synchronized
     internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
-        cancellationGeneration: Long = -1L, lookDirectory: File? = null): NativeHDRImage {
+        cancellationGeneration: Long = -1L, lookDirectory: File? = null,
+        progress: HDRProgressListener? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
-        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory, progress)
     }
 
     internal fun decodeHDRCamera(file: File, info: com.rawlab.android.photo.HDRSourceInfo, edge: Int,
         cancellationGeneration: Long = -1L,
         camera: com.rawlab.android.settings.HDRCameraDevelopmentSettings = com.rawlab.android.settings.HDRCameraDevelopmentSettings(),
-        profileDirectory: File? = null): NativeHDRImage {
+        profileDirectory: File? = null,
+        progress: HDRProgressListener? = null): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
-        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory)
+        return NativeHDRBridge.decodeCameraRaw(handle, file, info, edge, cancellationGeneration, camera, profileDirectory, progress)
     }
 
     internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
-        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L, lookDirectory: File? = null) {
+        edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L,
+        lookDirectory: File? = null, progress: HDRProgressListener? = null) {
         check(handle != 0L) { "Processor is closed" }
         edits.requireProRAWDecoder()
         NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
-            output, keepHDR, edge, cancellationGeneration, lookDirectory)
+            output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
     }
+
+    internal fun sessionHandle(): Long = handle
 
     // 取消不能等待 preview 的 Java monitor 或 native session 渲染锁。
     internal fun cancellationGeneration(): Long = nativeCancellationGeneration(handle)

@@ -1,5 +1,6 @@
 import RawLabKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct IOSCameraWorkspace: View {
     enum Route: Hashable { case connect, help, manual, importer, tether, history, storage }
@@ -13,6 +14,8 @@ struct IOSCameraWorkspace: View {
     @State private var pendingImport: CameraTransferJob?
     @State private var newTetherConfirmation = false
     @State private var confirmClearOriginals = false
+    @State private var showHandoffPassword = false
+    @State private var handoffPasswordCopied = false
     private var previousCamera: CameraDeviceIdentity? { model.device ?? model.manifest.tether?.camera ?? model.manifest.jobs.last?.camera }
     private var cameraName: String { previousCamera?.model == "ILCE-7CM2" ? "α7C II" : previousCamera?.model ?? L10n.text("相机") }
     let onOpenOriginal: (URL) -> Void
@@ -66,7 +69,11 @@ struct IOSCameraWorkspace: View {
             advanceConnectedRoute()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { connection.stop(); model.stop() }
+            if phase == .background { connection.pauseForBackground(); model.stop() }
+        }
+        .onChange(of: connection.manualWiFiHandoff) { _, _ in
+            showHandoffPassword = false
+            handoffPasswordCopied = false
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
             connection.stop(); model.stop()
@@ -139,12 +146,107 @@ struct IOSCameraWorkspace: View {
                         .font(.callout).accessibilityIdentifier("camera.card.confirm")
                 }
                 if connection.connecting || model.phase == .connecting {
-                    HStack { ProgressView(); Text(connection.status.isEmpty ? L10n.text("正在连接相机…") : connection.status) }
-                        .font(.callout).padding(.vertical, 8)
+                    HStack {
+                        ProgressView()
+                        Text(model.device != nil && model.phase == .connecting ? L10n.text("正在扫描相机…")
+                             : connection.status.isEmpty ? L10n.text("正在连接相机…") : connection.status)
+                    }
+                    .font(.callout).padding(.vertical, 8)
                     Button(L10n.text("取消连接")) { connection.stop(); model.stop() }.frame(minHeight: 44)
+                } else if let handoff = connection.manualWiFiHandoff {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Label(L10n.text("已获取相机 Wi-Fi 信息"), systemImage: "wifi").font(.headline)
+                            Spacer()
+                            if !handoff.label.isEmpty {
+                                Text(handoff.label).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.text("1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。")).font(.callout)
+                            Text(L10n.text("2. 返回 RawLab，点击“已连接，继续”。")).font(.callout)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("Wi-Fi 名称")).font(.caption).foregroundStyle(.secondary)
+                            Text(handoff.ssid).font(.body.monospaced()).textSelection(.enabled)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.text("Wi-Fi 密码")).font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                Text(showHandoffPassword ? handoff.password : "••••••••")
+                                    .font(.body.monospaced())
+                                Spacer()
+                                Button { showHandoffPassword.toggle() } label: {
+                                    Image(systemName: showHandoffPassword ? "eye.slash" : "eye")
+                                }
+                                .accessibilityLabel(showHandoffPassword ? L10n.text("隐藏密码") : L10n.text("显示密码"))
+                                .frame(minWidth: 44, minHeight: 44)
+                                Button(handoffPasswordCopied ? L10n.text("已复制") : L10n.text("复制密码")) {
+                                    UIPasteboard.general.setItems(
+                                        [[UTType.utf8PlainText.identifier: handoff.password]],
+                                        options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+                                    )
+                                    handoffPasswordCopied = true
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("camera.handoff.copy")
+                            }
+                            if handoffPasswordCopied {
+                                Text(L10n.text("密码已复制，仅本机可用，2 分钟后自动清除。"))
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
+                        Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。"))
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button {
+                            model.clearNotice()
+                            showHandoffPassword = false
+                            handoffPasswordCopied = false
+                            connection.continueAfterManualWiFiHandoff()
+                        } label: {
+                            Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(mode == .tethering && !cardConfirmed)
+                        .accessibilityIdentifier("camera.handoff.continue")
+                        Button(L10n.text("取消连接")) {
+                            showHandoffPassword = false
+                            handoffPasswordCopied = false
+                            connection.stop()
+                            model.stop()
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .padding(16)
+                    .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
                 } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(L10n.text("在系统 Wi-Fi 设置连接"), systemImage: "wifi").font(.headline)
+                        Text(L10n.text("请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"))
+                            .font(.callout).foregroundStyle(.secondary)
+                        Button {
+                            model.clearNotice()
+                            connection.useCurrentWiFi()
+                        } label: {
+                            Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(mode == .tethering && !cardConfirmed)
+                        .accessibilityIdentifier("camera.connect.continue")
+                        Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。"))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
+                    Divider().padding(.vertical, 4)
+                    Text(L10n.text("蓝牙发现相机（可选）")).font(.subheadline.weight(.semibold))
+                    Text(L10n.text("通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。"))
+                        .font(.footnote).foregroundStyle(.secondary)
                     ForEach(connection.candidates) { candidate in
-                        Button { connection.connect(candidate) } label: {
+                        Button {
+                            model.clearNotice()
+                            connection.connect(candidate)
+                        } label: {
                             HStack {
                                 Image(systemName: "camera"); Text(candidate.name).foregroundStyle(.primary)
                                 Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary)
@@ -175,7 +277,7 @@ struct IOSCameraWorkspace: View {
                     if model.manualImportRequired && mode == .tethering {
                         Button(L10n.text("从相机导入")) { choose(.importing, resume: false) }
                             .frame(minHeight: 44).accessibilityIdentifier("camera.connection.manual-import")
-                    } else if connection.failure != nil {
+                    } else if connection.failure != nil || model.localNetworkDenied {
                         Button(L10n.text("系统权限设置")) {
                             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                         }.frame(minHeight: 44)
@@ -191,6 +293,8 @@ struct IOSCameraWorkspace: View {
         List {
             Section(L10n.text("保存位置")) {
                 Label(L10n.text("RawLab 内的相机原件"), systemImage: "folder")
+                Text(L10n.text("导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。"))
+                    .font(.callout).foregroundStyle(.secondary)
                 Text(L10n.text("完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。"))
                     .font(.callout).foregroundStyle(.secondary)
                 // Q6：相机原件不自动删；这里提供列目录与手动清理入口。
@@ -269,20 +373,33 @@ private struct IOSCameraManualWiFi: View {
     private var connecting: Bool { connection.connecting || model.phase == .connecting }
     var body: some View {
         Form {
-            Section {
-                Text(L10n.text("在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。"))
+            Section(L10n.text("在系统 Wi-Fi 设置连接")) {
+                Text(L10n.text("请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"))
+                Button {
+                    model.clearNotice()
+                    connection.useCurrentWiFi()
+                } label: {
+                    Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(connecting)
+                .accessibilityIdentifier("camera.wifi.continue")
+                Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。")).font(.footnote).foregroundStyle(.secondary)
+            }
+            Section(L10n.text("尝试应用内自动加入（需 Hotspot 权限）")) {
+                Text(connection.hotspotAutoJoinUnavailable
+                     ? L10n.text("当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。")
+                     : L10n.text("应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"))
+                .font(.footnote).foregroundStyle(.secondary)
                 TextField(L10n.text("Wi-Fi 名称"), text: $ssid).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("camera.wifi.ssid")
                 SecureField(L10n.text("Wi-Fi 密码"), text: $password).accessibilityIdentifier("camera.wifi.password")
                 Button(L10n.text("连接相机 Wi-Fi")) {
-                    connection.join(ssid: ssid, password: password); password = ""
+                    model.clearNotice()
+                    connection.join(ssid: ssid, password: password)
+                    password = ""
                 }.disabled(ssid.isEmpty || password.count < 8 || connecting)
                     .accessibilityIdentifier("camera.wifi.join")
-            }
-            Section {
-                Button(L10n.text("已连接，继续")) { connection.useCurrentWiFi() }
-                    .disabled(connecting).accessibilityIdentifier("camera.wifi.continue")
-                Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。")).font(.footnote)
             }
             if connecting {
                 Section {
@@ -294,7 +411,16 @@ private struct IOSCameraManualWiFi: View {
                     Button(L10n.text("取消连接")) { connection.stop(); model.stop() }
                 }
             }
-            if let error = model.notice ?? connection.failure { Section { Text(error).foregroundStyle(.orange) } }
+            if let error = model.notice ?? connection.failure {
+                Section {
+                    Text(error).foregroundStyle(.orange)
+                    if model.localNetworkDenied {
+                        Button(L10n.text("系统权限设置")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                        }
+                    }
+                }
+            }
         }.navigationTitle(L10n.text("连接相机 Wi-Fi")).navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("camera.manual.page")
     }
@@ -309,12 +435,12 @@ private struct IOSCameraConnectionGuide: View {
             Section(L10n.text("连接前准备")) {
                 Text(L10n.text("保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。"))
             }
-            Section(L10n.text("使用蓝牙配对")) {
-                Text(L10n.text("在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。"))
-            }
-            Section(L10n.text("手动连接 Wi-Fi")) {
-                Text(L10n.text("如果相机显示 SSID 和密码，打开手动连接页并填写；也可先在系统 Wi-Fi 设置中加入该网络，再返回点击“已连接，继续”。"))
+            Section(L10n.text("方式一：在系统 Wi-Fi 设置连接（推荐）")) {
+                Text(L10n.text("打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。"))
                 Text(L10n.text("初代 ZV-E10 可使用机身“智能手机连接”中的连接画面；无需把蓝牙配对作为必经步骤。"))
+            }
+            Section(L10n.text("方式二：蓝牙唤醒并获取密码")) {
+                Text(L10n.text("蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。"))
             }
             Section(L10n.text("联机拍摄设置")) {
                 Text(L10n.text("在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"))

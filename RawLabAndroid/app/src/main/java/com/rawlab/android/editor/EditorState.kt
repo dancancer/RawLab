@@ -93,6 +93,7 @@ data class EditorState(
     val committingAdjustments: Boolean = false,
     val processingMigration: com.rawlab.android.settings.ProcessingMigrationReceipt? = null,
     val matchingProcessing: Boolean = false,
+    val exportProgress: Float? = null,
 ) {
     val hdrCameraDraftSettings get() = edits.hdr?.cameraSettings?.let { baseline ->
         photo?.let { hdrCameraDraft?.valueFor(it.identity, baseline) } ?: baseline
@@ -113,6 +114,7 @@ internal object EditorStateReducer {
     fun renderFinished(current: EditorState): EditorState = current.copy(
         operation = if (current.operation == Operation.IMPORT_LOOK) Operation.IMPORT_LOOK else Operation.NONE,
         exportStep = SingleExportStep.NONE,
+        exportProgress = null,
         rendering = false,
     )
 
@@ -236,6 +238,10 @@ internal fun prepareExportSubmission(
     }
     return ExportSubmission.Ready(
         Work.Export(photo, current.edits, destination, format, longEdge, gpuMode),
-        current.copy(operation = Operation.EXPORT, exportStep = SingleExportStep.WRITING),
+        current.copy(
+            operation = Operation.EXPORT,
+            exportStep = SingleExportStep.WRITING,
+            exportProgress = if (photo.hdrSource != null && current.edits.isHDREditing) 0f else null,
+        ),
     )
 }

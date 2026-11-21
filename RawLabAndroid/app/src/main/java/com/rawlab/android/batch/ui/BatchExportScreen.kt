@@ -4,9 +4,11 @@ import com.rawlab.android.ui.AppIcons
 
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import com.rawlab.android.editor.controls.formatAdjustment
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -260,11 +262,24 @@ private fun exportSizeChoice(longEdge: Int?): ExportSizeChoice = when (longEdge)
 
 @Composable
 private fun BatchProgressContent(state: BatchExportState, onCancel: () -> Unit) {
+    val context = LocalContext.current
+    val reduceMotion = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    val fraction = state.completionFraction.coerceIn(0f, 1f)
+    val animatedFraction by animateFloatAsState(targetValue = fraction, label = "batchExportProgress")
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
-        LinearProgressIndicator(progress = { state.completionFraction }, modifier = Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!reduceMotion) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
+            Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else if (state.phase == BatchPhase.PREPARING) AppStrings.text(R.string.message_preparing) else AppStrings.text(R.string.message_exporting), style = MaterialTheme.typography.titleLarge)
+        }
+        if (!reduceMotion && (state.phase == BatchPhase.PREPARING || (fraction <= 0f && !state.stopping))) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else {
+            LinearProgressIndicator(progress = { if (reduceMotion) fraction else animatedFraction }, modifier = Modifier.fillMaxWidth())
+        }
         Text(AppStrings.format(R.string.message_completed, state.successCount.toString(), state.job.rows.size.toString()))
-        LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row) } }
+        LazyColumn(Modifier.weight(1f)) { items(state.job.rows, key = { it.id }) { row -> BatchRowLine(row, reduceMotion = reduceMotion) } }
         OutlinedButton(onClick = onCancel, enabled = !state.stopping, modifier = Modifier.fillMaxWidth()) { Text(if (state.stopping) AppStrings.text(R.string.message_stopping) else stringResource(R.string.cancel)) }
     }
 }
@@ -300,14 +315,18 @@ private fun BatchResultContent(state: BatchExportState, onRetry: () -> Unit, onC
 }
 
 @Composable
-private fun BatchRowLine(row: BatchRow) {
+private fun BatchRowLine(row: BatchRow, reduceMotion: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        val icon = when (row.status) {
-            BatchRowStatus.SUCCESS -> Icons.Outlined.CheckCircle
-            BatchRowStatus.FAILED -> Icons.Outlined.Close
-            else -> Icons.Outlined.Refresh
+        if ((row.status == BatchRowStatus.PROCESSING || row.status == BatchRowStatus.PUBLISHING) && !reduceMotion) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            val icon = when (row.status) {
+                BatchRowStatus.SUCCESS -> Icons.Outlined.CheckCircle
+                BatchRowStatus.FAILED -> Icons.Outlined.Close
+                else -> Icons.Outlined.Refresh
+            }
+            Icon(icon, null, tint = if (row.status == BatchRowStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         }
-        Icon(icon, null, tint = if (row.status == BatchRowStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(row.target.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -561,7 +561,11 @@ struct CameraSkipAndLimitTests {
             ("testP222OrphanRecoveryAndPerPhotoDurability", testP222OrphanRecoveryAndPerPhotoDurability),
             ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery),
             ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile),
-            ("testTetheringTouchFocusAndCancelLifecycle", testTetheringTouchFocusAndCancelLifecycle)
+            ("testTetheringTouchFocusAndCancelLifecycle", testTetheringTouchFocusAndCancelLifecycle),
+            ("testManualBrowseOrderNewestFirst", testManualBrowseOrderNewestFirst),
+            ("testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial", testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial),
+            ("testTetheringAutomaticallySavesNewShotsToPhotoLibrary", testTetheringAutomaticallySavesNewShotsToPhotoLibrary),
+            ("testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary", testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary)
         ]
         #if os(macOS)
         suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
@@ -2621,6 +2625,450 @@ struct CameraSkipAndLimitTests {
         try await waitUntil(timeout: 3.0) { !controller.focusBusy && controller.notice == "当前为手动对焦（MF），无法选择对焦点。" }
         try check(controller.connected && controller.phase == .ready && channel.recorded9207.count == writeCountBeforeMF,
                   "MF mode reports notice with 0 0x9207 writes and keeps session ready")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
+    }
+
+    @MainActor static func testManualBrowseOrderNewestFirst() async throws {
+        // 1) Mobile protocol end-to-end via controller: newest capture first, equal timestamps reversed, undated last,
+        //    while controller.assets retains protocol listing order.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-manual-order-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let sample = validRAWBytes(1)
+        let entries = [
+            FakeSonyCameraEntry(content: 1, name: "DSC00000.ARW", createdMillis: 1, bytes: sample),
+            FakeSonyCameraEntry(content: 2, name: "DSC00001.ARW", createdMillis: baseMillis + 1_000, bytes: sample),
+            FakeSonyCameraEntry(content: 3, name: "DSC00002.ARW", createdMillis: baseMillis + 2_000, bytes: sample),
+            FakeSonyCameraEntry(content: 4, name: "DSC00002.JPG", createdMillis: baseMillis + 2_000, bytes: sample),
+            FakeSonyCameraEntry(content: 5, name: "DSC00003.ARW", createdMillis: baseMillis + 5_000, bytes: sample),
+            FakeSonyCameraEntry(content: 6, name: "DSC00004.ARW", createdMillis: baseMillis + 9_000, bytes: sample)
+        ]
+        let channel = FakeSonyCameraChannel(mode: .mobile, entries: entries)
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend)
+        controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE", label: "Fake"),
+                           mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing && controller.assets.count == 6 }
+
+        try check(controller.assets.map(\.snapshot.name) == [
+            "DSC00000.ARW", "DSC00001.ARW", "DSC00002.ARW", "DSC00002.JPG", "DSC00003.ARW", "DSC00004.ARW"
+        ], "Manual sort preserves protocol listing order in controller.assets")
+        try check(controller.manualAssets.map(\.snapshot.name) == [
+            "DSC00004.ARW", "DSC00003.ARW", "DSC00002.JPG", "DSC00002.ARW", "DSC00001.ARW", "DSC00000.ARW"
+        ], "Manual browse order shows newest mobile capture first, reverses equal-timestamp ties, and puts undated last")
+        controller.stop()
+
+        // 2) Legacy protocol snapshots (yyyyMMdd'T'HHmmss): newest first, same-second burst reversed, undated last.
+        let owner = UUID()
+        func legacy(_ content: UInt32, _ name: String, _ created: String) -> CameraRemoteAsset {
+            CameraRemoteAsset(owner: owner, snapshot: CameraAssetSnapshot(
+                content: content, file: 0, storage: 0x00010001, format: 0x3801,
+                name: name, size: 1024, created: created, modified: ""
+            ))
+        }
+        let legacyInput = [
+            legacy(1, "DSC_OLD.ARW", "20261120T090000"),
+            legacy(2, "DSC_BURST_1.ARW", "20261121T170000"),
+            legacy(3, "DSC_BURST_2.JPG", "20261121T170000"),
+            legacy(4, "DSC_MID.ARW", "20261121T103000"),
+            legacy(5, "DSC_UNDATED.ARW", "")
+        ]
+        try check(IOSCameraController.manualBrowseOrder(legacyInput).map(\.snapshot.name) == [
+            "DSC_BURST_2.JPG", "DSC_BURST_1.ARW", "DSC_MID.ARW", "DSC_OLD.ARW", "DSC_UNDATED.ARW"
+        ], "Manual browse order sorts legacy snapshots newest first, reverses same-second ties, and puts undated last")
+    }
+
+    @MainActor static func testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial() async throws {
+        final class MockCameraPhotoLibrarySaver: CameraPhotoLibrarySaving {
+            private let lock = NSLock()
+            var authorized = true
+            var shouldFailSave = false
+            var existingAssetIDs: Set<String>? = nil
+            private(set) var savedFiles: [(assetID: String, filename: String, digest: String, fileExisted: Bool)] = []
+            private var nextID = 1
+
+            func requestAddAuthorization() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                return authorized
+            }
+
+            func assetExists(_ identifier: String) -> Bool? {
+                lock.lock(); defer { lock.unlock() }
+                guard let existingAssetIDs else { return nil }
+                return existingAssetIDs.contains(identifier)
+            }
+
+            func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+                lock.lock(); defer { lock.unlock() }
+                guard authorized else { throw CameraPhotoLibraryError.permissionDenied }
+                guard !shouldFailSave else { throw CameraPhotoLibraryError.saveFailed("Simulated Photos write error") }
+                let assetID = "ph-asset-\(nextID)"
+                nextID += 1
+                let existed = FileManager.default.fileExists(atPath: fileURL.path)
+                savedFiles.append((assetID: assetID, filename: filename, digest: digest, fileExisted: existed))
+                if existingAssetIDs != nil { existingAssetIDs?.insert(assetID) }
+                return assetID
+            }
+        }
+
+        // Subtest A: Normal import (ARW + JPG) saves to Photos via fileURL, avoids duplicates on re-import,
+        // and re-saves if deleted from Photos when verifiable.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-photos-a-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let saver = MockCameraPhotoLibrarySaver()
+            let now = UInt64(Date().timeIntervalSince1970 * 1000) + 1_000
+            let rawBytes = validRAWBytes(11)
+            let jpegBytes = try makeLargeJPEG(targetSize: 16_384, seed: 22)
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC09001.ARW", createdMillis: now + 1_000, bytes: rawBytes),
+                FakeSonyCameraEntry(content: 2, name: "DSC09002.JPG", createdMillis: now + 2_000, bytes: jpegBytes)
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE", label: "Fake"),
+                               mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 2 }
+
+            controller.selection = Set(controller.assets.map(\.id))
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && controller.lastSavedToPhotoLibraryCount == 2 }
+
+            try check(saver.savedFiles.count == 2 && saver.savedFiles.allSatisfy(\.fileExisted),
+                      "Photos Subtest A: Imports stream verified on-disk ARW and JPG files to photo library")
+            try check(controller.notice == nil && !controller.photoLibraryPermissionDenied && controller.selection.isEmpty,
+                      "Photos Subtest A: Successful import shows zero error, reports 2 saved, and clears selection")
+            let rawOrig = try store.snapshot.originals.first { $0.name == "DSC09001.ARW" }
+                ?? { throw CameraProtocolError.invalid("Missing DSC09001.ARW") }()
+            let jpgOrig = try store.snapshot.originals.first { $0.name == "DSC09002.JPG" }
+                ?? { throw CameraProtocolError.invalid("Missing DSC09002.JPG") }()
+            try check(rawOrig.photoLibraryAssetID == "ph-asset-1" && jpgOrig.photoLibraryAssetID == "ph-asset-2",
+                      "Photos Subtest A: photoLibraryAssetID is recorded in store snapshot")
+
+            let onDiskManifest = try JSONDecoder().decode(
+                CameraOriginalManifest.self,
+                from: Data(contentsOf: root.appendingPathComponent("manifest.json"))
+            )
+            let diskRawID = onDiskManifest.originals.first { $0.name == "DSC09001.ARW" }?.photoLibraryAssetID
+            let diskJpgID = onDiskManifest.originals.first { $0.name == "DSC09002.JPG" }?.photoLibraryAssetID
+            try check(diskRawID == "ph-asset-1" && diskJpgID == "ph-asset-2",
+                      "Photos Subtest A: photoLibraryAssetID persists to manifest.json on disk")
+
+            // Re-import in addOnly mode (assetExists returns nil): must NOT duplicate in Photos.
+            controller.selection = Set(controller.assets.map(\.id))
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && controller.lastSavedToPhotoLibraryCount == 2 }
+            try check(saver.savedFiles.count == 2,
+                      "Photos Subtest A: Re-import in addOnly mode does not duplicate already-saved Photos assets")
+
+            // Simulate user deleting DSC09001.ARW from Photos while DSC09002.JPG remains.
+            saver.existingAssetIDs = [jpgOrig.photoLibraryAssetID!]
+            controller.selection = Set(controller.assets.map(\.id))
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && saver.savedFiles.count == 3 }
+            let updatedRawID = store.snapshot.originals.first { $0.name == "DSC09001.ARW" }?.photoLibraryAssetID
+            try check(saver.savedFiles.count == 3 && saver.savedFiles[2].filename == "DSC09001.ARW" && updatedRawID == "ph-asset-3",
+                      "Photos Subtest A: Deleted-from-Photos asset is re-saved once when verified missing, updating assetID")
+            controller.stop()
+        }
+
+        // Subtest B: Permission denied keeps local originals in CameraOriginalStore, keeps session connected,
+        // and subsequent re-import after permission grant saves the sampled reuse to Photos.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-photos-b-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let saver = MockCameraPhotoLibrarySaver()
+            saver.authorized = false
+            let now = UInt64(Date().timeIntervalSince1970 * 1000) + 1_000
+            let rawBytes = makeLargeRAW(size: 256_000, seed: 3)
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC09003.ARW", createdMillis: now + 1_000, bytes: rawBytes)
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+            controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE", label: "Fake"),
+                               mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 1 }
+
+            controller.selection = [controller.assets[0].id]
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && controller.notice != nil }
+
+            try check(store.snapshot.originals.count == 1 && store.snapshot.originals[0].photoLibraryAssetID == nil && saver.savedFiles.isEmpty,
+                      "Photos Subtest B: Denied Photos permission retains downloaded original locally with nil photoLibraryAssetID")
+            try check(controller.connected && controller.photoLibraryPermissionDenied && controller.lastSavedToPhotoLibraryCount == 0
+                      && controller.notice == "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。",
+                      "Photos Subtest B: Denied Photos permission keeps camera connected and surfaces actionable guidance")
+
+            // Grant permission and re-import (triggers 3x64KiB sampling reuse and completes Photos save).
+            channel.resetTransferStats()
+            saver.authorized = true
+            controller.selection = [controller.assets[0].id]
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && controller.lastSavedToPhotoLibraryCount == 1 }
+
+            let sampledBytes = channel.mobileRangeReads["DSC09003.ARW", default: []].reduce(0) { $0 + $1.count }
+            try check(saver.savedFiles.count == 1 && store.snapshot.originals[0].photoLibraryAssetID == "ph-asset-1"
+                      && !controller.photoLibraryPermissionDenied && controller.notice == nil && sampledBytes == 196_608,
+                      "Photos Subtest B: Re-importing after permission grant reuses local original and saves to Photos")
+            controller.stop()
+        }
+
+        // Subtest C: Photos write error preserves local original and keeps camera connected.
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-photos-c-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let store = try CameraOriginalStore(directory: root)
+            let saver = MockCameraPhotoLibrarySaver()
+            saver.shouldFailSave = true
+            let now = UInt64(Date().timeIntervalSince1970 * 1000) + 1_000
+            let channel = FakeSonyCameraChannel(entries: [
+                FakeSonyCameraEntry(content: 1, name: "DSC09004.ARW", createdMillis: now + 1_000, bytes: validRAWBytes(4))
+            ])
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+                try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            }
+            let controller = IOSCameraController(backend: backend)
+            UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+            controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE", label: "Fake"),
+                               mode: .importing, cardConfirmed: false, resume: false)
+            try await waitUntil { controller.phase == .browsing && controller.assets.count == 1 }
+
+            controller.selection = [controller.assets[0].id]
+            controller.importSelected()
+            try await waitUntil { controller.phase == .browsing && controller.notice != nil }
+
+            try check(store.snapshot.originals.count == 1 && store.snapshot.originals[0].photoLibraryAssetID == nil
+                      && controller.connected && !controller.photoLibraryPermissionDenied
+                      && controller.notice == "照片已保存在 RawLab 内，但部分照片未能保存到手机相册。",
+                      "Photos Subtest C: Photos write failure retains local original, stays connected, and shows partial-failure notice")
+            controller.stop()
+        }
+    }
+
+    @MainActor static func testTetheringAutomaticallySavesNewShotsToPhotoLibrary() async throws {
+        final class TetherPhotoLibrarySaver: CameraPhotoLibrarySaving {
+            private let lock = NSLock()
+            var authorized = true
+            private(set) var requestAuthCalls = 0
+            private(set) var savedFiles: [(assetID: String, filename: String, fileExisted: Bool)] = []
+            private var nextID = 1
+
+            func requestAddAuthorization() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                requestAuthCalls += 1
+                return authorized
+            }
+
+            func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+                lock.lock(); defer { lock.unlock() }
+                guard authorized else { throw CameraPhotoLibraryError.permissionDenied }
+                let assetID = "ph-tether-\(nextID)"
+                nextID += 1
+                savedFiles.append((assetID: assetID, filename: filename, fileExisted: FileManager.default.fileExists(atPath: fileURL.path)))
+                return assetID
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-tether-photos-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let saver = TetherPhotoLibrarySaver()
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let baselineEntry = FakeSonyCameraEntry(content: 1, name: "DSC09100.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(90))
+        let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [baselineEntry])
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend)
+        UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+        controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:TETHER-PH", label: "Fake"),
+                           mode: .tethering, cardConfirmed: true, resume: false)
+        try await waitUntil { controller.phase == .ready && controller.canCapture }
+
+        try check(saver.requestAuthCalls >= 1 && saver.savedFiles.isEmpty,
+                  "Tether Photos: Pre-authorizes photo library on connect without saving baseline card photos")
+
+        // Shot 1: Software shutter appends DSC09101.ARW -> auto-downloaded & saved to Photos.
+        channel.onShutter = { [weak channel] in
+            channel?.entries.append(
+                FakeSonyCameraEntry(content: 2, name: "DSC09101.ARW", createdMillis: baseMillis + 2_000, bytes: validRAWBytes(91))
+            )
+        }
+        controller.capture()
+        try await waitUntil(timeout: 8) { controller.phase == .ready && controller.recentTetherOriginals.count == 1 }
+        try check(saver.savedFiles.count == 1 && saver.savedFiles[0].filename == "DSC09101.ARW" && saver.savedFiles[0].fileExisted
+                  && controller.recentTetherOriginals[0].photoLibraryAssetID == "ph-tether-1" && controller.notice == nil,
+                  "Tether Photos (Shot 1): Software shutter auto-saves new ARW to photo library with assetID")
+
+        // Shot 2: Camera-side shutter appends DSC09102.JPG -> polled & saved to Photos without duplicating Shot 1.
+        let jpegBytes = try makeLargeJPEG(targetSize: 16_384, seed: 92)
+        channel.updateEntries {
+            $0.append(FakeSonyCameraEntry(content: 3, name: "DSC09102.JPG", createdMillis: baseMillis + 3_000, bytes: jpegBytes))
+        }
+        try await waitUntil(timeout: 8) { controller.phase == .ready && controller.recentTetherOriginals.count == 2 }
+        try check(saver.savedFiles.count == 2 && saver.savedFiles[1].filename == "DSC09102.JPG" && saver.savedFiles[1].fileExisted
+                  && controller.recentTetherOriginals.allSatisfy { $0.photoLibraryAssetID != nil },
+                  "Tether Photos (Shot 2): Camera-side shutter auto-saves new JPG to photo library without duplicating Shot 1")
+
+        // Shot 3: Photos permission denied mid-session -> preserves local original in store and keeps tether ready.
+        saver.authorized = false
+        channel.updateEntries {
+            $0.append(FakeSonyCameraEntry(content: 4, name: "DSC09103.ARW", createdMillis: baseMillis + 4_000, bytes: validRAWBytes(93)))
+        }
+        try await waitUntil(timeout: 8) {
+            controller.phase == .ready && controller.recentTetherOriginals.count == 3 && controller.notice != nil
+        }
+        let shot3 = controller.recentTetherOriginals.first { $0.name == "DSC09103.ARW" }
+        try check(controller.connected && controller.phase == .ready && controller.canCapture
+                  && controller.photoLibraryPermissionDenied
+                  && controller.notice == "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。"
+                  && store.snapshot.originals.count == 3 && shot3?.photoLibraryAssetID == nil,
+                  "Tether Photos (Shot 3): Denied Photos permission retains local tethered original and keeps tether session active")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
+    }
+
+    @MainActor static func testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary() async throws {
+        final class RecordingPhotoLibrarySaver: CameraPhotoLibrarySaving {
+            private let lock = NSLock()
+            private var nextID = 1
+            private(set) var saved: [(filename: String, url: URL, size: UInt64, pixelSize: CGSize?)] = []
+
+            func requestAddAuthorization() -> Bool { true }
+
+            func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+                let data = try Data(contentsOf: fileURL)
+                let dims: CGSize?
+                if let src = CGImageSourceCreateWithData(data as CFData, nil),
+                   let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                   let w = props[kCGImagePropertyPixelWidth] as? Int,
+                   let h = props[kCGImagePropertyPixelHeight] as? Int {
+                    dims = CGSize(width: w, height: h)
+                } else {
+                    dims = nil
+                }
+                lock.lock(); defer { lock.unlock() }
+                let assetID = "ph-manual-jpeg-\(nextID)"
+                nextID += 1
+                saved.append((filename: filename, url: fileURL, size: UInt64(data.count), pixelSize: dims))
+                return assetID
+            }
+        }
+
+        func makeLargeLandscapeJPEG(width: Int, height: Int, targetSize: Int) throws -> Data {
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+                throw CameraProtocolError.invalid("Failed to construct test CGContext")
+            }
+            ctx.setFillColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1)
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            guard let image = ctx.makeImage() else {
+                throw CameraProtocolError.invalid("Failed to construct test CGImage")
+            }
+            let encoded = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(encoded, "public.jpeg" as CFString, 1, nil) else {
+                throw CameraProtocolError.invalid("Failed to construct JPEG encoder")
+            }
+            CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.95] as CFDictionary)
+            guard CGImageDestinationFinalize(dest) else {
+                throw CameraProtocolError.invalid("Failed to finalize landscape JPEG")
+            }
+            let base = encoded as Data
+            var out = Data(capacity: max(targetSize, base.count))
+            out.append(base.prefix(2))
+            var remaining = max(0, targetSize - base.count)
+            while remaining >= 4 {
+                let payload = min(32_768, remaining - 4)
+                let segLen = UInt16(payload + 2)
+                out.append(contentsOf: [0xff, 0xfe, UInt8(segLen >> 8), UInt8(segLen & 0xff)])
+                out.append(Data(repeating: 0x22, count: payload))
+                remaining -= (4 + payload)
+            }
+            out.append(base.dropFirst(2))
+            return out
+        }
+
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-manual-jpeg-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let saver = RecordingPhotoLibrarySaver()
+        let rawBytes = validRAWBytes(15)
+        let jpegBytes = try makeLargeLandscapeJPEG(width: 128, height: 64, targetSize: 250_000)
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let channel = FakeSonyCameraChannel(entries: [
+            FakeSonyCameraEntry(content: 1, name: "DSC09201.ARW", createdMillis: baseMillis + 1_000, bytes: rawBytes),
+            FakeSonyCameraEntry(content: 2, name: "DSC09201.JPG", createdMillis: baseMillis + 1_000, bytes: jpegBytes)
+        ])
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), photoLibrarySaver: saver) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend)
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:MANUAL-JPEG", label: "Fake")
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing && controller.assets.count == 2 }
+
+        // 1) Manual mode with adjust=true shrinks JPEG to 40x20, keeps ARW untouched, and sends shrunk JPEG to Photos.
+        controller.setIncrementalMode(false)
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72))
+        controller.selection = Set(controller.assets.map(\.id))
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && controller.lastSavedToPhotoLibraryCount == 2 }
+
+        let adjustedOrig = try store.snapshot.originals.first { $0.name == "DSC09201.JPG" }
+            ?? { throw CameraProtocolError.invalid("Missing manual adjusted JPG") }()
+        let savedToPhotosAdjusted = saver.saved.first { $0.filename == "DSC09201.JPG" }
+        try check(adjustedOrig.jpegSource?.options == CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72)
+                  && savedToPhotosAdjusted?.pixelSize == CGSize(width: 40, height: 20)
+                  && adjustedOrig.size < UInt64(jpegBytes.count),
+                  "Manual import with adjust=true resizes JPEG to 40x20 and streams resized file to Photos")
+        let storedRaw = try store.snapshot.originals.first { $0.name == "DSC09201.ARW" }
+            ?? { throw CameraProtocolError.invalid("Missing manual ARW") }()
+        let storedRawBytes = try Data(contentsOf: store.verifiedURL(storedRaw.id))
+        try check(storedRaw.jpegSource == nil && storedRawBytes == rawBytes,
+                  "Manual import with JPEG resize leaves paired ARW untouched")
+
+        // 2) Switch to adjust=false and manually import the JPEG: keeps full 128x64 resolution without reusing resized copy.
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: false))
+        let jpgAsset = try controller.assets.first { $0.snapshot.name == "DSC09201.JPG" }
+            ?? { throw CameraProtocolError.invalid("Missing JPG remote asset") }()
+        controller.selection = [jpgAsset.id]
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && saver.saved.count == 3 }
+        let fullSavedToPhotos = saver.saved.last
+        let unadjustedOrig = store.snapshot.originals.last { $0.name == "DSC09201.JPG" }
+        try check(unadjustedOrig?.jpegSource == nil && unadjustedOrig?.id != adjustedOrig.id
+                  && fullSavedToPhotos?.pixelSize == CGSize(width: 128, height: 64)
+                  && unadjustedOrig?.size == UInt64(jpegBytes.count),
+                  "Manual import with adjust=false stores full 128x64 JPEG original")
+
+        // 3) Re-enable adjust=true when an unadjusted local copy exists: must NOT bypass resizing via 3x64KiB sampling!
+        channel.resetTransferStats()
+        controller.setJPEGOptions(CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72))
+        controller.selection = [jpgAsset.id]
+        controller.importSelected()
+        try await waitUntil { controller.phase == .browsing && channel.bytesReadByName["DSC09201.JPG"] == jpegBytes.count }
+        try check(channel.mobileRangeReads["DSC09201.JPG"] == [0..<jpegBytes.count],
+                  "Manual import with adjust=true downloads full bytes rather than sampling unadjusted original")
 
         await withCheckedContinuation { continuation in
             controller.stop { continuation.resume() }

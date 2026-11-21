@@ -29,13 +29,12 @@ final class SonyCameraSession {
     static func open(host: String, purpose: CameraSessionPurpose, clientID: UUID,
                      register: (CameraPTPClient) -> Void) throws -> SonyCameraSession {
         let command = try CameraTCPChannel(host: host)
-        let event: CameraTCPChannel
-        do { event = try CameraTCPChannel(host: host) }
-        catch { command.close(); throw error }
-        let client = CameraPTPClient(command: command, event: event)
+        let client = CameraPTPClient(command: command, event: nil)
         register(client)
         do {
-            try client.initialize(clientID: clientID)
+            try client.initialize(clientID: clientID, openEvent: {
+                try CameraTCPChannel(host: host)
+            })
             return try SonyCameraSession(client: client, purpose: purpose)
         } catch { client.close(); throw error }
     }
@@ -114,7 +113,8 @@ final class SonyCameraSession {
         _ = try client.operation(0x9212, parameters: [2, 1, 0])
         contentsEntered = true
         for _ in 0..<20 {
-            if try !storageIDs().isEmpty { return }
+            let ids = try storageIDs()
+            if !ids.isEmpty { return }
             try pause(0.25)
         }
         throw CameraProtocolError.unsupported("Camera card is not available")
