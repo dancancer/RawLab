@@ -1,4 +1,5 @@
 #include "photo_basic_controls_v3.h"
+#include "photo_geometry.h"
 #include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
@@ -55,8 +56,9 @@ float sample(const std::vector<float>& values, int width, int height, float x, f
 
 } // namespace
 
-void applyBasicToneV3(ImageData& image, const BasicToneV3& options, int sourceWidth, int sourceHeight) {
-    if (!options.active() || image.width <= 0 || image.height <= 0) return;
+BasicToneV3Field buildBasicToneV3Field(const ImageData& image, int sourceWidth, int sourceHeight) {
+    BasicToneV3Field field;
+    if (image.width <= 0 || image.height <= 0) return field;
     if (sourceWidth <= 0 || sourceHeight <= 0) {
         sourceWidth = image.width;
         sourceHeight = image.height;
@@ -94,20 +96,37 @@ void applyBasicToneV3(ImageData& image, const BasicToneV3& options, int sourceWi
         slope[i] = variance / (variance + .25f);
         intercept[i] = mean[i] * (1 - slope[i]);
     }
-    slope = boxMean(slope, width, height, radius);
-    intercept = boxMean(intercept, width, height, radius);
+    field.width = width;
+    field.height = height;
+    field.slope = boxMean(slope, width, height, radius);
+    field.intercept = boxMean(intercept, width, height, radius);
+    return field;
+}
+
+void applyBasicToneV3WithField(ImageData& image, const BasicToneV3& options,
+    const BasicToneV3Field& field, const SubRectMap& roiMap) {
+    if (!options.active() || image.width <= 0 || image.height <= 0 || field.empty()) return;
     const float shadows = std::clamp(options.shadows, -1.f, 1.f);
     const float highlights = std::clamp(options.highlights, -1.f, 1.f);
+    const bool hasRoi = roiMap.active();
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) {
             auto& pixel = image.pixels[i];
             const float light = luminance(pixel);
             if (!std::isfinite(light) || light <= 0) continue;
             const float logLight = std::log2(std::max(light, 1e-7f) / .1845f);
-            const float x = (float(i % image.width) + .5f) * width / image.width - .5f;
-            const float y = (float(i / image.width) + .5f) * height / image.height - .5f;
-            const float base = sample(slope, width, height, x, y) * logLight +
-                sample(intercept, width, height, x, y);
+            const int px = int(i % image.width);
+            const int py = int(i / image.width);
+            const float x = hasRoi
+                ? float(roiMap.sourceX0 + (double(px) + 0.5) * roiMap.sourceSpanX / image.width) *
+                    field.width / roiMap.fullWidth - .5f
+                : (float(px) + .5f) * field.width / image.width - .5f;
+            const float y = hasRoi
+                ? float(roiMap.sourceY0 + (double(py) + 0.5) * roiMap.sourceSpanY / image.height) *
+                    field.height / roiMap.fullHeight - .5f
+                : (float(py) + .5f) * field.height / image.height - .5f;
+            const float base = sample(field.slope, field.width, field.height, x, y) * logLight +
+                sample(field.intercept, field.width, field.height, x, y);
             const float shadowWeight = 1 - smooth((base + 6) / 7);
             const float highlightWeight = smooth((base + 1) / 6);
             const float gain = std::exp2(3.5f * shadows * shadowWeight + 3.f * highlights * highlightWeight);
@@ -116,6 +135,12 @@ void applyBasicToneV3(ImageData& image, const BasicToneV3& options, int sourceWi
             pixel.b *= gain;
         }
     });
+}
+
+void applyBasicToneV3(ImageData& image, const BasicToneV3& options, int sourceWidth, int sourceHeight) {
+    if (!options.active() || image.width <= 0 || image.height <= 0) return;
+    const auto field = buildBasicToneV3Field(image, sourceWidth, sourceHeight);
+    applyBasicToneV3WithField(image, options, field, {});
 }
 
 float basicContrastV3(float value, float amount) {

@@ -390,6 +390,68 @@ sony2fuji_status sony2fuji_hdr_export_tiled(sony2fuji_session* session,
     const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_export_config_v1* config,
     uint32_t output_format, const char* temporary_root, const char* path,
     sony2fuji_hdr_stream_result_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+typedef struct sony2fuji_hdr_roi_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+    uint32_t max_output_long_edge;
+    float base_content_headroom;
+    uint32_t source_x0;
+    uint32_t source_y0;
+    uint32_t full_source_width;
+    uint32_t full_source_height;
+} sony2fuji_hdr_roi_v1;
+
+typedef struct sony2fuji_hdr_roi_result_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+    uint32_t is_proxy;
+} sony2fuji_hdr_roi_result_v1;
+
+typedef struct sony2fuji_hdr_roi_source_bounds_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t source_x0;
+    uint32_t source_y0;
+    uint32_t source_x1;
+    uint32_t source_y1;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+    uint32_t output_width;
+    uint32_t output_height;
+} sony2fuji_hdr_roi_source_bounds_v1;
+
+sony2fuji_status sony2fuji_hdr_roi_source_bounds(uint32_t native_width, uint32_t native_height,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_roi_source_bounds_v1* out_bounds, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_roi(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_camera_raw_roi(sony2fuji_session* session, const char* file,
+    const sony2fuji_hdr_camera_development_v1* development, uint32_t use_ai,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_render_file_roi(sony2fuji_session* session, const char* file,
+    const sony2fuji_hdr_request_v1* request, const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
+void sony2fuji_hdr_clear_session_cache(sony2fuji_session* session);
+
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image);
 
 #ifdef __cplusplus

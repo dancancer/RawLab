@@ -548,6 +548,28 @@ DecodedImage decodeFile(const char* path, const HDRDecodeOptions& options) {
     result.pixels.decodeRevision=nextRevision.fetch_add(1);
     return result;
 }
+DecodedImage decodeFileROI(const char* path, const RoiSubRect& rect) {
+    if (rect.empty() || rect.x0 < 0 || rect.y0 < 0) {
+        fail(RenderStatus::InvalidArgument, kHdrFieldRequest, "Invalid HDR file ROI rect");
+    }
+    auto full = decodeFile(path, HDRDecodeOptions{kHdrIntentFinal, 0});
+    if (rect.x1 > full.pixels.hdr.width || rect.y1 > full.pixels.hdr.height) {
+        fail(RenderStatus::InvalidArgument, kHdrFieldRequest, "HDR file ROI exceeds image bounds");
+    }
+    const int rw = rect.width();
+    const int rh = rect.height();
+    ImageData subHdr(rw, rh);
+    ImageData subSdr(rw, rh);
+    for (int y = 0; y < rh; ++y) {
+        std::copy_n(full.pixels.hdr.pixels.data() + size_t(rect.y0 + y) * full.pixels.hdr.width + rect.x0,
+            rw, subHdr.pixels.data() + size_t(y) * rw);
+        std::copy_n(full.pixels.sdr.pixels.data() + size_t(rect.y0 + y) * full.pixels.sdr.width + rect.x0,
+            rw, subSdr.pixels.data() + size_t(y) * rw);
+    }
+    full.pixels.hdr = std::move(subHdr);
+    full.pixels.sdr = std::move(subSdr);
+    return full;
+}
 #if defined(__APPLE__)
 // Keep the portable adapter's symbol closure complete when the Apple-compiled
 // C ABI object also references tiled export. Never pull the Apple adapter back in.

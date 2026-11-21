@@ -187,6 +187,68 @@ HDRStreamResult exportRowStream(const StreamSourceSpec& source, const HDRRenderO
                                 const std::string& lookPath, const HDRExportConfig& config,
                                 bool keepHDR, const char* temporaryRoot, const char* targetFile);
 
+struct RoiCameraRawCacheEntry {
+    std::string file;
+    uintmax_t fileSize = 0;
+    std::filesystem::file_time_type modified{};
+    bool hasDevelopment = false;
+    bool legacySonyCrop = true;
+    uint32_t whiteBalance = 0;
+    uint32_t exposureReference = 0;
+    float temperature = 0.0f;
+    float tint = 0.0f;
+    uint32_t fbddLevel = 0;
+    uint32_t lensFlags = 0;
+    std::string lensProfileId;
+    bool hasCameraProfile = false;
+    std::string cameraProfilePath;
+    std::string cameraProfileSha256;
+    bool useAi = false;
+    std::string aiKey;
+
+    ImageData hdr;
+    uint32_t nativeWidth = 0;
+    uint32_t nativeHeight = 0;
+    uint32_t sourceHeadroomKind = kHdrHeadroomUnknown;
+    float sourceHeadroom = 0.0f;
+    uint64_t decodeRevision = 0;
+    bool isProxy = false;
+    bool usedCameraProfile = false;
+};
+
+struct RoiFileCacheEntry {
+    std::string file;
+    uintmax_t fileSize = 0;
+    std::filesystem::file_time_type modified{};
+    HDRImagePair pixels;
+    ExportSourceMetadata meta;
+    uint32_t sourceHeadroomKind = kHdrHeadroomUnknown;
+};
+
+struct RoiSessionCache {
+    RoiCameraRawCacheEntry cameraRaw;
+    RoiFileCacheEntry file;
+};
+
+struct RoiRenderOutput {
+    HDRImagePair pixels;
+    float hdrHeadroom = 0.0f;
+    float sdrHeadroom = 0.0f;
+    uint32_t sourceHeadroomKind = kHdrHeadroomUnknown;
+    ExportSourceMetadata meta;
+    HDRRoiSourceBounds bounds;
+    bool isProxy = false;
+};
+
+RoiRenderOutput renderPairROI(HDRImagePair& source, const std::string& lookPath,
+    const ExportSourceMetadata& sourceMeta, uint32_t headroomKind,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi);
+RoiRenderOutput renderCameraRawROI(RoiSessionCache& cache, const char* file,
+    const CameraRawDevelopmentSpec& devSpec, const std::string& lookPath,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi);
+RoiRenderOutput renderFileROI(RoiSessionCache& cache, const char* file,
+    const std::string& lookPath, const HDRRenderOptions& options, const HDRRoiSpec& roi);
+
 #if defined(__APPLE__)
 struct TiledSourceInput {
     const HDRImagePair* ownedCameraPixels = nullptr;

@@ -315,6 +315,9 @@ struct ContentView: View {
         .onChange(of: coordinator.photoViewing.holdingBefore) { _, _ in
             testHooks.onHoldingBeforeChange?(self)
         }
+        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore, initial: true) { _, needed in
+            viewModel.setDetailNeedsBefore(needed)
+        }
     }
 
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {

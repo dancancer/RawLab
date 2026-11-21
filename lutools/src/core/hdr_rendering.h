@@ -83,6 +83,52 @@ HDRImagePair renderHDRPair(const HDRImagePair& source, const HDRRenderOptions& o
 // A uniquely owned source may transfer its two pixel vectors into the result.
 // Callers that need the source after rendering must use the const& overload.
 HDRImagePair renderHDRPair(HDRImagePair&& source, const HDRRenderOptions& options);
+struct HDRRoiSpec {
+    double normX0 = 0.0;
+    double normY0 = 0.0;
+    double normX1 = 1.0;
+    double normY1 = 1.0;
+    uint32_t maxOutputLongEdge = 0;
+    float baseContentHeadroom = 0.0f;
+    uint32_t sourceOffsetX = 0;
+    uint32_t sourceOffsetY = 0;
+    uint32_t fullSourceWidth = 0;
+    uint32_t fullSourceHeight = 0;
+};
+
+struct HDRRoiSourceBounds {
+    RoiSubRect sourceRect;
+    OutputRoiPlan plan;
+    int detailHalo = 0;
+    int paddedOx0 = 0;
+    int paddedOy0 = 0;
+    int paddedOx1 = 0;
+    int paddedOy1 = 0;
+    int fullScaledWidth = 0;
+    int fullScaledHeight = 0;
+    int paddedOutWidth = 0;
+    int paddedOutHeight = 0;
+    int cropLeft = 0;
+    int cropTop = 0;
+};
+
+HDRRoiSourceBounds computeHDRRoiSourceBounds(uint32_t fullSourceWidth, uint32_t fullSourceHeight,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi);
+
+HDRImagePair renderHDRPairROI(const HDRImagePair& source, const HDRRenderOptions& options,
+    const HDRRoiSpec& roi, HDRRoiSourceBounds* outBounds = nullptr);
+
+ImageData extractHDRPlaneForROI(const ImageData& src, uint32_t fullWidth, uint32_t fullHeight,
+    const RoiSubRect& rect, uint32_t offsetX = 0, uint32_t offsetY = 0, bool isPreCropped = false);
+
+// Shared entry when caller already extracted/resampled sub-rectangles covering bounds.sourceRect.
+HDRImagePair renderHDRSubRectROI(ImageData subHdr, ImageData subSdr,
+    uint32_t fullSourceWidth, uint32_t fullSourceHeight,
+    float sourceHeadroom, uint64_t decodeRevision, HDRQuality sourceQuality,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi,
+    const HDRRoiSourceBounds& bounds,
+    const ImageData* veilSourceHdr = nullptr, const ImageData* veilSourceSdr = nullptr);
+
 ImageData renderHDRHslProbe(ImageData image, const HDRRenderOptions& options);
 HslColor analyzeHDRColor(const RGB& pixel);
 

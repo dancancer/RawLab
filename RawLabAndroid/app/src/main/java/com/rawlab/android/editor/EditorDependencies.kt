@@ -147,6 +147,8 @@ internal class EditorDependencies(
         pair.uncroppedGeometrySize(geometry).let { it[0] to it[1] }
     },
     val previewResizedDelayMs: Long = 200L,
+    val detailDebounceDelayMs: Long = 0L,
+    val detailOverscanRing: Int = 1,
     val saveNoticeFadeDelayMs: Long = 3000L,
     val sourceValidator: (com.rawlab.android.photo.ImportedPhoto) -> () -> Unit =
         EditorAdjustmentHistory.Companion::sourceValidation,

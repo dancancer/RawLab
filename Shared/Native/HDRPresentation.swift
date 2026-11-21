@@ -9,13 +9,19 @@ final class HDRPresentation: HDRDisplayImage, HDRLinearDisplayImage {
     var width: Int { image.width }
     var height: Int { image.height }
 
-    init(_ image: HDRImage) throws {
+    init(_ image: HDRImage, headroomOverride: Float? = nil) throws {
         self.image=image
-        statistics=try image.withPair { pair in
+        let measured=try image.withPair { pair in
             let buffer=pair.pointee.hdr
             guard let pointer=buffer.data else { throw HDRDisplayFailure.invalidBuffer }
             return try HDRStatistics.analyze(UnsafeBufferPointer(start:pointer.assumingMemoryBound(to:Float.self),
                 count:Int(buffer.size_bytes)/4),width:Int(buffer.width),height:Int(buffer.height),stride:Int(buffer.stride_bytes)/4)
+        }
+        if let headroomOverride, headroomOverride.isFinite, headroomOverride >= 1 {
+            statistics = HDRStatistics(bins: measured.bins, aboveWhite: measured.aboveWhite,
+                                       headroom: headroomOverride, pixels: measured.pixels)
+        } else {
+            statistics = measured
         }
         sdrImage=try Self.makeSDRImage(image)
     }

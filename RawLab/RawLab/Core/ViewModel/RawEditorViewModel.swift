@@ -11,6 +11,9 @@ final class RawEditorViewModel: ObservableObject {
     }
 
     @Published var previewImage: UIImage?
+    @Published var detailOverlay: PhotoDetailOverlay?
+    @Published var detailTiles: [PhotoDetailOverlay] = []
+    @Published var detailBacking: PhotoDetailBacking?
     @Published var hdrPresentation: HDRPresentation?
     @Published var hdrReference: HDRPresentation?
     @Published var sourceIsHDR=false
@@ -173,6 +176,7 @@ final class RawEditorViewModel: ObservableObject {
             acceptedPreviewRequest = nil
             completedPreviewCache.removeAll()
             completedPreviewCacheBytes = 0
+            fullRasterROIBuffer = nil
             closeQuickPresets()
         }
     }
@@ -226,6 +230,7 @@ final class RawEditorViewModel: ObservableObject {
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
+    var fullRasterROIBuffer: Sony2FujiProcessor.Buffer?
     var latestRenderID = UUID()
     var activeImportRevision: UUID?
     let resultDelivery: (@escaping () -> Void) -> Void
@@ -233,6 +238,39 @@ final class RawEditorViewModel: ObservableObject {
     let importQueue: DispatchQueue
     let lookImportCoordinator: LookImportCoordinator
     var previewWorkItem: DispatchWorkItem?
+    var detailDebounceWorkItem: DispatchWorkItem?
+    var detailRenderToken = UUID()
+    var lastDetailRequest: PhotoDetailRequest?
+    var detailTileCache: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
+    var detailTileLRU: [PhotoDetailTileKey] = []
+    var detailTileCacheBytes: Int = 0
+    var detailTileFrameID: UUID?
+    let detailTileByteBudget = 112 * 1024 * 1024
+    let detailTileMaxCount = 36
+    let detailBackingMaxLongEdge = 3072
+    let fastMetalFullResMaxPixels = 28_000_000
+    var detailPrewarmEnabled = true
+    var detailNeedsBefore = false
+    var desiredDetailSpecs: [PhotoDetailTileSpec] = []
+    var desiredDetailKeys: Set<PhotoDetailTileKey> = []
+    var desiredDetailVisibleKeys: Set<PhotoDetailTileKey> = []
+    var desiredDetailRequiredKeys: Set<PhotoDetailTileKey> = []
+    var inFlightDetailTileKey: PhotoDetailTileKey?
+    var detailWorkerActive = false
+    var detailWorkerFrameID: UUID?
+    var detailBackingRenderedFrameID: UUID?
+    var detailPrewarmScheduledFrameID: UUID?
+    var detailMetalFullResFailedFrameID: UUID?
+    var detailNeedsBeforeLocked = false
+    var detailPrewarmPending = false
+    var detailBeforeBackingPending = false
+    var cachedDetailTileBeforeLocked: [PhotoDetailTileKey: Bool] = [:]
+    var detailTileAfterLocked: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
+    var detailDeliverySequence: UInt64 = 0
+    var pendingDetailDeliveryKeys: [PhotoDetailTileKey: (hasBefore: Bool, seq: UInt64)] = [:]
+    var hdrDetailCache: [PhotoDetailOverlay] = []
+    let hdrDetailMaxCount = 4
+    private var memoryWarningObserver: NSObjectProtocol?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
     var onPreviewRequest: ((PreviewRequest, UUID) -> Void)?
@@ -282,6 +320,27 @@ final class RawEditorViewModel: ObservableObject {
             ErrorDiagnostics.log(error, operation: .editPersistence, stage: "openStore")
             editSaveState = .failed(error.localizedDescription)
         }
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.clearDetailState(releaseRaster: true, keepRequest: true)
+            self.renderStateLock.lock()
+            self.detailPrewarmScheduledFrameID = self.acceptedPreviewFrameID
+            self.renderStateLock.unlock()
+            self.renderQueue.async { [weak self] in
+                self?.processor.clearHDRSessionCache()
+            }
+        }
+    }
+
+    deinit {
+        if let memoryWarningObserver {
+            NotificationCenter.default.removeObserver(memoryWarningObserver)
+        }
+        detailDebounceWorkItem?.cancel()
     }
 
 }

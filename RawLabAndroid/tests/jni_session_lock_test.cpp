@@ -1029,6 +1029,21 @@ sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* s, in
     }
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_session_set_viewport_roi(sony2fuji_session* s, const sony2fuji_viewport_roi*) {
+    SessionCallScope scope(s);
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_session_get_viewport_roi_result(const sony2fuji_session* s,
+    sony2fuji_viewport_roi_result* out) {
+    SessionCallScope scope(const_cast<sony2fuji_session*>(s));
+    if (out) {
+        out->active = 1;
+        out->native_x0 = 0; out->native_y0 = 0;
+        out->native_x1 = 2; out->native_y1 = 2;
+        out->full_native_width = 2; out->full_native_height = 2;
+    }
+    return SONY2FUJI_STATUS_OK;
+}
 sony2fuji_status sony2fuji_session_set_wavelet_denoise(sony2fuji_session* s, const sony2fuji_wavelet_denoise_config* cfg) {
     SessionCallScope scope(s);
     if (gCapturePayloads && cfg) {
@@ -1404,6 +1419,49 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* s, const sony2fuji_hdr_
     require(validSource, "HDR render source released during use");
     *result = makeMockPair();
     return SONY2FUJI_STATUS_OK;
+}
+static void fillMockHdrRoiResult(sony2fuji_hdr_roi_result_v1* out_roi) {
+    if (!out_roi) return;
+    out_roi->native_x0 = 0; out_roi->native_y0 = 0;
+    out_roi->native_x1 = 2; out_roi->native_y1 = 2;
+    out_roi->full_native_width = 2; out_roi->full_native_height = 2;
+    out_roi->is_proxy = 0;
+}
+sony2fuji_status sony2fuji_hdr_roi_source_bounds(uint32_t w, uint32_t h, const sony2fuji_hdr_request_v1*,
+    const sony2fuji_hdr_roi_v1*, sony2fuji_hdr_roi_source_bounds_v1* out, sony2fuji_hdr_diagnostic_v1*) {
+    if (out) {
+        out->source_x0 = 0; out->source_y0 = 0; out->source_x1 = w; out->source_y1 = h;
+        out->native_x0 = 0; out->native_y0 = 0; out->native_x1 = w; out->native_y1 = h;
+        out->full_native_width = w; out->full_native_height = h;
+        out->output_width = w; out->output_height = h;
+    }
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_hdr_render_roi(sony2fuji_session* s, const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_request_v1* req, const sony2fuji_hdr_roi_v1*, sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_roi_result_v1* out_roi, sony2fuji_hdr_diagnostic_v1* diag) {
+    fillMockHdrRoiResult(out_roi);
+    return sony2fuji_hdr_render(s, source, req, result, diag);
+}
+sony2fuji_status sony2fuji_hdr_render_camera_raw_roi(sony2fuji_session* s, const char*,
+    const sony2fuji_hdr_camera_development_v1*, uint32_t, const sony2fuji_hdr_request_v1*,
+    const sony2fuji_hdr_roi_v1*, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1*) {
+    SessionCallScope scope(s);
+    *result = makeMockPair();
+    fillMockHdrRoiResult(out_roi);
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_hdr_render_file_roi(sony2fuji_session* s, const char*, const sony2fuji_hdr_request_v1*,
+    const sony2fuji_hdr_roi_v1*, sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1*) {
+    SessionCallScope scope(s);
+    *result = makeMockPair();
+    fillMockHdrRoiResult(out_roi);
+    return SONY2FUJI_STATUS_OK;
+}
+void sony2fuji_hdr_clear_session_cache(sony2fuji_session* s) {
+    if (s) { SessionCallScope scope(s); }
 }
 sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* s, const sony2fuji_hdr_image_pair_v1*,
     const sony2fuji_hdr_request_v1*, uint64_t, uint64_t, sony2fuji_hsl_probe** out, sony2fuji_hdr_diagnostic_v1*) {

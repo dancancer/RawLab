@@ -14,7 +14,12 @@ import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.adjustments.PreparedAdjustmentTransfer
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.CollectionExportReview
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.DetailTileSpec
+import com.rawlab.android.editor.canvas.ViewportRoiRequest
+import com.rawlab.android.editor.canvas.detailTileSpecs
 import com.rawlab.android.editor.render.EditorRenderer
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.Work
@@ -33,6 +38,8 @@ import com.rawlab.android.presets.AdjustmentPresetStore
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -79,6 +86,17 @@ class EditorViewModel internal constructor(
     private var previewLongEdge = 1600
     private var editorActivationRevision = 0L
     private var editorActive = true
+    private var detailDebounceJob: Job? = null
+    private var lastDetailRequest: ViewportRoiRequest? = null
+    private var detailNeedsBefore = false
+    private var inFlightDetailTileKey: DetailTileKey? = null
+    private var scheduledDetailTileKey: DetailTileKey? = null
+    private val detailRevisions = HashSet<Long>()
+    private val detailTileCache = LinkedHashMap<DetailTileKey, PreviewDetailOverlay>(32, 0.75f, true)
+    private var detailTileCacheBytes = 0L
+    private var detailTileSourceRevision = -1L
+    private var detailTileEditRevision = -1L
+    private val hdrDetailCache = ArrayList<PreviewDetailOverlay>(4)
 
     internal val storageRelease = StorageReleaseManifest(
         setOf("renderQueue", "lookQueue", "adjustmentQueue", "adjustmentPreparationQueue", "processingMigrationQueue", "collections"),
@@ -90,6 +108,14 @@ class EditorViewModel internal constructor(
         { revision, result ->
             // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
             dependencies.mainDelivery {
+                val isDetail = detailRevisions.remove(revision)
+                if (isDetail) {
+                    inFlightDetailTileKey = null
+                    if (!disposed && revision == currentRevision && result.isSuccess) {
+                        previewCoordinator.accept(result)
+                    }
+                    return@mainDelivery
+                }
                 val preview = result.getOrNull() as? WorkResult.Preview
                 if (!disposed && revision == currentRevision) previewCoordinator.accept(result)
                 else if (!disposed && revision >= progressivePreviewFloor && preview != null &&
@@ -238,12 +264,14 @@ class EditorViewModel internal constructor(
     private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(
         mutable, scope, strings, editStore, adjustmentHistory, previewCache, dependencies.saveNoticeFadeDelayMs,
         dependencies.recordUsage, { disposed }, { editorActive }, { editorActivationRevision },
-        { sourceRevision }, { currentRevision }, { previewLongEdge }, { previewLongEdge = it },
+        { sourceRevision }, { editRevision }, { currentRevision }, { previewLongEdge }, { previewLongEdge = it },
         { editRevision += 1 }, { work -> submitRender(work).also { currentRevision = it } },
         { work, completed -> commitAdjustments(work, completed = completed) },
         { work, completed -> commitAdjustments(work, completed = completed) },
         lookHolder, importRecoveryHolder, hslHolder, hdrHolder, exportHolder,
         processingMigrationHolder, adjustmentTransferHolder, collectionHolder, batchHolder, draftHolder, ::failure,
+        { scheduleDetailIfNeeded() },
+        ::handleDetailAccepted,
     )
 
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
@@ -322,16 +350,331 @@ class EditorViewModel internal constructor(
     }
 
     private fun submitRender(work: Work): Long {
-        if (work !is Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
-        hdrHolder.onRenderSubmitted(work)
+        if (work !is Work.DetailPreview && work !is Work.HslProbe) {
+            clearDetailState(keepRequest = work is Work.Preview && !work.importing)
+        }
+        if (work !is Work.DetailPreview) {
+            if (work !is Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
+            hdrHolder.onRenderSubmitted(work)
+        }
         val continuesInteraction = latestRender?.canFinishPreviewBefore(work) == true
-        latestRender = work
-        return queue.submit(work).also { if (!continuesInteraction) progressivePreviewFloor = it }
+        if (work !is Work.DetailPreview && work !is Work.HslProbe) {
+            latestRender = work
+        }
+        return queue.submit(work).also { submitted ->
+            if (work is Work.DetailPreview) {
+                inFlightDetailTileKey = work.tileKey
+                detailRevisions.add(submitted)
+                detailRevisions.removeAll { it < submitted - 32 }
+            } else {
+                inFlightDetailTileKey = null
+            }
+            if (!continuesInteraction && work !is Work.DetailPreview) progressivePreviewFloor = submitted
+        }
     }
 
     private fun invalidateRender(): Long {
+        clearDetailState(keepRequest = false)
         latestRender = null
         return queue.invalidate().also { progressivePreviewFloor = it }
+    }
+
+    private fun detailTileBytes(overlay: PreviewDetailOverlay): Long {
+        val single = overlay.pixelWidth.toLong().coerceAtLeast(1L) * overlay.pixelHeight.toLong().coerceAtLeast(1L) * 4L
+        return if (overlay.neutral != null && overlay.neutral !== overlay.result) single * 2L else single
+    }
+
+    private fun syncDetailCacheRevision() {
+        if (detailTileSourceRevision != sourceRevision || detailTileEditRevision != editRevision) {
+            detailTileCache.clear()
+            detailTileCacheBytes = 0L
+            hdrDetailCache.clear()
+            detailTileSourceRevision = sourceRevision
+            detailTileEditRevision = editRevision
+        }
+    }
+
+    private fun sortedCachedDetailTiles(): List<PreviewDetailOverlay> =
+        detailTileCache.values.sortedWith(
+            compareByDescending<PreviewDetailOverlay> { it.tileKey?.level ?: 0 }
+                .thenBy { it.tileKey?.row ?: 0 }
+                .thenBy { it.tileKey?.col ?: 0 },
+        )
+
+    private fun detailTilesMatch(lhs: List<PreviewDetailOverlay>, rhs: List<PreviewDetailOverlay>): Boolean {
+        if (lhs.size != rhs.size) return false
+        for (i in lhs.indices) {
+            if (lhs[i].tileKey != rhs[i].tileKey ||
+                lhs[i].sourceRevision != rhs[i].sourceRevision ||
+                lhs[i].editRevision != rhs[i].editRevision ||
+                lhs[i].result !== rhs[i].result ||
+                lhs[i].neutral !== rhs[i].neutral
+            ) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun tileNeedsRender(key: DetailTileKey): Boolean {
+        val cached = detailTileCache[key] ?: return true
+        return detailNeedsBefore && cached.neutral == null
+    }
+
+    private fun storeDetailTile(overlay: PreviewDetailOverlay, keepKeys: Set<DetailTileKey>) {
+        syncDetailCacheRevision()
+        val key = overlay.tileKey ?: return
+        detailTileCache.remove(key)?.let { old ->
+            detailTileCacheBytes = (detailTileCacheBytes - detailTileBytes(old)).coerceAtLeast(0L)
+        }
+        detailTileCache[key] = overlay
+        detailTileCacheBytes += detailTileBytes(overlay)
+
+        val maxBytes = 48L * 1024L * 1024L
+        val maxCount = 16
+        while (detailTileCacheBytes > maxBytes || detailTileCache.size > maxCount) {
+            val victimKey = detailTileCache.keys.firstOrNull { it !in keepKeys }
+                ?: detailTileCache.keys.firstOrNull()
+                ?: break
+            val removed = detailTileCache.remove(victimKey) ?: break
+            detailTileCacheBytes = (detailTileCacheBytes - detailTileBytes(removed)).coerceAtLeast(0L)
+        }
+    }
+
+    private fun storeHDRDetail(overlay: PreviewDetailOverlay) {
+        syncDetailCacheRevision()
+        hdrDetailCache.removeAll { it.normalizedRect == overlay.normalizedRect && it.pixelWidth == overlay.pixelWidth }
+        hdrDetailCache.add(overlay)
+        while (hdrDetailCache.size > 4) hdrDetailCache.removeAt(0)
+    }
+
+    private fun handleDetailAccepted(value: WorkResult.DetailPreview) {
+        inFlightDetailTileKey = null
+        val overlay = value.overlay ?: return
+        val req = value.request
+        if (req.sourceRevision != sourceRevision || req.editRevision != editRevision) return
+        if (overlay.tileKey != null) {
+            val activeRequest = lastDetailRequest
+            val keepKeys = activeRequest?.let { r ->
+                mutable.value.preview?.let { p ->
+                    detailTileSpecs(
+                        r.visibleRect,
+                        p.nativeWidth,
+                        p.nativeHeight,
+                        r.zoomScale,
+                        r.baseScale,
+                        overscanRing = dependencies.detailOverscanRing,
+                    ).mapTo(HashSet()) { it.key }
+                }
+            } ?: emptySet()
+            storeDetailTile(overlay, keepKeys)
+            if (activeRequest != null) {
+                val sorted = sortedCachedDetailTiles()
+                if (!detailTilesMatch(mutable.value.detailTiles, sorted) || mutable.value.detail !== overlay) {
+                    mutable.value = mutable.value.copy(detailTiles = sorted, detail = overlay)
+                }
+                val preview = mutable.value.preview
+                val remaining = if (preview != null && preview.hdr == null) {
+                    detailTileSpecs(
+                        activeRequest.visibleRect,
+                        preview.nativeWidth,
+                        preview.nativeHeight,
+                        activeRequest.zoomScale,
+                        activeRequest.baseScale,
+                        overscanRing = dependencies.detailOverscanRing,
+                    ).firstOrNull { tileNeedsRender(it.key) }
+                } else null
+                if (remaining != null) {
+                    scheduleDetailWork(activeRequest, remaining, delayMs = 0L)
+                }
+            }
+            return
+        }
+        if (overlay.hdrResult != null) storeHDRDetail(overlay)
+        if (lastDetailRequest != null) {
+            mutable.value = mutable.value.copy(detail = overlay, detailTiles = emptyList())
+        }
+    }
+
+    private fun clearDetailState(keepRequest: Boolean = false) {
+        detailDebounceJob?.cancel()
+        detailDebounceJob = null
+        scheduledDetailTileKey = null
+        inFlightDetailTileKey = null
+        if (!keepRequest) lastDetailRequest = null
+        detailTileCache.clear()
+        detailTileCacheBytes = 0L
+        hdrDetailCache.clear()
+        if (mutable.value.detail != null || mutable.value.detailTiles.isNotEmpty()) {
+            mutable.value = mutable.value.copy(detail = null, detailTiles = emptyList())
+        }
+    }
+
+    fun setDetailNeedsBefore(needed: Boolean) {
+        if (disposed || detailNeedsBefore == needed) return
+        detailNeedsBefore = needed
+        if (needed && lastDetailRequest != null) {
+            updateDetailRequest(lastDetailRequest)
+        }
+    }
+
+    private fun scheduleDetailIfNeeded() {
+        val request = lastDetailRequest ?: return
+        if (disposed) return
+        val current = mutable.value
+        val preview = current.preview
+        if (preview != null && preview.hdr == null) {
+            syncDetailCacheRevision()
+            val specs = detailTileSpecs(
+                request.visibleRect,
+                preview.nativeWidth,
+                preview.nativeHeight,
+                request.zoomScale,
+                request.baseScale,
+                overscanRing = dependencies.detailOverscanRing,
+            )
+            if (specs.isNotEmpty()) {
+                val firstMissing = specs.firstOrNull { tileNeedsRender(it.key) } ?: return
+                scheduleDetailWork(request, firstMissing, dependencies.detailDebounceDelayMs)
+                return
+            }
+        }
+        scheduleDetailWork(request, tileSpec = null, delayMs = dependencies.detailDebounceDelayMs)
+    }
+
+    private fun scheduleDetailWork(
+        request: ViewportRoiRequest,
+        tileSpec: DetailTileSpec?,
+        delayMs: Long,
+    ) {
+        if (disposed) return
+        detailDebounceJob?.cancel()
+        scheduledDetailTileKey = tileSpec?.key
+        detailDebounceJob = scope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            detailDebounceJob = null
+            scheduledDetailTileKey = null
+            if (disposed) return@launch
+            val current = mutable.value
+            val photo = current.photo ?: return@launch
+            val preview = current.preview ?: return@launch
+            if (!current.controlsEnabled || !current.exact || current.rendering ||
+                current.previewResizePending || current.operation != Operation.NONE ||
+                current.draft?.group == AdjustmentGroup.GEOMETRY || hslHolder.isWaiting
+            ) {
+                return@launch
+            }
+            val effectiveRoi = if (tileSpec != null) {
+                request.copy(
+                    visibleRect = tileSpec.rect,
+                    overscanRect = tileSpec.rect,
+                    maxOutputLongEdge = tileSpec.maxOutputLongEdge,
+                )
+            } else {
+                val edgeLimit = if (preview.hdr != null) minOf(1280, request.maxOutputLongEdge) else request.maxOutputLongEdge
+                if (hdrDetailCache.any {
+                    it.sourceRevision == sourceRevision &&
+                    it.editRevision == editRevision &&
+                    it.covers(request.visibleRect, request.zoomScale, edgeLimit)
+                }) {
+                    return@launch
+                }
+                request
+            }
+            val baseResultHeadroom = preview.hdr?.result?.statistics?.headroom ?: 0f
+            val baseNeutralHeadroom = preview.hdr?.neutral?.statistics?.headroom ?: 0f
+            currentRevision = submitRender(
+                Work.DetailPreview(
+                    photo = photo,
+                    edits = current.visibleEdits,
+                    roi = effectiveRoi,
+                    gpuMode = gpuMode(),
+                    sourceRevision = sourceRevision,
+                    editRevision = editRevision,
+                    baseResultHeadroom = baseResultHeadroom,
+                    baseNeutralHeadroom = baseNeutralHeadroom,
+                    includeNeutral = detailNeedsBefore,
+                    tileKey = tileSpec?.key,
+                )
+            )
+        }
+    }
+
+    fun updateDetailRequest(request: ViewportRoiRequest?) {
+        if (disposed) return
+        if (request == null) {
+            detailDebounceJob?.cancel()
+            detailDebounceJob = null
+            scheduledDetailTileKey = null
+            lastDetailRequest = null
+            if (mutable.value.detail != null || mutable.value.detailTiles.isNotEmpty()) {
+                mutable.value = mutable.value.copy(detail = null, detailTiles = emptyList())
+            }
+            return
+        }
+        lastDetailRequest = request
+        val current = mutable.value
+        val preview = current.preview
+        if (preview != null && preview.hdr == null) {
+            syncDetailCacheRevision()
+            if (com.rawlab.android.editor.canvas.detailTileLevel(request.zoomScale, request.baseScale) == null) {
+                detailDebounceJob?.cancel()
+                detailDebounceJob = null
+                scheduledDetailTileKey = null
+                return
+            }
+            val specs = detailTileSpecs(
+                request.visibleRect,
+                preview.nativeWidth,
+                preview.nativeHeight,
+                request.zoomScale,
+                request.baseScale,
+                overscanRing = dependencies.detailOverscanRing,
+            )
+            if (specs.isNotEmpty()) {
+                specs.forEach { detailTileCache[it.key] }
+                val cached = sortedCachedDetailTiles()
+                if (cached.isNotEmpty() && !detailTilesMatch(current.detailTiles, cached)) {
+                    mutable.value = current.copy(detailTiles = cached, detail = cached.last())
+                }
+                val missing = specs.filter { tileNeedsRender(it.key) }
+                if (missing.isEmpty()) {
+                    detailDebounceJob?.cancel()
+                    detailDebounceJob = null
+                    scheduledDetailTileKey = null
+                    return
+                }
+                val missingKeys = missing.mapTo(HashSet()) { it.key }
+                if (inFlightDetailTileKey != null && inFlightDetailTileKey in missingKeys) {
+                    return
+                }
+                val nextSpec = missing.first()
+                if (detailDebounceJob?.isActive == true && scheduledDetailTileKey == nextSpec.key) {
+                    return
+                }
+                scheduleDetailWork(request, nextSpec, dependencies.detailDebounceDelayMs)
+                return
+            }
+        }
+        syncDetailCacheRevision()
+        val edgeLimit = if (preview?.hdr != null) minOf(1280, request.maxOutputLongEdge) else request.maxOutputLongEdge
+        val hitIdx = hdrDetailCache.indexOfLast {
+            it.sourceRevision == sourceRevision &&
+            it.editRevision == editRevision &&
+            it.covers(request.visibleRect, request.zoomScale, edgeLimit)
+        }
+        if (hitIdx >= 0) {
+            val hit = hdrDetailCache.removeAt(hitIdx)
+            hdrDetailCache.add(hit)
+            detailDebounceJob?.cancel()
+            detailDebounceJob = null
+            scheduledDetailTileKey = null
+            if (current.detail !== hit || current.detailTiles.isNotEmpty()) {
+                mutable.value = current.copy(detail = hit, detailTiles = emptyList())
+            }
+            return
+        }
+        scheduleDetailIfNeeded()
     }
 
     private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
@@ -480,6 +823,8 @@ class EditorViewModel internal constructor(
         disposed = true
         adjustmentTransferHolder.onDisposed()
         draftHolder.cancelResize()
+        detailDebounceJob?.cancel()
+        detailDebounceJob = null
         batchHolder.dispose()
         collectionHolder.close(storageRelease.releaserFor("collections"))
         lookHolder.close()

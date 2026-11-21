@@ -25,6 +25,44 @@ struct PhotoZoomTests {
         precondition(landscape.fitScale == 0.25)
         precondition(landscape.doubleTapScale(from: 0.25) == 1)
         precondition(landscape.previewLongEdge(scale: landscape.fitScale) == 640)
-        print("PASS: fit, native pixels, display density, small images, landscape, double-tap toggle")
+
+        let raw6k = PhotoZoomGeometry(pixels: CGSize(width: 6000, height: 4000),
+                                      viewport: CGSize(width: 400, height: 600), displayScale: 3, margin: 0)
+        precondition(raw6k.fitScale == 0.2)
+        precondition(raw6k.maximumScale == 4)
+        precondition(raw6k.doubleTapScale(from: 0.2) == 1)
+        precondition(raw6k.detailRegion(contentOffset: .zero, boundsSize: CGSize(width: 400, height: 600),
+                                        zoomScale: raw6k.fitScale, baseLongEdge: 1280) == nil)
+        let thresholdScale = (1280.0 / 6000.0) * 1.04
+        precondition(raw6k.detailRegion(contentOffset: CGPoint(x: 100, y: 100), boundsSize: CGSize(width: 400, height: 600),
+                                        zoomScale: thresholdScale, baseLongEdge: 1280) == nil)
+        let detail = raw6k.detailRegion(contentOffset: CGPoint(x: 400, y: 300),
+                                        boundsSize: CGSize(width: 400, height: 600),
+                                        zoomScale: 1.0, baseLongEdge: 1280, maxOutputLongEdge: 2048)!
+        precondition(abs(detail.visibleRect.minX - 0.2) < 0.0001 && abs(detail.visibleRect.width - 0.2) < 0.0001)
+        precondition(detail.overscanRect.minX < detail.visibleRect.minX && detail.overscanRect.maxX > detail.visibleRect.maxX)
+        precondition(detail.overscanRect.minX >= 0 && detail.overscanRect.maxX <= 1)
+        precondition(PhotoZoomGeometry.detailOverlayCovers(
+            normalizedRect: detail.overscanRect,
+            pixelSize: CGSize(width: 1440, height: 1440),
+            fullNativeSize: CGSize(width: 6000, height: 4000),
+            visibleRect: detail.visibleRect,
+            requiredZoomScale: 1.0
+        ))
+        precondition(!PhotoZoomGeometry.detailOverlayCovers(
+            normalizedRect: detail.overscanRect,
+            pixelSize: CGSize(width: 1440, height: 1440),
+            fullNativeSize: CGSize(width: 6000, height: 4000),
+            visibleRect: detail.visibleRect.offsetBy(dx: 0.5, dy: 0),
+            requiredZoomScale: 1.0
+        ))
+        precondition(!PhotoZoomGeometry.detailOverlayCovers(
+            normalizedRect: detail.overscanRect,
+            pixelSize: CGSize(width: 300, height: 300),
+            fullNativeSize: CGSize(width: 6000, height: 4000),
+            visibleRect: detail.visibleRect,
+            requiredZoomScale: 1.0
+        ))
+        print("PASS: fit, native pixels, display density, small images, landscape, double-tap toggle, ROI detail threshold & coverage")
     }
 }

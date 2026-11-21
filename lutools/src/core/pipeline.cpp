@@ -903,6 +903,340 @@ RenderStatus Pipeline::migrateProcessing(const RenderParams& params, ProcessingM
     }
 }
 
+static void computeEffectiveWbAndExposure(
+    const RenderParams& local,
+    bool displayInput,
+    RGB& wb,
+    float& exposure
+) {
+    const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
+    const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
+    exposure = std::pow(2.0f, local.exposureEV) * local.brightness;
+    wb = RGB(1.0f, 1.0f, 1.0f);
+    if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
+        wb = RGB(
+            reference.r / std::max(selected.r, 1e-4f),
+            reference.g / std::max(selected.g, 1e-4f),
+            reference.b / std::max(selected.b, 1e-4f)
+        );
+        wb.r /= wb.g;
+        wb.b /= wb.g;
+        wb.g = 1.0f;
+    }
+    if ((local.inputType == RenderInputType::Buffer || displayInput) &&
+        local.wbMode == RenderWhiteBalanceMode::Custom) {
+        wb.r *= local.wbMul[0] / local.wbMul[1];
+        wb.b *= local.wbMul[2] / local.wbMul[1];
+    }
+}
+
+RenderStatus Pipeline::setViewportRoi(const ViewportRoiConfig& roi) noexcept {
+    if (!roi.enabled) {
+        viewportRoi_ = {};
+        return RenderStatus::Ok;
+    }
+    if (!std::isfinite(roi.normX0) || !std::isfinite(roi.normY0) ||
+        !std::isfinite(roi.normX1) || !std::isfinite(roi.normY1) ||
+        roi.normX0 < 0.0 || roi.normY0 < 0.0 ||
+        roi.normX1 > 1.0 || roi.normY1 > 1.0 ||
+        roi.normX0 >= roi.normX1 || roi.normY0 >= roi.normY1) {
+        return RenderStatus::InvalidArgument;
+    }
+    viewportRoi_ = roi;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::processPreviewRoi(
+    const RenderParams& params,
+    OwnedPixelBuffer* outBuffer,
+    std::shared_ptr<LUT3D> lut,
+    std::shared_ptr<const DcpLook> dcp,
+    bool displayInput,
+    bool normalX3f,
+    bool waveletActive,
+    int chromaMode,
+    bool basicV3,
+    float exposure,
+    const RGB& wb
+) {
+    if (!outBuffer) return RenderStatus::InvalidArgument;
+    RenderParams local = params;
+    ImageData image;
+    ImageData guideSeed;
+    ColorSpace colorSpace = ColorSpace::sRGB;
+    bool isLinear = false;
+    int canvasW = 0;
+    int canvasH = 0;
+
+    if (local.inputType == RenderInputType::Raw) {
+        RenderParams rawRequest = local;
+        rawRequest.intent = RenderIntent::Final;
+        RenderStatus status = loadRawImage(rawRequest, image, &colorSpace, &isLinear, false);
+        if (status != RenderStatus::Ok) return status;
+        if (rawCache_.width <= 0 || rawCache_.height <= 0 || rawCache_.pixels.empty()) {
+            return RenderStatus::ProcessingError;
+        }
+        canvasW = rawCache_.width;
+        canvasH = rawCache_.height;
+        lastRenderRendered_ = true;
+        lastRenderWasRaw_ = true;
+        lastRenderWasNormalX3f_ = normalX3f;
+    } else {
+        canvasW = static_cast<int>(local.inputWidth);
+        canvasH = static_cast<int>(local.inputHeight);
+        if (canvasW <= 0 || canvasH <= 0 || !local.inputPixels ||
+            exceedsOutputPixelCap(local.inputWidth, local.inputHeight)) {
+            return RenderStatus::InvalidArgument;
+        }
+        colorSpace = local.inputColorSpace;
+        isLinear = local.inputIsLinear;
+    }
+
+    const auto native = geometryOutputSize(canvasW, canvasH, geometry_);
+    if (native.first <= 0 || native.second <= 0) return RenderStatus::InvalidArgument;
+    const uint32_t nativeWidth = static_cast<uint32_t>(native.first);
+    const uint32_t nativeHeight = static_cast<uint32_t>(native.second);
+    const auto plan = computeOutputRoiPlan(native.first, native.second,
+        viewportRoi_.normX0, viewportRoi_.normY0, viewportRoi_.normX1, viewportRoi_.normY1,
+        viewportRoi_.maxOutputLongEdge);
+    if (!plan.valid()) return RenderStatus::InvalidArgument;
+
+    const BasicToneV3 basicTone{-local.highlights, local.shadows};
+    const bool basicToneActive = basicV3 && basicTone.active();
+    const bool needGuides = basicToneActive || atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f;
+
+    int halo = geometry_.active() ? 4 : 2;
+    if (waveletActive) halo += 96;
+    if (chromaMode != 0) halo += 32;
+    if (local.noiseReduction > 0.0f || local.sharpening > 0.0f) halo += 16;
+
+    const auto srcRect = computeGeometrySourceBounds(canvasW, canvasH, geometry_,
+        plan.ox0, plan.oy0, plan.ox1, plan.oy1, halo);
+    if (srcRect.empty()) return RenderStatus::InvalidArgument;
+
+    const bool needsFullDisplayLens = local.inputType == RenderInputType::DisplayBuffer &&
+        hasDisplayLensMetadata_ && lensCorrection_.active();
+
+    if (local.inputType == RenderInputType::Raw) {
+        image = extractImageSubRect(rawCache_, srcRect);
+        if (image.width <= 0 || image.height <= 0) return RenderStatus::ProcessingError;
+    } else if (needsFullDisplayLens) {
+        RenderStatus status = loadBufferImage(local, image, &colorSpace, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        lastRenderRendered_ = true;
+        lastRenderWasRaw_ = false;
+        lastRenderWasNormalX3f_ = false;
+        status = ensureLinear(image, colorSpace, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        ensureLensDatabase();
+        lensReport_ = applyDisplayLensCorrection(image, lensDatabase_,
+            displayLensMetadata_, lensCorrection_, displayLensOrientation_);
+        if (needGuides) {
+            const int longest = std::max(image.width, image.height);
+            if (longest > 1024) {
+                const double gs = 1024.0 / double(longest);
+                guideSeed = resizeBilinear(image,
+                    std::max(1u, static_cast<uint32_t>(std::lround(image.width * gs))),
+                    std::max(1u, static_cast<uint32_t>(std::lround(image.height * gs))));
+            } else {
+                guideSeed = image;
+            }
+            ColorConverter().convertImage(guideSeed, colorSpace, ColorSpace::sRGB);
+        }
+        image = extractImageSubRect(image, srcRect);
+    } else {
+        RenderStatus status = loadBufferImageROI(local, srcRect, image, &colorSpace, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        lastRenderRendered_ = true;
+        lastRenderWasRaw_ = false;
+        lastRenderWasNormalX3f_ = false;
+    }
+
+    RenderStatus status = RenderStatus::Ok;
+    const ColorSpace rawColorSpace = colorSpace;
+    const bool rawIsLinear = isLinear;
+    status = ensureLinear(image, colorSpace, &isLinear);
+    if (status != RenderStatus::Ok) return status;
+    checkProcessingCancellation();
+    if (colorSpace == ColorSpace::SonyNative) return RenderStatus::Unsupported;
+
+    // Bound large intermediate ROI work patches (e.g. slight zoom on ultra-high-MP sensors)
+    // while keeping strict 1:1 source pixels whenever close to or beyond 1:1 magnification.
+    const double outScaleX = double(plan.outputWidth) / double(plan.nativeWidth());
+    const double outScaleY = double(plan.outputHeight) / double(plan.nativeHeight());
+    const double uniformOutScale = std::min(1.0, std::max(outScaleX, outScaleY));
+    if (uint64_t(image.width) * uint64_t(image.height) > 6000000ULL && uniformOutScale < 0.999) {
+        const double workScale = std::clamp(std::max(uniformOutScale * 1.15, 0.25), 0.25, 1.0);
+        if (workScale < 0.999) {
+            const uint32_t wW = std::max(1u, static_cast<uint32_t>(std::lround(image.width * workScale)));
+            const uint32_t wH = std::max(1u, static_cast<uint32_t>(std::lround(image.height * workScale)));
+            image = resizeBilinear(image, wW, wH);
+        }
+    }
+
+    BasicToneV3Field basicField;
+    DehazeAnalysis dehazeState;
+    ClarityField clarityField;
+    if (needGuides) {
+        ImageData guideImage;
+        if (local.inputType == RenderInputType::Raw) {
+            uint32_t baselineBits = 0;
+            static_assert(sizeof(baselineBits) == sizeof(baselineEv_));
+            std::memcpy(&baselineBits, &baselineEv_, sizeof(baselineBits));
+            const std::string cacheKey = rawKey_ + ":baseline:" + std::to_string(baselineBits);
+            if (roiGuideCache_.key != cacheKey || roiGuideCache_.linearSrgb.pixels.empty()) {
+                const int longest = std::max(canvasW, canvasH);
+                if (longest > 1024) {
+                    const double gs = 1024.0 / double(longest);
+                    roiGuideCache_.linearSrgb = resizeBilinear(rawCache_,
+                        std::max(1u, static_cast<uint32_t>(std::lround(canvasW * gs))),
+                        std::max(1u, static_cast<uint32_t>(std::lround(canvasH * gs))));
+                } else {
+                    roiGuideCache_.linearSrgb = rawCache_;
+                }
+                ColorSpace gSpace = rawColorSpace;
+                bool gLinear = rawIsLinear;
+                status = ensureLinear(roiGuideCache_.linearSrgb, gSpace, &gLinear);
+                if (status != RenderStatus::Ok) return status;
+                ColorConverter().convertImage(roiGuideCache_.linearSrgb, gSpace, ColorSpace::sRGB);
+                roiGuideCache_.key = cacheKey;
+            }
+            guideImage = roiGuideCache_.linearSrgb;
+        } else if (!guideSeed.pixels.empty()) {
+            guideImage = std::move(guideSeed);
+        } else {
+            ColorSpace gSpace = ColorSpace::sRGB;
+            bool gLinear = false;
+            status = loadBufferImageDownsampled(local, 1024, guideImage, &gSpace, &gLinear);
+            if (status != RenderStatus::Ok) return status;
+            status = ensureLinear(guideImage, gSpace, &gLinear);
+            if (status != RenderStatus::Ok) return status;
+            ColorConverter().convertImage(guideImage, gSpace, ColorSpace::sRGB);
+        }
+
+        parallelPixelRanges(guideImage.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                applyExposureAndWhiteBalance(guideImage.pixels[i], exposure, wb);
+            }
+        });
+        RenderParams guideParams = local;
+        if (basicToneActive) {
+            basicField = buildBasicToneV3Field(guideImage, canvasW, canvasH);
+            if (atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f) {
+                applyBasicToneV3WithField(guideImage, basicTone, basicField);
+            }
+            guideParams.highlights = guideParams.shadows = 0.0f;
+        }
+        if (atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f) {
+            GpuConfig cpuLook = gpuConfig_;
+            cpuLook.mode = GpuMode::Off;
+            status = applyPhotoLook(guideImage, lut, dcp, guideParams.lutStrength, displayInput, cpuLook);
+            if (status != RenderStatus::Ok) return status;
+            checkProcessingCancellation();
+            if (atmosphere_.dehaze != 0.0f) {
+                dehazeState = buildDehazeAnalysis(guideImage, canvasW, canvasH, processingVersion_);
+                if (atmosphere_.clarity != 0.0f) {
+                    applyDehazeWithAnalysis(guideImage, atmosphere_.dehaze, dehazeState);
+                }
+            }
+            if (atmosphere_.clarity != 0.0f) {
+                if (basicV3) applyBasicBlackWhiteV3(guideImage, toneControls_);
+                else applyBlackWhite(guideImage, toneControls_);
+                applyToneAdjustments(guideImage, guideParams, channelCurves_, basicV3);
+                if (basicV3) applyBasicVibranceV3(guideImage, toneControls_.vibrance);
+                else applyVibrance(guideImage, toneControls_);
+                applyHsl(guideImage, hsl_);
+                applyColorGrading(guideImage, colorGrading_);
+                clarityField = buildClarityField(guideImage, canvasW, canvasH, processingVersion_);
+            }
+        }
+    }
+
+    const SubRectMap roiMap{
+        canvasW, canvasH,
+        double(srcRect.x0), double(srcRect.y0),
+        double(srcRect.width()), double(srcRect.height())
+    };
+
+    if (waveletActive) {
+        checkProcessingCancellation();
+        ColorConverter converter;
+        converter.convertImage(image, colorSpace, ColorSpace::sRGB);
+        WaveletDenoiseDiagnostics diagnostics;
+        const ImageData* noiseSource = (local.inputType == RenderInputType::Raw && !rawCache_.pixels.empty())
+            ? &rawCache_ : nullptr;
+        const auto wResult = applyWaveletDenoise(image, waveletDenoise_, &diagnostics,
+            GpuMode::Off, nullptr, "", nullptr, colorSpace, noiseSource);
+        checkProcessingCancellation();
+        if (wResult != ErrorCode::Success) return mapErrorCode(wResult);
+        colorSpace = ColorSpace::sRGB;
+    }
+
+    local.lut = lut;
+    local.dcp = dcp;
+    local.relativeWB = wb;
+    local.effects = photoEffects_;
+    local.chromaDenoise = chromaMode;
+    local.preserveSourceResolution = waveletActive || geometry_.active();
+    local.hsl = hsl_;
+    local.toneControls = toneControls_;
+    local.colorGrading = colorGrading_;
+    local.customCurve = toneCurve_;
+
+    ColorConverter converter;
+    converter.convertImage(image, colorSpace, ColorSpace::sRGB);
+    colorSpace = ColorSpace::sRGB;
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) applyExposureAndWhiteBalance(image.pixels[i], exposure, wb);
+    });
+    if (basicToneActive) {
+        applyBasicToneV3WithField(image, basicTone, basicField, roiMap);
+        local.highlights = local.shadows = 0.0f;
+    }
+
+    GpuConfig lookConfig = gpuConfig_;
+    lookConfig.mode = GpuMode::Off;
+    status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);
+    if (status != RenderStatus::Ok) return status;
+    checkProcessingCancellation();
+    if (atmosphere_.dehaze != 0.0f) {
+        applyDehazeWithAnalysis(image, atmosphere_.dehaze, dehazeState, roiMap);
+    }
+    if (basicV3) applyBasicBlackWhiteV3(image, toneControls_);
+    else applyBlackWhite(image, toneControls_);
+    applyToneAdjustments(image, local, channelCurves_, basicV3);
+    if (basicV3) applyBasicVibranceV3(image, toneControls_.vibrance);
+    else applyVibrance(image, toneControls_);
+    applyHsl(image, hsl_);
+    applyColorGrading(image, colorGrading_);
+    const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
+    checkProcessingCancellation();
+    if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
+    applyDetailAdjustments(image, local.noiseReduction, local.sharpening, atmosphere_.clarity,
+        canvasW, canvasH, processingVersion_,
+        atmosphere_.clarity != 0.0f ? &clarityField : nullptr, roiMap);
+    checkProcessingCancellation();
+    applyPhotoEffectsROI(image, photoEffects_, roiMap);
+
+    image = applyGeometryROI(image, srcRect, canvasW, canvasH, geometry_, plan);
+    if (image.width <= 0 || image.height <= 0) return RenderStatus::ProcessingError;
+    checkProcessingCancellation();
+    lastBackend_ = RenderBackend::Cpu;
+    status = writeOutputBuffer(local, image, outBuffer);
+    if (status == RenderStatus::Ok) {
+        geometryWidth_ = nativeWidth;
+        geometryHeight_ = nativeHeight;
+        viewportRoiResult_.active = true;
+        viewportRoiResult_.nativeX0 = static_cast<uint32_t>(plan.ox0);
+        viewportRoiResult_.nativeY0 = static_cast<uint32_t>(plan.oy0);
+        viewportRoiResult_.nativeX1 = static_cast<uint32_t>(plan.ox1);
+        viewportRoiResult_.nativeY1 = static_cast<uint32_t>(plan.oy1);
+        viewportRoiResult_.fullNativeWidth = nativeWidth;
+        viewportRoiResult_.fullNativeHeight = nativeHeight;
+    }
+    return status;
+}
+
 RenderStatus Pipeline::processImpl(
     const RenderParams& params,
     OwnedPixelBuffer* outBuffer,
@@ -916,6 +1250,7 @@ RenderStatus Pipeline::processImpl(
     gpuErrorDetail_.clear();
     checkProcessingCancellation();
     geometryWidth_ = geometryHeight_ = 0;
+    viewportRoiResult_ = {};
 
     RenderStatus status = validateRenderParams(params, outBuffer != nullptr);
     if (status != RenderStatus::Ok) return status;
@@ -982,7 +1317,15 @@ RenderStatus Pipeline::processImpl(
     // 只有导出才把工作图移走缓存来省一次整幅拷贝。
     const bool previewToBuffer = local.intent == RenderIntent::Preview &&
         local.outputTarget == RenderOutputTarget::Buffer;
-    bool viewportPreview = viewportPreview_ && previewToBuffer;
+    const bool roiActive = viewportRoi_.enabled && previewToBuffer && !preHsl && !migrationFrame;
+    if (roiActive && effectiveGpuMode == GpuMode::Force) {
+        unsupportedReason_ = UnsupportedReason::ForceGpu;
+        if (gpuFallbackReason_ == GpuFallbackReason::None) {
+            gpuFallbackReason_ = GpuFallbackReason::UnsupportedCapability;
+        }
+        return RenderStatus::Unsupported;
+    }
+    bool viewportPreview = viewportPreview_ && previewToBuffer && !roiActive;
     const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
         [](const auto& curve) { return curve.active(); });
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
@@ -1114,8 +1457,16 @@ RenderStatus Pipeline::processImpl(
         }
         sessionGpuPipeline = false;
     }
-    bool gpuPipeline = !cpuAnalysis && sessionGpuPipeline;
+    bool gpuPipeline = !cpuAnalysis && sessionGpuPipeline && !roiActive;
     checkProcessingCancellation();
+
+    RGB wb(1.0f, 1.0f, 1.0f);
+    float exposure = 1.0f;
+    computeEffectiveWbAndExposure(local, displayInput, wb, exposure);
+    if (roiActive) {
+        return processPreviewRoi(local, outBuffer, std::move(lut), std::move(dcp),
+            displayInput, normalX3f, waveletActive, chromaMode, basicV3, exposure, wb);
+    }
 
     ImageData image;
     ColorSpace colorSpace = ColorSpace::sRGB;
@@ -1222,25 +1573,6 @@ RenderStatus Pipeline::processImpl(
 
     // Absolute RAW WB already ran in camera space. Legacy RGB controls compensate
     // for the chosen illuminant (inverse response), not paint its color onto RGB.
-    const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
-    const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
-    const float exposure = std::pow(2.0f, local.exposureEV) * local.brightness;
-    RGB wb(1, 1, 1);
-    if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
-        wb = RGB(
-            reference.r / std::max(selected.r, 1e-4f),
-            reference.g / std::max(selected.g, 1e-4f),
-            reference.b / std::max(selected.b, 1e-4f)
-        );
-        wb.r /= wb.g;
-        wb.b /= wb.g;
-        wb.g = 1.0f;
-    }
-    if ((local.inputType == RenderInputType::Buffer || displayInput) && local.wbMode == RenderWhiteBalanceMode::Custom) {
-        wb.r *= local.wbMul[0] / local.wbMul[1];
-        wb.b *= local.wbMul[2] / local.wbMul[1];
-    }
-
     if (waveletActive) {
         checkProcessingCancellation();
         if (fastWavelet) {

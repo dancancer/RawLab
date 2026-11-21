@@ -184,6 +184,198 @@ std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOpti
     return {canvas.right - canvas.left, canvas.bottom - canvas.top};
 }
 
+OutputRoiPlan computeOutputRoiPlan(int fullNativeWidth, int fullNativeHeight,
+    double normX0, double normY0, double normX1, double normY1, uint32_t maxOutputLongEdge) {
+    OutputRoiPlan plan;
+    if (fullNativeWidth <= 0 || fullNativeHeight <= 0 ||
+        !std::isfinite(normX0) || !std::isfinite(normY0) ||
+        !std::isfinite(normX1) || !std::isfinite(normY1) ||
+        normX0 < 0.0 || normY0 < 0.0 || normX1 > 1.0 || normY1 > 1.0 ||
+        normX0 >= normX1 || normY0 >= normY1) {
+        return plan;
+    }
+    plan.fullNativeWidth = fullNativeWidth;
+    plan.fullNativeHeight = fullNativeHeight;
+    plan.ox0 = std::clamp(int(std::floor(normX0 * fullNativeWidth)), 0, fullNativeWidth - 1);
+    plan.oy0 = std::clamp(int(std::floor(normY0 * fullNativeHeight)), 0, fullNativeHeight - 1);
+    plan.ox1 = std::clamp(int(std::ceil(normX1 * fullNativeWidth)), plan.ox0 + 1, fullNativeWidth);
+    plan.oy1 = std::clamp(int(std::ceil(normY1 * fullNativeHeight)), plan.oy0 + 1, fullNativeHeight);
+    const int roiW = plan.ox1 - plan.ox0;
+    const int roiH = plan.oy1 - plan.oy0;
+    const int roiLong = std::max(roiW, roiH);
+    if (maxOutputLongEdge == 0 || uint32_t(roiLong) <= maxOutputLongEdge) {
+        plan.outputWidth = roiW;
+        plan.outputHeight = roiH;
+    } else {
+        const double scale = double(maxOutputLongEdge) / double(roiLong);
+        plan.outputWidth = std::clamp(int(std::lround(roiW * scale)), 1, std::min(roiW, int(maxOutputLongEdge)));
+        plan.outputHeight = std::clamp(int(std::lround(roiH * scale)), 1, std::min(roiH, int(maxOutputLongEdge)));
+    }
+    return plan;
+}
+
+RoiSubRect computeGeometrySourceBounds(int fullSourceWidth, int fullSourceHeight,
+    const GeometryOptions& options, int ox0, int oy0, int ox1, int oy1, int padding) {
+    if (fullSourceWidth <= 0 || fullSourceHeight <= 0 || !options.valid() || ox0 >= ox1 || oy0 >= oy1) {
+        return {};
+    }
+    const int pad = std::max(0, padding);
+    if (!options.active()) {
+        return {
+            std::clamp(ox0 - pad, 0, fullSourceWidth - 1),
+            std::clamp(oy0 - pad, 0, fullSourceHeight - 1),
+            std::clamp(ox1 + pad, 1, fullSourceWidth),
+            std::clamp(oy1 + pad, 1, fullSourceHeight)
+        };
+    }
+    const auto sampler = makeGeometrySampler(fullSourceWidth, fullSourceHeight, options);
+    int minX = fullSourceWidth;
+    int minY = fullSourceHeight;
+    int maxX = -1;
+    int maxY = -1;
+    const GeometryPixelReader tracker = [&](int sx, int sy) -> RGB {
+        const int cx = std::clamp(sx, 0, fullSourceWidth - 1);
+        const int cy = std::clamp(sy, 0, fullSourceHeight - 1);
+        minX = std::min(minX, cx);
+        minY = std::min(minY, cy);
+        maxX = std::max(maxX, cx);
+        maxY = std::max(maxY, cy);
+        return {};
+    };
+    const int rx1 = ox1 - 1;
+    const int ry1 = oy1 - 1;
+    for (int ox = ox0; ox <= rx1; ++ox) {
+        sampler(ox, oy0, tracker);
+        if (ry1 != oy0) sampler(ox, ry1, tracker);
+    }
+    for (int oy = oy0 + 1; oy < ry1; ++oy) {
+        sampler(ox0, oy, tracker);
+        if (rx1 != ox0) sampler(rx1, oy, tracker);
+    }
+    const int stepX = std::max(1, (ox1 - ox0) / 16);
+    const int stepY = std::max(1, (oy1 - oy0) / 16);
+    for (int oy = oy0; oy <= ry1; oy += stepY) {
+        for (int ox = ox0; ox <= rx1; ox += stepX) {
+            sampler(ox, oy, tracker);
+        }
+    }
+    if (maxX < minX || maxY < minY) {
+        return {0, 0, std::min(fullSourceWidth, 1), std::min(fullSourceHeight, 1)};
+    }
+    return {
+        std::clamp(minX - pad, 0, fullSourceWidth - 1),
+        std::clamp(minY - pad, 0, fullSourceHeight - 1),
+        std::clamp(maxX + 1 + pad, 1, fullSourceWidth),
+        std::clamp(maxY + 1 + pad, 1, fullSourceHeight)
+    };
+}
+
+ImageData applyGeometryROI(const ImageData& srcSubRect, const RoiSubRect& srcRect,
+    int fullSourceWidth, int fullSourceHeight, const GeometryOptions& options,
+    const OutputRoiPlan& plan) {
+    if (srcSubRect.width <= 0 || srcSubRect.height <= 0 || srcRect.empty() ||
+        fullSourceWidth <= 0 || fullSourceHeight <= 0 || !options.valid() || !plan.valid()) {
+        return {};
+    }
+    auto sampleSubRectBilinear = [&](double lx, double ly) -> RGB {
+        const double cx = std::clamp(lx, 0.0, double(srcSubRect.width - 1));
+        const double cy = std::clamp(ly, 0.0, double(srcSubRect.height - 1));
+        const int x0 = int(std::floor(cx));
+        const int y0 = int(std::floor(cy));
+        const int x1 = std::min(srcSubRect.width - 1, x0 + 1);
+        const int y1 = std::min(srcSubRect.height - 1, y0 + 1);
+        const float tx = float(cx - x0);
+        const float ty = float(cy - y0);
+        const RGB& p00 = srcSubRect.at(x0, y0);
+        const RGB& p10 = srcSubRect.at(x1, y0);
+        const RGB& p01 = srcSubRect.at(x0, y1);
+        const RGB& p11 = srcSubRect.at(x1, y1);
+        auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+        const RGB top{lerp(p00.r, p10.r, tx), lerp(p00.g, p10.g, tx), lerp(p00.b, p10.b, tx)};
+        const RGB bot{lerp(p01.r, p11.r, tx), lerp(p01.g, p11.g, tx), lerp(p01.b, p11.b, tx)};
+        return {lerp(top.r, bot.r, ty), lerp(top.g, bot.g, ty), lerp(top.b, bot.b, ty)};
+    };
+
+    const bool exactSource = srcSubRect.width == srcRect.width() && srcSubRect.height == srcRect.height();
+    const bool oneToOne = plan.outputWidth == plan.nativeWidth() && plan.outputHeight == plan.nativeHeight();
+    ImageData output(plan.outputWidth, plan.outputHeight);
+
+    if (!options.active()) {
+        if (oneToOne && exactSource) {
+            for (int ty = 0; ty < plan.outputHeight; ++ty) {
+                const int sy = std::clamp(plan.oy0 + ty - srcRect.y0, 0, srcSubRect.height - 1);
+                for (int tx = 0; tx < plan.outputWidth; ++tx) {
+                    const int sx = std::clamp(plan.ox0 + tx - srcRect.x0, 0, srcSubRect.width - 1);
+                    output.at(tx, ty) = srcSubRect.at(sx, sy);
+                }
+            }
+            return output;
+        }
+        const double sxScale = double(srcSubRect.width) / double(srcRect.width());
+        const double syScale = double(srcSubRect.height) / double(srcRect.height());
+        for (int ty = 0; ty < plan.outputHeight; ++ty) {
+            const double oy = oneToOne ? double(plan.oy0 + ty)
+                : plan.oy0 + (double(ty) + 0.5) * plan.nativeHeight() / double(plan.outputHeight) - 0.5;
+            const double ly = (oy + 0.5 - srcRect.y0) * syScale - 0.5;
+            for (int tx = 0; tx < plan.outputWidth; ++tx) {
+                const double ox = oneToOne ? double(plan.ox0 + tx)
+                    : plan.ox0 + (double(tx) + 0.5) * plan.nativeWidth() / double(plan.outputWidth) - 0.5;
+                const double lx = (ox + 0.5 - srcRect.x0) * sxScale - 0.5;
+                output.at(tx, ty) = sampleSubRectBilinear(lx, ly);
+            }
+        }
+        return output;
+    }
+
+    const auto sampler = makeGeometrySampler(fullSourceWidth, fullSourceHeight, options);
+    const GeometryPixelReader reader = [&](int sx, int sy) -> RGB {
+        if (exactSource) {
+            return srcSubRect.at(
+                std::clamp(sx - srcRect.x0, 0, srcSubRect.width - 1),
+                std::clamp(sy - srcRect.y0, 0, srcSubRect.height - 1));
+        }
+        const double lx = (double(sx) + 0.5 - srcRect.x0) * srcSubRect.width / double(srcRect.width()) - 0.5;
+        const double ly = (double(sy) + 0.5 - srcRect.y0) * srcSubRect.height / double(srcRect.height()) - 0.5;
+        return sampleSubRectBilinear(lx, ly);
+    };
+
+    if (oneToOne) {
+        for (int ty = 0; ty < plan.outputHeight; ++ty) {
+            const int oy = plan.oy0 + ty;
+            for (int tx = 0; tx < plan.outputWidth; ++tx) {
+                output.at(tx, ty) = sampler(plan.ox0 + tx, oy, reader);
+            }
+        }
+        return output;
+    }
+
+    for (int ty = 0; ty < plan.outputHeight; ++ty) {
+        const double oy = std::clamp(
+            plan.oy0 + (double(ty) + 0.5) * plan.nativeHeight() / double(plan.outputHeight) - 0.5,
+            double(plan.oy0), double(plan.oy1 - 1));
+        const int y0 = int(std::floor(oy));
+        const int y1 = std::min(plan.oy1 - 1, y0 + 1);
+        const float wy = float(oy - y0);
+        for (int tx = 0; tx < plan.outputWidth; ++tx) {
+            const double ox = std::clamp(
+                plan.ox0 + (double(tx) + 0.5) * plan.nativeWidth() / double(plan.outputWidth) - 0.5,
+                double(plan.ox0), double(plan.ox1 - 1));
+            const int x0 = int(std::floor(ox));
+            const int x1 = std::min(plan.ox1 - 1, x0 + 1);
+            const float wx = float(ox - x0);
+            const RGB c00 = sampler(x0, y0, reader);
+            const RGB c10 = sampler(x1, y0, reader);
+            const RGB c01 = sampler(x0, y1, reader);
+            const RGB c11 = sampler(x1, y1, reader);
+            auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+            const RGB top{lerp(c00.r, c10.r, wx), lerp(c00.g, c10.g, wx), lerp(c00.b, c10.b, wx)};
+            const RGB bot{lerp(c01.r, c11.r, wx), lerp(c01.g, c11.g, wx), lerp(c01.b, c11.b, wx)};
+            output.at(tx, ty) = {lerp(top.r, bot.r, wy), lerp(top.g, bot.g, wy), lerp(top.b, bot.b, wy)};
+        }
+    }
+    return output;
+}
+
 GeometryPixelSampler makeGeometrySampler(int width, int height, const GeometryOptions& options) {
     if (width <= 0 || height <= 0 || !options.valid())
         throw std::invalid_argument("Invalid geometry sampler");

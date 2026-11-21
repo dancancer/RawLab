@@ -137,6 +137,44 @@ func hdrNativeGeometrySize(_ source: CGSize, geometry: GeometrySettings) throws 
     return CGSize(width:Int(outputWidth),height:Int(outputHeight))
 }
 
+struct HDRViewportROI: Equatable, Sendable {
+    var normX0: Double
+    var normY0: Double
+    var normX1: Double
+    var normY1: Double
+    var maxOutputLongEdge: Int
+    var baseContentHeadroom: Float
+    var sourceX0: Int = 0
+    var sourceY0: Int = 0
+    var fullSourceWidth: Int = 0
+    var fullSourceHeight: Int = 0
+}
+
+struct HDRViewportROIResult: Equatable, Sendable {
+    let nativeX0: Int
+    let nativeY0: Int
+    let nativeX1: Int
+    let nativeY1: Int
+    let fullNativeWidth: Int
+    let fullNativeHeight: Int
+    let isProxy: Bool
+}
+
+struct HDRSourceBounds: Equatable, Sendable {
+    let sourceX0: Int
+    let sourceY0: Int
+    let sourceX1: Int
+    let sourceY1: Int
+    let nativeX0: Int
+    let nativeY0: Int
+    let nativeX1: Int
+    let nativeY1: Int
+    let fullNativeWidth: Int
+    let fullNativeHeight: Int
+    let outputWidth: Int
+    let outputHeight: Int
+}
+
 final class HDRImage {
     private var storage: sony2fuji_hdr_image_pair_v1
     private let proRAWBuffers: (hdr: Data, sdr: Data)?
@@ -311,39 +349,12 @@ final class HDRImage {
             let status = try withSessionCallbacks(decodeSession, cancelled: cancelled, progress: progress) {
                 url.path.withCString { path in
                     if info.isCameraRAW {
-                        var development = sony2fuji_hdr_camera_development_v1()
-                        development.version = 1; development.struct_size = UInt32(MemoryLayout.size(ofValue: development))
-                        development.white_balance = UInt32(camera.whiteBalance == .asShot ? SONY2FUJI_HDR_CAMERA_WB_AS_SHOT : SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE)
-                        development.exposure_reference = UInt32(camera.exposureReference == .metadata ? SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA : SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR)
-                        development.temperature = Float(camera.temperature); development.tint = Float(camera.tint)
-                        development.fbdd_level = UInt32(camera.fbddLevel)
-                        development.lens_flags = UInt32((camera.lensDistortion ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
-                            (camera.lensTCA ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
-                            (camera.lensVignetting ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0) |
-                            (camera.lensActive && camera.lensAutoCrop ? SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP : 0))
-                        func decodeRaw(_ lensProfile: UnsafePointer<CChar>?) -> sony2fuji_status {
-                            development.lens_profile_id = lensProfile
-                            if let profile = camera.cameraProfile, let profileURL {
-                                var profiled = sony2fuji_hdr_camera_development_v2()
-                                profiled.base = development
-                                profiled.base.version = 2
-                                profiled.base.struct_size = UInt32(MemoryLayout.size(ofValue: profiled))
-                                withUnsafeMutableBytes(of: &profiled.profile_sha256) { $0.copyBytes(from: profile.sha256.utf8) }
-                                return profileURL.path.withCString { resource in
-                                    profiled.profile_path = resource
-                                    return withUnsafePointer(to: &profiled) {
-                                        $0.withMemoryRebound(to: sony2fuji_hdr_camera_development_v1.self, capacity: 1) {
-                                            sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, $0, &result, &diagnostic)
-                                        }
-                                    }
-                                }
-                            }
+                        return Self.withCameraDevelopment(camera, profileURL: profileURL) { devPtr in
                             if cameraAIKey != nil {
-                                return sony2fuji_hdr_decode_camera_raw_with_ai(decodeSession, path, &options, &development, &result, &diagnostic)
+                                return sony2fuji_hdr_decode_camera_raw_with_ai(decodeSession, path, &options, devPtr, &result, &diagnostic)
                             }
-                            return sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, &development, &result, &diagnostic)
+                            return sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, devPtr, &result, &diagnostic)
                         }
-                        return camera.lensProfile?.withCString(decodeRaw) ?? decodeRaw(nil)
                     }
                     return sony2fuji_hdr_decode_with_session(decodeSession, path, &options, &result, &diagnostic)
                 }
@@ -377,6 +388,102 @@ final class HDRImage {
         if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
         return HDRImage(owned:result,url:sourceURL,info:sourceInfo)
+    }
+
+    static func fromProRAW(pair: sony2fuji_hdr_image_pair_v1, url: URL, info: HDRSourceInfo,
+                           buffers: (hdr: Data, sdr: Data)) -> HDRImage {
+        HDRImage(owned: pair, url: url, info: info, proRAWBuffers: buffers)
+    }
+
+    static func roiSourceBounds(nativeWidth: Int, nativeHeight: Int, settings: HDRSettings,
+                                roi: HDRViewportROI, longEdge: Int? = nil) throws -> HDRSourceBounds {
+        guard nativeWidth > 0, nativeHeight > 0 else { throw HDRRequestError.invalidSettings }
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: longEdge)
+        var nativeRoi = makeNativeRoi(roi)
+        var bounds = sony2fuji_hdr_roi_source_bounds_v1()
+        bounds.version = 1
+        bounds.struct_size = UInt32(MemoryLayout.size(ofValue: bounds))
+        var diagnostic = emptyDiagnostic()
+        let status = withHDRRequestPrefix(request) { reqPtr in
+            sony2fuji_hdr_roi_source_bounds(UInt32(nativeWidth), UInt32(nativeHeight),
+                                            reqPtr, &nativeRoi, &bounds, &diagnostic)
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw failure(status, diagnostic) }
+        return HDRSourceBounds(
+            sourceX0: Int(bounds.source_x0), sourceY0: Int(bounds.source_y0),
+            sourceX1: Int(bounds.source_x1), sourceY1: Int(bounds.source_y1),
+            nativeX0: Int(bounds.native_x0), nativeY0: Int(bounds.native_y0),
+            nativeX1: Int(bounds.native_x1), nativeY1: Int(bounds.native_y1),
+            fullNativeWidth: Int(bounds.full_native_width),
+            fullNativeHeight: Int(bounds.full_native_height),
+            outputWidth: Int(bounds.output_width),
+            outputHeight: Int(bounds.output_height)
+        )
+    }
+
+    func renderedROI(session: OpaquePointer, settings: HDRSettings, roi: HDRViewportROI,
+                     longEdge: Int? = nil) throws -> (image: HDRImage, result: HDRViewportROIResult) {
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: longEdge)
+        var nativeRoi = Self.makeNativeRoi(roi)
+        var result = Self.emptyPair()
+        var outRoi = Self.emptyRoiResult()
+        var diagnostic = Self.emptyDiagnostic()
+        let status = withPair { pair in
+            withHDRRequestPrefix(request) { reqPtr in
+                sony2fuji_hdr_render_roi(session, pair, reqPtr, &nativeRoi, &result, &outRoi, &diagnostic)
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw Self.failure(status, diagnostic) }
+        return (HDRImage(owned: result, url: sourceURL, info: sourceInfo), Self.makeRoiResult(outRoi))
+    }
+
+    static func renderCameraRawROI(session: OpaquePointer, url: URL, info: HDRSourceInfo,
+                                   settings: HDRSettings, roi: HDRViewportROI,
+                                   longEdge: Int? = nil, useAI: Bool = false) throws -> (image: HDRImage, result: HDRViewportROIResult) {
+        guard info.isCameraRAW else { throw HDRRequestError.invalidSettings }
+        let camera = settings.cameraDevelopmentSettings
+        guard camera.isValid else { throw HDRRequestError.invalidSettings }
+        let applyStatus = CanonicalEditRecipe.processingOnlyJSON(processingVersion: Int(info.cameraProcessingVersion.rawValue))
+            .withCString { sony2fuji_apply_params(session, $0) }
+        guard applyStatus == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
+        let profileURL = try camera.cameraProfile.map { try HDRCameraProfileAssetStore.url(for: $0) }
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: longEdge)
+        var nativeRoi = makeNativeRoi(roi)
+        var result = emptyPair()
+        var outRoi = emptyRoiResult()
+        var diagnostic = emptyDiagnostic()
+        let status = url.path.withCString { path in
+            withHDRRequestPrefix(request) { reqPtr in
+                withCameraDevelopment(camera, profileURL: profileURL) { devPtr in
+                    sony2fuji_hdr_render_camera_raw_roi(session, path, devPtr, useAI ? 1 : 0,
+                                                        reqPtr, &nativeRoi, &result, &outRoi, &diagnostic)
+                }
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw failure(status, diagnostic) }
+        return (HDRImage(owned: result, url: url, info: info), makeRoiResult(outRoi))
+    }
+
+    static func renderFileROI(session: OpaquePointer, url: URL, info: HDRSourceInfo,
+                              settings: HDRSettings, roi: HDRViewportROI,
+                              longEdge: Int? = nil) throws -> (image: HDRImage, result: HDRViewportROIResult) {
+        guard !info.isCameraRAW, info.proRAW == nil else { throw HDRRequestError.invalidSettings }
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_PREVIEW, longEdge: longEdge)
+        var nativeRoi = makeNativeRoi(roi)
+        var result = emptyPair()
+        var outRoi = emptyRoiResult()
+        var diagnostic = emptyDiagnostic()
+        let status = url.path.withCString { path in
+            withHDRRequestPrefix(request) { reqPtr in
+                sony2fuji_hdr_render_file_roi(session, path, reqPtr, &nativeRoi, &result, &outRoi, &diagnostic)
+            }
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw failure(status, diagnostic) }
+        return (HDRImage(owned: result, url: url, info: info), makeRoiResult(outRoi))
+    }
+
+    static func clearSessionCache(session: OpaquePointer) {
+        sony2fuji_hdr_clear_session_cache(session)
     }
 
     func exportJPEG(to output: URL, baseColor: HDRRecipe.BaseColor = .displayP3,
@@ -508,6 +615,73 @@ final class HDRImage {
     private static func emptyDiagnostic() -> sony2fuji_hdr_diagnostic_v1 {
         var value=sony2fuji_hdr_diagnostic_v1(); value.version=1
         value.struct_size=UInt32(MemoryLayout.size(ofValue:value)); return value
+    }
+    private static func emptyRoiResult() -> sony2fuji_hdr_roi_result_v1 {
+        var value = sony2fuji_hdr_roi_result_v1()
+        value.version = 1
+        value.struct_size = UInt32(MemoryLayout.size(ofValue: value))
+        return value
+    }
+    private static func makeNativeRoi(_ roi: HDRViewportROI) -> sony2fuji_hdr_roi_v1 {
+        var value = sony2fuji_hdr_roi_v1()
+        value.version = 1
+        value.struct_size = UInt32(MemoryLayout.size(ofValue: value))
+        value.norm_x0 = roi.normX0
+        value.norm_y0 = roi.normY0
+        value.norm_x1 = roi.normX1
+        value.norm_y1 = roi.normY1
+        value.max_output_long_edge = UInt32(max(0, roi.maxOutputLongEdge))
+        value.base_content_headroom = roi.baseContentHeadroom
+        value.source_x0 = UInt32(max(0, roi.sourceX0))
+        value.source_y0 = UInt32(max(0, roi.sourceY0))
+        value.full_source_width = UInt32(max(0, roi.fullSourceWidth))
+        value.full_source_height = UInt32(max(0, roi.fullSourceHeight))
+        return value
+    }
+    private static func makeRoiResult(_ raw: sony2fuji_hdr_roi_result_v1) -> HDRViewportROIResult {
+        HDRViewportROIResult(
+            nativeX0: Int(raw.native_x0), nativeY0: Int(raw.native_y0),
+            nativeX1: Int(raw.native_x1), nativeY1: Int(raw.native_y1),
+            fullNativeWidth: Int(raw.full_native_width),
+            fullNativeHeight: Int(raw.full_native_height),
+            isProxy: raw.is_proxy != 0
+        )
+    }
+    private static func withCameraDevelopment(
+        _ camera: HDRCameraDevelopmentSettings,
+        profileURL: URL?,
+        _ body: (UnsafePointer<sony2fuji_hdr_camera_development_v1>) -> sony2fuji_status
+    ) -> sony2fuji_status {
+        var development = sony2fuji_hdr_camera_development_v1()
+        development.version = 1
+        development.struct_size = UInt32(MemoryLayout.size(ofValue: development))
+        development.white_balance = UInt32(camera.whiteBalance == .asShot ? SONY2FUJI_HDR_CAMERA_WB_AS_SHOT : SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE)
+        development.exposure_reference = UInt32(camera.exposureReference == .metadata ? SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA : SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR)
+        development.temperature = Float(camera.temperature)
+        development.tint = Float(camera.tint)
+        development.fbdd_level = UInt32(camera.fbddLevel)
+        development.lens_flags = UInt32((camera.lensDistortion ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
+            (camera.lensTCA ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
+            (camera.lensVignetting ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0) |
+            (camera.lensActive && camera.lensAutoCrop ? SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP : 0))
+        func invoke(_ lensProfile: UnsafePointer<CChar>?) -> sony2fuji_status {
+            development.lens_profile_id = lensProfile
+            if let profile = camera.cameraProfile, let profileURL {
+                var profiled = sony2fuji_hdr_camera_development_v2()
+                profiled.base = development
+                profiled.base.version = 2
+                profiled.base.struct_size = UInt32(MemoryLayout.size(ofValue: profiled))
+                withUnsafeMutableBytes(of: &profiled.profile_sha256) { $0.copyBytes(from: profile.sha256.utf8) }
+                return profileURL.path.withCString { resource in
+                    profiled.profile_path = resource
+                    return withUnsafePointer(to: &profiled) {
+                        $0.withMemoryRebound(to: sony2fuji_hdr_camera_development_v1.self, capacity: 1) { body($0) }
+                    }
+                }
+            }
+            return withUnsafePointer(to: &development, body)
+        }
+        return camera.lensProfile?.withCString(invoke) ?? invoke(nil)
     }
     private static func failure(_ status: sony2fuji_status,_ diagnostic: sony2fuji_hdr_diagnostic_v1) -> HDRNativeError {
         HDRNativeError(status:status,reason:diagnostic.reason,field:diagnostic.field)

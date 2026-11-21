@@ -42,4 +42,57 @@ std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOpti
 std::pair<int, int> geometryViewportSourceSize(int width, int height,
     const GeometryOptions& options, int target_width, int target_height);
 
+struct RoiSubRect {
+    int x0 = 0;
+    int y0 = 0;
+    int x1 = 0;
+    int y1 = 0;
+    int width() const { return x1 > x0 ? x1 - x0 : 0; }
+    int height() const { return y1 > y0 ? y1 - y0 : 0; }
+    bool empty() const { return x1 <= x0 || y1 <= y0; }
+};
+
+struct SubRectMap {
+    int fullWidth = 0;
+    int fullHeight = 0;
+    double sourceX0 = 0.0;
+    double sourceY0 = 0.0;
+    double sourceSpanX = 0.0;
+    double sourceSpanY = 0.0;
+
+    bool active() const {
+        return fullWidth > 0 && fullHeight > 0 && sourceSpanX > 0.0 && sourceSpanY > 0.0;
+    }
+};
+
+struct OutputRoiPlan {
+    int fullNativeWidth = 0;
+    int fullNativeHeight = 0;
+    int ox0 = 0;
+    int oy0 = 0;
+    int ox1 = 0;
+    int oy1 = 0;
+    int outputWidth = 0;
+    int outputHeight = 0;
+
+    bool valid() const {
+        return fullNativeWidth > 0 && fullNativeHeight > 0 &&
+            ox0 >= 0 && oy0 >= 0 && ox0 < ox1 && oy0 < oy1 &&
+            ox1 <= fullNativeWidth && oy1 <= fullNativeHeight &&
+            outputWidth > 0 && outputHeight > 0;
+    }
+    int nativeWidth() const { return ox1 - ox0; }
+    int nativeHeight() const { return oy1 - oy0; }
+};
+
+OutputRoiPlan computeOutputRoiPlan(int fullNativeWidth, int fullNativeHeight,
+    double normX0, double normY0, double normX1, double normY1, uint32_t maxOutputLongEdge);
+
+RoiSubRect computeGeometrySourceBounds(int fullSourceWidth, int fullSourceHeight,
+    const GeometryOptions& options, int ox0, int oy0, int ox1, int oy1, int padding = 0);
+
+ImageData applyGeometryROI(const ImageData& srcSubRect, const RoiSubRect& srcRect,
+    int fullSourceWidth, int fullSourceHeight, const GeometryOptions& options,
+    const OutputRoiPlan& plan);
+
 } // namespace sony2fuji

@@ -17,6 +17,10 @@ import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.editor.PendingDcpImport
 import com.rawlab.android.editor.PendingLookImport
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.ViewportRoiRequest
+import com.rawlab.android.editor.canvas.detailOverlayCovers
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
@@ -72,6 +76,26 @@ internal fun comparisonDimensions(width: Int, height: Int): Pair<Float, Float> {
     return width * scale to height * scale
 }
 
+data class PreviewDetailOverlay(
+    val neutral: Bitmap?,
+    val result: Bitmap?,
+    val hdrNeutral: HDRPreviewFrame?,
+    val hdrResult: HDRPreviewFrame?,
+    val normalizedRect: NormalizedRect,
+    val pixelWidth: Int,
+    val pixelHeight: Int,
+    val fullNativeWidth: Int,
+    val fullNativeHeight: Int,
+    val sourceRevision: Long,
+    val editRevision: Long,
+    val tileKey: DetailTileKey? = null,
+) {
+    fun covers(visibleRect: NormalizedRect, requiredZoomScale: Float, maxOutputLongEdge: Int = 0): Boolean =
+        detailOverlayCovers(
+            normalizedRect, pixelWidth, pixelHeight, fullNativeWidth, fullNativeHeight,
+            visibleRect, requiredZoomScale, maxOutputLongEdge,
+        )
+}
 
 internal sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null,
@@ -81,6 +105,10 @@ internal sealed interface Work {
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
         val includeNeutral: Boolean = true) : Work
+    data class DetailPreview(val photo: ImportedPhoto, val edits: EditSettings, val roi: ViewportRoiRequest,
+        val gpuMode: Int, val sourceRevision: Long, val editRevision: Long,
+        val baseResultHeadroom: Float = 0f, val baseNeutralHeadroom: Float = 0f,
+        val includeNeutral: Boolean = true, val tileKey: DetailTileKey? = null) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,
@@ -94,6 +122,7 @@ internal sealed interface WorkResult {
     data class X3fImportFailure(val retry: Work.Import, val error: Throwable) : WorkResult
     data class UnusableEditImportFailure(val retry: Work.Import, val identity: PhotoIdentity, val error: Throwable) : WorkResult
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
+    data class DetailPreview(val request: Work.DetailPreview, val overlay: PreviewDetailOverlay?) : WorkResult
     data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult

@@ -311,7 +311,12 @@ extension ContentView {
                           overlayAvoidanceRect: photoComparisonControlBounds,
                           onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
                           hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: coordinator.hslTargetPoint,
-                          nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
+                          nativePixelSize: viewModel.viewportNativeSize, previewSourceSize: viewModel.viewportPreviewSourceSize,
+                          previewLongEdgeLimit: viewModel.viewportPreviewLimit,
+                          detailOverlay: geometrySelected ? nil : viewModel.detailOverlay,
+                          detailTiles: geometrySelected ? [] : viewModel.detailTiles,
+                          detailBacking: geometrySelected ? nil : viewModel.detailBacking,
+                          onDetailRequest: geometrySelected ? nil : { viewModel.updateDetailRequest($0) },
                           hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay)
                 .allowsHitTesting(!geometrySelected)
         }

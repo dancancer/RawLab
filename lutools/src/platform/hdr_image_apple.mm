@@ -451,6 +451,70 @@ DecodedImage decode(File& file, const HDRDecodeOptions& options) HDR_AVAILABLE {
     return result;
 }
 
+DecodedImage decodeROI(File& file, const RoiSubRect& rect) HDR_AVAILABLE {
+    require(!rect.empty() && rect.x0 >= 0 && rect.y0 >= 0, kHdrReasonInvalidArgument, "Invalid HDR file ROI rect");
+    CIImage* h=[CIImage imageWithData:file.data options:@{kCIImageApplyOrientationProperty:@YES,kCIImageExpandToHDR:@YES}];
+    CIImage* s=[CIImage imageWithData:file.data options:@{kCIImageApplyOrientationProperty:@YES,kCIImageExpandToHDR:@NO}];
+    require(h && s && CGRectEqualToRect(h.extent,s.extent), kHdrReasonMalformedAux, "HDR/SDR canvases differ");
+    const bool swapped=file.info.orientation>=5;
+    const uint32_t nativeWidth=swapped ? file.info.height : file.info.width;
+    const uint32_t nativeHeight=swapped ? file.info.width : file.info.height;
+    require(h.extent.size.width==nativeWidth && h.extent.size.height==nativeHeight,
+        kHdrReasonInvalidBuffer, "Decoded HDR canvas differs from metadata");
+    require(rect.x1 <= int(nativeWidth) && rect.y1 <= int(nativeHeight),
+        kHdrReasonInvalidArgument, "HDR file ROI exceeds image bounds");
+    const uint32_t rw = uint32_t(rect.width());
+    const uint32_t rh = uint32_t(rect.height());
+    admitMemory(uint64_t(rw) * rh * 48);
+    const CGRect ciCrop = CGRectMake(rect.x0, double(nativeHeight) - double(rect.y1), rw, rh);
+    auto cropCI = [&](CIImage* image) {
+        image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation(-image.extent.origin.x, -image.extent.origin.y)];
+        image = [image imageByCroppingToRect:ciCrop];
+        return [image imageByApplyingTransform:CGAffineTransformMakeTranslation(-ciCrop.origin.x, -ciCrop.origin.y)];
+    };
+    CIContext* context=[CIContext contextWithOptions:@{kCIContextWorkingFormat:@(kCIFormatRGBAf),kCIContextCacheIntermediates:@NO,
+        kCIContextUseSoftwareRenderer:@YES}];
+    DecodedImage result;
+    result.info = file.info;
+    if (h.contentHeadroom<=1 && file.info.container==kHdrContainerJpeg &&
+            file.info.protocol!=kHdrProtocolApple) {
+        admitMemory(uint64_t(nativeWidth) * nativeHeight * sizeof(RGB));
+        ImageData fullHdr = decodeJPEG(file.data.bytes, file.data.length, 0);
+        GeometryOptions geometry;
+        switch (file.info.orientation) {
+            case 2: geometry.flip_horizontal=true; break;
+            case 3: geometry.quarter_turns=2; break;
+            case 4: geometry.flip_vertical=true; break;
+            case 5: geometry.quarter_turns=1; geometry.flip_horizontal=true; break;
+            case 6: geometry.quarter_turns=1; break;
+            case 7: geometry.quarter_turns=1; geometry.flip_vertical=true; break;
+            case 8: geometry.quarter_turns=3; break;
+        }
+        require(applyGeometry(fullHdr, geometry)==ErrorCode::Success,
+            kHdrReasonInvalidBuffer, "JPEG fallback orientation failed");
+        require(uint32_t(fullHdr.width)==nativeWidth && uint32_t(fullHdr.height)==nativeHeight,
+            kHdrReasonInvalidBuffer, "JPEG fallback canvas size mismatch");
+        result.pixels.hdr = ImageData(int(rw), int(rh));
+        for (uint32_t y = 0; y < rh; ++y) {
+            std::copy_n(fullHdr.pixels.data() + size_t(rect.y0 + y) * nativeWidth + rect.x0,
+                rw, result.pixels.hdr.pixels.data() + size_t(y) * rw);
+        }
+    } else {
+        result.pixels.hdr = pixels(context, cropCI(h), int(rw), int(rh));
+    }
+    result.pixels.sdr = pixels(context, cropCI(s), int(rw), int(rh));
+    [context clearCaches];
+    if (file.info.contentHeadroom<=1)
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, "Native codec did not expand the gain map");
+    result.pixels.nativeWidth = nativeWidth;
+    result.pixels.nativeHeight = nativeHeight;
+    result.pixels.sourceHeadroom = file.info.contentHeadroom;
+    result.pixels.sourceQuality = result.pixels.renderQuality = HDRQuality::Final;
+    result.pixels.isProxy = false;
+    result.pixels.decodeRevision = revision.fetch_add(1);
+    return result;
+}
+
 void differentFile(const char* source,const char* target) {
     if (!source) return;
     NSURL* a=[[NSURL fileURLWithPath:[NSString stringWithUTF8String:source]] URLByResolvingSymlinksInPath];
@@ -904,6 +968,12 @@ HDRSourceInfo probeFile(const char* path) {
 DecodedImage decodeFile(const char* path,const HDRDecodeOptions& options) {
     @autoreleasepool {
         if (@available(macOS 15.0,iOS 18.0,*)) { File file; open(file,path); return decode(file,options); }
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
+    }
+}
+DecodedImage decodeFileROI(const char* path, const RoiSubRect& rect) {
+    @autoreleasepool {
+        if (@available(macOS 15.0,iOS 18.0,*)) { File file; open(file,path); return decodeROI(file,rect); }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
     }
 }

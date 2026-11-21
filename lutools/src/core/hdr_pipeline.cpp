@@ -457,7 +457,8 @@ CameraRawProbeResult probeCameraRaw(const char* file, ProcessingVersion version)
     return result;
 }
 
-CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmentSpec& spec) {
+CameraRawDecodedPair decodeCameraRawInternal(const char* file, const CameraRawDevelopmentSpec& spec,
+    bool generateSdr, bool useHalfSizePreview) {
     RAWProcessOptions raw;
     raw.outputLinear = true;
     raw.applyBaselineExposure = false;
@@ -509,7 +510,7 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
     if (spec.useAi && raw.rawNoiseReduction != 0) {
         fail(kHdrReasonCameraAi, kHdrFieldCameraDevelopment, "FBDD and HDR AI cannot be combined");
     }
-    raw.halfSize = spec.preview && raw.rawNoiseReduction == 0 && !spec.useAi;
+    raw.halfSize = useHalfSizePreview && raw.rawNoiseReduction == 0 && !spec.useAi;
 
     const auto filePath = std::filesystem::u8path(file);
     const auto before = stampCameraRawFile(filePath);
@@ -575,21 +576,24 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
         }
     }
 
-    if (spec.preview) {
+    if (spec.preview && useHalfSizePreview) {
         const auto longest = std::max(pair.hdr.width, pair.hdr.height);
-        if (uint32_t(longest) > spec.longEdge) {
+        if (spec.longEdge && uint32_t(longest) > spec.longEdge) {
             const double scale = double(spec.longEdge) / longest;
             const auto width = std::max(1l, std::lround(pair.hdr.width * scale));
             const auto height = std::max(1l, std::lround(pair.hdr.height * scale));
             admitMemory(uint64_t(width) * height * sizeof(RGB));
             pair.hdr = resample(pair.hdr, uint32_t(width), uint32_t(height));
         }
-    } else if (uint32_t(pair.hdr.width) != pair.nativeWidth || uint32_t(pair.hdr.height) != pair.nativeHeight) {
+    } else if (!useHalfSizePreview &&
+               (uint32_t(pair.hdr.width) != pair.nativeWidth || uint32_t(pair.hdr.height) != pair.nativeHeight)) {
         cameraRawStatus(ErrorCode::InvalidFormat);
     }
 
-    admitMemory(pair.hdr.pixels.size() * sizeof(RGB));
-    pair.sdr = ImageData(pair.hdr.width, pair.hdr.height);
+    if (generateSdr) {
+        admitMemory(pair.hdr.pixels.size() * sizeof(RGB));
+        pair.sdr = ImageData(pair.hdr.width, pair.hdr.height);
+    }
     std::atomic<bool> nonfinite{false};
     float fusedHeadroom = 1.0f;
     std::mutex headroomMutex;
@@ -601,12 +605,14 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
                 nonfinite.store(true, std::memory_order_relaxed);
                 return;
             }
-            if (!spec.preview) {
+            if (!useHalfSizePreview) {
                 localHeadroom = std::max(localHeadroom, cameraLuminance(pixel));
             }
-            pair.sdr.pixels[i] = cameraSDR(pixel);
+            if (generateSdr) {
+                pair.sdr.pixels[i] = cameraSDR(pixel);
+            }
         }
-        if (!spec.preview) {
+        if (!useHalfSizePreview) {
             std::lock_guard<std::mutex> lock(headroomMutex);
             fusedHeadroom = std::max(fusedHeadroom, localHeadroom);
         }
@@ -614,7 +620,7 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
     if (nonfinite.load(std::memory_order_relaxed)) {
         fail(kHdrReasonNonfinite, kHdrFieldSource, "Nonfinite camera RAW pixel", RenderStatus::ProcessingError);
     }
-    if (!spec.preview) {
+    if (!useHalfSizePreview) {
         pair.sourceHeadroom = fusedHeadroom;
         result.sourceHeadroomKind = kHdrHeadroomMeasured;
     }
@@ -625,11 +631,15 @@ CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmen
         fail(kHdrReasonSourceChanged, kHdrFieldSource, "Camera RAW source changed during decode");
     }
     checkProcessingCancellation();
-    pair.sourceQuality = pair.renderQuality = spec.preview ? HDRQuality::Preview : HDRQuality::Final;
-    pair.isProxy = spec.preview;
+    pair.sourceQuality = pair.renderQuality = useHalfSizePreview ? HDRQuality::Preview : HDRQuality::Final;
+    pair.isProxy = useHalfSizePreview;
     pair.decodeRevision = nextCameraRevision.fetch_add(1);
     result.usedCameraProfile = profile.has_value();
     return result;
+}
+
+CameraRawDecodedPair decodeCameraRaw(const char* file, const CameraRawDevelopmentSpec& spec) {
+    return decodeCameraRawInternal(file, spec, true, spec.preview);
 }
 
 float estimateAutoExposureEV(const ImageData& hdrImage, float temperature, float tint) {
@@ -677,6 +687,213 @@ HDRImagePair renderPair(HDRImagePair& source, bool ownedSource, const HDRRenderO
     }
     admitMemory(pixels * (ownedSource ? 48 : 24) + extra);
     return ownedSource ? renderHDRPair(source, options) : renderHDRPair(std::move(source), options);
+}
+
+RoiRenderOutput renderPairROI(HDRImagePair& source, const std::string& lookPath,
+    const ExportSourceMetadata& sourceMeta, uint32_t headroomKind,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi) {
+    const bool isPreCropped = roi.fullSourceWidth > 0 && roi.fullSourceHeight > 0;
+    const uint32_t fullW = isPreCropped
+        ? roi.fullSourceWidth
+        : (source.nativeWidth ? source.nativeWidth : uint32_t(source.hdr.width));
+    const uint32_t fullH = isPreCropped
+        ? roi.fullSourceHeight
+        : (source.nativeHeight ? source.nativeHeight : uint32_t(source.hdr.height));
+    const auto bounds = computeHDRRoiSourceBounds(fullW, fullH, options, roi);
+    admitMemory(uint64_t(bounds.paddedOutWidth) * bounds.paddedOutHeight * 48);
+    HDRRoiSourceBounds actualBounds;
+    auto rendered = renderHDRPairROI(source, options, roi, &actualBounds);
+    RoiRenderOutput out;
+    out.hdrHeadroom = rendered.editedHeadroom;
+    out.sdrHeadroom = rendered.editedSdrHeadroom;
+    out.sourceHeadroomKind = headroomKind;
+    out.meta = sourceMeta;
+    out.meta.lookPath = lookPath;
+    out.bounds = actualBounds;
+    out.isProxy = source.isProxy;
+    out.pixels = std::move(rendered);
+    return out;
+}
+
+RoiRenderOutput renderCameraRawROI(RoiSessionCache& cache, const char* file,
+    const CameraRawDevelopmentSpec& devSpec, const std::string& lookPath,
+    const HDRRenderOptions& options, const HDRRoiSpec& roi) {
+    validateHDRRenderOptions(options);
+    const auto filePath = std::filesystem::u8path(file);
+    const auto stamp = stampCameraRawFile(filePath);
+    const std::string aiKey = devSpec.useAi && devSpec.aiKeyForFile ? devSpec.aiKeyForFile(file) : std::string{};
+    const std::string lensId = devSpec.lensProfileId ? devSpec.lensProfileId : "";
+    const std::string profilePath = devSpec.hasCameraProfile && devSpec.cameraProfilePath ? devSpec.cameraProfilePath : "";
+    const std::string profileSha = devSpec.hasCameraProfile && devSpec.cameraProfileSha256 ? devSpec.cameraProfileSha256 : "";
+
+    auto& entry = cache.cameraRaw;
+    const bool cacheMatches = !entry.hdr.pixels.empty() &&
+        entry.file == file &&
+        entry.fileSize == stamp.size &&
+        entry.modified == stamp.modified &&
+        entry.hasDevelopment == devSpec.hasDevelopment &&
+        entry.legacySonyCrop == devSpec.legacySonyCrop &&
+        entry.whiteBalance == devSpec.whiteBalance &&
+        entry.exposureReference == devSpec.exposureReference &&
+        entry.temperature == devSpec.temperature &&
+        entry.tint == devSpec.tint &&
+        entry.fbddLevel == devSpec.fbddLevel &&
+        entry.lensFlags == devSpec.lensFlags &&
+        entry.lensProfileId == lensId &&
+        entry.hasCameraProfile == devSpec.hasCameraProfile &&
+        entry.cameraProfilePath == profilePath &&
+        entry.cameraProfileSha256 == profileSha &&
+        entry.useAi == devSpec.useAi &&
+        entry.aiKey == aiKey;
+
+    if (!cacheMatches) {
+        entry = {};
+        CameraRawDecodedPair decoded;
+        auto fullSpec = devSpec;
+        fullSpec.preview = false;
+        fullSpec.longEdge = 0;
+        bool isProxy = false;
+        try {
+            decoded = decodeCameraRawInternal(file, fullSpec, false, false);
+        } catch (const Error& err) {
+            if (err.reason == kHdrReasonOutOfMemory && devSpec.fbddLevel == 0 && !devSpec.useAi) {
+                isProxy = true;
+                decoded = decodeCameraRawInternal(file, fullSpec, false, true);
+            } else {
+                throw;
+            }
+        } catch (const std::bad_alloc&) {
+            if (devSpec.fbddLevel == 0 && !devSpec.useAi) {
+                isProxy = true;
+                decoded = decodeCameraRawInternal(file, fullSpec, false, true);
+            } else {
+                throw;
+            }
+        }
+        entry.file = file;
+        entry.fileSize = stamp.size;
+        entry.modified = stamp.modified;
+        entry.hasDevelopment = devSpec.hasDevelopment;
+        entry.legacySonyCrop = devSpec.legacySonyCrop;
+        entry.whiteBalance = devSpec.whiteBalance;
+        entry.exposureReference = devSpec.exposureReference;
+        entry.temperature = devSpec.temperature;
+        entry.tint = devSpec.tint;
+        entry.fbddLevel = devSpec.fbddLevel;
+        entry.lensFlags = devSpec.lensFlags;
+        entry.lensProfileId = lensId;
+        entry.hasCameraProfile = devSpec.hasCameraProfile;
+        entry.cameraProfilePath = profilePath;
+        entry.cameraProfileSha256 = profileSha;
+        entry.useAi = devSpec.useAi;
+        entry.aiKey = aiKey;
+        entry.hdr = std::move(decoded.pixels.hdr);
+        entry.nativeWidth = decoded.pixels.nativeWidth;
+        entry.nativeHeight = decoded.pixels.nativeHeight;
+        entry.sourceHeadroomKind = decoded.sourceHeadroomKind;
+        entry.sourceHeadroom = decoded.pixels.sourceHeadroom;
+        entry.decodeRevision = decoded.pixels.decodeRevision;
+        entry.isProxy = isProxy;
+        entry.usedCameraProfile = decoded.usedCameraProfile;
+    }
+
+    const auto bounds = computeHDRRoiSourceBounds(entry.nativeWidth, entry.nativeHeight, options, roi);
+    ImageData subHdr = extractHDRPlaneForROI(entry.hdr, entry.nativeWidth, entry.nativeHeight, bounds.sourceRect);
+    admitMemory(subHdr.pixels.size() * sizeof(RGB) + uint64_t(bounds.paddedOutWidth) * bounds.paddedOutHeight * 48);
+    ImageData subSdr(subHdr.width, subHdr.height);
+    parallelPixelRanges(subHdr.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            subSdr.pixels[i] = cameraSDR(subHdr.pixels[i]);
+        }
+    });
+
+    ImageData tinyVeilSdr;
+    const ImageData* veilSdrPtr = nullptr;
+    if (options.hasDetail() && options.detail.dehaze != 0) {
+        const int step = std::max(1, (std::max(entry.hdr.width, entry.hdr.height) + 127) / 128);
+        const int sw = std::max(1, (entry.hdr.width + step - 1) / step);
+        const int sh = std::max(1, (entry.hdr.height + step - 1) / step);
+        tinyVeilSdr = ImageData(sw, sh);
+        for (int y = 0; y < sh; ++y) {
+            for (int x = 0; x < sw; ++x) {
+                tinyVeilSdr.at(x, y) = cameraSDR(entry.hdr.at(
+                    std::min(x * step, entry.hdr.width - 1),
+                    std::min(y * step, entry.hdr.height - 1)));
+            }
+        }
+        veilSdrPtr = &tinyVeilSdr;
+    }
+
+    auto rendered = renderHDRSubRectROI(std::move(subHdr), std::move(subSdr),
+        entry.nativeWidth, entry.nativeHeight, entry.sourceHeadroom, entry.decodeRevision,
+        entry.isProxy ? HDRQuality::Preview : HDRQuality::Final,
+        options, roi, bounds, &entry.hdr, veilSdrPtr);
+
+    RoiRenderOutput out;
+    out.hdrHeadroom = rendered.editedHeadroom;
+    out.sdrHeadroom = rendered.editedSdrHeadroom;
+    out.sourceHeadroomKind = entry.sourceHeadroomKind;
+    out.meta = ExportSourceMetadata{{}, file, lookPath, entry.usedCameraProfile ? entry.cameraProfilePath : ""};
+    out.bounds = bounds;
+    out.isProxy = entry.isProxy;
+    out.pixels = std::move(rendered);
+    return out;
+}
+
+RoiRenderOutput renderFileROI(RoiSessionCache& cache, const char* file,
+    const std::string& lookPath, const HDRRenderOptions& options, const HDRRoiSpec& roi) {
+    validateHDRRenderOptions(options);
+#if defined(__APPLE__)
+    (void)cache;
+    const auto info = probeFile(file);
+    const bool swapped = info.orientation >= 5;
+    const uint32_t nativeWidth = swapped ? info.height : info.width;
+    const uint32_t nativeHeight = swapped ? info.width : info.height;
+    const auto bounds = computeHDRRoiSourceBounds(nativeWidth, nativeHeight, options, roi);
+    auto decoded = decodeFileROI(file, bounds.sourceRect);
+    admitMemory(uint64_t(bounds.paddedOutWidth) * bounds.paddedOutHeight * 48);
+    auto rendered = renderHDRSubRectROI(std::move(decoded.pixels.hdr), std::move(decoded.pixels.sdr),
+        nativeWidth, nativeHeight, decoded.pixels.sourceHeadroom, decoded.pixels.decodeRevision,
+        decoded.pixels.sourceQuality, options, roi, bounds, nullptr, nullptr);
+    RoiRenderOutput out;
+    out.hdrHeadroom = rendered.editedHeadroom;
+    out.sdrHeadroom = rendered.editedSdrHeadroom;
+    out.sourceHeadroomKind = decoded.info.headroomKind;
+    out.meta = ExportSourceMetadata{{}, file, lookPath, {}};
+    std::copy_n(decoded.info.sourceSha256, 32, out.meta.sourceSha256.begin());
+    out.bounds = bounds;
+    out.isProxy = false;
+    out.pixels = std::move(rendered);
+    return out;
+#else
+    const auto stamp = stampCameraRawFile(std::filesystem::u8path(file));
+    auto& entry = cache.file;
+    const bool cacheMatches = !entry.pixels.hdr.pixels.empty() &&
+        entry.file == file && entry.fileSize == stamp.size && entry.modified == stamp.modified;
+    if (!cacheMatches) {
+        entry = {};
+        DecodedImage decoded;
+        try {
+            decoded = decodeFile(file, {kHdrIntentFinal, 0});
+        } catch (const Error& err) {
+            if (err.reason == kHdrReasonOutOfMemory) {
+                decoded = decodeFile(file, {kHdrIntentPreview, 3200});
+            } else {
+                throw;
+            }
+        } catch (const std::bad_alloc&) {
+            decoded = decodeFile(file, {kHdrIntentPreview, 3200});
+        }
+        entry.file = file;
+        entry.fileSize = stamp.size;
+        entry.modified = stamp.modified;
+        entry.pixels = std::move(decoded.pixels);
+        entry.sourceHeadroomKind = decoded.info.headroomKind;
+        entry.meta = ExportSourceMetadata{{}, file, {}, {}};
+        std::copy_n(decoded.info.sourceSha256, 32, entry.meta.sourceSha256.begin());
+    }
+    return renderPairROI(entry.pixels, lookPath, entry.meta, entry.sourceHeadroomKind, options, roi);
+#endif
 }
 
 ImageData createHslProbeImage(HDRImagePair& source, bool ownedSource, const HDRRenderOptions& options) {

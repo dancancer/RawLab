@@ -34,8 +34,13 @@ internal static class AbiLayoutChecks
     private static readonly HashSet<string> UnmappedInNative = new(StringComparer.Ordinal)
     {
         "sony2fuji_curve_point",
+        "sony2fuji_hdr_roi_result_v1",
+        "sony2fuji_hdr_roi_source_bounds_v1",
+        "sony2fuji_hdr_roi_v1",
         "sony2fuji_lens_metadata",
         "sony2fuji_lens_profile_v2",
+        "sony2fuji_viewport_roi",
+        "sony2fuji_viewport_roi_result",
     };
 
     // Shared C ABI functions declared in sony2fuji_c.h / sony2fuji_hdr.h that Windows intentionally does not bind.
@@ -44,6 +49,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_compile_hdr_camera_dcp",
         "sony2fuji_compute_histogram",
         "sony2fuji_hdr_camera_ai_available",
+        "sony2fuji_hdr_clear_session_cache",
         "sony2fuji_hdr_decode_with_session",
         "sony2fuji_hdr_export_heif",
         "sony2fuji_hdr_export_heif_with_session",
@@ -52,9 +58,14 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_export_tiled",
         "sony2fuji_hdr_heif_export_available",
         "sony2fuji_hdr_probe_camera_raw",
+        "sony2fuji_hdr_render_camera_raw_roi",
+        "sony2fuji_hdr_render_file_roi",
+        "sony2fuji_hdr_render_roi",
+        "sony2fuji_hdr_roi_source_bounds",
         "sony2fuji_inspect_sdr_jpeg_mpf",
         "sony2fuji_session_get_raw_decode_count",
         "sony2fuji_session_get_raw_noise_reduction_support",
+        "sony2fuji_session_get_viewport_roi_result",
         "sony2fuji_session_inspect_lens_metadata",
         "sony2fuji_session_inspect_lens_metadata_v2",
         "sony2fuji_session_inspect_lens_v2",
@@ -75,6 +86,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_session_set_tone_controls",
         "sony2fuji_session_set_tone_curve",
         "sony2fuji_session_set_tone_curves",
+        "sony2fuji_session_set_viewport_roi",
         "sony2fuji_session_set_wavelet_denoise",
         "sony2fuji_session_set_x3f_mode",
         "sony2fuji_status_message",

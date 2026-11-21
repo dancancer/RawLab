@@ -114,6 +114,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onDeleteLook: (String) -> Unit = {}, onLookImportReportDismiss: () -> Unit = {},
     onAbout: () -> Unit = {}, updateVersion: String? = null,
     onPreviewSizeChange: (Int) -> Unit = {},
+    onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {},
+    onDetailNeedsBeforeChange: (Boolean) -> Unit = {},
     onBeginDraft: (AdjustmentGroup) -> Unit = {}, onDraftEdit: (EditSettings, Boolean) -> Unit = { _, _ -> },
     onUndoDraft: () -> Unit = {}, onRedoDraft: () -> Unit = {},
     onApplyDraft: ((Boolean) -> Unit) -> Unit = { it(false) }, onDiscardDraft: () -> Unit = {},
@@ -590,6 +592,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
             val dockHeight = if (!toolOpen && !quickPresetsVisible) com.rawlab.android.editor.controls.editorHomeDockHeight(density.fontScale).dp else dockLayout.height.dp
             val sideDockWidth = com.rawlab.android.editor.controls.EDITOR_SIDE_DOCK_WIDTH.dp
+            LaunchedEffect(compare || view.holdingBefore) {
+                onDetailNeedsBeforeChange(compare || view.holdingBefore)
+            }
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {
@@ -601,7 +606,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
-                                onCancelExport = onCancelExport)
+                                onCancelExport = onCancelExport,
+                                onDetailRequest = onDetailRequest)
                             workspaceActions(Modifier.align(Alignment.BottomCenter))
                             }
                         }
@@ -615,7 +621,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
-                                onCancelExport = onCancelExport)
+                                onCancelExport = onCancelExport,
+                                onDetailRequest = onDetailRequest)
                     workspaceActions(Modifier.align(Alignment.BottomCenter))
                     }
                     if (state.photo != null) {

@@ -16,6 +16,7 @@ import com.rawlab.android.analytics.UnavailableUsageTransport
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
+import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.RenderCancellation
 import com.rawlab.android.editor.render.Work
@@ -280,6 +281,8 @@ internal class EditorViewModelTestHarness : AutoCloseable {
         hdrSilverMasterLoader: () -> AdjustmentPayload = { throw UnsupportedOperationException() },
         hdrCameraProfileImporter: (Uri) -> HDRCameraProfile = { throw UnsupportedOperationException() },
         previewResizeDelayMs: Long = 50L,
+        detailDebounceDelayMs: Long = 50L,
+        detailOverscanRing: Int = 0,
         saveNoticeFadeDelayMs: Long = 5_000L,
         sourceValidator: (ImportedPhoto) -> () -> Unit = { photo -> { check(photo.file.isFile) } },
     ): EditorDependencies {
@@ -326,6 +329,8 @@ internal class EditorViewModelTestHarness : AutoCloseable {
             hdrCameraProfileImporter = hdrCameraProfileImporter,
             uncroppedGeometrySize = { pair, _ -> pair.nativeWidth to pair.nativeHeight },
             previewResizedDelayMs = previewResizeDelayMs,
+            detailDebounceDelayMs = detailDebounceDelayMs,
+            detailOverscanRing = detailOverscanRing,
             saveNoticeFadeDelayMs = saveNoticeFadeDelayMs,
             sourceValidator = sourceValidator,
             parseSystemPhotoUri = { raw ->
@@ -359,6 +364,34 @@ internal class EditorViewModelTestHarness : AutoCloseable {
             )
         }
         is Work.Preview -> WorkResult.Preview(work, TestBitmaps.pair(work.edge, (work.edge * 3) / 4))
+        is Work.DetailPreview -> {
+            val fullW = 6000
+            val fullH = 4000
+            val roiNativeW = (work.roi.overscanRect.width * fullW).coerceAtLeast(1f)
+            val roiNativeH = (work.roi.overscanRect.height * fullH).coerceAtLeast(1f)
+            val density = minOf(work.roi.zoomScale, 1f)
+            val capScale = work.roi.maxOutputLongEdge.toFloat() / maxOf(roiNativeW, roiNativeH)
+            val scale = minOf(density, capScale)
+            val pw = maxOf(1, (roiNativeW * scale).toInt())
+            val ph = maxOf(1, (roiNativeH * scale).toInt())
+            WorkResult.DetailPreview(
+                work,
+                PreviewDetailOverlay(
+                    neutral = if (work.includeNeutral) TestBitmaps.stub() else null,
+                    result = TestBitmaps.stub(),
+                    hdrNeutral = null,
+                    hdrResult = null,
+                    normalizedRect = work.roi.overscanRect,
+                    pixelWidth = pw,
+                    pixelHeight = ph,
+                    fullNativeWidth = fullW,
+                    fullNativeHeight = fullH,
+                    sourceRevision = work.sourceRevision,
+                    editRevision = work.editRevision,
+                    tileKey = work.tileKey,
+                ),
+            )
+        }
         is Work.HslProbe -> WorkResult.HslProbe(work, com.rawlab.android.settings.HslTargetSample.unavailable(work.revision, com.rawlab.android.settings.HslTargetAvailability.FAILED))
         is Work.CameraHDRPreflight -> WorkResult.CameraHDRPreflight(work)
         is Work.Export -> WorkResult.Export
@@ -375,6 +408,8 @@ internal class EditorViewModelTestHarness : AutoCloseable {
         hdrLookImporter: (Uri) -> HDRLookSettings = { throw UnsupportedOperationException() },
         hdrCameraProfileImporter: (Uri) -> HDRCameraProfile = { throw UnsupportedOperationException() },
         previewResizeDelayMs: Long = 50L,
+        detailDebounceDelayMs: Long = 50L,
+        detailOverscanRing: Int = 0,
         sourceValidator: (ImportedPhoto) -> () -> Unit = { photo -> { check(photo.file.isFile) } },
     ): EditorViewModel = onMain {
         EditorViewModel(
@@ -389,6 +424,8 @@ internal class EditorViewModelTestHarness : AutoCloseable {
                 hdrLookImporter = hdrLookImporter,
                 hdrCameraProfileImporter = hdrCameraProfileImporter,
                 previewResizeDelayMs = previewResizeDelayMs,
+                detailDebounceDelayMs = detailDebounceDelayMs,
+                detailOverscanRing = detailOverscanRing,
                 sourceValidator = sourceValidator,
             ),
         )

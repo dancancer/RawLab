@@ -1,4 +1,5 @@
 #include "photo_effects.h"
+#include "photo_geometry.h"
 #include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
@@ -145,6 +146,28 @@ void applyPhotoEffects(ImageData& image, const PhotoEffectsOptions& options) {
         for (int y = firstRow; y < lastRow; ++y) {
             for (int x = 0; x < image.width; ++x) {
                 image.at(x, y) = sampler.applySRGB(image.at(x, y), x, y);
+            }
+        }
+    });
+}
+
+void applyPhotoEffectsROI(ImageData& image, const PhotoEffectsOptions& options, const SubRectMap& roiMap) {
+    if (!options.active() || image.width <= 0 || image.height <= 0) return;
+    if (!roiMap.active()) {
+        applyPhotoEffects(image, options);
+        return;
+    }
+    const PhotoEffectSampler sampler(options, roiMap.fullWidth, roiMap.fullHeight);
+    parallelRowRanges(image.height, image.width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            const int gy = std::clamp(
+                int(std::lround(roiMap.sourceY0 + (double(y) + 0.5) * roiMap.sourceSpanY / image.height - 0.5)),
+                0, roiMap.fullHeight - 1);
+            for (int x = 0; x < image.width; ++x) {
+                const int gx = std::clamp(
+                    int(std::lround(roiMap.sourceX0 + (double(x) + 0.5) * roiMap.sourceSpanX / image.width - 0.5)),
+                    0, roiMap.fullWidth - 1);
+                image.at(x, y) = sampler.applySRGB(image.at(x, y), gx, gy);
             }
         }
     });

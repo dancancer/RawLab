@@ -5,6 +5,9 @@ import com.rawlab.android.adjustments.AdjustmentFailure
 import com.rawlab.android.adjustments.AdjustmentScope
 import com.rawlab.android.adjustments.AdjustmentStatus
 import com.rawlab.android.adjustments.AdjustmentTransferException
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.ViewportRoiRequest
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
 import com.rawlab.android.editor.render.Work
@@ -716,6 +719,177 @@ class EditorViewModelRaceTest {
                 assertFalse(failedState.canExport)
             } finally {
                 releasePersist.countDown()
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun detailOverlayLifecycleSkipsOverscanHitsResharpensAfterEditAndDegradesSilently() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("detail-roi.raw")
+            val detailCalls = AtomicInteger()
+            val failDetail = AtomicBoolean(false)
+            val failedDetailRan = CountDownLatch(1)
+            val model = harness.createViewModel(
+                detailDebounceDelayMs = 20L,
+                renderHandler = { work, _ ->
+                    when (work) {
+                        is Work.Import -> {
+                            val imported = harness.defaultRender(work) as WorkResult.Preview
+                            WorkResult.Preview(imported.request, TestBitmaps.pair(4000, 3000))
+                        }
+                        is Work.Preview -> WorkResult.Preview(work, TestBitmaps.pair(4000, 3000))
+                        is Work.DetailPreview -> {
+                            detailCalls.incrementAndGet()
+                            if (failDetail.get()) {
+                                failedDetailRan.countDown()
+                                throw RuntimeException("simulated detail OOM")
+                            }
+                            harness.defaultRender(work)
+                        }
+                        else -> harness.defaultRender(work)
+                    }
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                val regionA = ViewportRoiRequest(
+                    visibleRect = NormalizedRect(0.05f, 0.05f, 0.20f, 0.25f),
+                    overscanRect = NormalizedRect(0.03f, 0.03f, 0.22f, 0.27f),
+                    zoomScale = 1f,
+                    baseScale = 1600f / 4000f,
+                    maxOutputLongEdge = 2048,
+                )
+                harness.onMain { model.updateDetailRequest(regionA) }
+                harness.awaitState(model) { it.detail != null && it.detailTiles.size == 1 }
+                assertEquals(1, detailCalls.get())
+                assertTrue(model.state.value.canExport)
+                assertTrue(model.state.value.exact)
+                assertFalse(model.state.value.rendering)
+
+                // Small pan inside the same tile hits without re-rendering.
+                val insideTileA = regionA.copy(visibleRect = NormalizedRect(0.08f, 0.08f, 0.22f, 0.28f))
+                harness.onMain { model.updateDetailRequest(insideTileA) }
+                Thread.sleep(50)
+                harness.drainMain()
+                assertEquals(1, detailCalls.get())
+
+                // Panning to a disjoint tile (col=2, row=1) renders that tile and keeps Region A cached.
+                val regionB = regionA.copy(visibleRect = NormalizedRect(0.55f, 0.40f, 0.70f, 0.60f))
+                harness.onMain { model.updateDetailRequest(regionB) }
+                harness.awaitState(model) { it.detailTiles.size == 2 }
+                assertEquals(2, detailCalls.get())
+
+                // Panning back to Region A hits cache immediately with zero re-render.
+                harness.onMain { model.updateDetailRequest(regionA) }
+                Thread.sleep(50)
+                harness.drainMain()
+                assertEquals(2, detailCalls.get())
+
+                // Zooming out to Fit clears visible tiles, and zooming back into A restores from cache with zero re-render.
+                harness.onMain { model.updateDetailRequest(null) }
+                assertNull(model.state.value.detail)
+                assertTrue(model.state.value.detailTiles.isEmpty())
+                harness.onMain { model.updateDetailRequest(regionA) }
+                assertTrue(model.state.value.detailTiles.size == 2)
+                Thread.sleep(50)
+                harness.drainMain()
+                assertEquals(2, detailCalls.get())
+
+                // Editing invalidates cached tiles immediately and automatically re-sharpens after exact preview.
+                val firstEditRev = model.state.value.detail!!.editRevision
+                harness.onMain {
+                    model.edit(model.state.value.edits.copy(exposure = 0.5f))
+                    assertNull(model.state.value.detail)
+                    assertTrue(model.state.value.detailTiles.isEmpty())
+                }
+                harness.awaitState(model) { it.canExport && it.detail != null && it.detail!!.editRevision > firstEditRev }
+                assertEquals(3, detailCalls.get())
+
+                // ROI failure degrades silently without setting state.error or breaking canExport.
+                failDetail.set(true)
+                val regionC = regionA.copy(visibleRect = NormalizedRect(0.80f, 0.75f, 0.95f, 0.95f))
+                harness.onMain { model.updateDetailRequest(regionC) }
+                assertTrue(failedDetailRan.await(5, TimeUnit.SECONDS))
+                Thread.sleep(30)
+                harness.drainMain()
+                assertNull(model.state.value.error)
+                assertTrue(model.state.value.canExport)
+
+                // Zooming back out (null request) clears active detail tiles.
+                harness.onMain { model.updateDetailRequest(null) }
+                assertNull(model.state.value.detail)
+                assertTrue(model.state.value.detailTiles.isEmpty())
+            } finally {
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun detailWorkerDoesNotCancelInFlightTileOnSubTilePanPrefetchesOverscanAndSupportsLazyNeutral() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("lazy-neutral-tile.raw")
+            val firstTileEntered = CountDownLatch(1)
+            val releaseFirstTile = CountDownLatch(1)
+            val seenIncludesNeutral = CopyOnWriteArrayList<Boolean>()
+            val seenKeys = CopyOnWriteArrayList<DetailTileKey?>()
+            val model = harness.createViewModel(
+                detailDebounceDelayMs = 0L,
+                detailOverscanRing = 1,
+                renderHandler = { work, cancellation ->
+                    when (work) {
+                        is Work.Import -> {
+                            val imported = harness.defaultRender(work) as WorkResult.Preview
+                            WorkResult.Preview(imported.request, TestBitmaps.pair(4000, 3000))
+                        }
+                        is Work.Preview -> WorkResult.Preview(work, TestBitmaps.pair(4000, 3000))
+                        is Work.DetailPreview -> {
+                            seenIncludesNeutral.add(work.includeNeutral)
+                            seenKeys.add(work.tileKey)
+                            if (work.tileKey == DetailTileKey(0, 0, 0) && firstTileEntered.count > 0) {
+                                firstTileEntered.countDown()
+                                assertTrue(releaseFirstTile.await(5, TimeUnit.SECONDS))
+                                assertFalse("sub-tile pan must not cancel in-flight tile", cancellation.isCancelled)
+                            }
+                            harness.defaultRender(work)
+                        }
+                        else -> harness.defaultRender(work)
+                    }
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                val regionA = ViewportRoiRequest(
+                    visibleRect = NormalizedRect(0.05f, 0.05f, 0.20f, 0.25f),
+                    overscanRect = NormalizedRect(0.03f, 0.03f, 0.22f, 0.27f),
+                    zoomScale = 1f,
+                    baseScale = 1600f / 4000f,
+                    maxOutputLongEdge = 2048,
+                )
+                harness.onMain { model.updateDetailRequest(regionA) }
+                assertTrue(firstTileEntered.await(5, TimeUnit.SECONDS))
+
+                // Sub-tile pan inside (0, 0) while (0, 0) is in flight must not cancel it.
+                val shiftedInSameTile = regionA.copy(visibleRect = NormalizedRect(0.07f, 0.07f, 0.22f, 0.27f))
+                harness.onMain { model.updateDetailRequest(shiftedInSameTile) }
+                releaseFirstTile.countDown()
+
+                // Visible (0, 0) plus overscan ring (1, 0), (0, 1), (1, 1) -> 4 cached tiles with lazy neutral == null.
+                harness.awaitState(model) { it.detailTiles.size == 4 }
+                assertTrue(seenIncludesNeutral.all { !it })
+                assertTrue(model.state.value.detailTiles.all { it.neutral == null })
+
+                // Enabling before comparison triggers re-render with includeNeutral == true.
+                seenIncludesNeutral.clear()
+                harness.onMain { model.setDetailNeedsBefore(true) }
+                harness.awaitState(model) { state -> state.detailTiles.size == 4 && state.detailTiles.all { it.neutral != null } }
+                assertTrue(seenIncludesNeutral.isNotEmpty() && seenIncludesNeutral.all { it })
+            } finally {
+                releaseFirstTile.countDown()
                 harness.onMain { model.clearForTest() }
             }
         }

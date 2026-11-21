@@ -613,6 +613,39 @@ sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* se
 // Only PREVIEW buffer requests use it; FINAL and file outputs remain exact.
 // Disabled by default; the request layout and existing preview mode are unchanged.
 sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
+
+// Optional normalized region-of-interest rendering in post-geometry native coordinates.
+// Only PREVIEW + BUFFER requests apply this ROI; FINAL, file exports, and HSL probes ignore it.
+typedef struct sony2fuji_viewport_roi {
+    uint32_t struct_size;
+    uint32_t enabled;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+    uint32_t max_output_long_edge;
+} sony2fuji_viewport_roi;
+
+typedef struct sony2fuji_viewport_roi_result {
+    uint32_t struct_size;
+    uint32_t active;
+    uint32_t native_x0;
+    uint32_t native_y0;
+    uint32_t native_x1;
+    uint32_t native_y1;
+    uint32_t full_native_width;
+    uint32_t full_native_height;
+} sony2fuji_viewport_roi_result;
+
+sony2fuji_status sony2fuji_session_set_viewport_roi(
+    sony2fuji_session* session,
+    const sony2fuji_viewport_roi* roi
+);
+
+sony2fuji_status sony2fuji_session_get_viewport_roi_result(
+    const sony2fuji_session* session,
+    sony2fuji_viewport_roi_result* out_result
+);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
 sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session* session);
 sony2fuji_gpu_fallback_reason sony2fuji_session_get_gpu_fallback_reason(const sony2fuji_session* session);
