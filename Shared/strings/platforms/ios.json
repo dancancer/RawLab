@@ -33,6 +33,10 @@
       ],
       "source": "{0}数值"
     },
+    "1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。": {
+      "formats": [],
+      "source": "1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。"
+    },
     "16:9": {
       "formats": [],
       "source": "16:9"
@@ -40,6 +44,10 @@
     "1:1": {
       "formats": [],
       "source": "1:1"
+    },
+    "2. 返回 RawLab，点击“已连接，继续”。": {
+      "formats": [],
+      "source": "2. 返回 RawLab，点击“已连接，继续”。"
     },
     "3:2": {
       "formats": [],
@@ -394,6 +402,10 @@
     "下一张": {
       "formats": [],
       "source": "下一张"
+    },
+    "不可读外观": {
+      "source": "不可读外观",
+      "formats": []
     },
     "不支持此 HDR 格式或颜色描述。": {
       "formats": [],
@@ -1042,6 +1054,10 @@
       "formats": [],
       "source": "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。"
     },
+    "在系统 Wi-Fi 设置连接": {
+      "formats": [],
+      "source": "在系统 Wi-Fi 设置连接"
+    },
     "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。": {
       "formats": [],
       "source": "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。"
@@ -1095,6 +1111,10 @@
     "处理版本与来源不同，已沿用当前照片的处理版本": {
       "formats": [],
       "source": "处理版本与来源不同，已沿用当前照片的处理版本"
+    },
+    "复制密码": {
+      "formats": [],
+      "source": "复制密码"
     },
     "复制范围": {
       "formats": [],
@@ -1190,6 +1210,10 @@
       "formats": [],
       "source": "宽度"
     },
+    "密码已复制，仅本机可用，2 分钟后自动清除。": {
+      "formats": [],
+      "source": "密码已复制，仅本机可用，2 分钟后自动清除。"
+    },
     "对比": {
       "formats": [],
       "source": "对比"
@@ -1239,6 +1263,10 @@
     "导入照片": {
       "formats": [],
       "source": "导入照片"
+    },
+    "导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。": {
+      "formats": [],
+      "source": "导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。"
     },
     "导入相机配置…": {
       "formats": [],
@@ -1380,6 +1408,10 @@
       "formats": [],
       "source": "尚未选择照片"
     },
+    "尝试应用内自动加入（需 Hotspot 权限）": {
+      "formats": [],
+      "source": "尝试应用内自动加入（需 Hotspot 权限）"
+    },
     "尺寸": {
       "formats": [],
       "source": "尺寸"
@@ -1437,9 +1469,23 @@
         "%d"
       ]
     },
+    "已保存 %d 张照片到手机相册": {
+      "formats": [
+        "%d"
+      ],
+      "source": "已保存 {0} 张照片到手机相册"
+    },
+    "已保存到手机相册": {
+      "formats": [],
+      "source": "已保存到手机相册"
+    },
     "已保存到照片。": {
       "formats": [],
       "source": "已保存到照片。"
+    },
+    "已保存到相册": {
+      "formats": [],
+      "source": "已保存到相册"
     },
     "已保存的原件缺失或已改变，无法打开。": {
       "formats": [],
@@ -1480,6 +1526,10 @@
       ],
       "source": "已处理 {0} / {1}"
     },
+    "已复制": {
+      "formats": [],
+      "source": "已复制"
+    },
     "已导入": {
       "formats": [],
       "source": "已导入"
@@ -1512,6 +1562,10 @@
     "已忽略渲染后 RGB 降噪": {
       "formats": [],
       "source": "已忽略渲染后 RGB 降噪"
+    },
+    "已忽略目标不支持的普通降噪设置": {
+      "formats": [],
+      "source": "已忽略目标不支持的普通降噪设置"
     },
     "已恢复上次调整": {
       "formats": [],
@@ -1585,6 +1639,10 @@
       "formats": [],
       "source": "已自动升级，原设置已保留。"
     },
+    "已获取相机 Wi-Fi 信息": {
+      "formats": [],
+      "source": "已获取相机 Wi-Fi 信息"
+    },
     "已调整": {
       "formats": [],
       "source": "已调整"
@@ -1634,6 +1692,10 @@
     "应用": {
       "formats": [],
       "source": "应用"
+    },
+    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。": {
+      "formats": [],
+      "source": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"
     },
     "应用到多张照片": {
       "formats": [],
@@ -1709,6 +1771,10 @@
       "formats": [],
       "source": "当前构建未配置使用统计，未采集或上报。"
     },
+    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
+      "formats": [],
+      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+    },
     "当前照片或调整记录无效，无法安全重置。": {
       "formats": [],
       "source": "当前照片或调整记录无效，无法安全重置。"
@@ -1720,6 +1786,10 @@
     "当前相机模式未提供此功能。": {
       "formats": [],
       "source": "当前相机模式未提供此功能。"
+    },
+    "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。": {
+      "formats": [],
+      "source": "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。"
     },
     "当前配方不可用，无法安全重置外观。": {
       "formats": [],
@@ -1823,6 +1893,10 @@
       "formats": [],
       "source": "打开"
     },
+    "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。": {
+      "formats": [],
+      "source": "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。"
+    },
     "打开系统设置": {
       "formats": [],
       "source": "打开系统设置"
@@ -1913,6 +1987,10 @@
     "按每张调整导出…": {
       "formats": [],
       "source": "按每张调整导出…"
+    },
+    "损坏的外观": {
+      "source": "损坏的外观",
+      "formats": []
     },
     "损坏的预设": {
       "formats": [],
@@ -2058,6 +2136,14 @@
     "方向、裁切和构图一致": {
       "formats": [],
       "source": "方向、裁切和构图一致"
+    },
+    "方式一：在系统 Wi-Fi 设置连接（推荐）": {
+      "formats": [],
+      "source": "方式一：在系统 Wi-Fi 设置连接（推荐）"
+    },
+    "方式二：蓝牙唤醒并获取密码": {
+      "formats": [],
+      "source": "方式二：蓝牙唤醒并获取密码"
     },
     "方案 %@": {
       "formats": [
@@ -2313,6 +2399,10 @@
       "formats": [],
       "source": "显示图像"
     },
+    "显示密码": {
+      "formats": [],
+      "source": "显示密码"
+    },
     "暂停联机": {
       "formats": [],
       "source": "暂停联机"
@@ -2448,6 +2538,10 @@
     "未变化": {
       "formats": [],
       "source": "未变化"
+    },
+    "未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。": {
+      "formats": [],
+      "source": "未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。"
     },
     "未处理": {
       "formats": [],
@@ -2752,6 +2846,10 @@
       "formats": [],
       "source": "此外观已不在外观库中。"
     },
+    "此外观无法读取，可能已损坏或来自不兼容版本。": {
+      "source": "此外观无法读取，可能已损坏或来自不兼容版本。",
+      "formats": []
+    },
     "此操作只恢复%@组内的调整，其他分组保持不变。": {
       "formats": [
         "%@"
@@ -2970,6 +3068,14 @@
       "formats": [],
       "source": "照片处理设置"
     },
+    "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。": {
+      "formats": [],
+      "source": "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。"
+    },
+    "照片已保存在 RawLab 内，但部分照片未能保存到手机相册。": {
+      "formats": [],
+      "source": "照片已保存在 RawLab 内，但部分照片未能保存到手机相册。"
+    },
     "照片已写入，但任务记录未更新，请先核对保存结果。": {
       "formats": [],
       "source": "照片已写入，但任务记录未更新，请先核对保存结果。"
@@ -3091,6 +3197,10 @@
     "相机": {
       "formats": [],
       "source": "相机"
+    },
+    "相机 Wi-Fi 正在启动，请稍候…": {
+      "formats": [],
+      "source": "相机 Wi-Fi 正在启动，请稍候…"
     },
     "相机 Wi-Fi 通常无法访问互联网，请保持连接。": {
       "formats": [],
@@ -3436,6 +3546,14 @@
       "formats": [],
       "source": "蓝"
     },
+    "蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。": {
+      "formats": [],
+      "source": "蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。"
+    },
+    "蓝牙发现相机（可选）": {
+      "formats": [],
+      "source": "蓝牙发现相机（可选）"
+    },
     "补充镜头信息": {
       "formats": [],
       "source": "补充镜头信息"
@@ -3540,6 +3658,10 @@
       "formats": [],
       "source": "请允许系统连接相机 Wi-Fi"
     },
+    "请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。": {
+      "formats": [],
+      "source": "请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"
+    },
     "请先在系统 Wi-Fi 设置连接相机，再返回继续。": {
       "formats": [],
       "source": "请先在系统 Wi-Fi 设置连接相机，再返回继续。"
@@ -3575,6 +3697,10 @@
     "请在系统设置中允许 RawLab 使用蓝牙。": {
       "formats": [],
       "source": "请在系统设置中允许 RawLab 使用蓝牙。"
+    },
+    "请在系统设置中允许 RawLab 访问本地网络。": {
+      "formats": [],
+      "source": "请在系统设置中允许 RawLab 访问本地网络。"
     },
     "请在调整后的照片区域取色。": {
       "formats": [],
@@ -3872,6 +3998,10 @@
       "formats": [],
       "source": "透视"
     },
+    "通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。": {
+      "formats": [],
+      "source": "通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。"
+    },
     "通道边界像素：方案 %@% · 参考 %@%": {
       "formats": [
         "%@",
@@ -4147,6 +4277,10 @@
       "formats": [],
       "source": "隐私设置"
     },
+    "隐藏密码": {
+      "formats": [],
+      "source": "隐藏密码"
+    },
     "隐藏照片信息": {
       "formats": [],
       "source": "隐藏照片信息"
@@ -4333,26 +4467,6 @@
     "默认降噪设置": {
       "formats": [],
       "source": "默认降噪设置"
-    },
-    "已忽略目标不支持的普通降噪设置": {
-      "formats": [],
-      "source": "已忽略目标不支持的普通降噪设置"
-    },
-    "不可读外观": {
-      "source": "不可读外观",
-      "formats": []
-    },
-    "损坏的外观": {
-      "source": "损坏的外观",
-      "formats": []
-    },
-    "此外观无法读取，可能已损坏或来自不兼容版本。": {
-      "source": "此外观无法读取，可能已损坏或来自不兼容版本。",
-      "formats": []
-    },
-    "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。": {
-      "formats": [],
-      "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
     }
   },
   "overrides": {
@@ -4369,6 +4483,22 @@
     }
   },
   "unique": {
+    "1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。": {
+      "de": "1. Kopieren Sie das Passwort unten und treten Sie dem Netzwerk unter „Einstellungen → WLAN“ bei.",
+      "en": "1. Copy the password below and join this network in “Settings → Wi-Fi”.",
+      "es": "1. Copia la contraseña de abajo y únete a esta red en «Ajustes → Wi-Fi».",
+      "fr": "1. Copiez le mot de passe ci-dessous et rejoignez ce réseau dans « Réglages → Wi-Fi ».",
+      "ja": "1. 下のパスワードをコピーし、「設定 → Wi-Fi」でこのネットワークに接続してください。",
+      "zh-Hans": "1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。"
+    },
+    "2. 返回 RawLab，点击“已连接，继续”。": {
+      "de": "2. Kehren Sie zu RawLab zurück und tippen Sie auf „Verbunden, weiter“.",
+      "en": "2. Return to RawLab and tap “Connected, continue”.",
+      "es": "2. Vuelve a RawLab y pulsa «Conectado, continuar».",
+      "fr": "2. Revenez dans RawLab et touchez « Connecté, continuer ».",
+      "ja": "2. RawLab に戻り、「接続済み、続ける」をタップしてください。",
+      "zh-Hans": "2. 返回 RawLab，点击“已连接，继续”。"
+    },
     "Failed to load the selected photo.": {
       "de": "Das ausgewählte Foto konnte nicht geladen werden.",
       "en": "Failed to Load the Selected Photo.",
@@ -4689,6 +4819,22 @@
       "ja": "感度：4分の1",
       "zh-Hans": "四分之一灵敏度"
     },
+    "在系统 Wi-Fi 设置连接": {
+      "de": "In den System-Wi-Fi-Einstellungen verbinden",
+      "en": "Connect in System Wi-Fi Settings",
+      "es": "Conectar en Ajustes de Wi-Fi",
+      "fr": "Connexion via Réglages Wi-Fi",
+      "ja": "システムの Wi-Fi 設定で接続",
+      "zh-Hans": "在系统 Wi-Fi 设置连接"
+    },
+    "复制密码": {
+      "de": "Passwort kopieren",
+      "en": "Copy Password",
+      "es": "Copiar contraseña",
+      "fr": "Copier le mot de passe",
+      "ja": "パスワードをコピー",
+      "zh-Hans": "复制密码"
+    },
     "外观不可用": {
       "de": "Look nicht verfügbar",
       "en": "Look unavailable",
@@ -4705,6 +4851,14 @@
       "ja": "完全な原本は RawLab に保存されます。テザー接続を終了したり編集キャッシュを削除したりしても、原本は削除されません。",
       "zh-Hans": "完整原件保存在 RawLab 的持久存储中，结束联机或清理编辑缓存不会删除它们。"
     },
+    "密码已复制，仅本机可用，2 分钟后自动清除。": {
+      "de": "Passwort kopiert (nur auf diesem Gerät, wird nach 2 Minuten gelöscht).",
+      "en": "Password copied (local device only; clears in 2 minutes).",
+      "es": "Contraseña copiada (solo en este dispositivo; se borra en 2 minutos).",
+      "fr": "Mot de passe copié (appareil local uniquement ; effacé dans 2 minutes).",
+      "ja": "パスワードをコピーしました（この端末のみ・2 分後に自動消去）。",
+      "zh-Hans": "密码已复制，仅本机可用，2 分钟后自动清除。"
+    },
     "导入并打开一张照片后，可在这里继续编辑。": {
       "en": "Import and open a photo to continue editing it here.",
       "de": "Importiere und öffne ein Foto, um es hier weiterzubearbeiten.",
@@ -4720,6 +4874,14 @@
       "fr": "Importer une photo",
       "ja": "写真を読み込む",
       "zh-Hans": "导入照片"
+    },
+    "导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。": {
+      "de": "Importierte Fotos werden automatisch in deiner Fotomediathek gesichert. Lokale Originale verbleiben zusätzlich in RawLab für Offline-Bearbeitung und inkrementelle Duplikaterkennung.",
+      "en": "Imported photos are automatically saved to your Photo Library, while local originals remain in RawLab for offline editing and incremental deduplication.",
+      "es": "Las fotos importadas se guardan automáticamente en tu fototeca y se conserva el original local en RawLab para edición sin conexión y deduplicación incremental.",
+      "fr": "Les photos importées sont enregistrées automatiquement dans votre photothèque, et un original local est conservé dans RawLab pour l’édition hors ligne et la déduplication.",
+      "ja": "読み込んだ写真は自動で写真ライブラリに保存され、オフライン編集と増分重複除外のため RawLab 内にも原本を保持します。",
+      "zh-Hans": "导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。"
     },
     "导出尺寸无效。": {
       "de": "Ungültige Exportgröße.",
@@ -4769,6 +4931,14 @@
       "ja": "未保存です。再書き出しを許可",
       "zh-Hans": "尚未保存，允许重新导出"
     },
+    "尝试应用内自动加入（需 Hotspot 权限）": {
+      "de": "Automatisches Beitreten in der App (Hotspot-Berechtigung erforderlich)",
+      "en": "Try In-App Auto-Join (Requires Hotspot Entitlement)",
+      "es": "Unirse automáticamente desde la app (requiere permiso Hotspot)",
+      "fr": "Connexion auto dans l’app (droit Hotspot requis)",
+      "ja": "アプリ内で自動接続を試す（Hotspot 権限が必要）",
+      "zh-Hans": "尝试应用内自动加入（需 Hotspot 权限）"
+    },
     "已保存 {0} 张到照片图库": {
       "de": "In Fotos gespeichert: {0}",
       "en": "Saved to Photos: {0}",
@@ -4777,6 +4947,22 @@
       "ja": "写真に{0}枚保存しました",
       "zh-Hans": "已保存 {0} 张到照片图库"
     },
+    "已保存 {0} 张照片到手机相册": {
+      "de": "{0} Fotos in der Fotomediathek gesichert",
+      "en": "Saved {0} photos to Photo Library",
+      "es": "{0} fotos guardadas en la fototeca",
+      "fr": "{0} photos enregistrées dans la photothèque",
+      "ja": "{0} 枚の写真を写真ライブラリに保存しました",
+      "zh-Hans": "已保存 {0} 张照片到手机相册"
+    },
+    "已保存到手机相册": {
+      "de": "In der Fotomediathek gesichert",
+      "en": "Saved to Photo Library",
+      "es": "Guardadas en la fototeca",
+      "fr": "Enregistrées dans la photothèque",
+      "ja": "写真ライブラリに保存しました",
+      "zh-Hans": "已保存到手机相册"
+    },
     "已保存到照片。": {
       "de": "In Fotos gespeichert.",
       "en": "Saved to Photos.",
@@ -4784,6 +4970,14 @@
       "fr": "Enregistré dans Photos.",
       "ja": "写真に保存しました。",
       "zh-Hans": "已保存到照片。"
+    },
+    "已保存到相册": {
+      "de": "In Fotos gesichert",
+      "en": "Saved to Photos",
+      "es": "Guardada en Fotos",
+      "fr": "Enregistrée dans Photos",
+      "ja": "写真に保存済み",
+      "zh-Hans": "已保存到相册"
     },
     "已到上限": {
       "de": "Obergrenze erreicht",
@@ -4817,6 +5011,30 @@
       "ja": "処理済み {0} / {1}",
       "zh-Hans": "已处理 {0} / {1}"
     },
+    "已复制": {
+      "de": "Kopiert",
+      "en": "Copied",
+      "es": "Copiada",
+      "fr": "Copié",
+      "ja": "コピー済み",
+      "zh-Hans": "已复制"
+    },
+    "已获取相机 Wi-Fi 信息": {
+      "de": "Kamera-Wi-Fi-Daten abgerufen",
+      "en": "Camera Wi-Fi Credentials Ready",
+      "es": "Datos del Wi-Fi de la cámara listos",
+      "fr": "Identifiants Wi-Fi de l’appareil prêts",
+      "ja": "カメラの Wi-Fi 情報を取得しました",
+      "zh-Hans": "已获取相机 Wi-Fi 信息"
+    },
+    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。": {
+      "de": "Automatisches Beitreten in der App erfordert die Hotspot-Berechtigung eines kostenpflichtigen Apple-Entwicklerkontos. Nutzen Sie bei kostenloser Signierung bitte die System-Wi-Fi-Methode oben.",
+      "en": "In-app auto-join requires the Hotspot entitlement from a paid Apple Developer account. With a free Personal Team build, use System Wi-Fi above.",
+      "es": "Unirse desde la app requiere el permiso Hotspot de una cuenta Apple Developer de pago. Con firma gratuita personal, usa el Wi-Fi del sistema arriba.",
+      "fr": "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, utilisez les Réglages Wi-Fi ci-dessus.",
+      "ja": "アプリ内での自動接続には有料 Apple Developer アカウントの Hotspot 権限が必要です。無料の個人署名では上のシステム Wi-Fi 手順をご利用ください。",
+      "zh-Hans": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"
+    },
     "应用草稿并继续": {
       "de": "Entwurf übernehmen und fortfahren",
       "en": "Apply draft and continue",
@@ -4832,6 +5050,14 @@
       "es": "Esta función no está disponible en el modo actual de la cámara.",
       "ja": "現在のカメラモードでは、この機能を利用できません。",
       "zh-Hans": "当前相机模式未提供此功能。"
+    },
+    "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。": {
+      "de": "Diese Signierung unterstützt kein automatisches Wi-Fi-Beitreten. Bitte nutzen Sie die System-Wi-Fi-Methode oben.",
+      "en": "This build signing cannot auto-join Wi-Fi. Please connect using System Wi-Fi above.",
+      "es": "Esta firma no admite la unión automática al Wi-Fi. Conéctate usando el método de Ajustes de Wi-Fi arriba.",
+      "fr": "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Veuillez utiliser les Réglages Wi-Fi ci-dessus.",
+      "ja": "この署名ではシステムによる Wi-Fi 自動接続が有効になっていません。上のシステム Wi-Fi 手順で接続してください。",
+      "zh-Hans": "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。"
     },
     "恢复旧调整": {
       "en": "Restore Previous Adjustments",
@@ -4880,6 +5106,14 @@
       "es": "Abrir",
       "ja": "開く",
       "zh-Hans": "打开"
+    },
+    "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。": {
+      "de": "Öffnen Sie die Smartphone-Verbindung an der Kamera, treten Sie dem angezeigten WLAN unter „Einstellungen → WLAN“ bei (kein Internet ist normal) und tippen Sie dann auf „Verbunden, weiter“.",
+      "en": "Open Smartphone Connection on the camera, join its Wi-Fi in “Settings → Wi-Fi” (no internet is normal), then return and tap “Connected, continue”.",
+      "es": "Abre Conexión smartphone en la cámara, únete a su Wi-Fi en «Ajustes → Wi-Fi» (es normal que no tenga Internet) y vuelve para pulsar «Conectado, continuar».",
+      "fr": "Ouvrez la connexion smartphone sur l’appareil, rejoignez son réseau dans « Réglages → Wi-Fi » (sans accès Internet est normal), puis revenez toucher « Connecté, continuer ».",
+      "ja": "カメラでスマートフォン接続を開き、「設定 → Wi-Fi」でカメラの Wi-Fi に接続してから（インターネット未接続は正常）、戻り「接続済み、続ける」をタップしてください。",
+      "zh-Hans": "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。"
     },
     "打开系统设置": {
       "de": "Systemeinstellungen öffnen",
@@ -4952,6 +5186,22 @@
       "fr": "Données et fournisseur",
       "ja": "データと提供元",
       "zh-Hans": "数据与提供方"
+    },
+    "方式一：在系统 Wi-Fi 设置连接（推荐）": {
+      "de": "Methode 1: Über System-Wi-Fi verbinden (Empfohlen)",
+      "en": "Option 1: Connect in System Wi-Fi Settings (Recommended)",
+      "es": "Opción 1: Conectar en Ajustes de Wi-Fi (Recomendado)",
+      "fr": "Option 1 : Connexion via Réglages Wi-Fi (Recommandé)",
+      "ja": "方法 1：システムの Wi-Fi 設定で接続（推奨）",
+      "zh-Hans": "方式一：在系统 Wi-Fi 设置连接（推荐）"
+    },
+    "方式二：蓝牙唤醒并获取密码": {
+      "de": "Methode 2: Per Bluetooth wecken & Passwort abrufen",
+      "en": "Option 2: Wake via Bluetooth & Get Password",
+      "es": "Opción 2: Activar por Bluetooth y obtener contraseña",
+      "fr": "Option 2 : Réveiller via Bluetooth et obtenir le mot de passe",
+      "ja": "方法 2：Bluetooth で起動してパスワードを取得",
+      "zh-Hans": "方式二：蓝牙唤醒并获取密码"
     },
     "无法保存照片，请在系统设置中允许 RawLab 添加照片。": {
       "de": "Fotos können nicht gespeichert werden. Erlauben Sie RawLab in den Systemeinstellungen, Fotos hinzuzufügen.",
@@ -5081,6 +5331,14 @@
       "ja": "以前の調整は写真ライブラリの識別子だけで保存されています。同じ元の写真であれば復元できます。",
       "zh-Hans": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
     },
+    "显示密码": {
+      "de": "Passwort anzeigen",
+      "en": "Show password",
+      "es": "Mostrar contraseña",
+      "fr": "Afficher le mot de passe",
+      "ja": "パスワードを表示",
+      "zh-Hans": "显示密码"
+    },
     "暂无可导出的错误日志。": {
       "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
       "en": "There is no error log to export.",
@@ -5104,6 +5362,14 @@
       "fr": "Des réglages ne sont pas encore validés.",
       "ja": "未確定の調整があります。",
       "zh-Hans": "有未提交调整。"
+    },
+    "未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。": {
+      "de": "Keine Kamera im aktuellen Wi-Fi gefunden. Verbinden Sie zuerst in den System-Wi-Fi-Einstellungen mit dem Kamera-Hotspot und kehren Sie zurück.",
+      "en": "No camera found on the current Wi-Fi. Join the camera’s Wi-Fi in system Wi-Fi settings first, then return to continue.",
+      "es": "No se encontró ninguna cámara en el Wi-Fi actual. Conéctate primero al Wi-Fi de la cámara en Ajustes y vuelve para continuar.",
+      "fr": "Aucun appareil détecté sur ce Wi-Fi. Rejoignez d’abord le Wi-Fi de l’appareil dans les réglages, puis revenez.",
+      "ja": "現在の Wi-Fi でカメラが見つかりません。システム設定でカメラの Wi-Fi に接続してから戻ってください。",
+      "zh-Hans": "未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。"
     },
     "未处理": {
       "de": "Nicht verarbeitet",
@@ -5321,6 +5587,22 @@
       "ja": "原本をクリーンアップ",
       "zh-Hans": "清理原件"
     },
+    "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。": {
+      "de": "Die Fotos wurden in RawLab gesichert, aber nicht in der Fotomediathek. Erlauben Sie RawLab in den Systemeinstellungen das Hinzufügen von Fotos.",
+      "en": "Photos were saved inside RawLab, but not added to your Photo Library. Allow RawLab to add photos in system settings.",
+      "es": "Las fotos se guardaron en RawLab, pero no en tu fototeca. Permite a RawLab añadir fotos en los ajustes del sistema.",
+      "fr": "Les photos ont été enregistrées dans RawLab, mais pas ajoutées à votre photothèque. Autorisez RawLab à ajouter des photos dans les réglages.",
+      "ja": "写真は RawLab 内に保存されましたが、写真ライブラリには保存されませんでした。システム設定で RawLab の写真追加を許可してください。",
+      "zh-Hans": "照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。"
+    },
+    "照片已保存在 RawLab 内，但部分照片未能保存到手机相册。": {
+      "de": "Die Fotos wurden in RawLab gesichert, aber einige konnten nicht zur Fotomediathek hinzugefügt werden.",
+      "en": "Photos were saved inside RawLab, but some could not be added to your Photo Library.",
+      "es": "Las fotos se guardaron en RawLab, pero algunas no pudieron añadirse a tu fototeca.",
+      "fr": "Les photos ont été enregistrées dans RawLab, mais certaines n’ont pas pu être ajoutées à votre photothèque.",
+      "ja": "写真は RawLab 内に保存されましたが、一部の写真を写真ライブラリに保存できませんでした。",
+      "zh-Hans": "照片已保存在 RawLab 内，但部分照片未能保存到手机相册。"
+    },
     "照片已写入，但任务记录未更新，请先核对保存结果。": {
       "de": "Das Foto wurde geschrieben, aber der Auftragsdatensatz wurde nicht aktualisiert. Prüfen Sie zuerst das Ergebnis.",
       "en": "The Photo Was Written, but the Task Record Was Not Updated. Check the Save Result First.",
@@ -5336,6 +5618,14 @@
       "fr": "Photos cibles",
       "ja": "対象の写真",
       "zh-Hans": "目标照片"
+    },
+    "相机 Wi-Fi 正在启动，请稍候…": {
+      "de": "Kamera-Wi-Fi wird gestartet, bitte warten…",
+      "en": "Camera Wi-Fi is starting, please wait…",
+      "es": "El Wi-Fi de la cámara se está iniciando, espera…",
+      "fr": "Le Wi-Fi de l’appareil démarre, veuillez patienter…",
+      "ja": "カメラの Wi-Fi を起動しています。しばらくお待ちください…",
+      "zh-Hans": "相机 Wi-Fi 正在启动，请稍候…"
     },
     "相机 Wi-Fi 通常无法访问互联网，请保持连接。": {
       "en": "The camera’s Wi-Fi usually has no internet access. Stay connected.",
@@ -5409,6 +5699,22 @@
       "ja": "範囲",
       "zh-Hans": "范围"
     },
+    "蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。": {
+      "de": "Wählen Sie eine per Bluetooth gefundene Kamera aus, um das Kamera-Wi-Fi zu wecken. Mit Hotspot-Berechtigung tritt die App automatisch bei; mit kostenloser Signierung werden SSID und Passwort zum Kopieren angezeigt.",
+      "en": "Tap a Bluetooth-discovered camera to wake its Wi-Fi. With the Hotspot entitlement it joins automatically; with a free Personal Team build, copy the displayed password and join in Settings.",
+      "es": "Pulsa una cámara detectada por Bluetooth para activar su Wi-Fi. Con permiso Hotspot se une sola; con firma gratuita personal muestra el nombre y una contraseña para copiar y conectar en Ajustes.",
+      "fr": "Touchez un appareil détecté en Bluetooth pour réveiller son Wi-Fi. Avec le droit Hotspot il se connecte seul ; avec une signature gratuite, copiez le mot de passe affiché pour rejoindre le réseau dans Réglages.",
+      "ja": "Bluetooth で見つかったカメラを選ぶと Wi-Fi が自動起動します。Hotspot 権限がある場合は自動接続され、無料の個人署名では SSID とコピー用パスワードが表示されます。",
+      "zh-Hans": "蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。"
+    },
+    "蓝牙发现相机（可选）": {
+      "de": "Kamera über Bluetooth finden (optional)",
+      "en": "Find Camera via Bluetooth (Optional)",
+      "es": "Buscar cámara por Bluetooth (opcional)",
+      "fr": "Détecter l’appareil en Bluetooth (facultatif)",
+      "ja": "Bluetooth でカメラを探す（任意）",
+      "zh-Hans": "蓝牙发现相机（可选）"
+    },
     "裁切与旋转": {
       "de": "Zuschneiden und Drehen",
       "en": "Crop and Rotate",
@@ -5432,6 +5738,14 @@
       "es": "Prueba otro estado de edición.",
       "ja": "別の編集状態を選んでください。",
       "zh-Hans": "试试其他编辑状态。"
+    },
+    "请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。": {
+      "de": "Verbinden Sie sich zuerst unter iOS „Einstellungen → WLAN“ mit dem Kamera-Wi-Fi und tippen Sie dann hier auf „Verbunden, weiter“.",
+      "en": "Join the camera’s Wi-Fi in iOS “Settings → Wi-Fi” first, then return and tap “Connected, continue”.",
+      "es": "Únete primero al Wi-Fi de la cámara en iOS «Ajustes → Wi-Fi», luego vuelve y pulsa «Conectado, continuar».",
+      "fr": "Rejoignez d’abord le Wi-Fi de l’appareil dans « Réglages → Wi-Fi », puis revenez toucher « Connecté, continuer ».",
+      "ja": "先に iOS「設定 → Wi-Fi」でカメラの Wi-Fi に接続してから戻り、「接続済み、続ける」をタップしてください。",
+      "zh-Hans": "请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"
     },
     "请先在系统 Wi-Fi 设置连接相机，再返回继续。": {
       "en": "Connect to the camera in system Wi-Fi settings first, then return.",
@@ -5480,6 +5794,14 @@
       "es": "Permite a RawLab usar Bluetooth en los ajustes del sistema.",
       "ja": "システム設定で RawLab の Bluetooth 使用を許可してください。",
       "zh-Hans": "请在系统设置中允许 RawLab 使用蓝牙。"
+    },
+    "请在系统设置中允许 RawLab 访问本地网络。": {
+      "de": "Erlauben Sie RawLab den Zugriff auf das lokale Netzwerk in den Systemeinstellungen.",
+      "en": "Allow RawLab to access the local network in system settings.",
+      "es": "Permite a RawLab acceder a la red local en los ajustes del sistema.",
+      "fr": "Autorisez RawLab à accéder au réseau local dans les réglages système.",
+      "ja": "システム設定で RawLab のローカルネットワークへのアクセスを許可してください。",
+      "zh-Hans": "请在系统设置中允许 RawLab 访问本地网络。"
     },
     "请等待当前任务完成。": {
       "de": "Warten Sie, bis der aktuelle Auftrag abgeschlossen ist.",
@@ -5545,6 +5867,14 @@
       "ja": "写真を選んで調整を同期できます。1枚ずつ微調整した後、同じ一覧に戻ることもできます。",
       "zh-Hans": "选择照片后同步所需调整，也可进入单张微调，再返回原集合。"
     },
+    "通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。": {
+      "de": "Weckt das Kamera-Wi-Fi per Bluetooth auf. Wenn automatisches Beitreten nicht verfügbar ist, können Sie das Passwort kopieren und in den Einstellungen verbinden.",
+      "en": "Wakes camera Wi-Fi over Bluetooth. If automatic join is unavailable, you can copy the password and join in Settings.",
+      "es": "Activa el Wi-Fi de la cámara por Bluetooth. Si la unión automática no está disponible, copia la contraseña y conéctate en Ajustes.",
+      "fr": "Réveille le Wi-Fi de l’appareil en Bluetooth. Si l’ajout automatique est indisponible, copiez le mot de passe et connectez-vous dans Réglages.",
+      "ja": "Bluetooth でカメラの Wi-Fi を起動します。自動参加できない場合は、パスワードをコピーして設定から接続できます。",
+      "zh-Hans": "通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。"
+    },
     "部分照片导出失败": {
       "de": "Export einiger Fotos fehlgeschlagen",
       "en": "Some Photos Failed to Export",
@@ -5576,6 +5906,14 @@
       "fr": "Paramètres de confidentialité",
       "ja": "プライバシー設定",
       "zh-Hans": "隐私设置"
+    },
+    "隐藏密码": {
+      "de": "Passwort ausblenden",
+      "en": "Hide password",
+      "es": "Ocultar contraseña",
+      "fr": "Masquer le mot de passe",
+      "ja": "パスワードを隠す",
+      "zh-Hans": "隐藏密码"
     },
     "高级参数": {
       "de": "Erweiterte Parameter",

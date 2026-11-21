@@ -593,6 +593,44 @@ import Darwin
         let keptSource = try CGImageSourceCreateWithURL(store.verifiedURL(kept.id) as CFURL, nil)!
         let keptImage = CGImageSourceCreateImageAtIndex(keptSource, 0, nil)
         try check(keptImage?.width == 40 && keptImage?.height == 80, "A long-edge ceiling never enlarges the camera JPEG")
+
+        let manualRawBytes = Data([0x49, 0x49, 0x2a, 0x00, 7, 8, 9, 10])
+        let manualRaw = CameraAssetSnapshot(content: 2, file: 0, storage: 0, format: 0, name: "DSC002.ARW",
+                                            size: UInt64(manualRawBytes.count), created: "1700000001000", modified: "")
+        let manualJpg = CameraAssetSnapshot(content: 3, file: 0, storage: 0, format: 0, name: "DSC002.JPG",
+                                            size: UInt64(bytes.count), created: "1700000001000", modified: "")
+        let manualAdjustedOptions = CameraJPEGOptions(adjust: true, longEdge: 40, quality: 72)
+        let manualAdjustedJob = try store.enqueue(device: device, connectionKey: "fixture",
+                                                  assets: [manualRaw, manualJpg], jpeg: manualAdjustedOptions)
+        let manualSavedRaw = try write(manualRawBytes, item: manualAdjustedJob.items[0], job: manualAdjustedJob, store: store)
+        let manualSavedJpg = try write(bytes, item: manualAdjustedJob.items[1], job: manualAdjustedJob, store: store)
+        let manualOut = CGImageSourceCreateWithURL(try store.verifiedURL(manualSavedJpg.id) as CFURL, nil)!
+        let manualProps = CGImageSourceCopyPropertiesAtIndex(manualOut, 0, nil) as? [CFString: Any]
+        let manualRawData = try Data(contentsOf: store.verifiedURL(manualSavedRaw.id))
+        try check(manualSavedRaw.jpegSource == nil && manualRawData == manualRawBytes
+                  && manualSavedJpg.jpegSource?.options == manualAdjustedOptions
+                  && manualProps?[kCGImagePropertyPixelWidth] as? Int == 20
+                  && manualProps?[kCGImagePropertyPixelHeight] as? Int == 40,
+                  "Manual enqueue with jpeg options shrinks JPEG while leaving RAW byte-for-byte intact")
+
+        let manualPlainJob = try store.enqueue(device: device, connectionKey: "fixture", assets: [manualJpg],
+                                               jpeg: CameraJPEGOptions(adjust: false))
+        let manualPlainJpg = try write(bytes, item: manualPlainJob.items[0], job: manualPlainJob, store: store)
+        let manualPlainData = try Data(contentsOf: store.verifiedURL(manualPlainJpg.id))
+        try check(manualPlainJpg.id != manualSavedJpg.id && manualPlainJpg.jpegSource == nil
+                  && manualPlainData == bytes,
+                  "Manual enqueue with adjust=false stores full-resolution original distinct from adjusted JPEG")
+
+        var largeJpg = Data([0xff, 0xd8, 0xff, 0xe0, 0, 16]) + Data(repeating: 0x44, count: 220_000)
+        largeJpg[largeJpg.count - 2] = 0xff; largeJpg[largeJpg.count - 1] = 0xd9
+        let largeSnap = CameraAssetSnapshot(content: 4, file: 0, storage: 0, format: 0, name: "DSC003.JPG",
+                                            size: UInt64(largeJpg.count), created: "1700000002000", modified: "")
+        let largePlainJob = try store.enqueue(device: device, connectionKey: "fixture", assets: [largeSnap])
+        _ = try write(largeJpg, item: largePlainJob.items[0], job: largePlainJob, store: store)
+        let largeAdjustedProbe = try store.enqueue(device: device, connectionKey: "fixture", assets: [largeSnap],
+                                                   jpeg: manualAdjustedOptions)
+        try check(store.samplingCandidate(job: largeAdjustedProbe.id, item: largeAdjustedProbe.items[0].id) == nil,
+                  "Manual job with jpeg.adjust=true never reuses unadjusted local copy via sampling")
     }
 
     @available(macOS 15.0, iOS 18.0, *)

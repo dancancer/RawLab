@@ -12,7 +12,7 @@ extension CameraByteChannel { func beginEventLoop() {} }
 /// command 仅由同一串行 owner 调用；event 使用独立读取线程，关闭可从任何线程发起。
 final class CameraPTPClient {
     let command: CameraByteChannel
-    let event: CameraByteChannel?
+    private var event: CameraByteChannel?
     private let stateLock = NSLock()
     private var closed = false
     private var transaction: UInt32 = 0
@@ -23,11 +23,16 @@ final class CameraPTPClient {
     func close() {
         stateLock.lock()
         if closed { stateLock.unlock(); return }
-        closed = true; stateLock.unlock()
-        command.close(); event?.close()
+        closed = true
+        let eventChannel = event
+        stateLock.unlock()
+        command.close()
+        eventChannel?.close()
     }
 
-    func initialize(clientID: UUID, eventReceived: @escaping (UInt16) -> Void = { _ in }) throws {
+    func initialize(clientID: UUID,
+                    openEvent: (() throws -> CameraByteChannel)? = nil,
+                    eventReceived: @escaping (UInt16) -> Void = { _ in }) throws {
         do {
             var id = clientID.uuid
             var payload = withUnsafeBytes(of: &id) { Data($0) }
@@ -35,33 +40,59 @@ final class CameraPTPClient {
             payload.appendLE(UInt32(0x10000))
             try command.write(CameraWire.packet(1, payload))
             let ack = try packet(command, limit: 4096)
-            guard ack.type == 2, ack.data.count >= 24, let event else {
+            guard ack.type == 2, ack.data.count >= 24 else {
                 throw CameraProtocolError.invalid("PTP/IP command initialization rejected")
             }
             var reader = CameraDataReader(ack.data), connection = Data()
             connection.appendLE(try reader.u32())
-            try event.write(CameraWire.packet(3, connection))
-            let ready = try packet(event, limit: 4096)
+            let eventChannel: CameraByteChannel
+            if let openEvent {
+                guard !isClosed else { throw CameraProtocolError.cancelled }
+                let opened = try openEvent()
+                stateLock.lock()
+                if closed {
+                    stateLock.unlock()
+                    opened.close()
+                    throw CameraProtocolError.cancelled
+                }
+                event = opened
+                stateLock.unlock()
+                eventChannel = opened
+            } else {
+                stateLock.lock()
+                let existing = event
+                stateLock.unlock()
+                guard let existing else {
+                    throw CameraProtocolError.invalid("PTP/IP command initialization rejected")
+                }
+                eventChannel = existing
+            }
+            try eventChannel.write(CameraWire.packet(3, connection))
+            let ready = try packet(eventChannel, limit: 4096)
             guard ready.type == 4, ready.data.isEmpty else {
                 throw CameraProtocolError.invalid("PTP/IP event initialization rejected")
             }
-            event.beginEventLoop()
+            eventChannel.beginEventLoop()
             DispatchQueue(label: "rawlab.camera.events").async { [weak self] in
                 guard let self else { return }
                 do {
                     while !self.isClosed {
-                        let eventPacket = try self.packet(event, limit: 4096)
+                        let eventPacket = try self.packet(eventChannel, limit: 4096)
                         if eventPacket.type == 13, eventPacket.data.isEmpty {
-                            try event.write(CameraWire.packet(14, Data())); continue
+                            try eventChannel.write(CameraWire.packet(14, Data())); continue
                         }
                         guard eventPacket.type == 8, (6...18).contains(eventPacket.data.count),
                               (eventPacket.data.count - 6) % 4 == 0 else { throw CameraProtocolError.invalid("Invalid PTP event") }
                         var data = CameraDataReader(eventPacket.data)
                         eventReceived(try data.u16())
                     }
-                } catch { self.close() }
+                } catch {
+                    self.close()
+                }
             }
-        } catch { close(); throw error }
+        } catch {
+            close(); throw error
+        }
     }
 
     func operation(_ operation: UInt16, parameters: [UInt32] = [], outgoing: Data? = nil,

@@ -44,12 +44,20 @@ struct CameraTransferJob: Codable, Identifiable {
     var incremental: CameraIncrementalPlan?
     var dismissed: Bool?
     var listingOwner: UUID?
+    var jpeg: CameraJPEGOptions? = nil
     var originalListingOwner: UUID? { listingOwner ?? incremental?.owner }
     var complete: Bool { items.allSatisfy { $0.phase == .saved } }
     var savedCount: Int { items.filter { $0.phase == .saved }.count }
     var failedItems: [CameraTransferItem] { items.filter { $0.phase == .failed } }
     var pendingItems: [CameraTransferItem] { items.filter { $0.phase != .saved && $0.phase != .failed } }
     var itemLimit: Int { incremental == nil ? 64 : CameraIncrementalScan.maximumAssets }
+    var effectiveJPEGOptions: CameraJPEGOptions? {
+        let options = jpeg ?? incremental?.jpeg
+        return options?.adjust == true ? options : nil
+    }
+    func jpegOptions(for asset: CameraAssetSnapshot) -> CameraJPEGOptions? {
+        asset.kind == "JPEG" ? effectiveJPEGOptions : nil
+    }
 
     func matches(camera device: CameraDeviceIdentity, connectionKey: String, allowAlternateConnection: Bool = true) -> Bool {
         let serial = camera.serial.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,6 +103,7 @@ struct CameraStoredOriginal: Codable, Identifiable {
     let savedAt: Date
     var availability: CameraOriginalAvailability = .prepared
     var jpegSource: CameraJPEGSource?
+    var photoLibraryAssetID: String? = nil
 }
 struct CameraTetherRecord: Codable, Identifiable {
     static let maximumFilesPerTransfer = 64
@@ -180,9 +189,10 @@ struct CameraOriginalManifest: Codable {
     }
 
     func savedIncrementalKeys(owner: UUID, jpeg: CameraJPEGOptions) -> Set<String> {
-        Set(jobs.lazy.filter { $0.incremental != nil && $0.originalListingOwner == owner }.flatMap { job in
+        let targetJPEG = jpeg.adjust ? jpeg : nil
+        return Set(jobs.lazy.filter { $0.incremental != nil && $0.originalListingOwner == owner }.flatMap { job in
             job.items.compactMap { item in
-                guard item.phase == .saved, item.asset.kind == "RAW" || job.incremental?.jpeg == jpeg
+                guard item.phase == .saved, item.asset.kind == "RAW" || job.effectiveJPEGOptions == targetJPEG
                 else { return nil }
                 return item.asset.key
             }
@@ -463,10 +473,11 @@ final class CameraOriginalStore {
         return url
     }
     func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
-                 listingOwner: UUID? = nil, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+                 listingOwner: UUID? = nil, incremental: CameraIncrementalPlan? = nil,
+                 jpeg: CameraJPEGOptions? = nil) throws -> CameraTransferJob {
         try change {
             try appendJob(device: device, connectionKey: connectionKey, assets: assets,
-                          listingOwner: listingOwner, incremental: incremental)
+                          listingOwner: listingOwner, incremental: incremental, jpeg: jpeg)
         }
     }
     func dismissIncrementalJob(_ id: UUID) throws {
@@ -574,11 +585,15 @@ final class CameraOriginalStore {
         }
     }
     private func appendJob(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
-                           listingOwner: UUID?, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
+                           listingOwner: UUID?, incremental: CameraIncrementalPlan? = nil,
+                           jpeg: CameraJPEGOptions? = nil) throws -> CameraTransferJob {
         let limit = incremental == nil ? 64 : CameraIncrementalScan.maximumAssets
         guard !assets.isEmpty, assets.count <= limit, Set(assets.map(\.key)).count == assets.count,
               assets.allSatisfy({ $0.transferable && CameraWire.validName($0.name) && CameraWire.photoName($0.name) })
         else { throw CameraProtocolError.invalid("Camera import queue contains invalid or excessive files") }
+        if let jpeg {
+            guard jpeg.isValid else { throw CameraProtocolError.invalid("Invalid JPEG import options") }
+        }
         if let incremental {
             guard incremental.jpeg.isValid, assets.allSatisfy(incremental.format.includes) else {
                 throw CameraProtocolError.invalid("Incremental import options do not match the queue")
@@ -587,7 +602,8 @@ final class CameraOriginalStore {
             throw CameraProtocolError.invalid("Transfer exceeds 64 originals or 2 GiB")
         }
         let job = CameraTransferJob(id: UUID(), camera: device, connectionKey: connectionKey, createdAt: Date(),
-            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental, listingOwner: listingOwner)
+            items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental,
+            listingOwner: listingOwner, jpeg: incremental == nil ? (jpeg?.adjust == true ? jpeg : nil) : nil)
         let jobIndex = state.jobs.count
         state.jobs.append(job)
         jobIndexByID[job.id] = jobIndex
@@ -633,8 +649,8 @@ final class CameraOriginalStore {
                 // 保存相机源字节的摘要，JPEG 调整或落盘失败后仍可核对重传来源。
                 try change { state.jobs[j].items[i].sourceDigest = digest }
             }
-            let jpegSource = state.jobs[j].incremental.flatMap { plan in
-                plan.jpeg.adjust && transfer.asset.kind == "JPEG" ? CameraJPEGSource(digest: digest, options: plan.jpeg) : nil
+            let jpegSource = state.jobs[j].jpegOptions(for: transfer.asset).map {
+                CameraJPEGSource(digest: digest, options: $0)
             }
             let adjustableSource = try jpegSource.map { _ in try CameraJPEGProcessing.adjustableSource(partial) }
             let lookupDigest = jpegSource?.digest ?? digest
@@ -696,6 +712,19 @@ final class CameraOriginalStore {
             return state.originals.last!
         }
     }
+    @discardableResult
+    func markSavedToPhotoLibrary(originalID: UUID, assetID: String) throws -> CameraStoredOriginal? {
+        try locked {
+            guard let index = originalIndexByID[originalID] else { return nil }
+            if state.originals[index].photoLibraryAssetID == assetID {
+                return state.originals[index]
+            }
+            try change {
+                state.originals[index].photoLibraryAssetID = assetID
+            }
+            return state.originals[index]
+        }
+    }
     /// Wireless transfer skip heuristic: reuses an existing verified local original when `(kind, name, size, captureDate)`
     /// and 3x64KiB head/mid/tail reads (`sampleOffsets`) match. Not an archival hash substitute — distinct files sharing
     /// metadata and differing strictly outside those three 64KiB windows can collide; see `docs/design/camera-transfer/`.
@@ -704,7 +733,7 @@ final class CameraOriginalStore {
             guard let (j, i) = try? indices(job: job, item: item) else { return nil }
             let currentJob = state.jobs[j], transfer = currentJob.items[i]
             guard transfer.phase != .saved, transfer.phase != .prepared else { return nil }
-            if currentJob.incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG" { return nil }
+            if currentJob.jpegOptions(for: transfer.asset) != nil { return nil }
             let target = transfer.asset
             guard Self.sampleOffsets(forSize: target.size) != nil, let captureDate = target.captureDate else { return nil }
             let key = SamplingCandidateKey(kind: target.kind, name: target.name, size: target.size, captureDate: captureDate)
@@ -734,7 +763,7 @@ final class CameraOriginalStore {
             guard transfer.phase != .saved, transfer.phase != .prepared else {
                 throw CameraProtocolError.invalid("Published original cannot be reused again")
             }
-            guard !(state.jobs[j].incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG"),
+            guard state.jobs[j].jpegOptions(for: transfer.asset) == nil,
                   let sourceIndex = originalIndexByID[sourceID] else {
                 throw CameraProtocolError.invalid("Sampled original is unavailable")
             }

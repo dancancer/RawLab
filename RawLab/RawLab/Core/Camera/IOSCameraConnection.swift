@@ -9,8 +9,16 @@ struct IOSCameraCandidate: Identifiable, Equatable {
     let id: UUID
     let name: String
 }
+
 struct IOSCameraEndpoint: Equatable {
     let host: String
+    let connectionKey: String
+    let label: String
+}
+
+struct IOSCameraManualWiFiHandoff: Equatable {
+    let ssid: String
+    let password: String
     let connectionKey: String
     let label: String
 }
@@ -21,9 +29,13 @@ struct IOSCameraEndpoint: Equatable {
     @Published private(set) var connecting = false
     @Published private(set) var status = ""
     @Published private(set) var failure: String?
+    @Published private(set) var manualWiFiHandoff: IOSCameraManualWiFiHandoff?
+    @Published private(set) var hotspotAutoJoinUnavailable = false
     var onEndpoint: ((IOSCameraEndpoint) -> Void)?
 
-    private enum Stage { case idle, connecting, services, characteristics, pairing, wifiStart, ssid, password, joining, routing }
+    private enum Stage {
+        case idle, connecting, services, characteristics, pairing, wifiStart, ssid, password, joining, awaitingManualWiFi, routing
+    }
     private var stage = Stage.idle
     private var generation = UUID()
     private var central: CBCentralManager?
@@ -33,12 +45,16 @@ struct IOSCameraEndpoint: Equatable {
     private var pendingServices: Set<CBUUID> = []
     private var pathMonitor: NWPathMonitor?
     private var ssid: String?
+    private var ssidReadAttempts = 0
     private var connectionKey = ""
     private var label = ""
     private var discoveryRequested = false
     private static let control = CBUUID(string: "8000cc00-cc00-ffff-ffff-ffffffffffff")
     private static let pairing = CBUUID(string: "8000ee00-ee00-ffff-ffff-ffffffffffff")
     private static func characteristic(_ name: String) -> CBUUID { CBUUID(string: "0000\(name)-0000-1000-8000-00805f9b34fb") }
+    private static let maxSSIDReadAttempts = 8
+    private static let ssidReadRetryDelay: TimeInterval = 3
+    private static let sonyWiFiNotReadyATTCode = 0x9d
 
     func search() {
         stop()
@@ -47,6 +63,7 @@ struct IOSCameraEndpoint: Equatable {
         if central == nil { central = CBCentralManager(delegate: self, queue: .main) }
         else { startScanIfReady() }
     }
+
     private func startScanIfReady() {
         guard discoveryRequested, let central else { return }
         switch central.state {
@@ -65,10 +82,12 @@ struct IOSCameraEndpoint: Equatable {
         default: break
         }
     }
+
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central === self.central else { return }
         startScanIfReady()
     }
+
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         guard central === self.central, searching else { return }
@@ -81,6 +100,7 @@ struct IOSCameraEndpoint: Equatable {
         if let index = candidates.firstIndex(where: { $0.id == candidate.id }) { candidates[index] = candidate }
         else { candidates.append(candidate) }
     }
+
     func connect(_ candidate: IOSCameraCandidate) {
         guard let selected = peripherals[candidate.id], let central, central.state == .poweredOn else {
             fail(L10n.text("请打开手机蓝牙后重试。")); return
@@ -96,6 +116,7 @@ struct IOSCameraEndpoint: Equatable {
             self.fail(L10n.text("连接未完成。请保持相机唤醒，重新查找并连接。"))
         }
     }
+
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard central === self.central, peripheral === self.peripheral, stage == .connecting else { return }
         guard peripheral.maximumWriteValueLength(for: .withResponse) >= 7 else {
@@ -103,14 +124,17 @@ struct IOSCameraEndpoint: Equatable {
         }
         stage = .services; peripheral.discoverServices([Self.control, Self.pairing])
     }
+
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard central === self.central, peripheral === self.peripheral else { return }
         fail(L10n.text("连接未完成。请保持相机唤醒，重新查找并连接。"))
     }
+
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard central === self.central, peripheral === self.peripheral, connecting else { return }
         fail(L10n.text("相机连接已断开。已保存的照片仍可查看。"))
     }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard peripheral === self.peripheral, stage == .services else { return }
         guard error == nil, let services = peripheral.services,
@@ -122,6 +146,7 @@ struct IOSCameraEndpoint: Equatable {
             peripheral.discoverCharacteristics(nil, for: service)
         }
     }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard peripheral === self.peripheral, stage == .characteristics, pendingServices.contains(service.uuid) else { return }
         guard error == nil else { fail(L10n.text("相机未提供此蓝牙配对方式，请使用手动 Wi-Fi 连接。")); return }
@@ -139,6 +164,7 @@ struct IOSCameraEndpoint: Equatable {
         stage = .pairing; status = L10n.text("请核对手机和相机的配对数字")
         peripheral.writeValue(Data([6, 8, 1, 0, 0, 0, 0]), for: pairing, type: .withResponse)
     }
+
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         guard peripheral === self.peripheral else { return }
         guard error == nil else { fail(L10n.text("连接未完成。请保持相机唤醒，重新查找并连接。")); return }
@@ -146,17 +172,39 @@ struct IOSCameraEndpoint: Equatable {
             stage = .wifiStart; status = L10n.text("正在开启相机 Wi-Fi…")
             peripheral.writeValue(Data([1]), for: wifi, type: .withResponse)
         } else if stage == .wifiStart, characteristic === characteristics["cc08"] {
-            let token = generation
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak peripheral] in
-                guard let self, let peripheral, self.generation == token, peripheral === self.peripheral,
-                      self.stage == .wifiStart, let ssid = self.characteristics["cc06"] else { return }
-                self.stage = .ssid; peripheral.readValue(for: ssid)
-            }
+            scheduleSSIDRead(peripheral: peripheral, attempt: 1)
         }
     }
+
+    private func scheduleSSIDRead(peripheral: CBPeripheral, attempt: Int) {
+        ssidReadAttempts = attempt
+        if attempt > 1 {
+            status = L10n.text("相机 Wi-Fi 正在启动，请稍候…")
+        }
+        let token = generation
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.ssidReadRetryDelay) { [weak self, weak peripheral] in
+            guard let self, let peripheral, self.generation == token, peripheral === self.peripheral,
+                  (self.stage == .wifiStart || self.stage == .ssid),
+                  let ssid = self.characteristics["cc06"] else { return }
+            self.stage = .ssid
+            peripheral.readValue(for: ssid)
+        }
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard peripheral === self.peripheral else { return }
-        guard error == nil, let bytes = characteristic.value else {
+        if let error {
+            let nsError = error as NSError
+            if stage == .ssid, characteristic === characteristics["cc06"],
+               nsError.domain == CBATTErrorDomain,
+               nsError.code == Self.sonyWiFiNotReadyATTCode,
+               ssidReadAttempts < Self.maxSSIDReadAttempts {
+                scheduleSSIDRead(peripheral: peripheral, attempt: ssidReadAttempts + 1)
+                return
+            }
+            fail(L10n.text("无法读取相机 Wi-Fi 信息，请手动连接。")); return
+        }
+        guard let bytes = characteristic.value else {
             fail(L10n.text("无法读取相机 Wi-Fi 信息，请手动连接。")); return
         }
         do {
@@ -170,13 +218,19 @@ struct IOSCameraEndpoint: Equatable {
             }
         } catch { fail(L10n.text("无法读取相机 Wi-Fi 信息，请手动连接。")) }
     }
+
     func join(ssid: String, password: String, preserveIdentity: Bool = false) {
         let name = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.utf8.count <= 32, (8...63).contains(password.utf8.count) else {
             failure = L10n.text("请输入相机显示的 Wi-Fi 名称和密码。"); return
         }
         if !preserveIdentity { stop(); connectionKey = "SSID:" + name; label = name }
-        self.ssid = name; failure = nil; connecting = true; stage = .joining
+        self.ssid = name; failure = nil; manualWiFiHandoff = nil
+        if preserveIdentity && hotspotAutoJoinUnavailable {
+            enterManualWiFiHandoff(ssid: name, password: password)
+            return
+        }
+        connecting = true; stage = .joining
         status = L10n.text("请允许系统连接相机 Wi-Fi")
         let configuration = NEHotspotConfiguration(ssid: name, passphrase: password, isWEP: false)
         configuration.joinOnce = true
@@ -184,13 +238,57 @@ struct IOSCameraEndpoint: Equatable {
         NEHotspotConfigurationManager.shared.apply(configuration) { [weak self] error in
             Task { @MainActor in
                 guard let self, self.generation == token, self.stage == .joining else { return }
-                if let error, (error as NSError).code != NEHotspotConfigurationError.alreadyAssociated.rawValue {
-                    self.fail(L10n.text("未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。")); return
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.code != NEHotspotConfigurationError.alreadyAssociated.rawValue {
+                        if nsError.domain == NEHotspotConfigurationErrorDomain &&
+                            nsError.code == NEHotspotConfigurationError.internal.rawValue {
+                            self.hotspotAutoJoinUnavailable = true
+                        }
+                        if preserveIdentity {
+                            self.enterManualWiFiHandoff(ssid: name, password: password)
+                        } else {
+                            self.fail(L10n.text("未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。"))
+                        }
+                        return
+                    }
                 }
                 self.routeToCamera(token: token)
             }
         }
     }
+
+    private func enterManualWiFiHandoff(ssid: String, password: String) {
+        connecting = false
+        stage = .awaitingManualWiFi
+        status = ""
+        failure = nil
+        manualWiFiHandoff = IOSCameraManualWiFiHandoff(ssid: ssid, password: password, connectionKey: connectionKey, label: label)
+    }
+
+    func continueAfterManualWiFiHandoff() {
+        guard let handoff = manualWiFiHandoff else { useCurrentWiFi(); return }
+        let savedKey = handoff.connectionKey
+        let savedLabel = handoff.label
+        stop()
+        connectionKey = savedKey
+        label = savedLabel
+        failure = nil
+        connecting = true
+        stage = .routing
+        routeToCamera(token: generation)
+    }
+
+    func pauseForBackground() {
+        if stage == .awaitingManualWiFi && manualWiFiHandoff != nil {
+            central?.stopScan()
+            discoveryRequested = false
+            searching = false
+            return
+        }
+        stop()
+    }
+
     func useCurrentWiFi() {
         stop(); failure = nil; connecting = true; stage = .routing
         let token = generation
@@ -214,6 +312,7 @@ struct IOSCameraEndpoint: Equatable {
             }
         }
     }
+
     private func routeToCamera(token: UUID) {
         stage = .routing; status = L10n.text("正在连接相机…")
         pathMonitor?.cancel()
@@ -223,7 +322,7 @@ struct IOSCameraEndpoint: Equatable {
             guard path.status == .satisfied, path.usesInterfaceType(.wifi) else { return }
             let host = path.gateways.compactMap { endpoint -> String? in
                 if case .hostPort(let host, _) = endpoint, case .ipv4(let address) = host {
-                    return String(describing: address)
+                    return Self.ipv4String(address)
                 }
                 return nil
             }.first(where: CameraTCPChannel.localIPv4)
@@ -242,12 +341,23 @@ struct IOSCameraEndpoint: Equatable {
             self.fail(L10n.text("请先在系统 Wi-Fi 设置连接相机，再返回继续。"))
         }
     }
+
+    nonisolated private static func ipv4String(_ address: IPv4Address) -> String? {
+        let bytes = address.rawValue
+        guard bytes.count == 4 else { return nil }
+        return bytes.map(String.init).joined(separator: ".")
+    }
+
     func stop() {
         generation = UUID(); discoveryRequested = false; searching = false; connecting = false
         pathMonitor?.cancel(); pathMonitor = nil; central?.stopScan()
         if let peripheral { peripheral.delegate = nil; central?.cancelPeripheralConnection(peripheral) }
         peripheral = nil; characteristics = [:]; pendingServices = []; ssid = nil
+        ssidReadAttempts = 0; manualWiFiHandoff = nil
         connectionKey = ""; label = ""; stage = .idle
     }
-    private func fail(_ message: String) { stop(); failure = message; status = "" }
+
+    private func fail(_ message: String) {
+        stop(); failure = message; status = ""
+    }
 }

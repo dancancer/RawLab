@@ -63,24 +63,32 @@ class SonyCameraConnectionTest {
         var wifiScanReturn = true
         var scanResultsList: List<SonyCameraConnection.WifiApResult> = emptyList()
         var wifiReceiverClosed = false
+        var onWifiScanCallback: ((Boolean) -> Unit)? = null
         override fun isWifiAvailable(): Boolean = true
         override fun startWifiScan(): Boolean = wifiScanReturn
         override fun wifiScanResults(): List<SonyCameraConnection.WifiApResult> = scanResultsList
-        override fun registerWifiScanReceiver(onScanResults: () -> Unit): SonyCameraConnection.Handle =
-            object : SonyCameraConnection.Handle { override fun close() { wifiReceiverClosed = true } }
+        override fun registerWifiScanReceiver(onScanResults: (updated: Boolean) -> Unit): SonyCameraConnection.Handle {
+            onWifiScanCallback = onScanResults
+            wifiReceiverClosed = false
+            return object : SonyCameraConnection.Handle {
+                override fun close() { wifiReceiverClosed = true }
+            }
+        }
 
         var requestedSsid: String? = null
         var requestedPassword: String? = null
         var requestedBssid: String? = null
         var activeWifiCallbacks: SonyCameraConnection.WifiNetworkCallbacks? = null
         var networkHandleClosed = false
+        var manualWifiCallbacks: SonyCameraConnection.LegacyWifiCallbacks? = null
+        var manualWifiHandleClosed = false
         var gatewayForProperties: (LinkProperties?) -> Inet4Address? = { null }
 
         override fun isConnectivityAvailable(): Boolean = true
         override fun requestWifiNetwork(
             ssid: String,
             password: String,
-            bssid: String,
+            bssid: String?,
             callbacks: SonyCameraConnection.WifiNetworkCallbacks,
         ): SonyCameraConnection.Handle {
             requestedSsid = ssid
@@ -93,8 +101,13 @@ class SonyCameraConnectionTest {
             }
         }
 
-        override fun registerManualWifiNetwork(callbacks: SonyCameraConnection.LegacyWifiCallbacks): SonyCameraConnection.Handle =
-            object : SonyCameraConnection.Handle { override fun close() = Unit }
+        override fun registerManualWifiNetwork(callbacks: SonyCameraConnection.LegacyWifiCallbacks): SonyCameraConnection.Handle {
+            manualWifiCallbacks = callbacks
+            manualWifiHandleClosed = false
+            return object : SonyCameraConnection.Handle {
+                override fun close() { manualWifiHandleClosed = true }
+            }
+        }
 
         override fun defaultIpv4Gateway(properties: LinkProperties?): Inet4Address? = gatewayForProperties(properties)
 
@@ -188,10 +201,20 @@ class SonyCameraConnectionTest {
         listener: RecordingListener,
         wifiStartingTimeoutMs: Long = 45_000L,
         wifiRequestTimeoutMs: Long = 60_000L,
+        wifiScanFallbackMs: Long = 4_000L,
+        manualWifiTimeoutMs: Long = 15_000L,
     ): Pair<SonyCameraConnection, Context> {
         val root = Files.createTempDirectory("sony-conn-test").toFile()
         val app = TestEditorApplication(root)
-        val conn = SonyCameraConnection(app, listener, platform, wifiStartingTimeoutMs, wifiRequestTimeoutMs)
+        val conn = SonyCameraConnection(
+            app,
+            listener,
+            platform,
+            wifiStartingTimeoutMs,
+            wifiRequestTimeoutMs,
+            wifiScanFallbackMs,
+            manualWifiTimeoutMs,
+        )
         return conn to app
     }
 
@@ -456,8 +479,8 @@ class SonyCameraConnectionTest {
     }
 
     @Test
-    fun wifiStartScanReturningFalseFailsWithoutFreshApAndProceedsWithFreshCachedAp() {
-        // Case A: startScan() == false and no fresh AP -> fail immediately with Failure.WIFI
+    fun wifiStartScanReturningFalseFallsBackToSsidOnlyAndUsesCachedBssidWhenFresh() {
+        // Case A: startScan() == false and no fresh AP -> falls back immediately to SSID-only WifiNetworkSpecifier
         run {
             val platform = FakePlatform()
             val listener = RecordingListener()
@@ -469,11 +492,15 @@ class SonyCameraConnectionTest {
             platform.scanResultsList = emptyList()
             deliverCredentials(platform, gatt)
 
-            assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+            assertTrue(listener.failures.isEmpty())
+            assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+            assertEquals("DIRECT-x123:ILCE-7CM2", platform.requestedSsid)
+            assertNull(platform.requestedBssid)
             assertTrue(platform.wifiReceiverClosed)
+            conn.close()
         }
 
-        // Case B: startScan() == false but fresh AP is already cached -> proceeds to WIFI_CONFIRMATION
+        // Case B: startScan() == false but fresh AP is already cached -> proceeds to WIFI_CONFIRMATION with BSSID
         run {
             val platform = FakePlatform()
             val listener = RecordingListener()
@@ -490,7 +517,188 @@ class SonyCameraConnectionTest {
             assertTrue(listener.failures.isEmpty())
             assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
             assertEquals("DIRECT-x123:ILCE-7CM2", platform.requestedSsid)
+            assertEquals("02:11:22:33:44:55", platform.requestedBssid)
             conn.close()
         }
+    }
+
+    @Test
+    fun wifiScanAbortedBroadcastFallsBackToSsidOnlyWifiSpecifier() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val gatt = FakeGatt()
+        val (conn, _) = createConnection(platform, listener)
+
+        advanceToWifiStarting(conn, platform, gatt)
+        platform.wifiScanReturn = true
+        platform.scanResultsList = emptyList()
+        deliverCredentials(platform, gatt)
+
+        assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+        assertNull(platform.requestedSsid)
+
+        platform.onWifiScanCallback!!.invoke(false)
+
+        assertTrue(listener.failures.isEmpty())
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertEquals("DIRECT-x123:ILCE-7CM2", platform.requestedSsid)
+        assertNull(platform.requestedBssid)
+        assertTrue(platform.wifiReceiverClosed)
+        conn.close()
+    }
+
+    @Test
+    fun wifiScanFallbackTimerRequestsSsidOnlyWifiSpecifier() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val gatt = FakeGatt()
+        val (conn, _) = createConnection(platform, listener, wifiScanFallbackMs = 4_000L)
+
+        advanceToWifiStarting(conn, platform, gatt)
+        platform.wifiScanReturn = true
+        platform.scanResultsList = emptyList()
+        deliverCredentials(platform, gatt)
+
+        platform.advanceBy(3_999L)
+        assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+        assertNull(platform.requestedSsid)
+
+        platform.advanceBy(1L)
+        assertTrue(listener.failures.isEmpty())
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertEquals("DIRECT-x123:ILCE-7CM2", platform.requestedSsid)
+        assertNull(platform.requestedBssid)
+
+        val network = stubNetwork()
+        val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
+        platform.gatewayForProperties = { gateway }
+        platform.activeWifiCallbacks!!.onAvailable(network, stubLinkProperties())
+        platform.drain()
+
+        assertEquals(SonyCameraConnection.Stage.NETWORK, listener.stages.last())
+        assertEquals(1, listener.connected.size)
+        conn.close()
+    }
+
+    @Test
+    fun transientBleEstablishmentFailureRetriesAndRecoversOrFailsAfterLimit() {
+        // Part A: attempt 1 fails with status=133 -> retries after 400ms and recovers on attempt 2
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt1 = FakeGatt()
+            val gatt2 = FakeGatt()
+            var connectCount = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt1.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = true,
+                    connectGatt = { cb ->
+                        connectCount++
+                        val handle = if (connectCount == 1) gatt1 else gatt2
+                        handle.callback = cb
+                        handle
+                    },
+                    createBond = { true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt1.address)
+            platform.drain()
+            assertEquals(1, connectCount)
+
+            gatt1.callback!!.onConnectionStateChange(gatt1, 133, BluetoothProfile.STATE_DISCONNECTED)
+            platform.drain()
+            assertTrue("First transient failure must schedule retry without failing", listener.failures.isEmpty())
+            assertTrue(gatt1.disconnected && gatt1.closed)
+            assertEquals(1, connectCount)
+
+            platform.advanceBy(399L)
+            assertEquals(1, connectCount)
+            platform.advanceBy(1L)
+            assertEquals(2, connectCount)
+
+            gatt2.callback!!.onConnectionStateChange(gatt2, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+
+        // Part B: 3 consecutive status=62 (0x3e) failures fail with Failure.BLUETOOTH after attempt 3
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gattList = List(3) { FakeGatt() }
+            var connectCount = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gattList[0].address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = true,
+                    connectGatt = { cb ->
+                        val handle = gattList[connectCount++]
+                        handle.callback = cb
+                        handle
+                    },
+                    createBond = { true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gattList[0].address)
+            platform.drain()
+            assertEquals(1, connectCount)
+
+            // Attempt 1 (t = 0)
+            gattList[0].callback!!.onConnectionStateChange(gattList[0], 62, BluetoothProfile.STATE_DISCONNECTED)
+            platform.drain()
+            assertTrue(listener.failures.isEmpty())
+
+            // Attempt 2 (+400ms)
+            platform.advanceBy(400L)
+            assertEquals(2, connectCount)
+            gattList[1].callback!!.onConnectionStateChange(gattList[1], 62, BluetoothProfile.STATE_DISCONNECTED)
+            platform.drain()
+            assertTrue(listener.failures.isEmpty())
+
+            // Attempt 3 (+800ms) -> exhausted MAX_GATT_CONNECT_ATTEMPTS, fails immediately
+            platform.advanceBy(800L)
+            assertEquals(3, connectCount)
+            gattList[2].callback!!.onConnectionStateChange(gattList[2], 62, BluetoothProfile.STATE_DISCONNECTED)
+            platform.drain()
+            assertEquals(listOf(SonyCameraConnection.Failure.BLUETOOTH), listener.failures)
+        }
+    }
+
+    @Test
+    fun manualWifiTimesOutWithFailureWifiWhenNoNetworkResolves() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener, manualWifiTimeoutMs = 15_000L)
+
+        conn.useLegacyWifi()
+        platform.drain()
+        assertEquals(SonyCameraConnection.Stage.MANUAL_WIFI, listener.stages.last())
+        assertTrue(listener.failures.isEmpty())
+        assertFalse(platform.manualWifiHandleClosed)
+
+        platform.advanceBy(14_999L)
+        assertTrue(listener.failures.isEmpty())
+        assertFalse(platform.manualWifiHandleClosed)
+
+        platform.advanceBy(1L)
+        assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+        assertTrue(platform.manualWifiHandleClosed)
     }
 }

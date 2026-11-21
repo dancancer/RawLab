@@ -4,8 +4,10 @@
 "%@ · 联机" = "%@ · Tether";
 "%@ · 质量 %@" = "%@ · quality %@";
 "%@数值" = "%@ Value";
+"1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。" = "1. Copy the password below and join this network in “Settings → Wi-Fi”.";
 "16:9" = "16:9";
 "1:1" = "1:1";
+"2. 返回 RawLab，点击“已连接，继续”。" = "2. Return to RawLab and tap “Connected, continue”.";
 "3:2" = "3:2";
 "4:3" = "4:3";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";
@@ -249,6 +251,7 @@
 "在照片上取色并上下拖动" = "Sample the photo and drag up or down";
 "在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。" = "Select single shooting on the camera and keep originals on its memory card. Live-view images and thumbnails do not confirm that originals were saved.";
 "在相机打开智能手机连接，查看机身显示的 Wi-Fi 名称和密码。你也可以先在系统 Wi-Fi 设置中连接，再返回继续。" = "Open Smartphone Connection on the camera and check its Wi-Fi name and password. You can also connect in system Wi-Fi settings, then return to continue.";
+"在系统 Wi-Fi 设置连接" = "Connect in System Wi-Fi Settings";
 "在连接页查找并选择相机，按手机和相机提示完成配对，再允许系统加入相机 Wi-Fi。蓝牙配对成功不等于照片连接已经建立。" = "Find and select the camera, follow the pairing prompts on both devices, then allow the system to join the camera’s Wi-Fi. Bluetooth pairing alone does not establish photo transfer.";
 "场景" = "Scene";
 "场景线性" = "Scene linear";
@@ -262,6 +265,7 @@
 "增量起点" = "Start time";
 "处理失败：%@" = "Processing failed: %@";
 "处理版本与来源不同，已沿用当前照片的处理版本" = "Processing version differs from the source; the current photo's processing version is kept";
+"复制密码" = "Copy Password";
 "复制范围" = "Copy scope";
 "复制调整" = "Copy Adjustments";
 "外观" = "Looks";
@@ -285,6 +289,7 @@
 "实时取景" = "Live view";
 "实时取景、调整参数并拍摄" = "Use live view, adjust settings, and shoot";
 "宽度" = "Width";
+"密码已复制，仅本机可用，2 分钟后自动清除。" = "Password copied (local device only; clears in 2 minutes).";
 "对比" = "Comparison";
 "对比度" = "Contrast";
 "对比方式" = "Comparison mode";
@@ -297,6 +302,7 @@
 "导入方式" = "Import mode";
 "导入时请保持 RawLab 在前台。" = "Keep RawLab in the foreground during import.";
 "导入照片" = "Import Photo";
+"导入的照片会自动保存到手机相册，并在 RawLab 内保留本地原件以支持离线编辑与增量去重。" = "Imported photos are automatically saved to your Photo Library, while local originals remain in RawLab for offline editing and incremental deduplication.";
 "导入相机配置…" = "Import camera profile…";
 "导入结果" = "Import results";
 "导入记录" = "Import history";
@@ -330,6 +336,7 @@
 "尚未复制调整。请先从一张照片复制所需范围。" = "No adjustments copied yet. Copy the desired settings from a photo first.";
 "尚未选择 RAW" = "No RAW Photos Selected";
 "尚未选择照片" = "No Photos Selected";
+"尝试应用内自动加入（需 Hotspot 权限）" = "Try In-App Auto-Join (Requires Hotspot Entitlement)";
 "尺寸" = "Size";
 "屏幕容量 %@ EV" = "Display Headroom %@ EV";
 "展开%@组" = "Expand %@ group";
@@ -340,7 +347,10 @@
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Saved %@ · Unchanged %@ · Skipped %@ · Undone %@ · Incomplete %@";
 "已保存 %@ 张到照片图库" = "Saved to Photos: %@";
 "已保存 %d 张" = "Saved %d photos";
+"已保存 %d 张照片到手机相册" = "Saved %d photos to Photo Library";
+"已保存到手机相册" = "Saved to Photo Library";
 "已保存到照片。" = "Saved to Photos.";
+"已保存到相册" = "Saved to Photos";
 "已保存的原件缺失或已改变，无法打开。" = "The saved original is missing or has changed and cannot be opened.";
 "已允许使用统计；可随时关闭。" = "Usage analytics is allowed; you can turn it off at any time.";
 "已到上限" = "Maximum Reached";
@@ -350,6 +360,7 @@
 "已回退，保留旧版本。" = "Restored. The previous version will be retained.";
 "已在照片图库中确认保存" = "Confirmed Saved in Photos";
 "已处理 %@ / %@" = "Processed %@ / %@";
+"已复制" = "Copied";
 "已导入" = "Imported";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
 "已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
@@ -373,6 +384,7 @@
 "已确认相机同时将原件保存到存储卡。" = "I confirmed that the camera also saves originals to its memory card.";
 "已编辑" = "Edited";
 "已自动升级，原设置已保留。" = "Updated automatically. Original settings are saved.";
+"已获取相机 Wi-Fi 信息" = "Camera Wi-Fi Credentials Ready";
 "已调整" = "Adjusted";
 "已跳过" = "Skipped";
 "已连接 · 自动接收原件" = "Connected · Receiving originals";
@@ -383,6 +395,7 @@
 "平均差异 %@/255 · 最大差异 %@/255" = "Mean difference %@/255 · Maximum difference %@/255";
 "并排" = "Side by side";
 "应用" = "Apply";
+"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。" = "In-app auto-join requires the Hotspot entitlement from a paid Apple Developer account. With a free Personal Team build, use System Wi-Fi above.";
 "应用到多张照片" = "Apply to multiple photos";
 "应用到当前照片" = "Apply to current photo";
 "应用并保存" = "Apply and Save";
@@ -405,6 +418,7 @@
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前相机模式未提供此功能。" = "This feature is unavailable in the current camera mode.";
+"当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。" = "This build signing cannot auto-join Wi-Fi. Please connect using System Wi-Fi above.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
 "待导入 %@ 个文件" = "%@ files to import";
@@ -428,6 +442,7 @@
 "手动连接 Wi-Fi" = "Connect to Wi-Fi manually";
 "手动选片" = "Manual selection";
 "打开" = "Open";
+"打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。" = "Open Smartphone Connection on the camera, join its Wi-Fi in “Settings → Wi-Fi” (no internet is normal), then return and tap “Connected, continue”.";
 "打开系统设置" = "Open System Settings";
 "打开编辑" = "Open in editor";
 "批量导出" = "Batch Export";
@@ -485,6 +500,8 @@
 "新保存 %@ 个文件，%@ 个已在本机" = "%@ new files saved, %@ already on device";
 "新预设" = "New Preset";
 "方向、裁切和构图一致" = "Orientation, crop, and composition match";
+"方式一：在系统 Wi-Fi 设置连接（推荐）" = "Option 1: Connect in System Wi-Fi Settings (Recommended)";
+"方式二：蓝牙唤醒并获取密码" = "Option 2: Wake via Bluetooth & Get Password";
 "方案 %@" = "Option %@";
 "旋转" = "Rotation";
 "无效或不可用的相机显影设置（白平衡或镜头校正）。" = "Camera development settings (white balance or lens correction) are invalid or unavailable.";
@@ -546,6 +563,7 @@
 "明度" = "Lightness";
 "明度：从暗到亮。" = "Lightness: from dark to light.";
 "显示图像" = "Display image";
+"显示密码" = "Show password";
 "暂停联机" = "Pause tethering";
 "暂无可导出的错误日志。" = "There is no error log to export.";
 "暂无编辑历史。" = "No edit history yet.";
@@ -580,6 +598,7 @@
 "未匹配镜头，请手动选择" = "No Lens Match; Choose Manually";
 "未发现相机。请打开相机的智能手机连接。" = "No camera found. Open the camera’s smartphone connection.";
 "未变化" = "Unchanged";
+"未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。" = "No camera found on the current Wi-Fi. Join the camera’s Wi-Fi in system Wi-Fi settings first, then return to continue.";
 "未处理" = "Not Processed";
 "未应用 LUT" = "LUT not applied";
 "未找到机身或传感器尺寸信息" = "Camera or Sensor Size Information Missing";
@@ -709,6 +728,8 @@
 "照片四周留白" = "Space around photo";
 "照片图库" = "Photos";
 "照片处理设置" = "Photo processing settings";
+"照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。" = "Photos were saved inside RawLab, but not added to your Photo Library. Allow RawLab to add photos in system settings.";
+"照片已保存在 RawLab 内，但部分照片未能保存到手机相册。" = "Photos were saved inside RawLab, but some could not be added to your Photo Library.";
 "照片已写入，但任务记录未更新，请先核对保存结果。" = "The Photo Was Written, but the Task Record Was Not Updated. Check the Save Result First.";
 "照片或调整已变化，请重新确认重置。" = "The photo or its adjustments have changed. Confirm the reset again.";
 "照片格式" = "Photo format";
@@ -738,6 +759,7 @@
 "直方图" = "Histogram";
 "相对白平衡" = "Relative White Balance";
 "相机" = "Camera";
+"相机 Wi-Fi 正在启动，请稍候…" = "Camera Wi-Fi is starting, please wait…";
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "The camera’s Wi-Fi usually has no internet access. Stay connected.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "The camera has no RAW or JPEG photos to import.";
 "相机中的原照片会保留。" = "Original photos on the camera will be kept.";
@@ -822,6 +844,8 @@
 "范围与插值" = "Range and interpolation";
 "草稿已处理，请开始导出。" = "Draft resolved. Start the export when ready.";
 "蓝" = "Blue";
+"蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。" = "Tap a Bluetooth-discovered camera to wake its Wi-Fi. With the Hotspot entitlement it joins automatically; with a free Personal Team build, copy the displayed password and join in Settings.";
+"蓝牙发现相机（可选）" = "Find Camera via Bluetooth (Optional)";
 "补充镜头信息" = "Complete lens information";
 "裁切" = "Crop";
 "裁切上边" = "Crop top";
@@ -847,6 +871,7 @@
 "语言" = "Language";
 "请使用 %@ 的步进。" = "Use increments of %@.";
 "请允许系统连接相机 Wi-Fi" = "Allow the system to connect to the camera’s Wi-Fi";
+"请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。" = "Join the camera’s Wi-Fi in iOS “Settings → Wi-Fi” first, then return and tap “Connected, continue”.";
 "请先在系统 Wi-Fi 设置连接相机，再返回继续。" = "Connect to the camera in system Wi-Fi settings first, then return.";
 "请先完成或结束已有批量任务，再创建新任务。" = "Finish or end the existing batch task before creating a new one.";
 "请先导入一张照片。" = "Import a Photo First.";
@@ -856,6 +881,7 @@
 "请先确认同源图片、处理条件和参考来源。" = "First confirm the same source image, processing conditions, and reference source.";
 "请先选择外观或配方。" = "Select a look or recipe first.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Allow RawLab to use Bluetooth in system settings.";
+"请在系统设置中允许 RawLab 访问本地网络。" = "Allow RawLab to access the local network in system settings.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Save white balance mode, temperature, and tint together before applying this preset.";
 "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。" = "Set the camera to single shooting and confirm that photos are also saved to the camera memory card.";
@@ -930,6 +956,7 @@
 "选择镜头配置文件" = "Choose Lens Profile";
 "选择预览照片" = "Choose preview photo";
 "透视" = "Perspective";
+"通过蓝牙唤醒相机 Wi-Fi；系统自动加入不可用时，可复制密码后在系统设置连接。" = "Wakes camera Wi-Fi over Bluetooth. If automatic join is unavailable, you can copy the password and join in Settings.";
 "通道边界像素：方案 %@% · 参考 %@%" = "Channel-boundary pixels: candidate %@%% · reference %@%%";
 "部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。" = "If some features are unavailable, check the camera mode. Verified models are only a reference; other Sony cameras can also try connecting.";
 "部分照片导出失败" = "Some Photos Failed to Export";
@@ -994,6 +1021,7 @@
 "降噪" = "Noise Reduction";
 "降噪参数" = "Noise reduction settings";
 "隐私设置" = "Privacy settings";
+"隐藏密码" = "Hide password";
 "隐藏照片信息" = "Hide Photo Information";
 "霓虹都市 · 冷青粉紫" = "Neon city · cool cyan and pink-purple";
 "青" = "Cyan";

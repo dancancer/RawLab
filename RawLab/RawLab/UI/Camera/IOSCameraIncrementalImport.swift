@@ -19,7 +19,15 @@ struct IOSCameraIncrementalImport: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let notice = model.notice { Text(notice).font(.callout).foregroundStyle(.orange) }
+                    if let notice = model.notice {
+                        Text(notice).font(.callout).foregroundStyle(.orange)
+                        if model.photoLibraryPermissionDenied {
+                            Button(L10n.text("系统权限设置")) {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                            }
+                            .frame(minHeight: 44)
+                        }
+                    }
                     if model.phase == .receiving || pending != nil {
                         taskStatus(job)
                     } else if model.scanning {
@@ -150,12 +158,8 @@ struct IOSCameraIncrementalImport: View {
         }
     }
     private var jpegSummary: some View {
-        let options = model.importPreferences.jpeg
-        let size = options.longEdge.map { L10n.format("长边 %@ px", String($0)) } ?? L10n.text("原始尺寸")
-        let summary = options.adjust
-            ? L10n.format("%@ · 质量 %@", size, (Double(options.quality) / 100).formatted(.percent.locale(L10n.locale)))
-            : L10n.text("原样保存")
-        return Text(summary).font(.subheadline).foregroundStyle(.secondary)
+        Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+            .font(.subheadline).foregroundStyle(.secondary)
     }
     private func taskStatus(_ job: CameraTransferJob?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -198,10 +202,17 @@ struct IOSCameraIncrementalImport: View {
         let summary = reused > 0
             ? L10n.format("新保存 %@ 个文件，%@ 个已在本机", String(job.items.count - reused), String(reused))
             : L10n.format("已保存 %@ / %@ 个文件", String(job.items.count), String(job.items.count))
+        let savedSourceIDs = Set(job.items.compactMap(\.sourceID))
+        let savedToPhotos = model.manifest.originals.contains {
+            savedSourceIDs.contains($0.id) && $0.photoLibraryAssetID != nil
+        }
         return VStack(alignment: .leading, spacing: 4) {
             Text(L10n.text("增量导入完成")).font(.headline).accessibilityIdentifier("camera.incremental.complete")
             Text(summary).font(.subheadline).foregroundStyle(.secondary)
                 .accessibilityIdentifier("camera.incremental.saved")
+            if savedToPhotos {
+                Text(L10n.text("已保存到手机相册")).font(.footnote).foregroundStyle(.secondary)
+            }
             Button(L10n.text("导入记录"), action: history).frame(minHeight: 44)
             Divider()
         }
@@ -235,7 +246,13 @@ struct IOSCameraIncrementalImport: View {
     }
 }
 
-private struct IOSCameraJPEGSettings: View {
+struct IOSCameraJPEGSettings: View {
+    static func summary(for options: CameraJPEGOptions) -> String {
+        guard options.adjust else { return L10n.text("原样保存") }
+        let size = options.longEdge.map { L10n.format("长边 %@ px", String($0)) } ?? L10n.text("原始尺寸")
+        return L10n.format("%@ · 质量 %@", size, (Double(options.quality) / 100).formatted(.percent.locale(L10n.locale)))
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State var draft: CameraJPEGOptions
     let apply: (CameraJPEGOptions) -> Void
@@ -244,7 +261,15 @@ private struct IOSCameraJPEGSettings: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker(L10n.text("JPEG 保存"), selection: $draft.adjust) {
+                Picker(L10n.text("JPEG 保存"), selection: Binding(
+                    get: { draft.adjust },
+                    set: { value in
+                        if value && !draft.adjust && draft.longEdge == nil {
+                            draft.longEdge = ExportSize.presets.first ?? 2048
+                        }
+                        draft.adjust = value
+                    }
+                )) {
                     Text(L10n.text("原样保存")).tag(false)
                     Text(L10n.text("调整后保存")).tag(true)
                 }.accessibilityIdentifier("camera.jpeg.mode")

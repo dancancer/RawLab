@@ -67,6 +67,7 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     var selectedOnly by rememberSaveable { mutableStateOf(false) }
     var filterOpen by rememberSaveable { mutableStateOf(false) }
     var destinationOpen by rememberSaveable { mutableStateOf(false) }
+    var jpegOpen by rememberSaveable { mutableStateOf(false) }
     var draftFormat by rememberSaveable { mutableStateOf("all") }
     var draftDate by rememberSaveable { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
@@ -224,7 +225,8 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                         if (selected.size == 1) IconButton(onClick = { previewKey = selected.single().key }, modifier = Modifier.testTag("camera-preview-selected")) {
                             Icon(AppIcons.Outlined.ZoomIn, stringResource(R.string.camera_preview))
                         }
-                        Button(onClick = { model.startImport(); page = "task" }, enabled = canImport,
+                        Button(onClick = { model.startImport(); page = "task" },
+                            enabled = canImport && (!state.incrementalJpeg.adjust || state.incrementalOptionsValid || selected.all { it.raw }),
                             shape = CameraControlShape, modifier = Modifier.testTag("camera-import")) { Text(stringResource(R.string.camera_import_count, selected.size)) }
                     }
                 }
@@ -278,28 +280,31 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
                     CameraImportModeControls(state, model)
                     if (incremental) {
                         CameraIncrementalOptions(state, model)
-                    } else if (filtered.isEmpty()) CameraEmpty(if (state.photos.isEmpty()) R.string.camera_empty else R.string.camera_no_matches)
-                    else LazyVerticalGrid(state = if (selectedOnly) selectionGrid else browseGrid,
-                        columns = GridCells.Fixed(if (LocalDensity.current.fontScale >= 1.4f) 2 else 3),
-                        modifier = Modifier.fillMaxSize().testTag("camera-grid"), contentPadding = PaddingValues(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filtered, key = { it.key }) { photo ->
-                            val checked = photo.key in state.selected
-                            val saved = photo.key in savedKeys
-                            Column(Modifier.fillMaxWidth().combinedClickable(role = Role.Checkbox,
-                                onClick = { model.toggle(photo) }, onLongClick = { previewKey = photo.key },
-                                onLongClickLabel = stringResource(R.string.camera_preview), enabled = !state.transferring)
-                                .semantics { this.selected = checked }.testTag("camera-item-${photo.key}")) {
-                                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp))
-                                    .border(if (checked) 2.dp else 0.dp, if (checked) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(4.dp))) {
-                                    CameraImage(model, photo, false, state.connected, state.transferring, Modifier.fillMaxWidth().aspectRatio(1.5f))
-                                    Checkbox(checked, onCheckedChange = null, modifier = Modifier.align(Alignment.TopEnd))
-                                    Text(if (photo.raw) "RAW" else "JPEG", Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 4.dp, vertical = 2.dp),
-                                        color = Color.White, style = MaterialTheme.typography.labelSmall)
-                                    if (saved) Icon(Icons.Outlined.CheckCircle, stringResource(R.string.camera_saved),
-                                        Modifier.align(Alignment.BottomEnd).padding(4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    } else {
+                        CameraManualJpegBar(state.incrementalJpeg, enabled = canImport) { jpegOpen = true }
+                        if (filtered.isEmpty()) CameraEmpty(if (state.photos.isEmpty()) R.string.camera_empty else R.string.camera_no_matches)
+                        else LazyVerticalGrid(state = if (selectedOnly) selectionGrid else browseGrid,
+                            columns = GridCells.Fixed(if (LocalDensity.current.fontScale >= 1.4f) 2 else 3),
+                            modifier = Modifier.fillMaxSize().testTag("camera-grid"), contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(filtered, key = { it.key }) { photo ->
+                                val checked = photo.key in state.selected
+                                val saved = photo.key in savedKeys
+                                Column(Modifier.fillMaxWidth().combinedClickable(role = Role.Checkbox,
+                                    onClick = { model.toggle(photo) }, onLongClick = { previewKey = photo.key },
+                                    onLongClickLabel = stringResource(R.string.camera_preview), enabled = !state.transferring)
+                                    .semantics { this.selected = checked }.testTag("camera-item-${photo.key}")) {
+                                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp))
+                                        .border(if (checked) 2.dp else 0.dp, if (checked) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(4.dp))) {
+                                        CameraImage(model, photo, false, state.connected, state.transferring, Modifier.fillMaxWidth().aspectRatio(1.5f))
+                                        Checkbox(checked, onCheckedChange = null, modifier = Modifier.align(Alignment.TopEnd))
+                                        Text(if (photo.raw) "RAW" else "JPEG", Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 4.dp, vertical = 2.dp),
+                                            color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                        if (saved) Icon(Icons.Outlined.CheckCircle, stringResource(R.string.camera_saved),
+                                            Modifier.align(Alignment.BottomEnd).padding(4.dp).size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    Text(photo.name, Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                                 }
-                                Text(photo.name, Modifier.padding(top = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -316,6 +321,14 @@ internal fun CameraImportScreen(model: CameraImportViewModel, onBack: () -> Unit
     }
     if (destinationOpen) CameraImportSettings(state.destination,
         onSave = { model.setDestination(it); destinationOpen = false }, onDismiss = { destinationOpen = false })
+    if (jpegOpen) ModalBottomSheet(onDismissRequest = { jpegOpen = false },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CameraJpegSettingsContent(state, model)
+            Spacer(Modifier.height(8.dp))
+        }
+    }
     if (unreadableOpen) AlertDialog(onDismissRequest = { unreadableOpen = false },
         title = { Text(stringResource(R.string.camera_unreadable_title)) },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -376,12 +389,13 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
             job.incremental?.let { plan ->
                 Text("${stringResource(R.string.camera_transfer_format)} · ${if (plan.format == CameraImportFormat.RAW_AND_JPEG) "RAW + JPEG" else plan.format.name}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (job.items.any { job.jpegOptions(it) != null })
-                    Text(stringResource(R.string.camera_jpeg_summary,
-                        plan.jpeg.longEdge?.let { "$it px" } ?: stringResource(R.string.output_original_size),
-                        java.text.NumberFormat.getPercentInstance().format(plan.jpeg.quality / 100.0)), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            val effectiveJpeg = job.effectiveJpeg
+            if (effectiveJpeg != null && job.items.any { job.jpegOptions(it) != null })
+                Text(stringResource(R.string.camera_jpeg_summary,
+                    effectiveJpeg.longEdge?.let { "$it px" } ?: stringResource(R.string.output_original_size),
+                    java.text.NumberFormat.getPercentInstance().format(effectiveJpeg.quality / 100.0)), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (job.savedCount > 0) Text(stringResource(R.string.camera_saved_to_album),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LinearProgressIndicator(progress = { ((job.savedBytes + state.currentBytes).toFloat() / job.totalBytes.coerceAtLeast(1)).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -393,8 +407,10 @@ private fun CameraTask(state: CameraImportState, needsOriginalJpeg: Boolean) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(item.photo.name, style = MaterialTheme.typography.bodyMedium)
-                        Text(bytes(item.photo.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(bytes(item.outputSize ?: item.photo.size), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (item.saveOriginalJpeg) Text(stringResource(R.string.camera_jpeg_original),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else if (item.saved != null && job.jpegOptions(item) != null) Text(stringResource(R.string.camera_jpeg_output_adjusted),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (item.error != null && !item.skipped) Text(item.error,
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
@@ -449,8 +465,6 @@ private fun CameraImportModeControls(state: CameraImportState, model: CameraImpo
 private fun CameraIncrementalOptions(state: CameraImportState, model: CameraImportViewModel) {
     val context = LocalContext.current
     val scan = state.incrementalScan
-    var edgeText by remember(state.incrementalJpeg.longEdge) { mutableStateOf(state.incrementalJpeg.longEdge?.toString().orEmpty()) }
-    var qualityText by remember(state.incrementalJpeg.quality) { mutableStateOf(state.incrementalJpeg.quality.toString()) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp)
         .testTag("camera-incremental-options"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.camera_transfer_format), style = MaterialTheme.typography.labelLarge)
@@ -503,51 +517,106 @@ private fun CameraIncrementalOptions(state: CameraImportState, model: CameraImpo
         TextButton(onClick = model::refreshIncrementalScan, enabled = !state.preparing && !state.transferring && state.stage == null,
             modifier = Modifier.testTag("camera-incremental-refresh")) { Text(stringResource(R.string.camera_incremental_refresh)) }
         if (state.incrementalFormat != CameraImportFormat.RAW) {
-            Text(stringResource(R.string.camera_jpeg_settings), style = MaterialTheme.typography.labelLarge)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(state.incrementalJpeg.adjust, onCheckedChange = {
-                    model.setIncrementalJpeg(state.incrementalJpeg.copy(adjust = it))
-                }, modifier = Modifier.testTag("camera-jpeg-adjust"))
-                Text(stringResource(if (state.incrementalJpeg.adjust) R.string.camera_jpeg_adjusted else R.string.camera_jpeg_original),
-                    Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+            CameraJpegSettingsContent(state, model)
+        }
+    }
+}
+
+@Composable
+private fun cameraJpegSummaryText(options: CameraJPEGOptions): String {
+    if (!options.adjust) return stringResource(R.string.camera_jpeg_original)
+    val size = options.longEdge?.let { "$it px" } ?: stringResource(R.string.output_original_size)
+    val quality = java.text.NumberFormat.getPercentInstance().format(options.quality / 100.0)
+    return stringResource(R.string.camera_jpeg_summary, size, quality)
+}
+
+@Composable
+private fun CameraManualJpegBar(options: CameraJPEGOptions, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag("camera-jpeg-settings"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(stringResource(R.string.camera_jpeg_settings), style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.weight(1f))
+        Text(cameraJpegSummaryText(options), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    HorizontalDivider()
+}
+
+@Composable
+private fun CameraJpegSettingsContent(state: CameraImportState, model: CameraImportViewModel) {
+    var edgeText by remember { mutableStateOf(state.incrementalJpeg.longEdge?.toString().orEmpty()) }
+    var qualityText by remember { mutableStateOf(state.incrementalJpeg.quality.toString()) }
+    LaunchedEffect(state.incrementalJpeg.longEdge) {
+        val target = state.incrementalJpeg.longEdge?.toString().orEmpty()
+        if (edgeText.toIntOrNull() != state.incrementalJpeg.longEdge) edgeText = target
+    }
+    LaunchedEffect(state.incrementalJpeg.quality) {
+        if (qualityText.toIntOrNull() != state.incrementalJpeg.quality) qualityText = state.incrementalJpeg.quality.toString()
+    }
+    val edge = edgeText.toIntOrNull()
+    val edgeInvalid = edgeText.isNotBlank() && edge !in 1..65_535
+    val quality = qualityText.toIntOrNull()
+    val qualityInvalid = quality !in 1..100
+
+    Text(stringResource(R.string.camera_jpeg_settings), style = MaterialTheme.typography.labelLarge)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Switch(state.incrementalJpeg.adjust, onCheckedChange = { checked ->
+            val next = if (checked && !state.incrementalJpeg.adjust && state.incrementalJpeg.longEdge == null) {
+                state.incrementalJpeg.copy(adjust = true, longEdge = 2048)
+            } else {
+                state.incrementalJpeg.copy(adjust = checked)
             }
-            if (state.incrementalJpeg.adjust) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(null to "original", 2048 to "2048", 3000 to "3000", 4096 to "4096").forEach { (edge, label) ->
-                        FilterChip(selected = edgeText == edge?.toString().orEmpty(), onClick = {
-                            edgeText = edge?.toString().orEmpty()
-                            model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = edge))
-                            }, label = { Text(if (edge == null) stringResource(R.string.output_original_size) else label) },
-                            modifier = Modifier.testTag("camera-jpeg-size-$label"), shape = CameraControlShape)
-                    }
-                }
-                val edge = edgeText.toIntOrNull()
-                val edgeInvalid = (edgeText.isBlank() && state.incrementalJpeg.longEdge != null) ||
-                    (edgeText.isNotBlank() && edge !in 1..65_535)
-                val quality = qualityText.toIntOrNull()
-                val qualityInvalid = quality !in 1..100
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(edgeText, { value ->
-                        edgeText = value
-                        val parsed = value.toIntOrNull()
-                        if (parsed in 1..65_535) model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = parsed))
-                        model.setIncrementalOptionsValid(parsed in 1..65_535 && !qualityInvalid)
-                    }, label = { Text(stringResource(R.string.output_long_edge)) }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = edgeInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-size"))
-                    OutlinedTextField(qualityText, { value ->
-                        qualityText = value
-                        val parsed = value.toIntOrNull()
-                        parsed?.takeIf { it in 1..100 }?.let { model.setIncrementalJpeg(state.incrementalJpeg.copy(quality = it)) }
-                        model.setIncrementalOptionsValid(parsed in 1..100 && !edgeInvalid)
-                    }, label = { Text(stringResource(R.string.camera_jpeg_quality)) }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = qualityInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-quality"))
-                }
-                Text(stringResource(R.string.camera_jpeg_local_processing), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val valid = !checked || (!qualityInvalid && (next.longEdge == null || !edgeInvalid))
+            model.setIncrementalJpeg(next, optionsValid = valid)
+        }, modifier = Modifier.testTag("camera-jpeg-adjust"))
+        Text(stringResource(if (state.incrementalJpeg.adjust) R.string.camera_jpeg_adjusted else R.string.camera_jpeg_original),
+            Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+    }
+    if (state.incrementalJpeg.adjust) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(null to "original", 2048 to "2048", 3000 to "3000", 4096 to "4096").forEach { (preset, label) ->
+                FilterChip(selected = edgeText == preset?.toString().orEmpty(), onClick = {
+                    edgeText = preset?.toString().orEmpty()
+                    model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = preset), optionsValid = !qualityInvalid)
+                }, label = { Text(if (preset == null) stringResource(R.string.output_original_size) else label) },
+                    modifier = Modifier.testTag("camera-jpeg-size-$label"), shape = CameraControlShape)
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(edgeText, { value ->
+                edgeText = value
+                val parsed = value.toIntOrNull()
+                if (value.isBlank()) {
+                    model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = null), optionsValid = !qualityInvalid)
+                } else if (parsed in 1..65_535) {
+                    model.setIncrementalJpeg(state.incrementalJpeg.copy(longEdge = parsed), optionsValid = !qualityInvalid)
+                } else {
+                    model.setIncrementalOptionsValid(false)
+                }
+            }, label = { Text(stringResource(R.string.output_long_edge)) }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = edgeInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-size"))
+            OutlinedTextField(qualityText, { value ->
+                qualityText = value
+                val parsed = value.toIntOrNull()
+                if (parsed in 1..100) {
+                    model.setIncrementalJpeg(state.incrementalJpeg.copy(quality = parsed!!), optionsValid = !edgeInvalid)
+                } else {
+                    model.setIncrementalOptionsValid(false)
+                }
+            }, label = { Text(stringResource(R.string.camera_jpeg_quality)) }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = qualityInvalid, modifier = Modifier.weight(1f).testTag("camera-jpeg-quality"))
+        }
+        Text(stringResource(R.string.camera_jpeg_local_processing), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
