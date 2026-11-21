@@ -115,6 +115,8 @@ import Foundation
                   "Unknown capture releases buttons, closes the session and never retries exposure")
 
         try test552IncrementalCursorVerification()
+        try testFocusCoordinateMappingAndMetadata()
+        try testSonySessionTouchFocusAndFocusArea()
     }
 
     static func mobileDeviceInfo() -> Data {
@@ -223,6 +225,327 @@ import Foundation
         try check(gotBusy && !zeroChannel.closed,
                   "#552 0x923c busy response (0x2019) propagates response error without closing channel")
     }
+
+    static func testFocusCoordinateMappingAndMetadata() throws {
+        let quarter = CameraWire.focusPoint(tapX: 160, tapY: 120, containerWidth: 640, containerHeight: 480, imageWidth: 640, imageHeight: 480)
+        try check(quarter?.x == 160 && quarter?.y == 120 && quarter?.packed == ((160 << 16) | 120),
+                  "Quarter tap maps to (160, 120) on 640x480 Sony grid")
+
+        // 640x480 image AspectFit inside 640x640 container -> letterbox top 80..560
+        try check(CameraWire.focusPoint(tapX: 320, tapY: 40, containerWidth: 640, containerHeight: 640, imageWidth: 640, imageHeight: 480) == nil,
+                  "Tap in top letterbox bar is ignored")
+        try check(CameraWire.focusPoint(tapX: 320, tapY: 600, containerWidth: 640, containerHeight: 640, imageWidth: 640, imageHeight: 480) == nil,
+                  "Tap in bottom letterbox bar is ignored")
+        let topLeft = CameraWire.focusPoint(tapX: 0, tapY: 80, containerWidth: 640, containerHeight: 640, imageWidth: 640, imageHeight: 480)
+        let bottomRight = CameraWire.focusPoint(tapX: 640, tapY: 560, containerWidth: 640, containerHeight: 640, imageWidth: 640, imageHeight: 480)
+        try check(topLeft?.x == 0 && topLeft?.y == 0 && bottomRight?.x == 639 && bottomRight?.y == 479,
+                  "Fitted rect corners map and clamp to 0..639 x 0..479")
+
+        // Pillarbox 640x480 in 800x480 -> fitted left 80..720
+        try check(CameraWire.focusPoint(tapX: 40, tapY: 240, containerWidth: 800, containerHeight: 480, imageWidth: 640, imageHeight: 480) == nil &&
+                  CameraWire.focusPoint(tapX: 760, tapY: 240, containerWidth: 800, containerHeight: 480, imageWidth: 640, imageHeight: 480) == nil &&
+                  CameraWire.focusPoint(tapX: 0, tapY: 0, containerWidth: 0, containerHeight: 480, imageWidth: 640, imageHeight: 480) == nil,
+                  "Pillarbox and invalid container sizes return nil")
+
+        let bounds = try CameraWire.liveFrameBounds([16, 100, 116, 136])
+        try check(bounds.size == 236 && bounds.image == 0..<100 && bounds.metadata == 100..<236,
+                  "liveFrameBounds extracts both JPEG and metadata sub-ranges")
+        try check(try CameraWire.liveFrameBounds([16, 100, 0, 0]).metadata == nil,
+                  "liveFrameBounds omits empty metadata range")
+
+        // Real a6700 136-byte v0x68 empty metadata vector (matches alpha2go sonyliveviewmeta_test.go)
+        let a6700Hex = """
+        68 00 02 00 00 00 00 00 01 00 00 00 00 00 00 00
+        02 00 00 00 00 00 00 00 fc ff ff ff fb ff ff ff
+        ff 7f 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        00 00 00 00 00 00 00 00 00 00 0a 00 00 80 07 00
+        00 00 00 00 00 00 00 00 00 00 0a 00 00 80 07 00
+        00 00 00 00 00 00 00 00 00 00 0a 00 00 80 07 00
+        00 00 00 00 00 00 00 00 00 00 0a 00 00 80 07 00
+        00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        00 00 00 00 00 00 00 00
+        """
+        let cleanHex = a6700Hex.filter { !$0.isWhitespace }
+        var a6700Bytes = Data()
+        var idx = cleanHex.startIndex
+        while idx < cleanHex.endIndex {
+            let next = cleanHex.index(idx, offsetBy: 2)
+            a6700Bytes.append(UInt8(cleanHex[idx..<next], radix: 16)!)
+            idx = next
+        }
+        try check(a6700Bytes.count == 136 && CameraWire.liveViewFrames(a6700Bytes).isEmpty,
+                  "Real a6700 v0x68 metadata with empty frame blocks parses cleanly")
+
+        func metaBlock(xmax: UInt32, ymax: UInt32, entries: [(type: UInt16, state: UInt16, cx: UInt32, cy: UInt32, h: UInt32, w: UInt32)]) -> Data {
+            var b = Data()
+            b.appendLE(xmax); b.appendLE(ymax); b.appendLE(UInt16(entries.count)); b.append(Data(repeating: 0, count: 6))
+            for e in entries {
+                b.appendLE(e.type); b.appendLE(e.state); b.appendLE(UInt32(0))
+                b.appendLE(e.cx); b.appendLE(e.cy); b.appendLE(e.h); b.appendLE(e.w)
+            }
+            return b
+        }
+        func synthMeta(version: UInt16) -> Data {
+            var b = Data(); b.appendLE(version); b.append(Data(repeating: 0, count: 0x28 - 2))
+            b.append(metaBlock(xmax: 1, ymax: 1, entries: []))
+            b.append(metaBlock(xmax: 100, ymax: 50, entries: [(type: 1, state: 2, cx: 10, cy: 20, h: 4, w: 6)]))
+            if version > 0x64 {
+                b.append(metaBlock(xmax: 100, ymax: 50, entries: [(type: 2, state: 1, cx: 30, cy: 40, h: 8, w: 12)]))
+                b.append(metaBlock(xmax: 100, ymax: 50, entries: [(type: 5, state: 1, cx: 50, cy: 5, h: 2, w: 3)]))
+            }
+            return b
+        }
+
+        let v68 = synthMeta(version: 0x68)
+        let slicedV68 = (Data([0xaa, 0xbb]) + v68).dropFirst(2) // non-zero startIndex slice
+        let parsed68 = CameraWire.liveViewFrames(slicedV68)
+        try check(parsed68 == [
+            CameraLiveViewFrame(kind: .focus, cx: 0.1, cy: 0.4, width: 0.06, height: 0.08, focused: true),
+            CameraLiveViewFrame(kind: .face, cx: 0.3, cy: 0.8, width: 0.12, height: 0.16, focused: true),
+            CameraLiveViewFrame(kind: .tracking, cx: 0.5, cy: 0.1, width: 0.03, height: 0.04, focused: false),
+        ], "v0x68 liveViewFrames decodes H before W across non-zero-startIndex slice")
+
+        let parsed64 = CameraWire.liveViewFrames(synthMeta(version: 0x64))
+        try check(parsed64.count == 1 && parsed64[0].kind == .focus, "v0x64 decodes focus block only")
+        try check(CameraWire.liveViewFrames(synthMeta(version: 0x27)).isEmpty, "v0x27 yields empty frames")
+        try check(CameraWire.liveViewFrames(v68.prefix(0x30)).isEmpty, "Truncated metadata fails soft")
+        var oversized = v68
+        oversized[0x28 + 8] = 0xff; oversized[0x28 + 9] = 0xff
+        try check(CameraWire.liveViewFrames(oversized).isEmpty, "Oversized metadata block count fails soft")
+    }
+
+    static func testSonySessionTouchFocusAndFocusArea() throws {
+        // 1. Primary 0xD2E4 when 0xD284 == 1
+        let touchChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5, 0xd2dc],
+            props: [
+                (0x500a, 4, true, 1, 2, [2, 1]),
+                (0xd22c, 4, true, 1, 0x0001, [0x0001, 0x0102]),
+                (0xd284, 2, false, 1, 1, []),
+                (0xd285, 2, false, 0, 0, []),
+            ]
+        )
+        let touchSession = try SonyCameraSession(client: CameraPTPClient(command: touchChannel, event: nil), purpose: .tethering)
+        _ = try touchSession.setFocusPoint(x: 160, y: 120)
+        try check(touchChannel.recorded9207.count == 1 &&
+                  touchChannel.recorded9207[0].0 == 0xd2e4 &&
+                  touchChannel.recorded9207[0].1 == UInt32((160 << 16) | 120),
+                  "0xD2E4 remote touch sends packed (x<<16)|y when 0xD284 is enabled and 1")
+
+        // 2. Cancel active touch first when 0xD284 == 0 and 0xD285 == 1, then retry 0xD2E4
+        let cancelFirstChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5],
+            props: [
+                (0x500a, 4, true, 1, 2, [2, 1]),
+                (0xd284, 2, false, 1, 0, []),
+                (0xd285, 2, false, 1, 1, []),
+            ]
+        )
+        cancelFirstChannel.on9207 = { code, val in
+            if code == 0xd2e5 && val == 1 {
+                cancelFirstChannel.setPropValue(0xd284, 1)
+                cancelFirstChannel.setPropValue(0xd285, 0)
+            }
+        }
+        let cancelFirstSession = try SonyCameraSession(client: CameraPTPClient(command: cancelFirstChannel, event: nil), purpose: .tethering)
+        _ = try cancelFirstSession.setFocusPoint(x: 320, y: 240)
+        try check(cancelFirstChannel.recorded9207.map(\.0) == [0xd2e5, 0xd2e5, 0xd2e4] &&
+                  cancelFirstChannel.recorded9207.map(\.1) == [2, 1, UInt32((320 << 16) | 240)],
+                  "Tap cancels active touch (0xD2E5 2->1) and re-evaluates 0xD284 before 0xD2E4")
+
+        // 3. Fallback 0xD2DC when Spot M (0x0102)
+        let spotChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2dc],
+            props: [
+                (0x500a, 4, true, 1, 2, [2, 1]),
+                (0xd22c, 4, true, 1, 0x0102, [0x0001, 0x0002, 0x0102]),
+            ]
+        )
+        let spotSession = try SonyCameraSession(client: CameraPTPClient(command: spotChannel, event: nil), purpose: .tethering)
+        _ = try spotSession.setFocusPoint(x: 400, y: 100)
+        try check(spotChannel.recorded9207.count == 1 &&
+                  spotChannel.recorded9207[0].0 == 0xd2dc &&
+                  spotChannel.recorded9207[0].1 == UInt32((400 << 16) | 100),
+                  "0xD2DC fallback moves AF area in Spot M")
+
+        // 4. Fixed area rejection (0 writes)
+        for fixed: Int64 in [0x0001, 0x0003, 0x0201, 0x0203] {
+            let fixedChannel = MockFocusCameraChannel(
+                controls: [0xd2c1, 0xd2c2, 0xd2dc],
+                props: [(0x500a, 4, true, 1, 2, [2, 1]), (0xd22c, 4, true, 1, fixed, [fixed, 0x0102])]
+            )
+            let fixedSession = try SonyCameraSession(client: CameraPTPClient(command: fixedChannel, event: nil), purpose: .tethering)
+            var gotFixed = false
+            do { _ = try fixedSession.setFocusPoint(x: 100, y: 100) }
+            catch CameraProtocolError.focusUnavailable(.focusAreaFixed) { gotFixed = true }
+            try check(gotFixed && fixedChannel.recorded9207.isEmpty,
+                      "Fixed focus area \(String(format: "0x%04X", fixed)) rejects with 0 writes")
+        }
+
+        // 5. Manual focus (0x500A == 1) and unsupported controls reject with 0 writes
+        let mfChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2dc],
+            props: [(0x500a, 4, true, 1, 1, [1, 2]), (0xd22c, 4, true, 1, 0x0102, [0x0102])]
+        )
+        let mfSession = try SonyCameraSession(client: CameraPTPClient(command: mfChannel, event: nil), purpose: .tethering)
+        var gotMF = false
+        do { _ = try mfSession.setFocusPoint(x: 100, y: 100) }
+        catch CameraProtocolError.focusUnavailable(.manualFocus) { gotMF = true }
+        try check(gotMF && mfChannel.recorded9207.isEmpty, "MF rejects focus point with 0 writes")
+
+        let unsupportedChannel = MockFocusCameraChannel(controls: [0xd2c1, 0xd2c2], props: [(0x500a, 4, true, 1, 2, [2])])
+        let unsupportedSession = try SonyCameraSession(client: CameraPTPClient(command: unsupportedChannel, event: nil), purpose: .tethering)
+        var gotUnsupported = false
+        do { _ = try unsupportedSession.setFocusPoint(x: 100, y: 100) }
+        catch CameraProtocolError.focusUnavailable(.unsupported) { gotUnsupported = true }
+        try check(gotUnsupported && unsupportedChannel.recorded9207.isEmpty, "Unsupported controls reject with 0 writes")
+
+        // 6. Import purpose never writes focus or 0xD22C
+        let importChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e4, 0xd2dc],
+            props: [(0xd284, 2, false, 1, 1, []), (0xd22c, 4, true, 1, 0x0001, [0x0001, 0x0102])]
+        )
+        let importSession = try SonyCameraSession(client: CameraPTPClient(command: importChannel, event: nil), purpose: .importing)
+        try rejects("Import purpose forbids tap-to-focus") { _ = try importSession.setFocusPoint(x: 100, y: 100) }
+        try rejects("Import purpose forbids 0xD22C parameter write") { _ = try importSession.setParameter(0xd22c, value: 0x0102) }
+        try check(importChannel.recorded9207.isEmpty && importChannel.recorded9205.isEmpty, "Import purpose executes 0 writes")
+
+        // 7. Aligned PTP rejection keeps channel open; cancelTouchFocus releases on press failure
+        touchChannel.next9207Status = 0x2019
+        var gotRejected = false
+        do { _ = try touchSession.setFocusPoint(x: 100, y: 100) }
+        catch CameraProtocolError.focusRejected { gotRejected = true }
+        try check(gotRejected && !touchChannel.closed && !touchSession.stopped,
+                  "Aligned 0x9207 rejection throws .focusRejected without closing session")
+
+        let cancelErrChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e5],
+            props: [(0xd285, 2, false, 1, 1, [])]
+        )
+        cancelErrChannel.next9207Status = 0x2005
+        let cancelErrSession = try SonyCameraSession(client: CameraPTPClient(command: cancelErrChannel, event: nil), purpose: .tethering)
+        var gotCancelRejected = false
+        do { _ = try cancelErrSession.cancelTouchFocus() }
+        catch CameraProtocolError.focusRejected { gotCancelRejected = true }
+        try check(gotCancelRejected && !cancelErrChannel.closed &&
+                  cancelErrChannel.recorded9207.map(\.0) == [0xd2e5, 0xd2e5] &&
+                  cancelErrChannel.recorded9207.map(\.1) == [2, 1],
+                  "Failed cancelTouchFocus press still sends 0xD2E5 release=1 and keeps session open")
+
+        // 8. 0xD22C Focus Area setParameter write & confirmation
+        let updated = try spotSession.setParameter(0xd22c, value: 0x0002)
+        try check(updated.confirmed && updated.values[0xd22c]?.number == 0x0002 &&
+                  spotChannel.recorded9205.count == 1 &&
+                  spotChannel.recorded9205[0].0 == 0xd22c &&
+                  spotChannel.recorded9205[0].1 == 0x0002,
+                  "0xD22C Focus Area writes u16 via 0x9205 and confirms readback")
+    }
+}
+
+final class MockFocusCameraChannel: CameraByteChannel {
+    private let controls: [UInt16]
+    private var props: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64, choices: [Int64])]
+    private var outgoing = Data()
+    private var pendingOp: (tid: UInt32, op: UInt16, param: UInt32)?
+    private(set) var closed = false
+    private(set) var recorded9207: [(UInt32, UInt32)] = []
+    private(set) var recorded9205: [(UInt32, UInt32)] = []
+    var next9207Status: UInt16?
+    var on9207: ((UInt32, UInt32) -> Void)?
+
+    init(controls: [UInt16], props: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64, choices: [Int64])]) {
+        self.controls = controls
+        self.props = props
+    }
+
+    func setPropValue(_ code: UInt16, _ value: Int64) {
+        if let idx = props.firstIndex(where: { $0.code == code }) { props[idx].value = value }
+    }
+
+    func read(_ count: Int) throws -> Data {
+        guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+        let data = Data(outgoing.prefix(count))
+        outgoing.removeFirst(count)
+        return data
+    }
+
+    func write(_ data: Data) throws {
+        var r = CameraDataReader(data)
+        _ = try r.u32()
+        let type = try r.u32()
+        if type == 9 || type == 14 { return }
+        if type == 12 {
+            let tid = try r.u32()
+            guard let pending = pendingOp, pending.tid == tid else { throw CameraProtocolError.invalid("Unexpected data") }
+            pendingOp = nil
+            if pending.op == 0x9207 {
+                let value: UInt32 = r.remaining >= 4 ? try r.u32() : UInt32(try r.u16())
+                recorded9207.append((pending.param, value))
+                if let status = next9207Status {
+                    next9207Status = nil
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: status))
+                    return
+                }
+                on9207?(pending.param, value)
+                outgoing.append(CameraProtocolTests.transactionResponse(tid))
+            } else if pending.op == 0x9205 {
+                let value = UInt32(try r.u16())
+                recorded9205.append((pending.param, value))
+                setPropValue(UInt16(pending.param), Int64(value))
+                outgoing.append(CameraProtocolTests.transactionResponse(tid))
+            }
+            return
+        }
+        guard type == 6 else { return }
+        let phase = try r.u32()
+        let op = try r.u16()
+        let tid = try r.u32()
+        var params: [UInt32] = []
+        while r.remaining >= 4 { params.append(try r.u32()) }
+        if phase == 2 {
+            pendingOp = (tid, op, params.first ?? 0)
+            return
+        }
+        switch op {
+        case 0x1001:
+            var dev = Data()
+            dev.appendLE(UInt16(100)); dev.appendLE(UInt32(17)); dev.appendLE(UInt16(100))
+            dev.append(0); dev.appendLE(UInt16(0))
+            let ops: [UInt16] = [0x1001, 0x1002, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209, 0x923c, 0x923d]
+            dev.appendLE(UInt32(ops.count)); ops.forEach { dev.appendLE($0) }
+            for _ in 0..<4 { dev.appendLE(UInt32(0)) }
+            for v in ["Sony", "ILCE-6700", "2.00", "focus-test"] { dev.append(CameraProtocolTests.ptpString(v)) }
+            outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dev))
+        case 0x1002, 0x9201:
+            outgoing.append(CameraProtocolTests.transactionResponse(tid))
+        case 0x9202:
+            var ext = Data()
+            ext.appendLE(UInt16(0x12c))
+            ext.appendLE(UInt32(props.count)); props.forEach { ext.appendLE($0.code) }
+            ext.appendLE(UInt32(controls.count)); controls.forEach { ext.appendLE($0) }
+            outgoing.append(CameraProtocolTests.transactionResponse(tid, data: ext))
+        case 0x9209:
+            var p = Data(); p.appendLE(UInt64(props.count))
+            for item in props {
+                p.appendLE(item.code); p.appendLE(item.type)
+                p.append(item.writable ? 1 : 0); p.append(item.enabled)
+                if item.type == 2 { p.append(UInt8(item.value)); p.append(UInt8(item.value)) }
+                else { p.appendLE(UInt16(item.value)); p.appendLE(UInt16(item.value)) }
+                p.append(2)
+                for _ in 0..<2 {
+                    p.appendLE(UInt16(item.choices.count))
+                    for c in item.choices {
+                        if item.type == 2 { p.append(UInt8(c)) } else { p.appendLE(UInt16(c)) }
+                    }
+                }
+            }
+            outgoing.append(CameraProtocolTests.transactionResponse(tid, data: p))
+        default:
+            outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+        }
+    }
+
+    func close() { closed = true }
 }
 
 final class MockMobileCameraChannel: CameraByteChannel {

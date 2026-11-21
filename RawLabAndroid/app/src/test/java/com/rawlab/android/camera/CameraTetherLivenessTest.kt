@@ -199,6 +199,18 @@ class CameraTetherLivenessTest {
         val objectInfo1008Calls = AtomicInteger()
         val downloadCalls = AtomicInteger()
         val shutterCaptures = AtomicInteger()
+        data class ExtraProp(val code: Int, val type: Int, val writable: Boolean, @Volatile var enabled: Int, @Volatile var value: Long)
+        var tetherControls: List<Int> = listOf(0xd2c1, 0xd2c2)
+        val extraProps = java.util.concurrent.CopyOnWriteArrayList<ExtraProp>()
+        val recorded9207 = java.util.concurrent.CopyOnWriteArrayList<Pair<Int, Long>>()
+        var on9207: ((Int, Long) -> Unit)? = null
+
+        fun setExtraProp(code: Int, value: Long, enabled: Int = 1) {
+            extraProps.firstOrNull { it.code == code }?.let {
+                it.value = value
+                it.enabled = enabled
+            }
+        }
         val sessionOpenCalls = AtomicInteger()
         val deliveredRejections = AtomicInteger()
         val rangeRequests = CopyOnWriteArrayList<List<Long>>()
@@ -361,18 +373,39 @@ class CameraTetherLivenessTest {
                 }
                 0x1002, 0x9201, 0x9212 -> Unit
                 0x9202 -> {
-                    data = u16(0x12c) + u32(2) + u16(0xd222) + u16(0x5013) + u32(2) + u16(0xd2c1) + u16(0xd2c2)
+                    val out = ByteArrayOutputStream()
+                    out.write(u16(0x12c))
+                    out.write(u32(2)); out.write(u16(0xd222)); out.write(u16(0x5013))
+                    out.write(u32(tetherControls.size)); tetherControls.forEach { out.write(u16(it)) }
+                    data = out.toByteArray()
                 }
                 0x9209 -> {
                     val destValue = if (legacy) 1 else 0x10
-                    data = u32(2) + u32(0) +
-                        u16(0xd222) + u16(4) + byteArrayOf(1, 1) + u16(destValue) + u16(destValue) + byteArrayOf(0) +
-                        u16(0x5013) + u16(4) + byteArrayOf(1, 1) + u16(1) + u16(1) + byteArrayOf(0)
+                    val extras = extraProps.toList()
+                    val out = ByteArrayOutputStream()
+                    out.write(u32(2 + extras.size)); out.write(u32(0))
+                    out.write(u16(0xd222)); out.write(u16(4)); out.write(byteArrayOf(1, 1)); out.write(u16(destValue)); out.write(u16(destValue)); out.write(byteArrayOf(0))
+                    out.write(u16(0x5013)); out.write(u16(4)); out.write(byteArrayOf(1, 1)); out.write(u16(1)); out.write(u16(1)); out.write(byteArrayOf(0))
+                    for (extra in extras) {
+                        out.write(u16(extra.code)); out.write(u16(extra.type))
+                        out.write(byteArrayOf(if (extra.writable) 1 else 0, extra.enabled.toByte()))
+                        when (extra.type) {
+                            2 -> { val b = byteArrayOf(extra.value.toByte()); out.write(b); out.write(b) }
+                            6 -> { val v = u32(extra.value.toInt()); out.write(v); out.write(v) }
+                            else -> { val v = u16(extra.value.toInt()); out.write(v); out.write(v) }
+                        }
+                        out.write(byteArrayOf(0))
+                    }
+                    data = out.toByteArray()
                 }
                 0x9207 -> {
                     val control = params[0]
-                    val value = ByteBuffer.wrap(checkNotNull(outgoing)).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
-                    if (control == 0xd2c2 && value == 2) {
+                    val raw = checkNotNull(outgoing)
+                    val buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
+                    val value = if (raw.size >= 4) buf.int.toLong() and 0xffffffffL else (buf.short.toInt() and 0xffff).toLong()
+                    recorded9207.add(control to value)
+                    on9207?.invoke(control, value)
+                    if (control == 0xd2c2 && value == 2L) {
                         shutterCaptures.incrementAndGet()
                         onShutterTriggered?.invoke()
                     }
@@ -1329,6 +1362,88 @@ class CameraTetherLivenessTest {
             } finally {
                 clock.close()
                 controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun touchFocusCancelRejectionAndUnavailableKeepTetherSessionReady() = withWorkspace { _, store, journal, lock ->
+        FakeTetherCameraServer().use { camera ->
+            camera.tetherControls = listOf(0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5, 0xd2dc)
+            camera.extraProps.addAll(
+                listOf(
+                    FakeTetherCameraServer.ExtraProp(0x500a, 4, true, 1, 2),
+                    FakeTetherCameraServer.ExtraProp(0xd22c, 4, true, 1, 0x0001),
+                    FakeTetherCameraServer.ExtraProp(0xd284, 2, false, 1, 1),
+                    FakeTetherCameraServer.ExtraProp(0xd285, 2, false, 0, 0),
+                ),
+            )
+            camera.on9207 = { control, value ->
+                if (control == 0xd2e4) camera.setExtraProp(0xd285, 1, enabled = 1)
+                else if (control == 0xd2e5 && value == 1L) camera.setExtraProp(0xd285, 0, enabled = 0)
+            }
+            val clock = VirtualLoopClock(camera)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(
+                    camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:focus", CameraImportDestination(), false, false,
+                )
+                clock.awaitParked(controller)
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.parameters.canCancelTouchFocus)
+
+                // 1. Primary 0xD2E4 tap-to-focus sets focus point and exposes cancelTouchFocus
+                controller.setFocusPoint(160, 120)
+                assertTrue(controller.state.value.focusBusy)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertNull(controller.state.value.focusFailure)
+                assertTrue(controller.state.value.parameters.canCancelTouchFocus)
+                assertEquals(listOf(0xd2e4 to ((160L shl 16) or 120L)), camera.recorded9207.toList())
+
+                // 2. Cancel touch focus sends 0xD2E5 press+release and clears canCancelTouchFocus
+                controller.cancelTouchFocus()
+                assertTrue(controller.state.value.focusBusy)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertNull(controller.state.value.focusFailure)
+                assertFalse(controller.state.value.parameters.canCancelTouchFocus)
+                assertEquals(listOf(0xd2e5 to 2L, 0xd2e5 to 1L), camera.recorded9207.takeLast(2))
+
+                // 3. Aligned 0x9207 rejection keeps session READY with REJECTED focusFailure
+                camera.rejectNext(0x9207, 0x2019)
+                controller.setFocusPoint(320, 240)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertEquals(CameraFocusFailure.REJECTED, controller.state.value.focusFailure)
+                assertEquals(1, camera.sessionOpenCalls.get())
+
+                // 4. Manual focus (0x500A == 1, 0xD284 == 0) fails with MANUAL_FOCUS and 0 extra writes
+                camera.setExtraProp(0xd284, 0, enabled = 0)
+                camera.setExtraProp(0x500a, 1, enabled = 1)
+                val writesBeforeMF = camera.recorded9207.size
+                controller.setFocusPoint(320, 240)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertEquals(CameraFocusFailure.MANUAL_FOCUS, controller.state.value.focusFailure)
+                assertEquals(writesBeforeMF, camera.recorded9207.size)
+
+                // 5. Fixed Focus Area (Wide 0x0001 with 0xD284 == 0) fails with FOCUS_AREA_FIXED and 0 writes
+                camera.setExtraProp(0x500a, 2, enabled = 1)
+                controller.setFocusPoint(320, 240)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertEquals(CameraFocusFailure.FOCUS_AREA_FIXED, controller.state.value.focusFailure)
+                assertEquals(writesBeforeMF, camera.recorded9207.size)
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
             }
         }
     }

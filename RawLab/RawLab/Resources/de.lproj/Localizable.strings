@@ -227,6 +227,7 @@
 "双击名称或轨道恢复默认值。" = "Doppeltippe auf den Namen oder die Spur, um den Standardwert wiederherzustellen.";
 "取景已暂停" = "Livebild pausiert";
 "取消" = "Abbrechen";
+"取消对焦" = "Fokus aufheben";
 "取消导出" = "Export abbrechen";
 "取消检查" = "Prüfung abbrechen";
 "取消连接" = "Verbindung abbrechen";
@@ -288,6 +289,7 @@
 "对比" = "Vergleich";
 "对比度" = "Kontrast";
 "对比方式" = "Vergleichsmodus";
+"对焦区域" = "Fokusfeld";
 "对焦模式" = "Fokusmodus";
 "对照参考图（可选）" = "Mit einem Referenzbild vergleichen (optional)";
 "导入 %@ 个文件" = "%@ Dateien importieren";
@@ -398,12 +400,15 @@
 "强度" = "Intensität";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Starker Hell-Dunkel-Kontrast, tiefe kühl-cyane Schatten, kontrollierte Schwarztöne und warme Akzentlichter";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "Die SDR-Bearbeitung nutzt noch nicht von HDR unterstützte Werkzeuge. Setzen Sie diese vor dem Aktivieren von HDR zurück.";
+"当前为手动对焦（MF），无法选择对焦点。" = "Manueller Fokus (MF) ist aktiv; Tippen zum Fokussieren ist nicht verfügbar.";
 "当前拍摄模式下不可调整" = "Im aktuellen Aufnahmemodus nicht einstellbar";
 "当前显示 SDR 兼容预览。" = "Die SDR-kompatible Vorschau wird angezeigt.";
 "当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
 "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "GPU erzwingen ist für dieses Foto, diesen Look oder diese Verarbeitungsart nicht verfügbar. Wechseln Sie für den Fallback zu Auto.";
 "当前照片或调整记录无效，无法安全重置。" = "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.";
 "当前照片的设置尚不可用。" = "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.";
+"当前状态下相机未接受对焦点设置。" = "Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert.";
+"当前相机模式不支持远程选择对焦点。" = "Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl.";
 "当前相机模式未提供此功能。" = "Diese Funktion ist im aktuellen Kameramodus nicht verfügbar.";
 "当前配方不可用，无法安全重置外观。" = "Das aktuelle Rezept ist nicht verfügbar. Der Look kann daher nicht sicher zurückgesetzt werden.";
 "待处理" = "Aktion erforderlich";
@@ -648,6 +653,7 @@
 "正在生成预览…" = "Vorschauen werden erstellt …";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在连接相机…" = "Verbindung zur Kamera wird hergestellt …";
+"正在选择对焦点…" = "Fokuspunkt wird gesetzt…";
 "正常显影" = "Normale Entwicklung";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
@@ -857,6 +863,7 @@
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Erlauben Sie RawLab die Bluetooth-Nutzung in den Systemeinstellungen.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
+"请将对焦区域设为点或区，或在机身开启触控操作。" = "Stellen Sie das Fokusfeld auf Spot oder Feld oder aktivieren Sie die Touch-Bedienung an der Kamera.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Speichere Weißabgleichmodus, Temperatur und Tönung zusammen, bevor du diese Vorgabe anwendest.";
 "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。" = "Stellen Sie die Kamera auf Einzelaufnahme und bestätigen Sie, dass Fotos auch auf der Speicherkarte der Kamera gespeichert werden.";
 "请打开手机蓝牙后重试。" = "Schalten Sie Bluetooth am Smartphone ein und versuchen Sie es erneut.";

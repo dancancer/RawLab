@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"露出補正"</string>
     <string name="camera_param_failed">"カメラが設定を受け付けませんでした。現在の値を確認して、もう一度お試しください。"</string>
     <string name="camera_param_focus">"フォーカスモード"</string>
+    <string name="camera_param_focus_area">"フォーカスエリア"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"現在の撮影モードでは調整できません"</string>
     <string name="camera_param_readonly_short">"読み取り専用"</string>
@@ -481,10 +482,16 @@
     <string name="strength">"強度"</string>
     <string name="temperature">"色温度"</string>
     <string name="tether_backlog_error">"受信待ちの写真が多いため、撮影を一時停止しました。再接続すると受信を続行します。"</string>
+    <string name="tether_cancel_focus">"フォーカス解除"</string>
     <string name="tether_capturing">"撮影中"</string>
     <string name="tether_card_confirm">"カメラが原本をメモリーカードにも保存することを確認しました。"</string>
     <string name="tether_card_hint">"カメラで「1枚撮影」を選び、原本をメモリーカードにも保存してください。ライブビュー画像やサムネイルは、原本の保存成功を示すものではありません。"</string>
     <string name="tether_confirm_continue">"結果を確認して続行"</string>
+    <string name="tether_focus_area_fixed">"フォーカスエリアをスポットまたはゾーンにするか、カメラ本体のタッチ操作を有効にしてください。"</string>
+    <string name="tether_focus_busy">"ピント位置を設定中…"</string>
+    <string name="tether_focus_manual">"マニュアルフォーカス（MF）中はピント位置を選択できません。"</string>
+    <string name="tether_focus_rejected">"現在の状態ではカメラがピント位置の設定を受け付けませんでした。"</string>
+    <string name="tether_focus_unsupported">"このカメラモードではリモートでのピント位置選択に対応していません。"</string>
     <string name="tether_foreground">"このページを離れるとテザー撮影を一時停止します。保存済みの写真には影響しません。"</string>
     <string name="tether_grid">"構図グリッド"</string>
     <string name="tether_intro">"スマートフォンで構図を確認して1枚ずつ撮影し、カメラカード内のRAWとJPEGのオリジナルを自動保存します。"</string>

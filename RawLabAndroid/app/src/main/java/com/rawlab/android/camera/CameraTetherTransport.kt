@@ -18,7 +18,7 @@ internal data class CameraCardSnapshot(val photos: List<CameraPhoto>, val hardwa
     val download: (CameraPhoto, OutputStream, (Long) -> Unit) -> String)
 internal data class CameraTetherParameter(val code: Int, val current: Long, val options: List<Long>,
     val writable: Boolean, val enabled: Boolean)
-internal data class CameraTetherParameterReadback(val values: List<CameraTetherParameter>, val writable: Boolean, val captureReady: Boolean)
+internal data class CameraTetherParameterReadback(val values: List<CameraTetherParameter>, val writable: Boolean, val captureReady: Boolean, val canCancelTouchFocus: Boolean = false)
 internal data class CameraTetherParameterWrite(val confirmed: Boolean, val readback: CameraTetherParameterReadback)
 
 /** 一个调度器独占此对象；只有停止操作可从其他线程调用。 */
@@ -118,7 +118,8 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     fun readParameters(): CameraTetherParameterReadback {
         checkRunning()
         val opened = activateRemoteSession()
-        return parameterReadback(opened.properties(), opened.supportsParameterWrites(), opened.supportsShutter())
+        val properties = opened.properties()
+        return parameterReadback(properties, opened.supportsParameterWrites(), opened.supportsShutter(), opened.canCancelTouchFocus(properties))
     }
 
     @Synchronized
@@ -127,7 +128,23 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
         val opened = activateRemoteSession()
         val result = opened.setNumericProperty(code, requested)
         return CameraTetherParameterWrite(result.confirmed,
-            parameterReadback(result.properties, opened.supportsParameterWrites(), opened.supportsShutter()))
+            parameterReadback(result.properties, opened.supportsParameterWrites(), opened.supportsShutter(), opened.canCancelTouchFocus(result.properties)))
+    }
+
+    @Synchronized
+    fun setFocusPoint(x: Int, y: Int): CameraTetherParameterReadback {
+        checkRunning()
+        val opened = activateRemoteSession()
+        val updated = opened.setFocusPoint(x, y)
+        return parameterReadback(updated, opened.supportsParameterWrites(), opened.supportsShutter(), opened.canCancelTouchFocus(updated))
+    }
+
+    @Synchronized
+    fun cancelTouchFocus(): CameraTetherParameterReadback {
+        checkRunning()
+        val opened = activateRemoteSession()
+        val updated = opened.cancelTouchFocus()
+        return parameterReadback(updated, opened.supportsParameterWrites(), opened.supportsShutter(), opened.canCancelTouchFocus(updated))
     }
 
     fun capture() {
@@ -195,13 +212,13 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
         return checkNotNull(remote)
     }
 
-    private fun parameterReadback(properties: Map<Int, SonyTetherSession.Property>, writable: Boolean, shutter: Boolean): CameraTetherParameterReadback {
+    private fun parameterReadback(properties: Map<Int, SonyTetherSession.Property>, writable: Boolean, shutter: Boolean, canCancelTouchFocus: Boolean = false): CameraTetherParameterReadback {
         val values = properties.values.mapNotNull { property ->
             runCatching { CameraTetherParameter(property.code, property.number(), property.options().filterNot { property.code == 0xd20d && it == 0L },
                 property.writable && property.enabled == 1, property.enabled == 1) }.getOrNull()
         }.associateBy { it.code }.values.toList()
         val card = if (usesLegacyContents) cardSavingConfirmed else (properties[0xd222]?.number()?.and(0x10) ?: 0) != 0L
-        return CameraTetherParameterReadback(values, writable, shutter && card && properties[0x5013]?.number() == 1L)
+        return CameraTetherParameterReadback(values, writable, shutter && card && properties[0x5013]?.number() == 1L, canCancelTouchFocus)
     }
 }
 

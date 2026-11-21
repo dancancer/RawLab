@@ -227,6 +227,7 @@
 "双击名称或轨道恢复默认值。" = "Double-tap the name or track to restore the default.";
 "取景已暂停" = "Live view paused";
 "取消" = "Cancel";
+"取消对焦" = "Cancel focus";
 "取消导出" = "Cancel Export";
 "取消检查" = "Cancel Check";
 "取消连接" = "Cancel connection";
@@ -288,6 +289,7 @@
 "对比" = "Comparison";
 "对比度" = "Contrast";
 "对比方式" = "Comparison mode";
+"对焦区域" = "Focus area";
 "对焦模式" = "Focus mode";
 "对照参考图（可选）" = "Compare with a reference image (optional)";
 "导入 %@ 个文件" = "Import %@ files";
@@ -398,12 +400,15 @@
 "强度" = "Intensity";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Strong light-dark contrast, deep cool-cyan shadows, restrained blacks and warm accent light";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "The SDR edits use tools that HDR does not support yet. Reset those tools before enabling HDR.";
+"当前为手动对焦（MF），无法选择对焦点。" = "Manual focus (MF) is active; tap to focus is unavailable.";
 "当前拍摄模式下不可调整" = "Cannot adjust in the current shooting mode";
 "当前显示 SDR 兼容预览。" = "Showing the SDR-compatible preview.";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
+"当前状态下相机未接受对焦点设置。" = "The camera did not accept the focus point in its current state.";
+"当前相机模式不支持远程选择对焦点。" = "This camera mode does not support remote focus point selection.";
 "当前相机模式未提供此功能。" = "This feature is unavailable in the current camera mode.";
 "当前配方不可用，无法安全重置外观。" = "The current recipe is unavailable, so its look cannot be reset safely.";
 "待处理" = "Needs attention";
@@ -648,6 +653,7 @@
 "正在生成预览…" = "Generating previews…";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "正在连接相机…" = "Connecting to camera…";
+"正在选择对焦点…" = "Setting focus point…";
 "正常显影" = "Normal rendering";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "This JPEG contains an HDR gain map. Keep the original to preserve HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "This LUT lacks complete color information. Confirm how to apply it. It will be marked as compatible, with an unverified appearance.";
@@ -857,6 +863,7 @@
 "请先选择外观或配方。" = "Select a look or recipe first.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Allow RawLab to use Bluetooth in system settings.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
+"请将对焦区域设为点或区，或在机身开启触控操作。" = "Set Focus area to Spot or Zone, or enable Touch Operation on the camera.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Save white balance mode, temperature, and tint together before applying this preset.";
 "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。" = "Set the camera to single shooting and confirm that photos are also saved to the camera memory card.";
 "请打开手机蓝牙后重试。" = "Turn on Bluetooth on your phone and try again.";

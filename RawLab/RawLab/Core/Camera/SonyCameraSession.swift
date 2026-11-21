@@ -284,10 +284,104 @@ final class SonyCameraSession {
     }
     static func parameterType(_ code: UInt16) -> UInt16? {
         switch code {
-        case 0x5005, 0x5007, 0x500a, 0xd20f: return 4
+        case 0x5005, 0x5007, 0x500a, 0xd20f, 0xd22c: return 4
         case 0x5010: return 3
         case 0xd20d, 0xd21e, 0xd226: return 6
         default: return nil
+        }
+    }
+    static let fixedFocusAreas: Set<Int64> = [0x0001, 0x0003, 0x0201, 0x0203]
+
+    func canCancelTouchFocus(_ properties: [UInt16: CameraProperty]) -> Bool {
+        purpose == .tethering && remoteReady && !contentsEntered && !stopped &&
+            device.operations.contains(0x9207) && controls.contains(0xd2e5) &&
+            properties[0xd285]?.enabled == 1 && properties[0xd285]?.number == 1
+    }
+
+    func focusTarget(_ properties: [UInt16: CameraProperty]) -> Result<CameraFocusPointTarget, CameraFocusUnavailableReason> {
+        guard purpose == .tethering, remoteReady, !contentsEntered, !stopped,
+              device.operations.contains(0x9207) else { return .failure(.unsupported) }
+        if controls.contains(0xd2e4), properties[0xd284]?.enabled == 1, properties[0xd284]?.number == 1 {
+            return .success(.remoteTouch)
+        }
+        if properties[0x500a]?.number == 1 {
+            return .failure(.manualFocus)
+        }
+        if controls.contains(0xd2dc) {
+            if let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
+                return .failure(.focusAreaFixed)
+            }
+            return .success(.afAreaPosition)
+        }
+        if controls.contains(0xd2e4), let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
+            return .failure(.focusAreaFixed)
+        }
+        return .failure(.unsupported)
+    }
+
+    func setFocusPoint(x: Int, y: Int) throws -> [UInt16: CameraProperty] {
+        try checkRunning()
+        guard purpose == .tethering, remoteReady, !contentsEntered,
+              device.operations.contains(0x9207) else { throw CameraProtocolError.focusUnavailable(.unsupported) }
+        guard (0...639).contains(x), (0...479).contains(y) else {
+            throw CameraProtocolError.invalid("Focus point outside camera grid")
+        }
+        var latest = try properties()
+        if controls.contains(0xd2e4),
+           !(latest[0xd284]?.enabled == 1 && latest[0xd284]?.number == 1),
+           canCancelTouchFocus(latest) {
+            try sendTouchCancel()
+            try pause(0.05)
+            latest = try properties()
+        }
+        let target: CameraFocusPointTarget
+        switch focusTarget(latest) {
+        case .success(let resolved): target = resolved
+        case .failure(let reason): throw CameraProtocolError.focusUnavailable(reason)
+        }
+        var bytes = Data()
+        bytes.appendLE(UInt32((x << 16) | y))
+        do {
+            _ = try client.operation(0x9207, parameters: [UInt32(target.controlCode)], outgoing: bytes)
+        } catch CameraProtocolError.response {
+            throw CameraProtocolError.focusRejected
+        }
+        try pause(0.1)
+        return try properties()
+    }
+
+    func cancelTouchFocus() throws -> [UInt16: CameraProperty] {
+        try checkRunning()
+        let latest = try properties()
+        guard canCancelTouchFocus(latest) else { throw CameraProtocolError.focusUnavailable(.unsupported) }
+        try sendTouchCancel()
+        try pause(0.1)
+        return try properties()
+    }
+
+    private func sendTouchCancel() throws {
+        func send(_ value: UInt16) throws {
+            var bytes = Data(); bytes.appendLE(value)
+            _ = try client.operation(0x9207, parameters: [0xd2e5], outgoing: bytes)
+        }
+        var pressed = false
+        var failure: Error?
+        do {
+            pressed = true
+            try send(2)
+            try pause(0.05)
+            try send(1)
+            pressed = false
+        } catch {
+            failure = error
+        }
+        if pressed, !client.isClosed {
+            do { try send(1) }
+            catch { if failure == nil { failure = error } }
+        }
+        if let failure {
+            if case CameraProtocolError.response = failure { throw CameraProtocolError.focusRejected }
+            throw failure
         }
     }
     func setParameter(_ code: UInt16, value: Int64) throws -> (confirmed: Bool, values: [UInt16: CameraProperty]) {

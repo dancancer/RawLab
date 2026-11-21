@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"Belichtungskorrektur"</string>
     <string name="camera_param_failed">"Die Kamera hat die Einstellung nicht übernommen. Prüfen Sie den aktuellen Wert und versuchen Sie es erneut."</string>
     <string name="camera_param_focus">"Fokusmodus"</string>
+    <string name="camera_param_focus_area">"Fokusfeld"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"Im aktuellen Aufnahmemodus nicht einstellbar"</string>
     <string name="camera_param_readonly_short">"Nur lesen"</string>
@@ -481,10 +482,16 @@
     <string name="strength">"Intensität"</string>
     <string name="temperature">"Temperatur"</string>
     <string name="tether_backlog_error">"Es warten zu viele Fotos auf den Empfang. Die Aufnahme wurde pausiert. Verbinden Sie sich erneut, um den Empfang fortzusetzen."</string>
+    <string name="tether_cancel_focus">"Fokus aufheben"</string>
     <string name="tether_capturing">"Wird aufgenommen"</string>
     <string name="tether_card_confirm">"Ich habe bestätigt, dass die Kamera Originale auch auf der Speicherkarte speichert."</string>
     <string name="tether_card_hint">"Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden."</string>
     <string name="tether_confirm_continue">"Ergebnis bestätigen und fortfahren"</string>
+    <string name="tether_focus_area_fixed">"Stellen Sie das Fokusfeld auf Spot oder Feld oder aktivieren Sie die Touch-Bedienung an der Kamera."</string>
+    <string name="tether_focus_busy">"Fokuspunkt wird gesetzt…"</string>
+    <string name="tether_focus_manual">"Manueller Fokus (MF) ist aktiv; Tippen zum Fokussieren ist nicht verfügbar."</string>
+    <string name="tether_focus_rejected">"Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert."</string>
+    <string name="tether_focus_unsupported">"Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl."</string>
     <string name="tether_foreground">"Wenn Sie diese Seite verlassen, wird die Tether-Aufnahme pausiert. Bereits gespeicherte Fotos bleiben erhalten."</string>
     <string name="tether_grid">"Kompositionsraster"</string>
     <string name="tether_intro">"Auf dem Smartphone den Bildausschnitt wählen, einzelne Fotos aufnehmen und die originalen RAW- und JPEG-Dateien von der Speicherkarte automatisch speichern."</string>

@@ -72,6 +72,11 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var bytesReadByName: [String: Int] = [:]
     private(set) var objectInfoCalls = 0
     private(set) var shutterCommands = 0
+    private(set) var recorded9207: [(UInt32, UInt32)] = []
+    var tetherControls: [UInt16] = [0xd2c1, 0xd2c2]
+    var tetherExtraProps: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64)] = []
+    var next9207Status: UInt16?
+    var on9207: ((UInt32, UInt32) -> Void)?
     var onShutter: (() -> Void)?
     var onMobileDownloadChunk: ((String, Int) -> Void)?
     private var pendingOutgoing: [UInt32: (op: UInt16, param: UInt32)] = [:]
@@ -81,6 +86,15 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         self.mode = mode
         self.supportsTethering = supportsTethering
         self.entries = entries
+    }
+
+    func setExtraProperty(_ code: UInt16, value: Int64, enabled: UInt8 = 1) {
+        lock.lock()
+        if let idx = tetherExtraProps.firstIndex(where: { $0.code == code }) {
+            tetherExtraProps[idx].value = value
+            tetherExtraProps[idx].enabled = enabled
+        }
+        lock.unlock()
     }
 
     func updateEntries(_ body: (inout [FakeSonyCameraEntry]) -> Void) {
@@ -131,10 +145,25 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             }
             if packetType == 12 {
                 let tid = try reader.u32()
-                let val = reader.remaining >= 2 ? try reader.u16() : 0
-                if let pending = pendingOutgoing.removeValue(forKey: tid),
-                   pending.op == 0x9207, pending.param == 0xd2c2, val == 2 {
-                    onShutter?()
+                let val32: UInt32 = reader.remaining >= 4 ? try reader.u32() : (reader.remaining >= 2 ? UInt32(try reader.u16()) : 0)
+                if let pending = pendingOutgoing.removeValue(forKey: tid), pending.op == 0x9207 {
+                    recorded9207.append((pending.param, val32))
+                    if let status = next9207Status {
+                        next9207Status = nil
+                        appendResponse(tid, code: status)
+                        lock.unlock()
+                        return
+                    }
+                    let cb = on9207
+                    let shutterCb = (pending.param == 0xd2c2 && val32 == 2) ? onShutter : nil
+                    let param = pending.param
+                    lock.unlock()
+                    cb?(param, val32)
+                    shutterCb?()
+                    lock.lock()
+                    appendResponse(tid)
+                    lock.unlock()
+                    return
                 }
                 appendResponse(tid)
                 lock.unlock()
@@ -281,9 +310,8 @@ final class FakeSonyCameraChannel: CameraByteChannel {
             descriptor.appendLE(UInt16(0x12c))
             descriptor.appendLE(UInt32(1)); descriptor.appendLE(UInt16(0x5013))
             if supportsTethering {
-                descriptor.appendLE(UInt32(2))
-                descriptor.appendLE(UInt16(0xd2c1))
-                descriptor.appendLE(UInt16(0xd2c2))
+                descriptor.appendLE(UInt32(tetherControls.count))
+                tetherControls.forEach { descriptor.appendLE($0) }
             } else {
                 descriptor.appendLE(UInt32(0))
             }
@@ -291,7 +319,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         case 0x9209:
             var props = Data()
             if supportsTethering {
-                props.appendLE(UInt64(2))
+                props.appendLE(UInt64(2 + tetherExtraProps.count))
                 for (code, value): (UInt16, UInt16) in [(0x5013, 1), (0xd222, 0x10)] {
                     props.appendLE(code)
                     props.appendLE(UInt16(4))
@@ -299,6 +327,20 @@ final class FakeSonyCameraChannel: CameraByteChannel {
                     props.append(1)
                     props.appendLE(value)
                     props.appendLE(value)
+                    props.append(0)
+                }
+                for extra in tetherExtraProps {
+                    props.appendLE(extra.code)
+                    props.appendLE(extra.type)
+                    props.append(extra.writable ? 1 : 0)
+                    props.append(extra.enabled)
+                    if extra.type == 2 {
+                        props.append(UInt8(truncatingIfNeeded: extra.value))
+                        props.append(UInt8(truncatingIfNeeded: extra.value))
+                    } else {
+                        props.appendLE(UInt16(truncatingIfNeeded: extra.value))
+                        props.appendLE(UInt16(truncatingIfNeeded: extra.value))
+                    }
                     props.append(0)
                 }
             } else {
@@ -518,7 +560,8 @@ struct CameraSkipAndLimitTests {
             ("testP222ManifestWritesCoalescedToOneBatchWrite", testP222ManifestWritesCoalescedToOneBatchWrite),
             ("testP222OrphanRecoveryAndPerPhotoDurability", testP222OrphanRecoveryAndPerPhotoDurability),
             ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery),
-            ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile)
+            ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile),
+            ("testTetheringTouchFocusAndCancelLifecycle", testTetheringTouchFocusAndCancelLifecycle)
         ]
         #if os(macOS)
         suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
@@ -2492,5 +2535,76 @@ struct CameraSkipAndLimitTests {
         let afterPreviewWork = CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
         try check(afterPreviewWork - beforeWork == 0 && FileDigestCache.shared.digestComputeCount(for: savedURL) == beforeFileCount,
                   "508 original preview loads while backend.queue is blocked with 0 full-file SHA-256 computations")
+    }
+
+    @MainActor static func testTetheringTouchFocusAndCancelLifecycle() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-tether-focus-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
+        channel.tetherControls = [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5, 0xd2dc]
+        channel.tetherExtraProps = [
+            (0x500a, 4, true, 1, 2),
+            (0xd22c, 4, true, 1, 0x0001),
+            (0xd284, 2, false, 1, 1),
+            (0xd285, 2, false, 0, 0),
+        ]
+        channel.on9207 = { code, value in
+            if code == 0xd2e4 {
+                channel.setExtraProperty(0xd285, value: 1, enabled: 1)
+            } else if code == 0xd2e5 && value == 1 {
+                channel.setExtraProperty(0xd285, value: 0, enabled: 0)
+            }
+        }
+        var openedSession: SonyCameraSession?
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+            let s = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+            openedSession = s
+            return s
+        }
+        let controller = IOSCameraController(backend: backend)
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FOCUS", label: "Fake")
+        UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
+        controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+        try await waitUntil { controller.phase == .ready && controller.shutterReady }
+
+        // 1. Tap-to-focus via 0xD2E4 sets focus point and enables cancel touch (0xD285 == 1)
+        controller.setFocusPoint(u: 0.25, v: 0.25, x: 160, y: 120)
+        try check(controller.focusBusy && controller.tapFocusPoint != nil, "setFocusPoint enters focusBusy with tap reticle")
+        try await waitUntil(timeout: 3.0) { !controller.focusBusy }
+        try check(controller.phase == .ready && controller.canCancelTouchFocus && controller.notice == nil &&
+                  channel.recorded9207.count == 1 && channel.recorded9207[0].0 == 0xd2e4 &&
+                  channel.recorded9207[0].1 == UInt32((160 << 16) | 120),
+                  "Tether tap-to-focus sends 0xD2E4 and exposes cancelTouchFocus")
+
+        // 2. Cancel touch focus via 0xD2E5
+        controller.cancelTouchFocus()
+        try await waitUntil(timeout: 3.0) { !controller.focusBusy }
+        try check(controller.phase == .ready && !controller.canCancelTouchFocus && controller.notice == nil &&
+                  channel.recorded9207.map(\.0) == [0xd2e4, 0xd2e5, 0xd2e5] &&
+                  channel.recorded9207.map(\.1) == [UInt32((160 << 16) | 120), 2, 1],
+                  "cancelTouchFocus sends 0xD2E5 press+release and hides cancel pill")
+
+        // 3. Non-fatal PTP rejection keeps tether session .ready with notice
+        channel.next9207Status = 0x2019
+        controller.setFocusPoint(u: 0.5, v: 0.5, x: 320, y: 240)
+        try await waitUntil(timeout: 3.0) { !controller.focusBusy && controller.notice != nil }
+        try check(controller.connected && controller.phase == .ready && openedSession?.stopped == false &&
+                  controller.tapFocusPoint == nil && controller.notice == "当前状态下相机未接受对焦点设置。",
+                  "Aligned 0x9207 rejection keeps tether session ready with focus notice")
+
+        // 4. Manual focus (0x500A == 1, 0xD284 == 0) surfaces MF notice with 0 extra 0x9207 writes
+        channel.setExtraProperty(0xd284, value: 0, enabled: 0)
+        channel.setExtraProperty(0x500a, value: 1, enabled: 1)
+        let writeCountBeforeMF = channel.recorded9207.count
+        controller.setFocusPoint(u: 0.5, v: 0.5, x: 320, y: 240)
+        try await waitUntil(timeout: 3.0) { !controller.focusBusy && controller.notice == "当前为手动对焦（MF），无法选择对焦点。" }
+        try check(controller.connected && controller.phase == .ready && channel.recorded9207.count == writeCountBeforeMF,
+                  "MF mode reports notice with 0 0x9207 writes and keeps session ready")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
     }
 }

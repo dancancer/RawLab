@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"Compensación de exposición"</string>
     <string name="camera_param_failed">"La cámara no aceptó el ajuste. Comprueba el valor actual y vuelve a intentarlo."</string>
     <string name="camera_param_focus">"Modo de enfoque"</string>
+    <string name="camera_param_focus_area">"Área de enfoque"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"No se puede ajustar en el modo de disparo actual"</string>
     <string name="camera_param_readonly_short">"Solo lectura"</string>
@@ -481,10 +482,16 @@
     <string name="strength">"Intensidad"</string>
     <string name="temperature">"Temperatura"</string>
     <string name="tether_backlog_error">"Hay demasiadas fotos pendientes de recibir, así que se ha pausado el disparo. Vuelve a conectar para continuar recibiéndolas."</string>
+    <string name="tether_cancel_focus">"Cancelar enfoque"</string>
     <string name="tether_capturing">"Tomando la foto"</string>
     <string name="tether_card_confirm">"He confirmado que la cámara también guarda los originales en la tarjeta de memoria."</string>
     <string name="tether_card_hint">"Selecciona disparo único y guarda también los originales en la tarjeta. La vista en directo y las miniaturas no confirman que se hayan guardado los originales."</string>
     <string name="tether_confirm_continue">"Confirmar el resultado y continuar"</string>
+    <string name="tether_focus_area_fixed">"Ajusta el área de enfoque a Punto o Zona, o activa la operación táctil en la cámara."</string>
+    <string name="tether_focus_busy">"Ajustando punto de enfoque…"</string>
+    <string name="tether_focus_manual">"El enfoque manual (MF) está activo; no se puede seleccionar el punto de enfoque."</string>
+    <string name="tether_focus_rejected">"La cámara no aceptó el punto de enfoque en su estado actual."</string>
+    <string name="tether_focus_unsupported">"Este modo de cámara no admite la selección remota del punto de enfoque."</string>
     <string name="tether_foreground">"Si sales de esta página, se pausará el disparo conectado. Las fotos guardadas no se verán afectadas."</string>
     <string name="tether_grid">"Cuadrícula de composición"</string>
     <string name="tether_intro">"Encuadra y toma fotos individuales desde el teléfono; los originales RAW y JPEG de la tarjeta de la cámara se guardan automáticamente."</string>

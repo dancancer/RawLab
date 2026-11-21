@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"曝光补偿"</string>
     <string name="camera_param_failed">"相机未接受设置，请检查当前值后重试。"</string>
     <string name="camera_param_focus">"对焦模式"</string>
+    <string name="camera_param_focus_area">"对焦区域"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"当前拍摄模式下不可调整"</string>
     <string name="camera_param_readonly_short">"只读"</string>
@@ -481,10 +482,16 @@
     <string name="strength">"强度"</string>
     <string name="temperature">"色温"</string>
     <string name="tether_backlog_error">"待接收照片较多，已暂停拍摄。重新连接后继续接收。"</string>
+    <string name="tether_cancel_focus">"取消对焦"</string>
     <string name="tether_capturing">"正在拍摄"</string>
     <string name="tether_card_confirm">"已确认相机同时将原件保存到存储卡。"</string>
     <string name="tether_card_hint">"在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"</string>
     <string name="tether_confirm_continue">"确认结果后继续"</string>
+    <string name="tether_focus_area_fixed">"请将对焦区域设为点或区，或在机身开启触控操作。"</string>
+    <string name="tether_focus_busy">"正在选择对焦点…"</string>
+    <string name="tether_focus_manual">"当前为手动对焦（MF），无法选择对焦点。"</string>
+    <string name="tether_focus_rejected">"当前状态下相机未接受对焦点设置。"</string>
+    <string name="tether_focus_unsupported">"当前相机模式不支持远程选择对焦点。"</string>
     <string name="tether_foreground">"离开此页面会暂停联机，已保存照片不受影响。"</string>
     <string name="tether_grid">"构图网格"</string>
     <string name="tether_intro">"在手机上取景、单拍，自动保存相机卡内的 RAW 和 JPEG 原件。"</string>

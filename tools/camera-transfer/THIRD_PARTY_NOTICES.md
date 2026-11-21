@@ -12,11 +12,12 @@ commit `02883425c9445c653b2950210187cdd1547320c2`, particularly `ptpip/{client,o
 RawLab implements its own bounded transaction receiver, parsers, command restrictions and persistent storage;
 alpha2go is not a runtime dependency. The read-only implementation omits capture, settings and deletion APIs.
 
-The separately enabled Android tether profile additionally studies the same pinned revision's
-`ptpip/{sonycontrols,sonyprops,sonyliveview,sonycaptured}.go` and `docs/protocol.md` for Sony remote
-initialization, property descriptors, shutter press/release, and live-view framing. Its own bounded
-Java implementation permits only the explicit shutter controls, and does not set camera properties,
-delete files or format storage. The verified Java protocol implementation is shared by the RawLab
+The separately enabled tether profiles additionally study the same pinned revision's
+`ptpip/{sonycontrols,sonyprops,sonyliveview,sonyliveviewmeta,sonycaptured}.go` and `docs/protocol.md`
+for Sony remote initialization, property descriptors, shutter press/release (`0xD2C1`/`0xD2C2`),
+focus/touch controls (`0xD2DC`/`0xD2E4`/`0xD2E5`), live-view framing, and live-view overlay metadata.
+RawLab's bounded implementations permit only explicit allowlisted controls and shooting properties,
+and do not delete files or format storage. The verified Java protocol implementation is shared by the RawLab
 Android product and the separate experiment app; the experiment UI is not compiled into the product.
 
 Attribution: alpha2go, Copyright 2026 The alpha2go Authors.

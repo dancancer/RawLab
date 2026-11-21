@@ -66,8 +66,8 @@ struct IOSCameraTether: View {
         .sheet(isPresented: $parameters) {
             NavigationStack {
                 List {
-                    ForEach([IOSCameraParameter.whiteBalance, .focus, .temperature].filter {
-                        $0 != .temperature || $0.descriptor(in: model.properties) != nil
+                    ForEach([IOSCameraParameter.whiteBalance, .focus, .focusArea, .temperature].filter {
+                        ($0 != .temperature && $0 != .focusArea) || $0.descriptor(in: model.properties) != nil
                     }) { item in
                         Button {
                             parameters = false
@@ -115,19 +115,52 @@ struct IOSCameraTether: View {
                 ZStack {
                     Color.black
                     if let frame = model.frame {
+                        let imageSize = frame.size
+                        let scale = min(geometry.size.width / max(1, imageSize.width),
+                                        geometry.size.height / max(1, imageSize.height))
+                        let fittedWidth = imageSize.width * scale
+                        let fittedHeight = imageSize.height * scale
+                        let left = (geometry.size.width - fittedWidth) / 2
+                        let top = (geometry.size.height - fittedHeight) / 2
                         Image(uiImage: frame).resizable().scaledToFit().opacity(live ? 1 : 0.48)
                         if grid {
-                            let ratio = frame.size.width / max(1, frame.size.height)
-                            let width = min(geometry.size.width, geometry.size.height * ratio)
-                            let height = width / ratio
                             Path { path in
-                                let left = (geometry.size.width - width) / 2, top = (geometry.size.height - height) / 2
                                 for index in 1...2 {
                                     let p = CGFloat(index) / 3
-                                    path.move(to: CGPoint(x: left + width * p, y: top)); path.addLine(to: CGPoint(x: left + width * p, y: top + height))
-                                    path.move(to: CGPoint(x: left, y: top + height * p)); path.addLine(to: CGPoint(x: left + width, y: top + height * p))
+                                    path.move(to: CGPoint(x: left + fittedWidth * p, y: top))
+                                    path.addLine(to: CGPoint(x: left + fittedWidth * p, y: top + fittedHeight))
+                                    path.move(to: CGPoint(x: left, y: top + fittedHeight * p))
+                                    path.addLine(to: CGPoint(x: left + fittedWidth, y: top + fittedHeight * p))
                                 }
                             }.stroke(.white.opacity(0.35), lineWidth: 0.5).allowsHitTesting(false)
+                        }
+                        if live {
+                            Canvas { context, _ in
+                                for overlay in model.liveViewFrames {
+                                    let rect = CGRect(
+                                        x: left + CGFloat(overlay.cx - overlay.width / 2) * fittedWidth,
+                                        y: top + CGFloat(overlay.cy - overlay.height / 2) * fittedHeight,
+                                        width: CGFloat(overlay.width) * fittedWidth,
+                                        height: CGFloat(overlay.height) * fittedHeight
+                                    )
+                                    let color: Color = overlay.focused
+                                        ? Color(red: 0.30, green: 0.85, blue: 0.39)
+                                        : (overlay.kind == .tracking ? Color(red: 0.96, green: 0.77, blue: 0.09) : .white.opacity(0.85))
+                                    context.stroke(Path(rect), with: .color(color), lineWidth: overlay.focused ? 2 : 1.25)
+                                }
+                                if let tap = model.tapFocusPoint {
+                                    let size: CGFloat = 34
+                                    let rect = CGRect(
+                                        x: left + CGFloat(tap.u) * fittedWidth - size / 2,
+                                        y: top + CGFloat(tap.v) * fittedHeight - size / 2,
+                                        width: size,
+                                        height: size
+                                    )
+                                    context.stroke(Path(rect), with: .color(Color(red: 0.96, green: 0.77, blue: 0.09)), lineWidth: 2)
+                                }
+                            }
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("camera.tether.focusOverlay")
                         }
                     } else if model.connected && model.properties[0xd278]?.text != nil {
                         ProgressView().tint(.white)
@@ -135,6 +168,21 @@ struct IOSCameraTether: View {
                         Text(L10n.text("相机未提供实时取景，其他可用功能仍可使用。"))
                             .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
                     }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(coordinateSpace: .local) { location in
+                    guard live, model.phase == .ready, !model.busy, let frame = model.frame else { return }
+                    guard let tap = CameraWire.focusPoint(
+                        tapX: location.x,
+                        tapY: location.y,
+                        containerWidth: geometry.size.width,
+                        containerHeight: geometry.size.height,
+                        imageWidth: frame.size.width,
+                        imageHeight: frame.size.height
+                    ) else { return }
+                    model.setFocusPoint(u: tap.u, v: tap.v, x: tap.x, y: tap.y)
+                }
+                .overlay {
                     if !model.connected {
                         VStack(spacing: 10) {
                             Text(L10n.text("联机已暂停"))
@@ -143,11 +191,34 @@ struct IOSCameraTether: View {
                                 .accessibilityIdentifier("camera.tether.reconnect")
                         }.padding(20).background(.black.opacity(0.75))
                     }
-                }.overlay(alignment: .topLeading) {
+                }
+                .overlay(alignment: .topLeading) {
                     if model.connected {
                         Text(live ? "LIVE" : L10n.text("取景已暂停")).font(.caption2)
                             .padding(6).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4)).padding(10)
+                            .allowsHitTesting(false)
                     }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if live && model.canCancelTouchFocus {
+                        Button { model.cancelTouchFocus() } label: {
+                            Label(L10n.text("取消对焦"), systemImage: "xmark")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .frame(minHeight: 44)
+                                .background(.black.opacity(0.68), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.focusBusy || model.phase != .ready)
+                        .padding(10)
+                        .accessibilityIdentifier("camera.tether.cancelFocus")
+                    }
+                }
+                .task(id: model.tapFocusPoint?.id) {
+                    guard let id = model.tapFocusPoint?.id else { return }
+                    try? await Task.sleep(for: .seconds(1.8))
+                    model.clearTapFocusPoint(id: id)
                 }
             }
         }.accessibilityIdentifier("camera.liveview")
@@ -161,7 +232,7 @@ struct IOSCameraTether: View {
                     Text(descriptor?.number.map { compactValue(item, $0) } ?? "—")
                         .font(.system(size: 16)).monospacedDigit().foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.75)
                         .frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
-                }.buttonStyle(.plain).disabled(model.parameterBusy).accessibilityIdentifier("camera.parameter.\(item.code)")
+                }.buttonStyle(.plain).disabled(model.parameterBusy || model.focusBusy).accessibilityIdentifier("camera.parameter.\(item.code)")
             }
         }
     }
@@ -199,6 +270,7 @@ struct IOSCameraTether: View {
                 ProgressView(value: Double(progress.bytes), total: Double(progress.total)).accessibilityLabel(L10n.text("正在接收原件"))
             }
             if model.parameterBusy { Text(L10n.text("正在更新相机设置…")).font(.caption2).foregroundStyle(.secondary) }
+            if model.focusBusy { Text(L10n.text("正在选择对焦点…")).font(.caption2).foregroundStyle(.secondary) }
             if let notice = model.notice {
                 Text(notice).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camera.tether.notice")

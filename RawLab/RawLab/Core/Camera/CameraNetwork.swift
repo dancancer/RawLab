@@ -168,15 +168,17 @@ final class CameraLiveStream {
         }
         return result
     }
-    func frame() throws -> Data {
+    func frameWithMetadata() throws -> (jpeg: Data, metadata: Data) {
         var reader = CameraDataReader(try body(16)), fields: [UInt32] = []
         for _ in 0..<4 { fields.append(try reader.u32()) }
         let bounds = try CameraWire.liveFrameBounds(fields)
         let bytes = try body(bounds.size)
         let image = bytes.subdata(in: bounds.image)
         guard image.starts(with: [0xff, 0xd8]) else { throw CameraProtocolError.invalid("Live-view frame is not JPEG") }
-        return image
+        let metadata = bounds.metadata.map { bytes.subdata(in: $0) } ?? Data()
+        return (image, metadata)
     }
+    func frame() throws -> Data { try frameWithMetadata().jpeg }
     func close() { channel.close() }
     deinit { close() }
 }

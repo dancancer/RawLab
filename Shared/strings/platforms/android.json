@@ -6897,6 +6897,48 @@
       "formats": [],
       "source": "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
       "types": []
+    },
+    "camera_param_focus_area": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对焦区域",
+      "types": []
+    },
+    "tether_cancel_focus": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "取消对焦",
+      "types": []
+    },
+    "tether_focus_busy": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在选择对焦点…",
+      "types": []
+    },
+    "tether_focus_manual": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前为手动对焦（MF），无法选择对焦点。",
+      "types": []
+    },
+    "tether_focus_area_fixed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请将对焦区域设为点或区，或在机身开启触控操作。",
+      "types": []
+    },
+    "tether_focus_unsupported": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前相机模式不支持远程选择对焦点。",
+      "types": []
+    },
+    "tether_focus_rejected": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "当前状态下相机未接受对焦点设置。",
+      "types": []
     }
   },
   "overrides": {
