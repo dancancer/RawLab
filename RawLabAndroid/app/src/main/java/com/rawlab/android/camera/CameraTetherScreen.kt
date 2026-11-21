@@ -306,7 +306,9 @@ private fun TetherViewfinder(
     })
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var tapReticle by remember { mutableStateOf<Pair<Long, CameraFocusTap>?>(null) }
-    LaunchedEffect(tapReticle?.first) {
+    var lastFocusSquareRatio by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(tapReticle?.first, state.focusBusy) {
+        if (state.focusBusy) return@LaunchedEffect
         val activeTap = tapReticle ?: return@LaunchedEffect
         delay(1_800)
         if (tapReticle?.first == activeTap.first) tapReticle = null
@@ -314,6 +316,17 @@ private fun TetherViewfinder(
     LaunchedEffect(state.focusFailure, state.focusBusy, state.focusFrames, live) {
         if (!live || state.focusFailure != null || (!state.focusBusy && state.focusFrames.isNotEmpty())) {
             tapReticle = null
+        }
+    }
+    LaunchedEffect(state.focusFrames, state.frame, state.active) {
+        if (!state.active) {
+            lastFocusSquareRatio = null
+            return@LaunchedEffect
+        }
+        val bitmap = state.frame ?: return@LaunchedEffect
+        val nonFace = state.focusFrames.filter { it.kind != SonyTetherSession.LiveViewFrameKind.FACE }
+        if (nonFace.size == 1) {
+            normalizedFocusSquareRatio(nonFace[0], bitmap.width, bitmap.height)?.let { lastFocusSquareRatio = it }
         }
     }
     val canTap = live && state.phase == CameraTetherPhase.READY && !state.focusBusy && !state.parameters.busy
@@ -356,7 +369,7 @@ private fun TetherViewfinder(
                 }
             }
             if (live) {
-                val focusLocked = !state.focusBusy && state.parameters.focusLocked
+                val focusLocked = state.isFocusLocked
                 Canvas(Modifier.fillMaxSize().testTag("tether-focus-overlay")) {
                     val ratio = bitmap.width.toFloat() / bitmap.height
                     val width = minOf(size.width, size.height * ratio); val height = width / ratio
@@ -367,18 +380,22 @@ private fun TetherViewfinder(
                     clipRect(left = left, top = top, right = left + width, bottom = top + height) {
                         if (!state.focusBusy && state.focusFrames.isNotEmpty()) {
                             for (frame in state.focusFrames) {
-                                val w = frame.width * width
-                                val h = frame.height * height
-                                val x = left + frame.cx * width - w / 2f
-                                val y = top + frame.cy * height - h / 2f
+                                val box = computeFocusOverlayBox(frame, left, top, width, height)
                                 val focused = frame.focused || (focusLocked && frame.kind != SonyTetherSession.LiveViewFrameKind.FACE)
                                 val strokeWidth = if (focused) 2.dp.toPx() else 1.5.dp.toPx()
-                                drawRect(backing, Offset(x, y), Size(w, h), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
-                                drawRect(if (focused) green else white, Offset(x, y), Size(w, h), style = Stroke(width = strokeWidth))
+                                drawRect(backing, Offset(box.x, box.y), Size(box.width, box.height), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
+                                drawRect(if (focused) green else white, Offset(box.x, box.y), Size(box.width, box.height), style = Stroke(width = strokeWidth))
                             }
                         } else {
                             tapReticle?.second?.let { tap ->
-                                val boxSize = 34.dp.toPx()
+                                val boxSize = computeTapFocusSide(
+                                    width,
+                                    height,
+                                    minDefaultPx = 34.dp.toPx(),
+                                    maxDefaultPx = 52.dp.toPx(),
+                                    minLearnedPx = 20.dp.toPx(),
+                                    lastSquareRatio = lastFocusSquareRatio,
+                                )
                                 val x = left + tap.u * width - boxSize / 2f
                                 val y = top + tap.v * height - boxSize / 2f
                                 val strokeWidth = if (focusLocked) 2.dp.toPx() else 1.75.dp.toPx()
@@ -439,8 +456,6 @@ private fun TetherStatus(state: CameraTetherState) {
             Text(stringResource(R.string.tether_saved, state.saved.size), style = MaterialTheme.typography.labelSmall)
             if (state.pendingCount > 0) Text(" · " + stringResource(R.string.tether_pending, state.pendingCount), style = MaterialTheme.typography.labelSmall)
         }
-        if (state.focusBusy) Text(stringResource(R.string.tether_focus_busy), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("tether-focus-busy"))
         state.focusFailure?.let { focusFailure ->
             val focusMessage = when (focusFailure) {
                 CameraFocusFailure.MANUAL_FOCUS -> R.string.tether_focus_manual

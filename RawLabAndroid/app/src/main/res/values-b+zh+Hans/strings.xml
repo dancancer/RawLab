@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"在相机上选择单张拍摄，并将原件同时保留在存储卡。手机收到的取景图和缩略图不是原件保存成功的凭据。"</string>
     <string name="tether_confirm_continue">"确认结果后继续"</string>
     <string name="tether_focus_area_fixed">"请将对焦区域设为点或区，或在机身开启触控操作。"</string>
-    <string name="tether_focus_busy">"正在选择对焦点…"</string>
     <string name="tether_focus_manual">"当前为手动对焦（MF），无法选择对焦点。"</string>
     <string name="tether_focus_rejected">"当前状态下相机未接受对焦点设置。"</string>
     <string name="tether_focus_unsupported">"当前相机模式不支持远程选择对焦点。"</string>

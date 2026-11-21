@@ -653,7 +653,6 @@
 "正在生成预览…" = "Generando vistas previas…";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "正在连接相机…" = "Conectando con la cámara…";
-"正在选择对焦点…" = "Ajustando punto de enfoque…";
 "正常显影" = "Revelado normal";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.";

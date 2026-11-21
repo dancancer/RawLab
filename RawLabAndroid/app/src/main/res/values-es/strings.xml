@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"Selecciona disparo único y guarda también los originales en la tarjeta. La vista en directo y las miniaturas no confirman que se hayan guardado los originales."</string>
     <string name="tether_confirm_continue">"Confirmar el resultado y continuar"</string>
     <string name="tether_focus_area_fixed">"Ajusta el área de enfoque a Punto o Zona, o activa la operación táctil en la cámara."</string>
-    <string name="tether_focus_busy">"Ajustando punto de enfoque…"</string>
     <string name="tether_focus_manual">"El enfoque manual (MF) está activo; no se puede seleccionar el punto de enfoque."</string>
     <string name="tether_focus_rejected">"La cámara no aceptó el punto de enfoque en su estado actual."</string>
     <string name="tether_focus_unsupported">"Este modo de cámara no admite la selección remota del punto de enfoque."</string>

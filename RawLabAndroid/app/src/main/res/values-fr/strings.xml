@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"Sélectionnez la prise de vue unique et conservez les originaux sur la carte mémoire. Les images de visée et miniatures ne confirment pas l’enregistrement des originaux."</string>
     <string name="tether_confirm_continue">"Confirmer le résultat et continuer"</string>
     <string name="tether_focus_area_fixed">"Réglez la zone de mise au point sur Spot ou Zone, ou activez l’opération tactile sur l’appareil."</string>
-    <string name="tether_focus_busy">"Réglage du point de mise au point…"</string>
     <string name="tether_focus_manual">"La mise au point manuelle (MF) est active ; impossible de choisir le point de mise au point."</string>
     <string name="tether_focus_rejected">"L’appareil n’a pas accepté le point de mise au point dans son état actuel."</string>
     <string name="tether_focus_unsupported">"Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point."</string>

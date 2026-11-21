@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import com.rawlab.android.camera.protocol.SonyTetherSession
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -51,5 +52,57 @@ class CameraParameterDisplayTest {
         assertNull(mapViewfinderTapToCameraGrid(10f, 10f, 0f, 100f, 640, 480))
         assertNull(mapViewfinderTapToCameraGrid(10f, 10f, 100f, 100f, 0, 480))
         assertNull(mapViewfinderTapToCameraGrid(Float.NaN, 10f, 100f, 100f, 640, 480))
+    }
+
+    @Test fun focusOverlayBoxNormalizesNearSquareAndMatchesTapSideWhilePreservingFaceAndZoneRects() {
+        val trackingFrame = SonyTetherSession.LiveViewFocusFrame(
+            SonyTetherSession.LiveViewFrameKind.TRACKING,
+            0.5f,
+            0.5f,
+            0.10f,
+            0.127f,
+            false,
+        )
+        val box = computeFocusOverlayBox(trackingFrame, 0f, 0f, 430f, 286f)
+        assertTrue(box.normalizedSquare)
+        assertEquals(box.width, box.height, 0.001f)
+        val ratio = normalizedFocusSquareRatio(trackingFrame, 430, 286)
+        assertNotNull(ratio)
+        val learnedSide = computeTapFocusSide(
+            fittedWidth = 430f,
+            fittedHeight = 286f,
+            minDefaultPx = 34f,
+            maxDefaultPx = 52f,
+            minLearnedPx = 20f,
+            lastSquareRatio = ratio,
+        )
+        assertEquals(box.width, learnedSide, 0.01f)
+
+        val faceFrame = SonyTetherSession.LiveViewFocusFrame(
+            SonyTetherSession.LiveViewFrameKind.FACE,
+            0.5f,
+            0.5f,
+            0.10f,
+            0.127f,
+            true,
+        )
+        val faceBox = computeFocusOverlayBox(faceFrame, 0f, 0f, 430f, 286f)
+        assertFalse(faceBox.normalizedSquare)
+        assertEquals(43.0f, faceBox.width, 0.01f)
+        assertEquals(36.322f, faceBox.height, 0.01f)
+        assertNull(normalizedFocusSquareRatio(faceFrame, 430, 286))
+
+        val zoneFrame = SonyTetherSession.LiveViewFocusFrame(
+            SonyTetherSession.LiveViewFrameKind.FOCUS,
+            0.5f,
+            0.5f,
+            0.30f,
+            0.18f,
+            true,
+        )
+        val zoneBox = computeFocusOverlayBox(zoneFrame, 0f, 0f, 430f, 286f)
+        assertFalse(zoneBox.normalizedSquare)
+        assertTrue(zoneBox.width > zoneBox.height)
+        assertNull(normalizedFocusSquareRatio(zoneFrame, 430, 286))
     }
 }

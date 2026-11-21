@@ -442,6 +442,15 @@ public final class SonyTetherSession implements Closeable {
         }
     }
 
+    public static final class FocusPointResult {
+        public final Map<Integer,Property> properties;
+        public final boolean focusLocked;
+        public FocusPointResult(Map<Integer,Property> properties, boolean focusLocked) {
+            this.properties = properties;
+            this.focusLocked = focusLocked;
+        }
+    }
+
     private static final Set<Long> FIXED_FOCUS_AREAS = Collections.unmodifiableSet(
         new HashSet<>(Arrays.asList(0x0001L, 0x0003L, 0x0201L, 0x0203L)));
 
@@ -452,6 +461,18 @@ public final class SonyTetherSession implements Closeable {
         try {
             long v = indication.number();
             return v==2L || v==6L;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isFocusFailed(Map<Integer,Property> latest) {
+        if (latest==null) return false;
+        Property indication = latest.get(0xd213);
+        if (indication==null) return false;
+        try {
+            long v = indication.number();
+            return v==3L || v==7L;
         } catch (IOException ignored) {
             return false;
         }
@@ -503,7 +524,7 @@ public final class SonyTetherSession implements Closeable {
         throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
     }
 
-    public synchronized Map<Integer,Property> setFocusPoint(int x, int y) throws IOException {
+    public synchronized FocusPointResult setFocusPoint(int x, int y) throws IOException {
         if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || !operations.contains(0x9207)) {
             throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
         }
@@ -528,7 +549,79 @@ public final class SonyTetherSession implements Closeable {
             throw new FocusRejectedException(rejected.operation, rejected.code);
         }
         pause(100);
-        return properties();
+        latest = properties();
+        boolean focusLocked = isFocusLocked(latest);
+        Long focusModeValue = null;
+        Property focusMode = latest.get(0x500a);
+        if (focusMode != null) {
+            try { focusModeValue = focusMode.number(); } catch (IOException ignored) {}
+        }
+        if (!focusLocked && controls.contains(0xd2c1) && (focusModeValue == null || focusModeValue != 1L)) {
+            return acquireFocusWithHalfPress(latest);
+        }
+        return new FocusPointResult(latest, focusLocked);
+    }
+
+    private FocusPointResult acquireFocusWithHalfPress(Map<Integer,Property> initialProperties) throws IOException {
+        boolean half = false;
+        boolean pressRejectedByCamera = false;
+        boolean achieved = false;
+        IOException error = null;
+        Map<Integer,Property> current = initialProperties;
+        captureInFlight = true;
+        try {
+            half = true;
+            button(0xd2c1, 2);
+            for (int attempt = 0; attempt < 15; attempt++) {
+                pause(100);
+                current = properties();
+                Property indication = current.get(0xd213);
+                Long value = null;
+                if (indication != null) {
+                    try { value = indication.number(); } catch (IOException ignored) {}
+                }
+                if (value == null) {
+                    if (attempt >= 2) break;
+                    continue;
+                }
+                if (value == 2L || value == 6L) {
+                    achieved = true;
+                    break;
+                }
+                if (value == 3L) {
+                    break;
+                }
+                if (value == 7L && attempt >= 5) {
+                    break;
+                }
+            }
+        } catch (RemoteResponseException ignored) {
+            pressRejectedByCamera = true;
+        } catch (IOException failure) {
+            error = failure;
+        } finally {
+            if (!closed && half) {
+                try {
+                    button(0xd2c1, 1);
+                    half = false;
+                } catch (RemoteResponseException ignored) {
+                    half = false;
+                } catch (IOException releaseFailure) {
+                    if (error == null) error = releaseFailure;
+                    else error.addSuppressed(releaseFailure);
+                }
+            }
+            captureInFlight = false;
+            if (stopRequested) close();
+        }
+        if (error != null) throw error;
+        if (!pressRejectedByCamera && !closed && !stopRequested) {
+            try {
+                pause(50);
+                current = properties();
+            } catch (IOException ignored) {}
+        }
+        return new FocusPointResult(current, achieved || isFocusLocked(current));
     }
 
     public synchronized Map<Integer,Property> cancelTouchFocus() throws IOException {

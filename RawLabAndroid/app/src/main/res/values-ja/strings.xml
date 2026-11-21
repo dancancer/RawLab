@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"カメラで「1枚撮影」を選び、原本をメモリーカードにも保存してください。ライブビュー画像やサムネイルは、原本の保存成功を示すものではありません。"</string>
     <string name="tether_confirm_continue">"結果を確認して続行"</string>
     <string name="tether_focus_area_fixed">"フォーカスエリアをスポットまたはゾーンにするか、カメラ本体のタッチ操作を有効にしてください。"</string>
-    <string name="tether_focus_busy">"ピント位置を設定中…"</string>
     <string name="tether_focus_manual">"マニュアルフォーカス（MF）中はピント位置を選択できません。"</string>
     <string name="tether_focus_rejected">"現在の状態ではカメラがピント位置の設定を受け付けませんでした。"</string>
     <string name="tether_focus_unsupported">"このカメラモードではリモートでのピント位置選択に対応していません。"</string>

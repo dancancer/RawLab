@@ -2550,10 +2550,16 @@ struct CameraSkipAndLimitTests {
             (0xd285, 2, false, 0, 0),
             (0xd213, 2, false, 1, 1),
         ]
+        var nextS1Indication: Int64 = 6
         channel.on9207 = { code, value in
             if code == 0xd2e4 {
                 channel.setExtraProperty(0xd285, value: 1, enabled: 1)
-                channel.setExtraProperty(0xd213, value: 6, enabled: 1)
+                // Simulate real a7C II: 0xD2E4 leaves 0xD213=1 until S1 half-press (0xD2C1).
+                channel.setExtraProperty(0xd213, value: 1, enabled: 1)
+            } else if code == 0xd2c1 && value == 2 {
+                channel.setExtraProperty(0xd213, value: nextS1Indication, enabled: 1)
+            } else if code == 0xd2c1 && value == 1 {
+                channel.setExtraProperty(0xd213, value: 1, enabled: 1)
             } else if code == 0xd2e5 && value == 1 {
                 channel.setExtraProperty(0xd285, value: 0, enabled: 0)
                 channel.setExtraProperty(0xd213, value: 1, enabled: 1)
@@ -2572,22 +2578,31 @@ struct CameraSkipAndLimitTests {
         try await waitUntil { controller.phase == .ready && controller.shutterReady }
         try check(!controller.cameraFocusLocked, "Initial 0xD213=1 is not focus-locked")
 
-        // 1. Tap-to-focus via 0xD2E4 sets focus point, clears stale frames, and exposes cancel touch + focus lock
+        // 1. Tap-to-focus via 0xD2E4 + S1 half-press latches cameraFocusLocked=true even after S1 release resets 0xD213=1
         controller.setFocusPoint(u: 0.25, v: 0.25, x: 160, y: 120)
         try check(controller.focusBusy && controller.tapFocusPoint != nil && controller.liveViewFrames.isEmpty,
                   "setFocusPoint enters focusBusy with tap reticle and clears stale overlays")
         try await waitUntil(timeout: 3.0) { !controller.focusBusy }
-        try check(controller.phase == .ready && controller.canCancelTouchFocus && controller.cameraFocusLocked && controller.notice == nil &&
-                  channel.recorded9207.count == 1 && channel.recorded9207[0].0 == 0xd2e4 &&
-                  channel.recorded9207[0].1 == UInt32((160 << 16) | 120),
-                  "Tether tap-to-focus sends 0xD2E4, exposes cancelTouchFocus, and reports 0xD213 focus lock")
+        try check(controller.phase == .ready && controller.canCancelTouchFocus && controller.cameraFocusLocked &&
+                  controller.properties[0xd213]?.number == 1 && controller.notice == nil &&
+                  channel.recorded9207.map(\.0) == [0xd2e4, 0xd2c1, 0xd2c1] &&
+                  channel.recorded9207.map(\.1) == [UInt32((160 << 16) | 120), 2, 1],
+                  "Tether tap-to-focus runs 0xD2E4 then S1 press+release and latches focus lock")
 
-        // 2. Cancel touch focus via 0xD2E5
+        // 1b. Low-contrast failure (0xD213=3) clears previous lock and keeps cameraFocusLocked=false
+        nextS1Indication = 3
+        controller.setFocusPoint(u: 0.4, v: 0.4, x: 256, y: 192)
+        try await waitUntil(timeout: 3.0) { !controller.focusBusy }
+        try check(controller.phase == .ready && !controller.cameraFocusLocked && controller.notice == nil,
+                  "Low-contrast 0xD213=3 leaves cameraFocusLocked false")
+        nextS1Indication = 6
+
+        // 2. Cancel touch focus via 0xD2E5 clears cancel pill and resets 0xD285=0
         controller.cancelTouchFocus()
         try await waitUntil(timeout: 3.0) { !controller.focusBusy }
         try check(controller.phase == .ready && !controller.canCancelTouchFocus && !controller.cameraFocusLocked && controller.notice == nil &&
-                  channel.recorded9207.map(\.0) == [0xd2e4, 0xd2e5, 0xd2e5] &&
-                  channel.recorded9207.map(\.1) == [UInt32((160 << 16) | 120), 2, 1],
+                  channel.recorded9207.suffix(2).map(\.0) == [0xd2e5, 0xd2e5] &&
+                  channel.recorded9207.suffix(2).map(\.1) == [2, 1],
                   "cancelTouchFocus sends 0xD2E5 press+release, clears focus lock, and hides cancel pill")
 
         // 3. Non-fatal PTP rejection keeps tether session .ready with notice

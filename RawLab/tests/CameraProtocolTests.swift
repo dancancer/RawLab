@@ -331,7 +331,7 @@ import Foundation
     }
 
     static func testSonySessionTouchFocusAndFocusArea() throws {
-        // 1. Primary 0xD2E4 when 0xD284 == 1
+        // 1. Primary 0xD2E4 + real a7C II S1 (0xD2C1) confirmation when 0xD284 == 1
         let touchChannel = MockFocusCameraChannel(
             controls: [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5, 0xd2dc],
             props: [
@@ -339,14 +339,67 @@ import Foundation
                 (0xd22c, 4, true, 1, 0x0001, [0x0001, 0x0102]),
                 (0xd284, 2, false, 1, 1, []),
                 (0xd285, 2, false, 0, 0, []),
+                (0xd213, 2, false, 1, 1, []),
             ]
         )
+        touchChannel.on9207 = { code, value in
+            if code == 0xd2e4 {
+                touchChannel.setPropValue(0xd285, 1)
+                // On real a7C II, 0xD2E4 leaves 0xD213 == 1 until S1 half-press runs.
+            } else if code == 0xd2c1 && value == 2 {
+                touchChannel.setPropValue(0xd213, 6)
+            } else if code == 0xd2c1 && value == 1 {
+                touchChannel.setPropValue(0xd213, 1)
+            }
+        }
         let touchSession = try SonyCameraSession(client: CameraPTPClient(command: touchChannel, event: nil), purpose: .tethering)
-        _ = try touchSession.setFocusPoint(x: 160, y: 120)
-        try check(touchChannel.recorded9207.count == 1 &&
-                  touchChannel.recorded9207[0].0 == 0xd2e4 &&
-                  touchChannel.recorded9207[0].1 == UInt32((160 << 16) | 120),
-                  "0xD2E4 remote touch sends packed (x<<16)|y when 0xD284 is enabled and 1")
+        let touchResult = try touchSession.setFocusPoint(x: 160, y: 120)
+        try check(touchChannel.recorded9207.map(\.0) == [0xd2e4, 0xd2c1, 0xd2c1] &&
+                  touchChannel.recorded9207.map(\.1) == [UInt32((160 << 16) | 120), 2, 1] &&
+                  touchResult.properties[0xd213]?.number == 1 &&
+                  touchResult.focusLocked,
+                  "0xD2E4 triggers S1 half-press confirmation and latches focusLocked=true even after S1 release resets 0xD213=1")
+
+        // 1b. Low-contrast AF failure (0xD213 == 3) releases S1 cleanly and reports focusLocked=false
+        let lowContrastChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5],
+            props: [
+                (0x500a, 4, true, 1, 2, [2, 1]),
+                (0xd284, 2, false, 1, 1, []),
+                (0xd285, 2, false, 0, 0, []),
+                (0xd213, 2, false, 1, 1, []),
+            ]
+        )
+        lowContrastChannel.on9207 = { code, value in
+            if code == 0xd2c1 && value == 2 {
+                lowContrastChannel.setPropValue(0xd213, 3)
+            } else if code == 0xd2c1 && value == 1 {
+                lowContrastChannel.setPropValue(0xd213, 1)
+            }
+        }
+        let lowContrastSession = try SonyCameraSession(client: CameraPTPClient(command: lowContrastChannel, event: nil), purpose: .tethering)
+        let lowContrastResult = try lowContrastSession.setFocusPoint(x: 200, y: 150)
+        try check(lowContrastChannel.recorded9207.map(\.0) == [0xd2e4, 0xd2c1, 0xd2c1] &&
+                  lowContrastChannel.recorded9207.map(\.1) == [UInt32((200 << 16) | 150), 2, 1] &&
+                  !lowContrastResult.focusLocked,
+                  "Low-contrast 0xD213=3 releases 0xD2C1 and reports focusLocked=false")
+
+        // 1c. Aligned 0x2019 rejection on follow-up 0xD2C1 does not fail an accepted 0xD2E4 tap
+        let s1RejectedChannel = MockFocusCameraChannel(
+            controls: [0xd2c1, 0xd2c2, 0xd2e4],
+            props: [
+                (0x500a, 4, true, 1, 2, [2, 1]),
+                (0xd284, 2, false, 1, 1, []),
+                (0xd213, 2, false, 1, 1, []),
+            ]
+        )
+        s1RejectedChannel.on9207 = { code, _ in
+            if code == 0xd2e4 { s1RejectedChannel.next9207Status = 0x2019 }
+        }
+        let s1RejectedSession = try SonyCameraSession(client: CameraPTPClient(command: s1RejectedChannel, event: nil), purpose: .tethering)
+        let s1RejectedResult = try s1RejectedSession.setFocusPoint(x: 160, y: 120)
+        try check(!s1RejectedResult.focusLocked && !s1RejectedChannel.closed && !s1RejectedSession.stopped,
+                  "Non-fatal 0xD2C1 rejection leaves session open and degrades focusLocked cleanly")
 
         // 2. Cancel active touch first when 0xD284 == 0 and 0xD285 == 1, then retry 0xD2E4
         let cancelFirstChannel = MockFocusCameraChannel(
@@ -365,9 +418,9 @@ import Foundation
         }
         let cancelFirstSession = try SonyCameraSession(client: CameraPTPClient(command: cancelFirstChannel, event: nil), purpose: .tethering)
         _ = try cancelFirstSession.setFocusPoint(x: 320, y: 240)
-        try check(cancelFirstChannel.recorded9207.map(\.0) == [0xd2e5, 0xd2e5, 0xd2e4] &&
-                  cancelFirstChannel.recorded9207.map(\.1) == [2, 1, UInt32((320 << 16) | 240)],
-                  "Tap cancels active touch (0xD2E5 2->1) and re-evaluates 0xD284 before 0xD2E4")
+        try check(cancelFirstChannel.recorded9207.map(\.0) == [0xd2e5, 0xd2e5, 0xd2e4, 0xd2c1, 0xd2c1] &&
+                  cancelFirstChannel.recorded9207.map(\.1) == [2, 1, UInt32((320 << 16) | 240), 2, 1],
+                  "Tap cancels active touch (0xD2E5 2->1) and re-evaluates 0xD284 before 0xD2E4 and S1")
 
         // 3. Fallback 0xD2DC when Spot M (0x0102)
         let spotChannel = MockFocusCameraChannel(
@@ -379,10 +432,9 @@ import Foundation
         )
         let spotSession = try SonyCameraSession(client: CameraPTPClient(command: spotChannel, event: nil), purpose: .tethering)
         _ = try spotSession.setFocusPoint(x: 400, y: 100)
-        try check(spotChannel.recorded9207.count == 1 &&
-                  spotChannel.recorded9207[0].0 == 0xd2dc &&
-                  spotChannel.recorded9207[0].1 == UInt32((400 << 16) | 100),
-                  "0xD2DC fallback moves AF area in Spot M")
+        try check(spotChannel.recorded9207.map(\.0) == [0xd2dc, 0xd2c1, 0xd2c1] &&
+                  spotChannel.recorded9207.map(\.1) == [UInt32((400 << 16) | 100), 2, 1],
+                  "0xD2DC fallback moves AF area in Spot M and triggers S1")
 
         // 4. Fixed area rejection (0 writes)
         for fixed: Int64 in [0x0001, 0x0003, 0x0201, 0x0203] {
@@ -456,15 +508,39 @@ import Foundation
                   spotChannel.recorded9205[0].1 == 0x0002,
                   "0xD22C Focus Area writes u16 via 0x9205 and confirms readback")
 
-        for (rawVal, expected): (Int64?, Bool) in [(nil, false), (1, false), (2, true), (3, false), (5, false), (6, true), (7, false)] {
+        for (rawVal, locked, failed): (Int64?, Bool, Bool) in [
+            (nil, false, false), (1, false, false), (2, true, false),
+            (3, false, true), (5, false, false), (6, true, false), (7, false, true),
+        ] {
             let props: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64, choices: [Int64])] =
                 rawVal.map { [(0xd213, 2, false, 1, $0, [])] } ?? []
             let focusStatusChannel = MockFocusCameraChannel(controls: [0xd2c1, 0xd2c2], props: props)
             let focusStatusSession = try SonyCameraSession(client: CameraPTPClient(command: focusStatusChannel, event: nil), purpose: .tethering)
             let readProps = try focusStatusSession.properties()
-            try check(SonyCameraSession.isFocusLocked(readProps) == expected,
-                      "0xD213=\(rawVal.map(String.init) ?? "nil") reports focusLocked=\(expected)")
+            try check(SonyCameraSession.isFocusLocked(readProps) == locked &&
+                      SonyCameraSession.isFocusFailed(readProps) == failed,
+                      "0xD213=\(rawVal.map(String.init) ?? "nil") reports focusLocked=\(locked) focusFailed=\(failed)")
         }
+
+        // 8b. Overlay normalization & tap reticle consistency (a7C II 3:2 projection)
+        let trackingFrame = CameraLiveViewFrame(kind: .tracking, cx: 0.5, cy: 0.5, width: 0.10, height: 0.127, focused: false)
+        let normalizedTracking = CameraWire.focusOverlayBox(frame: trackingFrame, left: 0, top: 0, fittedWidth: 430, fittedHeight: 286)
+        let ratio = CameraWire.normalizedFocusSquareRatio(frame: trackingFrame, imageWidth: 430, imageHeight: 286)
+        let tapSide = CameraWire.tapFocusSide(fittedWidth: 430, fittedHeight: 286, lastSquareRatio: ratio)
+        try check(normalizedTracking.isNormalizedSquare &&
+                  abs(normalizedTracking.width - normalizedTracking.height) < 0.001 &&
+                  ratio != nil && abs(tapSide - normalizedTracking.width) < 0.01,
+                  "Tracking 0.10x0.127 on 430x286 3:2 normalizes to square matching tapFocusSide")
+
+        let faceFrame = CameraLiveViewFrame(kind: .face, cx: 0.5, cy: 0.5, width: 0.10, height: 0.127, focused: true)
+        let faceBox = CameraWire.focusOverlayBox(frame: faceFrame, left: 0, top: 0, fittedWidth: 430, fittedHeight: 286)
+        let zoneFrame = CameraLiveViewFrame(kind: .focus, cx: 0.5, cy: 0.5, width: 0.30, height: 0.18, focused: true)
+        let zoneBox = CameraWire.focusOverlayBox(frame: zoneFrame, left: 0, top: 0, fittedWidth: 430, fittedHeight: 286)
+        try check(!faceBox.isNormalizedSquare && abs(faceBox.width - 43.0) < 0.01 && abs(faceBox.height - 36.322) < 0.01 &&
+                  CameraWire.normalizedFocusSquareRatio(frame: faceFrame, imageWidth: 430, imageHeight: 286) == nil &&
+                  !zoneBox.isNormalizedSquare && zoneBox.width > zoneBox.height &&
+                  CameraWire.normalizedFocusSquareRatio(frame: zoneFrame, imageWidth: 430, imageHeight: 286) == nil,
+                  "Face and wide Zone frames preserve their true rectangular dimensions")
 
         // 9. properties() retries transient 0x2019 DeviceBusy up to 3 attempts without closing channel
         touchChannel.queued9209Statuses = [0x2019, 0x2019]

@@ -6910,12 +6910,6 @@
       "source": "取消对焦",
       "types": []
     },
-    "tether_focus_busy": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "正在选择对焦点…",
-      "types": []
-    },
     "tether_focus_manual": {
       "file": "strings.xml",
       "formats": [],

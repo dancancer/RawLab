@@ -14,7 +14,7 @@ enum IOSCameraEvent {
     case preview(Data)
     case previewUnavailable
     case parameterFinished(Bool)
-    case focusFinished(Error?)
+    case focusFinished(error: Error?, focusLocked: Bool)
     case frame(Data, [CameraLiveViewFrame], Date, UUID)
     case saved(CameraStoredOriginal)
     case failure(Error)
@@ -646,39 +646,30 @@ final class CameraWorkspaceBackend {
         }
     }
     func setFocusPoint(x: Int, y: Int, run: IOSCameraRun) {
-        performFocus(run, followUpFocusStatus: true) { session in try session.setFocusPoint(x: x, y: y) }
+        performFocus(run) { session in try session.setFocusPoint(x: x, y: y) }
     }
     func cancelTouchFocus(_ run: IOSCameraRun) {
-        performFocus(run, followUpFocusStatus: false) { session in try session.cancelTouchFocus() }
+        performFocus(run) { session in
+            CameraFocusPointResult(properties: try session.cancelTouchFocus(), focusLocked: false)
+        }
     }
-    private func performFocus(_ run: IOSCameraRun, followUpFocusStatus: Bool,
-                              _ action: @escaping (SonyCameraSession) throws -> [UInt16: CameraProperty]) {
+    private func performFocus(_ run: IOSCameraRun,
+                              _ action: @escaping (SonyCameraSession) throws -> CameraFocusPointResult) {
         perform(run) {
             guard !run.receiving, run.mode == .tethering else {
-                run.emit(.focusFinished(nil))
+                run.emit(.focusFinished(error: nil, focusLocked: false))
                 return
             }
             let session = try run.currentSession()
             do {
-                let values = try action(session)
-                self.publishProperties(run, values: values, session: session)
-                run.emit(.focusFinished(nil))
-                if followUpFocusStatus && !SonyCameraSession.isFocusLocked(values) {
-                    self.scheduleFocusRefresh(run)
-                }
+                let result = try action(session)
+                self.publishProperties(run, values: result.properties, session: session)
+                run.emit(.focusFinished(error: nil, focusLocked: result.focusLocked))
             } catch let error as CameraProtocolError where error.isNonFatalFocusError {
                 if !session.stopped, let values = try? session.properties() {
                     self.publishProperties(run, values: values, session: session)
                 }
-                run.emit(.focusFinished(error))
-            }
-        }
-    }
-    private func scheduleFocusRefresh(_ run: IOSCameraRun) {
-        queue.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self, self.owns(run), !run.receiving else { return }
-            if let session = try? run.currentSession(), let refreshed = try? session.properties() {
-                self.publishProperties(run, values: refreshed, session: session)
+                run.emit(.focusFinished(error: error, focusLocked: false))
             }
         }
     }

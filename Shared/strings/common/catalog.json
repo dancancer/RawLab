@@ -8823,14 +8823,6 @@
     "fr": "Annuler la mise au point",
     "ja": "フォーカス解除"
   },
-  "正在选择对焦点…": {
-    "zh-Hans": "正在选择对焦点…",
-    "en": "Setting focus point…",
-    "de": "Fokuspunkt wird gesetzt…",
-    "es": "Ajustando punto de enfoque…",
-    "fr": "Réglage du point de mise au point…",
-    "ja": "ピント位置を設定中…"
-  },
   "当前为手动对焦（MF），无法选择对焦点。": {
     "zh-Hans": "当前为手动对焦（MF），无法选择对焦点。",
     "en": "Manual focus (MF) is active; tap to focus is unavailable.",

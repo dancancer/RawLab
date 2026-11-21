@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"Wählen Sie Einzelaufnahme und speichern Sie Originale auch auf der Speicherkarte. Livebilder und Miniaturbilder bestätigen nicht, dass Originale gespeichert wurden."</string>
     <string name="tether_confirm_continue">"Ergebnis bestätigen und fortfahren"</string>
     <string name="tether_focus_area_fixed">"Stellen Sie das Fokusfeld auf Spot oder Feld oder aktivieren Sie die Touch-Bedienung an der Kamera."</string>
-    <string name="tether_focus_busy">"Fokuspunkt wird gesetzt…"</string>
     <string name="tether_focus_manual">"Manueller Fokus (MF) ist aktiv; Tippen zum Fokussieren ist nicht verfügbar."</string>
     <string name="tether_focus_rejected">"Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert."</string>
     <string name="tether_focus_unsupported">"Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl."</string>

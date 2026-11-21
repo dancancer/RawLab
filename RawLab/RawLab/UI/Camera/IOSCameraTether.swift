@@ -13,6 +13,7 @@ struct IOSCameraTether: View {
     @State private var parameters = false
     @State private var parameter: IOSCameraParameter?
     @State private var previewOriginal: CameraStoredOriginal?
+    @State private var lastFocusSquareRatio: Double?
     private var cameraName: String { model.device?.model == "ILCE-7CM2" ? "α7C II" : model.device?.model ?? "Sony" }
 
     var body: some View {
@@ -143,12 +144,14 @@ struct IOSCameraTether: View {
                                 let backing = Color.black.opacity(0.45)
                                 if !model.focusBusy && !model.liveViewFrames.isEmpty {
                                     for overlay in model.liveViewFrames {
-                                        let rect = CGRect(
-                                            x: left + CGFloat(overlay.cx - overlay.width / 2) * fittedWidth,
-                                            y: top + CGFloat(overlay.cy - overlay.height / 2) * fittedHeight,
-                                            width: CGFloat(overlay.width) * fittedWidth,
-                                            height: CGFloat(overlay.height) * fittedHeight
+                                        let box = CameraWire.focusOverlayBox(
+                                            frame: overlay,
+                                            left: left,
+                                            top: top,
+                                            fittedWidth: fittedWidth,
+                                            fittedHeight: fittedHeight
                                         )
+                                        let rect = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
                                         let focused = overlay.focused || (focusLocked && overlay.kind != .face)
                                         let lineWidth: CGFloat = focused ? 2 : 1.5
                                         let strokeColor: Color = focused ? green : white
@@ -156,7 +159,11 @@ struct IOSCameraTether: View {
                                         context.stroke(Path(rect), with: .color(strokeColor), lineWidth: lineWidth)
                                     }
                                 } else if let tap = model.tapFocusPoint {
-                                    let size: CGFloat = 34
+                                    let size = CGFloat(CameraWire.tapFocusSide(
+                                        fittedWidth: fittedWidth,
+                                        fittedHeight: fittedHeight,
+                                        lastSquareRatio: lastFocusSquareRatio
+                                    ))
                                     let rect = CGRect(
                                         x: left + CGFloat(tap.u) * fittedWidth - size / 2,
                                         y: top + CGFloat(tap.v) * fittedHeight - size / 2,
@@ -226,10 +233,22 @@ struct IOSCameraTether: View {
                         .accessibilityIdentifier("camera.tether.cancelFocus")
                     }
                 }
-                .task(id: model.tapFocusPoint?.id) {
-                    guard let id = model.tapFocusPoint?.id else { return }
+                .task(id: "\(model.tapFocusPoint?.id.uuidString ?? "")-\(model.focusBusy)") {
+                    guard !model.focusBusy, let id = model.tapFocusPoint?.id else { return }
                     try? await Task.sleep(for: .seconds(1.8))
                     model.clearTapFocusPoint(id: id)
+                }
+                .onChange(of: model.liveViewFrames) { _, frames in
+                    let nonFace = frames.filter { $0.kind != .face }
+                    if nonFace.count == 1, let imageSize = model.frame?.size,
+                       let ratio = CameraWire.normalizedFocusSquareRatio(frame: nonFace[0],
+                                                                         imageWidth: imageSize.width,
+                                                                         imageHeight: imageSize.height) {
+                        lastFocusSquareRatio = ratio
+                    }
+                }
+                .onChange(of: model.connected) { _, isConnected in
+                    if !isConnected { lastFocusSquareRatio = nil }
                 }
             }
         }.accessibilityIdentifier("camera.liveview")
@@ -281,7 +300,6 @@ struct IOSCameraTether: View {
                 ProgressView(value: Double(progress.bytes), total: Double(progress.total)).accessibilityLabel(L10n.text("正在接收原件"))
             }
             if model.parameterBusy { Text(L10n.text("正在更新相机设置…")).font(.caption2).foregroundStyle(.secondary) }
-            if model.focusBusy { Text(L10n.text("正在选择对焦点…")).font(.caption2).foregroundStyle(.secondary) }
             if let notice = model.notice {
                 Text(notice).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camera.tether.notice")

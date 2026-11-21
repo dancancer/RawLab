@@ -1379,10 +1379,16 @@ class CameraTetherLivenessTest {
                     FakeTetherCameraServer.ExtraProp(0xd213, 2, false, 1, 1),
                 ),
             )
+            var nextS1Indication = 6L
             camera.on9207 = { control, value ->
                 if (control == 0xd2e4) {
                     camera.setExtraProp(0xd285, 1, enabled = 1)
-                    camera.setExtraProp(0xd213, 6, enabled = 1)
+                    // Simulate real a7C II: 0xD2E4 leaves 0xD213=1 until S1 half-press (0xD2C1).
+                    camera.setExtraProp(0xd213, 1, enabled = 1)
+                } else if (control == 0xd2c1 && value == 2L) {
+                    camera.setExtraProp(0xd213, nextS1Indication, enabled = 1)
+                } else if (control == 0xd2c1 && value == 1L) {
+                    camera.setExtraProp(0xd213, 1, enabled = 1)
                 } else if (control == 0xd2e5 && value == 1L) {
                     camera.setExtraProp(0xd285, 0, enabled = 0)
                     camera.setExtraProp(0xd213, 1, enabled = 1)
@@ -1400,8 +1406,9 @@ class CameraTetherLivenessTest {
                 assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                 assertFalse(controller.state.value.parameters.canCancelTouchFocus)
                 assertFalse(controller.state.value.parameters.focusLocked)
+                assertFalse(controller.state.value.isFocusLocked)
 
-                // 1. Primary 0xD2E4 tap-to-focus sets focus point, exposes cancelTouchFocus, and locks focus (0xD213=6)
+                // 1. Primary 0xD2E4 + S1 half-press latches isFocusLocked even after S1 release resets 0xD213=1
                 controller.setFocusPoint(160, 120)
                 assertTrue(controller.state.value.focusBusy)
                 assertTrue(clock.stepParkedTick(controller))
@@ -1409,10 +1416,14 @@ class CameraTetherLivenessTest {
                 assertFalse(controller.state.value.focusBusy)
                 assertNull(controller.state.value.focusFailure)
                 assertTrue(controller.state.value.parameters.canCancelTouchFocus)
-                assertTrue(controller.state.value.parameters.focusLocked)
-                assertEquals(listOf(0xd2e4 to ((160L shl 16) or 120L)), camera.recorded9207.toList())
+                assertFalse(controller.state.value.parameters.focusLocked)
+                assertTrue(controller.state.value.isFocusLocked)
+                assertEquals(
+                    listOf(0xd2e4 to ((160L shl 16) or 120L), 0xd2c1 to 2L, 0xd2c1 to 1L),
+                    camera.recorded9207.toList(),
+                )
 
-                // 2. Cancel touch focus sends 0xD2E5 press+release and clears canCancelTouchFocus + focusLocked
+                // 2. Cancel touch focus sends 0xD2E5 press+release and clears canCancelTouchFocus + isFocusLocked
                 controller.cancelTouchFocus()
                 assertTrue(controller.state.value.focusBusy)
                 assertTrue(clock.stepParkedTick(controller))
@@ -1420,8 +1431,18 @@ class CameraTetherLivenessTest {
                 assertFalse(controller.state.value.focusBusy)
                 assertNull(controller.state.value.focusFailure)
                 assertFalse(controller.state.value.parameters.canCancelTouchFocus)
-                assertFalse(controller.state.value.parameters.focusLocked)
+                assertFalse(controller.state.value.isFocusLocked)
                 assertEquals(listOf(0xd2e5 to 2L, 0xd2e5 to 1L), camera.recorded9207.takeLast(2))
+
+                // 2b. Low-contrast failure (0xD213=3) keeps isFocusLocked=false
+                nextS1Indication = 3L
+                controller.setFocusPoint(256, 192)
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertFalse(controller.state.value.focusBusy)
+                assertNull(controller.state.value.focusFailure)
+                assertFalse(controller.state.value.isFocusLocked)
+                nextS1Indication = 6L
 
                 // 3. Aligned 0x9207 rejection keeps session READY with REJECTED focusFailure
                 camera.rejectNext(0x9207, 0x2019)

@@ -109,7 +109,13 @@ class StandaloneUiSmokeTest {
                 assertEquals(true, kotlin.math.abs(focusTaps[1].first - 320) <= 1)
                 assertEquals(true, kotlin.math.abs(focusTaps[1].second - 240) <= 1)
             }
+            compose.runOnIdle { state.value = state.value.copy(focusBusy = true) }
+            compose.onNodeWithTag("tether-focus-busy").assertDoesNotExist()
+            compose.onNodeWithTag("tether-focus-overlay").assertExists()
+
             state.value = state.value.copy(
+                focusBusy = false,
+                tapFocusLocked = true,
                 focusFrames = listOf(
                     SonyTetherSession.LiveViewFocusFrame(
                         SonyTetherSession.LiveViewFrameKind.FOCUS,
@@ -117,11 +123,12 @@ class StandaloneUiSmokeTest {
                         0.5f,
                         0.1f,
                         0.1f,
-                        true,
+                        false,
                     ),
                 ),
-                parameters = state.value.parameters.copy(canCancelTouchFocus = true, focusLocked = true),
+                parameters = state.value.parameters.copy(canCancelTouchFocus = true, focusLocked = false),
             )
+            compose.onNodeWithTag("tether-focus-overlay").assertExists()
             compose.onNodeWithTag("tether-cancel-focus").assertIsDisplayed().performClick()
             compose.runOnIdle {
                 assertEquals(1, cancelCount)

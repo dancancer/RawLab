@@ -488,7 +488,6 @@
     <string name="tether_card_hint">"Select single shooting on the camera and keep originals on its memory card. Live-view images and thumbnails do not confirm that originals were saved."</string>
     <string name="tether_confirm_continue">"Confirm the result and continue"</string>
     <string name="tether_focus_area_fixed">"Set Focus area to Spot or Zone, or enable Touch Operation on the camera."</string>
-    <string name="tether_focus_busy">"Setting focus point…"</string>
     <string name="tether_focus_manual">"Manual focus (MF) is active; tap to focus is unavailable."</string>
     <string name="tether_focus_rejected">"The camera did not accept the focus point in its current state."</string>
     <string name="tether_focus_unsupported">"This camera mode does not support remote focus point selection."</string>

@@ -27,6 +27,14 @@ struct CameraLiveViewFrame: Equatable {
     let focused: Bool
 }
 
+struct CameraOverlayBox: Equatable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let isNormalizedSquare: Bool
+}
+
 struct CameraFocusTapPoint: Equatable {
     let u: Double
     let v: Double
@@ -407,5 +415,41 @@ enum CameraWire {
         let x = min(639, max(0, Int((u * 640.0).rounded())))
         let y = min(479, max(0, Int((v * 480.0).rounded())))
         return CameraFocusTapPoint(u: u, v: v, x: x, y: y)
+    }
+
+    static func focusOverlayBox(frame: CameraLiveViewFrame, left: Double, top: Double,
+                                fittedWidth: Double, fittedHeight: Double) -> CameraOverlayBox {
+        let rawW = frame.width * fittedWidth
+        let rawH = frame.height * fittedHeight
+        let cx = left + frame.cx * fittedWidth
+        let cy = top + frame.cy * fittedHeight
+        if frame.kind != .face, rawW > 0, rawH > 0 {
+            let aspect = max(rawW, rawH) / min(rawW, rawH)
+            if aspect <= 1.35 {
+                let side = (rawW + rawH) / 2.0
+                return CameraOverlayBox(x: cx - side / 2.0, y: cy - side / 2.0,
+                                        width: side, height: side, isNormalizedSquare: true)
+            }
+        }
+        return CameraOverlayBox(x: cx - rawW / 2.0, y: cy - rawH / 2.0,
+                                width: rawW, height: rawH, isNormalizedSquare: false)
+    }
+
+    static func normalizedFocusSquareRatio(frame: CameraLiveViewFrame, imageWidth: Double, imageHeight: Double) -> Double? {
+        guard frame.kind != .face, imageWidth.isFinite, imageHeight.isFinite, imageWidth > 0, imageHeight > 0 else { return nil }
+        let shortEdge = min(imageWidth, imageHeight)
+        let w = frame.width * (imageWidth / shortEdge)
+        let h = frame.height * (imageHeight / shortEdge)
+        guard w > 0, h > 0, max(w, h) / min(w, h) <= 1.35 else { return nil }
+        return (w + h) / 2.0
+    }
+
+    static func tapFocusSide(fittedWidth: Double, fittedHeight: Double, lastSquareRatio: Double? = nil) -> Double {
+        let shortEdge = min(fittedWidth, fittedHeight)
+        guard shortEdge.isFinite, shortEdge > 0 else { return 34.0 }
+        if let ratio = lastSquareRatio, ratio.isFinite, ratio > 0 {
+            return min(max(20.0, shortEdge * ratio), max(20.0, shortEdge * 0.5))
+        }
+        return min(52.0, max(34.0, shortEdge * 0.138))
     }
 }

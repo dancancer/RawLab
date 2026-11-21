@@ -108,21 +108,68 @@ public class SonyCameraParameterTest {
     }
 
     @Test public void remoteTouchFocusRoutesPrimaryCancelRetryAndSpotFallback() throws Exception {
-        // 1. Primary 0xD2E4 when 0xD284 == 1; 0xD285 == 1 exposes cancelTouchFocus
+        // 1. Primary 0xD2E4 + real a7C II S1 (0xD2C1) confirmation when 0xD284 == 1
         try(FocusResponder responder=new FocusResponder(
                 new int[]{0xd2c1,0xd2c2,0xd2e4,0xd2e5,0xd2dc},
                 Arrays.asList(
                     FocusProp.u16(0x500a,true,1,2,2L,1L),
                     FocusProp.u16(0xd22c,true,1,0x0001,0x0001L,0x0102L),
                     FocusProp.u8(0xd284,false,1,1),
-                    FocusProp.u8(0xd285,false,1,1)));
+                    FocusProp.u8(0xd285,false,1,1),
+                    FocusProp.u8(0xd213,false,1,1)));
             SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
+            responder.on9207((control,val) -> {
+                if(control==0xd2c1 && val==2L) responder.setProp(0xd213,6,1);
+                else if(control==0xd2c1 && val==1L) responder.setProp(0xd213,1,1);
+            });
             session.connectRemote();
-            Map<Integer,SonyTetherSession.Property> latest=session.setFocusPoint(160,120);
-            assertEquals(1,responder.recorded9207.size());
-            assertEquals(0xd2e4L,responder.recorded9207.get(0)[0]);
-            assertEquals(((160L<<16)|120L),responder.recorded9207.get(0)[1]);
-            assertTrue(session.canCancelTouchFocus(latest));
+            SonyTetherSession.FocusPointResult result=session.setFocusPoint(160,120);
+            assertEquals(3,responder.recorded9207.size());
+            assertArrayEquals(new long[]{0xd2e4L,(160L<<16)|120L},responder.recorded9207.get(0));
+            assertArrayEquals(new long[]{0xd2c1L,2L},responder.recorded9207.get(1));
+            assertArrayEquals(new long[]{0xd2c1L,1L},responder.recorded9207.get(2));
+            assertTrue(result.focusLocked);
+            assertEquals(1L,result.properties.get(0xd213).number());
+            assertTrue(session.canCancelTouchFocus(result.properties));
+            session.close();responder.check();
+        }
+
+        // 1b. Low-contrast failure (0xD213=3) releases S1 cleanly and returns focusLocked=false
+        try(FocusResponder responder=new FocusResponder(
+                new int[]{0xd2c1,0xd2c2,0xd2e4,0xd2e5},
+                Arrays.asList(
+                    FocusProp.u16(0x500a,true,1,2,2L,1L),
+                    FocusProp.u8(0xd284,false,1,1),
+                    FocusProp.u8(0xd285,false,1,1),
+                    FocusProp.u8(0xd213,false,1,1)));
+            SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
+            responder.on9207((control,val) -> {
+                if(control==0xd2c1 && val==2L) responder.setProp(0xd213,3,1);
+                else if(control==0xd2c1 && val==1L) responder.setProp(0xd213,1,1);
+            });
+            session.connectRemote();
+            SonyTetherSession.FocusPointResult result=session.setFocusPoint(200,150);
+            assertFalse(result.focusLocked);
+            assertEquals(3,responder.recorded9207.size());
+            assertArrayEquals(new long[]{0xd2c1L,1L},responder.recorded9207.get(2));
+            session.close();responder.check();
+        }
+
+        // 1c. Aligned 0x2019 rejection on follow-up 0xD2C1 keeps session open with focusLocked=false
+        try(FocusResponder responder=new FocusResponder(
+                new int[]{0xd2c1,0xd2c2,0xd2e4},
+                Arrays.asList(
+                    FocusProp.u16(0x500a,true,1,2,2L,1L),
+                    FocusProp.u8(0xd284,false,1,1),
+                    FocusProp.u8(0xd213,false,1,1)));
+            SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
+            responder.on9207((control,val) -> {
+                if(control==0xd2e4) responder.setNext9207Status(0x2019);
+            });
+            session.connectRemote();
+            SonyTetherSession.FocusPointResult result=session.setFocusPoint(160,120);
+            assertFalse(result.focusLocked);
+            assertTrue(session.isOpen());
             session.close();responder.check();
         }
 
@@ -142,10 +189,12 @@ public class SonyCameraParameterTest {
             });
             session.connectRemote();
             session.setFocusPoint(320,240);
-            assertEquals(3,responder.recorded9207.size());
+            assertEquals(5,responder.recorded9207.size());
             assertArrayEquals(new long[]{0xd2e5L,2L},responder.recorded9207.get(0));
             assertArrayEquals(new long[]{0xd2e5L,1L},responder.recorded9207.get(1));
             assertArrayEquals(new long[]{0xd2e4L,(320L<<16)|240L},responder.recorded9207.get(2));
+            assertArrayEquals(new long[]{0xd2c1L,2L},responder.recorded9207.get(3));
+            assertArrayEquals(new long[]{0xd2c1L,1L},responder.recorded9207.get(4));
             session.close();responder.check();
         }
 
@@ -158,8 +207,10 @@ public class SonyCameraParameterTest {
             SonyTetherSession session=responder.session(SonyTetherSession.Purpose.TETHER)) {
             session.connectRemote();
             session.setFocusPoint(400,100);
-            assertEquals(1,responder.recorded9207.size());
+            assertEquals(3,responder.recorded9207.size());
             assertArrayEquals(new long[]{0xd2dcL,(400L<<16)|100L},responder.recorded9207.get(0));
+            assertArrayEquals(new long[]{0xd2c1L,2L},responder.recorded9207.get(1));
+            assertArrayEquals(new long[]{0xd2c1L,1L},responder.recorded9207.get(2));
             session.close();responder.check();
         }
     }
@@ -272,11 +323,14 @@ public class SonyCameraParameterTest {
 
         assertFalse(SonyTetherSession.isFocusLocked(null));
         assertFalse(SonyTetherSession.isFocusLocked(Collections.emptyMap()));
-        long[][] focusCases={{1L,0L},{2L,1L},{3L,0L},{5L,0L},{6L,1L},{7L,0L}};
+        assertFalse(SonyTetherSession.isFocusFailed(null));
+        assertFalse(SonyTetherSession.isFocusFailed(Collections.emptyMap()));
+        long[][] focusCases={{1L,0L,0L},{2L,1L,0L},{3L,0L,1L},{5L,0L,0L},{6L,1L,0L},{7L,0L,1L}};
         for(long[] pair : focusCases) {
             byte[] raw=cat(u32(1),u32(0),u16(0xd213),u16(2),new byte[]{0,1,(byte)pair[0],(byte)pair[0],0});
             Map<Integer,SonyTetherSession.Property> props=SonyTetherSession.parseProperties(raw);
             assertEquals(pair[1]==1L,SonyTetherSession.isFocusLocked(props));
+            assertEquals(pair[2]==1L,SonyTetherSession.isFocusFailed(props));
         }
     }
 
