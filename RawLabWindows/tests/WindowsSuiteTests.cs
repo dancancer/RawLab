@@ -114,6 +114,7 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "WpfModel")]
+    [Trait("Suite", "comparison")]
     public void ComparisonCanvasAndViewportWork() =>
         WpfTestHost.Run(() => ComparisonChecks.Run(Check));
 
