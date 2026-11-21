@@ -24,6 +24,7 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
         test -f "$(dirname "$binary")/Licenses/lensfun/$notice"
     done
     nm -gU "$binary" | grep -F '_sony2fuji_session_set_lens_correction' >/dev/null
+    nm -gU "$binary" | grep -F '_sony2fuji_session_set_hdr_progress_callback' >/dev/null
     for symbol in session_set_x3f_mode session_x3f_error x3f_available; do
         nm -gU "$binary" | grep -F "_sony2fuji_$symbol" >/dev/null
     done
@@ -46,8 +47,8 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     nm -gU "$binary" | grep -F '_sony2fuji_compile_dcp' >/dev/null
     nm -gU "$binary" | grep -E ' _sony2fuji_compile_hdr_camera_dcp$' >/dev/null
     nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
-    for symbol in probe decode probe_camera_raw probe_camera_profile decode_camera_raw camera_ai_key decode_camera_raw_with_ai \
-        probe_proraw decode_proraw export_proraw render export_jpeg export_sdr export_stream export_tiled release_pair; do
+    for symbol in probe decode decode_with_session probe_camera_raw probe_camera_profile decode_camera_raw camera_ai_key decode_camera_raw_with_ai \
+        probe_proraw decode_proraw export_proraw render export_jpeg export_jpeg_with_session export_heif_with_session export_sdr export_sdr_with_session export_stream export_tiled release_pair; do
         nm -gU "$binary" | grep -E " _sony2fuji_hdr_${symbol}$" >/dev/null
     done
     for header in sony2fuji_c.h sony2fuji_hdr.h; do

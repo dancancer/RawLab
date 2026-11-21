@@ -137,6 +137,14 @@ public final class FileDigestCache: @unchecked Sendable {
         return cache.count
     }
 
+    public func cachedDigest(for url: URL) -> String? {
+        let resolvedPath = Self.canonicalPath(for: url)
+        guard let current = FileStatFingerprint(resolvedPath: resolvedPath), current.isRegularFile else {
+            return nil
+        }
+        return cachedDigest(forPath: resolvedPath, fingerprint: current)
+    }
+
     public func invalidate(for url: URL) {
         let resolved = Self.canonicalPath(for: url)
         let raw = url.standardizedFileURL.path

@@ -1,5 +1,7 @@
 #include "platform/hdr_image.h"
 #include "core/hdr_jpeg.h"
+#include "core/hdr_progress.h"
+#include "core/hdr_srgb_lut.h"
 #include "core/jpeg_mpf.h"
 #include "core/output_file_mode.h"
 #include "core/parallel_pixels.h"
@@ -360,16 +362,28 @@ void pixelRows(CIContext* context, CIImage* input, int width, int height, int fi
                 error(RenderStatus::ProcessingError, kHdrReasonInvalidBuffer, "Invalid native HDR storage");
             }
             const uint8_t* bytes=CFDataGetBytePtr(data);
-            bool finite=true, opaque=true;
-            for (int y=0;y<rows;++y) for (int x=0;x<width;++x) {
-                float rgba[4]; std::memcpy(rgba,bytes+y*stride+x*16,16);
-                for (float c:rgba) finite &= std::isfinite(c);
-                opaque &= std::abs(rgba[3]-1)<1e-5f;
-                output[size_t(top + y - first) * width + x]={rgba[0],rgba[1],rgba[2]};
-            }
+            std::atomic<bool> finite{true}, opaque{true};
+            parallelRowRanges(rows, width, [&](int firstRow, int lastRow) {
+                for (int y = firstRow; y < lastRow; ++y) {
+                    const uint8_t* srcRow = bytes + size_t(y) * stride;
+                    RGB* dstRow = output + size_t(top + y - first) * width;
+                    for (int x = 0; x < width; ++x) {
+                        float rgba[4];
+                        std::memcpy(rgba, srcRow + x * 16, 16);
+                        if (!std::isfinite(rgba[0]) || !std::isfinite(rgba[1]) ||
+                            !std::isfinite(rgba[2]) || !std::isfinite(rgba[3])) {
+                            finite.store(false, std::memory_order_relaxed);
+                        }
+                        if (std::abs(rgba[3] - 1.0f) >= 1e-5f) {
+                            opaque.store(false, std::memory_order_relaxed);
+                        }
+                        dstRow[x] = {rgba[0], rgba[1], rgba[2]};
+                    }
+                }
+            });
             CFRelease(data); CGImageRelease(image);
-            require(finite, kHdrReasonNonfinite, "Native HDR contains nonfinite pixels");
-            require(opaque, kHdrReasonUnsupportedColor, "Native HDR contains transparency");
+            require(finite.load(std::memory_order_relaxed), kHdrReasonNonfinite, "Native HDR contains nonfinite pixels");
+            require(opaque.load(std::memory_order_relaxed), kHdrReasonUnsupportedColor, "Native HDR contains transparency");
         }
     }
 }
@@ -594,18 +608,22 @@ std::vector<uint8_t> withSRGBProfile(const std::vector<uint8_t>& jpeg) {
 CGImageRef sdrImage(const ImageData& image,bool sixteenBit) {
     const size_t componentBytes=sixteenBit ? 2 : 1;
     auto bytes=std::make_unique<std::vector<uint8_t>>(image.pixels.size()*3*componentBytes);
-    auto encode=[sixteenBit](float v) {
-        v=std::clamp(v,0.0f,1.0f);
-        return uint16_t(std::lround((sixteenBit ? 65535 : 255)*(v<=.0031308f ? 12.92f*v : 1.055f*std::pow(v,1/2.4f)-.055f)));
-    };
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) {
-            const float values[] = {image.pixels[i].r, image.pixels[i].g, image.pixels[i].b};
-            for (size_t channel = 0; channel < 3; ++channel) {
-                const uint16_t value = encode(values[channel]);
-                const size_t index = (i * 3 + channel) * componentBytes;
-                if (sixteenBit) std::memcpy(bytes->data() + index, &value, sizeof(value));
-                else (*bytes)[index] = uint8_t(value);
+        if (sixteenBit) {
+            for (size_t i = first; i < last; ++i) {
+                const float values[] = {image.pixels[i].r, image.pixels[i].g, image.pixels[i].b};
+                for (size_t channel = 0; channel < 3; ++channel) {
+                    const uint16_t value = uint16_t(std::lround(65535.0f * linearToSrgbUnit(values[channel])));
+                    std::memcpy(bytes->data() + (i * 3 + channel) * 2, &value, sizeof(value));
+                }
+            }
+        } else {
+            for (size_t i = first; i < last; ++i) {
+                const auto& pixel = image.pixels[i];
+                const size_t base = i * 3;
+                (*bytes)[base + 0] = srgbToUInt8(pixel.r);
+                (*bytes)[base + 1] = srgbToUInt8(pixel.g);
+                (*bytes)[base + 2] = srgbToUInt8(pixel.b);
             }
         }
     });
@@ -779,8 +797,37 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
     }
 }
 
+JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_t width, uint32_t height,
+    const char* path, const StreamSourcePin& pin) {
+    if (!config.metadataSourcePath) return {};
+    return [&config, width, height, path, &pin](const std::vector<uint8_t>& base) {
+        @autoreleasepool {
+            if (@available(macOS 15.0, iOS 18.0, *)) {
+                checkProcessingCancellation();
+                const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+                File source;
+                NSDictionary* properties = nil;
+                if (impl) {
+                    source.data = impl->data;
+                    source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+                    differentFile(config.metadataSourcePath, path);
+                    properties = buildMetadata(source, width, height);
+                } else {
+                    properties = metadata(source, config.metadataSourcePath, config.sourceSha256, width, height, path);
+                }
+                NSData* tagged = addBaseMetadata(
+                    [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
+                    properties, source.source);
+                const auto* ptr = static_cast<const uint8_t*>(tagged.bytes);
+                return std::vector<uint8_t>(ptr, ptr + tagged.length);
+            }
+            error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
+        }
+    };
+}
+
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin) {
+    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin, bool baseMetadataApplied) {
     @autoreleasepool {
         if (@available(macOS 15.0, iOS 18.0, *)) {
             checkProcessingCancellation();
@@ -794,30 +841,32 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
                     error(RenderStatus::IoError, kHdrReasonInputIo, "Cannot inspect streamed metadata source");
                 sourceSize = sourceBytes.unsignedLongLongValue;
             }
-            // 元数据重封装有自己的 compressed/NSData 工作集，不能沿用已结束的 codec 准入。
-            admitStreamingMemory(uint64_t(data.size()) * 8 + sourceSize * 2 + (64ull << 20));
-            File source;
-            NSDictionary* properties = nil;
-            if (impl) {
-                // 单次读取贯穿 validate→publish：元数据直接来自冻结的同一 NSData/解析，不再重开重算。
-                source.data = impl->data;
-                source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
-                differentFile(config.metadataSourcePath, path);
-                properties = buildMetadata(source, width, height);
-            } else {
-                properties = metadata(source, config.metadataSourcePath, config.sourceSha256, width, height, path);
+            if (!(hdr && baseMetadataApplied)) {
+                // 元数据重封装有自己的 compressed/NSData 工作集，不能沿用已结束的 codec 准入。
+                admitStreamingMemory(uint64_t(data.size()) * 8 + sourceSize * 2 + (64ull << 20));
+                File source;
+                NSDictionary* properties = nil;
+                if (impl) {
+                    // 单次读取贯穿 validate→publish：元数据直接来自冻结的同一 NSData/解析，不再重开重算。
+                    source.data = impl->data;
+                    source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+                    differentFile(config.metadataSourcePath, path);
+                    properties = buildMetadata(source, width, height);
+                } else {
+                    properties = metadata(source, config.metadataSourcePath, config.sourceSha256, width, height, path);
+                }
+                if (hdr) {
+                    const auto base = jpegBase(data.data(), data.size());
+                    NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
+                        properties, source.source);
+                    data = replaceJPEGBase(data.data(), data.size(), tagged.bytes, tagged.length);
+                } else {
+                    data = withSRGBProfile(data);
+                    NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source.source);
+                    data.assign(static_cast<const uint8_t*>(tagged.bytes), static_cast<const uint8_t*>(tagged.bytes) + tagged.length);
+                }
             }
-            if (hdr) {
-                const auto base = jpegBase(data.data(), data.size());
-                NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
-                    properties, source.source);
-                data = replaceJPEGBase(data.data(), data.size(), tagged.bytes, tagged.length);
-                probeJPEG(data.data(), data.size());
-            } else {
-                data = withSRGBProfile(data);
-                NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source.source);
-                data.assign(static_cast<const uint8_t*>(tagged.bytes), static_cast<const uint8_t*>(tagged.bytes) + tagged.length);
-            }
+            if (hdr) probeJPEG(data.data(), data.size());
             atomicStreamWrite([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], path, config, pin);
             return;
         }
@@ -848,14 +897,33 @@ void exportJPEG(const HDRImagePair& image,const HDRExportConfig& config,const ch
                 throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
             File metadataFile;
             NSDictionary* properties=metadata(metadataFile,config.metadataSourcePath,config.sourceSha256,image.hdr.width,image.hdr.height,path);
-            auto data=encodeJPEG(image,config.jpegQuality ? config.jpegQuality : 95,config.baseColor);
+            reportHdrProgress(100, 1000);
+            JPEGTransformBase transformBase;
             if (config.metadataSourcePath) {
-                const auto base=jpegBase(data.data(),data.size());
-                NSData* tagged=addBaseMetadata([NSData dataWithBytes:base.data() length:base.size()],properties,metadataFile.source);
-                data=replaceJPEGBase(data.data(),data.size(),tagged.bytes,tagged.length);
+                transformBase = [&](const std::vector<uint8_t>& base) {
+                    NSData* tagged = addBaseMetadata(
+                        [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
+                        properties, metadataFile.source);
+                    const auto* ptr = static_cast<const uint8_t*>(tagged.bytes);
+                    return std::vector<uint8_t>(ptr, ptr + tagged.length);
+                };
+            }
+            std::vector<uint8_t> data;
+            {
+                HdrProgressSubrangeScope sub(100, 900);
+                data = encodeJPEG(image,config.jpegQuality ? config.jpegQuality : 95,config.baseColor,transformBase);
             }
             probeJPEG(data.data(),data.size());
-            atomicWrite([NSData dataWithBytes:data.data() length:data.size()],path); return;
+            if (config.metadataSourcePath) {
+                if (!snapshotMatches(snapshotSource(config.metadataSourcePath), metadataFile.snapshot))
+                    error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source has changed");
+                differentFile(config.metadataSourcePath,path);
+            }
+            reportHdrProgress(950, 1000);
+            checkProcessingCancellation();
+            atomicWrite([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO],path);
+            reportHdrProgress(1000, 1000);
+            return;
         }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
     }
@@ -977,7 +1045,9 @@ void exportHEIF(const HDRImagePair& image,const HDRExportConfig& config,const ch
         if (@available(macOS 15.0,iOS 18.0,*)) {
             File metadataFile;
             NSDictionary* properties = metadata(metadataFile,config.metadataSourcePath,config.sourceSha256,image.hdr.width,image.hdr.height,path);
+            reportHdrProgress(150, 1000);
             NSData* data = encodeHEIF(image,properties,config.baseColor,config.jpegQuality);
+            reportHdrProgress(900, 1000);
             if (config.metadataSourcePath) {
                 // 编码期间源若被替换/覆写，inode 或 size/mtime/ctime 已变；核对 metadata()
                 // 单次读取时抓取的快照即可，不再整文件重算第二遍摘要（C-08：2→1）。
@@ -987,6 +1057,7 @@ void exportHEIF(const HDRImagePair& image,const HDRExportConfig& config,const ch
             }
             checkProcessingCancellation();
             atomicWrite(data,path);
+            reportHdrProgress(1000, 1000);
             return;
         }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR HEIF requires macOS15/iOS18");
@@ -1039,17 +1110,23 @@ void exportSDR(const HDRImagePair& image,const HDRSdrExportConfig& config,const 
             if (config.quality>100) throw std::invalid_argument("Invalid SDR quality");
             File metadataFile;
             NSDictionary* properties=metadata(metadataFile,config.metadataSourcePath,config.sourceSha256,image.sdr.width,image.sdr.height,path);
+            reportHdrProgress(150, 1000);
             NSMutableDictionary* values=[properties mutableCopy];
             values[(__bridge NSString*)kCGImageDestinationLossyCompressionQuality]=@((config.quality ? config.quality : 95)/100.0);
             NSMutableData* data=[NSMutableData data];
             CGImageRef pixels=sdrImage(image.sdr,config.outputFormat==kHdrSdrOutputPng);
+            reportHdrProgress(500, 1000);
             CFStringRef type=config.outputFormat==kHdrSdrOutputJpeg ? CFSTR("public.jpeg") : CFSTR("public.png");
             CGImageDestinationRef dest=CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data,type,1,nullptr);
             if (!dest) { CGImageRelease(pixels); throw std::bad_alloc(); }
             CGImageDestinationAddImage(dest,pixels,(__bridge CFDictionaryRef)values);
             const bool success=CGImageDestinationFinalize(dest); CGImageRelease(pixels); CFRelease(dest);
             require(success, kHdrReasonOutputIo, "Cannot encode SDR rendition");
-            atomicWrite(data,path); return;
+            reportHdrProgress(900, 1000);
+            checkProcessingCancellation();
+            atomicWrite(data,path);
+            reportHdrProgress(1000, 1000);
+            return;
         }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
     }

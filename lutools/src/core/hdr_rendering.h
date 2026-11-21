@@ -89,7 +89,7 @@ HslColor analyzeHDRColor(const RGB& pixel);
 // 供流式导出复用逐像素颜色算法；这里只处理一个行块，不声明 FINAL 图像来源。
 void validateHDRRenderOptions(const HDRRenderOptions& options);
 RGB hdrRelativeWhiteBalance(float temperature, float tint);
-void editHDRPixels(ImageData& image, const HDRRenderOptions& options, bool hdr);
+bool editHDRPixels(ImageData& image, const HDRRenderOptions& options, bool hdr, float* contentMax = nullptr);
 std::pair<int, int> hdrResizeSize(int width, int height, uint32_t longEdge);
 RGB sampleHDRResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
     const GeometryPixelReader& read);

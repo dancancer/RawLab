@@ -244,6 +244,80 @@ import UIKit
         check(rejectedAsExpected,"incompatible copied target accepted")
         let remaining=try FileManager.default.contentsOfDirectory(at:copyRoot,includingPropertiesForKeys:nil)
         check(before==remaining,"failed target preparation leaked its new private input copy")
-        print("PASS iOS mixed HDR/SDR batch preparation, frozen modes, WB rejection, record isolation, output and failed-copy cleanup")
+
+        let exportEditor = RawEditorViewModel(editPersistence: store)
+        let importSem = DispatchSemaphore(value: 0)
+        exportEditor.importImage(from: .raster(input), identity: aID, settings: settings, onImported: {
+            importSem.signal()
+        })
+        let importDeadline = Date().addingTimeInterval(30)
+        while importSem.wait(timeout: .now()) != .success && Date() < importDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        check(!exportEditor.isBusy && !exportEditor.previewFailed, "HDR ViewModel test failed to import sample")
+
+        var observedProgress = [Double]()
+        let photoSem = DispatchSemaphore(value: 0)
+        var photoResult: Result<Data, Error>?
+        exportEditor.exportPhoto(settings: settings, longEdge: 64, format: .hdrJPEG) {
+            photoResult = $0
+            photoSem.signal()
+        }
+        check(exportEditor.isExportingHDR && exportEditor.hdrExportProgress != nil, "exportPhoto did not enter HDR progress state")
+        let photoDeadline = Date().addingTimeInterval(30)
+        while photoSem.wait(timeout: .now()) != .success && Date() < photoDeadline {
+            if let p = exportEditor.hdrExportProgress {
+                if observedProgress.last != p { observedProgress.append(p) }
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        let exportedData = try photoResult!.get()
+        let checkOut = root.appendingPathComponent("vm-hdr.jpg")
+        try exportedData.write(to: checkOut)
+        let checkOutProbe = try HDRSourceInfo.probe(checkOut)
+        check(checkOutProbe != nil, "ViewModel exportPhoto lost HDR gain map")
+        check(!observedProgress.isEmpty && zip(observedProgress, observedProgress.dropFirst()).allSatisfy { $0.1 >= $0.0 },
+            "ViewModel hdrExportProgress must be non-empty and monotonic: \(observedProgress)")
+        check(!exportEditor.isExportingHDR && !exportEditor.isStoppingHDRExport && exportEditor.hdrExportProgress == nil,
+            "ViewModel did not reset HDR export state after photo export")
+
+        let cancelSem = DispatchSemaphore(value: 0)
+        var cancelResult: Result<Data, Error>?
+        exportEditor.exportPhoto(settings: settings, longEdge: nil, format: .hdrJPEG) {
+            cancelResult = $0
+            cancelSem.signal()
+        }
+        check(exportEditor.isExportingHDR, "ViewModel did not start cancellable HDR export")
+        exportEditor.cancelHDRExport()
+        check(exportEditor.isStoppingHDRExport, "cancelHDRExport did not set isStoppingHDRExport")
+        let cancelDeadline = Date().addingTimeInterval(30)
+        while cancelSem.wait(timeout: .now()) != .success && Date() < cancelDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        switch cancelResult! {
+        case .success: fatalError("Cancelled ViewModel HDR export succeeded")
+        case .failure(let error): check(error is CancellationError, "Expected CancellationError, got \(error)")
+        }
+        check(!exportEditor.isExportingHDR && !exportEditor.isStoppingHDRExport && exportEditor.hdrExportProgress == nil,
+            "ViewModel did not reset HDR export state after cancel")
+
+        let dngSem = DispatchSemaphore(value: 0)
+        var dngResult: Result<URL, Error>?
+        exportEditor.exportDNG(settings: settings, longEdge: 64) {
+            dngResult = $0
+            dngSem.signal()
+        }
+        check(exportEditor.isExportingHDR && exportEditor.hdrExportProgress != nil, "exportDNG did not enter HDR progress state")
+        let dngDeadline = Date().addingTimeInterval(30)
+        while dngSem.wait(timeout: .now()) != .success && Date() < dngDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        let dngOut = try dngResult!.get()
+        defer { try? FileManager.default.removeItem(at: dngOut) }
+        check(FileManager.default.fileExists(atPath: dngOut.path), "ViewModel exportDNG did not produce output file")
+        check(!exportEditor.isExportingHDR && !exportEditor.isStoppingHDRExport && exportEditor.hdrExportProgress == nil,
+            "ViewModel did not reset HDR export state after DNG export")
+
+        print("PASS iOS mixed HDR/SDR batch preparation, frozen modes, WB rejection, record isolation, output, failed-copy cleanup and ViewModel HDR progress/cancel")
     }
 }

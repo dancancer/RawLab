@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/hdr_jpeg.h"
 #include "core/hdr_rendering.h"
 #include <filesystem>
 #include <functional>
@@ -34,10 +35,13 @@ struct HDRStreamFiles {
     float rgbHeadroom = 1.001f;
 };
 
+#include <functional>
+
 HDRStreamFiles renderStreamFiles(const HDRRowSource& source, const HDRRenderOptions& options,
     bool includeHDR, const std::filesystem::path& temporaryRoot);
 uint64_t streamScratchBytes(uint32_t width, uint32_t height, const HDRRenderOptions& options, bool hdr);
 HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions& options,
-    bool hdr, uint32_t quality, uint32_t baseColor, const std::filesystem::path& temporaryRoot);
+    bool hdr, uint32_t quality, uint32_t baseColor, const std::filesystem::path& temporaryRoot,
+    const std::function<JPEGTransformBase(uint32_t width, uint32_t height)>& makeTransformBase = {});
 }
 }

@@ -47,7 +47,6 @@ struct Context {
 };
 }
 
-#if defined(__APPLE__) && !defined(RAWLAB_HDR_PORTABLE_ADAPTER)
 // B1 红锚辅助：元数据源首块读完后把路径 rename 换成同内容不同 inode 的替补文件，
 // 模拟「读后、快照夹逼前」的原子替换（fn-ptr 注入，不能捕获，故用文件级状态）。
 fs::path swapFrom, swapTo;
@@ -57,7 +56,6 @@ void swapSourceDuringRead() {
     fs::rename(swapFrom, swapTo, ignored);
     swapFired = true;
 }
-#endif
 
 int main(int argc, char* argv[]) {
     if (argc != 2) return 2;
@@ -144,14 +142,12 @@ int main(int argc, char* argv[]) {
             return sony2fuji_hdr_export_stream(session, &source, override ? override : &settings, &config,
                 hdr, scratch.c_str(), target.u8string().c_str(), &result, &diagnostic);
         };
-#if defined(__APPLE__) && !defined(RAWLAB_HDR_PORTABLE_ADAPTER)
-        // C-08 红锚：一次导出只读/哈希整文件一次（validate 冻结，publish 改名前核对 fstat 快照）。
+        // C-08 红锚：一次导出只读/哈希整文件一次（validate 冻结，publish 改名前核对快照）。
         hdr::resetSourceHashPassCount();
-#endif
         require(run(output) == SONY2FUJI_STATUS_OK && result.width == 48 && result.height == 32 && result.decode_revision == 7,
             "Complete stream API export failed or lost provenance");
-#if defined(__APPLE__) && !defined(RAWLAB_HDR_PORTABLE_ADAPTER)
         require(hdr::sourceHashPassCount() == 1, "Stream export still performs a second full-file digest pass");
+#if defined(__APPLE__) && !defined(RAWLAB_HDR_PORTABLE_ADAPTER)
         {
             auto tiledConfig = config; tiledConfig.metadata_policy = SONY2FUJI_HDR_METADATA_ISO;
             require(sony2fuji_hdr_heif_export_available() != 0, "Tiled row-source acceptance requires a working HEIF codec");
@@ -176,6 +172,7 @@ int main(int argc, char* argv[]) {
             }
             fs::remove(tiledOutput);
         }
+#endif
         {
             // B1 红锚：读中途替换源。修复版把「数据 ↔ 快照」绑定同一 fd，发布前按路径核对必判
             // SOURCE_CHANGED 且不发布；按路径 stat 的旧版会把快照记成替补文件、误判一致照常发布。
@@ -193,7 +190,6 @@ int main(int argc, char* argv[]) {
             require(!fs::exists(swapOutput), "Swapped metadata source published output anyway");
             write(original, swapBytes); // 复原内容（路径现为替补 inode，摘要与字节不变）
         }
-#endif
         require(hdr::probeFile(output.u8string().c_str()).width == 48, "Stream output does not contain a valid gain map");
         const auto existing = read(output);
 #ifndef _WIN32

@@ -198,139 +198,217 @@ final class HDRImage {
         return String(cString: key)
     }
 
+    private final class SessionCallbackBox {
+        let check: (() -> Bool)?
+        let progress: ((Double) -> Void)?
+        init(check: (() -> Bool)?, progress: ((Double) -> Void)?) {
+            self.check = check
+            self.progress = progress
+        }
+    }
+
+    static func withSessionCallbacks<T>(
+        _ session: OpaquePointer?,
+        cancelled: (() -> Bool)? = nil,
+        progress: ((Double) -> Void)? = nil,
+        _ body: () throws -> T
+    ) throws -> T {
+        guard let session, cancelled != nil || progress != nil else {
+            if cancelled?() == true || Task.isCancelled { throw CancellationError() }
+            return try body()
+        }
+        return try withoutActuallyEscaping(cancelled ?? { false }) { cancelFn in
+            try withoutActuallyEscaping(progress ?? { _ in }) { progressFn in
+                let box = SessionCallbackBox(
+                    check: cancelled == nil ? nil : { cancelFn() || Task.isCancelled },
+                    progress: progress == nil ? nil : progressFn
+                )
+                let opaque = Unmanaged.passUnretained(box).toOpaque()
+                if cancelled != nil {
+                    let st = sony2fuji_session_set_cancellation_callback(session, { pointer in
+                        guard let pointer else { return 0 }
+                        return Unmanaged<SessionCallbackBox>.fromOpaque(pointer).takeUnretainedValue().check?() == true ? 1 : 0
+                    }, opaque)
+                    guard st == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
+                }
+                if progress != nil {
+                    let st = sony2fuji_session_set_hdr_progress_callback(session, { pointer, completed, total in
+                        guard let pointer, total > 0 else { return }
+                        let fraction = min(1.0, max(0.0, Double(completed) / Double(total)))
+                        Unmanaged<SessionCallbackBox>.fromOpaque(pointer).takeUnretainedValue().progress?(fraction)
+                    }, opaque)
+                    guard st == SONY2FUJI_STATUS_OK else {
+                        if cancelled != nil { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+                        throw HDRRequestError.invalidSettings
+                    }
+                }
+                defer {
+                    if cancelled != nil { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
+                    if progress != nil { _ = sony2fuji_session_set_hdr_progress_callback(session, nil, nil) }
+                    withExtendedLifetime(box) {}
+                }
+                if box.check?() == true { throw CancellationError() }
+                return try body()
+            }
+        }
+    }
+
     static func decode(_ url: URL, info: HDRSourceInfo, intent: sony2fuji_intent,
                        longEdge: Int? = nil, session: OpaquePointer? = nil,
                        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
                        cameraAIKey: String? = nil,
                        cancelled: () -> Bool = { false }) throws -> HDRImage {
-        guard intent==SONY2FUJI_INTENT_FINAL || intent==SONY2FUJI_INTENT_PREVIEW,
-              longEdge.map({ (1...65535).contains($0) }) ?? true,
-              intent != SONY2FUJI_INTENT_FINAL || longEdge==nil,
-              camera.isValid, camera.isDefault || info.isCameraRAW,
-              cameraAIKey == nil || (info.isCameraRAW && session != nil && camera.cameraProfile == nil) else {
-            throw HDRRequestError.invalidSettings
-        }
-        let profileURL = try camera.cameraProfile.map { try HDRCameraProfileAssetStore.url(for: $0) }
-        if let proRAW = info.proRAW, let stamp = info.cameraStamp {
-            guard intent != SONY2FUJI_INTENT_PREVIEW || longEdge != nil else { throw HDRRequestError.invalidSettings }
-            let developed = try proRAW.decode(url, stamp: stamp, longEdge: longEdge, cancelled: cancelled)
-            return HDRImage(owned: developed.pair, url: url, info: info, proRAWBuffers: (developed.hdr, developed.sdr))
-        }
-        var decodeSession = session
-        defer {
-            if session == nil, let decodeSession { sony2fuji_session_destroy(decodeSession) }
-        }
-        if info.isCameraRAW {
-            if decodeSession == nil {
-                let status = sony2fuji_session_create(&decodeSession)
-                guard status == SONY2FUJI_STATUS_OK else {
-                    throw HDRNativeError(status: status, reason: UInt32(SONY2FUJI_HDR_REASON_OUT_OF_MEMORY),
-                        field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        try decode(url, info: info, intent: intent, longEdge: longEdge, session: session,
+                   camera: camera, cameraAIKey: cameraAIKey, progress: nil, cancelled: cancelled)
+    }
+
+    static func decode(_ url: URL, info: HDRSourceInfo, intent: sony2fuji_intent,
+                       longEdge: Int? = nil, session: OpaquePointer? = nil,
+                       camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
+                       cameraAIKey: String? = nil,
+                       progress: ((Double) -> Void)?,
+                       cancelled: () -> Bool = { false }) throws -> HDRImage {
+        try withoutActuallyEscaping(cancelled) { cancelled in
+            guard intent==SONY2FUJI_INTENT_FINAL || intent==SONY2FUJI_INTENT_PREVIEW,
+                  longEdge.map({ (1...65535).contains($0) }) ?? true,
+                  intent != SONY2FUJI_INTENT_FINAL || longEdge==nil,
+                  camera.isValid, camera.isDefault || info.isCameraRAW,
+                  cameraAIKey == nil || (info.isCameraRAW && session != nil && camera.cameraProfile == nil) else {
+                throw HDRRequestError.invalidSettings
+            }
+            let profileURL = try camera.cameraProfile.map { try HDRCameraProfileAssetStore.url(for: $0) }
+            if let proRAW = info.proRAW, let stamp = info.cameraStamp {
+                guard intent != SONY2FUJI_INTENT_PREVIEW || longEdge != nil else { throw HDRRequestError.invalidSettings }
+                progress?(0)
+                let developed = try proRAW.decode(url, stamp: stamp, longEdge: longEdge, cancelled: cancelled)
+                progress?(1)
+                return HDRImage(owned: developed.pair, url: url, info: info, proRAWBuffers: (developed.hdr, developed.sdr))
+            }
+            var decodeSession = session
+            defer {
+                if session == nil, let decodeSession { sony2fuji_session_destroy(decodeSession) }
+            }
+            if info.isCameraRAW || progress != nil {
+                if decodeSession == nil {
+                    let status = sony2fuji_session_create(&decodeSession)
+                    guard status == SONY2FUJI_STATUS_OK else {
+                        throw HDRNativeError(status: status, reason: UInt32(SONY2FUJI_HDR_REASON_OUT_OF_MEMORY),
+                            field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+                    }
                 }
             }
-            let status = CanonicalEditRecipe.processingOnlyJSON(processingVersion: Int(info.cameraProcessingVersion.rawValue))
-                .withCString { sony2fuji_apply_params(decodeSession, $0) }
-            guard status == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
-        }
-        var options=sony2fuji_hdr_decode_options_v1()
-        options.version=1; options.struct_size=UInt32(MemoryLayout.size(ofValue:options))
-        options.intent=UInt32(intent.rawValue); options.long_edge=UInt32(longEdge ?? 0)
-        var result=emptyPair(); var diagnostic=emptyDiagnostic()
-        let status = url.path.withCString { path in
             if info.isCameraRAW {
-                var development = sony2fuji_hdr_camera_development_v1()
-                development.version = 1; development.struct_size = UInt32(MemoryLayout.size(ofValue: development))
-                development.white_balance = UInt32(camera.whiteBalance == .asShot ? SONY2FUJI_HDR_CAMERA_WB_AS_SHOT : SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE)
-                development.exposure_reference = UInt32(camera.exposureReference == .metadata ? SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA : SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR)
-                development.temperature = Float(camera.temperature); development.tint = Float(camera.tint)
-                development.fbdd_level = UInt32(camera.fbddLevel)
-                development.lens_flags = UInt32((camera.lensDistortion ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
-                    (camera.lensTCA ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
-                    (camera.lensVignetting ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0) |
-                    (camera.lensActive && camera.lensAutoCrop ? SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP : 0))
-                func decode(_ lensProfile: UnsafePointer<CChar>?) -> sony2fuji_status {
-                    development.lens_profile_id = lensProfile
-                    if let profile = camera.cameraProfile, let profileURL {
-                        var profiled = sony2fuji_hdr_camera_development_v2()
-                        profiled.base = development
-                        profiled.base.version = 2
-                        profiled.base.struct_size = UInt32(MemoryLayout.size(ofValue: profiled))
-                        withUnsafeMutableBytes(of: &profiled.profile_sha256) { $0.copyBytes(from: profile.sha256.utf8) }
-                        return profileURL.path.withCString { resource in
-                            profiled.profile_path = resource
-                            return withUnsafePointer(to: &profiled) {
-                                $0.withMemoryRebound(to: sony2fuji_hdr_camera_development_v1.self, capacity: 1) {
-                                    sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, $0, &result, &diagnostic)
+                if let decodeSession {
+                    let status = CanonicalEditRecipe.processingOnlyJSON(processingVersion: Int(info.cameraProcessingVersion.rawValue))
+                        .withCString { sony2fuji_apply_params(decodeSession, $0) }
+                    guard status == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
+                }
+            }
+            var options=sony2fuji_hdr_decode_options_v1()
+            options.version=1; options.struct_size=UInt32(MemoryLayout.size(ofValue:options))
+            options.intent=UInt32(intent.rawValue); options.long_edge=UInt32(longEdge ?? 0)
+            var result=emptyPair(); var diagnostic=emptyDiagnostic()
+            let status = try withSessionCallbacks(decodeSession, cancelled: cancelled, progress: progress) {
+                url.path.withCString { path in
+                    if info.isCameraRAW {
+                        var development = sony2fuji_hdr_camera_development_v1()
+                        development.version = 1; development.struct_size = UInt32(MemoryLayout.size(ofValue: development))
+                        development.white_balance = UInt32(camera.whiteBalance == .asShot ? SONY2FUJI_HDR_CAMERA_WB_AS_SHOT : SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE)
+                        development.exposure_reference = UInt32(camera.exposureReference == .metadata ? SONY2FUJI_HDR_CAMERA_EXPOSURE_METADATA : SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR)
+                        development.temperature = Float(camera.temperature); development.tint = Float(camera.tint)
+                        development.fbdd_level = UInt32(camera.fbddLevel)
+                        development.lens_flags = UInt32((camera.lensDistortion ? SONY2FUJI_HDR_CAMERA_LENS_DISTORTION : 0) |
+                            (camera.lensTCA ? SONY2FUJI_HDR_CAMERA_LENS_TCA : 0) |
+                            (camera.lensVignetting ? SONY2FUJI_HDR_CAMERA_LENS_VIGNETTING : 0) |
+                            (camera.lensActive && camera.lensAutoCrop ? SONY2FUJI_HDR_CAMERA_LENS_AUTO_CROP : 0))
+                        func decodeRaw(_ lensProfile: UnsafePointer<CChar>?) -> sony2fuji_status {
+                            development.lens_profile_id = lensProfile
+                            if let profile = camera.cameraProfile, let profileURL {
+                                var profiled = sony2fuji_hdr_camera_development_v2()
+                                profiled.base = development
+                                profiled.base.version = 2
+                                profiled.base.struct_size = UInt32(MemoryLayout.size(ofValue: profiled))
+                                withUnsafeMutableBytes(of: &profiled.profile_sha256) { $0.copyBytes(from: profile.sha256.utf8) }
+                                return profileURL.path.withCString { resource in
+                                    profiled.profile_path = resource
+                                    return withUnsafePointer(to: &profiled) {
+                                        $0.withMemoryRebound(to: sony2fuji_hdr_camera_development_v1.self, capacity: 1) {
+                                            sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, $0, &result, &diagnostic)
+                                        }
+                                    }
                                 }
                             }
+                            if cameraAIKey != nil {
+                                return sony2fuji_hdr_decode_camera_raw_with_ai(decodeSession, path, &options, &development, &result, &diagnostic)
+                            }
+                            return sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, &development, &result, &diagnostic)
                         }
+                        return camera.lensProfile?.withCString(decodeRaw) ?? decodeRaw(nil)
                     }
-                    if cameraAIKey != nil {
-                        return sony2fuji_hdr_decode_camera_raw_with_ai(decodeSession, path, &options, &development, &result, &diagnostic)
-                    }
-                    return sony2fuji_hdr_decode_camera_raw_with_development(decodeSession, path, &options, &development, &result, &diagnostic)
+                    return sony2fuji_hdr_decode_with_session(decodeSession, path, &options, &result, &diagnostic)
                 }
-                return camera.lensProfile?.withCString(decode) ?? decode(nil)
             }
-            return sony2fuji_hdr_decode(path, &options, &result, &diagnostic)
+            if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
+            guard status==SONY2FUJI_STATUS_OK else { throw failure(status,diagnostic) }
+            let actual=withUnsafeBytes(of:result.source_sha256) { Data($0) }
+            let sameSource = info.isCameraRAW
+                ? (try? HDRSourceInfo.CameraStamp(url)) == info.cameraStamp
+                : actual == info.fingerprint
+            let sameAI = cameraAIKey.map { (try? Self.cameraAIKey(url, session: decodeSession)) == $0 } ?? true
+            guard sameSource && sameAI else {
+                sony2fuji_hdr_release_pair(&result)
+                throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                    reason:UInt32(SONY2FUJI_HDR_REASON_SOURCE_CHANGED),field:UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+            }
+            return HDRImage(owned:result,url:url,info:info)
         }
-        guard status==SONY2FUJI_STATUS_OK else { throw failure(status,diagnostic) }
-        let actual=withUnsafeBytes(of:result.source_sha256) { Data($0) }
-        let sameSource = info.isCameraRAW
-            ? (try? HDRSourceInfo.CameraStamp(url)) == info.cameraStamp
-            : actual == info.fingerprint
-        let sameAI = cameraAIKey.map { (try? Self.cameraAIKey(url, session: decodeSession)) == $0 } ?? true
-        guard sameSource && sameAI else {
-            sony2fuji_hdr_release_pair(&result)
-            throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
-                reason:UInt32(SONY2FUJI_HDR_REASON_SOURCE_CHANGED),field:UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
-        }
-        return HDRImage(owned:result,url:url,info:info)
     }
 
     func rendered(session: OpaquePointer, settings: HDRSettings, intent: sony2fuji_intent,
-                  longEdge: Int? = nil) throws -> HDRImage {
+                  longEdge: Int? = nil, cancelled: (() -> Bool)? = nil,
+                  progress: ((Double) -> Void)? = nil) throws -> HDRImage {
         let request=try makeHDRRequest(settings:settings,intent:intent,longEdge:longEdge)
         var result=Self.emptyPair(); var diagnostic=Self.emptyDiagnostic()
-        let status=withPair { pair in
-            withHDRRequestPrefix(request) { sony2fuji_hdr_render(session,pair,$0,&result,&diagnostic) }
+        let status = try Self.withSessionCallbacks(session, cancelled: cancelled, progress: progress) {
+            withPair { pair in
+                withHDRRequestPrefix(request) { sony2fuji_hdr_render(session,pair,$0,&result,&diagnostic) }
+            }
         }
+        if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
         return HDRImage(owned:result,url:sourceURL,info:sourceInfo)
     }
 
-    func exportJPEG(to output: URL, baseColor: HDRRecipe.BaseColor = .displayP3) throws {
-        try exportGainMap(to: output, baseColor: baseColor, heif: false)
+    func exportJPEG(to output: URL, baseColor: HDRRecipe.BaseColor = .displayP3,
+                    session: OpaquePointer? = nil, cancelled: (() -> Bool)? = nil,
+                    progress: ((Double) -> Void)? = nil) throws {
+        try exportGainMap(to: output, baseColor: baseColor, heif: false, session: session, cancelled: cancelled, progress: progress)
     }
 
     static var heifExportAvailable: Bool { sony2fuji_hdr_heif_export_available() != 0 }
 
-    func exportHEIF(to output: URL, baseColor: HDRRecipe.BaseColor = .displayP3) throws {
-        try exportGainMap(to: output, baseColor: baseColor, heif: true)
-    }
-
-    private final class ExportCancellation {
-        let check: () -> Bool
-        init(_ check: @escaping () -> Bool) { self.check = check }
+    func exportHEIF(to output: URL, baseColor: HDRRecipe.BaseColor = .displayP3,
+                    session: OpaquePointer? = nil, cancelled: (() -> Bool)? = nil,
+                    progress: ((Double) -> Void)? = nil) throws {
+        try exportGainMap(to: output, baseColor: baseColor, heif: true, session: session, cancelled: cancelled, progress: progress)
     }
 
     @discardableResult
     static func exportTiled(_ url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
                            longEdge: Int?, format: UInt32, session: OpaquePointer,
-                           cancelled: () -> Bool = { false }) throws -> sony2fuji_hdr_stream_result_v1 {
+                           cancelled: () -> Bool = { false },
+                           progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
         guard info.proRAW == nil else { throw HDRRequestError.invalidSettings }
         let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
         return try withoutActuallyEscaping(cancelled) { predicate in
-            let cancellation = ExportCancellation(predicate)
-            let callbackStatus = sony2fuji_session_set_cancellation_callback(session, { pointer in
-                guard let pointer else { return 0 }
-                return Unmanaged<ExportCancellation>.fromOpaque(pointer).takeUnretainedValue().check() ? 1 : 0
-            }, Unmanaged.passUnretained(cancellation).toOpaque())
-            guard callbackStatus == SONY2FUJI_STATUS_OK else { throw HDRRequestError.invalidSettings }
-            defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
-            if predicate() { throw CancellationError() }
-            let source = info.isCameraRAW ? try decode(url, info: info, intent: SONY2FUJI_INTENT_FINAL,
-                session: session, camera: settings.cameraDevelopmentSettings, cancelled: predicate) : nil
+            if predicate() || Task.isCancelled { throw CancellationError() }
+            let decodeWeight = info.isCameraRAW ? 0.35 : 0.0
+            let source = info.isCameraRAW ? try decode(
+                url, info: info, intent: SONY2FUJI_INTENT_FINAL,
+                session: session, camera: settings.cameraDevelopmentSettings,
+                progress: progress.map { report in { report($0 * decodeWeight) } },
+                cancelled: predicate
+            ) : nil
             if info.isCameraRAW, (try? HDRSourceInfo.CameraStamp(url)) != info.cameraStamp {
                 throw HDRNativeError(status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
                     reason: UInt32(SONY2FUJI_HDR_REASON_SOURCE_CHANGED), field: UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
@@ -343,26 +421,32 @@ final class HDRImage {
             var result = sony2fuji_hdr_stream_result_v1()
             result.version = 1; result.struct_size = UInt32(MemoryLayout.size(ofValue: result))
             var diagnostic = emptyDiagnostic()
-            let status = url.path.withCString { original in output.path.withCString { destination in
-                FileManager.default.temporaryDirectory.path.withCString { temporary in
-                    config.metadata_source_path = info.isCameraRAW ? nil : original
-                    let perform = { (pair: UnsafePointer<sony2fuji_hdr_image_pair_v1>?) in
-                        withHDRRequestPrefix(request) {
-                            sony2fuji_hdr_export_tiled(session, pair, nil, original, $0, &config, format,
-                                temporary, destination, &result, &diagnostic)
+            let tiledProgress: ((Double) -> Void)? = progress.map { report in
+                { fraction in report(decodeWeight + fraction * (1.0 - decodeWeight)) }
+            }
+            let status = try withSessionCallbacks(session, cancelled: predicate, progress: tiledProgress) {
+                url.path.withCString { original in output.path.withCString { destination in
+                    FileManager.default.temporaryDirectory.path.withCString { temporary in
+                        config.metadata_source_path = info.isCameraRAW ? nil : original
+                        let perform = { (pair: UnsafePointer<sony2fuji_hdr_image_pair_v1>?) in
+                            withHDRRequestPrefix(request) {
+                                sony2fuji_hdr_export_tiled(session, pair, nil, original, $0, &config, format,
+                                    temporary, destination, &result, &diagnostic)
+                            }
                         }
+                        return source.map { $0.withPair { perform($0) } } ?? perform(nil)
                     }
-                    return source.map { $0.withPair { perform($0) } } ?? perform(nil)
-                }
-            } }
-            withExtendedLifetime(cancellation) {}
+                } }
+            }
             if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
             guard status == SONY2FUJI_STATUS_OK else { throw failure(status, diagnostic) }
             return result
         }
     }
 
-    private func exportGainMap(to output: URL, baseColor: HDRRecipe.BaseColor, heif: Bool) throws {
+    private func exportGainMap(to output: URL, baseColor: HDRRecipe.BaseColor, heif: Bool,
+                               session: OpaquePointer? = nil, cancelled: (() -> Bool)? = nil,
+                               progress: ((Double) -> Void)? = nil) throws {
         try validateProRAWExport(to: output)
         var config=sony2fuji_hdr_export_config_v1()
         config.version=1; config.struct_size=UInt32(MemoryLayout.size(ofValue:config))
@@ -370,26 +454,34 @@ final class HDRImage {
         config.metadata_policy=UInt32(heif ? SONY2FUJI_HDR_METADATA_ISO : SONY2FUJI_HDR_METADATA_ISO_XMP)
         config.source_sha256=storage.source_sha256
         var diagnostic=Self.emptyDiagnostic()
-        let status=sourceURL.path.withCString { source in output.path.withCString { destination in
-            config.metadata_source_path = sourceInfo.isCameraRAW ? nil : source
-            return withPair {
-                heif ? sony2fuji_hdr_export_heif($0,&config,destination,&diagnostic)
-                    : sony2fuji_hdr_export_jpeg($0,&config,destination,&diagnostic)
-            }
-        } }
+        let status = try Self.withSessionCallbacks(session, cancelled: cancelled, progress: progress) {
+            sourceURL.path.withCString { source in output.path.withCString { destination in
+                config.metadata_source_path = sourceInfo.isCameraRAW ? nil : source
+                return withPair {
+                    heif ? sony2fuji_hdr_export_heif_with_session(session, $0, &config, destination, &diagnostic)
+                        : sony2fuji_hdr_export_jpeg_with_session(session, $0, &config, destination, &diagnostic)
+                }
+            } }
+        }
+        if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
     }
 
-    func exportSDR(to output: URL, format: sony2fuji_output_format) throws {
+    func exportSDR(to output: URL, format: sony2fuji_output_format,
+                   session: OpaquePointer? = nil, cancelled: (() -> Bool)? = nil,
+                   progress: ((Double) -> Void)? = nil) throws {
         try validateProRAWExport(to: output)
         var config=sony2fuji_hdr_sdr_export_config_v1()
         config.version=1; config.struct_size=UInt32(MemoryLayout.size(ofValue:config))
         config.output_format=UInt32(format.rawValue); config.quality=95; config.source_sha256=storage.source_sha256
         var diagnostic=Self.emptyDiagnostic()
-        let status=sourceURL.path.withCString { source in output.path.withCString { destination in
-            config.metadata_source_path = sourceInfo.isCameraRAW || format == SONY2FUJI_OUTPUT_DNG && sourceInfo.proRAW != nil ? nil : source
-            return withPair { sony2fuji_hdr_export_sdr($0,&config,destination,&diagnostic) }
-        } }
+        let status = try Self.withSessionCallbacks(session, cancelled: cancelled, progress: progress) {
+            sourceURL.path.withCString { source in output.path.withCString { destination in
+                config.metadata_source_path = sourceInfo.isCameraRAW || format == SONY2FUJI_OUTPUT_DNG && sourceInfo.proRAW != nil ? nil : source
+                return withPair { sony2fuji_hdr_export_sdr_with_session(session, $0, &config, destination, &diagnostic) }
+            } }
+        }
+        if status == SONY2FUJI_STATUS_CANCELLED { throw CancellationError() }
         guard status==SONY2FUJI_STATUS_OK else { throw Self.failure(status,diagnostic) }
     }
 

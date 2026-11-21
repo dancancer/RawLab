@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -477,6 +478,140 @@ int main(int argc, char** argv) {
             "invalid borrowed HDR request was accepted");
         require(borrowed.hdr == borrowedHdr && borrowed.sdr == borrowedSdr,
             "borrowed HDR pair was damaged by a failed render");
+
+        // Regression test 1: sony2fuji_hdr_render must honour cancellation even when
+        // photo effects, detail, and look are all inactive (exposure/tone-only render).
+        {
+            struct CancelState { int calls = 0; bool cancel = false; } cancelState{};
+            auto bigSettings = request();
+            bigSettings.exposure_ev = 0.5f;
+            std::vector<float> bigHdr(size_t(512) * 256 * 3, 0.4f);
+            std::vector<float> bigSdr(size_t(512) * 256 * 3, 0.25f);
+            auto bigPair = init<sony2fuji_hdr_image_pair_v1>();
+            bigPair.hdr.version = bigPair.sdr.version = 1;
+            bigPair.hdr.struct_size = bigPair.sdr.struct_size = sizeof(sony2fuji_hdr_buffer_v1);
+            bigPair.hdr.width = bigPair.sdr.width = bigPair.native_width = 512;
+            bigPair.hdr.height = bigPair.sdr.height = bigPair.native_height = 256;
+            bigPair.hdr.stride_bytes = bigPair.sdr.stride_bytes = 512 * 12;
+            bigPair.hdr.size_bytes = bigPair.sdr.size_bytes = bigHdr.size() * sizeof(float);
+            bigPair.hdr.pixel_format = bigPair.sdr.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR;
+            bigPair.hdr.color_encoding = bigPair.sdr.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
+            bigPair.hdr.headroom_kind = bigPair.sdr.headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
+            bigPair.hdr.content_headroom = 2.0f;
+            bigPair.sdr.content_headroom = 1.0f;
+            bigPair.hdr.data = bigHdr.data();
+            bigPair.sdr.data = bigSdr.data();
+            bigPair.orientation_applied = 1;
+            bigPair.source_intent = SONY2FUJI_INTENT_FINAL;
+            bigPair.render_intent = SONY2FUJI_INTENT_FINAL;
+            bigPair.source_headroom = 2.0f;
+            bigPair.source_headroom_kind = SONY2FUJI_HDR_HEADROOM_MEASURED;
+
+            struct ProgressLog {
+                std::vector<std::pair<uint32_t, uint32_t>> events;
+                bool cancelOnFirst = false;
+                bool cancelled = false;
+            } progressLog{};
+
+            require(sony2fuji_session_set_hdr_progress_callback(session,
+                [](void* ctx, uint32_t completed, uint32_t total) {
+                    auto* log = static_cast<ProgressLog*>(ctx);
+                    log->events.emplace_back(completed, total);
+                    if (log->cancelOnFirst) log->cancelled = true;
+                }, &progressLog) == SONY2FUJI_STATUS_OK, "setting HDR progress callback failed");
+            require(sony2fuji_session_set_cancellation_callback(session,
+                [](void* ctx) { return static_cast<ProgressLog*>(ctx)->cancelled ? 1 : 0; },
+                &progressLog) == SONY2FUJI_STATUS_OK, "setting HDR cancel callback failed");
+
+            progressLog.cancelled = true;
+            auto cancelOut = init<sony2fuji_hdr_image_pair_v1>();
+            require(sony2fuji_hdr_render(session, &bigPair, &bigSettings, &cancelOut, &diagnostic) == SONY2FUJI_STATUS_CANCELLED,
+                "exposure-only sony2fuji_hdr_render ignored cancellation");
+            require(!cancelOut.owner_token && !cancelOut.hdr.data, "cancelled render leaked output pair");
+
+            // Uncancelled render + export_jpeg_with_session + decode_with_session + export_sdr_with_session progress checks.
+            progressLog = {};
+            require(sony2fuji_hdr_render(session, &bigPair, &bigSettings, &cancelOut, &diagnostic) == SONY2FUJI_STATUS_OK,
+                "uncancelled HDR render failed");
+            auto checkMonotonic = [&](const char* label) {
+                require(!progressLog.events.empty(), std::string(label) + " emitted no progress");
+                uint32_t prev = 0;
+                for (const auto& [c, t] : progressLog.events) {
+                    require(t > 0 && c <= t && c >= prev, std::string(label) + " progress regressed");
+                    prev = c;
+                }
+                require(progressLog.events.back().first == progressLog.events.back().second,
+                    std::string(label) + " final progress did not reach total");
+            };
+            checkMonotonic("render");
+
+            namespace fs = std::filesystem;
+            const auto tmpDir = fs::temp_directory_path() / "rawlab-hdr-api-session-test";
+            fs::remove_all(tmpDir);
+            fs::create_directories(tmpDir);
+            const auto jpegOut = tmpDir / "out.jpg";
+            const auto sdrOut = tmpDir / "out-sdr.jpg";
+
+            auto exportCfg = init<sony2fuji_hdr_export_config_v1>();
+            exportCfg.jpeg_quality = 90;
+            exportCfg.base_color = SONY2FUJI_HDR_COLOR_SRGB;
+            exportCfg.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP;
+            progressLog = {};
+            require(sony2fuji_hdr_export_jpeg_with_session(session, &cancelOut, &exportCfg,
+                jpegOut.u8string().c_str(), &diagnostic) == SONY2FUJI_STATUS_OK && fs::exists(jpegOut),
+                "export_jpeg_with_session failed");
+            checkMonotonic("export_jpeg_with_session");
+
+            // Pre-publish cancel from inside progress callback leaves no output or staging file.
+            const auto cancelledJpegOut = tmpDir / "cancelled.jpg";
+            progressLog = {};
+            progressLog.cancelOnFirst = true;
+            require(sony2fuji_hdr_export_jpeg_with_session(session, &cancelOut, &exportCfg,
+                cancelledJpegOut.u8string().c_str(), &diagnostic) == SONY2FUJI_STATUS_CANCELLED,
+                "export_jpeg_with_session did not cancel mid-export");
+            require(!fs::exists(cancelledJpegOut), "cancelled export_jpeg_with_session left output file");
+
+            auto decodeOpts = init<sony2fuji_hdr_decode_options_v1>();
+            decodeOpts.intent = SONY2FUJI_INTENT_FINAL;
+            auto decodedPair = init<sony2fuji_hdr_image_pair_v1>();
+            progressLog = {};
+            require(sony2fuji_hdr_decode_with_session(session, jpegOut.u8string().c_str(), &decodeOpts,
+                &decodedPair, &diagnostic) == SONY2FUJI_STATUS_OK, "decode_with_session failed");
+            checkMonotonic("decode_with_session");
+            sony2fuji_hdr_release_pair(&decodedPair);
+
+            decodedPair = init<sony2fuji_hdr_image_pair_v1>();
+            progressLog = {};
+            progressLog.cancelled = true;
+            require(sony2fuji_hdr_decode_with_session(session, jpegOut.u8string().c_str(), &decodeOpts,
+                &decodedPair, &diagnostic) == SONY2FUJI_STATUS_CANCELLED && !decodedPair.owner_token,
+                "decode_with_session ignored cancellation");
+
+            auto sdrCfg = init<sony2fuji_hdr_sdr_export_config_v1>();
+            sdrCfg.output_format = SONY2FUJI_OUTPUT_JPEG;
+            sdrCfg.quality = 90;
+            progressLog = {};
+            require(sony2fuji_hdr_export_sdr_with_session(session, &cancelOut, &sdrCfg,
+                sdrOut.u8string().c_str(), &diagnostic) == SONY2FUJI_STATUS_OK && fs::exists(sdrOut),
+                "export_sdr_with_session failed");
+            checkMonotonic("export_sdr_with_session");
+
+            if (sony2fuji_hdr_heif_export_available()) {
+                const auto heifOut = tmpDir / "out.heic";
+                auto heifCfg = exportCfg;
+                heifCfg.metadata_policy = SONY2FUJI_HDR_METADATA_ISO;
+                progressLog = {};
+                require(sony2fuji_hdr_export_heif_with_session(session, &cancelOut, &heifCfg,
+                    heifOut.u8string().c_str(), &diagnostic) == SONY2FUJI_STATUS_OK && fs::exists(heifOut),
+                    "export_heif_with_session failed");
+                checkMonotonic("export_heif_with_session");
+            }
+
+            sony2fuji_session_set_hdr_progress_callback(session, nullptr, nullptr);
+            sony2fuji_session_set_cancellation_callback(session, nullptr, nullptr);
+            sony2fuji_hdr_release_pair(&cancelOut);
+            fs::remove_all(tmpDir);
+        }
 
         sony2fuji_session_destroy(session);
         std::cout << "PASS hdr_api_validation\n";

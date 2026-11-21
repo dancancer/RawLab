@@ -1160,10 +1160,22 @@
       "symbol": "sony2fuji_hdr_probe_look"
     },
     {
+      "name": "sony2fuji_session_set_hdr_progress_callback",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "sony2fuji_hdr_progress_callback", "void*"],
+      "symbol": "sony2fuji_session_set_hdr_progress_callback"
+    },
+    {
       "name": "sony2fuji_hdr_decode",
       "return_type": "sony2fuji_status",
       "params": ["const char*", "const sony2fuji_hdr_decode_options_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
       "symbol": "sony2fuji_hdr_decode"
+    },
+    {
+      "name": "sony2fuji_hdr_decode_with_session",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_decode_options_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_decode_with_session"
     },
     {
       "name": "sony2fuji_hdr_probe_camera_raw",
@@ -1274,6 +1286,12 @@
       "symbol": "sony2fuji_hdr_export_jpeg"
     },
     {
+      "name": "sony2fuji_hdr_export_jpeg_with_session",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_export_config_v1*", "const char*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_jpeg_with_session"
+    },
+    {
       "name": "sony2fuji_hdr_heif_export_available",
       "return_type": "uint32_t",
       "params": [],
@@ -1286,10 +1304,22 @@
       "symbol": "sony2fuji_hdr_export_heif"
     },
     {
+      "name": "sony2fuji_hdr_export_heif_with_session",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_export_config_v1*", "const char*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_heif_with_session"
+    },
+    {
       "name": "sony2fuji_hdr_export_sdr",
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_sdr_export_config_v1*", "const char*", "sony2fuji_hdr_diagnostic_v1*"],
       "symbol": "sony2fuji_hdr_export_sdr"
+    },
+    {
+      "name": "sony2fuji_hdr_export_sdr_with_session",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_sdr_export_config_v1*", "const char*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_sdr_with_session"
     },
     {
       "name": "sony2fuji_hdr_export_stream",
@@ -1602,6 +1632,11 @@
       "name": "sony2fuji_hdr_finish_decode_callback",
       "return_type": "sony2fuji_status",
       "params": ["void*"]
+    },
+    {
+      "name": "sony2fuji_hdr_progress_callback",
+      "return_type": "void",
+      "params": ["void*", "uint32_t", "uint32_t"]
     }
   ]
 }
