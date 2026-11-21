@@ -36,13 +36,13 @@ SDR rendition 和 SDR/HDR JPEG 使用共享 DNG profile/增益表后端及有界
 decoder revision 在恢复或进入 HDR 前拒绝。预设、同步和批量 HDR 仅对实际探测为 ProRAW 的
 RAW 放行，不能因 `.dng` 扩展名把普通 Bayer RAW 提升到该路径。
 
-## 下载 v0.10.0 Windows 包
+## 下载 v0.11.0 Windows 包
 
-[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.10.0/RawLab-Windows-0.10.0-x64.zip) · [发布说明](../docs/releases/v0.10/v0.10.0.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.10.0/SHA256SUMS.txt)
+[Windows x64 安装程序](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab.Desktop-stable-Setup.exe) · [手动安装 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Windows-0.11.0-x64.zip) · [发布说明](../docs/releases/v0.11/v0.11.0.md) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt)
 
-版本 `0.10.0` / build `19`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
+版本 `0.11.0` / build `20`，self-contained .NET 8，包含原生核心、运行库、LUT、Lens DB、ExifTool、GPU AI 模型和许可文件。安装程序按当前用户安装，支持签名描述文件校验的自动更新；ZIP 解压后运行 `RawLab.exe`，必须保留完整目录并手动更新。程序没有 Authenticode 签名，首次安装可能需要在 SmartScreen 选择“更多信息 → 仍要运行”。
 
-本次扩展 HDR 曲线、色彩、细节、效果和外观，增加 Edit、Select、Preview 桌面工作区；从系统打开的文件会转交已运行的应用。新增 16 位整数 RGB PNG/TIFF 和普通 SDR HEIF 输入，并修复普通图像批量目标因来源启用 AI 降噪而无法导出的问题。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
+本次引入 Processing v3（±5 EV SDR 曝光及校验后可回滚升级）、已编辑铅笔标记与效果缩略图、Sony RAW 全传感器画幅显影、16 位渲染型 DNG 内嵌预览、移动端 RGB 分通道曲线与镜头暗角开关保留，并修复手动安装版更新检测、更新失败锁死、HDR 显示、D3D11 设备丢失恢复及大图分块渲染。正式包带阿里云 RUM SDK，默认开启使用统计，可在关于页关闭。构建、原生/WPF 检查、实际设备与更新覆盖见发布附件 `BUILD-PROVENANCE.json`。
 
 ## 构建
 

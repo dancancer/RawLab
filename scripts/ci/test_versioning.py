@@ -59,11 +59,16 @@ class SingleSourceVersioningTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_bump_syncs_all_four_platforms_and_passes_check(self) -> None:
+        source = json.loads((ROOT / "Shared/version.json").read_text(encoding="utf-8"))
+        current_version = source["version"]
+        current_build = source["build"]
+        next_version = "99.1.2" if current_version != "99.1.2" else "99.1.3"
+        next_build = current_build + 7 if current_build + 7 <= 65535 else current_build - 1
         with tempfile.TemporaryDirectory(prefix="rawlab-version-sync-") as tmp:
             root = Path(tmp)
             _copy_versioned_tree(root)
             (root / "Shared/version.json").write_text(
-                json.dumps({"version": "0.11.2", "build": 25}, indent=2) + "\n",
+                json.dumps({"version": next_version, "build": next_build}, indent=2) + "\n",
                 encoding="utf-8",
             )
             # Before syncing, --check must fail closed without modifying files.
@@ -71,7 +76,7 @@ class SingleSourceVersioningTests(unittest.TestCase):
             self.assertNotEqual(pre_check.returncode, 0)
             self.assertEqual(
                 plistlib.loads((root / "RawLabMac/Info.plist").read_bytes())["CFBundleShortVersionString"],
-                "0.10.0",
+                current_version,
             )
 
             sync = _run_generator(root)
@@ -81,32 +86,45 @@ class SingleSourceVersioningTests(unittest.TestCase):
 
             for rel in ("RawLab/RawLab/Resources/Info.plist", "RawLabMac/Info.plist"):
                 info = plistlib.loads((root / rel).read_bytes())
-                self.assertEqual(info["CFBundleShortVersionString"], "0.11.2")
-                self.assertEqual(info["CFBundleVersion"], "25")
+                self.assertEqual(info["CFBundleShortVersionString"], next_version)
+                self.assertEqual(info["CFBundleVersion"], str(next_build))
 
             gradle_text = (root / "RawLabAndroid/app/build.gradle.kts").read_text(encoding="utf-8")
-            self.assertIn("versionCode = 25", gradle_text)
-            self.assertIn('versionName = "0.11.2"', gradle_text)
+            self.assertIn(f"versionCode = {next_build}", gradle_text)
+            self.assertIn(f'versionName = "{next_version}"', gradle_text)
 
             csproj_root = ET.fromstring((root / "RawLabWindows/RawLabWindows.csproj").read_text(encoding="utf-8"))
-            self.assertEqual(csproj_root.findtext("./PropertyGroup/Version"), "0.11.2")
-            self.assertEqual(csproj_root.findtext("./PropertyGroup/FileVersion"), "0.11.2.25")
-            self.assertEqual(csproj_root.findtext("./PropertyGroup/InformationalVersion"), "0.11.2+build.25")
+            self.assertEqual(csproj_root.findtext("./PropertyGroup/Version"), next_version)
+            self.assertEqual(csproj_root.findtext("./PropertyGroup/FileVersion"), f"{next_version}.{next_build}")
+            self.assertEqual(
+                csproj_root.findtext("./PropertyGroup/InformationalVersion"),
+                f"{next_version}+build.{next_build}",
+            )
 
     def test_mutations_in_each_platform_file_fail_check_without_writing(self) -> None:
+        source = json.loads((ROOT / "Shared/version.json").read_text(encoding="utf-8"))
+        ver = source["version"]
+        build = source["build"]
+        alt_ver = "0.9.9" if ver != "0.9.9" else "0.9.8"
+        alt_build_down = build - 1 if build > 1 else build + 1
+        alt_build_up = build + 1 if build < 65535 else build - 1
         mutations = (
-            ("RawLab/RawLab/Resources/Info.plist", "<string>0.10.0</string>", "<string>0.9.9</string>"),
-            ("RawLab/RawLab/Resources/Info.plist", "<string>19</string>", "<string>18</string>"),
-            ("RawLabMac/Info.plist", "<string>0.10.0</string>", "<string>0.9.9</string>"),
-            ("RawLabMac/Info.plist", "<string>19</string>", "<string>20</string>"),
-            ("RawLabAndroid/app/build.gradle.kts", "versionCode = 19", "versionCode = 18"),
-            ("RawLabAndroid/app/build.gradle.kts", 'versionName = "0.10.0"', 'versionName = "0.9.9"'),
-            ("RawLabWindows/RawLabWindows.csproj", "<Version>0.10.0</Version>", "<Version>0.9.9</Version>"),
-            ("RawLabWindows/RawLabWindows.csproj", "<FileVersion>0.10.0.19</FileVersion>", "<FileVersion>0.10.0.18</FileVersion>"),
+            ("RawLab/RawLab/Resources/Info.plist", f"<string>{ver}</string>", f"<string>{alt_ver}</string>"),
+            ("RawLab/RawLab/Resources/Info.plist", f"<string>{build}</string>", f"<string>{alt_build_down}</string>"),
+            ("RawLabMac/Info.plist", f"<string>{ver}</string>", f"<string>{alt_ver}</string>"),
+            ("RawLabMac/Info.plist", f"<string>{build}</string>", f"<string>{alt_build_up}</string>"),
+            ("RawLabAndroid/app/build.gradle.kts", f"versionCode = {build}", f"versionCode = {alt_build_down}"),
+            ("RawLabAndroid/app/build.gradle.kts", f'versionName = "{ver}"', f'versionName = "{alt_ver}"'),
+            ("RawLabWindows/RawLabWindows.csproj", f"<Version>{ver}</Version>", f"<Version>{alt_ver}</Version>"),
             (
                 "RawLabWindows/RawLabWindows.csproj",
-                "<InformationalVersion>0.10.0+build.19</InformationalVersion>",
-                "<InformationalVersion>0.10.0+build.18</InformationalVersion>",
+                f"<FileVersion>{ver}.{build}</FileVersion>",
+                f"<FileVersion>{ver}.{alt_build_down}</FileVersion>",
+            ),
+            (
+                "RawLabWindows/RawLabWindows.csproj",
+                f"<InformationalVersion>{ver}+build.{build}</InformationalVersion>",
+                f"<InformationalVersion>{ver}+build.{alt_build_down}</InformationalVersion>",
             ),
         )
         for rel, old, new in mutations:
