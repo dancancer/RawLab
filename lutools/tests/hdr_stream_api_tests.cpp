@@ -193,6 +193,30 @@ int main(int argc, char* argv[]) {
         }
         require(hdr::probeFile(output.u8string().c_str()).width == 48, "Stream output does not contain a valid gain map");
         const auto existing = read(output);
+        {
+            hdr::JPEGTransformBase detachedTransform;
+            {
+                std::string metaPath = original.u8string();
+                std::string targetPath = (directory / "detached-target.jpg").u8string();
+                HDRExportConfig cfg{};
+                cfg.jpegQuality = 90;
+                cfg.baseColor = kHdrColorSrgb;
+                cfg.metadataPolicy = kHdrMetadataIsoXmp;
+                cfg.metadataSourcePath = metaPath.c_str();
+                std::copy_n(source.source_sha256, 32, cfg.sourceSha256);
+                hdr::StreamSourcePin detachedPin;
+                hdr::validateStreamSource(cfg, 48, 32, targetPath.c_str(), detachedPin);
+                detachedTransform = hdr::makeStreamBaseTransform(cfg, 48, 32, targetPath.c_str(), detachedPin);
+                metaPath.assign(metaPath.size(), 'X');
+                targetPath.assign(targetPath.size(), 'Y');
+                cfg.metadataSourcePath = nullptr;
+                std::fill_n(cfg.sourceSha256, 32, uint8_t{0});
+            }
+            const auto baseOnly = hdr::jpegBase(originalBytes.data(), originalBytes.size());
+            const auto tagged = detachedTransform(baseOnly);
+            require(tagged.size() > 2 && tagged[0] == 0xFF && tagged[1] == 0xD8,
+                "Detached makeStreamBaseTransform did not produce valid JPEG");
+        }
 #ifndef _WIN32
         {
             const auto permTarget = directory / "perm-target.jpg";

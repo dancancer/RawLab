@@ -288,7 +288,7 @@ extension RawEditorViewModel {
                         }
                     }
 
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
                         self.isBusy = false
                         self.isExportingHDR = false
                         self.isStoppingHDRExport = false
@@ -298,7 +298,7 @@ extension RawEditorViewModel {
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
                 } catch {
-                    DispatchQueue.main.async {
+                    self.resultDelivery {
                         self.isBusy = false
                         self.isExportingHDR = false
                         self.isStoppingHDRExport = false

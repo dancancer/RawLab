@@ -83,7 +83,7 @@ inline void reportHdrProgress(uint32_t completed, uint32_t total) {
     mapped = std::max(mapped, *hdrProgress.highWater);
     mapped = std::min(mapped, hdrProgress.rangeTotal);
     const bool alreadyEmitted = hdrProgress.emitted && *hdrProgress.emitted;
-    if (alreadyEmitted && mapped == *hdrProgress.highWater && mapped < hdrProgress.rangeTotal) {
+    if (alreadyEmitted && mapped == *hdrProgress.highWater) {
         return;
     }
     *hdrProgress.highWater = mapped;

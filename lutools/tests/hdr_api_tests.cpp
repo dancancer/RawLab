@@ -536,8 +536,10 @@ int main(int argc, char** argv) {
             auto checkMonotonic = [&](const char* label) {
                 require(!progressLog.events.empty(), std::string(label) + " emitted no progress");
                 uint32_t prev = 0;
-                for (const auto& [c, t] : progressLog.events) {
-                    require(t > 0 && c <= t && c >= prev, std::string(label) + " progress regressed");
+                for (size_t i = 0; i < progressLog.events.size(); ++i) {
+                    const auto [c, t] = progressLog.events[i];
+                    require(t > 0 && c <= t && (i == 0 ? c >= prev : c > prev),
+                        std::string(label) + " progress regressed or duplicated");
                     prev = c;
                 }
                 require(progressLog.events.back().first == progressLog.events.back().second,

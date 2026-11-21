@@ -16,6 +16,7 @@
 #include <os/proc.h>
 #endif
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -24,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <limits>
+#include <string>
 #include <malloc/malloc.h>
 #include <cerrno>
 #include <fcntl.h>
@@ -800,20 +802,35 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
 JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_t width, uint32_t height,
     const char* path, const StreamSourcePin& pin) {
     if (!config.metadataSourcePath) return {};
-    return [&config, width, height, path, &pin](const std::vector<uint8_t>& base) {
+    std::string metadataPath(config.metadataSourcePath);
+    const bool hasTargetPath = path != nullptr;
+    std::string targetPath(path ? path : "");
+    std::array<uint8_t, 32> expectedSha{};
+    std::copy_n(config.sourceSha256, 32, expectedSha.begin());
+    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+    const bool hasPin = impl != nullptr;
+    NSData* pinnedData = impl ? impl->data : nil;
+    std::shared_ptr<const void> pinnedSource;
+    if (impl && impl->source) {
+        pinnedSource.reset(CFRetain(impl->source), [](const void* ref) {
+            if (ref) CFRelease(ref);
+        });
+    }
+    return [metadataPath = std::move(metadataPath), hasTargetPath, targetPath = std::move(targetPath),
+            expectedSha, width, height, hasPin, pinnedData, pinnedSource](const std::vector<uint8_t>& base) {
         @autoreleasepool {
             if (@available(macOS 15.0, iOS 18.0, *)) {
                 checkProcessingCancellation();
-                const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+                const char* destPath = hasTargetPath ? targetPath.c_str() : nullptr;
                 File source;
                 NSDictionary* properties = nil;
-                if (impl) {
-                    source.data = impl->data;
-                    source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
-                    differentFile(config.metadataSourcePath, path);
+                if (hasPin) {
+                    source.data = pinnedData;
+                    source.source = pinnedSource ? (CGImageSourceRef)CFRetain(pinnedSource.get()) : nullptr;
+                    differentFile(metadataPath.c_str(), destPath);
                     properties = buildMetadata(source, width, height);
                 } else {
-                    properties = metadata(source, config.metadataSourcePath, config.sourceSha256, width, height, path);
+                    properties = metadata(source, metadataPath.c_str(), expectedSha.data(), width, height, destPath);
                 }
                 NSData* tagged = addBaseMetadata(
                     [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],

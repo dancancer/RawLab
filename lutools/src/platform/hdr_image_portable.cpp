@@ -13,6 +13,7 @@
 #include "sony2fuji/raw_processor.h"
 #include <lcms2.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <cmath>
@@ -20,6 +21,8 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
+#include <string>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -166,7 +169,7 @@ File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
     while (true) {
         checkProcessingCancellation();
         if (filled < size) {
-            const DWORD chunk = DWORD((std::min)<size_t>(4u * 1024 * 1024, size_t(size - filled)));
+            const DWORD chunk = DWORD((std::min)(size_t(4u * 1024 * 1024), size_t(size - filled)));
             DWORD got = 0;
             if (!ReadFile(handle, file.bytes.data() + filled, chunk, &got, nullptr))
                 fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
@@ -450,30 +453,38 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
     pin.impl = impl.release();
 }
 namespace {
-std::vector<uint8_t> buildStreamExif(const HDRExportConfig& config, uint32_t width, uint32_t height,
-    const StreamSourcePin& pin, const uint8_t* expected) {
-    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+std::vector<uint8_t> buildStreamExif(const char* metadataSourcePath, uint32_t width, uint32_t height,
+    const StreamSourcePinImpl* impl, const uint8_t* expected) {
     if (impl) {
         const auto currentStamp = resourceFileStamp(impl->path);
         if (!currentStamp || !(*currentStamp == impl->stamp))
             fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
         if (impl->isTiff) {
-            (void)probeProRAW(config.metadataSourcePath);
+            (void)probeProRAW(metadataSourcePath);
             return sanitizedDNGExif(impl->path, width, height);
         }
         return sanitizedExif(impl->rawExif.data(), impl->rawExif.size(), width, height);
     }
-    return captureMetadata(config.metadataSourcePath, expected, width, height);
+    return captureMetadata(metadataSourcePath, expected, width, height);
 }
 } // namespace
 
 JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_t width, uint32_t height,
     const char*, const StreamSourcePin& pin) {
     if (!config.metadataSourcePath) return {};
-    const uint8_t* expected = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
-    return [&config, width, height, &pin, expected](const std::vector<uint8_t>& base) {
+    std::string metadataPath(config.metadataSourcePath);
+    const uint8_t* sourceSha = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
+    std::array<uint8_t, 32> expected{};
+    std::copy_n(sourceSha, 32, expected.begin());
+    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+    std::shared_ptr<const StreamSourcePinImpl> pinned;
+    if (impl) {
+        pinned = std::make_shared<StreamSourcePinImpl>(*impl);
+    }
+    return [metadataPath = std::move(metadataPath), width, height, pinned = std::move(pinned),
+            expected](const std::vector<uint8_t>& base) {
         checkProcessingCancellation();
-        const auto exif = buildStreamExif(config, width, height, pin, expected);
+        const auto exif = buildStreamExif(metadataPath.c_str(), width, height, pinned.get(), expected.data());
         return withJPEGExif(base.data(), base.size(), exif.data(), exif.size());
     };
 }
@@ -486,7 +497,7 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
     const uint8_t* expected = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
     if (!(hdr && baseMetadataApplied)) {
         admitStreamingMemory(uint64_t(data.size()) * 8 + (64ull << 20));
-        const auto exif = buildStreamExif(config, width, height, pin, expected);
+        const auto exif = buildStreamExif(config.metadataSourcePath, width, height, impl, expected);
         if (hdr) {
             const auto base = jpegBase(data.data(),data.size());
             const auto tagged = withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
