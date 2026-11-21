@@ -130,8 +130,81 @@ public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,I
     public bool Ready=>Rows.Count>0 && Rows.All(row=>row.Error==null && row.Record!=null && row.Settings!=null);
 }
 
-// 冻结产物：任务与已写进日志目录、尚未随任务落盘的 look 副本（未挂载前由调用方负责释放）。
-public sealed record FrozenCollectionExport(BatchJob Job,List<string> OwnedLookCopies);
+// 冻结事务：持有已写进日志目录的 look 副本所有权；Commit 成功后落盘并释放旧已完成任务，
+// 未提交（异常或提前释放）时自动回滚删除本次暂存的 look 副本。
+public sealed class FrozenCollectionExport : IDisposable
+{
+    private readonly BatchJournal journal;
+    private readonly BatchJob? previousCompletedJob;
+    private readonly List<string> stagedLookCopies;
+    private bool committed;
+    private bool rolledBack;
+    private bool disposed;
+
+    internal FrozenCollectionExport(
+        BatchJob job,
+        BatchJournal journal,
+        BatchJob? previousCompletedJob,
+        List<string> stagedLookCopies)
+    {
+        Job = job;
+        this.journal = journal;
+        this.previousCompletedJob = previousCompletedJob;
+        this.stagedLookCopies = stagedLookCopies;
+    }
+
+    public BatchJob Job { get; }
+    public int StagedLookCopyCount => stagedLookCopies.Count;
+
+    public BatchJob Commit(Action? validateBeforeCommit = null)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (committed || rolledBack)
+            throw new InvalidOperationException("Frozen collection export has already completed.");
+
+        try
+        {
+            validateBeforeCommit?.Invoke();
+            journal.Save(Job);
+            committed = true;
+            stagedLookCopies.Clear();
+            if (previousCompletedJob != null)
+            {
+                try { journal.ReleaseResources(previousCompletedJob); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return Job;
+        }
+        catch
+        {
+            if (!committed) Rollback();
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true;
+        if (!committed) Rollback();
+    }
+
+    private void Rollback()
+    {
+        rolledBack = true;
+        foreach (var path in stagedLookCopies)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        stagedLookCopies.Clear();
+    }
+}
 
 public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Func<SavedEdit,string?> resolveLook,
     Action<string>? validateAI=null,Func<string,long>? editGeneration=null)
@@ -189,11 +262,19 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
         }
         return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
     }
+    private BatchJob? EnsureNoUnfinishedTask()
+    {
+        var persisted = journal.Load();
+        if (persisted != null && persisted.SelectedCount > persisted.SucceededCount)
+            throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
+        return persisted;
+    }
+
     // 冻结核心：前后双遍全集重验 + 每目标 look 副本拷贝。只做文件读取、会话代次比较与入口已固化的委托查询，
-    // 可经 Task.Run 在后台线程执行（MainWindow.FreezeCollectionExportAsync 与 PrepareCollectionExportAsync 同形）；
-    // 日志落盘、上一任务释放与 UI 切换仍在 UI 线程原子完成（本方法的同步 Freeze 包装即该形态）。
+    // 可经 Task.Run 在后台线程执行（FreezeAsync 与 PrepareCollectionExportAsync 同形）；
+    // 日志落盘、上一任务释放与 UI 复核通过返回的 FrozenCollectionExport.Commit 原子完成。
     public FrozenCollectionExport FreezeCore(CollectionExportReview review,IReadOnlyList<string> selectionIDs,Func<string,string?> activeFailure,
-        int aiBackend=2,string aiDeviceID="",Action<string>? observeStage=null)
+        int aiBackend=2,string aiDeviceID="",Action<string>? observeStage=null,BatchJob? previousCompletedJob=null)
     {
         void Validate() {
             observeStage?.Invoke("revalidate");
@@ -237,22 +318,23 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 SourceSupportsCameraHDR=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsRaw(items[0].Input),
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
                 LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
-            return new FrozenCollectionExport(job,owned);
+            return new FrozenCollectionExport(job,journal,previousCompletedJob,owned);
         }catch {foreach(var path in owned)if(File.Exists(path))File.Delete(path);throw;}
     }
     public BatchJob Freeze(BatchSelectionSession selection,CollectionExportReview review,Func<string,string?> activeFailure,int aiBackend=2,string aiDeviceID="")
     {
         if(!review.Ready || !selection.SelectedPhotos.Select(photo=>photo.ID).SequenceEqual(review.SelectionIDs))
             throw new InvalidOperationException(Loc.Text("照片选择已变化，请重新检查。"));
-        var previous=journal.Load();
-        if(previous!=null && previous.SelectedCount>previous.SucceededCount)
-            throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
-        var frozen=FreezeCore(review,selection.SelectedPhotos.Select(photo=>photo.ID).ToList(),activeFailure,aiBackend,aiDeviceID);
-        try {
-            journal.Save(frozen.Job);frozen.OwnedLookCopies.Clear();
-            if(previous!=null)try{journal.ReleaseResources(previous);}catch(IOException){}catch(UnauthorizedAccessException){}
-            return frozen.Job;
-        }catch {foreach(var path in frozen.OwnedLookCopies)if(File.Exists(path))File.Delete(path);throw;}
+        var previous=EnsureNoUnfinishedTask();
+        using var frozen=FreezeCore(review,selection.SelectedPhotos.Select(photo=>photo.ID).ToList(),activeFailure,aiBackend,aiDeviceID,previousCompletedJob:previous);
+        return frozen.Commit();
+    }
+    public async Task<BatchJob> FreezeAsync(CollectionExportReview review,IReadOnlyList<string> selectionIDs,Func<string,string?> activeFailure,
+        Action? validateBeforeCommit=null,int aiBackend=2,string aiDeviceID="",Action<string>? observeStage=null)
+    {
+        var previous=EnsureNoUnfinishedTask();
+        using var frozen=await Task.Run(()=>FreezeCore(review,selectionIDs,activeFailure,aiBackend,aiDeviceID,observeStage,previous));
+        return frozen.Commit(validateBeforeCommit);
     }
 }
 
