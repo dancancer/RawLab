@@ -2,14 +2,10 @@ package com.rawlab.android.engine
 
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.raster.DecodedRaster
-import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
-import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.HslTargetRevision
-import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.X3fMode
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -31,12 +27,8 @@ class NativeProcessRequestTest {
             customWb = true,
             temperature = 5200f,
             tint = 14f,
-            denoise = DenoiseSettings(enabled = true, luma = 12f, chroma = 50f, coarse = 60f),
             sharpening = 0.9f,
-            effects = PhotoEffectsSettings(vignetteAmount = -30f, grainAmount = 20f),
-            displayChromaDenoise = 2,
             exposureMode = 0,
-            hsl = HslSettings().withValue(0, 2, 18f),
             processing = ProcessingIdentity.CURRENT,
             x3fMode = X3fMode.LEGACY,
         )
@@ -69,9 +61,6 @@ class NativeProcessRequestTest {
         assertEquals(-0.2f, req.tone.toneCurve, 0f)
         assertEquals(0.85f, req.tone.saturation, 1e-6f)
         assertEquals(0.9f, req.tone.sharpening, 0f)
-        assertEquals(NativeDenoiseConfig(enabled = true, luma = 12f, chroma = 50f, coarse = 60f, displayChroma = 2), req.denoise)
-        assertEquals(settings.effects.toNativePhotoEffects(), req.effects)
-        assertArrayEquals(settings.renderHsl.packed(), req.hsl, 0f)
         assertEquals(0, req.exposureMode)
         assertEquals(3, req.processingVersion)
         assertEquals(X3fMode.LEGACY.nativeValue, req.x3fMode)

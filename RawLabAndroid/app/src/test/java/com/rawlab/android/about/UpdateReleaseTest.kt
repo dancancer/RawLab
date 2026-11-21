@@ -15,10 +15,11 @@ class UpdateReleaseTest {
         assertEquals("https://github.com/dancancer/RawLab/releases/tag/v0.4.1", release("v0.4.1")?.url)
     }
 
-    @Test fun rejectsInvalidTagsAndIgnoresUnpublishedOrOtherPlatformReleases() {
-        for (tag in listOf("v0.5.0-beta", "v0.5.0/evil", "bad", "0.-1.0")) {
-            assertThrows(IllegalArgumentException::class.java) { release(tag) }
+    @Test fun ignoresNonSemverOrInvalidTagsAndUnpublishedOrOtherPlatformReleases() {
+        for (tag in listOf("assets-v1", "v0.5.0-beta", "v0.5.0/evil", "bad", "0.-1.0", "", "v99999999999999999999.0.0")) {
+            assertNull(release(tag))
         }
+        assertNull(UpdateRelease.select("v0.5.0", false, false, "Notes", listOf("RawLab-Android-0.5.0.apk"), "unknown"))
         assertNull(release("v0.5.0", draft = true))
         assertNull(release("v0.5.0", preview = true))
         assertNull(release("v0.5.0", assets = listOf("RawLab-Mac-arm64.zip")))

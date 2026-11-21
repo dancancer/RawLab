@@ -107,7 +107,8 @@ class EditorUiSmokeTest {
             compose.toggleWorkbenchFine()
             compose.assertWorkbenchFine(true)
             compose.toggleWorkbenchHistogram()
-            compose.onNodeWithTag("rgb-histogram").assertIsDisplayed()
+            compose.onNodeWithTag("rgb-histogram-popup").assertIsDisplayed()
+            compose.onNodeWithTag("rgb-histogram-plot").assertIsDisplayed()
 
             compose.runOnUiThread { compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             compose.waitUntil(20_000) { compose.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE }
@@ -132,7 +133,7 @@ class EditorUiSmokeTest {
             compose.runOnUiThread { model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }
             compose.waitUntilEditorReady(model)
 
-            compose.openWorkbenchTool(19)
+            compose.openWorkbenchTool(6)
             compose.onNodeWithTag("curve-channel-red").performScrollTo().performClick()
             compose.onNodeWithTag("curve-edit-point").performScrollTo().assertIsDisplayed()
             compose.cancelWorkbenchDraft(model)
@@ -141,12 +142,16 @@ class EditorUiSmokeTest {
             compose.onNodeWithTag("adjustment-value-${R.string.hsl_hue}").performScrollTo().assertIsDisplayed()
             compose.cancelWorkbenchDraft(model)
 
-            compose.openWorkbenchTool(20)
-            compose.onNodeWithTag("color-grading-wheel").performScrollTo().assertIsDisplayed()
+            compose.openWorkbenchTool(21)
+            compose.onNodeWithTag("grading-wheel").performScrollTo().assertIsDisplayed()
             compose.cancelWorkbenchDraft(model)
 
             compose.openWorkbenchTool(10)
             compose.onNodeWithTag("adjustment-value-${R.string.sharpening}").performScrollTo().assertIsDisplayed()
+            compose.cancelWorkbenchDraft(model)
+
+            compose.openWorkbenchTool(11)
+            compose.onNodeWithTag("adjustment-value-${R.string.denoise_luma}").performScrollTo().assertIsDisplayed()
             compose.cancelWorkbenchDraft(model)
 
             compose.openWorkbenchTool(12)

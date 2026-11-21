@@ -128,9 +128,6 @@ internal data class NativeProcessRequest(
     val lutStrength: Float = 0f,
     val whiteBalance: NativeProcessWhiteBalance = NativeProcessWhiteBalance(),
     val tone: NativeProcessTone = NativeProcessTone(),
-    val denoise: NativeDenoiseConfig = NativeDenoiseConfig(),
-    val effects: NativePhotoEffectsConfig = NativePhotoEffectsConfig(),
-    val hsl: FloatArray,
     val exposureMode: Int = 1,
     val processingVersion: Int = 3,
     val x3fMode: Int = 1,
@@ -144,8 +141,7 @@ internal data class NativeProcessRequest(
             input == other.input && output == other.output &&
             lutPath == other.lutPath && lutStrength == other.lutStrength &&
             whiteBalance == other.whiteBalance && tone == other.tone &&
-            denoise == other.denoise && effects == other.effects &&
-            hsl.contentEquals(other.hsl) && exposureMode == other.exposureMode &&
+            exposureMode == other.exposureMode &&
             processingVersion == other.processingVersion && x3fMode == other.x3fMode &&
             cancellationGeneration == other.cancellationGeneration &&
             backendOut.contentEqualsOrNull(other.backendOut) &&
@@ -159,9 +155,6 @@ internal data class NativeProcessRequest(
         result = 31 * result + lutStrength.hashCode()
         result = 31 * result + whiteBalance.hashCode()
         result = 31 * result + tone.hashCode()
-        result = 31 * result + denoise.hashCode()
-        result = 31 * result + effects.hashCode()
-        result = 31 * result + hsl.contentHashCode()
         result = 31 * result + exposureMode
         result = 31 * result + processingVersion
         result = 31 * result + x3fMode
@@ -350,15 +343,6 @@ internal fun EditSettings.toNativeProcessRequest(
             saturation = 1f + saturation * scale,
             sharpening = sharpening,
         ),
-        denoise = NativeDenoiseConfig(
-            enabled = denoise.enabled,
-            luma = denoise.luma,
-            chroma = denoise.chroma,
-            coarse = denoise.coarse,
-            displayChroma = displayChromaDenoise,
-        ),
-        effects = effects.toNativePhotoEffects(),
-        hsl = renderHsl.packed(),
         exposureMode = exposureMode,
         processingVersion = processing.version,
         x3fMode = x3fMode.nativeValue,

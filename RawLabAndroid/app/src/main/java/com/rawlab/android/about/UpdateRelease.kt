@@ -9,17 +9,17 @@ data class UpdateRelease(val version: String, val notes: String, val url: String
         fun select(tag: String, draft: Boolean, preview: Boolean, notes: String,
                    assets: List<String>, current: String): UpdateRelease? {
             if (draft || preview) return null
-            val latest = numbers(tag)
-            val installed = numbers(current)
+            val latest = numbersOrNull(tag) ?: return null
+            val installed = numbersOrNull(current) ?: return null
             val difference = latest.zip(installed).firstOrNull { (a, b) -> a != b }
             if (difference == null || difference.first < difference.second) return null
             if (assets.none { it.startsWith("RawLab-Android-") && it.endsWith(".apk") }) return null
             return UpdateRelease(latest.joinToString("."), notes, "${REPOSITORY}/releases/tag/${tag}")
         }
 
-        private fun numbers(text: String): List<Int> {
-            require(Regex("v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?").matches(text)) { "Invalid release version" }
-            val parts = text.removePrefix("v").split('.').map { it.toInt() }
+        private fun numbersOrNull(text: String): List<Int>? {
+            if (!Regex("v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?").matches(text)) return null
+            val parts = text.removePrefix("v").split('.').map { it.toIntOrNull() ?: return null }
             return if (parts.size == 2) parts + 0 else parts
         }
 
