@@ -1257,6 +1257,7 @@
 			files = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/../Shared/assets-manifest.json",
 			);
 			name = "Prepare Externalized LUTs";
 			outputPaths = (
@@ -1299,10 +1300,25 @@
 				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_3200_sRGB_v1.cube",
 				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_400_sRGB_v1.cube",
 				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_trix_400_sRGB_v1.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/billy_dinh_cinema.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/cinestill_800t.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/daniel_casson_autumn.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/hamada_daylight_pro_v2.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/ivan_ivanchenko_twilight.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/iwona_fairy_tale.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/jungraphy_neon.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/luizclas_portrait.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/rkrkrk_cyberpunk.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/samalive_vintage.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/takahiro_sakai_blue.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/takashi_yasui_zen.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/wilson_lee_golden.cube",
+				"$(SRCROOT)/../RawLabMac/Resources/MasterRecipes/withluke_epic.cube",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nmissing=0\ni=0\ncount=${SCRIPT_OUTPUT_FILE_COUNT:-0}\nwhile [ \"$i\" -lt \"$count\" ]; do\n    var=\"SCRIPT_OUTPUT_FILE_${i}\"\n    cube=\"${!var:-}\"\n    if [ -n \"$cube\" ] && [ ! -f \"$cube\" ]; then\n        missing=1\n        break\n    fi\n    i=$((i + 1))\ndone\nif [ \"$count\" -eq 0 ] || [ \"$missing\" -eq 1 ]; then\n    python3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts\nfi\n";
+			shellScript = "set -euo pipefail\npython3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts --check >/dev/null 2>&1 || \\\n    python3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts\n";
 			showEnvVarsInLog = 0;
 		};
 		AB4000000000000000000001 /* Embed RUM SDK */ = {
