@@ -5,6 +5,7 @@ import SwiftUI
 
 struct BatchExportView: View {
     @Environment(\.locale) private var localizationLocale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: BatchExportModel
     @Environment(\.dismiss) private var dismiss
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -187,7 +188,11 @@ struct BatchExportView: View {
                                 }
                             }
                             Spacer(minLength: 0)
-                            if target.status == .succeeded { Image(systemName: "checkmark.circle").foregroundStyle(.green) }
+                            if target.status == .succeeded {
+                                Image(systemName: "checkmark.circle").foregroundStyle(.green)
+                            } else if [.processing, .publishing].contains(target.status), !reduceMotion {
+                                ProgressView().progressViewStyle(.circular).controlSize(.small)
+                            }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
                             .overlay(alignment: .bottom) { Divider() }
                     }
@@ -232,8 +237,14 @@ struct BatchExportView: View {
                 ProgressView(L10n.text("正在准备照片…")).frame(maxWidth: .infinity)
             } else if model.isRunning {
                 ProgressView(value: Double(model.completedCount + model.failedCount), total: Double(max(1, model.selectedCount)))
-                Text(L10n.format("已处理 %@ / %@", String(describing: model.completedCount + model.failedCount), String(describing: model.selectedCount)))
-                    .font(.footnote).monospacedDigit()
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.completedCount + model.failedCount)
+                HStack(spacing: 6) {
+                    if !reduceMotion {
+                        ProgressView().progressViewStyle(.circular).controlSize(.small)
+                    }
+                    Text(L10n.format("已处理 %@ / %@", String(describing: model.completedCount + model.failedCount), String(describing: model.selectedCount)))
+                        .font(.footnote).monospacedDigit()
+                }
                 if let current = model.job.targets.first(where: { [.processing, .publishing].contains($0.status) }) {
                     Text(current.displayName).font(.caption).lineLimit(1).truncationMode(.middle)
                 }

@@ -3,6 +3,7 @@ package com.rawlab.android.editor.render
 import android.graphics.Bitmap
 import android.system.Os
 import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.HDRProgressListener
 import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.engine.NativeHDRImage
@@ -98,6 +99,15 @@ internal class EditorRenderer(
             camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
             profileDirectory: File? = null,
         ): HdrImageHandle
+        fun decodeHDRCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            cancellationGeneration: Long,
+            camera: HDRCameraDevelopmentSettings,
+            profileDirectory: File?,
+            progress: HDRProgressListener?,
+        ): HdrImageHandle = decodeHDRCamera(file, info, edge, cancellationGeneration, camera, profileDirectory)
         fun renderHDR(
             source: HdrImageHandle,
             settings: HDRSettings,
@@ -105,6 +115,14 @@ internal class EditorRenderer(
             cancellationGeneration: Long = -1L,
             lookDirectory: File? = null,
         ): HdrImageHandle
+        fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+        ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory)
         fun sampleHDRHsl(
             source: HdrImageHandle,
             settings: HDRSettings,
@@ -126,6 +144,18 @@ internal class EditorRenderer(
             cancellationGeneration: Long = -1L,
             lookDirectory: File? = null,
         )
+        fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+        ) = exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory)
+        fun sessionHandle(): Long = 0L
     }
 
     internal interface HdrSourceHandle : Closeable {
@@ -145,8 +175,33 @@ internal class EditorRenderer(
         ): HdrSourceHandle
         fun acquireGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrSourceHandle
         fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrImageHandle
+        fun decodeGainMap(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ): HdrImageHandle = decodeGainMap(file, info, edge)
         fun exportJpeg(rendered: HdrImageHandle, metadataSource: File?, output: File)
+        fun exportJpeg(
+            rendered: HdrImageHandle,
+            metadataSource: File?,
+            output: File,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ) = exportJpeg(rendered, metadataSource, output)
         fun exportSdr(rendered: HdrImageHandle, metadataSource: File?, output: File, format: Int)
+        fun exportSdr(
+            rendered: HdrImageHandle,
+            metadataSource: File?,
+            output: File,
+            format: Int,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ) = exportSdr(rendered, metadataSource, output, format)
         fun clearCache()
     }
 
@@ -206,15 +261,34 @@ internal class EditorRenderer(
             cancellationGeneration: Long,
             camera: HDRCameraDevelopmentSettings,
             profileDirectory: File?,
-        ): HdrImageHandle = NativeHdrImageHandle(native.decodeHDRCamera(file, info, edge, cancellationGeneration, camera, profileDirectory))
+        ): HdrImageHandle = decodeHDRCamera(file, info, edge, cancellationGeneration, camera, profileDirectory, null)
+        override fun decodeHDRCamera(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            cancellationGeneration: Long,
+            camera: HDRCameraDevelopmentSettings,
+            profileDirectory: File?,
+            progress: HDRProgressListener?,
+        ): HdrImageHandle = NativeHdrImageHandle(
+            native.decodeHDRCamera(file, info, edge, cancellationGeneration, camera, profileDirectory, progress)
+        )
         override fun renderHDR(
             source: HdrImageHandle,
             settings: HDRSettings,
             edge: Int,
             cancellationGeneration: Long,
             lookDirectory: File?,
+        ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory, null)
+        override fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
         ): HdrImageHandle = NativeHdrImageHandle(
-            native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory)
+            native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory, progress)
         )
         override fun sampleHDRHsl(
             source: HdrImageHandle,
@@ -239,7 +313,19 @@ internal class EditorRenderer(
             edge: Int,
             cancellationGeneration: Long,
             lookDirectory: File?,
-        ) = native.exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory)
+        ) = exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, null)
+        override fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+        ) = native.exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
+        override fun sessionHandle(): Long = native.sessionHandle()
         override fun close() = native.close()
     }
 
@@ -272,12 +358,72 @@ internal class EditorRenderer(
             }
         }
         override fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int): HdrImageHandle =
-            NativeHdrImageHandle(NativeHDRBridge.decode(file, info, edge))
+            decodeGainMap(file, info, edge, 0L, -1L, null)
+        override fun decodeGainMap(
+            file: File,
+            info: HDRSourceInfo,
+            edge: Int,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ): HdrImageHandle = NativeHdrImageHandle(
+            NativeHDRBridge.decode(file, info, edge, sessionHandle, cancellationGeneration, progress)
+        )
         override fun exportJpeg(rendered: HdrImageHandle, metadataSource: File?, output: File) =
-            NativeHDRBridge.exportJpeg((rendered as NativeHdrImageHandle).underlying, metadataSource, output)
+            exportJpeg(rendered, metadataSource, output, 0L, -1L, null)
+        override fun exportJpeg(
+            rendered: HdrImageHandle,
+            metadataSource: File?,
+            output: File,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ) = NativeHDRBridge.exportJpeg(
+            (rendered as NativeHdrImageHandle).underlying,
+            metadataSource,
+            output,
+            session = sessionHandle,
+            cancellationGeneration = cancellationGeneration,
+            progress = progress,
+        )
         override fun exportSdr(rendered: HdrImageHandle, metadataSource: File?, output: File, format: Int) =
-            NativeHDRBridge.exportSdr((rendered as NativeHdrImageHandle).underlying, metadataSource, output, format)
+            exportSdr(rendered, metadataSource, output, format, 0L, -1L, null)
+        override fun exportSdr(
+            rendered: HdrImageHandle,
+            metadataSource: File?,
+            output: File,
+            format: Int,
+            sessionHandle: Long,
+            cancellationGeneration: Long,
+            progress: HDRProgressListener?,
+        ) = NativeHDRBridge.exportSdr(
+            (rendered as NativeHdrImageHandle).underlying,
+            metadataSource,
+            output,
+            format,
+            session = sessionHandle,
+            cancellationGeneration = cancellationGeneration,
+            progress = progress,
+        )
         override fun clearCache() = com.rawlab.android.engine.HDRSourceCache.clear()
+    }
+
+    internal var onExportProgress: (Work.Export, Float) -> Unit = { _, _ -> }
+
+    private fun hdrProgressAdapter(
+        work: Work.Export,
+        startFraction: Float,
+        endFraction: Float,
+    ): HDRProgressListener {
+        val span = endFraction - startFraction
+        var lastPermille = -1
+        return HDRProgressListener { permille ->
+            if (permille == lastPermille) return@HDRProgressListener
+            if (lastPermille >= 0 && permille < 1000 && permille - lastPermille < 5) return@HDRProgressListener
+            lastPermille = permille
+            val local = permille.coerceIn(0, 1000) / 1000f
+            onExportProgress(work, (startFraction + local * span).coerceIn(0f, 1f))
+        }
     }
 
     private var processor: RenderEngine? = null
@@ -626,34 +772,55 @@ internal class EditorRenderer(
         if (info.isProRAW) work.edits.requireProRAWDecoder()
         val native = engine()
         native.setGpuMode(NativeProcessor.CPU)
+        val sessionHandle = native.sessionHandle()
+        onExportProgress(work, 0f)
         if (info.isProRAW && work.format in setOf(ExportFormat.HDR_JPEG, ExportFormat.JPEG)) {
             hdrBridge.clearCache()
             val output = storage.temporaryOutput(work.format)
             try {
-                native.exportProRAW(work.photo.file, info, work.edits, output,
-                    work.format == ExportFormat.HDR_JPEG, work.longEdge ?: 0, generation, storage.hdrLookDirectory)
+                native.exportProRAW(
+                    work.photo.file,
+                    info,
+                    work.edits,
+                    output,
+                    work.format == ExportFormat.HDR_JPEG,
+                    work.longEdge ?: 0,
+                    generation,
+                    storage.hdrLookDirectory,
+                    hdrProgressAdapter(work, 0f, 0.96f),
+                )
+                onExportProgress(work, 0.96f)
                 // Q12: exportProRAW 返回 ⇒ 输出文件已过提交点；迟到的取消不删文件，按「已完成」收尾。
                 if (work.destination == null) storage.saveAlbum(output, work.format)
                 else storage.saveDocument(output, work.destination, work.photo.uri)
+                onExportProgress(work, 1f)
             } finally { output.delete() }
             return WorkResult.Export
         }
         val settings = (work.edits.hdr ?: HDRSettings(mode = com.rawlab.android.settings.HDRMode.SDR))
             .copy(geometry = work.edits.geometry)
+        val decodeProgress = hdrProgressAdapter(work, 0f, 0.45f)
         val source = if (info.isCameraRaw) native.decodeHDRCamera(work.photo.file, info, 0, generation,
-            settings.cameraSettings, storage.hdrCameraProfileDirectory)
-            else hdrBridge.decodeGainMap(work.photo.file, info, 0)
-        val rendered = try { native.renderHDR(source, settings, work.longEdge ?: 0, generation, storage.hdrLookDirectory) }
-            finally { source.close() }
+            settings.cameraSettings, storage.hdrCameraProfileDirectory, decodeProgress)
+            else hdrBridge.decodeGainMap(work.photo.file, info, 0, sessionHandle, generation, decodeProgress)
+        onExportProgress(work, 0.45f)
+        val rendered = try {
+            native.renderHDR(source, settings, work.longEdge ?: 0, generation, storage.hdrLookDirectory,
+                hdrProgressAdapter(work, 0.45f, 0.72f))
+        } finally { source.close() }
+        onExportProgress(work, 0.72f)
         val output = storage.temporaryOutput(work.format)
         try {
             val metadataSource = work.photo.hdrSource?.takeUnless { it.isCameraRaw && !it.isProRAW }?.let { work.photo.file }
+            val encodeProgress = hdrProgressAdapter(work, 0.72f, 0.96f)
             if (work.format == ExportFormat.HDR_JPEG)
-                hdrBridge.exportJpeg(rendered, metadataSource, output)
-            else hdrBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue)
+                hdrBridge.exportJpeg(rendered, metadataSource, output, sessionHandle, generation, encodeProgress)
+            else hdrBridge.exportSdr(rendered, metadataSource, output, work.format.nativeValue, sessionHandle, generation, encodeProgress)
+            onExportProgress(work, 0.96f)
             // Q12: 输出文件写盘即已过提交点；迟到的取消不删文件，按「已完成」收尾。
             if (work.destination == null) storage.saveAlbum(output, work.format)
             else storage.saveDocument(output, work.destination, work.photo.uri)
+            onExportProgress(work, 1f)
         } finally {
             rendered.close(); output.delete()
         }

@@ -37,6 +37,8 @@ final class RawEditorViewModel: ObservableObject {
     @Published var resetUnusableImportRecord: ((((RawSettings) -> Void)?) -> Void)?
     @Published var isBusy = false
     @Published var isExportingHDR = false
+    @Published var hdrExportProgress: Double? = nil
+    @Published var isStoppingHDRExport = false
     final class ExportCancellation {
         private let lock = NSLock()
         private var cancelled = false
@@ -44,7 +46,12 @@ final class RawEditorViewModel: ObservableObject {
         func cancel() { lock.lock(); cancelled = true; lock.unlock() }
     }
     var hdrExportCancellation: ExportCancellation?
-    func cancelHDRExport() { hdrExportCancellation?.cancel() }
+    func cancelHDRExport() {
+        if isExportingHDR {
+            isStoppingHDRExport = true
+        }
+        hdrExportCancellation?.cancel()
+    }
     final class ImportCancellation {
         private let lock = NSLock()
         private var cancelled = false

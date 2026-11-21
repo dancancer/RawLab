@@ -1,5 +1,6 @@
 #pragma once
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "core/hdr_progress.h"
 #include "core/processing_cancellation.h"
 #include "sony2fuji/common.h"
 #include "sony2fuji/lens_correction.h"
@@ -33,6 +34,7 @@ bool hdrSessionForcesGPU(const SessionLease& session);
 bool hdrSessionUsesLegacySonyCrop(const SessionLease& session);
 void hdrSessionDidRenderCPU(const SessionLease& session);
 sony2fuji::ProcessingCancellation hdrSessionCancellation(const SessionLease& session);
+sony2fuji::HdrProgress hdrSessionProgress(const SessionLease& session);
 std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(const SessionLease& session);
 void hdrSessionPrepareCameraAI(const SessionLease& session, const char* path, uint64_t fileBytes,
     sony2fuji_ai_progress_callback progress, void* context);

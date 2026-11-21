@@ -137,6 +137,7 @@ internal class EditorExportStateHolder(
         mutable.value = mutable.value.copy(
             operation = Operation.NONE,
             exportStep = SingleExportStep.NONE,
+            exportProgress = null,
             message = strings.text(R.string.export_done),
         )
         recordUsage(UsageEvent.ExportCompleted)

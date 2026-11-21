@@ -110,6 +110,7 @@ class AbiLayoutFixtureTests(unittest.TestCase):
         expected_callbacks = {
             "sony2fuji_ai_progress_callback": ("int32_t", ["void*", "int32_t", "uint64_t", "uint64_t"]),
             "sony2fuji_cancel_callback": ("int32_t", ["void*"]),
+            "sony2fuji_hdr_progress_callback": ("void", ["void*", "uint32_t", "uint32_t"]),
             "sony2fuji_hdr_read_rows_callback": (
                 "sony2fuji_status",
                 ["void*", "uint32_t", "uint32_t", "uint32_t", "float*"],

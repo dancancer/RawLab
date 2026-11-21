@@ -9,14 +9,23 @@ import com.rawlab.android.batch.BatchRunner
 import com.rawlab.android.batch.BatchSourceSnapshot
 import com.rawlab.android.batch.BatchTarget
 import com.rawlab.android.batch.asBatchOutputFailure
+import com.rawlab.android.editor.DefaultEditorRenderGateway
+import com.rawlab.android.editor.EditorRenderGateway
 import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.EditorStateReducer
+import com.rawlab.android.editor.EditorViewModelTestHarness
 import com.rawlab.android.editor.ExportSubmission
 import com.rawlab.android.editor.Operation
 import com.rawlab.android.editor.SingleExportStep
+import com.rawlab.android.editor.TestBitmaps
+import com.rawlab.android.editor.TestEditorApplication
+import com.rawlab.android.editor.clearForTest
 import com.rawlab.android.editor.prepareExportSubmission
+import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.ExportDestinationDeleter
+import com.rawlab.android.editor.render.HDRPreviewFrame
+import com.rawlab.android.editor.render.RenderCancellation
 import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
@@ -24,9 +33,19 @@ import com.rawlab.android.editor.render.discardPendingWork
 import com.rawlab.android.editor.render.isExportCancellation
 import com.rawlab.android.editor.render.runGuardedExportWork
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.PhotoInputKind
+import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.photo.ImportedPhoto
+import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.Film
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRSettings
+import com.rawlab.android.settings.HslTargetRevision
+import com.rawlab.android.settings.PhotoEditState
 import com.rawlab.android.settings.PhotoIdentity
+import com.rawlab.android.settings.withHDRMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -550,5 +569,194 @@ class ExportCancellationTest {
             assertSame(WorkResult.Export, ok)
             assertTrue(deleted.isEmpty())
         } finally { root.deleteRecursively() }
+    }
+
+    @Test fun hdrRendererEmitsStageWeightedProgressWiresSessionAndCleansPreCommitCancel() {
+        val root = Files.createTempDirectory("rawlab-hdr-export-progress").toFile()
+        val deleted = mutableListOf<Pair<Uri, Uri?>>()
+        try {
+            val app = TestEditorApplication(root)
+            val storage = PhotoStorage(app, File(root, "looks"), bundledFilms = Film.all.map { it.copy(file = null) })
+            val sourceFile = File(root, "photo.jpg").apply { writeText("hdr") }
+            val hdrInfo = HDRSourceInfo(
+                width = 4000, height = 3000, orientation = 1, container = 1, protocol = 1,
+                colorDescription = 1, contentHeadroom = 2f, headroomKind = 1, fingerprint = ByteArray(32) { 1 },
+            )
+            val sourceUri = TestUri.of("/photos/hdr.jpg")
+            val photo = ImportedPhoto(sourceUri, "photo.jpg", sourceFile, inputKind = PhotoInputKind.RASTER, hdrSource = hdrInfo)
+            val hdrEdits = EditSettings(exposure = 0.5f).withHDRMode(true, sourceIsHDR = true)
+            val sdrEdits = EditSettings(exposure = 0.5f)
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val cleanup = ExportDestinationCleanup(scope) { _, _ -> }
+            try {
+                val hdrReady = prepareExportSubmission(
+                    EditorState(photo = photo, edits = hdrEdits, operation = Operation.PICK_EXPORT, exportStep = SingleExportStep.OPTIONS),
+                    TestUri.of("/exports/out.jpg"), ExportFormat.HDR_JPEG, null, 0, cleanup,
+                ) as ExportSubmission.Ready
+                assertEquals(0f, hdrReady.state.exportProgress)
+                val sdrReady = prepareExportSubmission(
+                    EditorState(photo = photo, edits = sdrEdits, operation = Operation.PICK_EXPORT, exportStep = SingleExportStep.OPTIONS),
+                    TestUri.of("/exports/sdr.jpg"), ExportFormat.JPEG, null, 0, cleanup,
+                ) as ExportSubmission.Ready
+                assertNull(sdrReady.state.exportProgress)
+                assertNull(EditorStateReducer.renderFinished(hdrReady.state.copy(exportProgress = 0.6f)).exportProgress)
+
+                val fakePair = object : EditorRenderer.HdrImageHandle {
+                    override val sourceInfo: HDRSourceInfo = hdrInfo
+                    override val outputNativeWidth: Int = 4000
+                    override val outputNativeHeight: Int = 3000
+                    override fun snapshot(): HDRPreviewFrame = HDRPreviewFrame(2, 2, FloatArray(12), FloatArray(12), 2f, 2f, 4000, 3000)
+                    override fun sdrBitmap() = TestBitmaps.stub()
+                    override fun close() = Unit
+                }
+                var decodeSession = 0L
+                var encodeSession = 0L
+                var decodeGen = -1L
+                var encodeGen = -1L
+                val hdrBridge = object : EditorRenderer.HdrRenderBridge {
+                    override fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int) = info
+                    override fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings) = intArrayOf(4000, 3000)
+                    override fun acquireCamera(file: File, info: HDRSourceInfo, edge: Int, camera: HDRCameraDevelopmentSettings?, lensDatabase: File?, decode: () -> EditorRenderer.HdrImageHandle) = error("unused")
+                    override fun acquireGainMap(file: File, info: HDRSourceInfo, edge: Int) = error("unused")
+                    override fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int) = error("unused")
+                    override fun decodeGainMap(
+                        file: File, info: HDRSourceInfo, edge: Int,
+                        sessionHandle: Long, cancellationGeneration: Long, progress: HDRProgressListener?,
+                    ): EditorRenderer.HdrImageHandle {
+                        decodeSession = sessionHandle
+                        decodeGen = cancellationGeneration
+                        progress?.onProgress(500)
+                        progress?.onProgress(1000)
+                        return fakePair
+                    }
+                    override fun exportJpeg(rendered: EditorRenderer.HdrImageHandle, metadataSource: File?, output: File) = error("unused")
+                    override fun exportJpeg(
+                        rendered: EditorRenderer.HdrImageHandle, metadataSource: File?, output: File,
+                        sessionHandle: Long, cancellationGeneration: Long, progress: HDRProgressListener?,
+                    ) {
+                        encodeSession = sessionHandle
+                        encodeGen = cancellationGeneration
+                        progress?.onProgress(500)
+                        output.writeBytes(byteArrayOf(7, 8, 9))
+                        throw NativeProcessingException(NativeProcessingException.CANCELLED, "cancelled before commit")
+                    }
+                    override fun exportSdr(rendered: EditorRenderer.HdrImageHandle, metadataSource: File?, output: File, format: Int) = error("unused")
+                    override fun clearCache() = Unit
+                }
+                val engine = object : EditorRenderer.RenderEngine {
+                    override fun setGpuMode(mode: Int) = Unit
+                    override fun cancellationGeneration(): Long = 17L
+                    override fun cancelPreview() = Unit
+                    override fun releaseRasterCache() = Unit
+                    override fun sessionHandle(): Long = 42L
+                    override fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, cancellationGeneration: Long) = error("unused")
+                    override fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long) = error("unused")
+                    override fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int?, inputKind: PhotoInputKind, cancellationGeneration: Long) = error("unused")
+                    override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind) = error("unused")
+                    override fun decodeHDRCamera(file: File, info: HDRSourceInfo, edge: Int, cancellationGeneration: Long, camera: HDRCameraDevelopmentSettings, profileDirectory: File?) = error("unused")
+                    override fun renderHDR(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                    override fun renderHDR(
+                        source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int,
+                        cancellationGeneration: Long, lookDirectory: File?, progress: HDRProgressListener?,
+                    ): EditorRenderer.HdrImageHandle {
+                        progress?.onProgress(500)
+                        progress?.onProgress(1000)
+                        return fakePair
+                    }
+                    override fun sampleHDRHsl(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                    override fun estimateHDRExposure(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long) = error("unused")
+                    override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                    override fun close() = Unit
+                }
+                val renderer = EditorRenderer(
+                    storage, { null }, false,
+                    destinationDeleter = ExportDestinationDeleter { dest, orig -> deleted += dest to orig },
+                    engineFactory = { engine }, hdrBridge = hdrBridge,
+                )
+                val gateway = DefaultEditorRenderGateway(renderer)
+                val progressEvents = mutableListOf<Float>()
+                gateway.setExportProgressListener { _, fraction -> progressEvents += fraction }
+                val dest = TestUri.of("/exports/cancelled-hdr.jpg")
+                val work = Work.Export(photo, hdrEdits, dest, ExportFormat.HDR_JPEG, null, NativeProcessor.AUTO)
+                assertThrows(NativeProcessingException::class.java) {
+                    gateway.perform(work, RenderCancellation())
+                }
+                assertEquals(42L, decodeSession)
+                assertEquals(42L, encodeSession)
+                assertEquals(17L, decodeGen)
+                assertEquals(17L, encodeGen)
+                assertEquals(listOf(dest to sourceUri), deleted)
+                assertTrue("Expected at least 5 monotonic progress events, got $progressEvents", progressEvents.size >= 5)
+                assertTrue(progressEvents.zipWithNext().all { (a, b) -> b >= a })
+                assertEquals(0f, progressEvents.first(), 1e-4f)
+                assertTrue(progressEvents.last() > 0.8f)
+            } finally {
+                scope.cancel()
+                storage.close()
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun viewModelHdrExportUpdatesProgressAndIgnoresStaleUpdatesAfterCancel() {
+        EditorViewModelTestHarness().use { harness ->
+            val (file, uri) = harness.createTempPhoto("hdr.jpg")
+            val hdrInfo = HDRSourceInfo(
+                width = 4000, height = 3000, orientation = 1, container = 1, protocol = 1,
+                colorDescription = 1, contentHeadroom = 2f, headroomKind = 1, fingerprint = ByteArray(32) { 1 },
+            )
+            val hdrPhoto = ImportedPhoto(
+                uri, "hdr.jpg", file,
+                inputKind = PhotoInputKind.RASTER,
+                validateOriginal = { check(file.isFile) },
+                hdrSource = hdrInfo,
+            )
+            val hdrEdits = EditSettings(exposure = 0.25f).withHDRMode(true, sourceIsHDR = true)
+            var listener: ((Work.Export, Float) -> Unit)? = null
+            val exportEntered = CountDownLatch(1)
+            val releaseExport = CountDownLatch(1)
+            val gateway = object : EditorRenderGateway {
+                override fun setExportProgressListener(l: ((Work.Export, Float) -> Unit)?) { listener = l }
+                override fun releaseDecodedRaster() = Unit
+                override fun close() = Unit
+                override fun perform(work: Work, cancellation: RenderCancellation): WorkResult = when (work) {
+                    is Work.Import -> WorkResult.Preview(
+                        Work.Preview(
+                            hdrPhoto, hdrEdits, false, work.gpuMode,
+                            importing = true,
+                            importedRecord = PhotoEditState(hdrPhoto.identity, null),
+                        ),
+                        TestBitmaps.pair(1600, 1200),
+                    )
+                    is Work.Export -> {
+                        listener?.invoke(work, 0.42f)
+                        exportEntered.countDown()
+                        check(releaseExport.await(5, TimeUnit.SECONDS))
+                        listener?.invoke(work, 0.95f)
+                        WorkResult.Export
+                    }
+                    else -> harness.defaultRender(work)
+                }
+            }
+            val model = harness.createViewModel(renderGateway = gateway)
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+                harness.onMain { model.beginExport { assertTrue(it) } }
+                harness.awaitState(model) { it.operation == Operation.PICK_EXPORT }
+                harness.onMain { model.export(TestUri.of("/exports/hdr-out.jpg"), ExportFormat.HDR_JPEG, null) }
+                assertTrue(exportEntered.await(5, TimeUnit.SECONDS))
+                harness.awaitState(model) { (it.exportProgress ?: 0f) >= 0.42f }
+
+                harness.onMain { model.cancelExport() }
+                assertEquals(Operation.NONE, model.state.value.operation)
+                assertNull(model.state.value.exportProgress)
+                releaseExport.countDown()
+                harness.awaitState(model) { it.message != null }
+                assertNull("Stale progress after cancel must never reappear", model.state.value.exportProgress)
+            } finally {
+                releaseExport.countDown()
+                harness.onMain { model.clearForTest() }
+            }
+        }
     }
 }

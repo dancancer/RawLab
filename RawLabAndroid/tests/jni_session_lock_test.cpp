@@ -10,6 +10,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -95,6 +96,7 @@ std::mutex gJniMutex;
 std::vector<std::unique_ptr<FakeJObject>> gAllocatedObjects;
 std::vector<std::unique_ptr<FakeMethodId>> gAllocatedMethods;
 std::vector<std::unique_ptr<FakeFieldId>> gAllocatedFields;
+std::vector<jint> gRecordedHdrProgress;
 std::atomic<int> gFindClassCalls{0};
 std::atomic<int> gGetFieldIdCalls{0};
 std::atomic<int> gGetMethodIdCalls{0};
@@ -246,6 +248,15 @@ jobject JNICALL mockCallStaticObjectMethodV(JNIEnv*, jclass, jmethodID method, v
         return makeFakeBitmap(static_cast<uint32_t>(w), static_cast<uint32_t>(h), gMockBitmapStridePaddingBytes);
     }
     return nullptr;
+}
+
+void JNICALL mockCallVoidMethodV(JNIEnv*, jobject, jmethodID method, va_list args) {
+    auto* mid = reinterpret_cast<FakeMethodId*>(method);
+    if (mid && mid->className == "com/rawlab/android/engine/HDRProgressListener" && mid->name == "onProgress") {
+        const jint permille = va_arg(args, jint);
+        std::lock_guard<std::mutex> lock(gJniMutex);
+        gRecordedHdrProgress.push_back(permille);
+    }
 }
 
 jfieldID JNICALL mockGetFieldID(JNIEnv*, jclass clazz, const char* name, const char* sig) {
@@ -483,6 +494,7 @@ JNINativeInterface_ makeEnvTable() {
     t.DeleteLocalRef = mockDeleteLocalRef;
     t.GetMethodID = mockGetMethodID;
     t.GetStaticMethodID = mockGetStaticMethodID;
+    t.CallVoidMethodV = mockCallVoidMethodV;
     t.CallStaticObjectMethodV = mockCallStaticObjectMethodV;
     t.GetFieldID = mockGetFieldID;
     t.GetObjectField = mockGetObjectField;
@@ -586,6 +598,8 @@ struct MockSessionState {
     uint64_t id = 0;
     sony2fuji_cancel_callback cancelCb = nullptr;
     void* cancelCtx = nullptr;
+    sony2fuji_hdr_progress_callback progressCb = nullptr;
+    void* progressCtx = nullptr;
     int activeCalls = 0;
     int maxConcurrentCalls = 0;
     int totalProcessCalls = 0;
@@ -720,6 +734,7 @@ void resetMocks() {
     gSessionDestroyCount = 0;
     gHdrPairReleaseCount = 0;
     gEventLog.clear();
+    gRecordedHdrProgress.clear();
     gTargetConcurrentProcesses = 0;
     gActiveProcesses = 0;
     gMaxConcurrentProcesses = 0;
@@ -792,6 +807,45 @@ public:
         }
     }
 };
+
+struct SessionCallbacks {
+    sony2fuji_hdr_progress_callback progressCb = nullptr;
+    void* progressCtx = nullptr;
+    sony2fuji_cancel_callback cancelCb = nullptr;
+    void* cancelCtx = nullptr;
+};
+
+SessionCallbacks snapshotSessionCallbacks(sony2fuji_session* s) {
+    SessionCallbacks out{};
+    if (!s) return out;
+    std::lock_guard<std::mutex> lock(gCoreMutex);
+    auto it = gMockSessions.find(s);
+    if (it != gMockSessions.end()) {
+        out.progressCb = it->second->progressCb;
+        out.progressCtx = it->second->progressCtx;
+        out.cancelCb = it->second->cancelCb;
+        out.cancelCtx = it->second->cancelCtx;
+    }
+    return out;
+}
+
+template <class Fn>
+sony2fuji_status runHdrWithSessionCallbacks(sony2fuji_session* s, Fn&& fn) {
+    std::optional<SessionCallScope> scope;
+    if (s) scope.emplace(s);
+    const auto callbacks = snapshotSessionCallbacks(s);
+    if (callbacks.cancelCb && callbacks.cancelCb(callbacks.cancelCtx)) {
+        return SONY2FUJI_STATUS_CANCELLED;
+    }
+    if (callbacks.progressCb) {
+        callbacks.progressCb(callbacks.progressCtx, 0, 1000);
+    }
+    const sony2fuji_status status = fn();
+    if (status == SONY2FUJI_STATUS_OK && callbacks.progressCb) {
+        callbacks.progressCb(callbacks.progressCtx, 1000, 1000);
+    }
+    return status;
+}
 
 } // namespace
 
@@ -1021,6 +1075,17 @@ sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* 
         it->second->cancelCtx = ctx;
     }
     gCoreCv.notify_all();
+    return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_session_set_hdr_progress_callback(sony2fuji_session* s,
+    sony2fuji_hdr_progress_callback cb, void* ctx) {
+    SessionCallScope scope(s);
+    std::lock_guard<std::mutex> lock(gCoreMutex);
+    auto it = gMockSessions.find(s);
+    if (it != gMockSessions.end()) {
+        it->second->progressCb = cb;
+        it->second->progressCtx = ctx;
+    }
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_process(sony2fuji_session* s, const sony2fuji_request* req, sony2fuji_buffer* out) {
@@ -1277,6 +1342,13 @@ sony2fuji_status sony2fuji_hdr_decode(const char*, const sony2fuji_hdr_decode_op
     *out = makeMockPair();
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_hdr_decode_with_session(sony2fuji_session* s, const char* path,
+    const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* out,
+    sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return runHdrWithSessionCallbacks(s, [&] {
+        return sony2fuji_hdr_decode(path, options, out, diagnostic);
+    });
+}
 sony2fuji_status sony2fuji_hdr_decode_camera_raw_with_development(sony2fuji_session* s, const char*,
     const sony2fuji_hdr_decode_options_v1*, const sony2fuji_hdr_camera_development_v1*,
     sony2fuji_hdr_image_pair_v1* out, sony2fuji_hdr_diagnostic_v1*) {
@@ -1367,8 +1439,22 @@ sony2fuji_status sony2fuji_hdr_export_jpeg(const sony2fuji_hdr_image_pair_v1* im
     require(validAfter, "HDR export_jpeg UAF on owner_token");
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_hdr_export_jpeg_with_session(sony2fuji_session* s,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return runHdrWithSessionCallbacks(s, [&] {
+        return sony2fuji_hdr_export_jpeg(image, config, path, diagnostic);
+    });
+}
 sony2fuji_status sony2fuji_hdr_export_sdr(const sony2fuji_hdr_image_pair_v1*, const sony2fuji_hdr_sdr_export_config_v1*,
     const char*, sony2fuji_hdr_diagnostic_v1*) { return SONY2FUJI_STATUS_OK; }
+sony2fuji_status sony2fuji_hdr_export_sdr_with_session(sony2fuji_session* s,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_sdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic) {
+    return runHdrWithSessionCallbacks(s, [&] {
+        return sony2fuji_hdr_export_sdr(image, config, path, diagnostic);
+    });
+}
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image) {
     if (!image || image->owner_token == 0) return;
     std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -1871,8 +1957,8 @@ void testHdrCrossSessionRenderConcurrency() {
     const jlong s1 = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(envMain.ptr(), nullptr, 0);
     const jlong s2 = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(envMain.ptr(), nullptr, 0);
 
-    const jlong p1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, makeJString("hdr1.jpg"), 0);
-    const jlong p2 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, makeJString("hdr2.jpg"), 0);
+    const jlong p1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, 0, makeJString("hdr1.jpg"), 0, -1, nullptr);
+    const jlong p2 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, 0, makeJString("hdr2.jpg"), 0, -1, nullptr);
     require(p1 > 0 && p2 > 0 && !consumeException().active, "Failed to decode mock HDR pairs");
 
     {
@@ -1886,14 +1972,14 @@ void testHdrCrossSessionRenderConcurrency() {
     std::thread h1([&] {
         LocalEnv env;
         out1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-            env.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1);
+            env.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1, nullptr);
         hdrEx1 = consumeException();
     });
     ThreadJoiner jh1{h1};
     std::thread h2([&] {
         LocalEnv env;
         out2 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-            env.ptr(), nullptr, s2, p2, makeNativeHdrRenderRequest(), -1);
+            env.ptr(), nullptr, s2, p2, makeNativeHdrRenderRequest(), -1, nullptr);
         hdrEx2 = consumeException();
     });
     ThreadJoiner jh2{h2};
@@ -1921,12 +2007,12 @@ void testHdrPairReleaseDuringExportConcurrency() {
     resetMocks();
     LocalEnv envMain;
     const jlong s1 = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(envMain.ptr(), nullptr, 0);
-    const jlong p1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, makeJString("hdr1.jpg"), 0);
+    const jlong p1 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(envMain.ptr(), nullptr, 0, makeJString("hdr1.jpg"), 0, -1, nullptr);
     require(p1 > 0 && !consumeException().active, "Failed to decode mock HDR pair");
 
     uint64_t out1Token = 0;
     const jlong exportPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-        envMain.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1);
+        envMain.ptr(), nullptr, s1, p1, makeNativeHdrRenderRequest(), -1, nullptr);
     require(exportPair > 0 && !consumeException().active, "Failed to produce exportPair");
     {
         std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -1941,7 +2027,7 @@ void testHdrPairReleaseDuringExportConcurrency() {
     std::thread tExport([&] {
         LocalEnv env;
         Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(
-            env.ptr(), nullptr, exportPair, makeJString("src.jpg"), makeJString("out.jpg"), SONY2FUJI_HDR_COLOR_SRGB);
+            env.ptr(), nullptr, exportPair, 0, makeJString("src.jpg"), makeJString("out.jpg"), SONY2FUJI_HDR_COLOR_SRGB, -1, nullptr);
         exportEx = consumeException();
     });
     ThreadJoiner jExport{tExport};
@@ -2109,7 +2195,7 @@ void testCachedJniFieldAndClassLookups() {
     resetMocks();
     LocalEnv env;
     const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
-    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, 0, makeJString("hdr.jpg"), 0, -1, nullptr);
     require(s > 0 && p > 0 && !consumeException().active, "Setup failed");
 
     // Warm the lazy JniCache with one call.
@@ -2131,7 +2217,7 @@ void testCachedJniFieldAndClassLookups() {
     require(geomOut != nullptr && !consumeException().active, "nativeGeometry failed");
 
     jlong rendered = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(
-        env.ptr(), nullptr, s, p, makeNativeHdrRenderRequest(256), -1);
+        env.ptr(), nullptr, s, p, makeNativeHdrRenderRequest(256), -1, nullptr);
     require(rendered > 0 && !consumeException().active, "nativeRender failed");
 
     jfloatArray probeOut = makeJFloatArray(std::vector<jfloat>(13, 0.5f));
@@ -2142,7 +2228,7 @@ void testCachedJniFieldAndClassLookups() {
     jbyteArray fp = makeJByteArray(std::vector<jbyte>(32, 7));
     Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(
         env.ptr(), nullptr, s, makeJString("in.dng"), makeNativeHdrRenderRequest(0), JNI_TRUE, fp,
-        makeJString("/tmp"), makeJString("/tmp/out.jpg"), -1);
+        makeJString("/tmp"), makeJString("/tmp/out.jpg"), -1, nullptr);
     require(!consumeException().active, "nativeExportProRAW failed");
 
     require(gFindClassCalls.load(std::memory_order_relaxed) == findBefore,
@@ -2258,7 +2344,7 @@ void testStructuredHdrMarshalling() {
     resetMocks();
     LocalEnv env;
     const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
-    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, 0, makeJString("hdr.jpg"), 0, -1, nullptr);
     gCapturePayloads = true;
 
     jobject geom = makeNativeGeometry(0.1f, 0.2f, 0.8f, 0.7f, 1, JNI_TRUE, JNI_FALSE, -3.5f, 0.25f, -0.15f);
@@ -2342,7 +2428,7 @@ void testStructuredHdrMarshalling() {
     setObjField(chObj, "blue", makeNativeToneCurve(1, {0.0, 0.0, 1.0, 1.0}));
     setObjField(req, "channelCurves", chObj);
 
-    const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1);
+    const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1, nullptr);
     auto ex = consumeException();
     require(outPair > 0 && !ex.active, "Full v8 HDR render failed: " + ex.message);
 
@@ -2379,7 +2465,7 @@ void testStructuredHdrMarshalling() {
     // Out-of-order section (color != null while tone == null) must throw IllegalArgumentException
     jobject badReq = makeNativeHdrRenderRequest(0);
     setObjField(badReq, "color", colorObj);
-    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, badReq, -1);
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, badReq, -1, nullptr);
     ex = consumeException();
     require(ex.active && ex.className == "java/lang/IllegalArgumentException",
         "Out-of-order HDR sections must throw IllegalArgumentException");
@@ -2596,7 +2682,7 @@ void testNativePlaneDirectCopyAndMetadataInspection() {
     resetMocks();
     LocalEnv env;
     gMockHdrPlaneStridePaddingFloats = 6; // padded float stride
-    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, makeJString("hdr.jpg"), 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, 0, makeJString("hdr.jpg"), 0, -1, nullptr);
     require(p > 0 && !consumeException().active, "Setup HDR pair failed");
 
     jfloatArray hdrPlane = Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(env.ptr(), nullptr, p, JNI_TRUE);
@@ -2638,6 +2724,49 @@ void testNativePlaneDirectCopyAndMetadataInspection() {
     std::cout << "PASS: testNativePlaneDirectCopyAndMetadataInspection" << std::endl;
 }
 
+void testHdrSessionProgressCallbackAndScopeCleanup() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    require(s > 0 && !consumeException().active, "Failed to create session for HDR progress test");
+    jobject listener = makeStruct("com/rawlab/android/engine/HDRProgressListener");
+
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(
+        env.ptr(), nullptr, s, makeJString("hdr.jpg"), 0, -1, listener);
+    require(p > 0 && !consumeException().active, "Session-scoped nativeDecode with progress listener failed");
+    {
+        std::lock_guard<std::mutex> jniLock(gJniMutex);
+        require(gRecordedHdrProgress == std::vector<jint>({0, 1000}),
+            "nativeDecode did not emit expected (0, 1000) HDR progress");
+        gRecordedHdrProgress.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        for (const auto& [_, st] : gMockSessions) {
+            require(!st->progressCb && !st->progressCtx, "ProgressScope leaked progressCb after nativeDecode");
+        }
+    }
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(
+        env.ptr(), nullptr, p, s, makeJString("src.jpg"), makeJString("out.jpg"), SONY2FUJI_HDR_COLOR_SRGB, -1, listener);
+    require(!consumeException().active, "Session-scoped nativeExportJpeg with progress listener failed");
+    {
+        std::lock_guard<std::mutex> jniLock(gJniMutex);
+        require(gRecordedHdrProgress == std::vector<jint>({0, 1000}),
+            "nativeExportJpeg did not emit expected (0, 1000) HDR progress");
+    }
+    {
+        std::lock_guard<std::mutex> lock(gCoreMutex);
+        for (const auto& [_, st] : gMockSessions) {
+            require(!st->progressCb && !st->progressCtx, "ProgressScope leaked progressCb after nativeExportJpeg");
+        }
+    }
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testHdrSessionProgressCallbackAndScopeCleanup" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2662,6 +2791,7 @@ int main() {
         {"testBitmapBackedPreviewZeroByteArrayAndPaddedStride", testBitmapBackedPreviewZeroByteArrayAndPaddedStride},
         {"testBitmapPreviewMidCopyCancellationUnlocksSymmetrically", testBitmapPreviewMidCopyCancellationUnlocksSymmetrically},
         {"testNativePlaneDirectCopyAndMetadataInspection", testNativePlaneDirectCopyAndMetadataInspection},
+        {"testHdrSessionProgressCallbackAndScopeCleanup", testHdrSessionProgressCallbackAndScopeCleanup},
     };
     int failures = 0;
     for (const auto& c : cases) {

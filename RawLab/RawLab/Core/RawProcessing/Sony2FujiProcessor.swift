@@ -22,7 +22,9 @@ struct Sony2FujiProcessor {
 
     func exportHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
                    processing: ProcessingIdentity = .current,
-                   proRAWDecodeVersion: Int? = nil, format: HDRPhotoFormat, cancelled: () -> Bool = { false }) throws {
+                   proRAWDecodeVersion: Int? = nil, format: HDRPhotoFormat,
+                   progress: ((Double) -> Void)? = nil,
+                   cancelled: () -> Bool = { false }) throws {
         guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
@@ -30,7 +32,8 @@ struct Sony2FujiProcessor {
         }
         if format == .hdrHEIF {
             try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
-                proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_HEIF), cancelled: cancelled)
+                proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_HEIF),
+                progress: progress, cancelled: cancelled)
             return
         }
         if format != .hdrHEIF, url.pathExtension.lowercased() == "dng",
@@ -39,23 +42,36 @@ struct Sony2FujiProcessor {
             hdrSources.clear()
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
                 _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
-                    longEdge: longEdge, keepHDR: format == .hdrJPEG, session: session, cancelled: cancelled)
+                    longEdge: longEdge, keepHDR: format == .hdrJPEG, session: session,
+                    cancelled: cancelled, progress: progress)
             }
             return
         }
-        let pair = try processHDR(url: url, settings: settings, previewLongEdge: nil, exportLongEdge: longEdge,
-                                  processing: processing, proRAWDecodeVersion: proRAWDecodeVersion, cancelled: cancelled)
-        if cancelled() { throw CancellationError() }
-        switch format {
-        case .sdrJPEG: try pair.exportSDR(to: output, format: SONY2FUJI_OUTPUT_JPEG)
-        case .hdrJPEG: try pair.exportJPEG(to: output)
-        case .hdrHEIF: try pair.exportHEIF(to: output)
+        try withoutActuallyEscaping(cancelled) { cancelled in
+            try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
+                let pair = try processHDR(url: url, settings: settings, previewLongEdge: nil, exportLongEdge: longEdge,
+                                          processing: processing, proRAWDecodeVersion: proRAWDecodeVersion,
+                                          sessionOverride: session,
+                                          progress: progress.map { report in { report($0 * 0.75) } },
+                                          cancelled: cancelled)
+                if cancelled() { throw CancellationError() }
+                let encodeProgress: ((Double) -> Void)? = progress.map { report in { report(0.75 + $0 * 0.25) } }
+                switch format {
+                case .sdrJPEG:
+                    try pair.exportSDR(to: output, format: SONY2FUJI_OUTPUT_JPEG,
+                                       session: session, cancelled: cancelled, progress: encodeProgress)
+                case .hdrJPEG:
+                    try pair.exportJPEG(to: output, session: session, cancelled: cancelled, progress: encodeProgress)
+                case .hdrHEIF:
+                    try pair.exportHEIF(to: output, session: session, cancelled: cancelled, progress: encodeProgress)
+                }
+            }
         }
-        if cancelled() { throw CancellationError() }
     }
 
     func exportHDRDNG(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
                       processing: ProcessingIdentity = .current, proRAWDecodeVersion: Int? = nil,
+                      progress: ((Double) -> Void)? = nil,
                       cancelled: () -> Bool = { false }) throws {
         guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
@@ -63,11 +79,13 @@ struct Sony2FujiProcessor {
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
         try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
-            proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_SDR_DNG), cancelled: cancelled)
+            proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_SDR_DNG),
+            progress: progress, cancelled: cancelled)
     }
 
     private func exportTiledHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int?,
                                 processing: ProcessingIdentity, proRAWDecodeVersion: Int?, format: UInt32,
+                                progress: ((Double) -> Void)? = nil,
                                 cancelled: () -> Bool) throws {
         guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
             throw HDRSettings.ModeError.unsupportedSource
@@ -79,40 +97,56 @@ struct Sony2FujiProcessor {
                 hdrSources.clear()
                 _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
                     format: format == UInt32(SONY2FUJI_HDR_TILED_HEIF) ? .hdrHEIF : .renderedDNG,
-                    session: session, cancelled: cancelled)
+                    session: session, cancelled: cancelled, progress: progress)
             } else {
                 _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
-                    longEdge: longEdge, format: format, session: session, cancelled: cancelled)
+                    longEdge: longEdge, format: format, session: session, cancelled: cancelled, progress: progress)
             }
         }
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
                     processing: ProcessingIdentity = .current,
-                    proRAWDecodeVersion: Int? = nil, cancelled: () -> Bool = { false }) throws -> HDRImage {
-        guard settings.mode == .hdr,settings.isValid else { throw HDRRequestError.invalidSettings }
-        guard gpuMode != SONY2FUJI_GPU_FORCE else {
-            throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
-        }
-        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
-            throw HDRSettings.ModeError.unsupportedSource
-        }
-        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
-        if previewLongEdge == nil, info.proRAW != nil { hdrSources.clear() }
-        let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
-        return try withRawSession(reuse:false,inputType:inputType) { session in
-            let source = try previewLongEdge.map {
-                try hdrPreviewSource(url, info: info, settings: settings, edge: $0, session: session, cancelled: cancelled)
-            } ?? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL,
-                                 session:info.isCameraRAW ? session : nil, camera:settings.cameraDevelopmentSettings,cancelled:cancelled)
-            if cancelled() { throw CancellationError() }
-            if settings.isIdentity && exportLongEdge==nil &&
-                (previewLongEdge == nil || max(source.width, source.height) <= previewLongEdge!) { return source }
-            let result = try source.rendered(session:session,settings:settings,
-                intent:previewLongEdge==nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,
-                longEdge:previewLongEdge ?? exportLongEdge)
-            if cancelled() { throw CancellationError() }
-            return result
+                    proRAWDecodeVersion: Int? = nil,
+                    sessionOverride: OpaquePointer? = nil,
+                    progress: ((Double) -> Void)? = nil,
+                    cancelled: () -> Bool = { false }) throws -> HDRImage {
+        try withoutActuallyEscaping(cancelled) { cancelled in
+            guard settings.mode == .hdr,settings.isValid else { throw HDRRequestError.invalidSettings }
+            guard gpuMode != SONY2FUJI_GPU_FORCE else {
+                throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+            }
+            guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
+                throw HDRSettings.ModeError.unsupportedSource
+            }
+            if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
+            if previewLongEdge == nil, info.proRAW != nil { hdrSources.clear() }
+            let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+            let run: (OpaquePointer) throws -> HDRImage = { session in
+                let decodeWeight = 0.4
+                let source = try previewLongEdge.map {
+                    try hdrPreviewSource(url, info: info, settings: settings, edge: $0, session: session, cancelled: cancelled)
+                } ?? HDRImage.decode(url,info:info,intent:SONY2FUJI_INTENT_FINAL,
+                                     session:session, camera:settings.cameraDevelopmentSettings,
+                                     progress: progress.map { report in { report($0 * decodeWeight) } },
+                                     cancelled:cancelled)
+                if cancelled() { throw CancellationError() }
+                if settings.isIdentity && exportLongEdge==nil &&
+                    (previewLongEdge == nil || max(source.width, source.height) <= previewLongEdge!) {
+                    progress?(1.0)
+                    return source
+                }
+                let result = try source.rendered(
+                    session:session, settings:settings,
+                    intent:previewLongEdge==nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,
+                    longEdge:previewLongEdge ?? exportLongEdge,
+                    cancelled: cancelled,
+                    progress: progress.map { report in { report(decodeWeight + $0 * (1.0 - decodeWeight)) } })
+                if cancelled() { throw CancellationError() }
+                return result
+            }
+            if let sessionOverride { return try run(sessionOverride) }
+            return try withRawSession(reuse: false, inputType: inputType, body: run)
         }
     }
 

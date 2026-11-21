@@ -47,12 +47,16 @@ internal class EditorStrings(
 
 internal interface EditorRenderGateway {
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult
+    fun setExportProgressListener(listener: ((Work.Export, Float) -> Unit)?) = Unit
     fun releaseDecodedRaster()
     fun close()
 }
 
 internal class DefaultEditorRenderGateway(val renderer: EditorRenderer) : EditorRenderGateway {
     override fun perform(work: Work, cancellation: RenderCancellation): WorkResult = renderer.perform(work, cancellation)
+    override fun setExportProgressListener(listener: ((Work.Export, Float) -> Unit)?) {
+        renderer.onExportProgress = listener ?: { _, _ -> }
+    }
     override fun releaseDecodedRaster() = renderer.releaseDecodedRaster()
     override fun close() = renderer.close()
 }

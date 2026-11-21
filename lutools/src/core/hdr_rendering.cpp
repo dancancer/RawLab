@@ -1,5 +1,6 @@
 #include "core/hdr_rendering.h"
 #include "core/hdr_look.h"
+#include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_tone_curve.h"
@@ -28,6 +29,20 @@ void validateImage(const ImageData& image) {
         uint64_t(image.width) * uint64_t(image.height) > pixelLimit ||
         uint64_t(image.width) * uint64_t(image.height) != image.pixels.size())
         throw std::invalid_argument("HDR image dimensions or pixel storage are invalid");
+    if (image.pixels.size() >= 65536) {
+        std::atomic<bool> nonfinite{false};
+        parallelPixelRanges(image.pixels.size(), [&](size_t begin, size_t end) {
+            for (size_t i = begin; i < end; ++i) {
+                if (!finite(image.pixels[i])) {
+                    nonfinite.store(true, std::memory_order_relaxed);
+                    return;
+                }
+            }
+        });
+        if (nonfinite.load(std::memory_order_relaxed))
+            throw std::invalid_argument("HDR pixels must be finite");
+        return;
+    }
     for (const auto& pixel : image.pixels)
         if (!finite(pixel)) throw std::invalid_argument("HDR pixels must be finite");
 }
@@ -316,27 +331,47 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     const bool inertLater = !o.geometry.active() && !o.hasDetail() && !o.hasPhotoEffects() &&
         (o.longEdge == 0 || o.longEdge >= canvasEdge);
     float hdrContentMax = 0, sdrContentMax = 0;
+    reportHdrProgress(50, 1000);
     const bool hdrRan = edit(result.hdr, o, true, inertLater ? &hdrContentMax : nullptr);
+    reportHdrProgress(250, 1000);
     const bool sdrRan = edit(result.sdr, o, false, inertLater ? &sdrContentMax : nullptr);
+    reportHdrProgress(450, 1000);
     finishGeometry(result.hdr, o); finishGeometry(result.sdr, o);
+    reportHdrProgress(650, 1000);
     finishDetail(result.hdr, o, true);
     finishDetail(result.sdr, o, false);
+    reportHdrProgress(850, 1000);
     finishEffects(result.hdr, o, true);
     finishEffects(result.sdr, o, false);
+    reportHdrProgress(950, 1000);
     result.renderQuality = o.intent;
     result.isProxy = result.isProxy || o.intent == HDRQuality::Preview;
     if (inertLater && hdrRan) {
         // edit 已逐像素验证非有限并采集峰值；几何恒等保证这些像素就是最终像素。
         result.editedHeadroom = std::max(1.0f, hdrContentMax);
     } else {
-        result.editedHeadroom = 1;
-        for (const auto& pixel : result.hdr.pixels) {
-            if (!finite(pixel)) throw std::overflow_error("HDR geometry exceeded finite float range");
-            result.editedHeadroom = std::max(result.editedHeadroom, luminance(pixel));
-        }
+        float peak = 1.0f;
+        std::atomic<bool> overflow{false};
+        std::mutex peakMutex;
+        parallelPixelRanges(result.hdr.pixels.size(), [&](size_t begin, size_t end) {
+            float localPeak = 1.0f;
+            for (size_t i = begin; i < end; ++i) {
+                const auto& pixel = result.hdr.pixels[i];
+                if (!finite(pixel)) {
+                    overflow.store(true, std::memory_order_relaxed);
+                    return;
+                }
+                localPeak = std::max(localPeak, luminance(pixel));
+            }
+            std::lock_guard<std::mutex> lock(peakMutex);
+            peak = std::max(peak, localPeak);
+        });
+        if (overflow.load(std::memory_order_relaxed)) throw std::overflow_error("HDR geometry exceeded finite float range");
+        result.editedHeadroom = peak;
     }
     if (!std::isfinite(result.editedHeadroom)) throw std::overflow_error("HDR headroom exceeded finite float range");
     result.editedSdrHeadroom = inertLater && sdrRan ? std::max(1.0f, sdrContentMax) : 0;
+    reportHdrProgress(1000, 1000);
     return result;
 }
 
@@ -422,10 +457,24 @@ void validateHDRRenderOptions(const HDRRenderOptions& o) {
         throw std::invalid_argument("Invalid HDR look strength or resource");
 }
 
-void editHDRPixels(ImageData& image, const HDRRenderOptions& options, bool hdr) {
+bool editHDRPixels(ImageData& image, const HDRRenderOptions& options, bool hdr, float* contentMax) {
     validateHDRRenderOptions(options);
     validateImage(image);
-    edit(image, options, hdr);
+    const bool ran = edit(image, options, hdr, contentMax);
+    if (!ran && contentMax) {
+        float peak = 0.0f;
+        std::mutex peakMutex;
+        parallelPixelRanges(image.pixels.size(), [&](size_t begin, size_t end) {
+            float localPeak = -std::numeric_limits<float>::infinity();
+            for (size_t i = begin; i < end; ++i) {
+                localPeak = std::max(localPeak, luminance(image.pixels[i]));
+            }
+            std::lock_guard<std::mutex> lock(peakMutex);
+            peak = std::max(peak, localPeak);
+        });
+        *contentMax = peak;
+    }
+    return ran;
 }
 
 std::pair<int, int> hdrResizeSize(int width, int height, uint32_t longEdge) {

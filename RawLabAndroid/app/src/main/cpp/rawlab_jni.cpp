@@ -15,6 +15,7 @@
 #include <atomic>
 #include <array>
 #include <fstream>
+#include <optional>
 #include "png16_decoder.h"
 #include "png16_color.h"
 
@@ -330,6 +331,11 @@ struct JniCache {
         jfieldID look = nullptr;
         jfieldID channelCurves = nullptr;
     } hdrRenderRequest;
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID onProgress = nullptr;
+    } hdrProgressListener;
 };
 
 JniCache gJniCache{};
@@ -388,6 +394,7 @@ void releaseJniCache(JNIEnv* env) {
         &gJniCache.hdrLook.clazz,
         &gJniCache.hdrChannelCurves.clazz,
         &gJniCache.hdrRenderRequest.clazz,
+        &gJniCache.hdrProgressListener.clazz,
     };
     for (jclass* slot : classes) {
         if (*slot) {
@@ -560,6 +567,9 @@ void initJniCache(JNIEnv* env) {
         c.hdrRenderRequest.detail = cacheField(env, c.hdrRenderRequest.clazz, "detail", "Lcom/rawlab/android/engine/NativeHDRDetail;");
         c.hdrRenderRequest.look = cacheField(env, c.hdrRenderRequest.clazz, "look", "Lcom/rawlab/android/engine/NativeHDRLook;");
         c.hdrRenderRequest.channelCurves = cacheField(env, c.hdrRenderRequest.clazz, "channelCurves", "Lcom/rawlab/android/engine/NativeHDRChannelCurves;");
+
+        c.hdrProgressListener.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/HDRProgressListener");
+        c.hdrProgressListener.onProgress = cacheMethod(env, c.hdrProgressListener.clazz, "onProgress", "(I)V");
 
         gJniCache = c;
         gJniCacheReady.store(true, std::memory_order_release);
@@ -1110,6 +1120,44 @@ struct SessionGuard {
     Session& session() { return *owner; }
     sony2fuji_session* get() const { return owner->get(); }
 };
+
+struct ProgressScope {
+    sony2fuji_session* session;
+    JNIEnv* env;
+    jobject listener;
+    jmethodID method;
+    static void onProgress(void* context, uint32_t completed, uint32_t total) {
+        auto& self = *static_cast<ProgressScope*>(context);
+        if (!self.env || !self.listener || !self.method || total == 0) return;
+        const auto permille = static_cast<jint>(std::min<uint64_t>(1000, (uint64_t(completed) * 1000) / total));
+        self.env->CallVoidMethod(self.listener, self.method, permille);
+        if (self.env->ExceptionCheck()) self.env->ExceptionClear();
+    }
+    ProgressScope(sony2fuji_session* owner, JNIEnv* env, jobject listener)
+        : session(owner), env(env), listener(listener),
+          method(listener ? jniCache(env).hdrProgressListener.onProgress : nullptr) {
+        if (session && listener && method) sony2fuji_session_set_hdr_progress_callback(session, onProgress, this);
+    }
+    ~ProgressScope() {
+        if (session && listener && method) sony2fuji_session_set_hdr_progress_callback(session, nullptr, nullptr);
+    }
+};
+
+struct OptionalHdrSessionScopes {
+    std::unique_ptr<SessionGuard> guard;
+    std::unique_ptr<CancellationScope> cancellation;
+    std::unique_ptr<ProgressScope> progress;
+    OptionalHdrSessionScopes(jlong sessionId, jlong cancellationGeneration, JNIEnv* env, jobject progressListener) {
+        if (sessionId != 0) {
+            guard = std::make_unique<SessionGuard>(sessionId);
+            cancellation = std::make_unique<CancellationScope>(guard->session(), cancellationGeneration);
+            progress = std::make_unique<ProgressScope>(guard->get(), env, progressListener);
+            if (cancellation->isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        }
+    }
+    sony2fuji_session* session() const { return guard ? guard->get() : nullptr; }
+    bool isCancelled() const { return cancellation && cancellation->isCancelled(); }
+};
 jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
     const auto& cache = jniCache(env);
     LocalRef charset(env, env->NewStringUTF("UTF-8"));
@@ -1644,11 +1692,13 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeProbeCameraRaw(JNIEnv* env,
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass, jstring path, jint longEdge) {
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass, jlong sessionId, jstring path,
+    jint longEdge, jlong cancellationGeneration, jobject progressListener) {
     try {
         UtfChars source(env, path);
         if (!source.chars || !*source.chars || longEdge < 0 || longEdge > 65535)
             throw std::invalid_argument("Invalid HDR preview request");
+        OptionalHdrSessionScopes scopes(sessionId, cancellationGeneration, env, progressListener);
         sony2fuji_hdr_decode_options_v1 options{};
         options.version = SONY2FUJI_HDR_VERSION;
         options.struct_size = sizeof(options);
@@ -1660,18 +1710,25 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(JNIEnv* env, jclass,
         sony2fuji_hdr_diagnostic_v1 diagnostic{};
         diagnostic.version = SONY2FUJI_HDR_VERSION;
         diagnostic.struct_size = sizeof(diagnostic);
-        const auto status = sony2fuji_hdr_decode(source.chars, &options, &result, &diagnostic);
+        const auto status = sony2fuji_hdr_decode_with_session(scopes.session(), source.chars, &options, &result, &diagnostic);
+        if (scopes.isCancelled()) {
+            sony2fuji_hdr_release_pair(&result);
+            throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+        }
         if (status != SONY2FUJI_STATUS_OK) {
             sony2fuji_hdr_release_pair(&result);
-            throw HDRStatusError(status,diagnostic);
+            if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
+            throw HDRStatusError(status, diagnostic);
         }
         return retainHdrPair(result);
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR decode");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
     } catch (const std::invalid_argument& error) {
         throwJava(env, "java/lang/IllegalArgumentException", error.what());
     } catch (const std::exception& error) {
-        throwHDRFailure(env,error);
+        throwHDRFailure(env, error);
     }
     return 0;
 }
@@ -1680,7 +1737,8 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env, jclass, jlong sessionId,
     jstring path, jint longEdge, jlong cancellationGeneration, jboolean proRAW, jstring temporaryRoot,
     jboolean customWhiteBalance, jfloat temperature, jfloat tint, jboolean sensorExposure,
-    jint fbddLevel, jint lensFlags, jstring lensProfile, jstring profilePath, jstring profileDigest, jint processingVersion) {
+    jint fbddLevel, jint lensFlags, jstring lensProfile, jstring profilePath, jstring profileDigest,
+    jint processingVersion, jobject progressListener) {
     try {
         UtfChars source(env, path), temporary(env, temporaryRoot), profile(env, lensProfile);
         UtfChars resource(env, profilePath), digest(env, profileDigest);
@@ -1688,6 +1746,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
             throw std::invalid_argument("Invalid camera RAW HDR preview request");
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
+        ProgressScope progress(guard.get(), env, progressListener);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
         if (!proRAW) {
             const auto paramsJson = processingOnlyParamsJson(processingVersion, "preview");
@@ -1745,7 +1804,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, jclass, jlong sessionId,
     jstring path, jobject requestObj, jboolean keepHDR, jbyteArray fingerprint,
-    jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration) {
+    jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration, jobject progressListener) {
     try {
         if (!fingerprint || env->GetArrayLength(fingerprint) != 32) throw std::invalid_argument("Invalid ProRAW export fingerprint");
         MarshalledHdrRequest marshalled;
@@ -1755,6 +1814,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, j
         UtfChars source(env, path), temporary(env, temporaryRoot), output(env, outputPath);
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
+        ProgressScope progress(guard.get(), env, progressListener);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
         sony2fuji_hdr_export_config_v1 config{};
         config.version = SONY2FUJI_HDR_VERSION; config.struct_size = sizeof(config);
@@ -1797,13 +1857,14 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(JNIEnv* env, jclas
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
-    jobject requestObj, jlong cancellationGeneration) {
+    jobject requestObj, jlong cancellationGeneration, jobject progressListener) {
     try {
         MarshalledHdrRequest marshalled;
         marshalHdrRenderRequest(env, requestObj, marshalled);
         auto& base = marshalled.base();
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
+        ProgressScope progress(guard.get(), env, progressListener);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
         const auto sourceOwner = acquireHdrPair(sourceId);
         const auto& source = sourceOwner->value;
@@ -1821,6 +1882,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
         }
         if (status != SONY2FUJI_STATUS_OK) {
             sony2fuji_hdr_release_pair(&result);
+            if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
             throw HDRStatusError(status, diagnostic);
         }
         return retainHdrPair(result);
@@ -2021,12 +2083,13 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(JNIEnv*, jclass, jl
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jclass, jlong pairId,
-    jstring sourcePath, jstring outputPath, jint baseColor) {
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jclass, jlong pairId, jlong sessionId,
+    jstring sourcePath, jstring outputPath, jint baseColor, jlong cancellationGeneration, jobject progressListener) {
     try {
         UtfChars source(env, sourcePath), output(env, outputPath);
         if (!output.chars || !*output.chars || baseColor < SONY2FUJI_HDR_COLOR_SRGB || baseColor > SONY2FUJI_HDR_COLOR_BT2020)
             throw std::invalid_argument("Invalid HDR JPEG export request");
+        OptionalHdrSessionScopes scopes(sessionId, cancellationGeneration, env, progressListener);
         const auto pairOwner = acquireHdrPair(pairId);
         const auto& pair = pairOwner->value;
         sony2fuji_hdr_export_config_v1 config{};
@@ -2036,19 +2099,27 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(JNIEnv* env, jcl
         config.metadata_source_path = source.chars;
         if (source.chars) std::memcpy(config.source_sha256, pair.source_sha256, 32);
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
-        const auto status = sony2fuji_hdr_export_jpeg(&pair, &config, output.chars, &diagnostic);
-        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status,diagnostic);
-    } catch (const std::exception& error) { throwHDRFailure(env,error); }
+        const auto status = sony2fuji_hdr_export_jpeg_with_session(scopes.session(), &pair, &config, output.chars, &diagnostic);
+        if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
+        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR JPEG export");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) { throwHDRFailure(env, error); }
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jclass, jlong pairId,
-    jstring sourcePath, jstring outputPath, jint format) {
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jclass, jlong pairId, jlong sessionId,
+    jstring sourcePath, jstring outputPath, jint format, jlong cancellationGeneration, jobject progressListener) {
     try {
         UtfChars source(env, sourcePath), output(env, outputPath);
         if (!output.chars || !*output.chars ||
             (format != SONY2FUJI_OUTPUT_JPEG && format != SONY2FUJI_OUTPUT_PNG && format != SONY2FUJI_OUTPUT_DNG))
             throw std::invalid_argument("Invalid SDR export request");
+        OptionalHdrSessionScopes scopes(sessionId, cancellationGeneration, env, progressListener);
         const auto pairOwner = acquireHdrPair(pairId);
         const auto& pair = pairOwner->value;
         sony2fuji_hdr_sdr_export_config_v1 config{};
@@ -2057,9 +2128,16 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportSdr(JNIEnv* env, jcla
         config.metadata_source_path = source.chars;
         if (source.chars) std::memcpy(config.source_sha256, pair.source_sha256, 32);
         sony2fuji_hdr_diagnostic_v1 diagnostic{SONY2FUJI_HDR_VERSION, sizeof(diagnostic)};
-        const auto status = sony2fuji_hdr_export_sdr(&pair, &config, output.chars, &diagnostic);
-        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status,diagnostic);
-    } catch (const std::exception& error) { throwHDRFailure(env,error); }
+        const auto status = sony2fuji_hdr_export_sdr_with_session(scopes.session(), &pair, &config, output.chars, &diagnostic);
+        if (status == SONY2FUJI_STATUS_CANCELLED) throw NativeStatusError(status);
+        if (status != SONY2FUJI_STATUS_OK) throw HDRStatusError(status, diagnostic);
+    } catch (const std::bad_alloc&) {
+        throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for SDR export");
+    } catch (const NativeStatusError& error) {
+        throwNativeStatus(env, error);
+    } catch (const std::invalid_argument& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+    } catch (const std::exception& error) { throwHDRFailure(env, error); }
 }
 
 extern "C" JNIEXPORT jobject JNICALL
