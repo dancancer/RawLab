@@ -22,7 +22,15 @@ the repository root, not from the `RawLab/` subdirectory.
 ## Build And Test
 
 Inspect schemes with `xcodebuild -list -project RawLab/RawLab.xcodeproj`.
-The app links `lutools/build-ios/sony2fuji.xcframework`; use the existing
+The app links `lutools/build-ios/sony2fuji.xcframework` and bundles
+53 externalized `.cube` LUTs across `lutools/flog-2-new/`,
+`Shared/BundledLooks/`, and `RawLabMac/Resources/MasterRecipes/`. Before
+copying resources and `BundledLooks`, the `RawLab` target runs the
+`Prepare Externalized LUTs` build phase, which verifies `--check` against
+`Shared/assets-manifest.json` and invokes
+`python3 "$SRCROOT/../scripts/assets/prepare.py" --group luts` when any
+file is missing or stale (hitting the shared `.cache/shared/assets` cache offline when
+populated). Use the existing
 [iOS integration instructions](../lutools/platform/ios/README.md) when native
 inputs changed or the framework is missing:
 

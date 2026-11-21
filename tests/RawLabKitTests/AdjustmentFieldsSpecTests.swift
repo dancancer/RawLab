@@ -197,6 +197,106 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         XCTAssertFalse(HDRRenditionSettings(peakLimitEV: 6.1).isValid)
     }
 
+    func testMacAdjustmentParameterSpecsMatchSpecJSON() throws {
+        let root = try loadSpecJSON()
+        let fields = try XCTUnwrap(root["fields"] as? [[String: Any]])
+        var entryById: [String: [String: Any]] = [:]
+        for entry in fields {
+            if let fid = entry["field_id"] as? String {
+                entryById[fid] = entry
+            }
+        }
+
+        func fieldId(for parameter: AdjustmentParameter) -> String {
+            switch parameter {
+            case .strength: return "looks.strength"
+            case .exposure: return "light.exposure"
+            case .temperature: return "color.white_balance.temperature_kelvin"
+            case .tint: return "color.white_balance.tint"
+            case .blackPoint: return "tone.black_point"
+            case .whitePoint: return "tone.white_point"
+            case .vibrance: return "color.vibrance"
+            case .clarity: return "effects.clarity"
+            case .dehaze: return "effects.dehaze"
+            case .contrast: return "light.contrast"
+            case .highlights: return "light.highlights"
+            case .shadows: return "light.shadows"
+            case .toneCurve: return "light.s_curve"
+            case .saturation: return "color.saturation"
+            case .sharpening: return "detail.sharpening"
+            case .rawNoiseReduction: return "detail.denoise.raw_level"
+            case .denoiseMode: return "detail.denoise.chroma_mode"
+            case .vignetteAmount: return "effects.vignette.amount"
+            case .grainAmount: return "effects.grain.amount"
+            }
+        }
+
+        func expectedDecimals(forUIStep uiStep: Double) -> Int {
+            if abs(uiStep - 0.01) < 1e-9 { return 2 }
+            if abs(uiStep - 0.1) < 1e-9 { return 1 }
+            return 0
+        }
+
+        XCTAssertEqual(AdjustmentParameter.allCases.count, 19)
+        for parameter in AdjustmentParameter.allCases {
+            let fid = fieldId(for: parameter)
+            let entry = try XCTUnwrap(entryById[fid], fid)
+            let model = try XCTUnwrap(entry["model"] as? [String: Any], fid)
+            let macModel = try XCTUnwrap(model["macos"] as? [String: Any], fid)
+            let ui = try XCTUnwrap(entry["ui"] as? [String: Any], fid)
+            let macUI = try XCTUnwrap(ui["macos"] as? [String: Any], fid)
+
+            let minV = try XCTUnwrap((macModel["min"] as? NSNumber)?.doubleValue, fid)
+            let maxV = try XCTUnwrap((macModel["max"] as? NSNumber)?.doubleValue, fid)
+            let defaultV = try XCTUnwrap(
+                ((macModel["default"] as? NSNumber) ?? (macUI["default"] as? NSNumber))?.doubleValue,
+                fid
+            )
+            let uiStep = try XCTUnwrap((macUI["step"] as? NSNumber)?.doubleValue, fid)
+            let expectedUnit = (macUI["unit"] as? String) ?? ""
+
+            let spec = parameter.spec
+            XCTAssertEqual(spec.range, minV...maxV, "\(parameter.rawValue) range")
+            XCTAssertEqual(spec.defaultValue, defaultV, "\(parameter.rawValue) default")
+            XCTAssertEqual(spec.step * spec.multiplier, uiStep, accuracy: 1e-9, "\(parameter.rawValue) UI step")
+            XCTAssertEqual(spec.unit, expectedUnit, "\(parameter.rawValue) unit")
+            XCTAssertEqual(spec.decimals, expectedDecimals(forUIStep: uiStep), "\(parameter.rawValue) decimals")
+            XCTAssertEqual(spec.reciprocalScale, parameter == .temperature, "\(parameter.rawValue) reciprocalScale")
+        }
+
+        var hdrSettings = Adjustments()
+        hdrSettings.hdr = HDRSettings()
+
+        let exposureEntry = try XCTUnwrap(entryById["light.exposure"])
+        let exposureMacModel = try XCTUnwrap((exposureEntry["model"] as? [String: Any])?["macos"] as? [String: Any])
+        let hdrExpMin = try XCTUnwrap((exposureMacModel["hdr_min"] as? NSNumber)?.doubleValue)
+        let hdrExpMax = try XCTUnwrap((exposureMacModel["hdr_max"] as? NSNumber)?.doubleValue)
+        let hdrExpSpec = AdjustmentParameter.exposure.spec(for: hdrSettings)
+        XCTAssertEqual(hdrExpSpec.range, hdrExpMin...hdrExpMax)
+        XCTAssertEqual(hdrExpSpec.defaultValue, try XCTUnwrap((exposureMacModel["default"] as? NSNumber)?.doubleValue))
+        XCTAssertEqual(hdrExpSpec.step, AdjustmentParameter.exposure.spec.step)
+        XCTAssertEqual(hdrExpSpec.decimals, AdjustmentParameter.exposure.spec.decimals)
+
+        let postRgbEntry = try XCTUnwrap(entryById["detail.denoise.post_rgb"])
+        let postRgbMacModel = try XCTUnwrap((postRgbEntry["model"] as? [String: Any])?["macos"] as? [String: Any])
+        let postRgbMin = try XCTUnwrap((postRgbMacModel["min"] as? NSNumber)?.doubleValue)
+        let postRgbMax = try XCTUnwrap((postRgbMacModel["max"] as? NSNumber)?.doubleValue)
+        let postRgbDefault = try XCTUnwrap((postRgbMacModel["default"] as? NSNumber)?.doubleValue)
+        let hdrDenoiseSpec = AdjustmentParameter.denoiseMode.spec(for: hdrSettings)
+        XCTAssertEqual(hdrDenoiseSpec.range, postRgbMin...postRgbMax)
+        XCTAssertEqual(hdrDenoiseSpec.defaultValue, postRgbDefault)
+        XCTAssertEqual(hdrDenoiseSpec.step, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(hdrDenoiseSpec.multiplier, 100)
+        XCTAssertEqual(hdrDenoiseSpec.unit, "%")
+
+        var sdrWithAsShot = Adjustments()
+        sdrWithAsShot.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 12))
+        XCTAssertEqual(AdjustmentParameter.temperature.spec(for: sdrWithAsShot).defaultValue, 5200)
+        XCTAssertEqual(AdjustmentParameter.tint.spec(for: sdrWithAsShot).defaultValue, 12)
+        sdrWithAsShot.setTransferRecipe(MasterRecipe.hamadaDaylightV2.id)
+        XCTAssertEqual(AdjustmentParameter.tint.spec(for: sdrWithAsShot).defaultValue, 0)
+    }
+
     private func assertModelSpecMatchesJSON(_ actual: AdjustmentFieldModelSpec, _ json: [String: Any], label: String) {
         XCTAssertEqual(actual.supported, json["supported"] as? Bool, label)
         XCTAssertEqual(actual.modes, json["modes"] as? [String], label)
