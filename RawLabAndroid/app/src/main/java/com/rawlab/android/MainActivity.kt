@@ -186,7 +186,6 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         if (cameraState.transferring) window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
-    var exportDialog by rememberSaveable { mutableStateOf(false) }
     var format by rememberSaveable { mutableStateOf(ExportFormat.JPEG) }
     var exportToAlbum by rememberSaveable { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
     var exportSizeKey by rememberSaveable { mutableStateOf(ExportSizeChoice.ORIGINAL.key) }
@@ -207,13 +206,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val openHDRLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRLookImport)
     val openHDRCameraProfile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRCameraProfileImport)
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-        if (it == null) exportDialog = true else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions() else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
     }
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
-        if (it == null) exportDialog = true else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions() else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
     }
     val saveDng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/x-adobe-dng")) {
-        if (it == null) exportDialog = true else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions() else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
     }
     if (cameraOpen) {
         com.rawlab.android.camera.CameraScreen(camera, model.storage, onBack = { cameraOpen = false; albumFromCamera = false },
@@ -313,7 +312,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
                 format = if (state.edits.isHDREditing) ExportFormat.HDR_JPEG else ExportFormat.JPEG
-                model.beginExport { if (it) exportDialog = true }
+                model.beginExport()
             },
             onCancelExport = model::cancelExport,
             onBatchExport = model::beginBatch,
@@ -359,8 +358,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     if (presetLibrary) AdjustmentPresetSheet(model, savingPreset,
         onClose = { presetLibrary = false; savingPreset = false; presetLibraryRevision++ },
         onRequest = { action -> presetLibrary = false; savingPreset = false; presetLibraryRevision++; presetAction = action })
-    if (exportDialog) ModalBottomSheet(
-        onDismissRequest = { exportDialog = false; model.cancelExport() },
+    if (state.exportOptionsVisible) ModalBottomSheet(
+        onDismissRequest = { model.cancelExport() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         EditorSheetSystemBars()
@@ -389,12 +388,13 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                 }
             }
             Button(onClick = {
-                    exportDialog = false
+                    if (!model.state.value.exportOptionsVisible) return@Button
                     if (exportToAlbum && format.allowsGallery && Build.VERSION.SDK_INT >= 29) {
                         model.export(null, format, longEdge)
                         return@Button
                     }
                     pendingExportLongEdgeText = longEdge?.toString().orEmpty()
+                    model.beginExportDestinationPick()
                     val name = "RawLab-${System.currentTimeMillis()}"
                     when (format) {
                         ExportFormat.JPEG, ExportFormat.HDR_JPEG -> saveJpeg.launch("$name.jpg")
@@ -402,7 +402,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                         ExportFormat.DNG -> saveDng.launch("$name.dng")
                     }
                 }, enabled = sizeValid, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text(stringResource(R.string.export)) }
-            TextButton(onClick = { exportDialog = false; model.cancelExport() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = { model.cancelExport() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.cancel)) }
         }
     }
     if (licenses) LicenseDialog { licenses = false }

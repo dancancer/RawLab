@@ -115,7 +115,12 @@ internal class EditorHdrStateHolder(
             (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)
         ) return
         val expected = Triple(currentSourceRevision(), currentEditRevision(), currentDraftRevision())
-        mutable.value = current.copy(operation = Operation.IMPORT_LOOK, error = null, importingHDRLook = true)
+        mutable.value = current.copy(
+            operation = Operation.IMPORT_LOOK,
+            exportStep = SingleExportStep.NONE,
+            error = null,
+            importingHDRLook = true,
+        )
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val self = coroutineContext[Job]
             runHDRLookImport(

@@ -41,7 +41,8 @@ data class PendingDcpImport(
 //  编辑器的界面状态：当前照片、参数、预览与进行中的操作
 // ============================================================================
 
-enum class Operation { NONE, IMPORT, IMPORT_LOOK, PICK_EXPORT, EXPORT }
+enum class Operation { NONE, IMPORT, IMPORT_LOOK, PREPARE_EXPORT, PICK_EXPORT, EXPORT }
+enum class SingleExportStep { NONE, PREPARING, OPTIONS, PICKING_DESTINATION, WRITING }
 enum class EditSaveState { NONE, RESTORED, SAVED, FAILED }
 
 internal class PendingPhotoImport {
@@ -65,6 +66,12 @@ data class EditorState(
     val recentLookIds: List<String> = emptyList(),
     val preview: PreviewPair? = null,
     val operation: Operation = Operation.NONE,
+    val exportStep: SingleExportStep = when (operation) {
+        Operation.PREPARE_EXPORT -> SingleExportStep.PREPARING
+        Operation.PICK_EXPORT -> SingleExportStep.OPTIONS
+        Operation.EXPORT -> SingleExportStep.WRITING
+        else -> SingleExportStep.NONE
+    },
     val rendering: Boolean = false,
     val previewResizePending: Boolean = false,
     val exact: Boolean = false,
@@ -93,6 +100,7 @@ data class EditorState(
     val canExport get() = photo != null && preview != null && exact && !rendering && !previewResizePending &&
         operation == Operation.NONE && !committingAdjustments && draft == null && saveState != EditSaveState.FAILED
     val controlsEnabled get() = photo != null && operation == Operation.NONE && !committingAdjustments
+    val exportOptionsVisible: Boolean get() = operation == Operation.PICK_EXPORT && exportStep == SingleExportStep.OPTIONS
     val visibleEdits get() = draft?.project(edits) ?: edits
     val draftReady get() = draft != null && controlsEnabled && exact && !rendering && !previewResizePending && error == null
     val canApplyDraft get() = draftReady && draft?.changed == true
@@ -104,6 +112,7 @@ internal data class EditorMutation(val state: EditorState, val preview: EditSett
 internal object EditorStateReducer {
     fun renderFinished(current: EditorState): EditorState = current.copy(
         operation = if (current.operation == Operation.IMPORT_LOOK) Operation.IMPORT_LOOK else Operation.NONE,
+        exportStep = SingleExportStep.NONE,
         rendering = false,
     )
 
@@ -132,6 +141,7 @@ internal object EditorStateReducer {
             edits = if (draft == null) edits else current.edits,
             draft = draft,
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             rendering = if (selected != null && hasPhoto) true else current.rendering,
             exact = if (selected != null && hasPhoto) false else current.exact,
             error = if (selected == null) current.error else null,
@@ -143,6 +153,7 @@ internal object EditorStateReducer {
         val state = current.copy(
             looks = current.looks.map { if (it.id == look.id) LookChoice(look.id, look.name, managed = true, appearanceUnverified = look.appearanceUnverified, compatibilityMode = look.compatibilityMode) else it },
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             error = null,
         )
         return EditorMutation(state, null)
@@ -156,6 +167,7 @@ internal object EditorStateReducer {
             looks = current.looks.filterNot { it.id == id },
             edits = edits,
             operation = Operation.NONE,
+            exportStep = SingleExportStep.NONE,
             rendering = if (rerender) true else current.rendering,
             exact = if (rerender) false else current.exact,
             error = null,
@@ -165,8 +177,11 @@ internal object EditorStateReducer {
 
     // HDR 外观导入结束必然交还 operation；过期或取消明确提示，读取失败报错，成功由调用方继续提交编辑。
     fun hdrLookImportFinished(current: EditorState, outcome: Result<*>, cancelled: String, unavailable: String): EditorState {
-        val ready = current.copy(importingHDRLook = false,
-            operation = if (current.operation == Operation.IMPORT_LOOK) Operation.NONE else current.operation)
+        val ready = current.copy(
+            importingHDRLook = false,
+            operation = if (current.operation == Operation.IMPORT_LOOK) Operation.NONE else current.operation,
+            exportStep = if (current.operation == Operation.IMPORT_LOOK) SingleExportStep.NONE else current.exportStep,
+        )
         val failure = outcome.exceptionOrNull() ?: return ready
         return if (failure is AdjustmentOperationExpiredException || failure is CancellationException) ready.copy(message = cancelled)
         else ready.copy(error = unavailable)
@@ -206,18 +221,21 @@ internal fun prepareExportSubmission(
         return ExportSubmission.Rejected(current)
     }
     if (destination == null && !format.allowsGallery) {
-        return ExportSubmission.Rejected(current.copy(operation = Operation.NONE), errorKey = R.string.dng_file_only)
+        return ExportSubmission.Rejected(
+            current.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE),
+            errorKey = R.string.dng_file_only,
+        )
     }
     if (!ExportSize.isValid(longEdge)) {
         cleanup.scheduleDelete(destination, photo.uri)
         return ExportSubmission.Rejected(
-            current.copy(operation = Operation.NONE),
+            current.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE),
             errorKey = R.string.output_size_error,
             refreshPreviewSize = true,
         )
     }
     return ExportSubmission.Ready(
         Work.Export(photo, current.edits, destination, format, longEdge, gpuMode),
-        current.copy(operation = Operation.EXPORT),
+        current.copy(operation = Operation.EXPORT, exportStep = SingleExportStep.WRITING),
     )
 }

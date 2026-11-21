@@ -114,4 +114,24 @@ class EditorStateReducerTest {
         assertNotNull(mutation.preview)
         assertEquals("neutral", mutation.preview?.film)
     }
+
+    @Test
+    fun renderFinishedAndLookMutationsResetStaleExportStep() {
+        val writing = EditorState(operation = Operation.EXPORT, exportStep = SingleExportStep.WRITING, rendering = true)
+        val finishedWriting = EditorStateReducer.renderFinished(writing)
+        assertEquals(Operation.NONE, finishedWriting.operation)
+        assertEquals(SingleExportStep.NONE, finishedWriting.exportStep)
+        assertFalse(finishedWriting.exportOptionsVisible)
+
+        val staleLook = EditorState(
+            looks = LookChoice.builtIns + LookChoice(imported.id, imported.name, managed = true),
+            operation = Operation.IMPORT_LOOK,
+            exportStep = SingleExportStep.PICKING_DESTINATION,
+            rendering = true,
+        )
+        assertEquals(SingleExportStep.NONE, EditorStateReducer.renderFinished(staleLook).exportStep)
+        assertEquals(SingleExportStep.NONE, EditorStateReducer.lookImported(staleLook, imported).state.exportStep)
+        assertEquals(SingleExportStep.NONE, EditorStateReducer.lookRenamed(staleLook, imported).state.exportStep)
+        assertEquals(SingleExportStep.NONE, EditorStateReducer.lookDeleted(staleLook, imported.id).state.exportStep)
+    }
 }

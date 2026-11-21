@@ -89,6 +89,7 @@ internal class EditorLookStateHolder(
         result.fold(::acceptLookValue) { error ->
             mutable.value = mutable.value.copy(
                 operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                exportStep = SingleExportStep.NONE,
                 lookImportPreparing = false,
                 error = strings.text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName),
             )
@@ -105,7 +106,10 @@ internal class EditorLookStateHolder(
                 updateRecentLooks()
             }
             is LookResult.UnreadableDeleted -> {
-                mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.entries).copy(operation = Operation.NONE)
+                mutable.value = EditorStateReducer.looksLoaded(mutable.value, result.entries).copy(
+                    operation = Operation.NONE,
+                    exportStep = SingleExportStep.NONE,
+                )
                 recentLooks.ids.filter { it.startsWith("recipe-lut:") }.forEach { includeIndependentRecipeLook(EditSettings(film = it)) }
                 includeIndependentRecipeLook(mutable.value.edits)
                 updateRecentLooks()
@@ -114,7 +118,7 @@ internal class EditorLookStateHolder(
                 val contextMatches = lookImportSelectionContext == (currentSourceRevision() to currentDraftRevision())
                 val mutation = result.imported.lastOrNull()?.takeIf { contextMatches }
                     ?.let { EditorStateReducer.lookImported(mutable.value, it) }
-                    ?: EditorMutation(mutable.value.copy(operation = Operation.NONE), null)
+                    ?: EditorMutation(mutable.value.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE), null)
                 val report = if (result.failures.isEmpty()) null else {
                     strings.format(R.string.look_import_summary, arrayOf(result.imported.size, result.failures.size)) +
                         result.failures.joinToString("\n") { failure ->
@@ -136,6 +140,7 @@ internal class EditorLookStateHolder(
                     pendingLookImports = pending,
                     lookImportPreparing = false,
                     operation = if (pending.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    exportStep = SingleExportStep.NONE,
                     lookImportReport = listOfNotNull(mutable.value.lookImportReport, report).takeIf { it.isNotEmpty() }?.joinToString("\n"),
                     error = if (mutation.blockedRecipeSelection) strings.text(R.string.editor_reset_unrepresentable) else mutation.state.error,
                     message = if (result.imported.isEmpty()) null else strings.text(R.string.look_imported),
@@ -157,6 +162,7 @@ internal class EditorLookStateHolder(
                 val title = strings.text(if (result.reload) R.string.look_error else R.string.look_storage_error)
                 mutable.value = mutable.value.copy(
                     operation = if (mutable.value.pendingLookImports.isEmpty()) Operation.NONE else Operation.IMPORT_LOOK,
+                    exportStep = SingleExportStep.NONE,
                     lookImportPreparing = false,
                     error = title + "\n" + (result.error.message ?: result.error.javaClass.simpleName),
                 )
@@ -203,7 +209,12 @@ internal class EditorLookStateHolder(
         if (uris.isEmpty() || mutable.value.operation != Operation.NONE ||
             (mutable.value.draft != null && mutable.value.draft?.group != AdjustmentGroup.LOOK)
         ) return
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null, lookImportReport = null)
+        mutable.value = mutable.value.copy(
+            operation = Operation.IMPORT_LOOK,
+            exportStep = SingleExportStep.NONE,
+            error = null,
+            lookImportReport = null,
+        )
         lookImportSelectionContext = currentSourceRevision() to currentDraftRevision()
         lookRevision = queue.submit(LookWork.Import(uris.toList()))
     }
@@ -231,19 +242,20 @@ internal class EditorLookStateHolder(
             pendingLookImports = remaining,
             lookImportPreparing = work != null,
             operation = if (work != null || remaining.isNotEmpty()) Operation.IMPORT_LOOK else Operation.NONE,
+            exportStep = SingleExportStep.NONE,
         )
         if (work != null) lookRevision = queue.submit(work)
     }
 
     fun renameLook(id: String, name: String) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, exportStep = SingleExportStep.NONE, error = null)
         lookRevision = queue.submit(LookWork.Rename(id, name))
     }
 
     fun deleteLook(id: String) {
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE || mutable.value.draft != null) return
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, exportStep = SingleExportStep.NONE, error = null)
         lookRevision = queue.submit(LookWork.Delete(id))
     }
 
@@ -251,7 +263,7 @@ internal class EditorLookStateHolder(
         if (mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE ||
             (mutable.value.draft != null && mutable.value.draft?.group != AdjustmentGroup.LOOK)
         ) return
-        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, error = null)
+        mutable.value = mutable.value.copy(operation = Operation.IMPORT_LOOK, exportStep = SingleExportStep.NONE, error = null)
         lookRevision = queue.submit(LookWork.DeleteUnreadable(entry))
     }
 

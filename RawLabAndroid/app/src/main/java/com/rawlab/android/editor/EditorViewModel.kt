@@ -431,6 +431,8 @@ class EditorViewModel internal constructor(
 
     fun setGpuEnabled(enabled: Boolean) = previewCoordinator.setGpuEnabled(enabled)
     fun beginExport(completed: (Boolean) -> Unit = {}) = exportHolder.beginExport(completed)
+    fun beginExportDestinationPick() = exportHolder.beginExportDestinationPick()
+    fun returnToExportOptions() = exportHolder.returnToExportOptions()
     fun cancelExport() = exportHolder.cancelExport()
     fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) = exportHolder.export(destination, format, longEdge)
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
