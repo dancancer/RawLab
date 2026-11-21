@@ -92,7 +92,7 @@ enum IOSCameraEvent {
     case phase(IOSCameraPhase)
     case device(CameraDeviceIdentity, CameraContentsFamily?)
     case assets([CameraRemoteAsset])
-    case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool)
+    case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool, canCancelTouchFocus: Bool)
     case manifest(CameraOriginalManifest)
     case incrementalJob(UUID)
     case progress(UUID, UInt64, UInt64)
@@ -100,7 +100,8 @@ enum IOSCameraEvent {
     case preview(Data)
     case previewUnavailable
     case parameterFinished(Bool)
-    case frame(Data, Date, UUID)
+    case focusFinished(error: Error?, focusLocked: Bool)
+    case frame(Data, [CameraLiveViewFrame], Date, UUID)
     case saved(CameraStoredOriginal)
     case failure(Error)
     case listingLimitCleared
@@ -405,7 +406,8 @@ final class CameraWorkspaceBackend {
         let pending = currentStorage?.snapshot.tether?.shutterRequestedAt != nil
         let blocked = pending || run.receiving || run.listingLimitExceeded || run.needsTetherBaseline || run.needsTetherResume
         run.emit(.properties(values, writable: session.canWriteParameters,
-            shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !blocked))
+            shutter: session.captureReady(values, cardConfirmed: run.cardConfirmed) && !blocked,
+            canCancelTouchFocus: session.canCancelTouchFocus(values)))
     }
     private func startLive(_ run: IOSCameraRun, url: URL) {
         let token = run.beginLive()
@@ -416,9 +418,10 @@ final class CameraWorkspaceBackend {
                 let opened = try CameraLiveStream(host: run.endpoint.host, url: url); stream = opened; run.installLive(opened, token: token)
                 var lastDelivered = Date.distantPast
                 while self.owns(run), run.isLiveCurrent(token) {
-                    let bytes = try opened.frame(), now = Date()
+                    let liveFrame = try opened.frameWithMetadata(), now = Date()
                     if run.isLiveCurrent(token), now.timeIntervalSince(lastDelivered) >= 0.1 {
-                        run.emit(.frame(bytes, now, token)); lastDelivered = now
+                        let overlays = CameraWire.liveViewFrames(liveFrame.metadata)
+                        run.emit(.frame(liveFrame.jpeg, overlays, now, token)); lastDelivered = now
                     }
                 }
             } catch {
@@ -777,6 +780,34 @@ final class CameraWorkspaceBackend {
             let session = try run.currentSession(), result = try session.setParameter(code, value: value)
             self.publishProperties(run, values: result.values, session: session)
             run.emit(.parameterFinished(result.confirmed))
+        }
+    }
+    func setFocusPoint(x: Int, y: Int, run: IOSCameraRun) {
+        performFocus(run) { session in try session.setFocusPoint(x: x, y: y) }
+    }
+    func cancelTouchFocus(_ run: IOSCameraRun) {
+        performFocus(run) { session in
+            CameraFocusPointResult(properties: try session.cancelTouchFocus(), focusLocked: false)
+        }
+    }
+    private func performFocus(_ run: IOSCameraRun,
+                              _ action: @escaping (SonyCameraSession) throws -> CameraFocusPointResult) {
+        perform(run) {
+            guard !run.receiving, run.mode == .tethering else {
+                run.emit(.focusFinished(error: nil, focusLocked: false))
+                return
+            }
+            let session = try run.currentSession()
+            do {
+                let result = try action(session)
+                self.publishProperties(run, values: result.properties, session: session)
+                run.emit(.focusFinished(error: nil, focusLocked: result.focusLocked))
+            } catch let error as CameraProtocolError where error.isNonFatalFocusError {
+                if !session.stopped, let values = try? session.properties() {
+                    self.publishProperties(run, values: values, session: session)
+                }
+                run.emit(.focusFinished(error: error, focusLocked: false))
+            }
         }
     }
     func capture(_ run: IOSCameraRun) {

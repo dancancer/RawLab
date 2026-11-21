@@ -229,6 +229,7 @@
 "双击名称或轨道恢复默认值。" = "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.";
 "取景已暂停" = "Visée en direct en pause";
 "取消" = "Annuler";
+"取消对焦" = "Annuler la mise au point";
 "取消导出" = "Annuler l’exportation";
 "取消检查" = "Annuler la vérification";
 "取消连接" = "Annuler la connexion";
@@ -293,6 +294,7 @@
 "对比" = "Comparaison";
 "对比度" = "Contraste";
 "对比方式" = "Mode de comparaison";
+"对焦区域" = "Zone de mise au point";
 "对焦模式" = "Mode de mise au point";
 "对照参考图（可选）" = "Comparer à une image de référence (facultatif)";
 "导入 %@ 个文件" = "Importer %@ fichiers";
@@ -411,12 +413,15 @@
 "强度" = "Intensité";
 "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光" = "Contraste marqué, ombres cyan froid profond, noirs maîtrisés et touches de lumière chaude";
 "当前 SDR 调整包含 HDR 暂不支持的工具。请先重置这些工具，再启用 HDR。" = "Les réglages SDR utilisent des outils encore incompatibles avec le HDR. Réinitialisez-les avant d’activer le HDR.";
+"当前为手动对焦（MF），无法选择对焦点。" = "La mise au point manuelle (MF) est active ; impossible de choisir le point de mise au point.";
 "当前拍摄模式下不可调整" = "Non réglable dans le mode de prise de vue actuel";
 "当前显示 SDR 兼容预览。" = "L’aperçu compatible SDR est affiché.";
 "当前构建未配置使用统计，未采集或上报。" = "L’analyse d’utilisation n’est pas configurée dans cette version. Aucune donnée n’est collectée ni transmise.";
 "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.";
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前照片的设置尚不可用。" = "Les paramètres de la photo actuelle ne sont pas encore disponibles.";
+"当前状态下相机未接受对焦点设置。" = "L’appareil n’a pas accepté le point de mise au point dans son état actuel.";
+"当前相机模式不支持远程选择对焦点。" = "Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point.";
 "当前相机模式未提供此功能。" = "Cette fonction est indisponible dans le mode actuel de l’appareil.";
 "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。" = "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Veuillez utiliser les Réglages Wi-Fi ci-dessus.";
 "当前配方不可用，无法安全重置外观。" = "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.";
@@ -883,6 +888,7 @@
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Autorisez RawLab à utiliser le Bluetooth dans les réglages système.";
 "请在系统设置中允许 RawLab 访问本地网络。" = "Autorisez RawLab à accéder au réseau local dans les réglages système.";
 "请在调整后的照片区域取色。" = "Prélevez une couleur dans la photo retouchée.";
+"请将对焦区域设为点或区，或在机身开启触控操作。" = "Réglez la zone de mise au point sur Spot ou Zone, ou activez l’opération tactile sur l’appareil.";
 "请将白平衡模式、色温和色调一起保存，再应用此预设。" = "Enregistrez ensemble le mode de balance des blancs, la température et la teinte avant d’appliquer cette recette.";
 "请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。" = "Réglez l’appareil sur la prise de vue unique et vérifiez que les photos sont également enregistrées sur sa carte mémoire.";
 "请打开手机蓝牙后重试。" = "Activez le Bluetooth du téléphone, puis réessayez.";

@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"Exposure compensation"</string>
     <string name="camera_param_failed">"The camera did not accept the setting. Check the current value and try again."</string>
     <string name="camera_param_focus">"Focus mode"</string>
+    <string name="camera_param_focus_area">"Focus area"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"Cannot adjust in the current shooting mode"</string>
     <string name="camera_param_readonly_short">"Read only"</string>
@@ -481,10 +482,15 @@
     <string name="strength">"Intensity"</string>
     <string name="temperature">"Temperature"</string>
     <string name="tether_backlog_error">"There are too many photos waiting to be received, so shooting has been paused. Reconnect to continue receiving."</string>
+    <string name="tether_cancel_focus">"Cancel focus"</string>
     <string name="tether_capturing">"Capturing"</string>
     <string name="tether_card_confirm">"I confirmed that the camera also saves originals to its memory card."</string>
     <string name="tether_card_hint">"Select single shooting on the camera and keep originals on its memory card. Live-view images and thumbnails do not confirm that originals were saved."</string>
     <string name="tether_confirm_continue">"Confirm the result and continue"</string>
+    <string name="tether_focus_area_fixed">"Set Focus area to Spot or Zone, or enable Touch Operation on the camera."</string>
+    <string name="tether_focus_manual">"Manual focus (MF) is active; tap to focus is unavailable."</string>
+    <string name="tether_focus_rejected">"The camera did not accept the focus point in its current state."</string>
+    <string name="tether_focus_unsupported">"This camera mode does not support remote focus point selection."</string>
     <string name="tether_foreground">"Leaving this page will pause tethering. Saved photos are not affected."</string>
     <string name="tether_grid">"Composition grid"</string>
     <string name="tether_intro">"Frame and capture single photos from your phone; the original RAW and JPEG files on the camera card are saved automatically."</string>

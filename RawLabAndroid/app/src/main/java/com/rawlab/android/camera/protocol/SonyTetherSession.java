@@ -395,10 +395,270 @@ public final class SonyTetherSession implements Closeable {
 
     private static int parameterType(int code) {
         switch(code) {
-            case 0x5005:case 0x5007:case 0x500a:case 0xd20f:return 4;
+            case 0x5005:case 0x5007:case 0x500a:case 0xd20f:case 0xd22c:return 4;
             case 0x5010:return 3;
             case 0xd20d:case 0xd21e:case 0xd226:return 6;
             default:return 0;
+        }
+    }
+
+    public enum FocusUnavailableReason { MANUAL_FOCUS, FOCUS_AREA_FIXED, UNSUPPORTED }
+    public enum FocusTarget {
+        REMOTE_TOUCH(0xd2e4),
+        AF_AREA_POSITION(0xd2dc);
+        public final int controlCode;
+        FocusTarget(int controlCode) { this.controlCode = controlCode; }
+    }
+    public static final class FocusUnavailableException extends IOException {
+        public final FocusUnavailableReason reason;
+        public FocusUnavailableException(FocusUnavailableReason reason) {
+            super("Remote focus unavailable: " + reason);
+            this.reason = reason;
+        }
+    }
+    public static final class FocusRejectedException extends IOException {
+        public final int operation, code;
+        public FocusRejectedException(int operation, int code) {
+            super(String.format(Locale.ROOT, "Camera rejected focus control op=0x%04x code=0x%04x", operation, code));
+            this.operation = operation;
+            this.code = code;
+        }
+    }
+    public enum LiveViewFrameKind { FOCUS, FACE, TRACKING }
+    public static final class LiveViewFocusFrame {
+        public final LiveViewFrameKind kind;
+        public final float cx, cy, width, height;
+        public final boolean focused;
+        public LiveViewFocusFrame(LiveViewFrameKind kind, float cx, float cy, float width, float height, boolean focused) {
+            this.kind = kind; this.cx = cx; this.cy = cy; this.width = width; this.height = height; this.focused = focused;
+        }
+    }
+    public static final class LiveViewFrame {
+        public final byte[] jpeg;
+        public final byte[] metadata;
+        public LiveViewFrame(byte[] jpeg, byte[] metadata) {
+            this.jpeg = jpeg;
+            this.metadata = metadata;
+        }
+    }
+
+    public static final class FocusPointResult {
+        public final Map<Integer,Property> properties;
+        public final boolean focusLocked;
+        public FocusPointResult(Map<Integer,Property> properties, boolean focusLocked) {
+            this.properties = properties;
+            this.focusLocked = focusLocked;
+        }
+    }
+
+    private static final Set<Long> FIXED_FOCUS_AREAS = Collections.unmodifiableSet(
+        new HashSet<>(Arrays.asList(0x0001L, 0x0003L, 0x0201L, 0x0203L)));
+
+    public static boolean isFocusLocked(Map<Integer,Property> latest) {
+        if (latest==null) return false;
+        Property indication = latest.get(0xd213);
+        if (indication==null) return false;
+        try {
+            long v = indication.number();
+            return v==2L || v==6L;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isFocusFailed(Map<Integer,Property> latest) {
+        if (latest==null) return false;
+        Property indication = latest.get(0xd213);
+        if (indication==null) return false;
+        try {
+            long v = indication.number();
+            return v==3L || v==7L;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
+    public boolean canCancelTouchFocus(Map<Integer,Property> latest) {
+        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null ||
+            !operations.contains(0x9207) || !controls.contains(0xd2e5)) return false;
+        Property property = latest.get(0xd285);
+        if (property==null || property.enabled!=1) return false;
+        try { return property.number()==1L; } catch (IOException ignored) { return false; }
+    }
+
+    public FocusTarget resolveFocusTarget(Map<Integer,Property> latest) throws FocusUnavailableException {
+        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null ||
+            !operations.contains(0x9207)) {
+            throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
+        }
+        if (controls.contains(0xd2e4)) {
+            Property touchUsable = latest.get(0xd284);
+            if (touchUsable!=null && touchUsable.enabled==1) {
+                try {
+                    if (touchUsable.number()==1L) return FocusTarget.REMOTE_TOUCH;
+                } catch (IOException ignored) {}
+            }
+        }
+        Property focusMode = latest.get(0x500a);
+        Long focusModeValue = null;
+        if (focusMode!=null) {
+            try { focusModeValue = focusMode.number(); } catch (IOException ignored) {}
+        }
+        if (focusModeValue!=null && focusModeValue==1L) {
+            throw new FocusUnavailableException(FocusUnavailableReason.MANUAL_FOCUS);
+        }
+        Long focusArea = null;
+        Property focusAreaProp = latest.get(0xd22c);
+        if (focusAreaProp!=null) {
+            try { focusArea = focusAreaProp.number(); } catch (IOException ignored) {}
+        }
+        if (controls.contains(0xd2dc)) {
+            if (focusArea!=null && FIXED_FOCUS_AREAS.contains(focusArea)) {
+                throw new FocusUnavailableException(FocusUnavailableReason.FOCUS_AREA_FIXED);
+            }
+            return FocusTarget.AF_AREA_POSITION;
+        }
+        if (controls.contains(0xd2e4) && focusArea!=null && FIXED_FOCUS_AREAS.contains(focusArea)) {
+            throw new FocusUnavailableException(FocusUnavailableReason.FOCUS_AREA_FIXED);
+        }
+        throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
+    }
+
+    public synchronized FocusPointResult setFocusPoint(int x, int y) throws IOException {
+        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || !operations.contains(0x9207)) {
+            throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
+        }
+        if (x<0 || x>639 || y<0 || y>479) throw new IllegalArgumentException("Focus point outside camera grid");
+        Map<Integer,Property> latest = properties();
+        boolean remoteTouchReady = false;
+        if (controls.contains(0xd2e4)) {
+            Property touchUsable = latest.get(0xd284);
+            if (touchUsable!=null && touchUsable.enabled==1) {
+                try { remoteTouchReady = touchUsable.number()==1L; } catch (IOException ignored) {}
+            }
+            if (!remoteTouchReady && canCancelTouchFocus(latest)) {
+                sendTouchCancel();
+                pause(50);
+                latest = properties();
+            }
+        }
+        FocusTarget target = resolveFocusTarget(latest);
+        try {
+            call(0x9207, new int[]{target.controlCode}, u32((x << 16) | y), 0, false);
+        } catch (RemoteResponseException rejected) {
+            throw new FocusRejectedException(rejected.operation, rejected.code);
+        }
+        pause(100);
+        latest = properties();
+        boolean focusLocked = isFocusLocked(latest);
+        Long focusModeValue = null;
+        Property focusMode = latest.get(0x500a);
+        if (focusMode != null) {
+            try { focusModeValue = focusMode.number(); } catch (IOException ignored) {}
+        }
+        if (!focusLocked && controls.contains(0xd2c1) && (focusModeValue == null || focusModeValue != 1L)) {
+            return acquireFocusWithHalfPress(latest);
+        }
+        return new FocusPointResult(latest, focusLocked);
+    }
+
+    private FocusPointResult acquireFocusWithHalfPress(Map<Integer,Property> initialProperties) throws IOException {
+        boolean half = false;
+        boolean pressRejectedByCamera = false;
+        boolean achieved = false;
+        IOException error = null;
+        Map<Integer,Property> current = initialProperties;
+        captureInFlight = true;
+        try {
+            half = true;
+            button(0xd2c1, 2);
+            for (int attempt = 0; attempt < 15; attempt++) {
+                pause(100);
+                current = properties();
+                Property indication = current.get(0xd213);
+                Long value = null;
+                if (indication != null) {
+                    try { value = indication.number(); } catch (IOException ignored) {}
+                }
+                if (value == null) {
+                    if (attempt >= 2) break;
+                    continue;
+                }
+                if (value == 2L || value == 6L) {
+                    achieved = true;
+                    break;
+                }
+                if (value == 3L) {
+                    break;
+                }
+                if (value == 7L && attempt >= 5) {
+                    break;
+                }
+            }
+        } catch (RemoteResponseException ignored) {
+            pressRejectedByCamera = true;
+        } catch (IOException failure) {
+            error = failure;
+        } finally {
+            if (!closed && half) {
+                try {
+                    button(0xd2c1, 1);
+                    half = false;
+                } catch (RemoteResponseException ignored) {
+                    half = false;
+                } catch (IOException releaseFailure) {
+                    if (error == null) error = releaseFailure;
+                    else error.addSuppressed(releaseFailure);
+                }
+            }
+            captureInFlight = false;
+            if (stopRequested) close();
+        }
+        if (error != null) throw error;
+        if (!pressRejectedByCamera && !closed && !stopRequested) {
+            try {
+                pause(50);
+                current = properties();
+            } catch (IOException ignored) {}
+        }
+        return new FocusPointResult(current, achieved || isFocusLocked(current));
+    }
+
+    public synchronized Map<Integer,Property> cancelTouchFocus() throws IOException {
+        Map<Integer,Property> latest = properties();
+        if (!canCancelTouchFocus(latest)) {
+            throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
+        }
+        sendTouchCancel();
+        pause(100);
+        return properties();
+    }
+
+    private void sendTouchCancel() throws IOException {
+        boolean pressed = false;
+        IOException error = null;
+        try {
+            pressed = true;
+            button(0xd2e5, 2);
+            pause(50);
+            button(0xd2e5, 1);
+            pressed = false;
+        } catch (IOException failure) {
+            error = failure;
+        } finally {
+            if (pressed && !closed) {
+                try { button(0xd2e5, 1); }
+                catch (IOException releaseError) {
+                    if (error==null) error = releaseError; else error.addSuppressed(releaseError);
+                }
+            }
+        }
+        if (error!=null) {
+            if (error instanceof RemoteResponseException) {
+                RemoteResponseException rejected = (RemoteResponseException) error;
+                throw new FocusRejectedException(rejected.operation, rejected.code);
+            }
+            throw error;
         }
     }
 
@@ -562,9 +822,19 @@ public final class SonyTetherSession implements Closeable {
         if(outgoing!=null) {
             if(purpose!=Purpose.TETHER || !remoteReady || params.length!=1) throw new IOException("Write outside tether ownership");
             if(op==0x9207) {
-                if(!controls.contains(params[0]) || (params[0]!=0xd2c1 && params[0]!=0xd2c2) || outgoing.length!=2 ||
-                    outgoing[1]!=0 || (outgoing[0]!=1 && outgoing[0]!=2)) throw new IOException("Unsupported remote control write");
-                if(outgoing[0]==2 && stopRequested) throw new IOException("Remote press stopped");
+                int control=params[0];
+                if(!controls.contains(control)) throw new IOException("Unsupported remote control write");
+                if(control==0xd2c1 || control==0xd2c2 || control==0xd2e5) {
+                    if(outgoing.length!=2 || outgoing[1]!=0 || (outgoing[0]!=1 && outgoing[0]!=2))
+                        throw new IOException("Unsupported remote control write");
+                    if(outgoing[0]==2 && stopRequested) throw new IOException("Remote press stopped");
+                } else if(control==0xd2dc || control==0xd2e4) {
+                    if(outgoing.length!=4 || stopRequested) throw new IOException("Unsupported remote control write");
+                    long packed=leU32(outgoing,0);
+                    int x=(int)(packed>>>16);
+                    int y=(int)(packed&0xffffL);
+                    if(x<0 || x>639 || y<0 || y>479) throw new IOException("Remote focus point out of range");
+                } else throw new IOException("Unsupported remote control write");
             } else if(op==0x9205) {
                 int type=parameterType(params[0]);
                 if(!supportsParameterWrites() || stopRequested || type==0 || outgoing.length!=(type==6?4:2))
@@ -712,7 +982,7 @@ public final class SonyTetherSession implements Closeable {
             return new URL("http",camera.getHostAddress(),uri.getPort(),uri.getRawPath()+(uri.getRawQuery()==null?"":"?"+uri.getRawQuery()));
         } catch (URISyntaxException invalid) { throw new IOException("Invalid camera live-view URL",invalid); }
     }
-    public static byte[] readFrame(InputStream input) throws IOException {
+    public static LiveViewFrame readFrameWithMetadata(InputStream input) throws IOException {
         DataInputStream stream=new DataInputStream(input); byte[] header=new byte[16]; stream.readFully(header); Reader r=new Reader(header);
         long imageOffset=r.u32(),imageLength=r.u32(),metaOffset=r.u32(),metaLength=r.u32();
         long imageEnd=imageOffset+imageLength,metaEnd=metaOffset+metaLength,total=Math.max(imageEnd,metaLength==0?16:metaEnd);
@@ -721,6 +991,50 @@ public final class SonyTetherSession implements Closeable {
         byte[] body=new byte[(int)total-16]; stream.readFully(body);
         byte[] jpeg=Arrays.copyOfRange(body,(int)imageOffset-16,(int)imageEnd-16);
         if (jpeg[0]!=(byte)255 || jpeg[1]!=(byte)216) throw new IOException("Live frame is not JPEG");
-        return jpeg;
+        byte[] meta=metaLength>0?Arrays.copyOfRange(body,(int)metaOffset-16,(int)metaEnd-16):new byte[0];
+        return new LiveViewFrame(jpeg,meta);
+    }
+    public static byte[] readFrame(InputStream input) throws IOException {
+        return readFrameWithMetadata(input).jpeg;
+    }
+    public static List<LiveViewFocusFrame> parseLiveViewFrames(byte[] metadata) {
+        if (metadata==null || metadata.length<0x28) return Collections.emptyList();
+        int version=leU16(metadata,0);
+        if (version<=0x27) return Collections.emptyList();
+        int[] offset={0x28};
+        List<LiveViewFocusFrame> frames=new ArrayList<>();
+        if (!readMetaBlock(metadata,offset,null,frames)) return Collections.emptyList();
+        if (!readMetaBlock(metadata,offset,LiveViewFrameKind.FOCUS,frames)) return Collections.emptyList();
+        if (version>0x64) {
+            if (!readMetaBlock(metadata,offset,LiveViewFrameKind.FACE,frames)) return Collections.emptyList();
+            if (!readMetaBlock(metadata,offset,LiveViewFrameKind.TRACKING,frames)) return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(frames);
+    }
+    private static boolean readMetaBlock(byte[] meta, int[] offsetRef, LiveViewFrameKind kind, List<LiveViewFocusFrame> out) {
+        int off=offsetRef[0];
+        if (off+16>meta.length) return false;
+        long xMax=leU32(meta,off), yMax=leU32(meta,off+4);
+        int count=leU16(meta,off+8);
+        off+=16;
+        if (count>128 || (long)count*24L>meta.length-off) return false;
+        for (int i=0;i<count;i++) {
+            int type=leU16(meta,off), state=leU16(meta,off+2);
+            long cx=leU32(meta,off+8), cy=leU32(meta,off+12), h=leU32(meta,off+16), w=leU32(meta,off+20);
+            off+=24;
+            if (kind!=null && xMax>0 && yMax>0 && w>0 && h>0 && w<=xMax && h<=yMax && cx<=xMax && cy<=yMax) {
+                boolean focused=kind==LiveViewFrameKind.FACE?type==2:state==2;
+                out.add(new LiveViewFocusFrame(kind,(float)((double)cx/(double)xMax),(float)((double)cy/(double)yMax),
+                    (float)((double)w/(double)xMax),(float)((double)h/(double)yMax),focused));
+            }
+        }
+        offsetRef[0]=off;
+        return true;
+    }
+    private static int leU16(byte[] b, int off) {
+        return (b[off]&0xff)|((b[off+1]&0xff)<<8);
+    }
+    private static long leU32(byte[] b, int off) {
+        return (b[off]&0xffL)|((b[off+1]&0xffL)<<8)|((b[off+2]&0xffL)<<16)|((b[off+3]&0xffL)<<24);
     }
 }

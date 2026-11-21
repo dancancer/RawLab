@@ -8806,5 +8806,53 @@
     "fr": "Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli.",
     "ja": "この写真、ルック、または処理方法では強制 GPU を利用できません。フォールバックするには自動（Auto）に切り替えてください。",
     "es": "GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo."
+  },
+  "对焦区域": {
+    "zh-Hans": "对焦区域",
+    "en": "Focus area",
+    "de": "Fokusfeld",
+    "es": "Área de enfoque",
+    "fr": "Zone de mise au point",
+    "ja": "フォーカスエリア"
+  },
+  "取消对焦": {
+    "zh-Hans": "取消对焦",
+    "en": "Cancel focus",
+    "de": "Fokus aufheben",
+    "es": "Cancelar enfoque",
+    "fr": "Annuler la mise au point",
+    "ja": "フォーカス解除"
+  },
+  "当前为手动对焦（MF），无法选择对焦点。": {
+    "zh-Hans": "当前为手动对焦（MF），无法选择对焦点。",
+    "en": "Manual focus (MF) is active; tap to focus is unavailable.",
+    "de": "Manueller Fokus (MF) ist aktiv; Tippen zum Fokussieren ist nicht verfügbar.",
+    "es": "El enfoque manual (MF) está activo; no se puede seleccionar el punto de enfoque.",
+    "fr": "La mise au point manuelle (MF) est active ; impossible de choisir le point de mise au point.",
+    "ja": "マニュアルフォーカス（MF）中はピント位置を選択できません。"
+  },
+  "请将对焦区域设为点或区，或在机身开启触控操作。": {
+    "zh-Hans": "请将对焦区域设为点或区，或在机身开启触控操作。",
+    "en": "Set Focus area to Spot or Zone, or enable Touch Operation on the camera.",
+    "de": "Stellen Sie das Fokusfeld auf Spot oder Feld oder aktivieren Sie die Touch-Bedienung an der Kamera.",
+    "es": "Ajusta el área de enfoque a Punto o Zona, o activa la operación táctil en la cámara.",
+    "fr": "Réglez la zone de mise au point sur Spot ou Zone, ou activez l’opération tactile sur l’appareil.",
+    "ja": "フォーカスエリアをスポットまたはゾーンにするか、カメラ本体のタッチ操作を有効にしてください。"
+  },
+  "当前相机模式不支持远程选择对焦点。": {
+    "zh-Hans": "当前相机模式不支持远程选择对焦点。",
+    "en": "This camera mode does not support remote focus point selection.",
+    "de": "Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl.",
+    "es": "Este modo de cámara no admite la selección remota del punto de enfoque.",
+    "fr": "Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point.",
+    "ja": "このカメラモードではリモートでのピント位置選択に対応していません。"
+  },
+  "当前状态下相机未接受对焦点设置。": {
+    "zh-Hans": "当前状态下相机未接受对焦点设置。",
+    "en": "The camera did not accept the focus point in its current state.",
+    "de": "Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert.",
+    "es": "La cámara no aceptó el punto de enfoque en su estado actual.",
+    "fr": "L’appareil n’a pas accepté le point de mise au point dans son état actuel.",
+    "ja": "現在の状態ではカメラがピント位置の設定を受け付けませんでした。"
   }
 }

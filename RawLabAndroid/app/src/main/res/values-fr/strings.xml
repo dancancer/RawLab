@@ -143,6 +143,7 @@
     <string name="camera_param_ev">"Correction d’exposition"</string>
     <string name="camera_param_failed">"L’appareil photo n’a pas accepté le réglage. Vérifiez la valeur actuelle, puis réessayez."</string>
     <string name="camera_param_focus">"Mode de mise au point"</string>
+    <string name="camera_param_focus_area">"Zone de mise au point"</string>
     <string name="camera_param_iso">"ISO"</string>
     <string name="camera_param_readonly">"Non réglable dans le mode de prise de vue actuel"</string>
     <string name="camera_param_readonly_short">"Lecture seule"</string>
@@ -481,10 +482,15 @@
     <string name="strength">"Intensité"</string>
     <string name="temperature">"Température"</string>
     <string name="tether_backlog_error">"Trop de photos sont en attente de réception ; la prise de vue a été mise en pause. Reconnectez-vous pour reprendre la réception."</string>
+    <string name="tether_cancel_focus">"Annuler la mise au point"</string>
     <string name="tether_capturing">"Prise de vue en cours"</string>
     <string name="tether_card_confirm">"J’ai confirmé que l’appareil enregistre aussi les originaux sur la carte mémoire."</string>
     <string name="tether_card_hint">"Sélectionnez la prise de vue unique et conservez les originaux sur la carte mémoire. Les images de visée et miniatures ne confirment pas l’enregistrement des originaux."</string>
     <string name="tether_confirm_continue">"Confirmer le résultat et continuer"</string>
+    <string name="tether_focus_area_fixed">"Réglez la zone de mise au point sur Spot ou Zone, ou activez l’opération tactile sur l’appareil."</string>
+    <string name="tether_focus_manual">"La mise au point manuelle (MF) est active ; impossible de choisir le point de mise au point."</string>
+    <string name="tether_focus_rejected">"L’appareil n’a pas accepté le point de mise au point dans son état actuel."</string>
+    <string name="tether_focus_unsupported">"Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point."</string>
     <string name="tether_foreground">"Quitter cette page mettra la prise de vue connectée en pause. Les photos déjà enregistrées ne sont pas affectées."</string>
     <string name="tether_grid">"Grille de composition"</string>
     <string name="tether_intro">"Cadrez et prenez des photos individuelles depuis votre téléphone ; les originaux RAW et JPEG de la carte de l’appareil sont automatiquement enregistrés."</string>

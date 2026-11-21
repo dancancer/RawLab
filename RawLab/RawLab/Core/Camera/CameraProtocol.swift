@@ -1,10 +1,54 @@
 import Foundation
 
+enum CameraFocusUnavailableReason: Error, Equatable {
+    case manualFocus
+    case focusAreaFixed
+    case unsupported
+}
+
+enum CameraFocusPointTarget: Equatable {
+    case remoteTouch
+    case afAreaPosition
+    var controlCode: UInt16 { self == .remoteTouch ? 0xd2e4 : 0xd2dc }
+}
+
+enum CameraLiveViewFrameKind: Equatable {
+    case focus
+    case face
+    case tracking
+}
+
+struct CameraLiveViewFrame: Equatable {
+    let kind: CameraLiveViewFrameKind
+    let cx: Double
+    let cy: Double
+    let width: Double
+    let height: Double
+    let focused: Bool
+}
+
+struct CameraOverlayBox: Equatable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let isNormalizedSquare: Bool
+}
+
+struct CameraFocusTapPoint: Equatable {
+    let u: Double
+    let v: Double
+    let x: Int
+    let y: Int
+    var packed: UInt32 { (UInt32(x) << 16) | UInt32(y) }
+}
+
 enum CameraProtocolError: Error, LocalizedError {
     case invalid(String), invalidOriginalHeader, transientTransfer(String), unsupported(String), response(UInt16, UInt16)
     case disconnected, cancelled, timeout, localNetworkDenied, connectionRefused, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
     case photoLimitExceeded, photoLibraryDenied, photoLibrarySaveFailed, itemFailed(String, String)
+    case focusUnavailable(CameraFocusUnavailableReason), focusRejected
 
     var errorDescription: String? {
         switch self {
@@ -27,6 +71,17 @@ enum CameraProtocolError: Error, LocalizedError {
         case .photoLibraryDenied: return "Photo library add permission is denied"
         case .photoLibrarySaveFailed: return "Could not save some imported photos to the photo library"
         case .itemFailed(_, let detail): return detail
+        case .focusUnavailable(.manualFocus): return "Manual focus is active"
+        case .focusUnavailable(.focusAreaFixed): return "Focus area cannot move in the current mode"
+        case .focusUnavailable(.unsupported): return "Remote focus point selection is unavailable"
+        case .focusRejected: return "Camera rejected the focus point request"
+        }
+    }
+
+    var isNonFatalFocusError: Bool {
+        switch self {
+        case .focusUnavailable, .focusRejected: return true
+        default: return false
         }
     }
 }
@@ -287,7 +342,7 @@ enum CameraWire {
         guard let result = url.url else { throw CameraProtocolError.invalid("Invalid live-view endpoint") }
         return result
     }
-    static func liveFrameBounds(_ fields: [UInt32]) throws -> (size: Int, image: Range<Int>) {
+    static func liveFrameBounds(_ fields: [UInt32]) throws -> (size: Int, image: Range<Int>, metadata: Range<Int>?) {
         guard fields.count == 4 else { throw CameraProtocolError.invalid("Invalid frame header") }
         let image = UInt64(fields[0]), length = UInt64(fields[1]), metadata = UInt64(fields[2]), metadataLength = UInt64(fields[3])
         let imageEnd = image + length, metadataEnd = metadata + metadataLength
@@ -296,6 +351,109 @@ enum CameraWire {
               metadataLength == 0 || (metadata >= 16 && !(image < metadataEnd && metadata < imageEnd)) else {
             throw CameraProtocolError.invalid("Invalid live-view frame bounds")
         }
-        return (Int(total - 16), Int(image - 16)..<Int(imageEnd - 16))
+        let metadataRange: Range<Int>? = metadataLength > 0 ? Int(metadata - 16)..<Int(metadataEnd - 16) : nil
+        return (Int(total - 16), Int(image - 16)..<Int(imageEnd - 16), metadataRange)
+    }
+
+    static func liveViewFrames(_ rawMeta: Data) -> [CameraLiveViewFrame] {
+        let meta = Data(rawMeta)
+        guard meta.count >= 0x28 else { return [] }
+        func u16(_ offset: Int) -> UInt16 {
+            UInt16(meta[offset]) | (UInt16(meta[offset + 1]) << 8)
+        }
+        func u32(_ offset: Int) -> UInt32 {
+            UInt32(meta[offset]) | (UInt32(meta[offset + 1]) << 8) |
+                (UInt32(meta[offset + 2]) << 16) | (UInt32(meta[offset + 3]) << 24)
+        }
+        let version = u16(0)
+        guard version > 0x27 else { return [] }
+        var offset = 0x28
+        var frames: [CameraLiveViewFrame] = []
+        func readBlock(kind: CameraLiveViewFrameKind?) -> Bool {
+            guard offset + 16 <= meta.count else { return false }
+            let xMax = u32(offset), yMax = u32(offset + 4), count = Int(u16(offset + 8))
+            offset += 16
+            guard count <= 128, offset + count * 24 <= meta.count else { return false }
+            for _ in 0..<count {
+                let type = u16(offset), state = u16(offset + 2)
+                let centerX = u32(offset + 8), centerY = u32(offset + 12)
+                let height = u32(offset + 16), width = u32(offset + 20)
+                offset += 24
+                if let kind, xMax > 0, yMax > 0, width > 0, height > 0,
+                   width <= xMax, height <= yMax, centerX <= xMax, centerY <= yMax {
+                    let focused: Bool
+                    switch kind {
+                    case .focus, .tracking: focused = state == 2
+                    case .face: focused = type == 2
+                    }
+                    frames.append(CameraLiveViewFrame(
+                        kind: kind,
+                        cx: Double(centerX) / Double(xMax),
+                        cy: Double(centerY) / Double(yMax),
+                        width: Double(width) / Double(xMax),
+                        height: Double(height) / Double(yMax),
+                        focused: focused
+                    ))
+                }
+            }
+            return true
+        }
+        guard readBlock(kind: nil), readBlock(kind: .focus) else { return [] }
+        if version > 0x64 {
+            guard readBlock(kind: .face), readBlock(kind: .tracking) else { return [] }
+        }
+        return frames
+    }
+
+    static func focusPoint(tapX: Double, tapY: Double, containerWidth: Double, containerHeight: Double,
+                           imageWidth: Double, imageHeight: Double) -> CameraFocusTapPoint? {
+        guard tapX.isFinite, tapY.isFinite, containerWidth.isFinite, containerHeight.isFinite,
+              imageWidth.isFinite, imageHeight.isFinite,
+              containerWidth > 0, containerHeight > 0, imageWidth > 0, imageHeight > 0 else { return nil }
+        let scale = min(containerWidth / imageWidth, containerHeight / imageHeight)
+        let fittedWidth = imageWidth * scale, fittedHeight = imageHeight * scale
+        let left = (containerWidth - fittedWidth) / 2, top = (containerHeight - fittedHeight) / 2
+        guard tapX >= left, tapX <= left + fittedWidth, tapY >= top, tapY <= top + fittedHeight else { return nil }
+        let u = min(1.0, max(0.0, (tapX - left) / fittedWidth))
+        let v = min(1.0, max(0.0, (tapY - top) / fittedHeight))
+        let x = min(639, max(0, Int((u * 640.0).rounded())))
+        let y = min(479, max(0, Int((v * 480.0).rounded())))
+        return CameraFocusTapPoint(u: u, v: v, x: x, y: y)
+    }
+
+    static func focusOverlayBox(frame: CameraLiveViewFrame, left: Double, top: Double,
+                                fittedWidth: Double, fittedHeight: Double) -> CameraOverlayBox {
+        let rawW = frame.width * fittedWidth
+        let rawH = frame.height * fittedHeight
+        let cx = left + frame.cx * fittedWidth
+        let cy = top + frame.cy * fittedHeight
+        if frame.kind != .face, rawW > 0, rawH > 0 {
+            let aspect = max(rawW, rawH) / min(rawW, rawH)
+            if aspect <= 1.35 {
+                let side = (rawW + rawH) / 2.0
+                return CameraOverlayBox(x: cx - side / 2.0, y: cy - side / 2.0,
+                                        width: side, height: side, isNormalizedSquare: true)
+            }
+        }
+        return CameraOverlayBox(x: cx - rawW / 2.0, y: cy - rawH / 2.0,
+                                width: rawW, height: rawH, isNormalizedSquare: false)
+    }
+
+    static func normalizedFocusSquareRatio(frame: CameraLiveViewFrame, imageWidth: Double, imageHeight: Double) -> Double? {
+        guard frame.kind != .face, imageWidth.isFinite, imageHeight.isFinite, imageWidth > 0, imageHeight > 0 else { return nil }
+        let shortEdge = min(imageWidth, imageHeight)
+        let w = frame.width * (imageWidth / shortEdge)
+        let h = frame.height * (imageHeight / shortEdge)
+        guard w > 0, h > 0, max(w, h) / min(w, h) <= 1.35 else { return nil }
+        return (w + h) / 2.0
+    }
+
+    static func tapFocusSide(fittedWidth: Double, fittedHeight: Double, lastSquareRatio: Double? = nil) -> Double {
+        let shortEdge = min(fittedWidth, fittedHeight)
+        guard shortEdge.isFinite, shortEdge > 0 else { return 34.0 }
+        if let ratio = lastSquareRatio, ratio.isFinite, ratio > 0 {
+            return min(max(20.0, shortEdge * ratio), max(20.0, shortEdge * 0.5))
+        }
+        return min(52.0, max(34.0, shortEdge * 0.138))
     }
 }

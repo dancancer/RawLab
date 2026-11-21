@@ -7,12 +7,14 @@ import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -25,11 +27,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -38,14 +44,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rawlab.android.R
+import com.rawlab.android.camera.protocol.SonyTetherSession
 import com.rawlab.android.photo.PhotoStorage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -63,6 +72,7 @@ internal fun CameraTetherScreen(model: CameraImportViewModel, storage: PhotoStor
     BackHandler(onBack = ::back)
     CameraTetherWorkspace(tether, { uri, size -> storage.thumbnail(uri, size) }, model.tether::capture,
         { onConnect(tether.canResume) }, { model.openTetherSaved(it, onOpen) }, onSetParameter = model.tether::setParameter,
+        onFocusPoint = model.tether::setFocusPoint, onCancelTouchFocus = model.tether::cancelTouchFocus,
         cameraName = (SonyCameraModel.entries.find { it.profileId == tether.run?.profileId } ?: connection.model).displayName,
         onBack = ::back, onChangeCamera = { onConnect(false) }, onDisconnect = model::disconnect,
         onDestination = { settings = true }, destinationEnabled = !tether.active && !connection.closing,
@@ -76,6 +86,7 @@ internal fun CameraTetherScreen(model: CameraImportViewModel, storage: PhotoStor
 internal fun CameraTetherWorkspace(state: CameraTetherState,
     thumbnail: suspend (Uri, Int) -> Bitmap?, onCapture: () -> Unit, onReconnect: () -> Unit,
     onEdit: (CameraTetherSaved) -> Unit, onSetParameter: (Int, Long) -> Unit = { _, _ -> },
+    onFocusPoint: (Int, Int) -> Unit = { _, _ -> }, onCancelTouchFocus: () -> Unit = {},
     cameraName: String = "Sony", onBack: () -> Unit = {}, onChangeCamera: () -> Unit = {},
     onDisconnect: () -> Unit = {}, onDestination: () -> Unit = {}, destinationEnabled: Boolean = true,
     onHistory: () -> Unit = {}, onImport: () -> Unit = {}, onConfirmContinue: () -> Unit = {}) {
@@ -131,7 +142,7 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
             }
             @Composable fun viewfinder(modifier: Modifier) {
                 Box(modifier) {
-                    TetherViewfinder(state, grid, Modifier.fillMaxSize())
+                    TetherViewfinder(state, grid, Modifier.fillMaxSize(), onFocusPoint = onFocusPoint, onCancelTouchFocus = onCancelTouchFocus)
                     if (!state.active) Column(Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = .8f))
                         .padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.tether_paused), color = Color.White)
@@ -184,11 +195,12 @@ private enum class TetherParameterKind(val code: Int, val title: Int, val tag: S
     EV(0x5010, R.string.camera_param_ev, "ev"),
     WB(CameraShootingParameter.WHITE_BALANCE.code, R.string.camera_param_wb, "wb"),
     FOCUS(CameraShootingParameter.FOCUS.code, R.string.camera_param_focus, "focus"),
+    FOCUS_AREA(CameraShootingParameter.FOCUS_AREA.code, R.string.camera_param_focus_area, "focus-area"),
     TEMPERATURE(0xd20f, R.string.camera_param_temperature, "temperature");
 
     companion object {
         val common = listOf(SHUTTER, APERTURE, ISO, EV)
-        val panel = listOf(WB, FOCUS, TEMPERATURE)
+        val panel = listOf(WB, FOCUS, FOCUS_AREA, TEMPERATURE)
     }
 }
 
@@ -201,7 +213,8 @@ private fun TetherParameterBar(state: CameraTetherState, onSetParameter: (Int, L
         Row(Modifier.fillMaxWidth()) {
             TetherParameterKind.common.forEach { kind ->
                 TetherParameterControl(kind, values[kind.code] ?: if (kind == TetherParameterKind.ISO) values[0xd226] else null,
-                    state.parameters, onSetParameter, Modifier.weight(1f), available = state.phase == CameraTetherPhase.READY)
+                    state.parameters, onSetParameter, Modifier.weight(1f),
+                    available = state.phase == CameraTetherPhase.READY && !state.focusBusy, focusBusy = state.focusBusy)
             }
         }
         if (state.parameters.busy) Text(stringResource(R.string.camera_param_busy), style = MaterialTheme.typography.labelSmall,
@@ -220,13 +233,13 @@ private fun TetherParameterBar(state: CameraTetherState, onSetParameter: (Int, L
 @Composable
 private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraTetherParameter?,
     parameters: CameraTetherParameterState, onSetParameter: (Int, Long) -> Unit, modifier: Modifier = Modifier,
-    available: Boolean = true, inline: Boolean = false) {
+    available: Boolean = true, focusBusy: Boolean = false, inline: Boolean = false) {
     var menu by remember(kind, parameter?.current, parameter?.options) { mutableStateOf(false) }
     var reason by remember { mutableStateOf(false) }
     val canSet = available && parameter != null && parameter.enabled && parameter.writable && parameters.writable &&
-        !parameters.busy && parameter.options.isNotEmpty()
+        !parameters.busy && !focusBusy && parameter.options.isNotEmpty()
     Box(modifier) {
-        val cell = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(enabled = !parameters.busy, role = Role.Button) {
+        val cell = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(enabled = !parameters.busy && !focusBusy, role = Role.Button) {
             if (canSet) menu = true else reason = true
         }.padding(horizontal = 4.dp, vertical = 8.dp).testTag("tether-parameter-${kind.tag}")
         val value = parameter?.valueText() ?: "—"
@@ -266,9 +279,9 @@ private fun TetherParameterSheet(state: CameraTetherState, onSetParameter: (Int,
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).navigationBarsPadding()
             .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.camera_shooting_parameters), style = MaterialTheme.typography.headlineSmall)
-            TetherParameterKind.panel.filter { it != TetherParameterKind.TEMPERATURE || values.containsKey(it.code) }.forEach { kind ->
+            TetherParameterKind.panel.filter { (it != TetherParameterKind.TEMPERATURE && it != TetherParameterKind.FOCUS_AREA) || values.containsKey(it.code) }.forEach { kind ->
                 TetherParameterControl(kind, values[kind.code], state.parameters, onSetParameter, Modifier.fillMaxWidth(),
-                    available = state.phase == CameraTetherPhase.READY, inline = true)
+                    available = state.phase == CameraTetherPhase.READY && !state.focusBusy, focusBusy = state.focusBusy, inline = true)
                 HorizontalDivider()
             }
             if (state.parameters.failure != null) Text(stringResource(R.string.camera_param_failed), color = MaterialTheme.colorScheme.error)
@@ -278,14 +291,72 @@ private fun TetherParameterSheet(state: CameraTetherState, onSetParameter: (Int,
 }
 
 @Composable
-private fun TetherViewfinder(state: CameraTetherState, grid: Boolean, modifier: Modifier) {
+private fun TetherViewfinder(
+    state: CameraTetherState,
+    grid: Boolean,
+    modifier: Modifier,
+    onFocusPoint: (Int, Int) -> Unit = { _, _ -> },
+    onCancelTouchFocus: () -> Unit = {},
+) {
     val live = state.active && state.live && state.liveAvailable && state.frame != null
     val label = stringResource(when {
         live -> R.string.tether_live
         state.frame != null || state.liveAvailable -> R.string.tether_stale
         else -> R.string.camera_live_unavailable
     })
-    Box(modifier.background(Color.Black).testTag("tether-viewfinder"), contentAlignment = Alignment.Center) {
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var tapReticle by remember { mutableStateOf<Pair<Long, CameraFocusTap>?>(null) }
+    var lastFocusSquareRatio by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(tapReticle?.first, state.focusBusy) {
+        if (state.focusBusy) return@LaunchedEffect
+        val activeTap = tapReticle ?: return@LaunchedEffect
+        delay(1_800)
+        if (tapReticle?.first == activeTap.first) tapReticle = null
+    }
+    LaunchedEffect(state.focusFailure, state.focusBusy, state.focusFrames, live) {
+        if (!live || state.focusFailure != null || (!state.focusBusy && state.focusFrames.isNotEmpty())) {
+            tapReticle = null
+        }
+    }
+    LaunchedEffect(state.focusFrames, state.frame, state.active) {
+        if (!state.active) {
+            lastFocusSquareRatio = null
+            return@LaunchedEffect
+        }
+        val bitmap = state.frame ?: return@LaunchedEffect
+        val nonFace = state.focusFrames.filter { it.kind != SonyTetherSession.LiveViewFrameKind.FACE }
+        if (nonFace.size == 1) {
+            normalizedFocusSquareRatio(nonFace[0], bitmap.width, bitmap.height)?.let { lastFocusSquareRatio = it }
+        }
+    }
+    val canTap = live && state.phase == CameraTetherPhase.READY && !state.focusBusy && !state.parameters.busy
+    val latestFrame by rememberUpdatedState(state.frame)
+    val latestContainerSize by rememberUpdatedState(containerSize)
+    val latestOnFocusPoint by rememberUpdatedState(onFocusPoint)
+    Box(
+        modifier
+            .background(Color.Black)
+            .onSizeChanged { containerSize = it }
+            .pointerInput(canTap) {
+                if (!canTap) return@pointerInput
+                detectTapGestures { offset ->
+                    val bitmap = latestFrame ?: return@detectTapGestures
+                    val bounds = latestContainerSize
+                    val tap = mapViewfinderTapToCameraGrid(
+                        tapX = offset.x,
+                        tapY = offset.y,
+                        containerWidth = bounds.width.toFloat(),
+                        containerHeight = bounds.height.toFloat(),
+                        imageWidth = bitmap.width,
+                        imageHeight = bitmap.height,
+                    ) ?: return@detectTapGestures
+                    tapReticle = System.nanoTime() to tap
+                    latestOnFocusPoint(tap.x, tap.y)
+                }
+            }
+            .testTag("tether-viewfinder"),
+        contentAlignment = Alignment.Center,
+    ) {
         state.frame?.let { bitmap ->
             Image(bitmap.asImageBitmap(), label, Modifier.fillMaxSize().graphicsLayer { alpha = if (live) 1f else .45f }, contentScale = ContentScale.Fit)
             if (grid) Canvas(Modifier.fillMaxSize().testTag("tether-grid")) {
@@ -297,6 +368,44 @@ private fun TetherViewfinder(state: CameraTetherState, grid: Boolean, modifier: 
                     drawLine(Color.White.copy(alpha = .5f), Offset(left, top + height * i / 3), Offset(left + width, top + height * i / 3), 1.dp.toPx())
                 }
             }
+            if (live) {
+                val focusLocked = state.isFocusLocked
+                Canvas(Modifier.fillMaxSize().testTag("tether-focus-overlay")) {
+                    val ratio = bitmap.width.toFloat() / bitmap.height
+                    val width = minOf(size.width, size.height * ratio); val height = width / ratio
+                    val left = (size.width - width) / 2; val top = (size.height - height) / 2
+                    val green = Color(0xFF34D759)
+                    val white = Color.White.copy(alpha = 0.92f)
+                    val backing = Color.Black.copy(alpha = 0.45f)
+                    clipRect(left = left, top = top, right = left + width, bottom = top + height) {
+                        if (!state.focusBusy && state.focusFrames.isNotEmpty()) {
+                            for (frame in state.focusFrames) {
+                                val box = computeFocusOverlayBox(frame, left, top, width, height)
+                                val focused = frame.focused || (focusLocked && frame.kind != SonyTetherSession.LiveViewFrameKind.FACE)
+                                val strokeWidth = if (focused) 2.dp.toPx() else 1.5.dp.toPx()
+                                drawRect(backing, Offset(box.x, box.y), Size(box.width, box.height), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
+                                drawRect(if (focused) green else white, Offset(box.x, box.y), Size(box.width, box.height), style = Stroke(width = strokeWidth))
+                            }
+                        } else {
+                            tapReticle?.second?.let { tap ->
+                                val boxSize = computeTapFocusSide(
+                                    width,
+                                    height,
+                                    minDefaultPx = 34.dp.toPx(),
+                                    maxDefaultPx = 52.dp.toPx(),
+                                    minLearnedPx = 20.dp.toPx(),
+                                    lastSquareRatio = lastFocusSquareRatio,
+                                )
+                                val x = left + tap.u * width - boxSize / 2f
+                                val y = top + tap.v * height - boxSize / 2f
+                                val strokeWidth = if (focusLocked) 2.dp.toPx() else 1.75.dp.toPx()
+                                drawRect(backing, Offset(x, y), Size(boxSize, boxSize), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
+                                drawRect(if (focusLocked) green else white, Offset(x, y), Size(boxSize, boxSize), style = Stroke(width = strokeWidth))
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (state.frame == null && state.active && state.liveAvailable) CircularProgressIndicator(Modifier.size(32.dp))
         if (state.frame != null) Text(if (live) "LIVE" else label,
@@ -304,6 +413,28 @@ private fun TetherViewfinder(state: CameraTetherState, grid: Boolean, modifier: 
             color = Color.White, style = MaterialTheme.typography.labelSmall)
         else if (state.active) Text(label,
             Modifier.background(Color.Black.copy(alpha = .7f), MaterialTheme.shapes.small).padding(12.dp), color = Color.White)
+        if (live && state.parameters.canCancelTouchFocus) {
+            val cancelEnabled = !state.focusBusy && state.phase == CameraTetherPhase.READY
+            Row(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black.copy(alpha = 0.68f))
+                    .clickable(enabled = cancelEnabled, role = Role.Button) {
+                        tapReticle = null
+                        onCancelTouchFocus()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .testTag("tether-cancel-focus"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                Text(stringResource(R.string.tether_cancel_focus), color = Color.White, style = MaterialTheme.typography.labelMedium)
+            }
+        }
     }
 }
 
@@ -324,6 +455,16 @@ private fun TetherStatus(state: CameraTetherState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(R.string.tether_saved, state.saved.size), style = MaterialTheme.typography.labelSmall)
             if (state.pendingCount > 0) Text(" · " + stringResource(R.string.tether_pending, state.pendingCount), style = MaterialTheme.typography.labelSmall)
+        }
+        state.focusFailure?.let { focusFailure ->
+            val focusMessage = when (focusFailure) {
+                CameraFocusFailure.MANUAL_FOCUS -> R.string.tether_focus_manual
+                CameraFocusFailure.FOCUS_AREA_FIXED -> R.string.tether_focus_area_fixed
+                CameraFocusFailure.UNSUPPORTED -> R.string.tether_focus_unsupported
+                CameraFocusFailure.REJECTED -> R.string.tether_focus_rejected
+            }
+            Text(stringResource(focusMessage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("tether-focus-error"))
         }
         state.current?.let { photo ->
             Text(photo.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -351,7 +492,7 @@ private fun TetherStatus(state: CameraTetherState) {
 
 @Composable
 private fun Shutter(state: CameraTetherState, onCapture: () -> Unit) {
-    val enabled = state.phase == CameraTetherPhase.READY && (state.live || !state.liveAvailable) && state.parameters.captureReady && !state.parameters.busy
+    val enabled = state.phase == CameraTetherPhase.READY && (state.live || !state.liveAvailable) && state.parameters.captureReady && !state.parameters.busy && !state.focusBusy
     val label = stringResource(R.string.tether_shutter)
     Box(Modifier.size(68.dp).border(3.dp, if (enabled) Color.White else MaterialTheme.colorScheme.outline, CircleShape)
         .padding(5.dp).clip(CircleShape).background(if (enabled) Color.White else MaterialTheme.colorScheme.surfaceContainerHigh)

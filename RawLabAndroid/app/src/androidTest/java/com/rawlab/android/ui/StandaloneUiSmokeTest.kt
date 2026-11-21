@@ -10,17 +10,23 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.down
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.up
 import androidx.core.app.ActivityOptionsCompat
 import com.rawlab.android.RawLabTheme
 import com.rawlab.android.camera.CameraTetherParameterState
 import com.rawlab.android.camera.CameraTetherPhase
 import com.rawlab.android.camera.CameraTetherState
 import com.rawlab.android.camera.CameraTetherWorkspace
+import com.rawlab.android.camera.protocol.SonyTetherSession
 import com.rawlab.android.editor.PendingLookCompatibility
 import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.looks.LUTCompatibility
@@ -60,7 +66,8 @@ class StandaloneUiSmokeTest {
     }
 
     @Test fun cameraTetherControlSmoke() {
-        val frame = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
+        val frame = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888)
+        val frame2 = Bitmap.createBitmap(640, 480, Bitmap.Config.ARGB_8888)
         val state = mutableStateOf(
             CameraTetherState(
                 phase = CameraTetherPhase.READY,
@@ -70,11 +77,62 @@ class StandaloneUiSmokeTest {
             ),
         )
         var shots = 0
+        val focusTaps = mutableListOf<Pair<Int, Int>>()
+        var cancelCount = 0
         try {
             compose.setContent {
                 RawLabTheme {
-                    CameraTetherWorkspace(state.value, { _, _ -> null }, { shots++ }, {}, {})
+                    CameraTetherWorkspace(
+                        state.value,
+                        { _, _ -> null },
+                        { shots++ },
+                        {},
+                        {},
+                        onFocusPoint = { x, y -> focusTaps.add(x to y) },
+                        onCancelTouchFocus = { cancelCount++ },
+                    )
                 }
+            }
+            compose.onNodeWithTag("tether-focus-overlay").assertExists()
+            compose.onNodeWithTag("tether-viewfinder").performTouchInput { click(center) }
+            compose.runOnIdle {
+                assertEquals(1, focusTaps.size)
+                assertEquals(true, kotlin.math.abs(focusTaps[0].first - 320) <= 1)
+                assertEquals(true, kotlin.math.abs(focusTaps[0].second - 240) <= 1)
+            }
+            // LiveView frames swap state.frame at ~10Hz; replacing frame mid-tap must not cancel detectTapGestures.
+            compose.onNodeWithTag("tether-viewfinder").performTouchInput { down(center) }
+            compose.runOnIdle { state.value = state.value.copy(frame = frame2) }
+            compose.onNodeWithTag("tether-viewfinder").performTouchInput { up() }
+            compose.runOnIdle {
+                assertEquals(2, focusTaps.size)
+                assertEquals(true, kotlin.math.abs(focusTaps[1].first - 320) <= 1)
+                assertEquals(true, kotlin.math.abs(focusTaps[1].second - 240) <= 1)
+            }
+            compose.runOnIdle { state.value = state.value.copy(focusBusy = true) }
+            compose.onNodeWithTag("tether-focus-busy").assertDoesNotExist()
+            compose.onNodeWithTag("tether-focus-overlay").assertExists()
+
+            state.value = state.value.copy(
+                focusBusy = false,
+                tapFocusLocked = true,
+                focusFrames = listOf(
+                    SonyTetherSession.LiveViewFocusFrame(
+                        SonyTetherSession.LiveViewFrameKind.FOCUS,
+                        0.5f,
+                        0.5f,
+                        0.1f,
+                        0.1f,
+                        false,
+                    ),
+                ),
+                parameters = state.value.parameters.copy(canCancelTouchFocus = true, focusLocked = false),
+            )
+            compose.onNodeWithTag("tether-focus-overlay").assertExists()
+            compose.onNodeWithTag("tether-cancel-focus").assertIsDisplayed().performClick()
+            compose.runOnIdle {
+                assertEquals(1, cancelCount)
+                assertEquals(2, focusTaps.size)
             }
             compose.onNodeWithTag("tether-shutter").assertIsEnabled().performClick()
             assertEquals(1, shots)
@@ -82,7 +140,10 @@ class StandaloneUiSmokeTest {
             compose.onNodeWithTag("tether-grid-toggle").performClick()
             compose.onNodeWithTag("tether-grid").assertExists()
         } finally {
-            compose.runOnIdle { frame.recycle() }
+            compose.runOnIdle {
+                frame.recycle()
+                frame2.recycle()
+            }
         }
     }
 }

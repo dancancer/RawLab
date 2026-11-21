@@ -3,7 +3,7 @@ import SwiftUI
 import ImageIO
 
 enum IOSCameraParameter: CaseIterable, Identifiable {
-    case shutter, aperture, iso, exposureCompensation, whiteBalance, focus, temperature
+    case shutter, aperture, iso, exposureCompensation, whiteBalance, focus, focusArea, temperature
     var id: Self { self }
     var code: UInt16 {
         switch self {
@@ -13,6 +13,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case .exposureCompensation: return 0x5010
         case .whiteBalance: return 0x5005
         case .focus: return 0x500a
+        case .focusArea: return 0xd22c
         case .temperature: return 0xd20f
         }
     }
@@ -24,6 +25,7 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case .exposureCompensation: return L10n.text("曝光补偿")
         case .whiteBalance: return L10n.text("白平衡")
         case .focus: return L10n.text("对焦模式")
+        case .focusArea: return L10n.text("对焦区域")
         case .temperature: return L10n.text("色温")
         }
     }
@@ -49,6 +51,15 @@ enum IOSCameraParameter: CaseIterable, Identifiable {
         case .focus:
             return [1: "MF", 2: "AF", 0x8004: "AF-C", 0x8005: "AF-A", 0x8006: "DMF", 0x8008: "AF-D"][value]
                 ?? String(format: "0x%X", value)
+        case .focusArea:
+            let known: [Int64: String] = [
+                0x0001: "Wide", 0x0002: "Zone", 0x0003: "Center",
+                0x0101: "Spot S", 0x0102: "Spot M", 0x0103: "Spot L", 0x0104: "Expand Spot",
+                0x0201: "Tracking: Wide", 0x0202: "Tracking: Zone", 0x0203: "Tracking: Center",
+                0x0204: "Tracking: Spot S", 0x0205: "Tracking: Spot M", 0x0206: "Tracking: Spot L",
+                0x0207: "Tracking: Expand Spot",
+            ]
+            return known[value] ?? String(format: "0x%04X", value)
         case .whiteBalance:
             let known: [Int64: String] = [2: "AWB", 4: L10n.text("日光"), 6: L10n.text("白炽灯"), 7: L10n.text("闪光灯"),
                 0x8010: L10n.text("阴天"), 0x8011: L10n.text("阴影"), 0x8012: L10n.text("色温"),
@@ -76,10 +87,15 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var previewLoading = false
     @Published private(set) var frame: UIImage?
     @Published private(set) var frameAt: Date?
+    @Published private(set) var liveViewFrames: [CameraLiveViewFrame] = []
     @Published private(set) var progress: (id: UUID, bytes: UInt64, total: UInt64)?
     @Published private(set) var parameterBusy = false
+    @Published private(set) var focusBusy = false
     @Published private(set) var writable = false
     @Published private(set) var shutterReady = false
+    @Published private(set) var canCancelTouchFocus = false
+    @Published private(set) var tapFocusLocked = false
+    @Published private(set) var tapFocusPoint: (id: UUID, u: Double, v: Double)?
     @Published private(set) var savedCount = 0
     @Published private(set) var latestOriginal: CameraStoredOriginal?
     @Published private(set) var importPreferences = IOSCameraImportPreferences()
@@ -121,13 +137,14 @@ struct IOSCameraImportPreferences: Codable {
         reloadHistory()
     }
     var connected: Bool { run != nil && phase != .connecting && phase != .paused && phase != .idle }
-    var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy || scanning }
+    var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy || focusBusy || scanning }
     var selectedAssets: [CameraRemoteAsset] { assets.filter { selection.contains($0.id) } }
     var selectionBytes: UInt64 { selectedAssets.reduce(0) { $0 + $1.snapshot.size } }
     var selectionAllowed: Bool {
         !selectedAssets.isEmpty && selectedAssets.count <= 64 && selectionBytes <= 2 << 30 && selectedAssets.allSatisfy { $0.snapshot.transferable }
     }
-    var canCapture: Bool { connected && phase == .ready && !parameterBusy && shutterReady && originalBrowsingAvailable }
+    var canCapture: Bool { connected && phase == .ready && !parameterBusy && !focusBusy && shutterReady && originalBrowsingAvailable }
+    var cameraFocusLocked: Bool { !focusBusy && (tapFocusLocked || SonyCameraSession.isFocusLocked(properties)) }
     var hasUnknownShot: Bool { manifest.tether?.shutterRequestedAt != nil }
     var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { $0.dismissed != true && !$0.pendingItems.isEmpty }.reversed() }
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
@@ -155,6 +172,7 @@ struct IOSCameraImportPreferences: Codable {
         assets = []; manualAssets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
         properties = [:]; device = nil; writable = false; shutterReady = false; parameterBusy = false
+        focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
         preview = nil; frame = nil; frameAt = nil; progress = nil; savedCount = 0; notice = nil; phase = .connecting
         let owner = UUID()
         callbackOwner = owner
@@ -174,6 +192,9 @@ struct IOSCameraImportPreferences: Codable {
             let previousPhase = phase
             phase = value
             if value == .browsing || value == .ready { pendingThumbnails = [] }
+            if value == .paused {
+                focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
+            }
             if previousPhase == .receiving && value == .browsing {
                 if mode == .importing && receivingSavedToPhotoLibraryCount > 0 {
                     lastSavedToPhotoLibraryCount = receivingSavedToPhotoLibraryCount
@@ -199,7 +220,12 @@ struct IOSCameraImportPreferences: Codable {
             assets = values
             manualAssets = Self.manualBrowseOrder(values)
             selection.formIntersection(Set(values.map(\.id))); scanning = false
-        case .properties(let values, let writable, let shutter): properties = values; self.writable = writable; shutterReady = shutter
+        case .properties(let values, let writable, let shutter, let canCancelTouchFocus):
+            let hadCancel = self.canCancelTouchFocus
+            properties = values; self.writable = writable; shutterReady = shutter; self.canCancelTouchFocus = canCancelTouchFocus
+            if SonyCameraSession.isFocusFailed(values) || (hadCancel && !canCancelTouchFocus) {
+                tapFocusLocked = false
+            }
         case .manifest(let value):
             let wasComplete = incrementalJobID.flatMap { id in manifest.jobs.first { $0.id == id }?.complete } == true
             manifest = value
@@ -222,14 +248,30 @@ struct IOSCameraImportPreferences: Codable {
         case .parameterFinished(let confirmed):
             parameterBusy = false
             if !confirmed { notice = L10n.text("设置结果未确认，请重新连接后检查。") }
-        case .frame(let bytes, let date, let token):
+        case .focusFinished(let error, let focusLocked):
+            focusBusy = false
+            if let error {
+                tapFocusLocked = false
+                tapFocusPoint = nil
+                notice = message(error)
+            } else {
+                tapFocusLocked = focusLocked
+            }
+        case .frame(let bytes, let overlays, let date, let token):
             guard let run, run.isLiveCurrent(token), let decoded = Self.decode(bytes, edge: 2048) else { return }
             frame = decoded; frameAt = date; run.markFrame(date)
+            if focusBusy {
+                liveViewFrames = []
+            } else {
+                liveViewFrames = overlays
+                if !overlays.isEmpty { tapFocusPoint = nil }
+            }
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
             if original.photoLibraryAssetID != nil { receivingSavedToPhotoLibraryCount += 1 }
         case .failure(let error):
-            parameterBusy = false; previewLoading = false; shutterReady = false; scanning = false; progress = nil
+            parameterBusy = false; focusBusy = false; tapFocusLocked = false; tapFocusPoint = nil
+            previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
             if case CameraProtocolError.localNetworkDenied = error { localNetworkDenied = true }
@@ -243,6 +285,8 @@ struct IOSCameraImportPreferences: Codable {
                 notice = message(error)
                 updatingListingLimitNotice = false
             } else {
+                canCancelTouchFocus = false
+                liveViewFrames = []
                 notice = message(error)
             }
         case .listingLimitCleared:
@@ -269,7 +313,8 @@ struct IOSCameraImportPreferences: Codable {
     }
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
-        callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; shutterReady = false
+        callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; focusBusy = false
+        canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil; shutterReady = false
         previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
         localNetworkDenied = false; photoLibraryPermissionDenied = false
         lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
@@ -454,12 +499,26 @@ struct IOSCameraImportPreferences: Codable {
         backend.thumbnail(asset, run: run, large: true)
     }
     func setParameter(_ descriptor: CameraProperty, value: Int64) {
-        guard let run, phase == .ready, writable, !parameterBusy, descriptor.accepts(value) else { return }
-        parameterBusy = true; notice = nil; backend.setParameter(descriptor.code, value: value, run: run)
+        guard let run, phase == .ready, writable, !parameterBusy, !focusBusy, descriptor.accepts(value) else { return }
+        parameterBusy = true; tapFocusLocked = false; notice = nil; backend.setParameter(descriptor.code, value: value, run: run)
+    }
+    func setFocusPoint(u: Double, v: Double, x: Int, y: Int) {
+        guard let run, connected, phase == .ready, !busy else { return }
+        let tapID = UUID()
+        focusBusy = true; tapFocusLocked = false; notice = nil; liveViewFrames = []; tapFocusPoint = (id: tapID, u: u, v: v)
+        backend.setFocusPoint(x: x, y: y, run: run)
+    }
+    func cancelTouchFocus() {
+        guard let run, connected, phase == .ready, !busy, canCancelTouchFocus else { return }
+        focusBusy = true; tapFocusLocked = false; notice = nil; liveViewFrames = []; tapFocusPoint = nil
+        backend.cancelTouchFocus(run)
+    }
+    func clearTapFocusPoint(id: UUID) {
+        if tapFocusPoint?.id == id { tapFocusPoint = nil }
     }
     func capture() {
         guard let run, canCapture else { return }
-        phase = .capturing; notice = nil; photoLibraryPermissionDenied = false; backend.capture(run)
+        phase = .capturing; tapFocusLocked = false; notice = nil; photoLibraryPermissionDenied = false; backend.capture(run)
     }
     func openOriginal(_ original: CameraStoredOriginal, completion: @escaping (URL) -> Void) {
         stop { [weak self] in
@@ -544,6 +603,14 @@ struct IOSCameraImportPreferences: Codable {
         case CameraProtocolError.photoLibraryDenied: return L10n.text("照片已保存在 RawLab 内，但未保存到手机相册。请在系统设置中允许 RawLab 添加照片。")
         case CameraProtocolError.photoLibrarySaveFailed: return L10n.text("照片已保存在 RawLab 内，但部分照片未能保存到手机相册。")
         case CameraProtocolError.itemFailed(let name, _): return L10n.format("保存 %@ 失败。", name)
+        case CameraProtocolError.focusUnavailable(.manualFocus):
+            return L10n.text("当前为手动对焦（MF），无法选择对焦点。")
+        case CameraProtocolError.focusUnavailable(.focusAreaFixed):
+            return L10n.text("请将对焦区域设为点或区，或在机身开启触控操作。")
+        case CameraProtocolError.focusUnavailable(.unsupported):
+            return L10n.text("当前相机模式不支持远程选择对焦点。")
+        case CameraProtocolError.focusRejected:
+            return L10n.text("当前状态下相机未接受对焦点设置。")
         case CameraProtocolError.invalid,
              CameraProtocolError.transientTransfer,
              CameraProtocolError.invalidOriginalHeader,

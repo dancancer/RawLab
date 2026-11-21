@@ -4,6 +4,11 @@ import CryptoKit
 enum CameraSessionPurpose { case importing, tethering }
 enum CameraContentsFamily { case mobile, legacy }
 
+struct CameraFocusPointResult {
+    let properties: [UInt16: CameraProperty]
+    let focusLocked: Bool
+}
+
 final class SonyCameraSession {
     static let maximumListedAssets = 10_000
     static let maximumMobilePages = 1_000
@@ -265,10 +270,22 @@ final class SonyCameraSession {
     func properties() throws -> [UInt16: CameraProperty] {
         try checkRunning()
         guard remoteReady else { throw CameraProtocolError.unsupported("Remote properties are unavailable") }
-        do { return try CameraWire.properties(client.operation(0x9209, parameters: enumTables == 1 ? [] : [0],
-            requiresData: true, limit: CameraWire.dataLimit), enumTables: enumTables) }
-        catch CameraProtocolError.response(let op, let code) { throw CameraProtocolError.response(op, code) }
-        catch { client.close(); throw error }
+        for attempt in 0...2 {
+            do {
+                return try CameraWire.properties(client.operation(0x9209, parameters: enumTables == 1 ? [] : [0],
+                    requiresData: true, limit: CameraWire.dataLimit), enumTables: enumTables)
+            } catch CameraProtocolError.response(let op, let code) {
+                if op == 0x9209 && code == 0x2019 && attempt < 2 && !stopped {
+                    try pause(0.1 * Double(attempt + 1))
+                    continue
+                }
+                throw CameraProtocolError.response(op, code)
+            } catch {
+                client.close()
+                throw error
+            }
+        }
+        throw CameraProtocolError.response(0x9209, 0x2019)
     }
     var canWriteParameters: Bool {
         purpose == .tethering && remoteReady && !contentsEntered && !stopped && enumTables == 2 && device.operations.contains(0x9205)
@@ -284,10 +301,194 @@ final class SonyCameraSession {
     }
     static func parameterType(_ code: UInt16) -> UInt16? {
         switch code {
-        case 0x5005, 0x5007, 0x500a, 0xd20f: return 4
+        case 0x5005, 0x5007, 0x500a, 0xd20f, 0xd22c: return 4
         case 0x5010: return 3
         case 0xd20d, 0xd21e, 0xd226: return 6
         default: return nil
+        }
+    }
+    static let fixedFocusAreas: Set<Int64> = [0x0001, 0x0003, 0x0201, 0x0203]
+
+    static func isFocusLocked(_ properties: [UInt16: CameraProperty]) -> Bool {
+        guard let value = properties[0xd213]?.number else { return false }
+        return value == 2 || value == 6
+    }
+
+    static func isFocusFailed(_ properties: [UInt16: CameraProperty]) -> Bool {
+        guard let value = properties[0xd213]?.number else { return false }
+        return value == 3 || value == 7
+    }
+
+    func canCancelTouchFocus(_ properties: [UInt16: CameraProperty]) -> Bool {
+        purpose == .tethering && remoteReady && !contentsEntered && !stopped &&
+            device.operations.contains(0x9207) && controls.contains(0xd2e5) &&
+            properties[0xd285]?.enabled == 1 && properties[0xd285]?.number == 1
+    }
+
+    func focusTarget(_ properties: [UInt16: CameraProperty]) -> Result<CameraFocusPointTarget, CameraFocusUnavailableReason> {
+        guard purpose == .tethering, remoteReady, !contentsEntered, !stopped,
+              device.operations.contains(0x9207) else { return .failure(.unsupported) }
+        if controls.contains(0xd2e4), properties[0xd284]?.enabled == 1, properties[0xd284]?.number == 1 {
+            return .success(.remoteTouch)
+        }
+        if properties[0x500a]?.number == 1 {
+            return .failure(.manualFocus)
+        }
+        if controls.contains(0xd2dc) {
+            if let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
+                return .failure(.focusAreaFixed)
+            }
+            return .success(.afAreaPosition)
+        }
+        if controls.contains(0xd2e4), let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
+            return .failure(.focusAreaFixed)
+        }
+        return .failure(.unsupported)
+    }
+
+    func setFocusPoint(x: Int, y: Int) throws -> CameraFocusPointResult {
+        try checkRunning()
+        guard purpose == .tethering, remoteReady, !contentsEntered,
+              device.operations.contains(0x9207) else { throw CameraProtocolError.focusUnavailable(.unsupported) }
+        guard (0...639).contains(x), (0...479).contains(y) else {
+            throw CameraProtocolError.invalid("Focus point outside camera grid")
+        }
+        var latest = try properties()
+        if controls.contains(0xd2e4),
+           !(latest[0xd284]?.enabled == 1 && latest[0xd284]?.number == 1),
+           canCancelTouchFocus(latest) {
+            try sendTouchCancel()
+            try pause(0.05)
+            latest = try properties()
+        }
+        let target: CameraFocusPointTarget
+        switch focusTarget(latest) {
+        case .success(let resolved): target = resolved
+        case .failure(let reason): throw CameraProtocolError.focusUnavailable(reason)
+        }
+        var bytes = Data()
+        bytes.appendLE(UInt32((x << 16) | y))
+        do {
+            _ = try client.operation(0x9207, parameters: [UInt32(target.controlCode)], outgoing: bytes)
+        } catch CameraProtocolError.response {
+            throw CameraProtocolError.focusRejected
+        }
+        try pause(0.1)
+        latest = try properties()
+        let focusLocked = Self.isFocusLocked(latest)
+        if !focusLocked, controls.contains(0xd2c1), latest[0x500a]?.number != 1 {
+            return try acquireFocusWithHalfPress(initialProperties: latest)
+        }
+        return CameraFocusPointResult(properties: latest, focusLocked: focusLocked)
+    }
+
+    private func acquireFocusWithHalfPress(initialProperties: [UInt16: CameraProperty]) throws -> CameraFocusPointResult {
+        stateLock.lock()
+        if stopping {
+            stateLock.unlock()
+            throw CameraProtocolError.cancelled
+        }
+        capturing = true
+        stateLock.unlock()
+        defer {
+            stateLock.lock()
+            capturing = false
+            let stop = stopping
+            stateLock.unlock()
+            if stop { client.close() }
+        }
+
+        func sendHalfPress(_ value: UInt16) throws {
+            var bytes = Data()
+            bytes.appendLE(value)
+            _ = try client.operation(0x9207, parameters: [0xd2c1], outgoing: bytes)
+        }
+
+        var half = false
+        var pressRejectedByCamera = false
+        var fatalError: Error?
+        var achieved = false
+        var current = initialProperties
+
+        do {
+            half = true
+            try sendHalfPress(2)
+            for attempt in 0..<15 {
+                try pause(0.1)
+                current = try properties()
+                guard let indication = current[0xd213]?.number else {
+                    if attempt >= 2 { break }
+                    continue
+                }
+                if indication == 2 || indication == 6 {
+                    achieved = true
+                    break
+                }
+                if indication == 3 {
+                    break
+                }
+                if indication == 7 && attempt >= 5 {
+                    break
+                }
+            }
+        } catch CameraProtocolError.response {
+            pressRejectedByCamera = true
+        } catch {
+            fatalError = error
+        }
+
+        if half && !client.isClosed {
+            do {
+                try sendHalfPress(1)
+                half = false
+            } catch CameraProtocolError.response {
+                half = false
+            } catch {
+                if fatalError == nil { fatalError = error }
+            }
+        }
+        if let fatalError { throw fatalError }
+        if !pressRejectedByCamera && !stopped {
+            try? pause(0.05)
+            if !stopped, let refreshed = try? properties() {
+                current = refreshed
+            }
+        }
+        return CameraFocusPointResult(properties: current, focusLocked: achieved || Self.isFocusLocked(current))
+    }
+
+    func cancelTouchFocus() throws -> [UInt16: CameraProperty] {
+        try checkRunning()
+        let latest = try properties()
+        guard canCancelTouchFocus(latest) else { throw CameraProtocolError.focusUnavailable(.unsupported) }
+        try sendTouchCancel()
+        try pause(0.1)
+        return try properties()
+    }
+
+    private func sendTouchCancel() throws {
+        func send(_ value: UInt16) throws {
+            var bytes = Data(); bytes.appendLE(value)
+            _ = try client.operation(0x9207, parameters: [0xd2e5], outgoing: bytes)
+        }
+        var pressed = false
+        var failure: Error?
+        do {
+            pressed = true
+            try send(2)
+            try pause(0.05)
+            try send(1)
+            pressed = false
+        } catch {
+            failure = error
+        }
+        if pressed, !client.isClosed {
+            do { try send(1) }
+            catch { if failure == nil { failure = error } }
+        }
+        if let failure {
+            if case CameraProtocolError.response = failure { throw CameraProtocolError.focusRejected }
+            throw failure
         }
     }
     func setParameter(_ code: UInt16, value: Int64) throws -> (confirmed: Bool, values: [UInt16: CameraProperty]) {
