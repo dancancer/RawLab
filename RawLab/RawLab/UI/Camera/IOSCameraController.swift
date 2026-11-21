@@ -138,6 +138,7 @@ struct IOSCameraImportPreferences: Codable {
         !selectedAssets.isEmpty && selectedAssets.count <= 64 && selectionBytes <= 2 << 30 && selectedAssets.allSatisfy { $0.snapshot.transferable }
     }
     var canCapture: Bool { connected && phase == .ready && !parameterBusy && !focusBusy && shutterReady && originalBrowsingAvailable }
+    var cameraFocusLocked: Bool { !focusBusy && SonyCameraSession.isFocusLocked(properties) }
     var hasUnknownShot: Bool { manifest.tether?.shutterRequestedAt != nil }
     var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { $0.dismissed != true && !$0.pendingItems.isEmpty }.reversed() }
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
@@ -232,7 +233,13 @@ struct IOSCameraImportPreferences: Codable {
             }
         case .frame(let bytes, let overlays, let date, let token):
             guard let run, run.isLiveCurrent(token), let decoded = Self.decode(bytes, edge: 2048) else { return }
-            frame = decoded; frameAt = date; liveViewFrames = overlays; run.markFrame(date)
+            frame = decoded; frameAt = date; run.markFrame(date)
+            if focusBusy {
+                liveViewFrames = []
+            } else {
+                liveViewFrames = overlays
+                if !overlays.isEmpty { tapFocusPoint = nil }
+            }
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
         case .failure(let error):
@@ -456,12 +463,12 @@ struct IOSCameraImportPreferences: Codable {
     func setFocusPoint(u: Double, v: Double, x: Int, y: Int) {
         guard let run, connected, phase == .ready, !busy else { return }
         let tapID = UUID()
-        focusBusy = true; notice = nil; tapFocusPoint = (id: tapID, u: u, v: v)
+        focusBusy = true; notice = nil; liveViewFrames = []; tapFocusPoint = (id: tapID, u: u, v: v)
         backend.setFocusPoint(x: x, y: y, run: run)
     }
     func cancelTouchFocus() {
         guard let run, connected, phase == .ready, !busy, canCancelTouchFocus else { return }
-        focusBusy = true; notice = nil; tapFocusPoint = nil
+        focusBusy = true; notice = nil; liveViewFrames = []; tapFocusPoint = nil
         backend.cancelTouchFocus(run)
     }
     func clearTapFocusPoint(id: UUID) {

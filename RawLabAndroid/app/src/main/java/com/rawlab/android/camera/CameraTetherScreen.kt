@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -310,28 +311,34 @@ private fun TetherViewfinder(
         delay(1_800)
         if (tapReticle?.first == activeTap.first) tapReticle = null
     }
-    LaunchedEffect(state.focusFailure, live) {
-        if (!live || state.focusFailure != null) tapReticle = null
+    LaunchedEffect(state.focusFailure, state.focusBusy, state.focusFrames, live) {
+        if (!live || state.focusFailure != null || (!state.focusBusy && state.focusFrames.isNotEmpty())) {
+            tapReticle = null
+        }
     }
     val canTap = live && state.phase == CameraTetherPhase.READY && !state.focusBusy && !state.parameters.busy
+    val latestFrame by rememberUpdatedState(state.frame)
+    val latestContainerSize by rememberUpdatedState(containerSize)
+    val latestOnFocusPoint by rememberUpdatedState(onFocusPoint)
     Box(
         modifier
             .background(Color.Black)
             .onSizeChanged { containerSize = it }
-            .pointerInput(canTap, state.frame, containerSize) {
+            .pointerInput(canTap) {
                 if (!canTap) return@pointerInput
                 detectTapGestures { offset ->
-                    val bitmap = state.frame ?: return@detectTapGestures
+                    val bitmap = latestFrame ?: return@detectTapGestures
+                    val bounds = latestContainerSize
                     val tap = mapViewfinderTapToCameraGrid(
                         tapX = offset.x,
                         tapY = offset.y,
-                        containerWidth = containerSize.width.toFloat(),
-                        containerHeight = containerSize.height.toFloat(),
+                        containerWidth = bounds.width.toFloat(),
+                        containerHeight = bounds.height.toFloat(),
                         imageWidth = bitmap.width,
                         imageHeight = bitmap.height,
                     ) ?: return@detectTapGestures
                     tapReticle = System.nanoTime() to tap
-                    onFocusPoint(tap.x, tap.y)
+                    latestOnFocusPoint(tap.x, tap.y)
                 }
             }
             .testTag("tether-viewfinder"),
@@ -348,29 +355,38 @@ private fun TetherViewfinder(
                     drawLine(Color.White.copy(alpha = .5f), Offset(left, top + height * i / 3), Offset(left + width, top + height * i / 3), 1.dp.toPx())
                 }
             }
-            if (live) Canvas(Modifier.fillMaxSize().testTag("tether-focus-overlay")) {
-                val ratio = bitmap.width.toFloat() / bitmap.height
-                val width = minOf(size.width, size.height * ratio); val height = width / ratio
-                val left = (size.width - width) / 2; val top = (size.height - height) / 2
-                val strokeWidth = 2.dp.toPx()
-                val thinStroke = 1.25.dp.toPx()
-                for (frame in state.focusFrames) {
-                    val w = frame.width * width
-                    val h = frame.height * height
-                    val x = left + frame.cx * width - w / 2f
-                    val y = top + frame.cy * height - h / 2f
-                    val color = when {
-                        frame.focused -> Color(0xFF4CD964)
-                        frame.kind == SonyTetherSession.LiveViewFrameKind.TRACKING -> Color(0xFFF5C518)
-                        else -> Color.White.copy(alpha = 0.85f)
+            if (live) {
+                val focusLocked = !state.focusBusy && state.parameters.focusLocked
+                Canvas(Modifier.fillMaxSize().testTag("tether-focus-overlay")) {
+                    val ratio = bitmap.width.toFloat() / bitmap.height
+                    val width = minOf(size.width, size.height * ratio); val height = width / ratio
+                    val left = (size.width - width) / 2; val top = (size.height - height) / 2
+                    val green = Color(0xFF34D759)
+                    val white = Color.White.copy(alpha = 0.92f)
+                    val backing = Color.Black.copy(alpha = 0.45f)
+                    clipRect(left = left, top = top, right = left + width, bottom = top + height) {
+                        if (!state.focusBusy && state.focusFrames.isNotEmpty()) {
+                            for (frame in state.focusFrames) {
+                                val w = frame.width * width
+                                val h = frame.height * height
+                                val x = left + frame.cx * width - w / 2f
+                                val y = top + frame.cy * height - h / 2f
+                                val focused = frame.focused || (focusLocked && frame.kind != SonyTetherSession.LiveViewFrameKind.FACE)
+                                val strokeWidth = if (focused) 2.dp.toPx() else 1.5.dp.toPx()
+                                drawRect(backing, Offset(x, y), Size(w, h), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
+                                drawRect(if (focused) green else white, Offset(x, y), Size(w, h), style = Stroke(width = strokeWidth))
+                            }
+                        } else {
+                            tapReticle?.second?.let { tap ->
+                                val boxSize = 34.dp.toPx()
+                                val x = left + tap.u * width - boxSize / 2f
+                                val y = top + tap.v * height - boxSize / 2f
+                                val strokeWidth = if (focusLocked) 2.dp.toPx() else 1.75.dp.toPx()
+                                drawRect(backing, Offset(x, y), Size(boxSize, boxSize), style = Stroke(width = strokeWidth + 1.5.dp.toPx()))
+                                drawRect(if (focusLocked) green else white, Offset(x, y), Size(boxSize, boxSize), style = Stroke(width = strokeWidth))
+                            }
+                        }
                     }
-                    drawRect(color, Offset(x, y), Size(w, h), style = Stroke(width = if (frame.focused) strokeWidth else thinStroke))
-                }
-                tapReticle?.second?.let { tap ->
-                    val boxSize = 34.dp.toPx()
-                    val x = left + tap.u * width - boxSize / 2f
-                    val y = top + tap.v * height - boxSize / 2f
-                    drawRect(Color(0xFFF5C518), Offset(x, y), Size(boxSize, boxSize), style = Stroke(width = strokeWidth))
                 }
             }
         }

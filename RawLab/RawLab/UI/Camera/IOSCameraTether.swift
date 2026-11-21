@@ -136,19 +136,26 @@ struct IOSCameraTether: View {
                         }
                         if live {
                             Canvas { context, _ in
-                                for overlay in model.liveViewFrames {
-                                    let rect = CGRect(
-                                        x: left + CGFloat(overlay.cx - overlay.width / 2) * fittedWidth,
-                                        y: top + CGFloat(overlay.cy - overlay.height / 2) * fittedHeight,
-                                        width: CGFloat(overlay.width) * fittedWidth,
-                                        height: CGFloat(overlay.height) * fittedHeight
-                                    )
-                                    let color: Color = overlay.focused
-                                        ? Color(red: 0.30, green: 0.85, blue: 0.39)
-                                        : (overlay.kind == .tracking ? Color(red: 0.96, green: 0.77, blue: 0.09) : .white.opacity(0.85))
-                                    context.stroke(Path(rect), with: .color(color), lineWidth: overlay.focused ? 2 : 1.25)
-                                }
-                                if let tap = model.tapFocusPoint {
+                                context.clip(to: Path(CGRect(x: left, y: top, width: fittedWidth, height: fittedHeight)))
+                                let focusLocked = model.cameraFocusLocked
+                                let green = Color(red: 0.20, green: 0.84, blue: 0.35)
+                                let white = Color.white.opacity(0.92)
+                                let backing = Color.black.opacity(0.45)
+                                if !model.focusBusy && !model.liveViewFrames.isEmpty {
+                                    for overlay in model.liveViewFrames {
+                                        let rect = CGRect(
+                                            x: left + CGFloat(overlay.cx - overlay.width / 2) * fittedWidth,
+                                            y: top + CGFloat(overlay.cy - overlay.height / 2) * fittedHeight,
+                                            width: CGFloat(overlay.width) * fittedWidth,
+                                            height: CGFloat(overlay.height) * fittedHeight
+                                        )
+                                        let focused = overlay.focused || (focusLocked && overlay.kind != .face)
+                                        let lineWidth: CGFloat = focused ? 2 : 1.5
+                                        let strokeColor: Color = focused ? green : white
+                                        context.stroke(Path(rect), with: .color(backing), lineWidth: lineWidth + 1.5)
+                                        context.stroke(Path(rect), with: .color(strokeColor), lineWidth: lineWidth)
+                                    }
+                                } else if let tap = model.tapFocusPoint {
                                     let size: CGFloat = 34
                                     let rect = CGRect(
                                         x: left + CGFloat(tap.u) * fittedWidth - size / 2,
@@ -156,7 +163,11 @@ struct IOSCameraTether: View {
                                         width: size,
                                         height: size
                                     )
-                                    context.stroke(Path(rect), with: .color(Color(red: 0.96, green: 0.77, blue: 0.09)), lineWidth: 2)
+                                    let focused = !model.focusBusy && focusLocked
+                                    let lineWidth: CGFloat = focused ? 2 : 1.75
+                                    let strokeColor: Color = focused ? green : white
+                                    context.stroke(Path(rect), with: .color(backing), lineWidth: lineWidth + 1.5)
+                                    context.stroke(Path(rect), with: .color(strokeColor), lineWidth: lineWidth)
                                 }
                             }
                             .allowsHitTesting(false)

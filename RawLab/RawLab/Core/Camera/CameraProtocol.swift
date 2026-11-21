@@ -367,7 +367,8 @@ enum CameraWire {
                 let centerX = u32(offset + 8), centerY = u32(offset + 12)
                 let height = u32(offset + 16), width = u32(offset + 20)
                 offset += 24
-                if let kind, xMax > 0, yMax > 0, width > 0, height > 0, centerX <= xMax, centerY <= yMax {
+                if let kind, xMax > 0, yMax > 0, width > 0, height > 0,
+                   width <= xMax, height <= yMax, centerX <= xMax, centerY <= yMax {
                     let focused: Bool
                     switch kind {
                     case .focus, .tracking: focused = state == 2

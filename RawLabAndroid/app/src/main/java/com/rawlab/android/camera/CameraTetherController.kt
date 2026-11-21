@@ -33,6 +33,7 @@ internal data class CameraTetherParameterState(
     val reason: String? = null,
     val captureReady: Boolean = false,
     val canCancelTouchFocus: Boolean = false,
+    val focusLocked: Boolean = false,
 )
 internal data class CameraTetherState(
     val phase: CameraTetherPhase = CameraTetherPhase.IDLE,
@@ -95,6 +96,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         @Volatile var liveGeneration = 0
         @Volatile var connection: HttpURLConnection? = null
         @Volatile var liveFailure = false
+        @Volatile var pendingFocusRefreshAt: Long = 0L
         var liveJob: Job? = null
         var run: CameraTetherRun? = null
         var ended = false
@@ -159,11 +161,16 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                         if (current.liveFailure) throw CameraTetherLiveException()
                         current.parameterRequests.tryReceive().getOrNull()?.let { processParameter(current, it) }
                         current.focusRequests.tryReceive().getOrNull()?.let { processFocus(current, it) }
-                        if (mutable.value.phase == CameraTetherPhase.READY && clock() - lastParameterRead >= 3_000) {
+                        if (mutable.value.phase == CameraTetherPhase.READY && current.pendingFocusRefreshAt != 0L && clock() >= current.pendingFocusRefreshAt) {
+                            current.pendingFocusRefreshAt = 0L
+                            processParameter(current, ParameterRequest())
+                            lastParameterRead = clock()
+                        } else if (mutable.value.phase == CameraTetherPhase.READY && clock() - lastParameterRead >= 3_000) {
                             processParameter(current, ParameterRequest())
                             lastParameterRead = clock()
                         }
                         if (current.shutter.tryReceive().isSuccess) {
+                            current.pendingFocusRefreshAt = 0L
                             mutable.update { it.copy(phase = CameraTetherPhase.CAPTURING, failure = null) }
                             storeLock.withLock {
                                 current.permit.check()
@@ -293,6 +300,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
     fun setParameter(code: Int, requested: Long) {
         val current = active ?: return
         if (mutable.value.phase != CameraTetherPhase.READY || mutable.value.parameters.busy || mutable.value.focusBusy) return
+        current.pendingFocusRefreshAt = 0L
         mutable.update { it.copy(focusFailure = null, parameters = it.parameters.copy(busy = true, failure = null, reason = null)) }
         current.parameterRequests.trySend(ParameterRequest(code, requested))
     }
@@ -300,7 +308,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         val current = active ?: return
         val snapshot = mutable.value
         if (snapshot.phase != CameraTetherPhase.READY || snapshot.parameters.busy || snapshot.focusBusy || current.stopped) return
-        mutable.update { it.copy(focusBusy = true, focusFailure = null) }
+        current.pendingFocusRefreshAt = 0L
+        mutable.update { it.copy(focusBusy = true, focusFailure = null, focusFrames = emptyList()) }
         if (current.focusRequests.trySend(FocusRequest.Point(x, y)).isFailure) {
             mutable.update { it.copy(focusBusy = false) }
         }
@@ -310,7 +319,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         val snapshot = mutable.value
         if (snapshot.phase != CameraTetherPhase.READY || snapshot.parameters.busy || snapshot.focusBusy ||
             !snapshot.parameters.canCancelTouchFocus || current.stopped) return
-        mutable.update { it.copy(focusBusy = true, focusFailure = null) }
+        current.pendingFocusRefreshAt = 0L
+        mutable.update { it.copy(focusBusy = true, focusFailure = null, focusFrames = emptyList()) }
         if (current.focusRequests.trySend(FocusRequest.Cancel).isFailure) {
             mutable.update { it.copy(focusBusy = false) }
         }
@@ -422,7 +432,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 else if (active === current && !current.stopped) {
                     mutable.update { it.copy(parameters = it.parameters.copy(values = result.readback.values,
                         writable = result.readback.writable, captureReady = result.readback.captureReady,
-                        canCancelTouchFocus = result.readback.canCancelTouchFocus, read = true, busy = false,
+                        canCancelTouchFocus = result.readback.canCancelTouchFocus,
+                        focusLocked = result.readback.focusLocked, read = true, busy = false,
                         failure = CameraParameterFailure.UNCONFIRMED, reason = "Camera did not confirm the selected value")) }
                 }
             }
@@ -439,11 +450,14 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 is FocusRequest.Point -> current.transport.setFocusPoint(request.x, request.y)
                 is FocusRequest.Cancel -> current.transport.cancelTouchFocus()
             }
+            current.pendingFocusRefreshAt = if (request is FocusRequest.Point && !readback.focusLocked) clock() + 450L else 0L
             publishParameters(current, readback)
             if (active === current && !current.stopped) {
                 mutable.update { it.copy(focusBusy = false, focusFailure = null) }
             }
         } catch (unavailable: SonyTetherSession.FocusUnavailableException) {
+            current.pendingFocusRefreshAt = 0L
+            runCatching { current.transport.readParameters() }.onSuccess { publishParameters(current, it) }
             val mapped = when (unavailable.reason) {
                 SonyTetherSession.FocusUnavailableReason.MANUAL_FOCUS -> CameraFocusFailure.MANUAL_FOCUS
                 SonyTetherSession.FocusUnavailableReason.FOCUS_AREA_FIXED -> CameraFocusFailure.FOCUS_AREA_FIXED
@@ -453,6 +467,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                 mutable.update { it.copy(focusBusy = false, focusFailure = mapped) }
             }
         } catch (_: SonyTetherSession.FocusRejectedException) {
+            current.pendingFocusRefreshAt = 0L
             runCatching { current.transport.readParameters() }.onSuccess { publishParameters(current, it) }
             if (active === current && !current.stopped) {
                 mutable.update { it.copy(focusBusy = false, focusFailure = CameraFocusFailure.REJECTED) }
@@ -463,7 +478,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         if (active !== current) return
         mutable.update { it.copy(parameters = CameraTetherParameterState(readback.values, readback.writable,
             read = true, busy = false, failure = null, reason = null, captureReady = readback.captureReady,
-            canCancelTouchFocus = readback.canCancelTouchFocus)) }
+            canCancelTouchFocus = readback.canCancelTouchFocus, focusLocked = readback.focusLocked)) }
     }
     private fun publishParameterFailure(current: Active, failure: CameraParameterFailure, reason: String?) {
         if (active !== current) return
@@ -502,7 +517,8 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                         val focusFrames = SonyTetherSession.parseLiveViewFrames(liveFrame.metadata)
                         shown = now
                         if (active === current && token == current.liveGeneration) mutable.update {
-                            it.copy(frame = bitmap, frameTime = now, live = true, focusFrames = focusFrames)
+                            it.copy(frame = bitmap, frameTime = now, live = true,
+                                focusFrames = if (it.focusBusy) emptyList() else focusFrames)
                         }
                     }
                 }

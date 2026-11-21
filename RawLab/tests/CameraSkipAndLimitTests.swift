@@ -2548,12 +2548,15 @@ struct CameraSkipAndLimitTests {
             (0xd22c, 4, true, 1, 0x0001),
             (0xd284, 2, false, 1, 1),
             (0xd285, 2, false, 0, 0),
+            (0xd213, 2, false, 1, 1),
         ]
         channel.on9207 = { code, value in
             if code == 0xd2e4 {
                 channel.setExtraProperty(0xd285, value: 1, enabled: 1)
+                channel.setExtraProperty(0xd213, value: 6, enabled: 1)
             } else if code == 0xd2e5 && value == 1 {
                 channel.setExtraProperty(0xd285, value: 0, enabled: 0)
+                channel.setExtraProperty(0xd213, value: 1, enabled: 1)
             }
         }
         var openedSession: SonyCameraSession?
@@ -2567,23 +2570,25 @@ struct CameraSkipAndLimitTests {
         UserDefaults.standard.set("zh-Hans", forKey: L10n.preferenceKey)
         controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
         try await waitUntil { controller.phase == .ready && controller.shutterReady }
+        try check(!controller.cameraFocusLocked, "Initial 0xD213=1 is not focus-locked")
 
-        // 1. Tap-to-focus via 0xD2E4 sets focus point and enables cancel touch (0xD285 == 1)
+        // 1. Tap-to-focus via 0xD2E4 sets focus point, clears stale frames, and exposes cancel touch + focus lock
         controller.setFocusPoint(u: 0.25, v: 0.25, x: 160, y: 120)
-        try check(controller.focusBusy && controller.tapFocusPoint != nil, "setFocusPoint enters focusBusy with tap reticle")
+        try check(controller.focusBusy && controller.tapFocusPoint != nil && controller.liveViewFrames.isEmpty,
+                  "setFocusPoint enters focusBusy with tap reticle and clears stale overlays")
         try await waitUntil(timeout: 3.0) { !controller.focusBusy }
-        try check(controller.phase == .ready && controller.canCancelTouchFocus && controller.notice == nil &&
+        try check(controller.phase == .ready && controller.canCancelTouchFocus && controller.cameraFocusLocked && controller.notice == nil &&
                   channel.recorded9207.count == 1 && channel.recorded9207[0].0 == 0xd2e4 &&
                   channel.recorded9207[0].1 == UInt32((160 << 16) | 120),
-                  "Tether tap-to-focus sends 0xD2E4 and exposes cancelTouchFocus")
+                  "Tether tap-to-focus sends 0xD2E4, exposes cancelTouchFocus, and reports 0xD213 focus lock")
 
         // 2. Cancel touch focus via 0xD2E5
         controller.cancelTouchFocus()
         try await waitUntil(timeout: 3.0) { !controller.focusBusy }
-        try check(controller.phase == .ready && !controller.canCancelTouchFocus && controller.notice == nil &&
+        try check(controller.phase == .ready && !controller.canCancelTouchFocus && !controller.cameraFocusLocked && controller.notice == nil &&
                   channel.recorded9207.map(\.0) == [0xd2e4, 0xd2e5, 0xd2e5] &&
                   channel.recorded9207.map(\.1) == [UInt32((160 << 16) | 120), 2, 1],
-                  "cancelTouchFocus sends 0xD2E5 press+release and hides cancel pill")
+                  "cancelTouchFocus sends 0xD2E5 press+release, clears focus lock, and hides cancel pill")
 
         // 3. Non-fatal PTP rejection keeps tether session .ready with notice
         channel.next9207Status = 0x2019

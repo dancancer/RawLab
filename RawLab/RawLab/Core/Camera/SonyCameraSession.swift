@@ -265,10 +265,22 @@ final class SonyCameraSession {
     func properties() throws -> [UInt16: CameraProperty] {
         try checkRunning()
         guard remoteReady else { throw CameraProtocolError.unsupported("Remote properties are unavailable") }
-        do { return try CameraWire.properties(client.operation(0x9209, parameters: enumTables == 1 ? [] : [0],
-            requiresData: true, limit: CameraWire.dataLimit), enumTables: enumTables) }
-        catch CameraProtocolError.response(let op, let code) { throw CameraProtocolError.response(op, code) }
-        catch { client.close(); throw error }
+        for attempt in 0...2 {
+            do {
+                return try CameraWire.properties(client.operation(0x9209, parameters: enumTables == 1 ? [] : [0],
+                    requiresData: true, limit: CameraWire.dataLimit), enumTables: enumTables)
+            } catch CameraProtocolError.response(let op, let code) {
+                if op == 0x9209 && code == 0x2019 && attempt < 2 && !stopped {
+                    try pause(0.1 * Double(attempt + 1))
+                    continue
+                }
+                throw CameraProtocolError.response(op, code)
+            } catch {
+                client.close()
+                throw error
+            }
+        }
+        throw CameraProtocolError.response(0x9209, 0x2019)
     }
     var canWriteParameters: Bool {
         purpose == .tethering && remoteReady && !contentsEntered && !stopped && enumTables == 2 && device.operations.contains(0x9205)
@@ -291,6 +303,11 @@ final class SonyCameraSession {
         }
     }
     static let fixedFocusAreas: Set<Int64> = [0x0001, 0x0003, 0x0201, 0x0203]
+
+    static func isFocusLocked(_ properties: [UInt16: CameraProperty]) -> Bool {
+        guard let value = properties[0xd213]?.number else { return false }
+        return value == 2 || value == 6
+    }
 
     func canCancelTouchFocus(_ properties: [UInt16: CameraProperty]) -> Bool {
         purpose == .tethering && remoteReady && !contentsEntered && !stopped &&

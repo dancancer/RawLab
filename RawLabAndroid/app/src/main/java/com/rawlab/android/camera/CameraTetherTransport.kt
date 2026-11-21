@@ -18,7 +18,7 @@ internal data class CameraCardSnapshot(val photos: List<CameraPhoto>, val hardwa
     val download: (CameraPhoto, OutputStream, (Long) -> Unit) -> String)
 internal data class CameraTetherParameter(val code: Int, val current: Long, val options: List<Long>,
     val writable: Boolean, val enabled: Boolean)
-internal data class CameraTetherParameterReadback(val values: List<CameraTetherParameter>, val writable: Boolean, val captureReady: Boolean, val canCancelTouchFocus: Boolean = false)
+internal data class CameraTetherParameterReadback(val values: List<CameraTetherParameter>, val writable: Boolean, val captureReady: Boolean, val canCancelTouchFocus: Boolean = false, val focusLocked: Boolean = false)
 internal data class CameraTetherParameterWrite(val confirmed: Boolean, val readback: CameraTetherParameterReadback)
 
 /** 一个调度器独占此对象；只有停止操作可从其他线程调用。 */
@@ -218,7 +218,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
                 property.writable && property.enabled == 1, property.enabled == 1) }.getOrNull()
         }.associateBy { it.code }.values.toList()
         val card = if (usesLegacyContents) cardSavingConfirmed else (properties[0xd222]?.number()?.and(0x10) ?: 0) != 0L
-        return CameraTetherParameterReadback(values, writable, shutter && card && properties[0x5013]?.number() == 1L, canCancelTouchFocus)
+        return CameraTetherParameterReadback(values, writable, shutter && card && properties[0x5013]?.number() == 1L, canCancelTouchFocus, SonyTetherSession.isFocusLocked(properties))
     }
 }
 

@@ -269,6 +269,15 @@ public class SonyCameraParameterTest {
             assertArrayEquals(new long[]{0xd22cL,0x0002L},responder.recorded9205.get(0));
             session.close();responder.check();
         }
+
+        assertFalse(SonyTetherSession.isFocusLocked(null));
+        assertFalse(SonyTetherSession.isFocusLocked(Collections.emptyMap()));
+        long[][] focusCases={{1L,0L},{2L,1L},{3L,0L},{5L,0L},{6L,1L},{7L,0L}};
+        for(long[] pair : focusCases) {
+            byte[] raw=cat(u32(1),u32(0),u16(0xd213),u16(2),new byte[]{0,1,(byte)pair[0],(byte)pair[0],0});
+            Map<Integer,SonyTetherSession.Property> props=SonyTetherSession.parseProperties(raw);
+            assertEquals(pair[1]==1L,SonyTetherSession.isFocusLocked(props));
+        }
     }
 
     @Test public void liveViewFrameReadWithMetadataAndParseLiveViewFrames() throws Exception {
@@ -328,6 +337,16 @@ public class SonyCameraParameterTest {
         byte[] oversized=v68.clone();
         oversized[0x28+8]=(byte)0xff; oversized[0x28+9]=(byte)0xff;
         assertTrue(SonyTetherSession.parseLiveViewFrames(oversized).isEmpty());
+
+        ByteArrayOutputStream rectBoundsMeta=new ByteArrayOutputStream();
+        rectBoundsMeta.write(u16(0x68)); rectBoundsMeta.write(new byte[0x28-2]);
+        rectBoundsMeta.write(metaBlock(1,1,new int[0][]));
+        rectBoundsMeta.write(metaBlock(100,50,new int[][]{{1,2,10,20,4,6},{1,2,50,25,51,6},{1,2,50,25,4,101}}));
+        rectBoundsMeta.write(metaBlock(100,50,new int[0][]));
+        rectBoundsMeta.write(metaBlock(100,50,new int[0][]));
+        List<SonyTetherSession.LiveViewFocusFrame> filtered=SonyTetherSession.parseLiveViewFrames(rectBoundsMeta.toByteArray());
+        assertEquals(1,filtered.size());
+        assertEquals(0.1f,filtered.get(0).cx,1e-5f);
     }
 
     private static byte[] hexToBytes(String hex) {

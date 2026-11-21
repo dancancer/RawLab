@@ -312,6 +312,22 @@ import Foundation
         var oversized = v68
         oversized[0x28 + 8] = 0xff; oversized[0x28 + 9] = 0xff
         try check(CameraWire.liveViewFrames(oversized).isEmpty, "Oversized metadata block count fails soft")
+
+        var oversizedRectMeta = Data()
+        oversizedRectMeta.appendLE(UInt16(0x68))
+        oversizedRectMeta.append(Data(repeating: 0, count: 0x28 - 2))
+        oversizedRectMeta.append(metaBlock(xmax: 1, ymax: 1, entries: []))
+        oversizedRectMeta.append(metaBlock(xmax: 100, ymax: 50, entries: [
+            (type: 1, state: 2, cx: 10, cy: 20, h: 4, w: 6),
+            (type: 1, state: 2, cx: 50, cy: 25, h: 51, w: 6),
+            (type: 1, state: 2, cx: 50, cy: 25, h: 4, w: 101),
+        ]))
+        oversizedRectMeta.append(metaBlock(xmax: 100, ymax: 50, entries: []))
+        oversizedRectMeta.append(metaBlock(xmax: 100, ymax: 50, entries: []))
+        let filteredFrames = CameraWire.liveViewFrames(oversizedRectMeta)
+        try check(filteredFrames == [
+            CameraLiveViewFrame(kind: .focus, cx: 0.1, cy: 0.4, width: 0.06, height: 0.08, focused: true),
+        ], "liveViewFrames skips entries with width > xMax or height > yMax")
     }
 
     static func testSonySessionTouchFocusAndFocusArea() throws {
@@ -432,13 +448,36 @@ import Foundation
                   cancelErrChannel.recorded9207.map(\.1) == [2, 1],
                   "Failed cancelTouchFocus press still sends 0xD2E5 release=1 and keeps session open")
 
-        // 8. 0xD22C Focus Area setParameter write & confirmation
+        // 8. 0xD22C Focus Area setParameter write & confirmation; 0xD213 focus lock indication
         let updated = try spotSession.setParameter(0xd22c, value: 0x0002)
         try check(updated.confirmed && updated.values[0xd22c]?.number == 0x0002 &&
                   spotChannel.recorded9205.count == 1 &&
                   spotChannel.recorded9205[0].0 == 0xd22c &&
                   spotChannel.recorded9205[0].1 == 0x0002,
                   "0xD22C Focus Area writes u16 via 0x9205 and confirms readback")
+
+        for (rawVal, expected): (Int64?, Bool) in [(nil, false), (1, false), (2, true), (3, false), (5, false), (6, true), (7, false)] {
+            let props: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64, choices: [Int64])] =
+                rawVal.map { [(0xd213, 2, false, 1, $0, [])] } ?? []
+            let focusStatusChannel = MockFocusCameraChannel(controls: [0xd2c1, 0xd2c2], props: props)
+            let focusStatusSession = try SonyCameraSession(client: CameraPTPClient(command: focusStatusChannel, event: nil), purpose: .tethering)
+            let readProps = try focusStatusSession.properties()
+            try check(SonyCameraSession.isFocusLocked(readProps) == expected,
+                      "0xD213=\(rawVal.map(String.init) ?? "nil") reports focusLocked=\(expected)")
+        }
+
+        // 9. properties() retries transient 0x2019 DeviceBusy up to 3 attempts without closing channel
+        touchChannel.queued9209Statuses = [0x2019, 0x2019]
+        let recoveredProps = try touchSession.properties()
+        try check(!recoveredProps.isEmpty && !touchChannel.closed && touchChannel.queued9209Statuses.isEmpty,
+                  "properties() recovers from two 0x9209 0x2019 DeviceBusy responses")
+
+        touchChannel.queued9209Statuses = [0x2019, 0x2019, 0x2019]
+        var exhaustedBusy = false
+        do { _ = try touchSession.properties() }
+        catch CameraProtocolError.response(0x9209, 0x2019) { exhaustedBusy = true }
+        try check(exhaustedBusy && !touchChannel.closed && touchChannel.queued9209Statuses.isEmpty,
+                  "properties() propagates 0x2019 after 3 exhausted attempts without closing channel")
     }
 }
 
@@ -451,6 +490,7 @@ final class MockFocusCameraChannel: CameraByteChannel {
     private(set) var recorded9207: [(UInt32, UInt32)] = []
     private(set) var recorded9205: [(UInt32, UInt32)] = []
     var next9207Status: UInt16?
+    var queued9209Statuses: [UInt16] = []
     var on9207: ((UInt32, UInt32) -> Void)?
 
     init(controls: [UInt16], props: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64, choices: [Int64])]) {
@@ -525,6 +565,11 @@ final class MockFocusCameraChannel: CameraByteChannel {
             ext.appendLE(UInt32(controls.count)); controls.forEach { ext.appendLE($0) }
             outgoing.append(CameraProtocolTests.transactionResponse(tid, data: ext))
         case 0x9209:
+            if !queued9209Statuses.isEmpty {
+                let status = queued9209Statuses.removeFirst()
+                outgoing.append(CameraProtocolTests.transactionResponse(tid, code: status))
+                return
+            }
             var p = Data(); p.appendLE(UInt64(props.count))
             for item in props {
                 p.appendLE(item.code); p.appendLE(item.type)

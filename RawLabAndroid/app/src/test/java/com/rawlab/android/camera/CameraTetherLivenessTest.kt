@@ -1376,11 +1376,17 @@ class CameraTetherLivenessTest {
                     FakeTetherCameraServer.ExtraProp(0xd22c, 4, true, 1, 0x0001),
                     FakeTetherCameraServer.ExtraProp(0xd284, 2, false, 1, 1),
                     FakeTetherCameraServer.ExtraProp(0xd285, 2, false, 0, 0),
+                    FakeTetherCameraServer.ExtraProp(0xd213, 2, false, 1, 1),
                 ),
             )
             camera.on9207 = { control, value ->
-                if (control == 0xd2e4) camera.setExtraProp(0xd285, 1, enabled = 1)
-                else if (control == 0xd2e5 && value == 1L) camera.setExtraProp(0xd285, 0, enabled = 0)
+                if (control == 0xd2e4) {
+                    camera.setExtraProp(0xd285, 1, enabled = 1)
+                    camera.setExtraProp(0xd213, 6, enabled = 1)
+                } else if (control == 0xd2e5 && value == 1L) {
+                    camera.setExtraProp(0xd285, 0, enabled = 0)
+                    camera.setExtraProp(0xd213, 1, enabled = 1)
+                }
             }
             val clock = VirtualLoopClock(camera)
             val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -1393,8 +1399,9 @@ class CameraTetherLivenessTest {
                 clock.awaitParked(controller)
                 assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                 assertFalse(controller.state.value.parameters.canCancelTouchFocus)
+                assertFalse(controller.state.value.parameters.focusLocked)
 
-                // 1. Primary 0xD2E4 tap-to-focus sets focus point and exposes cancelTouchFocus
+                // 1. Primary 0xD2E4 tap-to-focus sets focus point, exposes cancelTouchFocus, and locks focus (0xD213=6)
                 controller.setFocusPoint(160, 120)
                 assertTrue(controller.state.value.focusBusy)
                 assertTrue(clock.stepParkedTick(controller))
@@ -1402,9 +1409,10 @@ class CameraTetherLivenessTest {
                 assertFalse(controller.state.value.focusBusy)
                 assertNull(controller.state.value.focusFailure)
                 assertTrue(controller.state.value.parameters.canCancelTouchFocus)
+                assertTrue(controller.state.value.parameters.focusLocked)
                 assertEquals(listOf(0xd2e4 to ((160L shl 16) or 120L)), camera.recorded9207.toList())
 
-                // 2. Cancel touch focus sends 0xD2E5 press+release and clears canCancelTouchFocus
+                // 2. Cancel touch focus sends 0xD2E5 press+release and clears canCancelTouchFocus + focusLocked
                 controller.cancelTouchFocus()
                 assertTrue(controller.state.value.focusBusy)
                 assertTrue(clock.stepParkedTick(controller))
@@ -1412,6 +1420,7 @@ class CameraTetherLivenessTest {
                 assertFalse(controller.state.value.focusBusy)
                 assertNull(controller.state.value.focusFailure)
                 assertFalse(controller.state.value.parameters.canCancelTouchFocus)
+                assertFalse(controller.state.value.parameters.focusLocked)
                 assertEquals(listOf(0xd2e5 to 2L, 0xd2e5 to 1L), camera.recorded9207.takeLast(2))
 
                 // 3. Aligned 0x9207 rejection keeps session READY with REJECTED focusFailure
@@ -1423,25 +1432,29 @@ class CameraTetherLivenessTest {
                 assertEquals(CameraFocusFailure.REJECTED, controller.state.value.focusFailure)
                 assertEquals(1, camera.sessionOpenCalls.get())
 
-                // 4. Manual focus (0x500A == 1, 0xD284 == 0) fails with MANUAL_FOCUS and 0 extra writes
+                // 4. Cancel-then-retry onto MF (0x500A == 1, 0xD284 == 0, 0xD285 == 1) cancels active touch, refreshes parameters, and surfaces MANUAL_FOCUS
                 camera.setExtraProp(0xd284, 0, enabled = 0)
+                camera.setExtraProp(0xd285, 1, enabled = 1)
                 camera.setExtraProp(0x500a, 1, enabled = 1)
-                val writesBeforeMF = camera.recorded9207.size
+                controller.refreshParameters()
+                assertTrue(clock.stepParkedTick(controller))
+                assertTrue(controller.state.value.parameters.canCancelTouchFocus)
                 controller.setFocusPoint(320, 240)
                 assertTrue(clock.stepParkedTick(controller))
                 assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                 assertFalse(controller.state.value.focusBusy)
                 assertEquals(CameraFocusFailure.MANUAL_FOCUS, controller.state.value.focusFailure)
-                assertEquals(writesBeforeMF, camera.recorded9207.size)
+                assertFalse(controller.state.value.parameters.canCancelTouchFocus)
 
-                // 5. Fixed Focus Area (Wide 0x0001 with 0xD284 == 0) fails with FOCUS_AREA_FIXED and 0 writes
+                // 5. Fixed Focus Area (Wide 0x0001 with 0xD284 == 0, 0xD285 == 0) fails with FOCUS_AREA_FIXED and 0 writes
+                val writesBeforeFixed = camera.recorded9207.size
                 camera.setExtraProp(0x500a, 2, enabled = 1)
                 controller.setFocusPoint(320, 240)
                 assertTrue(clock.stepParkedTick(controller))
                 assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
                 assertFalse(controller.state.value.focusBusy)
                 assertEquals(CameraFocusFailure.FOCUS_AREA_FIXED, controller.state.value.focusFailure)
-                assertEquals(writesBeforeMF, camera.recorded9207.size)
+                assertEquals(writesBeforeFixed, camera.recorded9207.size)
             } finally {
                 controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
             }

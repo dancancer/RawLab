@@ -445,6 +445,18 @@ public final class SonyTetherSession implements Closeable {
     private static final Set<Long> FIXED_FOCUS_AREAS = Collections.unmodifiableSet(
         new HashSet<>(Arrays.asList(0x0001L, 0x0003L, 0x0201L, 0x0203L)));
 
+    public static boolean isFocusLocked(Map<Integer,Property> latest) {
+        if (latest==null) return false;
+        Property indication = latest.get(0xd213);
+        if (indication==null) return false;
+        try {
+            long v = indication.number();
+            return v==2L || v==6L;
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
     public boolean canCancelTouchFocus(Map<Integer,Property> latest) {
         if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null ||
             !operations.contains(0x9207) || !controls.contains(0xd2e5)) return false;
@@ -917,7 +929,7 @@ public final class SonyTetherSession implements Closeable {
             int type=leU16(meta,off), state=leU16(meta,off+2);
             long cx=leU32(meta,off+8), cy=leU32(meta,off+12), h=leU32(meta,off+16), w=leU32(meta,off+20);
             off+=24;
-            if (kind!=null && xMax>0 && yMax>0 && w>0 && h>0 && cx<=xMax && cy<=yMax) {
+            if (kind!=null && xMax>0 && yMax>0 && w>0 && h>0 && w<=xMax && h<=yMax && cx<=xMax && cy<=yMax) {
                 boolean focused=kind==LiveViewFrameKind.FACE?type==2:state==2;
                 out.add(new LiveViewFocusFrame(kind,(float)((double)cx/(double)xMax),(float)((double)cy/(double)yMax),
                     (float)((double)w/(double)xMax),(float)((double)h/(double)yMax),focused));
