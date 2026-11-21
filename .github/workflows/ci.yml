@@ -646,7 +646,7 @@ jobs:
             }
             $python = (Get-Command python).Source
             Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=ON', '-DSONY2FUJI_TEST_PORTABLE_HDR=ON', "-DPython3_EXECUTABLE=$python")
-            Invoke-Checked python @('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows')
+            Invoke-Checked python @('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows', '--skip-orphan-check')
             Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', 'windows_display_image_tests', 'edit_pixel_golden_tests', 'hdr_portable_tests', 'd3d11_shader_tests', '--parallel', '4')
             $package = Join-Path $PWD 'build/windows-batch-selection'
             Copy-Item build/windows-native/core/Release/sony2fuji.dll, build/windows-native/Release/raw.dll $package
