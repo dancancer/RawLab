@@ -87,6 +87,11 @@ W0（止血与治理） ──▶ W1（构建与测试地基） ──▶ W2（�
 | W3-4 | UI 测试收缩为每端约 10–20 条 robot 层冒烟用例，几何断言下沉单测；Android 字面量测试改为行为断言 | UI 改版不再触发批量测试追尾提交 |
 | W3-5 | DJI DNG 迁至 `.cache/shared`；压缩 11MB 文档图片；`.cube`（233MB）迁至 Git LFS 或 Release 资产 + SHA-256 校验（历史重写按 D2 延后评估） | HEAD 检出体积 < 150MB |
 
+> **W3.5 收口对齐注记**：
+> - `Shared/specs/adjustment-fields-v1.json` 的 `default_expiration_wave` 与各字段 `expires_wave` 须登记于 `divergence_policy.allowed_expiration_milestones`（当前为 `["v0.12"]`），由 `scripts/ci/test_adjustment_fields_spec.py` 强制校验。
+> - 外置资产清单 `Shared/assets-manifest.json`（`assets-v1`）声明 `releasePolicy`（`prerelease: true`、`makeLatest: false`），由 `scripts/assets/prepare.py --check-release-policy` 与 `scripts/ci/test_assets_prepare.py` 防止抢占 `Latest`。
+> - 活跃文档相对链接由 `scripts/ci/test_doc_links.py` 门禁检查，关键契约与生成检查的撤修复变红由 `scripts/ci/test_mutation_anchors.py` 在沙盒中执行 CI mutation 校验。
+
 ## 4. 明确不做（Non-Goals）
 
 - **不更换 UI 框架**、不做 WPF 全量 MVVM 重写、不自建通用 GPU HAL：保持四端原生体验，GPU 后端仅共享 `RenderParams`。

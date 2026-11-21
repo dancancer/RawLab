@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -45,6 +46,8 @@ class AssetsManifestAndPrepareTests(unittest.TestCase):
         manifest = PREPARE.load_manifest(ROOT / "Shared/assets-manifest.json")
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(manifest["releaseTag"], "assets-v1")
+        self.assertEqual(manifest.get("releasePolicy"), {"prerelease": True, "makeLatest": False})
+        self.assertEqual(PREPARE.validate_release_policy(manifest), {"prerelease": True, "makeLatest": False})
         self.assertEqual(set(manifest["groups"]), {"luts", "raw"})
 
         luts = manifest["groups"]["luts"]
@@ -219,6 +222,91 @@ class AssetsManifestAndPrepareTests(unittest.TestCase):
                 self.assertEqual(resolved, (main_repo / ".cache/shared/assets").resolve())
             finally:
                 subprocess.run(["git", "worktree", "remove", "--force", str(wt)], cwd=main_repo, check=True)
+
+    def test_release_policy_and_gh_release_args_guard_against_hijacking_latest(self) -> None:
+        manifest_path = ROOT / "Shared/assets-manifest.json"
+        manifest = PREPARE.load_manifest(manifest_path)
+
+        create_cmd = PREPARE.build_gh_release_args(
+            manifest,
+            "create",
+            title="Externalized LUT & RAW assets (v1)",
+            files=["rawlab-luts-v1.tar.gz"],
+        )
+        self.assertEqual(
+            create_cmd,
+            [
+                "gh",
+                "release",
+                "create",
+                "assets-v1",
+                "--prerelease",
+                "--latest=false",
+                "--title",
+                "Externalized LUT & RAW assets (v1)",
+                "rawlab-luts-v1.tar.gz",
+            ],
+        )
+        edit_cmd = PREPARE.build_gh_release_args(manifest, "edit")
+        self.assertEqual(edit_cmd, ["gh", "release", "edit", "assets-v1", "--prerelease", "--latest=false"])
+
+        cli_ok = subprocess.run(
+            [sys.executable, str(PREPARE_PATH), "--check-release-policy", "--manifest", str(manifest_path)],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        self.assertEqual(cli_ok.returncode, 0, cli_ok.stdout + cli_ok.stderr)
+
+        cli_print = subprocess.run(
+            [sys.executable, str(PREPARE_PATH), "--print-gh-release-args", "edit", "--manifest", str(manifest_path)],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+        )
+        self.assertEqual(cli_print.returncode, 0, cli_print.stdout + cli_print.stderr)
+        self.assertIn("--prerelease", cli_print.stdout)
+        self.assertIn("--latest=false", cli_print.stdout)
+
+        bad_policies = [
+            None,
+            {},
+            {"prerelease": True},
+            {"makeLatest": False},
+            {"prerelease": False, "makeLatest": False},
+            {"prerelease": True, "makeLatest": True},
+            {"prerelease": "true", "makeLatest": False},
+            {"prerelease": True, "makeLatest": "false"},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            bad_path = Path(tmp) / "assets-manifest.json"
+            for bad_policy in bad_policies:
+                mutated = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if bad_policy is None:
+                    mutated.pop("releasePolicy", None)
+                else:
+                    mutated["releasePolicy"] = bad_policy
+                bad_path.write_text(json.dumps(mutated), encoding="utf-8")
+
+                with self.subTest(bad_policy=bad_policy):
+                    with self.assertRaises(ValueError):
+                        PREPARE.validate_release_policy(mutated)
+                    with self.assertRaises(ValueError):
+                        PREPARE.build_gh_release_args(mutated, "create")
+                    res = subprocess.run(
+                        [sys.executable, str(PREPARE_PATH), "--check-release-policy", "--manifest", str(bad_path)],
+                        capture_output=True,
+                        text=True,
+                        cwd=ROOT,
+                    )
+                    self.assertNotEqual(res.returncode, 0)
+                    print_res = subprocess.run(
+                        [sys.executable, str(PREPARE_PATH), "--print-gh-release-args", "create", "--manifest", str(bad_path)],
+                        capture_output=True,
+                        text=True,
+                        cwd=ROOT,
+                    )
+                    self.assertNotEqual(print_res.returncode, 0)
 
 
 if __name__ == "__main__":

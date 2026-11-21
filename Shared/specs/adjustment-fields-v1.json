@@ -11,7 +11,10 @@
   "divergence_policy": {
     "max_divergent_fields": 65,
     "monotonic_non_increasing": true,
-    "default_expiration_wave": "W4",
+    "default_expiration_wave": "v0.12",
+    "allowed_expiration_milestones": [
+      "v0.12"
+    ],
     "policy_notes": "Total divergent_fields must stay <= max_divergent_fields and monotonically decrease across waves; every divergent field must declare divergence.expires_wave."
   },
   "summary": {
@@ -314,7 +317,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; Windows model stores 0..200 (default 100) while Mac/iOS/Android store 0..2 (default 1)."
       }
     },
@@ -467,7 +470,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.01 EV vs mobile 0.05 EV; wire protocol allows -20..20 EV while local SDR models clamp/validate -5..5 EV (HDR -4..4 EV)."
       }
     },
@@ -740,7 +743,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1% vs mobile 1%; SDR model stores -100..100 (Mac/Windows), 0..2 default 1 (iOS), -1..1 default 0 (Android); HDR stores -100..100 on all 4 ends."
       }
     },
@@ -885,7 +888,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Wire protocol uses engine/iOS SDR sign (-1..1 where UI +100 -> protocol -1.0); iOS SDR model stores -1..1 inverted relative to UI while Android SDR stores -1..1 same-sign and Mac/Windows/HDR store -100..100 same-sign."
       }
     },
@@ -1030,7 +1033,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1% vs mobile 1%; mobile SDR stores -1..1 while desktop SDR and all-platform HDR store -100..100."
       }
     },
@@ -1174,7 +1177,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Report erratum: active IOSToneCurveControls (ToneCurveControls.swift:110) uses step 0.1% (matching Mac/Windows), while dead AdjustmentKind.toneCurve.step is 1 and Android ToneCurveControls.kt:127 uses step 1%; mobile SDR model stores -1..1 vs desktop/HDR -100..100."
       }
     },
@@ -1414,7 +1417,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Mac and Windows expose only the RGB master curve in UI (no Red/Green/Blue channel tabs), whereas iOS and Android expose RGB/Red/Green/Blue channel selectors; Android CurveCanvas fine keyboard step is 0.001 normalized (0.016 EV across -8..8 EV) with freeform coordinate dialog vs 0.01 EV grid on Mac/iOS/Windows."
       }
     },
@@ -1549,7 +1552,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -1684,7 +1687,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -1819,7 +1822,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -2742,7 +2745,7 @@
           "P2-23",
           "P1-11"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1; Android raster->RAW paste tracked under P1-11."
       }
     },
@@ -2887,7 +2890,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1% vs mobile 1%; SDR model stores -100..100 (Mac/Windows), 0..2 default 1 (iOS), -1..1 default 0 (Android); HDR stores -100..100 on all 4 ends."
       }
     },
@@ -3135,7 +3138,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1."
       }
     },
@@ -3270,7 +3273,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
@@ -3405,7 +3408,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
@@ -3540,7 +3543,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
@@ -3675,7 +3678,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
@@ -4085,7 +4088,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Custom white balance temperature slider in HDR RAW dialog uses 50 K step on Mac/iOS/Windows vs 10 K on Android (reusing R.string.temperature)."
       }
     },
@@ -4220,7 +4223,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4355,7 +4358,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4490,7 +4493,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4625,7 +4628,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4760,7 +4763,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4895,7 +4898,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5030,7 +5033,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5165,7 +5168,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5300,7 +5303,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5435,7 +5438,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5570,7 +5573,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5705,7 +5708,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5840,7 +5843,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5975,7 +5978,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6110,7 +6113,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6245,7 +6248,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6380,7 +6383,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6515,7 +6518,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6650,7 +6653,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6785,7 +6788,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6920,7 +6923,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7055,7 +7058,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7190,7 +7193,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7325,7 +7328,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7462,7 +7465,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7599,7 +7602,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7736,7 +7739,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7873,7 +7876,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8010,7 +8013,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8147,7 +8150,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8298,7 +8301,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; SDR model stores -100..100 while HDRDetailSettings stores -1..1 across all 4 ends."
       }
     },
@@ -8449,7 +8452,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; SDR model stores -100..100 while HDRDetailSettings stores -1..1 across all 4 ends."
       }
     },
@@ -8586,7 +8589,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8723,7 +8726,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8867,7 +8870,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; desktop SDR stores 0..200 while mobile SDR and all-platform HDR store 0..2."
       }
     },
@@ -8987,7 +8990,7 @@
           "D-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Q3/D-02: raw_level is pre-demosaic Bayer FBDD (integer 0/1/2), modeled only by Mac SDR RAW. A valid non-zero value unsupported by the platform or target (raster, non-Bayer, or active desktop AI) is ignored with ignored_raw_denoise; other selected edits still apply. Zero never overwrites dormant denoise on an AI target. Wire type/range/source validation remains strict before adaptation."
       }
     },
@@ -9117,7 +9120,7 @@
           "D-02",
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Q3/D-02: post_rgb is post-render RGB denoise (0-1 float), the current HDR v6+ key; Mac/Android/Windows model it on HDR only and iOS on SDR RAW+HDR (no SDR UI slider). Unsupported SDR platform/target values, including iOS raster and desktop AI, are ignored with ignored_post_rgb_denoise; other selected edits still apply. This client capability rule does not remove the core display-buffer RGB stage. HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS."
       }
     },
@@ -9243,7 +9246,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Mac stores optional Double? defaulting to nil (legacy picker visible when hasLegacyDenoise); iOS/Android/Windows store non-null Int 0..2 defaulting to 0 with UI hidden. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
@@ -9463,7 +9466,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50); Windows DenoisePanel displays '%' suffix while Mac/iOS/Android display unitless values. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
@@ -9856,7 +9859,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "UI minimum crop dimension diverges 3 ways: iOS 1.0% vs Mac/Android 0.1% vs Windows 0.01%."
       }
     },
@@ -9991,7 +9994,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "UI minimum crop dimension diverges 3 ways: iOS 1.0% vs Mac/Android 0.1% vs Windows 0.01%."
       }
     },
@@ -10513,7 +10516,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Mac/iOS/Android straighten UI fine step is 0.1 deg while Windows GeometryPanel uses Grid = 0.01 deg."
       }
     },
@@ -10650,7 +10653,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Mac/iOS/Android display -100..100 (Mac step 0.1, iOS/Android step 1; Android adds '%' suffix), whereas Windows GeometryPanel displays normalized -1..1 with step 0.001."
       }
     },
@@ -10787,7 +10790,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Mac/iOS/Android display -100..100 (Mac step 0.1, iOS/Android step 1; Android adds '%' suffix), whereas Windows GeometryPanel displays normalized -1..1 with step 0.001."
       }
     },
@@ -11188,7 +11191,7 @@
           "P1-11",
           "P1-12"
         ],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Report erratum: SDR Lens UI exposes vignetting toggle only on iOS (LensControls.swift:63) and Android (LensControls.kt:58), while Mac (LensControls.swift:98) and Windows (LensPanel.xaml:9-11) omit it in SDR (exposed only in HDR camera RAW dialog)."
       }
     },
@@ -11564,7 +11567,7 @@
           "missing"
         ],
         "ledger_ids": [],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Intentional desktop-only hardware GPU feature (Mac Core ML, Windows DirectML); absent from wire transfer protocol and mobile clients."
       }
     },
@@ -11681,7 +11684,7 @@
           "missing"
         ],
         "ledger_ids": [],
-        "expires_wave": "W4",
+        "expires_wave": "v0.12",
         "notes": "Intentional desktop-only HDR camera RAW AI denoise flag (Mac Core ML, Windows DirectML); absent from wire transfer protocol and mobile clients."
       }
     }
