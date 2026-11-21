@@ -2,7 +2,10 @@
 #include "platform/hdr_heif.h"
 #include "platform/hdr_metadata.h"
 #include "core/hdr_jpeg.h"
+#include "core/hdr_progress.h"
+#include "core/hdr_srgb_lut.h"
 #include "core/output_file_mode.h"
+#include "core/parallel_pixels.h"
 #include "core/proraw_source.h"
 #include "core/processing_cancellation.h"
 #include "core/sha256.h"
@@ -10,6 +13,7 @@
 #include "sony2fuji/raw_processor.h"
 #include <lcms2.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <cmath>
@@ -17,6 +21,8 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <memory>
+#include <string>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -46,25 +52,153 @@ bool hasDigest(const uint8_t sha[32]) {
 bool has(const std::vector<uint8_t>& bytes,const char* text) {
     return std::search(bytes.begin(),bytes.end(),text,text+std::strlen(text))!=bytes.end();
 }
+struct StreamSourcePinImpl {
+    std::filesystem::path path;
+    ResourceFileStamp stamp{};
+    bool isTiff = false;
+    std::vector<uint8_t> rawExif;
+    uint8_t digest[32]{};
+};
+#ifndef _WIN32
+ResourceFileStamp stampFromStat(const struct stat& info) {
+#ifdef __APPLE__
+    const auto modified = info.st_mtimespec, changed = info.st_ctimespec;
+#else
+    const auto modified = info.st_mtim, changed = info.st_ctim;
+#endif
+    return ResourceFileStamp{
+        uint64_t(info.st_size),
+        {uint64_t(modified.tv_sec), uint64_t(modified.tv_nsec)},
+        {uint64_t(changed.tv_sec), uint64_t(changed.tv_nsec)},
+        {uint64_t(info.st_dev), uint64_t(info.st_ino)},
+    };
+}
+#endif
 struct File {
     std::vector<uint8_t> bytes;
     HDRSourceInfo info{};
     bool jpeg=false;
     AppleGainMapMetadata apple;
+    ResourceFileStamp stamp{};
 };
 File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
     const auto path=std::filesystem::u8path(name);
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path,error))
+    File file;
+#ifndef _WIN32
+    const int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0)
         fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
-    const uint64_t size=std::filesystem::file_size(path,error);
-    if (error || (!size && !expectedSHA256) || size>512ull*1024*1024)
+    struct DescriptorGuard {
+        int fd;
+        ~DescriptorGuard() { if (fd >= 0) ::close(fd); }
+    } guard{descriptor};
+    struct stat before{};
+    if (::fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode))
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    if (before.st_size < 0)
         fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
-    admitMemory(size*3);
-    File file; file.bytes.resize(size_t(size));
-    std::ifstream input(path,std::ios::binary);
-    if (!input.read(reinterpret_cast<char*>(file.bytes.data()),std::streamsize(size)))
-        fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+    const uint64_t size = uint64_t(before.st_size);
+    if ((!size && !expectedSHA256) || size > 512ull * 1024 * 1024)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
+    admitMemory(size * 3);
+    file.bytes.resize(size_t(size));
+    size_t filled = 0;
+    bool firstChunk = true;
+    while (true) {
+        checkProcessingCancellation();
+        ssize_t got = -1;
+        errno = 0;
+        if (filled < size) {
+            got = ::read(descriptor, file.bytes.data() + filled,
+                         std::min<size_t>(4u * 1024 * 1024, size_t(size - filled)));
+        } else {
+            unsigned char probe = 0;
+            got = ::read(descriptor, &probe, 1);
+            if (got > 0) fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+            if (got == 0) break;
+        }
+        if (got < 0 && errno == EINTR) continue;
+        if (got < 0) fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+        if (got == 0) break;
+        filled += size_t(got);
+        if (firstChunk) {
+            firstChunk = false;
+            if (sourceReadTestHook) {
+                auto hook = sourceReadTestHook;
+                sourceReadTestHook = nullptr;
+                hook();
+            }
+        }
+    }
+    struct stat after{};
+    if (::fstat(descriptor, &after) != 0 || filled != size || !(stampFromStat(before) == stampFromStat(after)))
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    file.stamp = stampFromStat(before);
+#else
+    const HANDLE handle = CreateFileW(
+        path.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    struct HandleGuard {
+        HANDLE handle;
+        void close() {
+            if (handle != INVALID_HANDLE_VALUE) {
+                CloseHandle(handle);
+                handle = INVALID_HANDLE_VALUE;
+            }
+        }
+        ~HandleGuard() { close(); }
+    } guard{handle};
+    if (GetFileType(handle) != FILE_TYPE_DISK)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    const auto beforeStamp = resourceFileStampFromHandle(handle);
+    if (!beforeStamp)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    const uint64_t size = beforeStamp->size;
+    if ((!size && !expectedSHA256) || size > 512ull * 1024 * 1024)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
+    admitMemory(size * 3);
+    file.bytes.resize(size_t(size));
+    size_t filled = 0;
+    while (true) {
+        checkProcessingCancellation();
+        if (filled < size) {
+            const DWORD chunk = DWORD((std::min)(size_t(4u * 1024 * 1024), size_t(size - filled)));
+            DWORD got = 0;
+            if (!ReadFile(handle, file.bytes.data() + filled, chunk, &got, nullptr))
+                fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+            if (got == 0) break;
+            filled += size_t(got);
+        } else {
+            unsigned char probe = 0;
+            DWORD got = 0;
+            if (!ReadFile(handle, &probe, 1, &got, nullptr))
+                fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+            if (got > 0)
+                fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+            break;
+        }
+    }
+    const auto afterHandleStamp = resourceFileStampFromHandle(handle);
+    if (!afterHandleStamp || filled != size || !(*afterHandleStamp == *beforeStamp))
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    guard.close();
+    if (sourceReadTestHook) {
+        auto hook = sourceReadTestHook;
+        sourceReadTestHook = nullptr;
+        hook();
+    }
+    const auto afterPathStamp = resourceFileStamp(path);
+    if (!afterPathStamp || !(*afterPathStamp == *beforeStamp))
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    file.stamp = *beforeStamp;
+#endif
     sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
     const auto sha=hash::sha256Bytes(file.bytes.data(),file.bytes.size());
     auto hex=[](char c) { return c<='9' ? c-'0' : c-'a'+10; };
@@ -131,7 +265,8 @@ bool isTIFF(const char* source) {
 std::string fileDigest(const char* source) {
     checkProcessingCancellation();
     sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
-    try { return hash::sha256File(source); }
+    try { return hash::sha256File(source, checkProcessingCancellation); }
+    catch (const ProcessingCancelled&) { throw; }
     catch (const std::runtime_error&) {
         fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot verify HDR metadata source");
     }
@@ -279,45 +414,109 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
     const char* path, StreamSourcePin& pin) {
     differentFile(config.metadataSourcePath, path);
     HDRSourceInfo info;
+    auto impl = std::make_unique<StreamSourcePinImpl>();
+    impl->path = std::filesystem::u8path(config.metadataSourcePath);
     if (isTIFF(config.metadataSourcePath)) {
-        const auto file = std::filesystem::u8path(config.metadataSourcePath);
-        const auto before = resourceFileStamp(file);
-        if (hasDigest(config.sourceSha256)) verifyDigest(config.metadataSourcePath, config.sourceSha256);
-        else {
-            // 全零 config.sourceSha256：调用方未预冻结，内部自采一次并贯穿发布阶段。
+        impl->isTiff = true;
+        const auto before = resourceFileStamp(impl->path);
+        if (!before) fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot inspect HDR metadata source");
+        if (hasDigest(config.sourceSha256)) {
+            verifyDigest(config.metadataSourcePath, config.sourceSha256);
+            std::copy_n(config.sourceSha256, 32, impl->digest);
+        } else {
+            // 全零 config.sourceSha256：调用方未预冻结，内部单次哈希并贯穿发布阶段。
             const auto digest = fileDigest(config.metadataSourcePath);
             const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-            for (size_t i = 0; i < 32; ++i) pin.digest[i] = uint8_t(hex(digest[2*i])*16 + hex(digest[2*i+1]));
+            for (size_t i = 0; i < 32; ++i) {
+                const uint8_t b = uint8_t(hex(digest[2 * i]) * 16 + hex(digest[2 * i + 1]));
+                pin.digest[i] = b;
+                impl->digest[i] = b;
+            }
         }
         info = probeProRAW(config.metadataSourcePath);
-        if (!before || !(resourceFileStamp(file) == before))
+        const auto after = resourceFileStamp(impl->path);
+        if (!after || !(*after == *before))
             fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+        impl->stamp = *before;
     } else {
-        const auto source = readFile(config.metadataSourcePath, config.sourceSha256); info = source.info;
-        if (info.orientation >= 5 && info.orientation <= 8) std::swap(info.width,info.height);
+        const auto source = readFile(config.metadataSourcePath, config.sourceSha256);
+        info = source.info;
+        if (info.orientation >= 5 && info.orientation <= 8) std::swap(info.width, info.height);
+        impl->stamp = source.stamp;
+        impl->rawExif = source.jpeg ? jpegExif(source.bytes.data(), source.bytes.size())
+                                    : heifExif(source.bytes.data(), source.bytes.size());
+        std::copy_n(source.info.sourceSha256, 32, impl->digest);
+        std::copy_n(source.info.sourceSha256, 32, pin.digest);
     }
     if (info.width != width || info.height != height)
         fail(RenderStatus::InvalidArgument, kHdrReasonPreviewSource, "Stream must read the complete source canvas");
+    pin.impl = impl.release();
 }
+namespace {
+std::vector<uint8_t> buildStreamExif(const char* metadataSourcePath, uint32_t width, uint32_t height,
+    const StreamSourcePinImpl* impl, const uint8_t* expected) {
+    if (impl) {
+        const auto currentStamp = resourceFileStamp(impl->path);
+        if (!currentStamp || !(*currentStamp == impl->stamp))
+            fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+        if (impl->isTiff) {
+            (void)probeProRAW(metadataSourcePath);
+            return sanitizedDNGExif(impl->path, width, height);
+        }
+        return sanitizedExif(impl->rawExif.data(), impl->rawExif.size(), width, height);
+    }
+    return captureMetadata(metadataSourcePath, expected, width, height);
+}
+} // namespace
+
+JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_t width, uint32_t height,
+    const char*, const StreamSourcePin& pin) {
+    if (!config.metadataSourcePath) return {};
+    std::string metadataPath(config.metadataSourcePath);
+    const uint8_t* sourceSha = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
+    std::array<uint8_t, 32> expected{};
+    std::copy_n(sourceSha, 32, expected.begin());
+    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
+    std::shared_ptr<const StreamSourcePinImpl> pinned;
+    if (impl) {
+        pinned = std::make_shared<StreamSourcePinImpl>(*impl);
+    }
+    return [metadataPath = std::move(metadataPath), width, height, pinned = std::move(pinned),
+            expected](const std::vector<uint8_t>& base) {
+        checkProcessingCancellation();
+        const auto exif = buildStreamExif(metadataPath.c_str(), width, height, pinned.get(), expected.data());
+        return withJPEGExif(base.data(), base.size(), exif.data(), exif.size());
+    };
+}
+
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin) {
+    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin, bool baseMetadataApplied) {
     checkProcessingCancellation();
     differentFile(config.metadataSourcePath, path);
-    admitStreamingMemory(uint64_t(data.size()) * 8 + (64ull << 20));
+    const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
     const uint8_t* expected = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
-    const auto exif = captureMetadata(config.metadataSourcePath, expected, width, height);
-    if (hdr) {
-        const auto base = jpegBase(data.data(),data.size());
-        const auto tagged = withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
-        data = replaceJPEGBase(data.data(),data.size(),tagged.data(),tagged.size());
-        (void)probeJPEG(data.data(),data.size());
-    } else {
-        data = srgbICC(data);
-        data = withJPEGExif(data.data(),data.size(),exif.data(),exif.size());
+    if (!(hdr && baseMetadataApplied)) {
+        admitStreamingMemory(uint64_t(data.size()) * 8 + (64ull << 20));
+        const auto exif = buildStreamExif(config.metadataSourcePath, width, height, impl, expected);
+        if (hdr) {
+            const auto base = jpegBase(data.data(),data.size());
+            const auto tagged = withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
+            data = replaceJPEGBase(data.data(),data.size(),tagged.data(),tagged.size());
+        } else {
+            data = srgbICC(data);
+            data = withJPEGExif(data.data(),data.size(),exif.data(),exif.size());
+        }
     }
+    if (hdr) (void)probeJPEG(data.data(),data.size());
     Temporary output(path);
     write(output.path(),data); syncOutput(output.path());
-    verifyDigest(config.metadataSourcePath, expected);
+    if (impl) {
+        const auto publishStamp = resourceFileStamp(impl->path);
+        if (!publishStamp || !(*publishStamp == impl->stamp))
+            fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    } else {
+        verifyDigest(config.metadataSourcePath, expected);
+    }
     differentFile(config.metadataSourcePath, path);
     checkProcessingCancellation();
     output.publish(path);
@@ -379,35 +578,59 @@ void exportHEIF(const HDRImagePair&, const HDRExportConfig&, const char*) {
 void exportJPEG(const HDRImagePair& image, const HDRExportConfig& config, const char* path) {
     if (config.metadataPolicy!=kHdrMetadataIsoXmp) throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
     const auto exif=captureMetadata(config.metadataSourcePath, config.sourceSha256, image.hdr.width, image.hdr.height);
-    auto bytes=encodeJPEG(image, config.jpegQuality ? config.jpegQuality : 95, config.baseColor);
-    const auto base=jpegBase(bytes.data(),bytes.size());
-    const auto tagged=withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
-    bytes=replaceJPEGBase(bytes.data(),bytes.size(),tagged.data(),tagged.size());
-    Temporary output(path); write(output.path(),bytes); output.publish(path);
+    reportHdrProgress(100, 1000);
+    std::vector<uint8_t> bytes;
+    {
+        HdrProgressSubrangeScope sub(100, 950);
+        bytes = encodeJPEG(image, config.jpegQuality ? config.jpegQuality : 95, config.baseColor,
+            [&](const std::vector<uint8_t>& base) {
+                return withJPEGExif(base.data(), base.size(), exif.data(), exif.size());
+            });
+    }
+    Temporary output(path); write(output.path(),bytes);
+    checkProcessingCancellation();
+    output.publish(path);
+    reportHdrProgress(1000, 1000);
 }
 void exportSDR(const HDRImagePair& image, const HDRSdrExportConfig& config, const char* path) {
     if (config.quality>100) throw std::invalid_argument("Invalid SDR quality");
     const auto exif=captureMetadata(config.metadataSourcePath, config.sourceSha256, image.sdr.width, image.sdr.height);
+    reportHdrProgress(100, 1000);
     Temporary output(path);
     if (config.outputFormat==kHdrSdrOutputJpeg) {
-        auto bytes=srgbICC(encodeSDRJPEG(image.sdr,config.quality ? config.quality : 95));
-        bytes=withJPEGExif(bytes.data(),bytes.size(),exif.data(),exif.size()); write(output.path(),bytes);
+        std::vector<uint8_t> bytes;
+        {
+            HdrProgressSubrangeScope sub(100, 900);
+            bytes = srgbICC(encodeSDRJPEG(image.sdr,config.quality ? config.quality : 95));
+        }
+        bytes=withJPEGExif(bytes.data(),bytes.size(),exif.data(),exif.size());
+        write(output.path(),bytes);
     } else if (config.outputFormat==kHdrSdrOutputPng) {
         admitMemory(uint64_t(image.sdr.width)*image.sdr.height*16);
         ImageData display=image.sdr;
-        for (auto& pixel:display.pixels) for (float* p:{&pixel.r,&pixel.g,&pixel.b}) {
-            const float value=std::clamp(*p,0.0f,1.0f); *p=value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
-        }
+        parallelPixelRanges(display.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                auto& pixel = display.pixels[i];
+                pixel.r = linearToSrgbUnit(pixel.r);
+                pixel.g = linearToSrgbUnit(pixel.g);
+                pixel.b = linearToSrgbUnit(pixel.b);
+            }
+        });
+        reportHdrProgress(400, 1000);
         ImageEncoder::PngMetadata metadata;
         metadata.exif=exif;
         if (ImageEncoder::savePNG(display,output.path().u8string(),&metadata)!=ErrorCode::Success)
             fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot encode SDR PNG");
     } else fail(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, "Unsupported SDR export format");
+    reportHdrProgress(950, 1000);
+    checkProcessingCancellation();
     output.publish(path);
+    reportHdrProgress(1000, 1000);
 }
 
-// 可移植路径按既有 verifyDigest 流程核对来源；快照冻结由摘要重算代替，impl 保持为空。
-StreamSourcePin::~StreamSourcePin() {}
+StreamSourcePin::~StreamSourcePin() {
+    delete static_cast<StreamSourcePinImpl*>(impl);
+}
 uint64_t sourceHashPassCount() { return sourceHashPasses.load(std::memory_order_relaxed); }
 void resetSourceHashPassCount() { sourceHashPasses.store(0, std::memory_order_relaxed); }
 void (*sourceReadTestHook)() = nullptr;

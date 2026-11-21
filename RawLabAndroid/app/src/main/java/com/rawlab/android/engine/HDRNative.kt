@@ -7,6 +7,10 @@ import android.graphics.Bitmap
 import java.io.File
 import com.rawlab.android.geometry.GeometrySettings
 
+internal fun interface HDRProgressListener {
+    fun onProgress(permille: Int)
+}
+
 /** Strict gain-map probe; only NOT_HDR is represented as null. */
 internal object NativeHDRBridge {
     init { System.loadLibrary("rawlab-jni") }
@@ -34,9 +38,10 @@ internal object NativeHDRBridge {
     fun geometrySize(width: Int, height: Int, geometry: GeometrySettings): IntArray =
         nativeGeometry(width, height, geometry.toNativeGeometry())
 
-    fun decode(file: File, info: HDRSourceInfo, edge: Int): NativeHDRImage {
+    fun decode(file: File, info: HDRSourceInfo, edge: Int, session: Long = 0L, cancellationGeneration: Long = -1L,
+        progress: HDRProgressListener? = null): NativeHDRImage {
         if (edge == 0) HDRSourceCache.clear()
-        val handle = nativeDecode(file.absolutePath, edge)
+        val handle = nativeDecode(session, file.absolutePath, edge, cancellationGeneration, progress)
         if (handle == 0L) error("HDR decode returned an empty owner")
         try {
             require(nativeFingerprint(handle).contentEquals(info.fingerprint)) { "HDR source changed" }
@@ -49,7 +54,7 @@ internal object NativeHDRBridge {
 
     fun decodeCameraRaw(processor: Long, file: File, info: HDRSourceInfo, edge: Int,
         cancellationGeneration: Long = -1L, camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
-        profileDirectory: File? = null): NativeHDRImage {
+        profileDirectory: File? = null, progress: HDRProgressListener? = null): NativeHDRImage {
         require(info.isCameraRaw) { "Camera RAW HDR decode requires a camera RAW source" }
         require(!info.isProRAW || camera.isDefault) { "Camera development requires an ordinary Bayer RAW" }
         require(edge in 0..65535)
@@ -60,7 +65,7 @@ internal object NativeHDRBridge {
             info.isProRAW, requireNotNull(file.parentFile).absolutePath, camera.customWhiteBalance,
             camera.temperature, camera.tint, camera.sensorExposure, camera.fbddLevel, flags, camera.lensProfile,
             camera.cameraProfile?.requireAsset(profileDirectory)?.absolutePath, camera.cameraProfile?.sha256,
-            info.cameraProcessingVersion)
+            info.cameraProcessingVersion, progress)
         if (handle == 0L) error("Camera RAW HDR decode returned an empty owner")
         try {
             info.cameraStamp?.let { expected ->
@@ -74,9 +79,10 @@ internal object NativeHDRBridge {
     }
 
     fun render(session: Long, source: NativeHDRImage, settings: HDRSettings, edge: Int, cancellationGeneration: Long,
-        lookDirectory: File?): NativeHDRImage {
+        lookDirectory: File?, progress: HDRProgressListener? = null): NativeHDRImage {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
-        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory), cancellationGeneration)
+        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory),
+            cancellationGeneration, progress)
         if (handle == 0L) error("HDR render returned an empty owner")
         try {
             return NativeHDRImage(handle, source.sourceInfo, nativeMetadata(handle))
@@ -96,23 +102,25 @@ internal object NativeHDRBridge {
     }
     fun sdrBitmap(pair: NativeHDRImage, bitmap: Bitmap) = nativeSdrBitmap(pair.handle, bitmap)
     fun release(pair: Long) = nativeRelease(pair)
-    fun exportJpeg(pair: NativeHDRImage, source: File?, output: File, baseColor: Int = 2) =
-        nativeExportJpeg(pair.handle, source?.absolutePath, output.absolutePath, baseColor)
-    fun exportSdr(pair: NativeHDRImage, source: File?, output: File, format: Int) =
-        nativeExportSdr(pair.handle, source?.absolutePath, output.absolutePath, format)
+    fun exportJpeg(pair: NativeHDRImage, source: File?, output: File, baseColor: Int = 2,
+        session: Long = 0L, cancellationGeneration: Long = -1L, progress: HDRProgressListener? = null) =
+        nativeExportJpeg(pair.handle, session, source?.absolutePath, output.absolutePath, baseColor,
+            cancellationGeneration, progress)
+    fun exportSdr(pair: NativeHDRImage, source: File?, output: File, format: Int,
+        session: Long = 0L, cancellationGeneration: Long = -1L, progress: HDRProgressListener? = null) =
+        nativeExportSdr(pair.handle, session, source?.absolutePath, output.absolutePath, format,
+            cancellationGeneration, progress)
 
     fun exportProRAW(processor: Long, file: File, info: HDRSourceInfo, settings: HDRSettings,
-        output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) {
+        output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?,
+        progress: HDRProgressListener? = null) {
         require(info.isProRAW && edge in 0..65535 && settings.cameraSettings.isDefault)
         info.cameraStamp?.let { require(it == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" } }
         HDRSourceCache.clear()
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val bytes = ByteArray(1024 * 1024)
-            while (true) { val count = input.read(bytes); if (count < 0) break; digest.update(bytes, 0, count) }
-        }
+        // 全零 source_sha256：导出内部在 validateStreamSource 单次读取时自采冻结摘要，避免前置全盘扫读。
         nativeExportProRAW(processor, file.absolutePath, settings.toNativeRequest(edge, lookDirectory), keepHDR,
-            digest.digest(), requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration)
+            ByteArray(32), requireNotNull(output.parentFile).absolutePath, output.absolutePath,
+            cancellationGeneration, progress)
     }
 
     @JvmStatic
@@ -126,18 +134,20 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeGeometry(width: Int, height: Int, geometry: NativeGeometry): IntArray
     @JvmStatic
-    private external fun nativeDecode(path: String, longEdge: Int): Long
+    private external fun nativeDecode(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
+        progress: HDRProgressListener?): Long
     @JvmStatic
     private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
         proRAW: Boolean, temporaryRoot: String, customWhiteBalance: Boolean, temperature: Float, tint: Float,
         sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?,
-        processingVersion: Int): Long
+        processingVersion: Int, progress: HDRProgressListener?): Long
     @JvmStatic
     private external fun nativeExportProRAW(session: Long, path: String, request: NativeHDRRenderRequest,
-        keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long)
+        keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String,
+        cancellationGeneration: Long, progress: HDRProgressListener?)
     @JvmStatic
     private external fun nativeRender(session: Long, source: Long, request: NativeHDRRenderRequest,
-        cancellationGeneration: Long): Long
+        cancellationGeneration: Long, progress: HDRProgressListener?): Long
     @JvmStatic
     private external fun nativeEstimateAutoExposure(session: Long, source: Long, temperature: Float, tint: Float, cancellationGeneration: Long): Float
     @JvmStatic
@@ -154,9 +164,11 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeRelease(pair: Long)
     @JvmStatic
-    private external fun nativeExportJpeg(pair: Long, source: String?, output: String, baseColor: Int)
+    private external fun nativeExportJpeg(pair: Long, session: Long, source: String?, output: String, baseColor: Int,
+        cancellationGeneration: Long, progress: HDRProgressListener?)
     @JvmStatic
-    private external fun nativeExportSdr(pair: Long, source: String?, output: String, format: Int)
+    private external fun nativeExportSdr(pair: Long, session: Long, source: String?, output: String, format: Int,
+        cancellationGeneration: Long, progress: HDRProgressListener?)
 }
 
 internal class NativeHDRImage internal constructor(

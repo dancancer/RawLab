@@ -379,8 +379,8 @@ target_link_libraries(sony2fuji_core ${SONY2FUJI_CORE_LINK_LIBRARIES})
 if(BUILD_SHARED_LIB)
     add_library(sony2fuji SHARED $<TARGET_OBJECTS:sony2fuji_core_objects>)
     if(CMAKE_GENERATOR STREQUAL "Xcode")
-        # Xcode skips linking shared/framework targets that contain only TARGET_OBJECTS without a compiled source.
-        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/sony2fuji-shared-anchor.cpp" "// Xcode link anchor.\n")
+        # Xcode skips linking targets that contain only TARGET_OBJECTS without a compiled source.
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/sony2fuji-shared-anchor.cpp" "// Xcode framework anchor.\n")
         target_sources(sony2fuji PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sony2fuji-shared-anchor.cpp")
     endif()
     target_link_libraries(sony2fuji ${SONY2FUJI_CORE_LINK_LIBRARIES})

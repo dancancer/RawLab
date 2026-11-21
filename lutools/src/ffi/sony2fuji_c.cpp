@@ -163,6 +163,11 @@ sony2fuji::ProcessingCancellation hdrSessionCancellation(const SessionLease& ses
     return raw ? raw->pipeline.getCancellation() : sony2fuji::ProcessingCancellation{};
 }
 
+sony2fuji::HdrProgress hdrSessionProgress(const SessionLease& session) {
+    const auto* raw = session.constRaw();
+    return raw ? raw->pipeline.getHdrProgress() : sony2fuji::HdrProgress{};
+}
+
 std::shared_ptr<const sony2fuji::LensCorrectionDatabase> hdrSessionLensDatabase(const SessionLease& lease) {
     auto* raw = lease.raw();
     return raw ? raw->pipeline.lensDatabaseShared() : sony2fuji::LensCorrectionDatabase::load();
@@ -756,6 +761,15 @@ sony2fuji_status sony2fuji_session_set_cancellation_callback(
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     lease.raw()->pipeline.setCancellation(callback, context);
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_hdr_progress_callback(
+    sony2fuji_session* handle, sony2fuji_hdr_progress_callback callback, void* context
+) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    lease.raw()->pipeline.setHdrProgress(callback, context);
     return SONY2FUJI_STATUS_OK;
 }
 

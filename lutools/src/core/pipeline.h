@@ -14,6 +14,7 @@
 #include "core/photo_tone_curve.h"
 #include "core/pixel_buffer.h"
 #include "core/preview_exposure.h"
+#include "core/hdr_progress.h"
 #include "core/processing_cancellation.h"
 #include "core/processing_migration.h"
 #include "core/render_params.h"
@@ -159,6 +160,8 @@ public:
     // Configuration setters & diagnostics
     void setCancellation(int32_t (*callback)(void*), void* context);
     ProcessingCancellation getCancellation() const noexcept { return cancellation_; }
+    void setHdrProgress(void (*callback)(void*, uint32_t, uint32_t), void* context);
+    HdrProgress getHdrProgress() const noexcept { return hdrProgress_; }
 
     void setGpuConfig(GpuMode mode);
     GpuMode gpuMode() const noexcept { return gpuConfig_.mode; }
@@ -285,6 +288,7 @@ private:
     void copyConfigurationFrom(const Pipeline& source);
 
     ProcessingCancellation cancellation_{};
+    HdrProgress hdrProgress_{};
     GpuConfig gpuConfig_{};
     ImageData rawCache_{};
     std::pair<int, int> rawNativeSize_{};

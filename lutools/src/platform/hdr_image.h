@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "core/hdr_jpeg.h"
+
 namespace sony2fuji::hdr {
 
 class Error : public std::runtime_error {
@@ -45,8 +47,11 @@ struct StreamSourcePin {
 };
 void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_t height,
     const char* path, StreamSourcePin& pin);
+JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_t width, uint32_t height,
+    const char* path, const StreamSourcePin& pin);
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin);
+    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin,
+    bool baseMetadataApplied = false);
 
 #if defined(__APPLE__)
 HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);

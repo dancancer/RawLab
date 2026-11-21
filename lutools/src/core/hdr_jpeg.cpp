@@ -1,6 +1,8 @@
 #include "core/hdr_jpeg.h"
 #include "core/hdr_half.h"
+#include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
+#include "core/hdr_srgb_lut.h"
 #include "core/parallel_pixels.h"
 #include "platform/hdr_image.h"
 #include "platform/hdr_metadata.h"
@@ -73,10 +75,6 @@ RGB outputRGB(RGB p,uint32_t color) {
         .0331995f*p.r+.9667835f*p.g,
         .0170854f*p.r+.0723957f*p.g+.9103015f*p.b};
     return p;
-}
-float srgb(float value) {
-    value=std::clamp(value,0.0f,1.0f);
-    return value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
 }
 std::vector<uint8_t> stream(uhdr_codec_private_t* enc) {
     checked(uhdr_encode(enc)); const auto* data=uhdr_get_encoded_stream(enc);
@@ -413,13 +411,19 @@ std::vector<uint8_t> encodeSDRJPEGRows(uint32_t width, uint32_t height, uint32_t
     jpeg_start_compress(&state->codec,TRUE);
     while (state->codec.next_scanline<state->codec.image_height) {
         checkProcessingCancellation();
-        const auto* pixels = read(state->codec.next_scanline);
+        const uint32_t y = state->codec.next_scanline;
+        const auto* pixels = read(y);
         if (!pixels) throw std::invalid_argument("Missing SDR JPEG row");
         for (uint32_t x=0;x<width;++x) {
-            const auto& p=pixels[x]; const float values[]={p.r,p.g,p.b};
-            for (int c=0;c<3;++c) state->row[size_t(x)*3+c]=uint8_t(std::lround(srgb(values[c])*255));
+            const auto& p=pixels[x];
+            state->row[size_t(x)*3+0] = srgbToUInt8(p.r);
+            state->row[size_t(x)*3+1] = srgbToUInt8(p.g);
+            state->row[size_t(x)*3+2] = srgbToUInt8(p.b);
         }
         JSAMPROW row=state->row.data(); jpeg_write_scanlines(&state->codec,&row,1);
+        if ((y & 63u) == 0 || y + 1 == height) {
+            reportHdrProgress(y + 1, height);
+        }
     }
     jpeg_finish_compress(&state->codec); checkProcessingCancellation();
     return std::move(state->destination.bytes);
@@ -442,19 +446,53 @@ std::vector<uint8_t> replaceJPEGBase(const void* data,size_t size,const void* ba
     checked(uhdr_enc_set_gainmap_image(enc.get(),&g,metadata)); return stream(enc.get());
 }
 
-std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint32_t baseColor) {
+std::vector<uint8_t> encodeJPEG(const HDRImagePair& image,uint32_t quality,uint32_t baseColor,
+    const JPEGTransformBase& transformBase) {
     if (quality<1 || quality>100 || (baseColor!=kHdrColorSrgb && baseColor!=kHdrColorDisplayP3))
         throw std::invalid_argument("Invalid HDR JPEG quality or gamut");
     const unsigned width=image.hdr.width,height=image.hdr.height;
     if (width>65500 || height>65500) throw std::invalid_argument("HDR JPEG exceeds codec dimension ceiling");
     std::vector<uint16_t> hdr(size_t(width)*height*4);
     std::vector<uint8_t> sdr(hdr.size());
-    const float headroom = packJPEGInput(image.hdr.pixels.data(), image.hdr.pixels.size(), true, baseColor, hdr.data());
-    packJPEGInput(image.sdr.pixels.data(), image.sdr.pixels.size(), false, baseColor, sdr.data());
+    std::vector<float> rowHeadrooms(height, 1.0f);
+    std::atomic<bool> overflow{false};
+    parallelRowRanges(int(height), int(width), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            try {
+                rowHeadrooms[size_t(y)] = packJPEGInput(
+                    image.hdr.pixels.data() + size_t(y) * width, width, true, baseColor,
+                    hdr.data() + size_t(y) * width * 4);
+            } catch (const std::overflow_error&) {
+                overflow.store(true, std::memory_order_relaxed);
+                return;
+            }
+        }
+    });
+    if (overflow.load(std::memory_order_relaxed))
+        throw std::overflow_error("HDR JPEG exceeds finite half-float codec range");
+    float headroom = 1.0f;
+    for (float rowPeak : rowHeadrooms) headroom = std::max(headroom, rowPeak);
+    reportHdrProgress(200, 1000);
+    parallelRowRanges(int(height), int(width), [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            try {
+                packJPEGInput(
+                    image.sdr.pixels.data() + size_t(y) * width, width, false, baseColor,
+                    sdr.data() + size_t(y) * width * 4);
+            } catch (const std::overflow_error&) {
+                overflow.store(true, std::memory_order_relaxed);
+                return;
+            }
+        }
+    });
+    if (overflow.load(std::memory_order_relaxed))
+        throw std::overflow_error("HDR JPEG exceeds finite half-float codec range");
+    reportHdrProgress(400, 1000);
+    HdrProgressSubrangeScope sub(400, 1000);
     return encodeJPEGInputs(width, height, quality, baseColor, headroom,
         [&](bool high, const std::function<void(const void*)>& consume) {
             consume(high ? static_cast<const void*>(hdr.data()) : static_cast<const void*>(sdr.data()));
-        });
+        }, transformBase);
 }
 
 float packJPEGInput(const RGB* pixels, size_t count, bool hdr, uint32_t baseColor, void* output) {
@@ -470,7 +508,7 @@ float packJPEGInput(const RGB* pixels, size_t count, bool hdr, uint32_t baseColo
             if (hdr) {
                 high[i * 4 + c] = floatToHalf(std::max(0.0f, values[c]));
                 headroom = std::max(headroom, values[c]);
-            } else low[i * 4 + c] = uint8_t(std::lround(srgb(values[c]) * 255));
+            } else low[i * 4 + c] = srgbToUInt8(values[c]);
         }
         if (hdr) high[i * 4 + 3] = floatToHalf(1);
         else low[i * 4 + 3] = 255;
@@ -479,7 +517,8 @@ float packJPEGInput(const RGB* pixels, size_t count, bool hdr, uint32_t baseColo
 }
 
 std::vector<uint8_t> encodeJPEGInputs(uint32_t width, uint32_t height, uint32_t quality,
-    uint32_t baseColor, float headroom, const JPEGInputBorrower& borrow) {
+    uint32_t baseColor, float headroom, const JPEGInputBorrower& borrow,
+    const JPEGTransformBase& transformBase) {
     if (!width || !height || width > 65500 || height > 65500 || uint64_t(width) * height > 128000000 ||
         quality < 1 || quality > 100 || !borrow || !std::isfinite(headroom) || headroom < 1 ||
         (baseColor != kHdrColorSrgb && baseColor != kHdrColorDisplayP3))
@@ -505,19 +544,34 @@ std::vector<uint8_t> encodeJPEGInputs(uint32_t width, uint32_t height, uint32_t 
     const float capacity=std::max(1.001f,headroom);
     checked(uhdr_enc_set_target_display_peak_brightness(enc.get(),std::min(capacity*203,10000.0f)));
     checkProcessingCancellation();
+    reportHdrProgress(100, 1000);
     auto encoded=stream(enc.get());
     enc.reset(); checkProcessingCancellation();
-    // 第二次只封装已生成的 JPEG，更新真实成片容量；不受 setter 的 10000-nit 上限限制。
+    reportHdrProgress(750, 1000);
+    // 第二次只封装已生成的 JPEG，同时更新真实成片容量与可选基图 EXIF；不受 setter 的 10000-nit 上限限制。
     auto dec=decoder(encoded.data(),encoded.size(),false);
     auto metadata=*uhdr_dec_get_gainmap_metadata(dec.get()); metadata.hdr_capacity_max=capacity;
     const auto* base=uhdr_dec_get_base_image(dec.get()); const auto* gain=uhdr_dec_get_gainmap_image(dec.get());
     if (!base || !gain) throw std::runtime_error("Missing freshly encoded base or gain map");
+    std::vector<uint8_t> transformedBase;
+    const void* basePtr = base->data;
+    size_t baseSz = base->data_sz;
+    if (transformBase) {
+        std::vector<uint8_t> baseCopy(static_cast<const uint8_t*>(base->data),
+                                      static_cast<const uint8_t*>(base->data) + base->data_sz);
+        transformedBase = transformBase(baseCopy);
+        if (transformedBase.empty()) throw std::runtime_error("Empty transformed HDR JPEG base");
+        basePtr = transformedBase.data();
+        baseSz = transformedBase.size();
+    }
     Encoder packed(uhdr_create_encoder(),uhdr_release_encoder); if (!packed) throw std::bad_alloc();
-    auto b=compressed(base->data,base->data_sz),g=compressed(gain->data,gain->data_sz);
+    auto b=compressed(basePtr,baseSz),g=compressed(gain->data,gain->data_sz);
     checked(uhdr_enc_set_compressed_image(packed.get(),&b,UHDR_BASE_IMG));
     checked(uhdr_enc_set_gainmap_image(packed.get(),&g,&metadata));
-    dec.reset(); std::vector<uint8_t>().swap(encoded);
+    dec.reset(); std::vector<uint8_t>().swap(encoded); std::vector<uint8_t>().swap(transformedBase);
+    reportHdrProgress(900, 1000);
     auto output = stream(packed.get()); checkProcessingCancellation();
+    reportHdrProgress(1000, 1000);
     return output;
 }
 } // namespace sony2fuji::hdr

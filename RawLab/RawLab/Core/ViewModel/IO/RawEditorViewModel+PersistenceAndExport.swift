@@ -218,8 +218,11 @@ extension RawEditorViewModel {
 
         isBusy = true
         let cancellation = ExportCancellation()
-        if settings.isHDREditing && sourceProRAW != nil {
-            hdrExportCancellation = cancellation; isExportingHDR = true
+        if settings.isHDREditing {
+            hdrExportCancellation = cancellation
+            isExportingHDR = true
+            isStoppingHDRExport = false
+            hdrExportProgress = 0
         }
         exportQueue.async {
             sourceFile.withReadAccess { sourceURL in
@@ -230,8 +233,23 @@ extension RawEditorViewModel {
                     if let hdr=settings.hdr,settings.isHDREditing {
                         let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).\(format.suffix)")
                         defer { try? FileManager.default.removeItem(at:output) }
+                        var lastPercent = -1
+                        let progressLock = NSLock()
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
                             processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
+                            progress: { [weak self] fraction in
+                                let clamped = min(1.0, max(0.0, fraction))
+                                let bucket = Int((clamped * 100.0).rounded())
+                                progressLock.lock()
+                                let shouldEmit = bucket != lastPercent
+                                if shouldEmit { lastPercent = bucket }
+                                progressLock.unlock()
+                                guard shouldEmit else { return }
+                                self?.resultDelivery {
+                                    guard let self, self.hdrExportCancellation === cancellation else { return }
+                                    self.hdrExportProgress = max(self.hdrExportProgress ?? 0, clamped)
+                                }
+                            },
                             cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
@@ -270,14 +288,22 @@ extension RawEditorViewModel {
                         }
                     }
 
-                    DispatchQueue.main.async {
-                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
+                    self.resultDelivery {
+                        self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(cancellation.isCancelled ? .failure(CancellationError()) : .success(data))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        self.isBusy = false; self.isExportingHDR = false; self.hdrExportCancellation = nil
+                    self.resultDelivery {
+                        self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
@@ -310,6 +336,13 @@ extension RawEditorViewModel {
         }
 
         isBusy = true
+        let cancellation = ExportCancellation()
+        if settings.isHDREditing {
+            hdrExportCancellation = cancellation
+            isExportingHDR = true
+            isStoppingHDRExport = false
+            hdrExportProgress = 0
+        }
         let name = sourceFile.withReadAccess { $0.deletingPathExtension().lastPathComponent }
         let base = name.isEmpty ? "RawLab" : name
         let outputURL = FileManager.default.temporaryDirectory
@@ -319,8 +352,25 @@ extension RawEditorViewModel {
                 do {
                     let lutURL = self.lutURL(for: settings)
                     if let hdr=settings.hdr,settings.isHDREditing {
+                        var lastPercent = -1
+                        let progressLock = NSLock()
                         try self.processor.exportHDRDNG(url: sourceURL, settings: hdr, output: outputURL, longEdge: longEdge,
-                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion)
+                            processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                            progress: { [weak self] fraction in
+                                let clamped = min(1.0, max(0.0, fraction))
+                                let bucket = Int((clamped * 100.0).rounded())
+                                progressLock.lock()
+                                let shouldEmit = bucket != lastPercent
+                                if shouldEmit { lastPercent = bucket }
+                                progressLock.unlock()
+                                guard shouldEmit else { return }
+                                self?.resultDelivery {
+                                    guard let self, self.hdrExportCancellation === cancellation else { return }
+                                    self.hdrExportProgress = max(self.hdrExportProgress ?? 0, clamped)
+                                }
+                            },
+                            cancelled: { cancellation.isCancelled })
+                        if cancellation.isCancelled { throw CancellationError() }
                     } else if sourceKind == .raw {
                         try self.processor.exportDNG(url: sourceURL, settings: settings, lutURL: lutURL,
                                                      outputURL: outputURL, exportLongEdge: longEdge)
@@ -334,6 +384,10 @@ extension RawEditorViewModel {
                     }
                     self.resultDelivery {
                         self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.success(outputURL))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }
@@ -341,6 +395,10 @@ extension RawEditorViewModel {
                     try? FileManager.default.removeItem(at: outputURL)
                     self.resultDelivery {
                         self.isBusy = false
+                        self.isExportingHDR = false
+                        self.isStoppingHDRExport = false
+                        self.hdrExportProgress = nil
+                        self.hdrExportCancellation = nil
                         completion(.failure(error))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                     }

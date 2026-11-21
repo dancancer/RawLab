@@ -71,8 +71,17 @@ void runParallelStepRanges(Index count, Index block, Index cancelStep, bool para
 
 #if defined(SONY2FUJI_ENABLE_CHROMA_DENOISE) || defined(SONY2FUJI_ENABLE_WAVELET_DENOISE)
     if (parallelEligible) {
+        struct WorkerCancellationGuard {
+            ProcessingCancellation previous;
+            explicit WorkerCancellationGuard(const ProcessingCancellation& active)
+                : previous(processingCancellation) {
+                processingCancellation = active;
+            }
+            ~WorkerCancellationGuard() { processingCancellation = previous; }
+        };
         const int blockCount = static_cast<int>((size_t(count) + size_t(block) - 1) / size_t(block));
         cv::parallel_for_(cv::Range(0, blockCount), [&](const cv::Range& range) {
+            const WorkerCancellationGuard workerGuard(cancellation);
             const Index first = static_cast<Index>(size_t(range.start) * size_t(block));
             const Index last = static_cast<Index>(std::min<size_t>(size_t(count), size_t(range.end) * size_t(block)));
             invokeBounded(first, last);

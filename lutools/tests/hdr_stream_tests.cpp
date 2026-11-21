@@ -2,6 +2,7 @@
 #include "core/hdr_stream.h"
 #include "core/hdr_look.h"
 #include "core/hdr_jpeg.h"
+#include "core/hdr_srgb_lut.h"
 #include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
@@ -78,6 +79,34 @@ void interruptSDRJPEGAfterGrowth() {
     require(!hdr::encodeSDRJPEGRows(width, height, 100, row).empty(), "SDR encode did not recover");
 }
 
+void verifySrgbLutBitExact() {
+    const float edgeValues[] = {
+        -1.0f, -1e-6f, -0.0f, 0.0f, 1e-12f, 0.0031307f, 0.0031308f, 0.0031309f,
+        std::nextafter(0.0031308f, -1.0f), std::nextafter(0.0031308f, 1.0f),
+        0.5f, 1.0f - 1e-7f, 1.0f, 1.0001f, 100.0f, std::numeric_limits<float>::infinity()
+    };
+    for (float v : edgeValues) {
+        require(hdr::srgbToUInt8(v) == hdr::exactSrgbToUInt8(v), "srgbToUInt8 mismatch on edge value");
+    }
+    constexpr size_t kBuckets = 16384;
+    for (size_t i = 0; i < kBuckets; ++i) {
+        const float boundary = float(i) / float(kBuckets);
+        const float probes[] = {
+            std::nextafter(boundary, -1.0f),
+            boundary,
+            std::nextafter(boundary, 2.0f),
+            float(i + 0.5) / float(kBuckets),
+        };
+        for (float v : probes) {
+            require(hdr::srgbToUInt8(v) == hdr::exactSrgbToUInt8(v), "srgbToUInt8 mismatch at bucket boundary");
+        }
+    }
+    for (int i = 0; i <= 200000; ++i) {
+        const float v = float(i) / 200000.0f;
+        require(hdr::srgbToUInt8(v) == hdr::exactSrgbToUInt8(v), "srgbToUInt8 mismatch in dense sweep");
+    }
+}
+
 void largeCanvasClarity(const fs::path& root) {
     HDRImagePair pair;
     pair.hdr = ImageData(16, 8000); pair.sdr = ImageData(16, 8000);
@@ -112,6 +141,7 @@ int main(int argc, char* argv[]) {
     if (argc != 2) return 2;
     auto root = fs::temp_directory_path() / ("rawlab-stream-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     try {
+        verifySrgbLutBitExact();
         interruptSDRJPEGAfterGrowth();
         fs::create_directory(root);
         largeCanvasClarity(root);

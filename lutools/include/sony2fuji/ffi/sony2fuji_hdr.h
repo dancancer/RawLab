@@ -267,8 +267,20 @@ sony2fuji_status sony2fuji_hdr_probe(const char* path, sony2fuji_hdr_source_info
     sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_probe_look(const char* path, sony2fuji_hdr_look_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// HDR 进度回调：completed ∈ [0, total]（total > 0），仅在同步进入核心 API 的调用方线程触发。
+typedef void (*sony2fuji_hdr_progress_callback)(
+    void* context,
+    uint32_t completed,
+    uint32_t total);
+sony2fuji_status sony2fuji_session_set_hdr_progress_callback(sony2fuji_session* session,
+    sony2fuji_hdr_progress_callback callback, void* context);
+
 sony2fuji_status sony2fuji_hdr_decode(const char* path, const sony2fuji_hdr_decode_options_v1* options,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
+// 允许绑定可选会话以支持解码进度与取消；session 为 NULL 时等价于 sony2fuji_hdr_decode。
+sony2fuji_status sony2fuji_hdr_decode_with_session(sony2fuji_session* session, const char* path,
+    const sony2fuji_hdr_decode_options_v1* options, sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Explicit camera RAW development. Probe inspects the header only and does not hash
 // or unpack the file. Decode returns the oriented canvas with source_sha256 zero.
 // Camera RAW exports require metadata_source_path == NULL; source stamp checks bracket decode.
@@ -341,14 +353,23 @@ sony2fuji_status sony2fuji_hdr_estimate_auto_exposure(const sony2fuji_hdr_image_
     float temperature, float tint, float* exposure_ev, sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_export_jpeg(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_jpeg_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // Adaptive HDR HEIF with an 8-bit SDR primary image and ISO gain map.
 // The same export config uses SONY2FUJI_HDR_METADATA_ISO for this container.
 // Apple availability requires a successful in-memory encode and gain-map readback on the current runtime.
 uint32_t sony2fuji_hdr_heif_export_available(void);
 sony2fuji_status sony2fuji_hdr_export_heif(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_heif_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 sony2fuji_status sony2fuji_hdr_export_sdr(const sony2fuji_hdr_image_pair_v1* image,
     const sony2fuji_hdr_sdr_export_config_v1* config, const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
+sony2fuji_status sony2fuji_hdr_export_sdr_with_session(sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* image, const sony2fuji_hdr_sdr_export_config_v1* config,
+    const char* path, sony2fuji_hdr_diagnostic_v1* diagnostic);
 // 跨平台流式 JPEG 导出。keep_hdr=1 为 ISO/XMP HDR JPEG，0 为 sRGB SDR JPEG。
 // config 必须指定冻结的原片路径和 SHA-256；temporary_root 必须是可写现有目录。
 // 先颜色、后几何、再 resize，完整成功后才原子替换单个目标。失败清空 result 并保留旧目标。
