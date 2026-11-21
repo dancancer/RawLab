@@ -184,29 +184,20 @@ public partial class MainWindow
         // RequestedAIBackend 读 WPF GpuMode：在 UI 线程快照，后台派发闭包不得再触碰 DispatcherObject（同 Rendering.cs 惯例）。
         var aiBackend=RequestedAIBackend;
         var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
-        var persisted=batchJournal.Load();
-        if(persisted!=null && persisted.SelectedCount>persisted.SucceededCount)
-            throw new InvalidOperationException(Loc.Text("请先结束或完成当前导出任务。"));
         transferPreparing=true;
         try {
-            // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）经 Task.Run 留在后台线程，UI 线程只接收结果。
-            var frozen=await Task.Run(()=>exporter.FreezeCore(review,selectionIDs,id=>failures.GetValueOrDefault(id),aiBackend,device,observeStage));
-            try {
+            // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）经 Task.Run 留在后台线程，UI 线程只完成原子复核、落盘与切换。
+            var job=await exporter.FreezeAsync(review,selectionIDs,id=>failures.GetValueOrDefault(id),validateBeforeCommit:()=>{
                 // 与 UI 原子的复核保留在 UI 线程：编辑窗口状态、选择与实时草稿随任务挂载一次判定。
                 if(closing||exporting||UpdateInstallationActive||generation!=transferGeneration||opened!=openRevision||revision!=editRevision||file!=current||
                     !Collection.SelectedPhotos.Select(photo=>photo.ID).SequenceEqual(selectionIDs)||
                     review.Rows.Any(row=>CollectionDraftFailure(row.Photo.ID)!=null))
                     throw new InvalidOperationException(Loc.Text("照片选择已变化，请重新检查。"));
-                batchJournal.Save(frozen.Job);frozen.OwnedLookCopies.Clear();
-            }catch {
-                foreach(var path in frozen.OwnedLookCopies)if(File.Exists(path))File.Delete(path);
-                throw;
-            }
-            if(persisted!=null)try{batchJournal.ReleaseResources(persisted);}catch(IOException){}catch(UnauthorizedAccessException){}
-            previousBatch=frozen.Job;
+            },aiBackend:aiBackend,aiDeviceID:device,observeStage:observeStage);
+            previousBatch=job;
             // 任务窗口 Show() 会同步触发对话框 Deactivated；解除取消门禁的回调必须在 ShowBatch 激活新窗口之前执行。
             beforeShowBatch?.Invoke();
-            ShowBatch(frozen.Job,autoStart);return frozen.Job;
+            ShowBatch(job,autoStart);return job;
         }finally{if(generation==transferGeneration)transferPreparing=false;}
     }
     internal void ViewCollectionExport()=>ShowBatchClicked(this,new());
