@@ -95,6 +95,7 @@ struct CameraStoredOriginal: Codable, Identifiable {
     let savedAt: Date
     var availability: CameraOriginalAvailability = .prepared
     var jpegSource: CameraJPEGSource?
+    var photoLibraryAssetID: String? = nil
 }
 struct CameraTetherRecord: Codable, Identifiable {
     static let maximumFilesPerTransfer = 64
@@ -694,6 +695,19 @@ final class CameraOriginalStore {
             }
             if staged != partial { try? FileManager.default.removeItem(at: partial) }
             return state.originals.last!
+        }
+    }
+    @discardableResult
+    func markSavedToPhotoLibrary(originalID: UUID, assetID: String) throws -> CameraStoredOriginal? {
+        try locked {
+            guard let index = originalIndexByID[originalID] else { return nil }
+            if state.originals[index].photoLibraryAssetID == assetID {
+                return state.originals[index]
+            }
+            try change {
+                state.originals[index].photoLibraryAssetID = assetID
+            }
+            return state.originals[index]
         }
     }
     /// Wireless transfer skip heuristic: reuses an existing verified local original when `(kind, name, size, captureDate)`

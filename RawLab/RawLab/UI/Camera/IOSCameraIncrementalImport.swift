@@ -19,7 +19,15 @@ struct IOSCameraIncrementalImport: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let notice = model.notice { Text(notice).font(.callout).foregroundStyle(.orange) }
+                    if let notice = model.notice {
+                        Text(notice).font(.callout).foregroundStyle(.orange)
+                        if model.photoLibraryPermissionDenied {
+                            Button(L10n.text("系统权限设置")) {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                            }
+                            .frame(minHeight: 44)
+                        }
+                    }
                     if model.phase == .receiving || pending != nil {
                         taskStatus(job)
                     } else if model.scanning {
@@ -198,10 +206,17 @@ struct IOSCameraIncrementalImport: View {
         let summary = reused > 0
             ? L10n.format("新保存 %@ 个文件，%@ 个已在本机", String(job.items.count - reused), String(reused))
             : L10n.format("已保存 %@ / %@ 个文件", String(job.items.count), String(job.items.count))
+        let savedSourceIDs = Set(job.items.compactMap(\.sourceID))
+        let savedToPhotos = model.manifest.originals.contains {
+            savedSourceIDs.contains($0.id) && $0.photoLibraryAssetID != nil
+        }
         return VStack(alignment: .leading, spacing: 4) {
             Text(L10n.text("增量导入完成")).font(.headline).accessibilityIdentifier("camera.incremental.complete")
             Text(summary).font(.subheadline).foregroundStyle(.secondary)
                 .accessibilityIdentifier("camera.incremental.saved")
+            if savedToPhotos {
+                Text(L10n.text("已保存到手机相册")).font(.footnote).foregroundStyle(.secondary)
+            }
             Button(L10n.text("导入记录"), action: history).frame(minHeight: 44)
             Divider()
         }

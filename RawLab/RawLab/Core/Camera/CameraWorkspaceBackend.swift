@@ -1,4 +1,90 @@
 import Foundation
+#if os(iOS)
+import RawLabKit
+import Photos
+import UniformTypeIdentifiers
+#endif
+
+enum CameraPhotoLibraryError: Error, Equatable {
+    case permissionDenied
+    case saveFailed(String)
+}
+
+protocol CameraPhotoLibrarySaving: AnyObject {
+    func requestAddAuthorization() -> Bool
+    func assetExists(_ identifier: String) -> Bool?
+    func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String
+}
+
+extension CameraPhotoLibrarySaving {
+    func assetExists(_ identifier: String) -> Bool? { nil }
+}
+
+#if os(iOS)
+final class IOSCameraPhotoLibrarySaver: CameraPhotoLibrarySaving {
+    private let onSavedContentIdentifier: ((String) -> Void)?
+
+    init(onSavedContentIdentifier: ((String) -> Void)? = nil) {
+        self.onSavedContentIdentifier = onSavedContentIdentifier
+    }
+
+    func requestAddAuthorization() -> Bool {
+        var status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+        if status == .notDetermined {
+            let semaphore = DispatchSemaphore(value: 0)
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { resolved in
+                status = resolved
+                semaphore.signal()
+            }
+            semaphore.wait()
+        }
+        return status == .authorized || status == .limited
+    }
+
+    func assetExists(_ identifier: String) -> Bool? {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { return nil }
+        if PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).count > 0 { return true }
+        return status == .authorized ? false : nil
+    }
+
+    func saveOriginal(at fileURL: URL, filename: String, digest: String) throws -> String {
+        guard requestAddAuthorization() else {
+            throw CameraPhotoLibraryError.permissionDenied
+        }
+        let ext = (filename as NSString).pathExtension.lowercased()
+        let uti: String? = (ext == "jpg" || ext == "jpeg")
+            ? UTType.jpeg.identifier
+            : UTType(filenameExtension: ext)?.identifier
+        let semaphore = DispatchSemaphore(value: 0)
+        var didSucceed = false
+        var writeError: Error?
+        var createdIdentifier: String?
+        PHPhotoLibrary.shared().performChanges({
+            let request = PHAssetCreationRequest.forAsset()
+            let options = PHAssetResourceCreationOptions()
+            options.originalFilename = filename
+            options.shouldMoveFile = false
+            if let uti { options.uniformTypeIdentifier = uti }
+            request.addResource(with: .photo, fileURL: fileURL, options: options)
+            createdIdentifier = request.placeholderForCreatedAsset?.localIdentifier
+        }) { success, error in
+            didSucceed = success
+            writeError = error
+            semaphore.signal()
+        }
+        semaphore.wait()
+        guard didSucceed else {
+            throw CameraPhotoLibraryError.saveFailed(writeError?.localizedDescription ?? "Photo library save failed")
+        }
+        onSavedContentIdentifier?(digest)
+        if let createdIdentifier, !createdIdentifier.isEmpty {
+            return createdIdentifier
+        }
+        return "saved"
+    }
+}
+#endif
 
 enum IOSCameraMode { case importing, tethering }
 enum IOSCameraPhase { case idle, connecting, browsing, ready, receiving, capturing, waiting, paused }
@@ -92,7 +178,13 @@ final class IOSCameraRun {
 }
 
 final class CameraWorkspaceBackend {
+    #if os(iOS)
+    static let shared = CameraWorkspaceBackend(photoLibrarySaver: IOSCameraPhotoLibrarySaver(onSavedContentIdentifier: {
+        ExportEvidenceStore.shared.record(contentIdentifier: $0)
+    }))
+    #else
     static let shared = CameraWorkspaceBackend()
+    #endif
     private static let sessionFailureCodes: Set<UInt16> = [0x2003, 0x2004, 0x2013, 0x201e]
     let queue = DispatchQueue(label: "rawlab.camera.owner", qos: .userInitiated)
     private let thumbnailQueue = DispatchQueue(label: "rawlab.camera.thumbnails", qos: .userInitiated)
@@ -102,12 +194,15 @@ final class CameraWorkspaceBackend {
     private var active: IOSCameraRun?
     private let clientID: UUID
     private let shutterTimeout: TimeInterval
+    private let photoLibrarySaver: CameraPhotoLibrarySaving?
     private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
 
     init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil, shutterTimeout: TimeInterval = 35,
+         photoLibrarySaver: CameraPhotoLibrarySaving? = nil,
          openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil) {
         self.storage = storage
         self.shutterTimeout = shutterTimeout
+        self.photoLibrarySaver = photoLibrarySaver
         self.sessionOpener = openSession
         if let clientID {
             self.clientID = clientID
@@ -220,6 +315,7 @@ final class CameraWorkspaceBackend {
             }
             guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
             if session.family != nil {
+                _ = self.photoLibrarySaver?.requestAddAuthorization()
                 do {
                     let assets = try self.readCard(run)
                     session = try run.currentSession()
@@ -493,6 +589,12 @@ final class CameraWorkspaceBackend {
         let store = try store(), session = try run.currentSession()
         run.emit(.phase(.receiving))
         var firstItemError: Error?
+        var photoLibraryAuthorized = true
+        var photoLibraryPermissionDenied = false
+        var photoLibrarySaveFailed = false
+        if let photoLibrarySaver, !pending.isEmpty {
+            photoLibraryAuthorized = photoLibrarySaver.requestAddAuthorization()
+        }
         for (item, asset) in pending {
             guard owns(run) else { throw CameraProtocolError.cancelled }
             var outcome: ReceiveItemOutcome?
@@ -532,7 +634,36 @@ final class CameraWorkspaceBackend {
                 throw error
             }
             switch outcome {
-            case .saved(let original):
+            case .saved(var original):
+                if let saver = photoLibrarySaver {
+                    let needsPhotoLibrarySave: Bool
+                    if let existingID = original.photoLibraryAssetID {
+                        needsPhotoLibrarySave = saver.assetExists(existingID) == false
+                    } else {
+                        needsPhotoLibrarySave = true
+                    }
+                    if needsPhotoLibrarySave {
+                        if photoLibraryAuthorized {
+                            do {
+                                let assetID = try saver.saveOriginal(
+                                    at: store.originalURL(original),
+                                    filename: original.name,
+                                    digest: original.digest
+                                )
+                                if let updated = try? store.markSavedToPhotoLibrary(originalID: original.id, assetID: assetID) {
+                                    original = updated
+                                }
+                            } catch CameraPhotoLibraryError.permissionDenied {
+                                photoLibraryAuthorized = false
+                                photoLibraryPermissionDenied = true
+                            } catch {
+                                photoLibrarySaveFailed = true
+                            }
+                        } else {
+                            photoLibraryPermissionDenied = true
+                        }
+                    }
+                }
                 publishManifest(run); run.emit(.saved(original))
             case .itemFailed(let itemError):
                 publishManifest(run)
@@ -543,6 +674,10 @@ final class CameraWorkspaceBackend {
         }
         if let firstItemError {
             run.emit(.failure(firstItemError))
+        } else if photoLibraryPermissionDenied {
+            run.emit(.failure(CameraProtocolError.photoLibraryDenied))
+        } else if photoLibrarySaveFailed {
+            run.emit(.failure(CameraProtocolError.photoLibrarySaveFailed))
         }
     }
     private func reuseByMobileSampling(jobID: UUID, item: CameraTransferItem, asset: CameraRemoteAsset,
