@@ -286,12 +286,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             incrementalOptionsValid = if (format == CameraImportFormat.RAW) true else it.incrementalOptionsValid) }
         if (mutable.value.importMode == CameraImportMode.INCREMENTAL && mutable.value.connected) recomputeIncrementalScan()
     }
-    fun setIncrementalJpeg(options: CameraJPEGOptions) {
+    fun setIncrementalJpeg(options: CameraJPEGOptions, optionsValid: Boolean = options.isValid) {
         if (!options.isValid || mutable.value.transferring || mutable.value.preparing) return
         preferences.edit().putBoolean(preferenceKey("incremental-jpeg-adjust"), options.adjust)
             .putString(preferenceKey("incremental-jpeg-edge"), options.longEdge?.toString())
             .putInt(preferenceKey("incremental-jpeg-quality"), options.quality).apply()
-        mutable.update { it.copy(incrementalJpeg = options, incrementalOptionsValid = true) }
+        mutable.update { it.copy(incrementalJpeg = options, incrementalOptionsValid = optionsValid) }
         recomputeIncrementalScan()
     }
     fun setIncrementalOptionsValid(valid: Boolean) { if (!mutable.value.transferring && !mutable.value.preparing)
@@ -500,6 +500,8 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             (scan == null || scan.needsCutoffConfirmation || !snapshot.incrementalOptionsValid)) return
         val photos = scan?.assets ?: snapshot.photos.filter { it.key in snapshot.selected }
         if (photos.isEmpty()) return
+        if (snapshot.importMode == CameraImportMode.MANUAL && snapshot.incrementalJpeg.adjust &&
+            !snapshot.incrementalOptionsValid && photos.any { !it.raw }) return
         val incremental = scan?.let {
             CameraIncrementalPlan(snapshot.incrementalFormat, snapshot.incrementalJpeg,
                 customCutoffMillis = snapshot.incrementalCutoffMillis,
@@ -507,6 +509,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 sessionOwner = snapshot.incrementalOwner,
                 checkpoints = it.nextCheckpoints)
         }
+        val manualJpeg = if (incremental == null) snapshot.incrementalJpeg.takeIf { it.adjust } else null
         val selectedCamera = cameraId
         val hardwareIdentity = device?.let(CameraHardwareIdentity::read)
         val current = generation
@@ -515,7 +518,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             try {
                 val result = withContext(Dispatchers.IO) { storeLock.withLock { runCatching {
                     store.create(selectedCamera, photos, snapshot.destination, incremental = incremental,
-                        hardwareIdentity = hardwareIdentity, listingOwner = snapshot.incrementalOwner)
+                        hardwareIdentity = hardwareIdentity, listingOwner = snapshot.incrementalOwner, jpeg = manualJpeg)
                 } } }
                 result.onSuccess { job ->
                     if (!foreground || current != generation) {
@@ -746,7 +749,7 @@ internal fun computeCameraIncrementalScan(snapshot: CameraImportState, cameraId:
     val savedKeys = if (snapshot.incrementalCutoffMillis != null) emptySet() else jobs.asSequence()
         .filter { it.originalListingOwner == snapshot.incrementalOwner || it.id in verifiedJobs }
         .flatMap { job ->
-            val plannedJpeg = job.incremental?.jpeg?.takeIf { it.adjust }
+            val plannedJpeg = job.effectiveJpeg
             val saved = job.items.asSequence().filter {
                 it.saved != null && (it.photo.raw || jpeg == plannedJpeg || jpeg == job.jpegOptions(it))
             }

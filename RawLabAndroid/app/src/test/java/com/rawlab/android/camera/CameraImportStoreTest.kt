@@ -860,6 +860,59 @@ class CameraImportStoreTest {
         assertFalse(resumed.committed)
     }
 
+    @Test fun manualImportAppliesJpegOptionsPersistsAcrossLoadAndSkipsRawSampling() = withStore { fixture, _ ->
+        val resizedBytes = "resized-manual-jpeg".toByteArray()
+        var processedCalls = 0
+        val store = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }, processJpeg = { _, destination, options ->
+                processedCalls++
+                assertEquals(CameraJPEGOptions(true, 2048, 85), options)
+                destination.writeBytes(resizedBytes)
+                CameraProcessedFile(resizedBytes.size.toLong(), hash(resizedBytes))
+            })
+        val bigJpeg = jpeg.copyOf(256 * 1024)
+        val unadjustedPhoto = CameraPhoto("big-jpeg-1", "DSC02.JPG", bigJpeg.size.toLong(), 1_700_000_000_000L, storageToken = "card")
+        val plainJob = store.create("camera", listOf(unadjustedPhoto), CameraImportDestination())
+        val plainPart = store.partial(plainJob.id).apply { writeBytes(bigJpeg) }
+        val plainComplete = store.publish(plainJob, 0, plainPart, hash(bigJpeg), CameraTransferPermit())
+        val plainUri = checkNotNull(plainComplete.items.single().saved).uri
+
+        val rawPhoto = CameraPhoto("raw-1", "DSC01.ARW", raw.size.toLong(), 1_700_000_000_000L, storageToken = "card")
+        val jpegOptions = CameraJPEGOptions(adjust = true, longEdge = 2048, quality = 85)
+        val manualJob = store.create("camera", listOf(rawPhoto, unadjustedPhoto), CameraImportDestination(), jpeg = jpegOptions)
+        assertEquals(jpegOptions, manualJob.effectiveJpeg)
+        assertNull(manualJob.jpegOptions(manualJob.items[0]))
+        assertEquals(jpegOptions, manualJob.jpegOptions(manualJob.items[1]))
+
+        val samplingOutput = File(fixture.root, "sampling-unused.jpg")
+        assertNull(java.io.FileOutputStream(samplingOutput).use { out ->
+            store.copySampledOriginal(manualJob, unadjustedPhoto, out, CameraTransferPermit()) { offset, length ->
+                bigJpeg.copyOfRange(offset.toInt(), offset.toInt() + length)
+            }
+        })
+
+        val completed = receiveCameraJob(store, manualJob, CameraTransferPermit(), { photo, output ->
+            val bytes = if (photo.raw) raw else bigJpeg
+            output.write(bytes)
+            hash(bytes)
+        })
+        assertEquals(CameraJobStatus.COMPLETE, completed.status)
+        assertEquals(1, processedCalls)
+        val rawUri = checkNotNull(completed.items[0].saved).uri
+        val adjustedUri = checkNotNull(completed.items[1].saved).uri
+        assertNotEquals(plainUri, adjustedUri)
+        assertEquals(resizedBytes.size.toLong(), completed.items[1].outputSize)
+        assertArrayEquals(raw, fixture.media.file(rawUri).readBytes())
+        assertArrayEquals(resizedBytes, fixture.media.file(adjustedUri).readBytes())
+
+        val reloaded = CameraImportStore(File(fixture.root, "jobs"), File(fixture.root, "partial"), fixture.media,
+            { fixture.capture }).load().first { it.id == manualJob.id }
+        assertEquals(jpegOptions, reloaded.jpeg)
+        assertEquals(jpegOptions, reloaded.effectiveJpeg)
+        val keptOriginals = manualJob.keepingPendingJpegOriginals()
+        assertNull(keptOriginals.jpegOptions(keptOriginals.items[1]))
+    }
+
     private class FileMedia(private val root: File) : MediaPhotoAccess {
         val rows = linkedMapOf<String, MediaPhoto>()
         var failBeforePublish = false
