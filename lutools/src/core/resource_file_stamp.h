@@ -29,21 +29,29 @@ struct ResourceFileStamp {
     }
 };
 
+#ifdef _WIN32
+inline std::optional<ResourceFileStamp> resourceFileStampFromHandle(HANDLE file) {
+    if (file == INVALID_HANDLE_VALUE || !file) return std::nullopt;
+    BY_HANDLE_FILE_INFORMATION info{};
+    FILE_BASIC_INFO basic{};
+    const bool valid = GetFileInformationByHandle(file, &info) &&
+        GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic));
+    if (!valid || (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return std::nullopt;
+    return ResourceFileStamp{(uint64_t(info.nFileSizeHigh) << 32) | info.nFileSizeLow,
+        {uint64_t(basic.LastWriteTime.QuadPart), 0}, {uint64_t(basic.ChangeTime.QuadPart), 0},
+        {info.dwVolumeSerialNumber, (uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow}};
+}
+#endif
+
 // ctime/ChangeTime 与文件身份保留同大小覆写后恢复 mtime 的失效语义。
 inline std::optional<ResourceFileStamp> resourceFileStamp(const std::filesystem::path& path) {
 #ifdef _WIN32
     const auto file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return std::nullopt;
-    BY_HANDLE_FILE_INFORMATION info{};
-    FILE_BASIC_INFO basic{};
-    const bool valid = GetFileInformationByHandle(file, &info) &&
-        GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic));
+    const auto stamp = resourceFileStampFromHandle(file);
     CloseHandle(file);
-    if (!valid || (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return std::nullopt;
-    return ResourceFileStamp{(uint64_t(info.nFileSizeHigh) << 32) | info.nFileSizeLow,
-        {uint64_t(basic.LastWriteTime.QuadPart), 0}, {uint64_t(basic.ChangeTime.QuadPart), 0},
-        {info.dwVolumeSerialNumber, (uint64_t(info.nFileIndexHigh) << 32) | info.nFileIndexLow}};
+    return stamp;
 #else
     struct stat info{};
     if (::stat(path.c_str(), &info) || !S_ISREG(info.st_mode) || info.st_size < 0) return std::nullopt;

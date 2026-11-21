@@ -132,25 +132,67 @@ File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
         fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
     file.stamp = stampFromStat(before);
 #else
-    std::error_code error;
-    if (!std::filesystem::is_regular_file(path,error))
+    const HANDLE handle = CreateFileW(
+        path.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
         fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
-    const auto beforeStamp = resourceFileStamp(path);
-    const uint64_t size=std::filesystem::file_size(path,error);
-    if (error || !beforeStamp || (!size && !expectedSHA256) || size>512ull*1024*1024)
+    struct HandleGuard {
+        HANDLE handle;
+        void close() {
+            if (handle != INVALID_HANDLE_VALUE) {
+                CloseHandle(handle);
+                handle = INVALID_HANDLE_VALUE;
+            }
+        }
+        ~HandleGuard() { close(); }
+    } guard{handle};
+    if (GetFileType(handle) != FILE_TYPE_DISK)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    const auto beforeStamp = resourceFileStampFromHandle(handle);
+    if (!beforeStamp)
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
+    const uint64_t size = beforeStamp->size;
+    if ((!size && !expectedSHA256) || size > 512ull * 1024 * 1024)
         fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
-    admitMemory(size*3);
+    admitMemory(size * 3);
     file.bytes.resize(size_t(size));
-    std::ifstream input(path,std::ios::binary);
-    if (!input.read(reinterpret_cast<char*>(file.bytes.data()),std::streamsize(size)))
-        fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+    size_t filled = 0;
+    while (true) {
+        checkProcessingCancellation();
+        if (filled < size) {
+            const DWORD chunk = DWORD((std::min)<size_t>(4u * 1024 * 1024, size_t(size - filled)));
+            DWORD got = 0;
+            if (!ReadFile(handle, file.bytes.data() + filled, chunk, &got, nullptr))
+                fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+            if (got == 0) break;
+            filled += size_t(got);
+        } else {
+            unsigned char probe = 0;
+            DWORD got = 0;
+            if (!ReadFile(handle, &probe, 1, &got, nullptr))
+                fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+            if (got > 0)
+                fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+            break;
+        }
+    }
+    const auto afterHandleStamp = resourceFileStampFromHandle(handle);
+    if (!afterHandleStamp || filled != size || !(*afterHandleStamp == *beforeStamp))
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    guard.close();
     if (sourceReadTestHook) {
         auto hook = sourceReadTestHook;
         sourceReadTestHook = nullptr;
         hook();
     }
-    const auto afterStamp = resourceFileStamp(path);
-    if (!afterStamp || !(*afterStamp == *beforeStamp))
+    const auto afterPathStamp = resourceFileStamp(path);
+    if (!afterPathStamp || !(*afterPathStamp == *beforeStamp))
         fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
     file.stamp = *beforeStamp;
 #endif

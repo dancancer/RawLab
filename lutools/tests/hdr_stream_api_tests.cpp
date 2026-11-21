@@ -51,9 +51,10 @@ struct Context {
 // 模拟「读后、快照夹逼前」的原子替换（fn-ptr 注入，不能捕获，故用文件级状态）。
 fs::path swapFrom, swapTo;
 bool swapFired = false;
+std::error_code swapError;
 void swapSourceDuringRead() {
-    std::error_code ignored;
-    fs::rename(swapFrom, swapTo, ignored);
+    swapError.clear();
+    fs::rename(swapFrom, swapTo, swapError);
     swapFired = true;
 }
 
@@ -180,11 +181,11 @@ int main(int argc, char* argv[]) {
             const auto swapBytes = read(original);
             write(staged, swapBytes);
             const auto swapOutput = directory / "swap-output.jpg";
-            swapFrom = staged; swapTo = original; swapFired = false;
+            swapFrom = staged; swapTo = original; swapFired = false; swapError.clear();
             hdr::sourceReadTestHook = swapSourceDuringRead;
             const auto swapStatus = run(swapOutput);
             hdr::sourceReadTestHook = nullptr;
-            require(swapFired, "Metadata source read hook never fired");
+            require(swapFired && !swapError, "Metadata source swap hook failed: " + swapError.message());
             require(swapStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT && diagnostic.reason == SONY2FUJI_HDR_REASON_SOURCE_CHANGED,
                 "Metadata source replaced during read went undetected");
             require(!fs::exists(swapOutput), "Swapped metadata source published output anyway");
