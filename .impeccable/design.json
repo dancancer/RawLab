@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-18T12:39:11Z",
+  "generatedAt": "2026-11-21T08:41:05Z",
   "title": "RawLab iOS / iPadOS design extension",
   "extensions": {
     "motion": [
@@ -151,9 +151,10 @@
         "touchTargetMinimum": "44×44pt",
         "accessibilityToolCircle": "44pt",
         "accessibilityToolRowHeight": "max(44pt, preferred body lineHeight + 16pt)",
-        "sidePanelWidth": "min(320pt, available width × 0.48)",
-        "stackedPanelBudget": "body-scaled 256pt plus tool-specific room, bounded by available height",
-        "accessibilityPhotoReservation": "up to 96pt after the tool row and separators",
+        "sidePanelWidth": "min(336pt, available width × 0.48)",
+        "stackedPanelBudget": "measures content and contracts up to a body-scaled 220pt maximum, further bounded by window and text size",
+        "accessibilityPhotoReservation": "up to 96pt in ordinary stacked windows, or 68pt when tools scroll with parameters in a short accessibility window",
+        "mobilePhotoCanvasInset": "0pt by default; fit photo proportionally to available canvas filling at least one edge",
         "wheelRegularPopoverHeight": "min(440pt, presenting-window available height)",
         "wheelAccessibilityPopoverHeight": "min(600pt, presenting-window available height)",
         "wheelAvailableHeight": "max(0, window height - safeArea.top - safeArea.bottom - 40pt)",
@@ -167,6 +168,8 @@
         "nativeValuePresentation": "Explicit iPhone sheet, including landscape regular horizontal size class; iPad anchored popover with compact system adaptation to a large sheet. Wide/short content reflow is available in a genuinely wide sheet.",
         "nativeValueDraft": "Picker selection changes local draft only. Changed draft disables interactive dismissal; Cancel preserves entering value; Apply commits; focus returns to the original value button.",
         "nativeValueCandidates": "Sorted, deduplicated legal grid and endpoints plus valid current/default extras. One complete-value UIPickerView column.",
+        "exposureRange": "Ordinary SDR exposure uses -5…+5 EV in 0.05 EV steps; HDR exposure retains -4…+4 EV.",
+        "fineAction": "Compact selected button beside Reset with a 32pt visible body, 44pt touch target and explicit accessibility state; shares style with Auto.",
         "editorDraft": "Geometry/lens draft preview stays staged. Fixed Apply/Cancel commit/discard and return to Exposure. Dirty navigation asks Apply/Discard/Continue. Lens editing is RAW-only; raster UI evidence does not demonstrate a RAW lens draft.",
         "exportGuard": "isEditorDraftActive covers unchanged and changed geometry/lens drafts. Export actions also guard previewRendering, previewResizePending, editor busy state and look availability.",
         "importGuard": "Single-photo import guards isEditorDraftChanged.",
@@ -193,7 +196,7 @@
         "RawLab/RawLab/UI/Editor/ContentView+Panels.swift",
         "RawLab/RawLab/UI/Editor/ContentView+Helpers.swift",
         "RawLab/RawLab/UI/Controls/EditorComponents.swift",
-        "RawLab/RawLab/Core/Models/FilmPresentation.swift"
+        "Shared/RawLabKit/FilmPresentation.swift"
       ]
     }
   },
@@ -211,7 +214,7 @@
     {
       "name": "iOS Parameter Control",
       "kind": "input",
-      "description": "Complete value button, named reset, horizontal ruler, Fine action and readable default/range.",
+      "description": "Name and complete tappable value in a stable numeric slot above a full-width ruler, named reset, compact Fine action (32pt body / 44pt target) and readable default/range.",
       "nativeSource": {
         "path": "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
         "symbol": "AdjustmentControl"
@@ -256,10 +259,10 @@
       }
     },
     {
-      "name": "iOS Luminance Histogram",
+      "name": "iOS RGB / HDR Histogram",
       "kind": "custom",
       "refersTo": "ios-histogram-header",
-      "description": "Collapsible edge overlay with a 44pt header and current-preview luminance distribution.",
+      "description": "Collapsible edge overlay with a 44pt header, 256-bin RGB (or HDR luminance) distribution, explicit title and before/after source, and a scrollable popover with a 44pt close target for short canvases or accessibility text sizes.",
       "nativeSource": {
         "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
         "symbol": "FloatingHistogram"
