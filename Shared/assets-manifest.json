@@ -1,6 +1,10 @@
 {
   "schemaVersion": 1,
   "releaseTag": "assets-v1",
+  "releasePolicy": {
+    "prerelease": true,
+    "makeLatest": false
+  },
   "groups": {
     "luts": {
       "archive": "rawlab-luts-v1.tar.gz",

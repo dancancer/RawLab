@@ -34,6 +34,20 @@ def validate_spec_document(doc: dict) -> None:
     summary, policy = doc["summary"], doc["divergence_policy"]
     if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 65:
         raise AssertionError("Invalid divergence_policy ratchet")
+    allowed_milestones = policy.get("allowed_expiration_milestones")
+    if (
+        not isinstance(allowed_milestones, list)
+        or not allowed_milestones
+        or not all(isinstance(m, str) and m.strip() for m in allowed_milestones)
+    ):
+        raise AssertionError(
+            "divergence_policy.allowed_expiration_milestones must be a non-empty list of milestone strings"
+        )
+    default_wave = policy.get("default_expiration_wave")
+    if not isinstance(default_wave, str) or default_wave not in allowed_milestones:
+        raise AssertionError(
+            f"default_expiration_wave={default_wave!r} must belong to allowed_expiration_milestones={allowed_milestones!r}"
+        )
     all_div = [f for f in fields if f["divergence"]["has_divergence"]]
     transfer = [f for f in fields if f["protocol"]["transferable"]]
     if len(transfer) != 81 or summary["divergent_fields"] != len(all_div) or summary["identical_fields"] != 83 - len(all_div):
@@ -51,6 +65,10 @@ def validate_spec_document(doc: dict) -> None:
         if div["has_divergence"]:
             if not cats or not isinstance(div.get("expires_wave"), str) or not div["expires_wave"].strip():
                 raise AssertionError(f"{fid} divergent field requires categories and expires_wave")
+            if div["expires_wave"] not in allowed_milestones:
+                raise AssertionError(
+                    f"{fid} expires_wave={div['expires_wave']!r} must belong to allowed_expiration_milestones={allowed_milestones!r}"
+                )
         elif cats or "expires_wave" in div or any(entry["ui"][p] != entry["ui"][PLATFORMS[0]] for p in PLATFORMS[1:]):
             raise AssertionError(f"{fid} non-divergent entry inconsistent")
 
@@ -92,6 +110,30 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         next(f for f in missing_exp["fields"] if f["divergence"]["has_divergence"])["divergence"].pop("expires_wave")
         with self.assertRaisesRegex(AssertionError, r"expires_wave"):
             validate_spec_document(missing_exp)
+
+    def test_expiration_milestones_are_registered_and_reject_fictional_waves(self) -> None:
+        doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
+        policy = doc["divergence_policy"]
+        self.assertEqual(policy["allowed_expiration_milestones"], ["v0.12"])
+        self.assertEqual(policy["default_expiration_wave"], "v0.12")
+        for field in doc["fields"]:
+            if field["divergence"]["has_divergence"]:
+                self.assertIn(field["divergence"]["expires_wave"], policy["allowed_expiration_milestones"])
+
+        bad_field_wave = copy.deepcopy(doc)
+        next(f for f in bad_field_wave["fields"] if f["divergence"]["has_divergence"])["divergence"]["expires_wave"] = "W4"
+        with self.assertRaisesRegex(AssertionError, r"allowed_expiration_milestones"):
+            validate_spec_document(bad_field_wave)
+
+        bad_default_wave = copy.deepcopy(doc)
+        bad_default_wave["divergence_policy"]["default_expiration_wave"] = "W4"
+        with self.assertRaisesRegex(AssertionError, r"default_expiration_wave"):
+            validate_spec_document(bad_default_wave)
+
+        missing_allowed = copy.deepcopy(doc)
+        missing_allowed["divergence_policy"].pop("allowed_expiration_milestones")
+        with self.assertRaisesRegex(AssertionError, r"allowed_expiration_milestones"):
+            validate_spec_document(missing_allowed)
 
     def test_codegen_check_determinism_and_mutations(self) -> None:
         res = subprocess.run([sys.executable, str(GENERATOR), "--check"], capture_output=True, text=True, cwd=ROOT)

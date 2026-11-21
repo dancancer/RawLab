@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,49 @@ def load_manifest(manifest_path: Path) -> dict:
     if data.get("schemaVersion") != 1 or not isinstance(data.get("groups"), dict):
         raise ValueError(f"Unsupported assets manifest schema: {manifest_path}")
     return data
+
+
+def validate_release_policy(manifest: dict) -> dict[str, bool]:
+    """Ensure externalized asset packs stay prerelease-only and never steal Latest."""
+    policy = manifest.get("releasePolicy")
+    if not isinstance(policy, dict):
+        raise ValueError("Missing or invalid top-level 'releasePolicy' object in assets manifest")
+    prerelease = policy.get("prerelease")
+    make_latest = policy.get("makeLatest")
+    if not isinstance(prerelease, bool) or not isinstance(make_latest, bool):
+        raise ValueError("assets manifest 'releasePolicy' must define boolean 'prerelease' and 'makeLatest'")
+    if prerelease is not True:
+        raise ValueError("assets manifest releasePolicy.prerelease must be true")
+    if make_latest is not False:
+        raise ValueError("assets manifest releasePolicy.makeLatest must be false so asset packs cannot steal Latest")
+    return {"prerelease": prerelease, "makeLatest": make_latest}
+
+
+def build_gh_release_args(
+    manifest: dict,
+    action: str = "create",
+    *,
+    title: str | None = None,
+    notes: str | None = None,
+    files: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Build guarded `gh release create/edit` argv enforcing `--prerelease --latest=false`."""
+    if action not in ("create", "edit"):
+        raise ValueError(f"Unsupported gh release action: {action!r}")
+    validate_release_policy(manifest)
+    tag = manifest.get("releaseTag")
+    if not isinstance(tag, str) or not tag.strip():
+        raise ValueError("assets manifest must define a non-empty 'releaseTag'")
+    cmd = ["gh", "release", action, tag.strip(), "--prerelease", "--latest=false"]
+    if title is not None:
+        cmd.extend(["--title", title])
+    if notes is not None:
+        cmd.extend(["--notes", notes])
+    if files:
+        if action != "create":
+            raise ValueError("Asset file arguments are only supported for 'gh release create'")
+        cmd.extend(files)
+    return cmd
 
 
 def selected_groups(manifest: dict, group: str) -> list[tuple[str, dict]]:
@@ -230,6 +274,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--group", choices=("luts", "raw", "all"), default="all", help="Asset group to prepare or check")
     parser.add_argument("--check", action="store_true", help="Verify materialized files against manifest without downloading")
+    parser.add_argument(
+        "--check-release-policy",
+        action="store_true",
+        help="Verify manifest releasePolicy prevents asset releases from marking Latest",
+    )
+    parser.add_argument(
+        "--print-gh-release-args",
+        choices=("create", "edit"),
+        help="Print guarded gh release CLI command for the manifest releaseTag",
+    )
     parser.add_argument("--offline", action="store_true", help="Materialize from local shared cache only; fail if missing")
     parser.add_argument("--quiet", action="store_true", help="Suppress informational output")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST, help="Path to assets-manifest.json")
@@ -239,6 +293,25 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = args.repo_root.resolve()
     manifest_path = args.manifest if args.manifest.is_absolute() else (repo_root / args.manifest)
     manifest = load_manifest(manifest_path)
+
+    if args.check_release_policy or args.print_gh_release_args:
+        try:
+            policy = validate_release_policy(manifest)
+            cmd = build_gh_release_args(manifest, args.print_gh_release_args or "create")
+        except ValueError as exc:
+            print(f"[assets:release-policy] {exc}", file=sys.stderr)
+            return 1
+        if args.print_gh_release_args:
+            print(shlex.join(cmd))
+        elif not args.quiet:
+            print(
+                f"[assets:release-policy] OK (tag={manifest['releaseTag']}, "
+                f"prerelease={str(policy['prerelease']).lower()}, "
+                f"makeLatest={str(policy['makeLatest']).lower()})"
+            )
+        if not args.check:
+            return 0
+
     groups = selected_groups(manifest, args.group)
 
     if args.check:

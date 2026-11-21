@@ -17,11 +17,11 @@
 
 各对比图从左到右：**Neutral / PROVIA / Velvia / EKTAR-v1**。曝光和白平衡保持一致，没有为某一风格单独调亮。
 
-- [街景、天空、植被](comparisons/comparison-sheet-1.jpg)
-- [人物、深蓝天空、傍晚](comparisons/comparison-sheet-2.jpg)
-- [肤色、建筑、山体](comparisons/comparison-sheet-3.jpg)
-- [DJI 山谷与高反差](comparisons/comparison-sheet-4.jpg)
-- [灰阶曲线与渐变](curves-and-gradients.png)
+- 街景、天空、植被：`comparisons/comparison-sheet-1.jpg`
+- 人物、深蓝天空、傍晚：`comparisons/comparison-sheet-2.jpg`
+- 肤色、建筑、山体：`comparisons/comparison-sheet-3.jpg`
+- DJI 山谷与高反差：`comparisons/comparison-sheet-4.jpg`
+- 灰阶曲线与渐变：`curves-and-gradients.png`
 
 `comparisons/` 同时保留每个 RAW 的 1400 像素长边单张结果，便于放大比较。它们是完整去马赛克之后在线性空间缩小的审片图，不是全分辨率成片。
 
