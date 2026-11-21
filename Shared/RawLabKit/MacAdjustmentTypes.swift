@@ -449,19 +449,90 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         return settings[keyPath: spec.keyPath]
     }
     public var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
+    private var generatedModelSpec: AdjustmentFieldModelSpec {
+        switch self {
+        case .strength: return AdjustmentFieldSpec.Fields.looksStrength.macosModel
+        case .exposure: return AdjustmentFieldSpec.Fields.lightExposure.macosModel
+        case .temperature: return AdjustmentFieldSpec.Fields.colorWhiteBalanceTemperatureKelvin.macosModel
+        case .tint: return AdjustmentFieldSpec.Fields.colorWhiteBalanceTint.macosModel
+        case .blackPoint: return AdjustmentFieldSpec.Fields.toneBlackPoint.macosModel
+        case .whitePoint: return AdjustmentFieldSpec.Fields.toneWhitePoint.macosModel
+        case .vibrance: return AdjustmentFieldSpec.Fields.colorVibrance.macosModel
+        case .clarity: return AdjustmentFieldSpec.Fields.effectsClarity.macosModel
+        case .dehaze: return AdjustmentFieldSpec.Fields.effectsDehaze.macosModel
+        case .contrast: return AdjustmentFieldSpec.Fields.lightContrast.macosModel
+        case .highlights: return AdjustmentFieldSpec.Fields.lightHighlights.macosModel
+        case .shadows: return AdjustmentFieldSpec.Fields.lightShadows.macosModel
+        case .toneCurve: return AdjustmentFieldSpec.Fields.lightSCurve.macosModel
+        case .saturation: return AdjustmentFieldSpec.Fields.colorSaturation.macosModel
+        case .sharpening: return AdjustmentFieldSpec.Fields.detailSharpening.macosModel
+        case .rawNoiseReduction: return AdjustmentFieldSpec.Fields.detailDenoiseRawLevel.macosModel
+        case .denoiseMode: return AdjustmentFieldSpec.Fields.detailDenoiseChromaMode.macosModel
+        case .vignetteAmount: return AdjustmentFieldSpec.Fields.effectsVignetteAmount.macosModel
+        case .grainAmount: return AdjustmentFieldSpec.Fields.effectsGrainAmount.macosModel
+        }
+    }
+
+    private func makeSpec(
+        title: String,
+        keyPath: WritableKeyPath<Adjustments, Double>,
+        step: Double? = nil,
+        unit: String = "%",
+        multiplier: Double = 1.0,
+        decimals: Int? = nil,
+        reciprocalScale: Bool = false
+    ) -> AdjustmentSpec {
+        let model = generatedModelSpec
+        let defaultStep = model.quantization == .discrete ? 1.0 : 0.1
+        let defaultDecimals = model.quantization == .discrete ? 0 : 1
+        return AdjustmentSpec(
+            title: title,
+            keyPath: keyPath,
+            range: model.closedRange!,
+            defaultValue: model.defaultValue.numberValue ?? 0,
+            step: step ?? defaultStep,
+            unit: unit,
+            multiplier: multiplier,
+            decimals: decimals ?? defaultDecimals,
+            reciprocalScale: reciprocalScale
+        )
+    }
+
     public func spec(for settings: Adjustments) -> AdjustmentSpec {
         var value = spec
         if settings.isHDREditing && self == .denoiseMode {
-            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: 0...1,
-                defaultValue: 0, step: 0.01, unit: "%", multiplier: 100)
+            let hdrModel = AdjustmentFieldSpec.Fields.detailDenoisePostRgb.macosModel
+            return AdjustmentSpec(
+                title: value.title,
+                keyPath: value.keyPath,
+                range: hdrModel.closedRange!,
+                defaultValue: hdrModel.defaultValue.numberValue ?? 0,
+                step: 0.01,
+                unit: "%",
+                multiplier: 100
+            )
         }
         if settings.isHDREditing && self == .exposure {
-            return AdjustmentSpec(title: value.title, keyPath: value.keyPath, range: -4...4,
-                defaultValue: 0, step: value.step, unit: value.unit, decimals: value.decimals)
+            let hdrModel = AdjustmentFieldSpec.Fields.lightExposure.macosModel
+            return AdjustmentSpec(
+                title: value.title,
+                keyPath: value.keyPath,
+                range: hdrModel.hdrClosedRange!,
+                defaultValue: hdrModel.defaultValue.numberValue ?? 0,
+                step: value.step,
+                unit: value.unit,
+                decimals: value.decimals
+            )
         }
         if settings.isHDREditing { return value }
-        if self == .temperature { value.defaultValue = settings.asShotWhiteBalance?.temperature ?? 6500 }
-        if self == .tint { value.defaultValue = settings.masterRecipe != nil ? 0 : (settings.asShotWhiteBalance?.tint ?? 0) }
+        if self == .temperature {
+            value.defaultValue = settings.asShotWhiteBalance?.temperature
+                ?? AdjustmentFieldSpec.Fields.colorWhiteBalanceTemperatureKelvin.macosModel.defaultValue.numberValue!
+        }
+        if self == .tint {
+            let defaultTint = AdjustmentFieldSpec.Fields.colorWhiteBalanceTint.macosModel.defaultValue.numberValue!
+            value.defaultValue = settings.masterRecipe != nil ? defaultTint : (settings.asShotWhiteBalance?.tint ?? defaultTint)
+        }
         return value
     }
     public var symbol: String {
@@ -488,25 +559,25 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
     }
     public var spec: AdjustmentSpec {
         switch self {
-        case .strength: return AdjustmentSpec(title: L10n.text("强度"), keyPath: \.strength, range: 0...2, defaultValue: 1, step: 0.001, unit: "%", multiplier: 100, decimals: 1)
-        case .exposure: return AdjustmentSpec(title: L10n.text("曝光"), keyPath: \.exposure, range: -5...5, defaultValue: 0, step: 0.01, unit: "EV", decimals: 2)
-        case .temperature: return AdjustmentSpec(title: L10n.text("色温"), keyPath: \.temperature, range: 2000...50000, defaultValue: 6500, step: 10, unit: "K", reciprocalScale: true)
-        case .tint: return AdjustmentSpec(title: L10n.text("色调"), keyPath: \.tint, range: -150...150, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
-        case .blackPoint: return AdjustmentSpec(title: L10n.text("黑场"), keyPath: \.blackPoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .whitePoint: return AdjustmentSpec(title: L10n.text("白场"), keyPath: \.whitePoint, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .vibrance: return AdjustmentSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .clarity: return AdjustmentSpec(title: L10n.text("清晰度"), keyPath: \.clarity, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .dehaze: return AdjustmentSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .contrast: return AdjustmentSpec(title: L10n.text("对比度"), keyPath: \.contrast, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .highlights: return AdjustmentSpec(title: L10n.text("高光"), keyPath: \.highlights, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .shadows: return AdjustmentSpec(title: L10n.text("阴影"), keyPath: \.shadows, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .toneCurve: return AdjustmentSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .saturation: return AdjustmentSpec(title: L10n.text("饱和度"), keyPath: \.saturation, range: -100...100, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .sharpening: return AdjustmentSpec(title: L10n.text("锐化"), keyPath: \.sharpening, range: 0...200, defaultValue: 0, step: 0.1, unit: "%", decimals: 1)
-        case .rawNoiseReduction: return AdjustmentSpec(title: L10n.text("RAW 降噪"), keyPath: \.rawNoiseReduction, range: 0...2, defaultValue: 0, step: 1, unit: "")
-        case .denoiseMode: return AdjustmentSpec(title: L10n.text("降噪"), keyPath: \.denoiseMode, range: 0...2, defaultValue: 0, step: 1, unit: "")
-        case .vignetteAmount: return AdjustmentSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, range: -100...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
-        case .grainAmount: return AdjustmentSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, range: 0...100, defaultValue: 0, step: 0.1, unit: "", decimals: 1)
+        case .strength: return makeSpec(title: L10n.text("强度"), keyPath: \.strength, step: 0.001, multiplier: 100, decimals: 1)
+        case .exposure: return makeSpec(title: L10n.text("曝光"), keyPath: \.exposure, step: 0.01, unit: "EV", decimals: 2)
+        case .temperature: return makeSpec(title: L10n.text("色温"), keyPath: \.temperature, step: 10, unit: "K", decimals: 0, reciprocalScale: true)
+        case .tint: return makeSpec(title: L10n.text("色调"), keyPath: \.tint, unit: "")
+        case .blackPoint: return makeSpec(title: L10n.text("黑场"), keyPath: \.blackPoint)
+        case .whitePoint: return makeSpec(title: L10n.text("白场"), keyPath: \.whitePoint)
+        case .vibrance: return makeSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance)
+        case .clarity: return makeSpec(title: L10n.text("清晰度"), keyPath: \.clarity)
+        case .dehaze: return makeSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze)
+        case .contrast: return makeSpec(title: L10n.text("对比度"), keyPath: \.contrast)
+        case .highlights: return makeSpec(title: L10n.text("高光"), keyPath: \.highlights)
+        case .shadows: return makeSpec(title: L10n.text("阴影"), keyPath: \.shadows)
+        case .toneCurve: return makeSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve)
+        case .saturation: return makeSpec(title: L10n.text("饱和度"), keyPath: \.saturation)
+        case .sharpening: return makeSpec(title: L10n.text("锐化"), keyPath: \.sharpening)
+        case .rawNoiseReduction: return makeSpec(title: L10n.text("RAW 降噪"), keyPath: \.rawNoiseReduction, unit: "")
+        case .denoiseMode: return makeSpec(title: L10n.text("降噪"), keyPath: \.denoiseMode, unit: "")
+        case .vignetteAmount: return makeSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, unit: "")
+        case .grainAmount: return makeSpec(title: L10n.text("颗粒"), keyPath: \.grainAmount, unit: "")
         }
     }
 }

@@ -1136,6 +1136,7 @@
 				E20DD483661FD62C27502C63 /* Sources */,
 				7A7847F15E616132CAD7AF18 /* Frameworks */,
 				8F3A1B2C3D4E5F678901234D /* Embed Frameworks */,
+				AB4000000000000000000003 /* Prepare Externalized LUTs */,
 				DBB0E1C42A7E409E830998F8 /* Resources */,
 				D01200000000000000000001 /* Copy BundledLooks */,
 				D01200000000000000000002 /* Copy BundledLooks Artwork */,
@@ -1247,6 +1248,61 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "bash \"$SRCROOT/../scripts/ci/check-ios-sdk.sh\" \"$SDKROOT\"\n";
+			showEnvVarsInLog = 0;
+		};
+		AB4000000000000000000003 /* Prepare Externalized LUTs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Prepare Externalized LUTs";
+			outputPaths = (
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_CLASSIC-Neg._65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ETERNA-BB_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_ETERNA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_PRO-Neg.Std_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_REALA-ACE_65grid_V.1.00.cube",
+				"$(SRCROOT)/../lutools/flog-2-new/FLog2_to_Velvia_65grid_V.1.00.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_contax_nd_std_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_pentax_k5_reversal_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_2393_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_bw_400_cn_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_e100_gx_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_ektachrome_100_vs_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_ektar_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_100_xpro_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_chrome_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_chrome_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_color_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_color_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_elite_extracolor_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_hie_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_25_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_kodachrome_64_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_160_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_portra_800_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_100_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_3200_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_tmax_400_sRGB_v1.cube",
+				"$(SRCROOT)/../Shared/BundledLooks/RawLab_look_trix_400_sRGB_v1.cube",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nmissing=0\ni=0\ncount=${SCRIPT_OUTPUT_FILE_COUNT:-0}\nwhile [ \"$i\" -lt \"$count\" ]; do\n    var=\"SCRIPT_OUTPUT_FILE_${i}\"\n    cube=\"${!var:-}\"\n    if [ -n \"$cube\" ] && [ ! -f \"$cube\" ]; then\n        missing=1\n        break\n    fi\n    i=$((i + 1))\ndone\nif [ \"$count\" -eq 0 ] || [ \"$missing\" -eq 1 ]; then\n    python3 \"$SRCROOT/../scripts/assets/prepare.py\" --group luts\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 		AB4000000000000000000001 /* Embed RUM SDK */ = {
