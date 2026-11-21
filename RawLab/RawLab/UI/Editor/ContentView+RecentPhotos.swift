@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 extension ContentView {
@@ -7,9 +8,7 @@ extension ContentView {
     }
 
     func showRecentPhotos() {
-        guard !editorBusy, !isEditorDraftActive, viewModel.saveCurrentSettings(settings) else { return }
-        showingBefore = false
-        showingRecentPhotos = true
+        coordinator.showRecentPhotos()
     }
 
     func recordRecentPhoto() {
@@ -32,18 +31,14 @@ extension ContentView {
     }
 
     func finishRecentPhotos() {
-        if recentImportRequested {
-            recentImportRequested = false
-            requestEditorImport(file: false)
-        } else if let photo = recentPhotoToOpen {
-            recentPhotoToOpen = nil
+        coordinator.finishRecentPhotos { photo in
             Task { await openRecentPhoto(photo) }
         }
     }
 
     @MainActor func openRecentPhoto(_ photo: RecentPhoto) async {
         guard !editorBusy, !isEditorDraftActive, viewModel.saveCurrentSettings(settings) else { return }
-        isImporting = true
+        coordinator.isImporting = true
         do {
             let source = try await photoPreviews.source(for: photo)
             try Task.checkCancellation()
@@ -53,14 +48,18 @@ extension ContentView {
             viewModel.importImage(from: input, identity: source.identity, retainedInput: source.file,
                 diagnosticContext: ["entryPoint": "recentPhotos"], onImported: { UsageAnalytics.shared.record(.photoImported) }) { restored in
                     settings = restored
-                    if restored.isHDREditing { selectedGroup = .light; selectedAdjustment = .exposure; selectedHDRRenditionTool = nil }
+                    if restored.isHDREditing {
+                        coordinator.selectedGroup = .light
+                        coordinator.selectedAdjustment = .exposure
+                        coordinator.selectedHDRRenditionTool = nil
+                    }
                 }
         } catch is CancellationError {
-            isImporting = false
+            coordinator.isImporting = false
         } catch {
-            isImporting = false
-            recentFailedPhoto = photo
-            recentOpenError = error.localizedDescription
+            coordinator.isImporting = false
+            coordinator.recentFailedPhoto = photo
+            coordinator.recentOpenError = error.localizedDescription
         }
     }
 }

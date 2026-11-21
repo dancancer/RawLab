@@ -91,11 +91,10 @@ internal sealed partial class RenderEngine
         progress.Token.ThrowIfCancellationRequested();
         if (!settings.IsHDREditing)
         {
-            if(PhotoInput.IsNormalX3f(path,settings))throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+            if(Native.sony2fuji_is_normal_x3f(path,settings.X3fMode)!=0)throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
             if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-            settings=PrepareRecipe(path,settings);SetProcessing(settings.Processing);SetX3f(path,settings);
-            SetTone(settings.RenderToneControls);SetAtmosphere(settings.RenderAtmosphere);
-            SetCurve(settings.RenderCurve);SetGrading(settings.RenderGrading);SetLens(settings.Lens);
+            settings=PrepareRecipe(path,settings);
+            ApplyParams(path,settings,includeDenoise:false,validateAiX3f:true);
         }
         ConfigureAI(true);
         Exception? callbackError=null;
@@ -109,7 +108,7 @@ internal sealed partial class RenderEngine
             aiNativeOperationStarted=true;
             if (settings.IsHDREditing)
             {
-                SetProcessing(settings.Processing);
+                ApplyProcessingOnly(settings.Processing);
                 var diagnostic=HDRNative.Diagnostic();
                 status=Native.sony2fuji_hdr_prepare_camera_raw_ai(session,path,callback,IntPtr.Zero,ref diagnostic);
             }
@@ -126,10 +125,11 @@ internal sealed partial class RenderEngine
 
     private HDRSourceLease AcquireHDRSource(string path,HDRSourceInfo info,bool final,uint edge,Adjustments settings)
     {
-        if (info.IsCameraRaw && !info.IsProRAW) SetProcessing(settings.Processing);
+        if (info.IsCameraRaw && !info.IsProRAW) ApplyProcessingOnly(settings.Processing);
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
-            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase);
+            return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
+                temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory);
         if (!PhotoInput.IsHDRCameraAICandidate(info))
             throw new AIDenoiseException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
         ConfigureAI(true);
@@ -140,7 +140,7 @@ internal sealed partial class RenderEngine
         try
         {
             return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
-                System.Text.Encoding.ASCII.GetString(key,0,64));
+                System.Text.Encoding.ASCII.GetString(key,0,64),appPaths.HdrCacheDirectory,appPaths.HdrCameraProfilesDirectory);
         }
         catch (HDRSourceException error) when (error.Status==8 || error.Reason==HDRNative.ReasonCameraAI)
         {

@@ -153,6 +153,91 @@ inline std::string finishDigest(std::array<uint32_t, 8> state, const uint8_t* ta
 #endif
 } // namespace detail
 
+class Sha256 {
+public:
+    Sha256()
+#if defined(_WIN32)
+        : hasher_(detail::sha256AlgHandle())
+#endif
+    {
+#if defined(__APPLE__)
+        CC_SHA256_Init(&ctx_);
+#endif
+    }
+
+    Sha256(const Sha256&) = delete;
+    Sha256& operator=(const Sha256&) = delete;
+
+    void update(const void* data, size_t size) {
+        if (finished_) throw std::runtime_error("SHA-256 already finished");
+        if (size == 0) return;
+        if (!data) throw std::invalid_argument("invalid SHA-256 input");
+#if defined(__APPLE__)
+        const auto* ptr = static_cast<const uint8_t*>(data);
+        size_t remaining = size;
+        while (remaining > 0) {
+            const auto chunk = static_cast<CC_LONG>(std::min<size_t>(remaining, 0x40000000u));
+            CC_SHA256_Update(&ctx_, ptr, chunk);
+            ptr += chunk;
+            remaining -= chunk;
+        }
+#elif defined(_WIN32)
+        hasher_.update(data, size);
+#else
+        const auto* ptr = static_cast<const uint8_t*>(data);
+        size_t remaining = size;
+        bytes_ += size;
+        if (tailSize_ > 0) {
+            const size_t fill = std::min(size_t(64) - tailSize_, remaining);
+            std::copy_n(ptr, fill, tail_.data() + tailSize_);
+            tailSize_ += fill;
+            ptr += fill;
+            remaining -= fill;
+            if (tailSize_ == 64) {
+                detail::compress(state_, tail_.data());
+                tailSize_ = 0;
+            }
+        }
+        while (remaining >= 64) {
+            detail::compress(state_, ptr);
+            ptr += 64;
+            remaining -= 64;
+        }
+        if (remaining > 0) {
+            std::copy_n(ptr, remaining, tail_.data());
+            tailSize_ = remaining;
+        }
+#endif
+    }
+
+    std::string finish() {
+        if (finished_) throw std::runtime_error("SHA-256 already finished");
+        finished_ = true;
+#if defined(__APPLE__)
+        std::array<uint8_t, CC_SHA256_DIGEST_LENGTH> digest{};
+        CC_SHA256_Final(digest.data(), &ctx_);
+        return detail::formatDigest(digest.data(), digest.size());
+#elif defined(_WIN32)
+        return hasher_.finish();
+#else
+        return detail::finishDigest(state_, tail_.data(), tailSize_, bytes_);
+#endif
+    }
+
+private:
+    bool finished_ = false;
+#if defined(__APPLE__)
+    CC_SHA256_CTX ctx_{};
+#elif defined(_WIN32)
+    detail::BcryptHash hasher_;
+#else
+    std::array<uint32_t, 8> state_ = detail::initialState;
+    std::array<uint8_t, 64> tail_{};
+    size_t tailSize_ = 0;
+    uint64_t bytes_ = 0;
+#endif
+};
+
 inline std::string sha256Bytes(const void* data, size_t size) {
     if (!data && size) throw std::invalid_argument("invalid SHA-256 input");
 #if defined(__APPLE__)

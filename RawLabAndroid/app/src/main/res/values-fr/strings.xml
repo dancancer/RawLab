@@ -242,6 +242,7 @@
     <string name="exposure_sensor">"Référence du capteur"</string>
     <string name="film">"Film"</string>
     <string name="follow_system">"Suivre le système"</string>
+    <string name="force_gpu_unsupported">"Le mode GPU forcé n’est pas disponible pour cette photo, ce look ou ce mode de traitement. Passez en mode Auto pour revenir en repli."</string>
     <string name="geometry">"Géométrie"</string>
     <string name="geometry_crop_height">"Hauteur du recadrage"</string>
     <string name="geometry_crop_hint">"Les pourcentages de recadrage suivent la rotation, les retournements, la perspective et le redressement."</string>

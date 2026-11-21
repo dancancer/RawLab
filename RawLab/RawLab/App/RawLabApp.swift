@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 @main
@@ -20,14 +21,17 @@ struct RawLabApp: App {
         (try? BatchJournalStore.appStore())?.removeOrphanedJobDirectories()
         let batchExportRoot = BatchFileOutputStore.root()
         let batchJournalRoot = BatchArtifactRetention.defaultJournalRoot
+        let editsDirectory = EditPersistence.defaultDirectory
         DispatchQueue.global(qos: .utility).async {
             for entry in staleImportEntries { try? FileManager.default.removeItem(at: entry) }
             _ = BatchArtifactRetention.reclaim(exportsRoot: batchExportRoot,
                                                journalRoot: batchJournalRoot)
+            _ = EditPersistence.removeStaleAtomicTempFiles(in: editsDirectory)
         }
         // Q6（B1 判据）：相机手动清理的「已导出」证据 = 外部出口成功后写入的持久账本
         // （保存图库 / Files 另存 / 渲染 DNG / 批量导出）。读取在 backend 队列执行，
         // RecentPhotoStore 的 LRU 副本不再充当判据——打开 ≠ 导出。
+        BatchExportJob.defaultX3fModeProvider = { try Sony2FujiProcessor().x3fDefaultMode(for: $0) }
         IOSCameraController.exportedContentIdentifiersProvider = {
             ExportEvidenceStore.shared.exportedContentIdentifiers()
         }
@@ -41,9 +45,7 @@ struct RawLabApp: App {
 #if RAWLAB_RUM
                     if RawLabRUM.start() { return }
 #endif
-                    if ProcessInfo.processInfo.environment["RAWLAB_SMOKE_TEST"] != "1" {
-                        UsageAnalytics.shared.beginSession()
-                    }
+                    UsageAnalytics.shared.beginSession()
                 }
         }
     }

@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import CryptoKit
 import ImageIO
@@ -516,7 +517,8 @@ struct CameraSkipAndLimitTests {
             ("testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch", testIN6TetheringResumeLimitAndExactBoundary10000To10001AndLanguageSwitch),
             ("testP222ManifestWritesCoalescedToOneBatchWrite", testP222ManifestWritesCoalescedToOneBatchWrite),
             ("testP222OrphanRecoveryAndPerPhotoDurability", testP222OrphanRecoveryAndPerPhotoDurability),
-            ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery)
+            ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery),
+            ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile)
         ]
         #if os(macOS)
         suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
@@ -2433,5 +2435,62 @@ struct CameraSkipAndLimitTests {
         let reopened = try CameraOriginalStore(directory: root)
         try check(reopened.snapshot.jobs.count == 7,
                   "P2-22 persist failure recovery: On-disk manifest matches 7 committed jobs with zero split-brain")
+    }
+
+    @MainActor static func test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-508-thumb-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let jpegBytes = try makeLargeJPEG(targetSize: 256_000, seed: 7)
+        let digest = sha256Hex(jpegBytes)
+        let device = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-6700", firmware: "2.00", serial: "0508", operations: [0x923c, 0x923d])
+        let snapshot = CameraAssetSnapshot(content: 1, file: 1, storage: 0, format: 0,
+                                           name: "DSC00508.JPG", size: UInt64(jpegBytes.count),
+                                           created: "1700000050800", modified: "")
+        let job = try store.enqueue(device: device, connectionKey: "fixture", assets: [snapshot])
+        let target = try store.begin(job: job.id, item: job.items[0].id)
+        try target.handle.write(contentsOf: jpegBytes)
+        try target.handle.close()
+        let savedOriginal = try store.complete(job: job.id, item: job.items[0].id, digest: digest)
+        let savedURL = store.originalURL(savedOriginal)
+
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID())
+        let controller = IOSCameraController(backend: backend)
+        try await waitUntil { !controller.manifest.originals.isEmpty }
+
+        FileDigestCache.shared.invalidateAll()
+        let beforeWork = CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+        let beforeFileCount = FileDigestCache.shared.digestComputeCount(for: savedURL)
+
+        let stateLock = NSLock()
+        var queueEntered = false
+        let releaseQueue = DispatchSemaphore(value: 0)
+        backend.queue.async {
+            stateLock.lock(); queueEntered = true; stateLock.unlock()
+            _ = releaseQueue.wait(timeout: .now() + 5)
+        }
+        defer { releaseQueue.signal() }
+        try await waitUntil(timeout: 2.0) {
+            stateLock.lock(); defer { stateLock.unlock() }
+            return queueEntered
+        }
+        try check({ stateLock.lock(); defer { stateLock.unlock() }; return queueEntered }(),
+                  "508 setup: backend.queue entered blocked state")
+
+        controller.thumbnail(savedOriginal)
+        try await waitUntil(timeout: 1.5) {
+            controller.thumbnails[savedOriginal.id.uuidString] != nil
+        }
+        let afterThumbWork = CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+        try check(afterThumbWork - beforeWork == 0 && FileDigestCache.shared.digestComputeCount(for: savedURL) == beforeFileCount,
+                  "508 thumbnail loads while backend.queue is blocked with 0 full-file SHA-256 computations")
+
+        controller.showPreview(savedOriginal)
+        try await waitUntil(timeout: 1.5) {
+            !controller.previewLoading && controller.preview != nil
+        }
+        let afterPreviewWork = CameraOriginalStore.fullFileHashCount + FileDigestCache.shared.digestComputeCount
+        try check(afterPreviewWork - beforeWork == 0 && FileDigestCache.shared.digestComputeCount(for: savedURL) == beforeFileCount,
+                  "508 original preview loads while backend.queue is blocked with 0 full-file SHA-256 computations")
     }
 }

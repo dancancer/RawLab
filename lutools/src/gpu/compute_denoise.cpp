@@ -11,7 +11,14 @@ bool finiteOutput(FilterDevice& device, FilterBuffer& buffer, size_t count, floa
                   std::vector<float>& scratch) {
     scratch.resize(count);
     device.read(buffer, count, scratch.data());
-    if (!std::all_of(scratch.begin(), scratch.end(), [](float value) { return std::isfinite(value); })) return false;
+    if (!std::all_of(scratch.begin(), scratch.end(), [](float value) { return std::isfinite(value); })) {
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::ProcessingError,
+            GpuBackendFault::FilterError,
+            "GPU filter produced non-finite output"
+        };
+        return false;
+    }
     std::memcpy(output, scratch.data(), count * sizeof(float));
     return true;
 }
@@ -36,7 +43,14 @@ bool imageFilter(FilterDevice& device, const ImageData& source, FilterParams par
     // Independent effects need no halo; a detail pass needs one source row each side.
     const bool detail = params.stage == static_cast<uint32_t>(FilterStage::Detail);
     const size_t maxRows = 8 * 1024 * 1024 / (rowFloats * sizeof(float));
-    if (maxRows <= 2) return false;
+    if (maxRows <= 2) {
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::Unsupported,
+            GpuBackendFault::UnsupportedCapability,
+            "Image row exceeds 8 MiB filter band budget"
+        };
+        return false;
+    }
     const size_t bandRows = std::min<size_t>(maxRows - 2, params.height);
     const size_t maxInputRows = std::min<size_t>(params.height, bandRows + (detail ? 2 : 0));
     auto input = device.allocate(rowFloats * maxInputRows);

@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 enum AdjustmentSheetKind: String, Identifiable {
@@ -68,6 +69,7 @@ extension EditorModel {
     // 主线程模型/测试入口；界面的大批量预检使用独立队列执行只读 prepare。
     func prepareAdjustmentPaste(payload: AdjustmentTransferPayload, targets: [URL], excludingSource: String? = nil,
                                 action: AdjustmentHistoryTransaction.Action = .paste) throws -> PreparedAdjustmentTransfer {
+        _ = editStore?.flushPendingCommits()
         let session = try requireAdjustmentSession()
         return try session.prepare(payload: payload, targets: adjustmentTransferTargets(targets, payload: payload, excludingSource: excludingSource), action: action)
     }
@@ -87,7 +89,7 @@ extension EditorModel {
         let source = sourceRevision
         let revision = editRevision
         let activeRaw = rawHDRSource, activeHDR = sourceIsHDR
-        let activeDraft = geometryDraft != nil || dirty
+        let activeDraft = geometryDraft != nil || dirty || hasPendingEditCommits
         let looks = availableAdjustmentLooks, photos = batchSelectionPhotos
         let store = editStore, probeHDRSource = probeHDRSource
         // 主线程只冻结模型状态；逐张 RAW 探测随 prepare 在后台执行。
@@ -96,7 +98,7 @@ extension EditorModel {
             for url in urls {
                 if shouldCancel() { break }
                 guard url.resolvingSymlinksInPath().standardizedFileURL.path != excludingSource,
-                      excludingIdentity == nil || (try? BatchExportItem.resourceKey(url)) != excludingIdentity else { continue }
+                      excludingIdentity == nil || (try? MacBatchExportItem.resourceKey(url)) != excludingIdentity else { continue }
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path
                 let collectionPhoto = collection ? photos.values.first { $0.url.path == path } : nil
                 let sourceIsHDR = Result { path == activePath ? activeHDR : try probeHDRSource(url, {}) != nil }
@@ -124,17 +126,17 @@ extension EditorModel {
                           !lens.distortion || info.appliedDistortion,
                           !lens.tca || info.appliedTCA, !lens.vignetting || info.appliedVignetting else { throw AdjustmentTransferError.incompatible("lens calibration") }
                 }
-                targets.append(AdjustmentTransferTarget(url: url, defaultState: PhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
+                targets.append(AdjustmentTransferTarget(url: url, defaultState: MacPhotoEditState(settings: Adjustments(), filmID: ""), context: context, expectedIdentity: collectionPhoto?.original ?? (path == activePath ? activeIdentity : nil),
                     isCurrent: { [weak self] in
                         let check = {
                             guard let self, self.sourceRevision == source else { return false }
                             guard path != excludingSource else { return false }
-                            if let excludingIdentity, (try? BatchExportItem.resourceKey(url)) == excludingIdentity { return false }
+                            if let excludingIdentity, (try? MacBatchExportItem.resourceKey(url)) == excludingIdentity { return false }
                             if collection {
                                 guard let collectionPhoto, (try? collectionPhoto.validate()) != nil else { return false }
                             }
                             if self.file?.resolvingSymlinksInPath().standardizedFileURL.path != path { return path != activePath }
-                            return self.editRevision == revision && !self.dirty && self.geometryDraft == nil && !self.aiState.isRunning
+                            return self.editRevision == revision && !self.dirty && !self.hasPendingEditCommits && self.geometryDraft == nil && !self.aiState.isRunning
                         }
                         return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)
                     }, resolveMetadata: { state in
@@ -154,7 +156,7 @@ extension EditorModel {
                         hydrated.settings.resolveRawNoiseReductionSupport(frame.supportsRawNoiseReduction)
                         return hydrated
                     }, resolveDefaultState: {
-                        try PhotoEditState(settings: RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get()), filmID: "")
+                        try MacPhotoEditState(settings: RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get()), filmID: "")
                     }))
             }
             return targets
@@ -192,7 +194,7 @@ extension EditorModel {
         guard let session = adjustmentSession else { return }
         let current: (String) -> Bool = { [weak self] path in
             guard let self else { return false }
-            return self.file?.resolvingSymlinksInPath().standardizedFileURL.path != path || (!self.dirty && self.geometryDraft == nil)
+            return self.file?.resolvingSymlinksInPath().standardizedFileURL.path != path || (!self.dirty && !self.hasPendingEditCommits && self.geometryDraft == nil)
         }
         if let photo = request.photo {
             acceptAdjustmentOutcomes(request.undo ? session.undoPhoto(photo, transactionID: request.transactionID, isCurrent: current)

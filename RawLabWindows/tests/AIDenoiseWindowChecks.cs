@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -24,11 +23,9 @@ internal static class AIDenoiseWindowChecks
             if(Volatile.Read(ref failDraft) && snapshot.Lens.Distortion)throw new InvalidOperationException("Fixture: draft model failure");
             release.Wait(TimeSpan.FromSeconds(30));progress.Token.ThrowIfCancellationRequested();
         });
-        var window=new MainWindow(new UsageAnalytics(),null,job);
-        TestWindowState.Isolate(window,output);window.Show();window.GpuMode.SelectedIndex=1;
-        const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
-        object? Call(string name,params object[] args)=>typeof(MainWindow).GetMethod(name,flags)!.Invoke(window,args);
-        Adjustments Settings()=>(Adjustments)typeof(MainWindow).GetField("settings",flags)!.GetValue(window)!;
+        var window=TestWindowState.CreateIsolatedWindow(output,aiJob:job);
+        window.Show();window.GpuMode.SelectedIndex=1;
+        Adjustments Settings()=>window.Settings;
         void Begin()
         {
             release.Reset();var before=started;
@@ -40,11 +37,11 @@ internal static class AIDenoiseWindowChecks
         try {
             window.OpenFile(raw);Pump(()=>window.ExportPng.IsEnabled);
             Begin();
-            var previewBefore=typeof(MainWindow).GetField("hslAcceptedWork",flags)!.GetValue(window);
-            Settings().Set(Parameter.Exposure,.25);Call("MarkEdited");Call("Schedule",false,false);
-            Pump(()=>!ReferenceEquals(previewBefore,typeof(MainWindow).GetField("hslAcceptedWork",flags)!.GetValue(window)));
+            var previewBefore=window.HslAcceptedWorkToken;
+            Settings().Set(Parameter.Exposure,.25);window.MarkEditedForTests();window.ScheduleForTests(false,false);
+            Pump(()=>!ReferenceEquals(previewBefore,window.HslAcceptedWorkToken));
             check(job.State.IsRunning && !Settings().AIDenoiseEnabled,"Ordinary preview continues while the first AI result is being prepared");
-            Call("ExecuteReset",new EditorResetScope(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
+            window.ExecuteResetForTests(new EditorResetScope(EditorResetKind.Tool,Tool:EditorAdjustmentTool.Denoise));
             check(job.State.Status==AIDenoiseStatus.Idle,"Reset neutral denoise cancels pending AI intent");
             release.Set();Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
             check(!Settings().AIDenoiseEnabled,"Completion after reset cannot re-enable AI");
@@ -52,18 +49,18 @@ internal static class AIDenoiseWindowChecks
             ((Button)window.DenoiseEditor.FindName("AICancel")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             release.Set();Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
             check(!Settings().AIDenoiseEnabled,"Cancelling first AI request restores ordinary export");
-            Begin();Call("BeginEditGesture");
-            typeof(MainWindow).GetField("interacting",flags)!.SetValue(window,true);
-            Settings().Set(Parameter.Exposure,.75);Call("MarkEdited");release.Set();
+            Begin();window.BeginEditGestureForTests();
+            window.Interacting=true;
+            Settings().Set(Parameter.Exposure,.75);window.MarkEditedForTests();release.Set();
             Pump(()=>Settings().AIDenoiseEnabled);
-            Call("CancelEditGesture");
+            window.CancelEditGestureForTests();
             check(Settings().AIDenoiseEnabled,"Cancelling a parameter gesture preserves AI enabled by an asynchronous completion");
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;
             Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
             foreach(var scope in new[]{new EditorResetScope(EditorResetKind.All),new EditorResetScope(EditorResetKind.Group,EditorAdjustmentGroup.Detail)}) {
                 Settings().Denoise=DenoiseSettings.Clean;
                 Begin();var prepared=window.PrepareReset(scope)!;
-                var revision=(long)typeof(MainWindow).GetField("editRevision",flags)!.GetValue(window)!;
+                var revision=window.EditRevision;
                 check(window.CommitReset(prepared,revision) && job.State.Status==AIDenoiseStatus.Idle,"Committed reset cancels pending AI: "+scope.Kind);
                 release.Set();Pump(()=>job.Completion.IsCompleted && window.ExportPng.IsEnabled);
             }
@@ -72,26 +69,22 @@ internal static class AIDenoiseWindowChecks
             check(!Settings().AIDenoiseEnabled,"Photo reopen rejects a stale AI completion");
             release.Reset();Volatile.Write(ref failDraft,true);Settings().AIDenoiseEnabled=true;
             var beforeDraft=started;
-            Call("BeginTransform",TransformTool.Lens);Pump(()=>started>beforeDraft);
+            window.BeginTransformForTests(TransformTool.Lens);Pump(()=>started>beforeDraft);
             var originalPreparation=job.Completion;
-            var transform=(TransformDraft)typeof(MainWindow).GetField("transform",flags)!.GetValue(window)!;
-            transform.Update(new GeometrySettings {StraightenDegrees=1});Call("Schedule",false,false);
+            var transform=window.TransformDraft;
+            transform.Update(new GeometrySettings {StraightenDegrees=1});window.ScheduleForTests(false,false);
             check(ReferenceEquals(originalPreparation,job.Completion),"Geometry-only draft keeps the same AI task");
-            var failurePendingType=typeof(MainWindow).GetNestedType("PendingAllReset",BindingFlags.NonPublic)!;
-            var failurePending=Activator.CreateInstance(failurePendingType,BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance,
-                null,new object?[]{typeof(MainWindow).GetField("file",flags)!.GetValue(window),
-                    typeof(MainWindow).GetField("openRevision",flags)!.GetValue(window),EditorAdjustmentTool.Exposure,null},null);
-            typeof(MainWindow).GetField("pendingAllReset",flags)!.SetValue(window,failurePending);
-            Call("UpdateLensDraft",new LensSettings(Distortion:true));release.Set();
+            window.SetPendingAllResetForTests(window.CurrentFile,window.OpenRevision,EditorAdjustmentTool.Exposure,null);
+            window.UpdateLensDraftForTests(new LensSettings(Distortion:true));release.Set();
             Pump(()=>job.State.Status==AIDenoiseStatus.Failed);
             window.Dispatcher.Invoke(()=>{},DispatcherPriority.ApplicationIdle);
-            check(typeof(MainWindow).GetField("pendingAllReset",flags)!.GetValue(window)==null,
+            check(!window.HasPendingAllReset,
                 "AI preparation failure clears the pending all-reset continuation before preview can run");
             check(job.Identity?.Lens.Distortion==true && !Settings().Lens.Distortion,
                 "Active lens draft prepares its own identity without committing lens settings");
-            var failedPreparation=job.Completion;Call("Schedule",false,false);
+            var failedPreparation=job.Completion;window.ScheduleForTests(false,false);
             check(ReferenceEquals(failedPreparation,job.Completion),"Same failed draft identity does not retry automatically");
-            release.Reset();var beforeRestore=started;Call("CancelTransformDraft");
+            release.Reset();var beforeRestore=started;window.CancelTransformDraftForTests();
             Pump(()=>started>beforeRestore && job.State.IsRunning);
             check(job.Identity?.Lens.Distortion==false && !Settings().Lens.Distortion,
                 "Cancelling a failed lens draft restores the committed AI identity");
@@ -100,19 +93,15 @@ internal static class AIDenoiseWindowChecks
             Volatile.Write(ref failDraft,false);
             var beforeMissing=started;
             Begin();
-            var pendingType=typeof(MainWindow).GetNestedType("PendingAllReset",BindingFlags.NonPublic)!;
-            var pending=Activator.CreateInstance(pendingType,BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance,
-                null,new object?[]{typeof(MainWindow).GetField("file",flags)!.GetValue(window),
-                    typeof(MainWindow).GetField("openRevision",flags)!.GetValue(window),EditorAdjustmentTool.Exposure,null},null);
-            typeof(MainWindow).GetField("pendingAllReset",flags)!.SetValue(window,pending);
+            window.SetPendingAllResetForTests(window.CurrentFile,window.OpenRevision,EditorAdjustmentTool.Exposure,null);
             release.Set();
             Pump(()=>job.State.Status==AIDenoiseStatus.Failed);
-            check(typeof(MainWindow).GetField("pendingAllReset",flags)!.GetValue(window)==null,
+            check(!window.HasPendingAllReset,
                 "Native preview failure clears the pending post-reset tool return");
             check(started-beforeMissing==4 && job.State.Error==Loc.Text("AI 降噪结果连续未就绪，请重试。") &&
                 window.AdjustmentPanel.IsEnabled && ((Button)window.DenoiseEditor.FindName("AIRetry")).IsEnabled,
                 "Repeated native AI_NOT_READY stops after three re-preparations and keeps retry controls usable");
-            Call("Schedule",false,false);Pump(()=>job.Completion.IsCompleted);
+            window.ScheduleForTests(false,false);Pump(()=>job.Completion.IsCompleted);
             check(started-beforeMissing==4,"Ordinary preview requests do not restart an exhausted AI preparation");
             ((CheckBox)window.DenoiseEditor.FindName("AIEnabledBox")).IsChecked=false;
             Pump(()=>window.ExportPng.IsEnabled);
@@ -135,11 +124,10 @@ internal static class AIDenoiseWindowChecks
         } finally {
             release.Set();
             if(window.IsVisible){
-                typeof(MainWindow).GetField("pendingAllReset",flags)!.SetValue(window,null);
-                Settings().AIDenoiseEnabled=false;Call("ResetAITask");Call("CancelTransformDraft");
+                window.ClearPendingAllResetForTests();
+                Settings().AIDenoiseEnabled=false;window.ResetAITaskForTests();window.CancelTransformDraftForTests();
                 window.Close();Pump(()=>!window.IsVisible);
             }
-            app.Shutdown();
         }
     }
     private static void Pump(Func<bool> done)

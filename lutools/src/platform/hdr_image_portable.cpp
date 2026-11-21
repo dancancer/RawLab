@@ -9,7 +9,6 @@
 #include "core/resource_file_stamp.h"
 #include "sony2fuji/raw_processor.h"
 #include <lcms2.h>
-#include <zlib.h>
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
@@ -41,15 +40,15 @@ std::atomic<uint64_t> sourceHashPasses{0};
 bool hasDigest(const uint8_t sha[32]) {
     return std::any_of(sha, sha + 32, [](uint8_t value) { return value != 0; });
 }
-[[noreturn]] void fail(sony2fuji_status status,uint32_t reason,const char* message) {
-    throw Error(status,reason,SONY2FUJI_HDR_FIELD_PATH,message);
+[[noreturn]] void fail(RenderStatus status, uint32_t reason, const char* message) {
+    throw Error(status, reason, kHdrFieldPath, message);
 }
 bool has(const std::vector<uint8_t>& bytes,const char* text) {
     return std::search(bytes.begin(),bytes.end(),text,text+std::strlen(text))!=bytes.end();
 }
 struct File {
     std::vector<uint8_t> bytes;
-    sony2fuji_hdr_source_info_v1 info{};
+    HDRSourceInfo info{};
     bool jpeg=false;
     AppleGainMapMetadata apple;
 };
@@ -57,23 +56,23 @@ File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
     const auto path=std::filesystem::u8path(name);
     std::error_code error;
     if (!std::filesystem::is_regular_file(path,error))
-        fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR input is not a readable regular file");
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR input is not a readable regular file");
     const uint64_t size=std::filesystem::file_size(path,error);
     if (error || (!size && !expectedSHA256) || size>512ull*1024*1024)
-        fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR compressed input exceeds the file budget");
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
     admitMemory(size*3);
     File file; file.bytes.resize(size_t(size));
     std::ifstream input(path,std::ios::binary);
     if (!input.read(reinterpret_cast<char*>(file.bytes.data()),std::streamsize(size)))
-        fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"Cannot read HDR source");
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
     sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
     const auto sha=hash::sha256Bytes(file.bytes.data(),file.bytes.size());
     auto hex=[](char c) { return c<='9' ? c-'0' : c-'a'+10; };
     std::array<uint8_t, 32> digest{};
     for (size_t i=0;i<digest.size();++i) digest[i]=uint8_t(hex(sha[2*i])*16+hex(sha[2*i+1]));
     if (expectedSHA256 && std::memcmp(digest.data(),expectedSHA256,digest.size()))
-        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
-    if (!size) fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"HDR compressed input exceeds the file budget");
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+    if (!size) fail(RenderStatus::IoError, kHdrReasonInputIo, "HDR compressed input exceeds the file budget");
     file.jpeg=size>=2 && file.bytes[0]==255 && file.bytes[1]==0xd8;
     const bool heif=size>=12 && std::memcmp(file.bytes.data()+4,"ftyp",4)==0;
     const bool xmp=has(file.bytes,"http://ns.adobe.com/hdr-gain-map/1.0/");
@@ -82,33 +81,32 @@ File readFile(const char* name, const uint8_t* expectedSHA256 = nullptr) {
         has(file.bytes,"http://ns.apple.com/HDRGainMap/1.0/");
     if (file.jpeg) {
         if (!xmp && !iso && !apple) {
-            fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_NOT_HDR,"No HDR gain map");
+            fail(RenderStatus::Unsupported, kHdrReasonNotHdr, "No HDR gain map");
         }
         const auto jpeg=apple && !iso ? probeAppleJPEG(file.bytes.data(),file.bytes.size()) : probeJPEG(file.bytes.data(),file.bytes.size());
         const auto exif=jpegExif(file.bytes.data(),file.bytes.size());
         file.info.width=jpeg.width; file.info.height=jpeg.height;
         file.info.orientation=exifOrientation(exif.data(),exif.size());
-        file.info.container=SONY2FUJI_HDR_CONTAINER_JPEG;
-        file.info.protocol=iso ? (xmp ? SONY2FUJI_HDR_PROTOCOL_ISO_XMP : SONY2FUJI_HDR_PROTOCOL_ISO) : SONY2FUJI_HDR_PROTOCOL_XMP;
-        file.info.color_description=jpegColorDescription(file.bytes.data(),file.bytes.size(),apple && !iso);
-        if (!file.info.color_description)
-            fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_COLOR,"HDR JPEG has no supported RGB profile");
-        file.info.content_headroom=jpeg.headroom;
+        file.info.container=kHdrContainerJpeg;
+        file.info.protocol=iso ? (xmp ? kHdrProtocolIsoXmp : kHdrProtocolIso) : kHdrProtocolXmp;
+        file.info.colorDescription=jpegColorDescription(file.bytes.data(),file.bytes.size(),apple && !iso);
+        if (!file.info.colorDescription)
+            fail(RenderStatus::Unsupported, kHdrReasonUnsupportedColor, "HDR JPEG has no supported RGB profile");
+        file.info.contentHeadroom=jpeg.headroom;
         if(apple && !iso) {
             const auto metadata=jpegGainMapXMP(file.bytes.data(),file.bytes.size());
             file.apple=appleGainMapMetadata(metadata.data(),metadata.size());
             const float headroom=file.apple.headroom;
-            file.info.protocol=SONY2FUJI_HDR_PROTOCOL_APPLE;
-            file.info.content_headroom=headroom ? headroom : appleHeadroom(exif.data(),exif.size());
+            file.info.protocol=kHdrProtocolApple;
+            file.info.contentHeadroom=headroom ? headroom : appleHeadroom(exif.data(),exif.size());
         }
-        file.info.headroom_kind=SONY2FUJI_HDR_HEADROOM_DECLARED;
+        file.info.headroomKind=kHdrHeadroomDeclared;
     } else if (heif) file.info=probeHEIF(file.bytes.data(),file.bytes.size());
     else {
-        if (xmp || iso || apple) fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported declared HDR container");
-        fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_NOT_HDR,"No HDR gain map");
+        if (xmp || iso || apple) fail(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, "Unsupported declared HDR container");
+        fail(RenderStatus::Unsupported, kHdrReasonNotHdr, "No HDR gain map");
     }
-    file.info.version=1; file.info.struct_size=sizeof(file.info);
-    std::copy(digest.begin(),digest.end(),file.info.source_sha256);
+    std::copy(digest.begin(),digest.end(),file.info.sourceSha256);
     return file;
 }
 void orient(ImageData& image,uint32_t orientation) {
@@ -123,7 +121,7 @@ void orient(ImageData& image,uint32_t orientation) {
         case 8: options.quarter_turns=3; break;
     }
     if (applyGeometry(image,options)!=ErrorCode::Success)
-        fail(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_INVALID_BUFFER,"HDR orientation failed");
+        fail(RenderStatus::ProcessingError, kHdrReasonInvalidBuffer, "HDR orientation failed");
 }
 bool isTIFF(const char* source) {
     std::ifstream input(std::filesystem::u8path(source), std::ios::binary);
@@ -135,14 +133,14 @@ std::string fileDigest(const char* source) {
     sourceHashPasses.fetch_add(1, std::memory_order_relaxed);
     try { return hash::sha256File(source); }
     catch (const std::runtime_error&) {
-        fail(SONY2FUJI_STATUS_IO_ERROR,SONY2FUJI_HDR_REASON_INPUT_IO,"Cannot verify HDR metadata source");
+        fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot verify HDR metadata source");
     }
 }
 void verifyDigest(const char* source, const uint8_t sha[32]) {
     const std::string digest = fileDigest(source);
     const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
     for (size_t i = 0; i < 32; ++i) if (uint8_t(hex(digest[2*i])*16 + hex(digest[2*i+1])) != sha[i])
-        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
+        fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
     checkProcessingCancellation();
 }
 void differentFile(const char* source, const char* output) {
@@ -150,7 +148,7 @@ void differentFile(const char* source, const char* output) {
     std::error_code error;
     if (std::filesystem::equivalent(inputPath,outputPath,error) ||
         std::filesystem::weakly_canonical(inputPath) == std::filesystem::weakly_canonical(outputPath))
-        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SAME_FILE,"HDR output must not replace the source");
+        fail(RenderStatus::InvalidArgument, kHdrReasonSameFile, "HDR output must not replace the source");
 }
 std::vector<uint8_t> captureMetadata(const char* source,const uint8_t sha[32],uint32_t width,uint32_t height) {
     std::vector<uint8_t> exif;
@@ -190,7 +188,7 @@ public:
             }
         }
         if (created==INVALID_HANDLE_VALUE)
-            fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot create HDR output transaction");
+            fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot create HDR output transaction");
         CloseHandle(created); // write() reopens the reserved name.
         path_=candidate;
 #else
@@ -201,7 +199,7 @@ public:
             fd=::open(candidate.c_str(),O_CREAT|O_EXCL|O_WRONLY|O_CLOEXEC,0666);
             if (fd<0 && errno!=EEXIST) break;
         }
-        if (fd<0) fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot create HDR output transaction");
+        if (fd<0) fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot create HDR output transaction");
         preserveDestinationMode(fd,destination);
         close(fd); path_=std::move(candidate);
 #endif
@@ -214,13 +212,13 @@ public:
 #else
         const bool okay=std::rename(path_.c_str(),std::filesystem::u8path(target).c_str())==0;
 #endif
-        if (!okay) fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot publish HDR output");
+        if (!okay) fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot publish HDR output");
     }
 };
 void write(const std::filesystem::path& path,const std::vector<uint8_t>& bytes) {
     std::ofstream output(path,std::ios::binary|std::ios::trunc);
     output.write(reinterpret_cast<const char*>(bytes.data()),std::streamsize(bytes.size())); output.flush();
-    if (!output.good()) fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot write HDR output");
+    if (!output.good()) fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot write HDR output");
 }
 void syncOutput(const std::filesystem::path& path) {
 #ifdef _WIN32
@@ -232,7 +230,7 @@ void syncOutput(const std::filesystem::path& path) {
     const bool okay = handle >= 0 && fsync(handle) == 0;
     if (handle >= 0) close(handle);
 #endif
-    if (!okay) fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot flush HDR output transaction");
+    if (!okay) fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot flush HDR output transaction");
 }
 std::vector<uint8_t> srgbICC(const std::vector<uint8_t>& jpeg) {
     auto profile=cmsCreate_sRGBProfile(); if (!profile) throw std::bad_alloc();
@@ -243,15 +241,6 @@ std::vector<uint8_t> srgbICC(const std::vector<uint8_t>& jpeg) {
     const uint32_t length=size+16;
     std::vector<uint8_t> output{255,0xd8,255,0xe2,uint8_t(length>>8),uint8_t(length),'I','C','C','_','P','R','O','F','I','L','E',0,1,1};
     output.insert(output.end(),icc.begin(),icc.end()); output.insert(output.end(),jpeg.begin()+2,jpeg.end()); return output;
-}
-void pngExif(const std::filesystem::path& path,const std::vector<uint8_t>& exif) {
-    std::ifstream input(path,std::ios::binary); std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input),{}}; input.close();
-    if (bytes.size()<33) throw std::runtime_error("Cannot read SDR PNG output");
-    std::vector<uint8_t> chunk;
-    auto integer=[&](uint32_t v) { for (int i=3;i>=0;--i) chunk.push_back(uint8_t(v>>(8*i))); };
-    integer(uint32_t(exif.size())); chunk.insert(chunk.end(),{'e','X','I','f'}); chunk.insert(chunk.end(),exif.begin(),exif.end());
-    integer(uint32_t(crc32(0,chunk.data()+4,uInt(chunk.size()-4))));
-    bytes.insert(bytes.begin()+33,chunk.begin(),chunk.end()); write(path,bytes);
 }
 }
 
@@ -282,41 +271,41 @@ void admitMemory(uint64_t additionalBytes) {
     const uint64_t limit=total/2;
     available=std::min(available,resident<limit ? limit-resident : 0);
     if (!total || !available || additionalBytes>available*.65)
-        fail(SONY2FUJI_STATUS_OUT_OF_MEMORY,SONY2FUJI_HDR_REASON_OUT_OF_MEMORY,"HDR task exceeds current memory budget");
+        fail(RenderStatus::OutOfMemory, kHdrReasonOutOfMemory, "HDR task exceeds current memory budget");
 }
 // Mac 上的可移植适配器测试也必须完全覆盖平台符号，不能链接回 Apple 对象。
 void admitStreamingMemory(uint64_t additionalBytes) { admitMemory(additionalBytes); }
-void validateStreamSource(const sony2fuji_hdr_export_config_v1& config, uint32_t width, uint32_t height,
+void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_t height,
     const char* path, StreamSourcePin& pin) {
-    differentFile(config.metadata_source_path,path);
-    sony2fuji_hdr_source_info_v1 info;
-    if (isTIFF(config.metadata_source_path)) {
-        const auto file = std::filesystem::u8path(config.metadata_source_path);
+    differentFile(config.metadataSourcePath, path);
+    HDRSourceInfo info;
+    if (isTIFF(config.metadataSourcePath)) {
+        const auto file = std::filesystem::u8path(config.metadataSourcePath);
         const auto before = resourceFileStamp(file);
-        if (hasDigest(config.source_sha256)) verifyDigest(config.metadata_source_path,config.source_sha256);
+        if (hasDigest(config.sourceSha256)) verifyDigest(config.metadataSourcePath, config.sourceSha256);
         else {
-            // 全零 config.source_sha256：调用方未预冻结，内部自采一次并贯穿发布阶段。
-            const auto digest = fileDigest(config.metadata_source_path);
+            // 全零 config.sourceSha256：调用方未预冻结，内部自采一次并贯穿发布阶段。
+            const auto digest = fileDigest(config.metadataSourcePath);
             const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
             for (size_t i = 0; i < 32; ++i) pin.digest[i] = uint8_t(hex(digest[2*i])*16 + hex(digest[2*i+1]));
         }
-        info = probeProRAW(config.metadata_source_path);
+        info = probeProRAW(config.metadataSourcePath);
         if (!before || !(resourceFileStamp(file) == before))
-            fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_SOURCE_CHANGED,"HDR metadata source changed");
+            fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
     } else {
-        const auto source = readFile(config.metadata_source_path,config.source_sha256); info = source.info;
+        const auto source = readFile(config.metadataSourcePath, config.sourceSha256); info = source.info;
         if (info.orientation >= 5 && info.orientation <= 8) std::swap(info.width,info.height);
     }
     if (info.width != width || info.height != height)
-        fail(SONY2FUJI_STATUS_INVALID_ARGUMENT,SONY2FUJI_HDR_REASON_PREVIEW_SOURCE,"Stream must read the complete source canvas");
+        fail(RenderStatus::InvalidArgument, kHdrReasonPreviewSource, "Stream must read the complete source canvas");
 }
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
-    const sony2fuji_hdr_export_config_v1& config, bool hdr, const char* path, const StreamSourcePin& pin) {
+    const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin) {
     checkProcessingCancellation();
-    differentFile(config.metadata_source_path,path);
+    differentFile(config.metadataSourcePath, path);
     admitStreamingMemory(uint64_t(data.size()) * 8 + (64ull << 20));
-    const uint8_t* expected = !hasDigest(config.source_sha256) && hasDigest(pin.digest) ? pin.digest : config.source_sha256;
-    const auto exif = captureMetadata(config.metadata_source_path,expected,width,height);
+    const uint8_t* expected = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
+    const auto exif = captureMetadata(config.metadataSourcePath, expected, width, height);
     if (hdr) {
         const auto base = jpegBase(data.data(),data.size());
         const auto tagged = withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
@@ -328,14 +317,14 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
     }
     Temporary output(path);
     write(output.path(),data); syncOutput(output.path());
-    verifyDigest(config.metadata_source_path,expected);
-    differentFile(config.metadata_source_path,path);
+    verifyDigest(config.metadataSourcePath, expected);
+    differentFile(config.metadataSourcePath, path);
     checkProcessingCancellation();
     output.publish(path);
 }
-sony2fuji_hdr_source_info_v1 probeFile(const char* path) { return readFile(path).info; }
-DecodedImage decodeFile(const char* path,const sony2fuji_hdr_decode_options_v1& options) {
-    auto file=readFile(path); const uint32_t edge=options.intent==SONY2FUJI_INTENT_PREVIEW ? options.long_edge : 0;
+HDRSourceInfo probeFile(const char* path) { return readFile(path).info; }
+DecodedImage decodeFile(const char* path, const HDRDecodeOptions& options) {
+    auto file=readFile(path); const uint32_t edge=options.intent==kHdrIntentPreview ? options.longEdge : 0;
     const uint32_t nativeWidth=file.info.orientation>=5 ? file.info.height : file.info.width;
     const uint32_t nativeHeight=file.info.orientation>=5 ? file.info.width : file.info.height;
     const double scale=edge && std::max(nativeWidth,nativeHeight)>edge ? double(edge)/std::max(nativeWidth,nativeHeight) : 1;
@@ -343,55 +332,77 @@ DecodedImage decodeFile(const char* path,const sony2fuji_hdr_decode_options_v1& 
     admitMemory(uint64_t(width)*height*48);
     DecodedImage result;
     if (file.jpeg) {
-        result.pixels.hdr=file.info.protocol==SONY2FUJI_HDR_PROTOCOL_APPLE ?
-            decodeAppleJPEG(file.bytes.data(),file.bytes.size(),file.info.content_headroom,edge,file.apple,file.info.color_description) :
+        result.pixels.hdr=file.info.protocol==kHdrProtocolApple ?
+            decodeAppleJPEG(file.bytes.data(),file.bytes.size(),file.info.contentHeadroom,edge,file.apple,file.info.colorDescription) :
             edge ? decodeJPEGPreview(file.bytes.data(),file.bytes.size(),edge) : decodeJPEG(file.bytes.data(),file.bytes.size());
-        result.pixels.sdr=decodeSDRJPEG(file.bytes.data(),file.bytes.size(),edge,file.info.color_description);
+        result.pixels.sdr=decodeSDRJPEG(file.bytes.data(),file.bytes.size(),edge,file.info.colorDescription);
         orient(result.pixels.hdr,file.info.orientation); orient(result.pixels.sdr,file.info.orientation);
     } else result=decodeHEIF(file.bytes.data(),file.bytes.size(),edge);
     result.info=file.info;
     if (result.pixels.hdr.width!=int(width) || result.pixels.hdr.height!=int(height) ||
         result.pixels.sdr.width!=int(width) || result.pixels.sdr.height!=int(height))
-        fail(SONY2FUJI_STATUS_PROCESSING_ERROR,SONY2FUJI_HDR_REASON_INVALID_BUFFER,"HDR/SDR decoded canvases disagree");
+        fail(RenderStatus::ProcessingError, kHdrReasonInvalidBuffer, "HDR/SDR decoded canvases disagree");
     result.pixels.nativeWidth=nativeWidth; result.pixels.nativeHeight=nativeHeight;
-    result.pixels.sourceHeadroom=file.info.content_headroom;
+    result.pixels.sourceHeadroom=file.info.contentHeadroom;
     result.pixels.sourceQuality=result.pixels.renderQuality=static_cast<HDRQuality>(options.intent);
-    result.pixels.isProxy=options.intent==SONY2FUJI_INTENT_PREVIEW;
+    result.pixels.isProxy=options.intent==kHdrIntentPreview;
     result.pixels.decodeRevision=nextRevision.fetch_add(1);
     return result;
 }
+#if defined(__APPLE__)
+// Keep the portable adapter's symbol closure complete when the Apple-compiled
+// C ABI object also references tiled export. Never pull the Apple adapter back in.
+HDRRowSource openRasterRows(const char*, const uint8_t[32], StreamSourcePin&, uint64_t&) {
+    fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        "Tiled HDR raster decoding is unavailable on this platform");
+}
+void freezeStreamSourceFile(const char*, StreamSourcePin&) {
+    fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        "Tiled HDR source snapshots are unavailable on this platform");
+}
+void verifyStreamSource(const StreamSourcePin&) {
+    fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        "Tiled HDR source snapshots are unavailable on this platform");
+}
+void publishTiledHEIF(const HDRStreamFiles&, const HDRExportConfig&, const char*, const StreamSourcePin&) {
+    throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        kHdrFieldExport, "Tiled HDR HEIF encoding is unavailable on this platform");
+}
+#endif
+
 bool heifExportAvailable() { return false; }
-void exportHEIF(const HDRImagePair&,const sony2fuji_hdr_export_config_v1&,const char*) {
-    throw Error(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
-        SONY2FUJI_HDR_FIELD_EXPORT,"HDR HEIF encoding is unavailable on this platform");
+void exportHEIF(const HDRImagePair&, const HDRExportConfig&, const char*) {
+    throw Error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        kHdrFieldExport, "HDR HEIF encoding is unavailable on this platform");
 }
 
-void exportJPEG(const HDRImagePair& image,const sony2fuji_hdr_export_config_v1& config,const char* path) {
-    if (config.metadata_policy!=SONY2FUJI_HDR_METADATA_ISO_XMP) throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
-    const auto exif=captureMetadata(config.metadata_source_path,config.source_sha256,image.hdr.width,image.hdr.height);
-    auto bytes=encodeJPEG(image,config.jpeg_quality ? config.jpeg_quality : 95,config.base_color);
+void exportJPEG(const HDRImagePair& image, const HDRExportConfig& config, const char* path) {
+    if (config.metadataPolicy!=kHdrMetadataIsoXmp) throw std::invalid_argument("HDR JPEG requires ISO and XMP metadata");
+    const auto exif=captureMetadata(config.metadataSourcePath, config.sourceSha256, image.hdr.width, image.hdr.height);
+    auto bytes=encodeJPEG(image, config.jpegQuality ? config.jpegQuality : 95, config.baseColor);
     const auto base=jpegBase(bytes.data(),bytes.size());
     const auto tagged=withJPEGExif(base.data(),base.size(),exif.data(),exif.size());
     bytes=replaceJPEGBase(bytes.data(),bytes.size(),tagged.data(),tagged.size());
     Temporary output(path); write(output.path(),bytes); output.publish(path);
 }
-void exportSDR(const HDRImagePair& image,const sony2fuji_hdr_sdr_export_config_v1& config,const char* path) {
+void exportSDR(const HDRImagePair& image, const HDRSdrExportConfig& config, const char* path) {
     if (config.quality>100) throw std::invalid_argument("Invalid SDR quality");
-    const auto exif=captureMetadata(config.metadata_source_path,config.source_sha256,image.sdr.width,image.sdr.height);
+    const auto exif=captureMetadata(config.metadataSourcePath, config.sourceSha256, image.sdr.width, image.sdr.height);
     Temporary output(path);
-    if (config.output_format==SONY2FUJI_OUTPUT_JPEG) {
+    if (config.outputFormat==kHdrSdrOutputJpeg) {
         auto bytes=srgbICC(encodeSDRJPEG(image.sdr,config.quality ? config.quality : 95));
         bytes=withJPEGExif(bytes.data(),bytes.size(),exif.data(),exif.size()); write(output.path(),bytes);
-    } else if (config.output_format==SONY2FUJI_OUTPUT_PNG) {
+    } else if (config.outputFormat==kHdrSdrOutputPng) {
         admitMemory(uint64_t(image.sdr.width)*image.sdr.height*16);
         ImageData display=image.sdr;
         for (auto& pixel:display.pixels) for (float* p:{&pixel.r,&pixel.g,&pixel.b}) {
             const float value=std::clamp(*p,0.0f,1.0f); *p=value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
         }
-        if (ImageEncoder::savePNG(display,output.path().u8string())!=ErrorCode::Success)
-            fail(SONY2FUJI_STATUS_OUTPUT_IO_ERROR,SONY2FUJI_HDR_REASON_OUTPUT_IO,"Cannot encode SDR PNG");
-        pngExif(output.path(),exif);
-    } else fail(SONY2FUJI_STATUS_UNSUPPORTED,SONY2FUJI_HDR_REASON_UNSUPPORTED_PROTOCOL,"Unsupported SDR export format");
+        ImageEncoder::PngMetadata metadata;
+        metadata.exif=exif;
+        if (ImageEncoder::savePNG(display,output.path().u8string(),&metadata)!=ErrorCode::Success)
+            fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot encode SDR PNG");
+    } else fail(RenderStatus::Unsupported, kHdrReasonUnsupportedProtocol, "Unsupported SDR export format");
     output.publish(path);
 }
 

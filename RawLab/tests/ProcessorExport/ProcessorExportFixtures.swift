@@ -17,6 +17,14 @@ extension ProcessorExportTests {
                   "process status \(status) has one accurate localized message and preserves its detail")
             check(error.diagnosticStatus == status, "process failure keeps native status \(status) for diagnostics")
         }
+        let forceGpuError = processor.processingFailure(
+            SONY2FUJI_STATUS_UNSUPPORTED,
+            unsupportedReason: SONY2FUJI_UNSUPPORTED_FORCE_GPU
+        )
+        check(forceGpuError.localizedDescription == "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+              "process status UNSUPPORTED with Force GPU reason surfaces Force GPU fallback prompt")
+        check(forceGpuError.diagnosticStatus == SONY2FUJI_STATUS_UNSUPPORTED,
+              "Force GPU failure keeps native status UNSUPPORTED for diagnostics")
         if case .processFailed(let message, _) = processor.processingFailure(SONY2FUJI_STATUS_PROCESSING_ERROR) {
             check(message == "processing error", "generic process failure keeps the native associated value")
         } else { check(false, "generic process failure keeps its existing enum contract") }

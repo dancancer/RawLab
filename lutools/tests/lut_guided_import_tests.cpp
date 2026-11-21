@@ -40,8 +40,8 @@ int main() {
         rejects([&]{loadLUTCompatibilityPreview(path.u8string(),request.dump());},"Preview cannot override a declared VLOG input");
 
         std::vector<unsigned char> a{20,30,40,255,60,70,80,255}, b=a;
-        sony2fuji_buffer candidate{a.data(),a.size(),2,1,8,SONY2FUJI_PIXEL_RGBA8};
-        sony2fuji_buffer reference{b.data(),b.size(),2,1,8,SONY2FUJI_PIXEL_RGBA8};
+        PixelBufferView candidate{a.data(),a.size(),2,1,8,PixelBufferFormat::RGBA8};
+        PixelBufferView reference{b.data(),b.size(),2,1,8,PixelBufferFormat::RGBA8};
         json conditions={{"same_source",true},{"same_geometry",true},{"same_processing",true},{"known_srgb",true},
             {"reference_source","Synthetic exact-value fixture; not author appearance evidence"}};
         auto comparison=json::parse(compareLUTPreviews(candidate,reference,conditions.dump()));
@@ -57,11 +57,11 @@ int main() {
         auto missing=conditions;missing["reference_source"]="   ";
         rejects([&]{compareLUTPreviews(candidate,reference,missing.dump());},"Reference provenance cannot be blank");
         reference.width=1;rejects([&]{compareLUTPreviews(candidate,reference,conditions.dump());},"Different preview dimensions cannot be compared");
-        reference.width=2;reference.size_bytes=3;
+        reference.width=2;reference.sizeBytes=3;
         rejects([&]{compareLUTPreviews(candidate,reference,conditions.dump());},"Short buffers fail before pixel reads");
-        reference.size_bytes=b.size();reference.stride_bytes=7;
+        reference.sizeBytes=b.size();reference.strideBytes=7;
         rejects([&]{compareLUTPreviews(candidate,reference,conditions.dump());},"Invalid stride is rejected");
-        reference.stride_bytes=8;b[3]=0;
+        reference.strideBytes=8;b[3]=0;
         rejects([&]{compareLUTPreviews(candidate,reference,conditions.dump());},"Transparent reference pixels are not silently compared");
     } catch(const std::exception& error) {check(false,error.what());}
     std::filesystem::remove_all(dir);std::cout<<"Guided LUT failures: "<<rawlab::test::failureCount()<<'\n';return rawlab::test::exitCode();

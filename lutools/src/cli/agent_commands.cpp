@@ -49,11 +49,15 @@ Json optionalFeatures() {
     if (sony2fuji_session_create(&session) != SONY2FUJI_STATUS_OK) throw std::bad_alloc();
     const auto destroy = [](sony2fuji_session* value) { sony2fuji_session_destroy(value); };
     const std::unique_ptr<sony2fuji_session, decltype(destroy)> owned(session, destroy);
-    sony2fuji_wavelet_denoise_config wavelet{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(wavelet), 1, 0, 46, 50};
-    sony2fuji_lens_correction_config lens{SONY2FUJI_LENS_CORRECTION_CONFIG_VERSION, sizeof(lens), 1, 0, 1, nullptr};
-    return {{"wavelet_denoise", sony2fuji_session_set_wavelet_denoise(session, &wavelet) == SONY2FUJI_STATUS_OK},
-        {"chroma_denoise", sony2fuji_session_set_chroma_denoise(session, 1) == SONY2FUJI_STATUS_OK},
-        {"lens_correction", sony2fuji_session_set_lens_correction(session, &lens) == SONY2FUJI_STATUS_OK}};
+    auto probe = [&](const char* editsJson) {
+        const std::string doc = std::string(
+            R"({"schema_version":4,"input":{"path":"probe.dng"},"edits":{"exposure":{"mode":"scene"},)") +
+            editsJson + R"(},"output":{"path":"probe.jpg","format":"jpeg"}})";
+        return sony2fuji_apply_params(session, doc.c_str()) == SONY2FUJI_STATUS_OK;
+    };
+    return {{"wavelet_denoise", probe(R"("denoise":{"wavelet":{"enabled":true}})")},
+        {"chroma_denoise", probe(R"("denoise":{"chroma_mode":1})")},
+        {"lens_correction", probe(R"("lens_correction":{"distortion":true})")}};
 }
 
 bool rasterPath(const std::string& path) {
@@ -421,44 +425,12 @@ int runAgentCommands(int argc, char* argv[]) {
             status = sony2fuji_session_create(&pointer);
             auto destroy = [](sony2fuji_session* session) { sony2fuji_session_destroy(session); };
             const std::unique_ptr<sony2fuji_session, decltype(destroy)> session(pointer, destroy);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_processing_version(session.get(), recipe.processingVersion);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_x3f_mode(session.get(), recipe.x3fMode);
             if (status == SONY2FUJI_STATUS_OK && !lensDatabase.empty())
                 status = sony2fuji_session_set_lens_database(session.get(), lensDatabase.c_str());
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_raw_exposure_mode(session.get(), recipe.exposureMode);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_hsl(session.get(), &recipe.hsl);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_tone_controls(session.get(), &recipe.toneControls);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_atmosphere(session.get(), &recipe.atmosphere);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_color_grading(session.get(), &recipe.colorGrading);
             if (status == SONY2FUJI_STATUS_OK) {
-                const sony2fuji_tone_curve_set_config curves{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(curves),
-                    {recipe.toneCurve, recipe.channelCurves[0], recipe.channelCurves[1], recipe.channelCurves[2]}};
-                status = sony2fuji_session_set_tone_curves(session.get(), &curves);
+                const std::string canonicalJson = serializeEditRecipe(recipe);
+                status = sony2fuji_apply_params(session.get(), canonicalJson.c_str());
             }
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_photo_effects(session.get(), &recipe.effects);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_wavelet_denoise(session.get(), &recipe.wavelet);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_chroma_denoise(session.get(), recipe.chromaDenoise);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_raw_noise_reduction(session.get(), recipe.rawNoiseReduction);
-            sony2fuji_lens_correction_config_v2 lens{{SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION,
-                sizeof(sony2fuji_lens_correction_config_v2), recipe.lensDistortion, recipe.lensTca,
-                recipe.lensAutoCrop, recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()}, recipe.lensVignetting};
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_lens_correction_v2(session.get(), &lens);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
-            if (status == SONY2FUJI_STATUS_OK)
-                status = sony2fuji_session_set_perspective(session.get(), &recipe.perspective);
             auto request = recipe.toRequest();
             sony2fuji_buffer image{};
             const auto release = [](sony2fuji_buffer* value) { sony2fuji_release_buffer(value); };

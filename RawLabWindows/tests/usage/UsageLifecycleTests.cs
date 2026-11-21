@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 // ┌──────────────────────────────────────────────────────────────────────┐
 // │ 默认开启的同意语义、安装标识的生命周期、退出时的有界等待               │

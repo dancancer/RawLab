@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "native_gpu_test_support.h"
 
@@ -15,13 +16,9 @@
 
 namespace {
 
-size_t checks = 0;
-void check(bool condition, const std::string& name) {
-    ++checks;
-    if (!condition) throw std::runtime_error(name);
-}
+using rawlab::test::require;
 void status(sony2fuji_status actual, sony2fuji_status expected, const std::string& name) {
-    check(actual == expected, name + ": " + sony2fuji_status_message(actual));
+    require(actual == expected, name + ": " + sony2fuji_status_message(actual));
 }
 struct Session {
     sony2fuji_session* value = nullptr;
@@ -64,7 +61,7 @@ void size(sony2fuji_session* session, uint32_t expectedWidth, uint32_t expectedH
     uint32_t width = 999, height = 999;
     status(sony2fuji_session_get_geometry_size(session, &width, &height),
         expectedWidth ? SONY2FUJI_STATUS_OK : SONY2FUJI_STATUS_UNSUPPORTED, name);
-    check(width == expectedWidth && height == expectedHeight, name + " dimensions");
+    require(width == expectedWidth && height == expectedHeight, name + " dimensions");
 }
 Pixels grid(uint32_t width = 95, uint32_t height = 67) {
     Pixels source{width, height, std::vector<unsigned char>(size_t(width) * height * 3)};
@@ -92,8 +89,8 @@ Pixels render(sony2fuji_session* session, const sony2fuji_request& request, cons
     Buffer output;
     status(sony2fuji_process(session, &request, &output.value), SONY2FUJI_STATUS_OK, name);
     const auto& b = output.value;
-    check(b.data && b.width && b.height && b.pixel_format == SONY2FUJI_PIXEL_RGB8, name + " RGB8 pixels");
-    check(b.stride_bytes >= size_t(b.width) * 3 &&
+    require(b.data && b.width && b.height && b.pixel_format == SONY2FUJI_PIXEL_RGB8, name + " RGB8 pixels");
+    require(b.stride_bytes >= size_t(b.width) * 3 &&
         b.size_bytes >= size_t(b.stride_bytes) * (b.height - 1) + size_t(b.width) * 3, name + " buffer layout");
     Pixels result{b.width, b.height, std::vector<unsigned char>(size_t(b.width) * b.height * 3)};
     for (uint32_t y = 0; y < b.height; ++y)
@@ -102,12 +99,12 @@ Pixels render(sony2fuji_session* session, const sony2fuji_request& request, cons
     return result;
 }
 void equal(const Pixels& actual, const Pixels& expected, const std::string& name, int tolerance = 0) {
-    check(actual.width == expected.width && actual.height == expected.height &&
+    require(actual.width == expected.width && actual.height == expected.height &&
         actual.bytes.size() == expected.bytes.size(), name + " dimensions and byte count");
     for (size_t i = 0; i < expected.bytes.size(); ++i)
         if (std::abs(int(actual.bytes[i]) - int(expected.bytes[i])) > tolerance)
-            check(false, name + " pixel byte " + std::to_string(i));
-    check(true, name + " all pixels");
+            require(false, name + " pixel byte " + std::to_string(i));
+    require(true, name + " all pixels");
 }
 std::pair<uint32_t, uint32_t> dimensions(uint32_t width, uint32_t height,
     const sony2fuji_geometry_config& g, const sony2fuji_perspective_config& p) {
@@ -138,7 +135,7 @@ void resized(const Pixels& actual, const Pixels& native, const std::string& name
             const float top = sample(x0, y0) * (1 - (sx - x0)) + sample(x1, y0) * (sx - x0);
             const float bottom = sample(x0, y1) * (1 - (sx - x0)) + sample(x1, y1) * (sx - x0);
             // The native RGB8 reference adds one quantization step; float resizing differs by at most one code.
-            check(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + channel] -
+            require(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + channel] -
                 (top * (1 - (sy - y0)) + bottom * (sy - y0))) <= 1.01f, name + " bilinear sample");
         }
     }
@@ -146,11 +143,11 @@ void resized(const Pixels& actual, const Pixels& native, const std::string& name
 
 void abiTests() {
     using P = sony2fuji_perspective_config;
-    check(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION == 1 && sizeof(P) == 16, "perspective version/16-byte ABI");
-    check(offsetof(P, version) == 0 && offsetof(P, struct_size) == 4 &&
+    require(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION == 1 && sizeof(P) == 16, "perspective version/16-byte ABI");
+    require(offsetof(P, version) == 0 && offsetof(P, struct_size) == 4 &&
         offsetof(P, horizontal) == 8 && offsetof(P, vertical) == 12, "perspective ABI offsets");
     using G = sony2fuji_geometry_config;
-    check(SONY2FUJI_GEOMETRY_CONFIG_VERSION == 1 && sizeof(G) == 40 &&
+    require(SONY2FUJI_GEOMETRY_CONFIG_VERSION == 1 && sizeof(G) == 40 &&
         offsetof(G, version) == 0 && offsetof(G, struct_size) == 4 &&
         offsetof(G, crop_x) == 8 && offsetof(G, crop_y) == 12 &&
         offsetof(G, crop_width) == 16 && offsetof(G, crop_height) == 20 &&
@@ -158,8 +155,8 @@ void abiTests() {
         offsetof(G, flip_vertical) == 32 && offsetof(G, straighten_degrees) == 36, "unchanged geometry v1 ABI");
     using R = sony2fuji_request;
     const bool wide = sizeof(void*) == 8;
-    check(SONY2FUJI_REQUEST_VERSION == 2 && sizeof(R) == (wide ? 184u : 156u), "unchanged request v2 size");
-    check(offsetof(R, input_pixels) == (wide ? 24u : 16u) && offsetof(R, lut_strength) == (wide ? 64u : 44u) &&
+    require(SONY2FUJI_REQUEST_VERSION == 2 && sizeof(R) == (wide ? 184u : 156u), "unchanged request v2 size");
+    require(offsetof(R, input_pixels) == (wide ? 24u : 16u) && offsetof(R, lut_strength) == (wide ? 64u : 44u) &&
         offsetof(R, output_path) == (wide ? 160u : 136u) && offsetof(R, preview_long_edge) == sizeof(R) - 4,
         "unchanged request v2 offsets");
 }
@@ -199,7 +196,7 @@ void validationTests() {
         setPerspective(session.value, perspective(edge, -edge));
         const auto output = render(session.value, request, "inclusive perspective bounds");
         const auto d = dimensions(source.width, source.height, geometry(), perspective(edge, -edge));
-        check(output.width == d.first && output.height == d.second, "inclusive bounds dimensions");
+        require(output.width == d.first && output.height == d.second, "inclusive bounds dimensions");
     }
 }
 
@@ -232,7 +229,7 @@ void setterTests() {
     failed = request; failed.input_type = SONY2FUJI_INPUT_RAW; failed.input_path = "/no/such/rawlab-perspective-input.ARW";
     status(sony2fuji_process(first.value, &failed, &output.value), SONY2FUJI_STATUS_IO_ERROR, "missing RAW process");
     size(first.value, 0, 0, "input failure clears size");
-    check(source.bytes == grid().bytes, "perspective leaves caller pixels unchanged");
+    require(source.bytes == grid().bytes, "perspective leaves caller pixels unchanged");
 }
 
 void previewTests() {
@@ -247,7 +244,7 @@ void previewTests() {
         request.intent = SONY2FUJI_INTENT_FINAL; request.size_mode = SONY2FUJI_SIZE_NATIVE; request.preview_long_edge = 0;
         const auto native = render(session.value, request, "native perspective FINAL");
         const auto d = dimensions(source.width, source.height, g, p);
-        check(native.width == d.first && native.height == d.second, "perspective then straighten then crop dimensions");
+        require(native.width == d.first && native.height == d.second, "perspective then straighten then crop dimensions");
         size(session.value, d.first, d.second, "native perspective size");
         request.intent = SONY2FUJI_INTENT_PREVIEW;
         equal(render(session.value, request, "native perspective PREVIEW"), native, "exact native preview/final parity");
@@ -255,7 +252,7 @@ void previewTests() {
         for (const auto target : {std::pair<uint32_t, uint32_t>{31, 23}, {1, 9}, {9, 1}}) {
             request.target_width = target.first; request.target_height = target.second;
             const auto preview = render(session.value, request, "resized perspective PREVIEW");
-            check(preview.width == target.first && preview.height == target.second, "requested exact size");
+            require(preview.width == target.first && preview.height == target.second, "requested exact size");
             resized(preview, native, "resize after perspective"); size(session.value, d.first, d.second, "resize retains native query");
             request.intent = SONY2FUJI_INTENT_FINAL;
             equal(render(session.value, request, "resized perspective FINAL"), preview, "resized preview/final parity");
@@ -264,7 +261,7 @@ void previewTests() {
         request.preview_long_edge = 19;
         const auto small = render(session.value, request, "perspective preview long edge");
         const float scale = 19.f / std::max(native.width, native.height);
-        check(small.width == std::max(1u, uint32_t(std::round(native.width * scale))) &&
+        require(small.width == std::max(1u, uint32_t(std::round(native.width * scale))) &&
             small.height == std::max(1u, uint32_t(std::round(native.height * scale))), "preview limit follows perspective canvas");
         resized(small, native, "long-edge resize after perspective"); size(session.value, d.first, d.second, "long-edge native query");
     }
@@ -275,24 +272,24 @@ void gpuTests(bool nativeGpu) {
     setGpu(session.value, SONY2FUJI_GPU_OFF); const auto baseline = render(session.value, request, "identity CPU");
     setGpu(session.value, SONY2FUJI_GPU_AUTO); const auto automatic = render(session.value, request, "identity Auto");
     const auto backend = sony2fuji_session_get_last_backend(session.value);
-    check(backend == (nativeGpu ? rawlabtest::nativeBackend : SONY2FUJI_BACKEND_CPU), "identity actual backend");
+    require(backend == (nativeGpu ? rawlabtest::nativeBackend : SONY2FUJI_BACKEND_CPU), "identity actual backend");
     equal(automatic, baseline, "identity CPU/Auto", nativeGpu ? 2 : 0);
     setPerspective(session.value, perspective(.6f, -.4f));
     setGpu(session.value, SONY2FUJI_GPU_OFF); const auto cpu = render(session.value, request, "perspective CPU");
     setGpu(session.value, SONY2FUJI_GPU_AUTO);
     equal(render(session.value, request, "perspective Auto"), cpu, "perspective CPU/Auto", nativeGpu ? 2 : 0);
-    check(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU, "mixed perspective result reports CPU");
+    require(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU, "mixed perspective result reports CPU");
     size(session.value, cpu.width, cpu.height, "Auto perspective query");
     setGpu(session.value, SONY2FUJI_GPU_FORCE); Buffer rejected;
     status(sony2fuji_process(session.value, &request, &rejected.value), SONY2FUJI_STATUS_UNSUPPORTED, "perspective Force unsupported");
     size(session.value, 0, 0, "Force failure clears query");
     setPerspective(session.value, perspective()); setGpu(session.value, SONY2FUJI_GPU_AUTO);
     equal(render(session.value, request, "zero perspective Auto"), automatic, "zero perspective restores Auto pixels");
-    check(sony2fuji_session_get_last_backend(session.value) == backend, "zero perspective restores backend");
+    require(sony2fuji_session_get_last_backend(session.value) == backend, "zero perspective restores backend");
     if (nativeGpu) {
         setGpu(session.value, SONY2FUJI_GPU_FORCE);
         equal(render(session.value, request, "zero perspective Force"), automatic, "zero perspective restores GPU Force");
-        check(sony2fuji_session_get_last_backend(session.value) == rawlabtest::nativeBackend, "zero Force native backend");
+        require(sony2fuji_session_get_last_backend(session.value) == rawlabtest::nativeBackend, "zero Force native backend");
     } else std::cout << "SKIP native GPU hardware parity: actual backend probe unavailable\n";
 }
 
@@ -306,7 +303,7 @@ void rawTests(const char* path, bool nativeGpu) {
     setGeometry(session.value, g); const auto geometryOnly = render(session.value, request, "RAW geometry reference");
     setPerspective(session.value, p); const auto native = render(session.value, request, "RAW combined FINAL");
     const auto d = dimensions(baseline.width, baseline.height, g, p);
-    check(native.width == d.first && native.height == d.second, "RAW perspective uses already-oriented canvas");
+    require(native.width == d.first && native.height == d.second, "RAW perspective uses already-oriented canvas");
     size(session.value, d.first, d.second, "RAW combined native query");
     status(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK, "RAW interactive preview");
     status(sony2fuji_session_set_viewport_preview(session.value, 1), SONY2FUJI_STATUS_OK, "RAW viewport preview");
@@ -314,7 +311,7 @@ void rawTests(const char* path, bool nativeGpu) {
     equal(render(session.value, request, "RAW native PREVIEW"), native, "RAW exact preview/final parity");
     request.preview_long_edge = 23; const auto preview = render(session.value, request, "RAW small PREVIEW");
     const float scale = 23.f / std::max(native.width, native.height);
-    check(preview.width == std::max(1u, uint32_t(std::round(native.width * scale))) &&
+    require(preview.width == std::max(1u, uint32_t(std::round(native.width * scale))) &&
         preview.height == std::max(1u, uint32_t(std::round(native.height * scale))), "RAW preview size follows combined canvas");
     size(session.value, d.first, d.second, "RAW small preview query");
     status(sony2fuji_session_set_viewport_preview(session.value, 0), SONY2FUJI_STATUS_OK, "RAW exact perspective opt-out");
@@ -323,7 +320,7 @@ void rawTests(const char* path, bool nativeGpu) {
     equal(render(session.value, request, "RAW FINAL after preview"), native, "RAW cache retains exact combined pixels");
     setGpu(session.value, SONY2FUJI_GPU_AUTO);
     equal(render(session.value, request, "RAW combined Auto"), native, "RAW CPU/Auto perspective", nativeGpu ? 2 : 0);
-    check(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU, "RAW combined Auto reports CPU");
+    require(sony2fuji_session_get_last_backend(session.value) == SONY2FUJI_BACKEND_CPU, "RAW combined Auto reports CPU");
     size(session.value, d.first, d.second, "RAW Auto native query");
     setGpu(session.value, SONY2FUJI_GPU_OFF); setPerspective(session.value, perspective());
     equal(render(session.value, request, "RAW perspective reset"), geometryOnly, "RAW perspective reset retains geometry/cache");
@@ -354,10 +351,10 @@ int main(int argc, char** argv) {
             return 77;
         }
         if (rawPath) rawTests(rawPath, nativeGpu);
-        std::cout << "PASS " << checks << " perspective ABI, validation, setter, canvas, preview/final and GPU checks\n";
+        std::cout << "PASS " << rawlab::test::checkCount() << " perspective ABI, validation, setter, canvas, preview/final and GPU rawlab::test::checkCount()\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
+        std::cerr << "FAIL after " << rawlab::test::checkCount() << " rawlab::test::checkCount(): " << error.what() << '\n';
         return 1;
     }
 }

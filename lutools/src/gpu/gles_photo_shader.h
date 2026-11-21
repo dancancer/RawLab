@@ -1,4 +1,5 @@
 #pragma once
+#include "photo_log_shader.h"
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
@@ -7,7 +8,7 @@ namespace sony2fuji {
 inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
-)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + kToneCurveShader + R"glsl(
+)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + kToneCurveShader + photoLogShader(ShaderDialect::Glsl) + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -51,21 +52,6 @@ float neutral(float x) {
     const float gray = 0.1845;
     float linear = 1.0 / (1.0 + (1.0 - gray) / gray * pow(gray / x, 1.5));
     return linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1.0 / 2.4) - 0.055;
-}
-float flog2(float x) {
-    return clamp(x < 0.00088899597 ? 8.799461 * x + 0.092864 :
-        log(x * 5.555556 + 0.064829) / log(10.0) * 0.245281 + 0.384316, 0.0, 1.0);
-}
-float encodeLog(float x) {
-    if (!inputIsFLog) return flog2(x);
-    return clamp(x < 0.00089 ? 8.735631 * x + 0.092864 :
-        0.344676 * log(0.555556 * x + 0.009468) / log(10.0) + 0.790453, 0.0, 1.0);
-}
-float decodeLog(float x) {
-    if (outputIsFLog) return x < 0.100537775223865 ? (x - 0.092864) / 8.735631 :
-        (pow(10.0, (x - 0.790453) / 0.344676) - 0.009468) / 0.555556;
-    return x < 0.100686685370811 ? (x - 0.092864) / 8.799461 :
-        (pow(10.0, (x - 0.384316) / 0.245281) - 0.064829) / 5.555556;
 }
 vec3 lookup(vec3 x) {
     vec3 p = clamp((x - domainMin) / (domainMax - domainMin), 0.0, 1.0) * float(lutSize - 1);
@@ -146,20 +132,14 @@ vec3 evaluate(vec3 inputColor) {
         vec3 lookInput = pixel;
         if (!inputIsSRGB) {
             vec3 fgamut = toFGamut * linear;
-            lookInput = vec3(encodeLog(fgamut.r), encodeLog(fgamut.g), encodeLog(fgamut.b));
+            lookInput = vec3(encodePhotoLog(fgamut.r, inputIsFLog), encodePhotoLog(fgamut.g, inputIsFLog), encodePhotoLog(fgamut.b, inputIsFLog));
         }
         vec3 look = lookup(lookInput);
-        if (outputIsLog) look = vec3(neutral(decodeLog(look.r)), neutral(decodeLog(look.g)), neutral(decodeLog(look.b)));
+        if (outputIsLog) look = vec3(neutral(decodePhotoLog(look.r, outputIsFLog)), neutral(decodePhotoLog(look.g, outputIsFLog)), neutral(decodePhotoLog(look.b, outputIsFLog)));
         pixel = mix(pixel, look, strength);
     }
     pixel = tcBlackWhite(pixel, toneControls.x, toneControls.y);
-    if (tone.z != 0.0 || tone.w != 0.0) {
-        float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
-        float adjusted = luminance;
-        if (tone.w != 0.0) adjusted = pow(clamp(adjusted, 0.0, 1.0), 1.0 - tone.w * 0.5);
-        if (tone.z != 0.0) adjusted = 1.0 - pow(1.0 - clamp(adjusted, 0.0, 1.0), 1.0 - tone.z * 0.5);
-        pixel = luminance > 0.0 ? pixel * (adjusted / luminance) : vec3(adjusted);
-    }
+    pixel = hsApplyHighlightsShadows(pixel, tone.z, tone.w);
     if (customCurveCount != 0) pixel = vec3(customToneCurve(pixel.r), customToneCurve(pixel.g), customToneCurve(pixel.b));
     else if (curve != 0.0) pixel = vec3(toneCurve(pixel.r), toneCurve(pixel.g), toneCurve(pixel.b));
     if (tone.x != 1.0 || tone.y != 1.0) {

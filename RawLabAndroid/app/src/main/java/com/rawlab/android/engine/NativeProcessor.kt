@@ -1,5 +1,7 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.R
+import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.ToneCurveSettings
 
@@ -48,16 +50,39 @@ enum class LookFormat(val extension: String) {
 data class LookValidation(val format: LookFormat, val version: Int, val colorState: Int = 5)
 class LUTColorContractException(val reason: Int) : IllegalArgumentException("LUT color contract requires attention")
 
-class NativeProcessingException(val status: Int, message: String) : IOException(message) {
+class NativeProcessingException @JvmOverloads constructor(
+    val status: Int,
+    message: String,
+    val unsupportedReason: Int = UNSUPPORTED_NONE
+) : IOException(
+    if (status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU && AppStrings.isInitialized()) {
+        AppStrings.text(R.string.force_gpu_unsupported)
+    } else {
+        message
+    }
+) {
+    val isForceGpuUnsupported: Boolean
+        get() = status == UNSUPPORTED && unsupportedReason == UNSUPPORTED_FORCE_GPU
+
     companion object {
+        const val UNSUPPORTED = 2
         const val IO_ERROR = 3
         const val OUTPUT_IO_ERROR = 6
         const val CANCELLED = 7
+        const val UNSUPPORTED_NONE = 0
+        const val UNSUPPORTED_FORCE_GPU = 1
     }
 }
 
-class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val temperature: Float, val tint: Float, val backend: Int,
-    histogram: IntArray? = null) {
+class NativeFrame(
+    val width: Int,
+    val height: Int,
+    private val backingBitmap: Bitmap,
+    val temperature: Float,
+    val tint: Float,
+    val backend: Int,
+    histogram: IntArray? = null,
+) {
     val histogram: RgbHistogram? = RgbHistogram.fromNative(width, height, histogram)
     var lens: LensInfo? = null
         internal set
@@ -65,8 +90,23 @@ class NativeFrame(val width: Int, val height: Int, val pixels: ByteArray, val te
         internal set
     var geometryHeight: Int = height
         internal set
-    fun bitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-        it.copyPixelsFromBuffer(ByteBuffer.wrap(pixels))
+    fun bitmap(): Bitmap = backingBitmap
+    val pixels: ByteArray by lazy(LazyThreadSafetyMode.NONE) {
+        ByteArray(width * height * 4).also { out ->
+            backingBitmap.copyPixelsToBuffer(ByteBuffer.wrap(out))
+        }
+    }
+
+    internal companion object {
+        @JvmStatic
+        fun allocateBitmap(width: Int, height: Int, reusable: Bitmap? = null): Bitmap {
+            if (reusable != null && reusable.isMutable && !reusable.isRecycled &&
+                reusable.config == Bitmap.Config.ARGB_8888 &&
+                reusable.width == width && reusable.height == height) {
+                return reusable
+            }
+            return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
     }
 }
 
@@ -94,9 +134,9 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
-        cancellationGeneration: Long = -1L): NativeFrame {
+        cancellationGeneration: Long = -1L, reusableBitmap: Bitmap? = null): NativeFrame {
         val frame = checkNotNull(previewRequest(input, lut, settings, edge, interactive, inputKind,
-            cancellationGeneration = cancellationGeneration))
+            cancellationGeneration = cancellationGeneration, reusableBitmap = reusableBitmap))
         val dimensions = nativeGeometrySize(handle)
         require(dimensions.size == 2 && dimensions.all { it > 0 }) { "Invalid native geometry size" }
         frame.geometryWidth = dimensions[0]
@@ -130,28 +170,30 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     private fun previewRequest(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision? = null, probe: FloatArray? = null,
-        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame? {
+        cancellationGeneration: Long = -1L, migration: FloatArray? = null, reusableBitmap: Bitmap? = null): NativeFrame? {
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, edge)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        setToneCurves(effective.renderCurve)
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
-        return nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0,
-            pixels?.height ?: 0, pixels?.pixelFormat ?: 0, lut?.path, null, effective.strength,
-            effective.exposure, effective.customWb, effective.temperature, effective.tint,
-            effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-            effective.saturation, effective.sharpening, edge, interactive, ExportFormat.JPEG.nativeValue, 0,
-            effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-            effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-            effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-            effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-            effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null, effective.processing.version, effective.x3fMode.nativeValue, null,
-            revision?.source ?: 0, revision?.request ?: 0, probe, cancellationGeneration, migration)
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = true,
+        ))
+        return nativeProcess(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = edge,
+                interactive = interactive,
+                revision = revision,
+                probe = probe,
+                cancellationGeneration = cancellationGeneration,
+                migrationOut = migration,
+                reusableBitmap = reusableBitmap,
+            ),
+        )
     }
 
     @Synchronized
@@ -201,26 +243,25 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
                     if (cancelled()) {
                         throw NativeProcessingException(NativeProcessingException.CANCELLED, "Processing cancelled")
                     }
-                    configureLens(effective.lens)
-                    configureGeometry(settings.geometry)
-                    setToneCurves(effective.renderCurve)
-                    nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-                    nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-                    with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-                        midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
+                    configureDisplayLens(effective.lens)
+                    nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+                        isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+                        includeDenoise = true,
+                    ))
                     val backend = intArrayOf(-1)
-                    nativeProcess(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
-                        pixels?.pixelFormat ?: 0, lut?.path, staging.path, effective.strength,
-                        effective.exposure, effective.customWb, effective.temperature, effective.tint,
-                        effective.highlights, effective.shadows, effective.contrast, effective.renderToneCurve,
-                        effective.saturation, effective.sharpening, 0, false, format.nativeValue, longEdge ?: 0,
-                        effective.denoise.enabled, effective.denoise.luma, effective.denoise.chroma, effective.denoise.coarse,
-                        effective.displayChromaDenoise, effective.effects.vignetteAmount, effective.effects.vignetteMidpoint,
-                        effective.effects.vignetteRoundness, effective.effects.vignetteFeather, effective.effects.vignetteHighlights,
-                        effective.effects.grainAmount, effective.effects.grainSize, effective.effects.grainRoughness,
-                        effective.exposureMode, effective.renderHsl.packed(), effective.recipeID != null,
-                        effective.processing.version, effective.x3fMode.nativeValue, backend,
-                        0, 0, null, generation, null)
+                    nativeProcess(
+                        handle,
+                        effective.toNativeProcessRequest(
+                            inputPath = input.path,
+                            pixels = pixels,
+                            lutPath = lut?.path,
+                            outputPath = staging.path,
+                            format = format,
+                            longEdge = longEdge ?: 0,
+                            backendOut = backend,
+                            cancellationGeneration = generation,
+                        ),
+                    )
                     check(backend[0] >= 0) { "Native export did not report a backend" }
                     backend[0]
                 },
@@ -238,13 +279,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         check(handle != 0L) { "Processor is closed" }
         val effective = settings.effectiveFor(inputKind)
         val pixels = rasterInput(input, inputKind, 1280)
-        configureLens(effective.lens)
-        configureGeometry(settings.geometry)
-        setToneCurves(effective.renderCurve)
-        nativeSetToneControls(handle, effective.renderBlackPoint / 100f, effective.renderWhitePoint / 100f, effective.renderVibrance / 100f)
-        nativeSetAtmosphere(handle, effective.renderClarity / 100f, effective.renderDehaze / 100f)
-        with(effective.renderColorGrading) { nativeSetColorGrading(handle, shadows.hue, shadows.saturation,
-            midtones.hue, midtones.saturation, highlights.hue, highlights.saturation) }
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = false,
+        ))
         return nativeAutoExposure(handle, input.path, pixels?.pixels, pixels?.width ?: 0, pixels?.height ?: 0,
             pixels?.pixelFormat ?: 0, effective.customWb, effective.temperature, effective.tint,
             effective.exposureMode, effective.recipeID != null, effective.strength, effective.processing.version, effective.x3fMode.nativeValue)
@@ -325,20 +364,13 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         return checkNotNull(raster)
     }
 
-    private fun configureLens(settings: LensSettings) {
+    private fun configureDisplayLens(settings: LensSettings) {
         displayLensMetadata?.let { source ->
             val metadata = source.copy(focalLength = settings.focalLength ?: source.focalLength,
                 cropFactor = settings.cropFactor ?: source.cropFactor)
             nativeSetDisplayLensMetadata(handle, metadata.names, metadata.numbers, metadata.sourceOrientation)
         }
-        nativeSetLensCorrection(handle, settings.distortion, settings.tca, settings.autoCrop, settings.vignetting,
-            settings.coreProfileId.toByteArray(Charsets.UTF_8))
     }
-
-    private fun configureGeometry(settings: GeometrySettings) = nativeSetGeometry(handle,
-        settings.cropX, settings.cropY, settings.cropWidth, settings.cropHeight, settings.quarterTurns,
-        settings.flipHorizontal, settings.flipVertical, settings.straightenDegrees,
-        settings.perspectiveHorizontal, settings.perspectiveVertical)
 
     private fun readLens(input: File): LensInfo {
         val key = Triple(input.canonicalPath, input.length(), input.lastModified())
@@ -355,46 +387,72 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
             displayLensMetadata?.focalLength?.takeIf { it > 0 }, displayLensMetadata?.aperture?.takeIf { it > 0 }, report[6] == "1")
     }
 
+    @Synchronized
+    internal fun inspectLens(input: File, settings: EditSettings, inputKind: PhotoInputKind): LensInfo {
+        check(handle != 0L) { "Processor is closed" }
+        val effective = settings.effectiveFor(inputKind)
+        val metadata = if (inputKind == PhotoInputKind.RASTER) {
+            DisplayLensMetadata.read(input).also {
+                val configured = it.copy(
+                    focalLength = effective.lens.focalLength ?: it.focalLength,
+                    cropFactor = effective.lens.cropFactor ?: it.cropFactor,
+                )
+                nativeSetDisplayLensMetadata(handle, configured.names, configured.numbers, configured.sourceOrientation)
+            }
+        } else {
+            nativeSetDisplayLensMetadata(handle, null, floatArrayOf(0f, 0f, 0f), 1)
+            null
+        }
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = inputKind != PhotoInputKind.RAW,
+            includeDenoise = false,
+        ))
+        val applied = nativeInspectLens(handle, if (metadata == null) input.path else null)
+        require(applied.size == 3) { "Invalid native lens inspection" }
+        return LensInfo(0, "", "", applied[0], applied[1], 1f, emptyList(),
+            appliedVignetting = applied[2])
+    }
+
+    @Synchronized
+    internal fun resolveCameraWhiteBalance(
+        input: File,
+        settings: EditSettings,
+        inputKind: PhotoInputKind = PhotoInputKind.RAW,
+    ): Pair<Float, Float>? {
+        check(handle != 0L) { "Processor is closed" }
+        if (inputKind != PhotoInputKind.RAW) return null
+        val effective = settings.effectiveFor(inputKind)
+        val result = nativeResolveCameraWhiteBalance(
+            handle,
+            input.path,
+            effective.processing.version,
+            effective.x3fMode.nativeValue,
+            effective.exposureMode,
+        ) ?: return null
+        require(result.size == 2) { "Invalid native camera white balance" }
+        val temp = result[0]
+        val tint = result[1]
+        if (!temp.isFinite() || !tint.isFinite()) return null
+        return temp to tint
+    }
+
     private external fun nativeCreate(mode: Int): Long
     private external fun nativeCompatibilityPreview(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, lut: String?, configuration: String?): NativeFrame
     private external fun nativeSetGpuMode(handle: Long, mode: Int)
     private external fun nativeSetLensDatabase(handle: Long, path: String)
-    private external fun nativeSetLensCorrection(handle: Long, distortion: Boolean, tca: Boolean, autoCrop: Boolean, vignetting: Boolean, profile: ByteArray)
     private external fun nativeSetDisplayLensMetadata(handle: Long, names: Array<String>?, numbers: FloatArray, orientation: Int)
-    private external fun nativeSetColorGrading(handle: Long, shadowsHue: Float, shadowsSaturation: Float,
-        midtonesHue: Float, midtonesSaturation: Float, highlightsHue: Float, highlightsSaturation: Float)
-    private external fun nativeSetAtmosphere(handle: Long, clarity: Float, dehaze: Float)
-    private external fun nativeSetToneControls(handle: Long, blackPoint: Float, whitePoint: Float, vibrance: Float)
-    private fun setToneCurves(curve: ToneCurveSettings) {
-        nativeSetToneCurves(handle, curve.mode.nativeValue, curve.packed(),
-            curve.channels.red.mode.nativeValue, curve.channels.red.packed(),
-            curve.channels.green.mode.nativeValue, curve.channels.green.packed(),
-            curve.channels.blue.mode.nativeValue, curve.channels.blue.packed())
-    }
-    private external fun nativeSetToneCurves(handle: Long, mode: Int, points: DoubleArray,
-        redMode: Int, redPoints: DoubleArray, greenMode: Int, greenPoints: DoubleArray, blueMode: Int, bluePoints: DoubleArray)
-    private external fun nativeSetGeometry(handle: Long, cropX: Float, cropY: Float, cropWidth: Float,
-        cropHeight: Float, quarterTurns: Int, flipHorizontal: Boolean, flipVertical: Boolean, straightenDegrees: Float,
-        perspectiveHorizontal: Float, perspectiveVertical: Float)
+    private external fun nativeApplyParams(handle: Long, recipeJson: String)
     private external fun nativeGeometrySize(handle: Long): IntArray
     private external fun nativeLensProfiles(handle: Long, input: String?): Array<String>
     private external fun nativeLensReport(handle: Long): Array<String>
+    private external fun nativeInspectLens(handle: Long, input: String?): BooleanArray
+    private external fun nativeResolveCameraWhiteBalance(handle: Long, input: String, processingVersion: Int, x3fMode: Int, exposureMode: Int): FloatArray?
     private external fun nativeDestroy(handle: Long)
     private external fun nativeAutoExposure(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
         pixelFormat: Int, customWb: Boolean,
         temperature: Float, tint: Float, exposureMode: Int, recipeActive: Boolean, strength: Float, processingVersion: Int, x3fMode: Int): Float
-    private external fun nativeProcess(handle: Long, input: String, pixels: Any?, width: Int, height: Int,
-        pixelFormat: Int, lut: String?, output: String?,
-        strength: Float, exposure: Float, customWb: Boolean, temperature: Float, tint: Float,
-        highlights: Float, shadows: Float, contrast: Float, toneCurve: Float, saturation: Float, sharpening: Float,
-        edge: Int, interactive: Boolean, format: Int, longEdge: Int,
-        denoiseEnabled: Boolean, luma: Float, chroma: Float, coarse: Float, displayChromaDenoise: Int,
-        vignetteAmount: Float, vignetteMidpoint: Float, vignetteRoundness: Float, vignetteFeather: Float,
-        vignetteHighlights: Float, grainAmount: Float, grainSize: Float, grainRoughness: Float,
-        exposureMode: Int, hsl: FloatArray, recipeActive: Boolean, processingVersion: Int, x3fMode: Int, backend: IntArray? = null,
-        sourceRevision: Long = 0, requestRevision: Long = 0, hslProbe: FloatArray? = null,
-        cancellationGeneration: Long = -1L, migration: FloatArray? = null): NativeFrame?
+    private external fun nativeProcess(handle: Long, request: NativeProcessRequest): NativeFrame?
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean

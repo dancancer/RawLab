@@ -1,7 +1,7 @@
 package com.rawlab.android.settings
 
 import com.rawlab.android.geometry.GeometrySettings
-import com.rawlab.android.json.validateStrictJSON
+import com.rawlab.android.json.parseStrictJSONObject
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,8 +48,8 @@ internal object StructuredSettingsCodec {
     fun decode(encoded: String, format: String): EditSettings {
         require(encoded.startsWith("v2:")) { "Unsupported settings encoding" }
         val json = encoded.removePrefix("v2:")
-        validateStrictJSON(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns", "proRAWDecodeVersion"))
-        val root = JSONObject(json).keysExactly("format", "version", "settings")
+        val root = parseStrictJSONObject(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns", "proRAWDecodeVersion"))
+            .keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
         val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode", "proRAWDecodeVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",

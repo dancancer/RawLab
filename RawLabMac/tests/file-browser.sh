@@ -1,12 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-file-browser.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
-    -target "$(uname -m)-apple-macosx26.0" \
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-file-browser
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileBrowser.swift" \
     "$ROOT/RawLabMac/tests/FileBrowserTests.swift" \

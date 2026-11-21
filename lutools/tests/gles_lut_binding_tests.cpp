@@ -624,8 +624,8 @@ int main(int argc, char** argv) {
         require(before.context == caller.context, "caller context active before initContext failure");
 
         ImageData forced = source;
-        require(applyLUTWithConfig(lut3, forced, {GpuMode::Force}) == ErrorCode::ProcessingError,
-                "Force fails when GLES 3.1 initContext fails");
+        require(applyLUTWithConfig(lut3, forced, {GpuMode::Force}) == ErrorCode::Unsupported,
+                "Force returns Unsupported when GLES 3.1 initContext fails");
         requireSameState(before, captureEglState(),
                          "initContext failure restores caller EGL context/surfaces/display/API");
 
@@ -647,8 +647,8 @@ int main(int argc, char** argv) {
         // G-N3：瞬时初始化失败不得被永久缓存——故障窗口过后的下一次调用必须重试初始化。
         driver().minorVersion = 0;
         ImageData first = source;
-        require(applyLUTWithConfig(lut3, first, {GpuMode::Force}) == ErrorCode::ProcessingError,
-                "Force fails while transient init fault is active");
+        require(applyLUTWithConfig(lut3, first, {GpuMode::Force}) == ErrorCode::Unsupported,
+                "Force returns Unsupported while GLES 3.1 init fault is active");
         requireImagesClose(source, first, 0.0f, "first failed Force leaves the image untouched");
 
         ImageData automatic = source;

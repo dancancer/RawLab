@@ -9,9 +9,15 @@ $repo = Split-Path $PSScriptRoot -Parent
 $native = Join-Path $repo 'build/windows-native'
 $output = Join-Path $repo 'build/RawLab-Windows'
 if ($ReleasePackage) {
+    $versionSource = Get-Content -LiteralPath (Join-Path $repo 'Shared/version.json') -Raw | ConvertFrom-Json
+    if (!$PSBoundParameters.ContainsKey('ReleaseVersion')) { $ReleaseVersion = [string]$versionSource.version }
+    if (!$PSBoundParameters.ContainsKey('ReleaseBuild')) { $ReleaseBuild = [int]$versionSource.build }
     if (!$DualDnModel -or !$DualDnManifestSha256) { throw 'Release packages require -DualDnModel and its -DualDnManifestSha256.' }
     if (!$UpdateTrustFile) { throw 'Release packages require -UpdateTrustFile with the permanent public key.' }
     if ($ReleaseVersion -notmatch '^\d+\.\d+\.\d+$' -or $ReleaseBuild -lt 1) { throw 'Supply the authorized -ReleaseVersion and positive -ReleaseBuild.' }
+    if ($ReleaseVersion -ne [string]$versionSource.version -or $ReleaseBuild -ne [int]$versionSource.build) {
+        throw "ReleaseVersion/ReleaseBuild ($ReleaseVersion/$ReleaseBuild) must match Shared/version.json ($($versionSource.version)/$($versionSource.build))."
+    }
     if ((Get-FileHash -LiteralPath "$DualDnModel/manifest.json" -Algorithm SHA256).Hash -ne $DualDnManifestSha256) { throw 'Release model manifest SHA-256 mismatch.' }
     foreach ($resource in @('blind_rgb.onnx','Restormer-LICENSE.txt')) {
         if (!(Test-Path -LiteralPath "$DualDnModel/$resource" -PathType Leaf)) { throw "Incomplete release model: $resource" }
@@ -113,10 +119,11 @@ foreach ($line in $environment) {
     if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
 }
 if (!$Python) { $Python = & "$PSScriptRoot/build-host-python.ps1" -Directory "$repo/build/tools/python-lens" }
+Invoke-Checked $Python @((Join-Path $repo 'scripts/assets/prepare.py'), '--group', 'luts')
 $fixture = ''
 if ($Test) {
     & "$PSScriptRoot/tests/BuildScriptChecks.ps1"
-    Invoke-Checked $DotNet @('run','--project',"$PSScriptRoot/tests/updates/UpdateChecks.csproj",'-c','Release')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--filter','Suite=updates')
     if (!$RawPath) { $RawPath = (Get-ChildItem -LiteralPath $RawDirectory -File -Filter '*.ARW' | Sort-Object Name | Select-Object -First 1).FullName }
     if (!$RawPath -or !(Test-Path -LiteralPath $RawPath)) { throw 'Supply -RawPath pointing to an external RAW fixture.' }
     # Test only a local copy; the external photo directory is read-only input.
@@ -197,7 +204,7 @@ New-Item -ItemType Directory -Force "$licenses/x3f-rust" | Out-Null
 Copy-Item "$native/core/x3f-rust-licenses/*" "$licenses/x3f-rust" -Recurse -Force
 Copy-Item "$repo/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt", "$repo/lutools/third_party/rawspeed-camera-calibration.inc", "$repo/RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt", "$repo/RawLabMac/Resources/Licenses/libspng-LICENSE.txt" $licenses -Force
 Copy-Item "$PSScriptRoot/Licenses/*" $licenses -Force
-Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md", "$PSScriptRoot/verification.md", "$PSScriptRoot/performance.md" $output -Force
+Copy-Item "$PSScriptRoot/ThirdPartyNotices.md", "$PSScriptRoot/README.md" $output -Force
 Copy-Item "$repo/LICENSE" $output -Force
 Copy-Item "$repo/LICENSE" "$licenses/RawLab-GPL-3.0.txt" -Force
 Copy-Item "$repo/LICENSE-ALIYUN-RUM-EXCEPTION" "$licenses/RawLab-Aliyun-RUM-Exception.txt" -Force
@@ -215,14 +222,18 @@ if ($Test) {
     Copy-Item "$native/core/Release/sony2fuji.dll", "$native/Release/raw.dll", "$($crt.FullName)/*.dll", "$($openmp.FullName)/*.dll" $testOut -Force
     Copy-Item "$native/hdr-display/Release/rawlab-hdr-display.dll" $testOut -Force
     Copy-Item "$output/ExifTool" $testOut -Recurse -Force
+    $env:RAWLAB_TEST_REPO = $repo
+    $env:RAWLAB_TEST_RAW = $fixture
+    $env:RAWLAB_TEST_RESULTS = "$repo/build/windows-v08-results"
     if ($DualDnModel) {
         foreach ($name in $runtimePins.Keys) { Copy-Item -LiteralPath "$output/$name" $testOut -Force }
         Copy-Item "$output/AI" $testOut -Recurse -Force
-        Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--ai-window',"$repo/lutools/tests/fixtures/bayer-demosaic.dng","$repo/build/windows-ai-window")
+        $env:RAWLAB_TEST_AI_RAW = "$repo/lutools/tests/fixtures/bayer-demosaic.dng"
+        Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=ai-window')
     }
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--ai-panel',"$repo/build/windows-ai-panel")
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",'--about')
-    Invoke-Checked $DotNet @("$testOut/RawLabWindows.Tests.dll",$repo,$fixture)
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=ai-panel')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=about')
+    Invoke-Checked $DotNet @('test',"$PSScriptRoot/tests/RawLabWindows.Tests.csproj",'-c','Release','--no-build','--filter','Suite=default')
 }
 if ($ReleasePackage) {
     # Package only after native libraries, models, notices and compiler runtimes are copied.

@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main
@@ -11,9 +12,9 @@ struct AdjustmentTransferSessionTests {
         if case .expired = error { return true }
         return false
     }
-    static func state(_ exposure: Double) -> PhotoEditState {
+    static func state(_ exposure: Double) -> MacPhotoEditState {
         var settings = Adjustments(); settings.exposure = exposure
-        return PhotoEditState(settings: settings, filmID: "")
+        return MacPhotoEditState(settings: settings, filmID: "")
     }
     static func context(_ url: URL) -> MacAdjustmentTransferContext {
         MacAdjustmentTransferContext(identifier: url.path, isRaw: true)
@@ -47,10 +48,204 @@ struct AdjustmentTransferSessionTests {
         try replacedPreflight(root: root, a: a, b: b)
         try latePreflight(root: root, a: a)
         try releasedPreflight()
+        try asyncCommitOrderingAndLIFORollback(root: root, a: a)
+    }
+
+    static func asyncCommitOrderingAndLIFORollback(root: URL, a: URL) throws {
+        let dir = root.appendingPathComponent("async-lifo-rollback")
+        let lock = NSLock()
+        var failFromWrite = Int.max
+        var writeCount = 0
+        var writeOnMain = false
+        let enteredFirst = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        var blockFirst = true
+
+        let store = try MacEditPersistence(directory: dir, writeData: { data, url in
+            let isMain = Thread.isMainThread
+            lock.lock()
+            writeCount += 1
+            let current = writeCount
+            if isMain { writeOnMain = true }
+            let shouldBlock = blockFirst && current == 1
+            let shouldFail = current >= failFromWrite
+            lock.unlock()
+            if shouldBlock {
+                enteredFirst.signal()
+                releaseFirst.wait()
+            }
+            if shouldFail {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        let session = AdjustmentTransferSession(store: store)
+        let initial = try store.readState(for: a)
+
+        let out1 = session.commitEditAsync(expected: initial, state: state(1))
+        let out2 = session.commitEditAsync(expected: out1.saved!, state: state(2))
+        check(out1.status == .applied && out2.status == .applied,
+              "Async edit commits return optimistic applied outcomes immediately")
+        check(session.hasPendingCommits && session.transactions.count == 2,
+              "Optimistic history transactions and pending commit state update immediately")
+        check(enteredFirst.wait(timeout: .now() + 5) == .success, "First async write started on ioQueue")
+        releaseFirst.signal()
+        check(session.flushPendingCommits() && !session.hasPendingCommits, "Flush settles queued commits")
+        lock.lock()
+        let ranOnMain = writeOnMain
+        blockFirst = false
+        failFromWrite = 3 // fail E3 (and chained E4)
+        lock.unlock()
+        check(!ranOnMain, "Async edit commits write off the main thread")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(2), "Ordered writes persist latest revision")
+
+        // Enqueue E3 and E4 where E3 fails -> LIFO rollback removes both E4 and E3 back to state(2).
+        var callbacks: [(AdjustmentTransferStatus, Double?)] = []
+        let out3 = session.commitEditAsync(expected: out2.saved!, state: state(3), completion: { outcome, rolledBack in
+            callbacks.append((outcome.status, rolledBack?.state?.settings.exposure))
+        })
+        let out4 = session.commitEditAsync(expected: out3.saved!, state: state(4), completion: { outcome, rolledBack in
+            callbacks.append((outcome.status, rolledBack?.state?.settings.exposure))
+        })
+        check(out3.status == .applied && out4.status == .applied && session.transactions.count == 4,
+              "In-flight E3/E4 stack optimistically before failure")
+        check(!session.flushPendingCommits(), "Flush reports failure when queued commits fail")
+        check(session.transactions.count == 2 &&
+              session.knownRecord(forPath: initial.identity.path)?.state == state(2) &&
+              !session.hasPendingCommits,
+              "LIFO rollback restores transactions and knownRecords to state(2)")
+        check(callbacks.count == 2 && callbacks.allSatisfy { $0.0 == .failed },
+              "Both failed commits invoke failure callbacks")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(2),
+              "Disk retains last committed state(2) after LIFO rollback")
+
+        // E3 succeeds, E4 fails -> LIFO rollback pops only E4 back to state(3).
+        lock.lock()
+        failFromWrite = writeCount + 2 // allow next write (E3), fail following write (E4)
+        lock.unlock()
+        let out5 = session.commitEditAsync(expected: session.knownRecord(forPath: initial.identity.path)!, state: state(3))
+        _ = session.commitEditAsync(expected: out5.saved!, state: state(4))
+        check(!session.flushPendingCommits(), "Flush reports failure when trailing E4 fails")
+        check(session.transactions.count == 3 &&
+              session.knownRecord(forPath: initial.identity.path)?.state == state(3),
+              "Partial stack failure rolls back only E4 in LIFO order to state(3)")
+        check(try MacEditPersistence(directory: dir).state(for: a) == state(3),
+              "Disk preserves confirmed E3 state(3) after E4 rollback")
+
+        // First async commit failure on a photo with pre-existing persisted state & dormant HDR
+        // (knownRecords[path] == nil at start of session) must restore pre-existing state, not nil.
+        let preexistingPhoto = root.appendingPathComponent("preexisting-hdr.raw")
+        try Data("preexisting".utf8).write(to: preexistingPhoto)
+        let preexistingDir = root.appendingPathComponent("preexisting-first-async-fail")
+        let setupStore = try MacEditPersistence(directory: preexistingDir)
+        var dormantHDR = HDRSettings()
+        dormantHDR.mode = .sdr
+        dormantHDR.exposure = 0.42
+        var preexistingSettings = Adjustments()
+        preexistingSettings.exposure = 1.25
+        preexistingSettings.hdr = dormantHDR
+        let preexistingState = MacPhotoEditState(settings: preexistingSettings, filmID: "")
+        try setupStore.save(preexistingPhoto, state: preexistingState)
+
+        let failLock = NSLock()
+        var failWrite = true
+        let reopenStore = try MacEditPersistence(directory: preexistingDir, writeData: { data, url in
+            failLock.lock()
+            let shouldFail = failWrite
+            failLock.unlock()
+            if shouldFail { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        let reopenSession = AdjustmentTransferSession(store: reopenStore)
+        let expectedExisting = try reopenStore.readState(for: preexistingPhoto)
+        check(reopenSession.knownRecord(forPath: expectedExisting.identity.path) == nil,
+              "Fresh session starts with nil knownRecords for reopened photo")
+        var failedCallbackRecord: MacPhotoEditRecord?
+        let firstFailOut = reopenSession.commitEditAsync(
+            expected: expectedExisting,
+            state: state(2.5),
+            completion: { _, rolledBack in
+                failedCallbackRecord = rolledBack
+            }
+        )
+        check(firstFailOut.status == .applied, "First edit on reopened photo enqueues optimistically")
+        check(!reopenSession.flushPendingCommits(), "Flush reports failure when first write on reopened photo fails")
+        check(failedCallbackRecord?.state == preexistingState &&
+              failedCallbackRecord?.state?.settings.exposure == 1.25 &&
+              failedCallbackRecord?.state?.settings.hdr == dormantHDR,
+              "First-edit failure rollback preserves pre-existing persisted exposure and dormant HDR state")
+        check(reopenSession.knownRecord(forPath: expectedExisting.identity.path)?.state == preexistingState,
+              "knownRecords restores pre-existing state instead of nil after first-edit failure")
+        check(reopenSession.transactions.isEmpty, "Failed first edit leaves history transactions empty")
+
+        failLock.lock(); failWrite = false; failLock.unlock()
+        let nextOut = reopenSession.commitEditAsync(
+            expected: failedCallbackRecord!,
+            state: state(3.0)
+        )
+        check(nextOut.status == .applied && reopenSession.flushPendingCommits(),
+              "Subsequent edit succeeds after storage recovers")
+        let undoneAfterFail = reopenSession.undoPhoto(preexistingPhoto)
+        let diskAfterUndo = try reopenStore.state(for: preexistingPhoto)
+        check(undoneAfterFail.first?.status == .applied &&
+              undoneAfterFail.first?.saved?.state == preexistingState &&
+              diskAfterUndo == preexistingState,
+              "Undoing subsequent edit after first-commit failure restores pre-existing 1.25 state, not nil")
+
+        // 1B-i: A1 fails on ioQueue before RunLoop.main drains -> A2 enqueued on main -> no split-brain.
+        let dir1Bi = root.appendingPathComponent("session-1bi")
+        var attempts1Bi = 0
+        let store1Bi = try MacEditPersistence(directory: dir1Bi, writeData: { data, url in
+            lock.lock(); attempts1Bi += 1; let idx = attempts1Bi; lock.unlock()
+            if idx == 1 { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        let session1Bi = AdjustmentTransferSession(store: store1Bi)
+        let init1Bi = try store1Bi.readState(for: a)
+        let a1Out = session1Bi.commitEditAsync(expected: init1Bi, state: state(1))
+        store1Bi.waitForPendingIO()
+        _ = session1Bi.commitEditAsync(expected: a1Out.saved!, state: state(2))
+        _ = session1Bi.flushPendingCommits()
+        let mem1Bi = session1Bi.knownRecord(forPath: init1Bi.identity.path)?.state?.settings.exposure
+        let disk1Bi = try MacEditPersistence(directory: dir1Bi).state(for: a)?.settings.exposure
+        check(mem1Bi == 2 && disk1Bi == 2 && session1Bi.transactions.count == 1,
+              "1B-i pre-drain async failure followed by new commit keeps memory, disk, and history consistent")
+
+        // 1B-ii: A1 fails + A2 chain-fails while B1 pauses ioQueue -> A3 enqueued before RunLoop.main drains -> no split-brain.
+        let dir1Bii = root.appendingPathComponent("session-1bii")
+        var attempts1Bii = 0
+        let a1Entered1Bii = DispatchSemaphore(value: 0)
+        let a1Release1Bii = DispatchSemaphore(value: 0)
+        let b1Entered1Bii = DispatchSemaphore(value: 0)
+        let b1Release1Bii = DispatchSemaphore(value: 0)
+        let store1Bii = try MacEditPersistence(directory: dir1Bii, writeData: { data, url in
+            lock.lock(); attempts1Bii += 1; let idx = attempts1Bii; lock.unlock()
+            if idx == 1 { a1Entered1Bii.signal(); a1Release1Bii.wait(); throw CocoaError(.fileWriteOutOfSpace) }
+            if idx == 2 { b1Entered1Bii.signal(); b1Release1Bii.wait() }
+            try data.write(to: url, options: .atomic)
+        })
+        let session1Bii = AdjustmentTransferSession(store: store1Bii)
+        let b1Bii = root.appendingPathComponent("1bii-b.raw")
+        try Data("original-B-1bii".utf8).write(to: b1Bii)
+        let initA1Bii = try store1Bii.readState(for: a)
+        let initB1Bii = try store1Bii.readState(for: b1Bii)
+        let b1Out1 = session1Bii.commitEditAsync(expected: initA1Bii, state: state(1))
+        check(a1Entered1Bii.wait(timeout: .now() + 5) == .success, "1B-ii A1 entered ioQueue")
+        let b1Out2 = session1Bii.commitEditAsync(expected: b1Out1.saved!, state: state(2))
+        _ = session1Bii.commitEditAsync(expected: initB1Bii, state: state(1.5))
+        a1Release1Bii.signal()
+        check(b1Entered1Bii.wait(timeout: .now() + 5) == .success, "1B-ii B1 paused ioQueue")
+        _ = session1Bii.commitEditAsync(expected: b1Out2.saved!, state: state(3))
+        b1Release1Bii.signal()
+        _ = session1Bii.flushPendingCommits()
+        let mem1Bii = session1Bii.knownRecord(forPath: initA1Bii.identity.path)?.state?.settings.exposure
+        let disk1Bii = try MacEditPersistence(directory: dir1Bii).state(for: a)?.settings.exposure
+        check(mem1Bii == 3 && disk1Bii == 3 && session1Bii.transactions.count == 2,
+              "1B-ii blocked-queue failure expiry before main drain keeps memory, disk, and history consistent")
     }
 
     static func cancelledPreflight(root: URL, a: URL, b: URL) throws {
-        let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("cancelled-preflight")))
+        let session = AdjustmentTransferSession(store: try MacEditPersistence(directory: root.appendingPathComponent("cancelled-preflight")))
         for fails in [false, true] {
             var cancelled = false, visits = 0
             var first = target(a), second = target(b)
@@ -90,7 +285,7 @@ struct AdjustmentTransferSessionTests {
         for close in [false, true] {
             let queue = DispatchQueue(label: "preflight-replacement-test")
             let preflight = AdjustmentTransferPreflight(queue: queue)
-            let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("replacement-\(close)")))
+            let session = AdjustmentTransferSession(store: try MacEditPersistence(directory: root.appendingPathComponent("replacement-\(close)")))
             let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
             var firstVisits = 0, skippedCalls = 0, latestCalls = 0, deliveries = [Double]()
             var first = target(a), second = target(b)
@@ -124,7 +319,7 @@ struct AdjustmentTransferSessionTests {
     static func latePreflight(root: URL, a: URL) throws {
         let queue = DispatchQueue(label: "preflight-late-test")
         let preflight = AdjustmentTransferPreflight(queue: queue)
-        let session = AdjustmentTransferSession(store: try EditPersistence(directory: root.appendingPathComponent("late-preflight")))
+        let session = AdjustmentTransferSession(store: try MacEditPersistence(directory: root.appendingPathComponent("late-preflight")))
         let value = try session.prepare(payload: payload(1), targets: [target(a)])
         var deliveries = 0
         preflight.start({ _ in value }, completed: { _ in deliveries += 1 })
@@ -155,7 +350,7 @@ struct AdjustmentTransferSessionTests {
     }
 
     static func sourceDefaults(root: URL, a: URL, b: URL) throws {
-        let store = try EditPersistence(directory: root.appendingPathComponent("source-defaults"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("source-defaults"))
         let session = AdjustmentTransferSession(store: store)
         var legacy = state(0); legacy.settings.x3fMode = .legacy
         var good = target(a), failed = target(b)
@@ -176,7 +371,7 @@ struct AdjustmentTransferSessionTests {
     static func partialFailureAndHistory(root: URL, a: URL, b: URL) throws {
         let directory = root.appendingPathComponent("partial")
         var writes = 0
-        let store = try EditPersistence(directory: directory, writeData: { data, file in
+        let store = try MacEditPersistence(directory: directory, writeData: { data, file in
             writes += 1
             if writes == 2 { throw CocoaError(.fileWriteOutOfSpace) }
             try data.write(to: file, options: .atomic)
@@ -210,7 +405,7 @@ struct AdjustmentTransferSessionTests {
               "Other photo redo survives an independent edit")
         _ = session.undoPhoto(a)
         check((try store.state(for: a)) == nil, "Latest ordinary edit undo restores its previous state")
-        let reopened = try EditPersistence(directory: directory)
+        let reopened = try MacEditPersistence(directory: directory)
         check(try reopened.state(for: b) == state(1), "Saved changes survive reopening the real registry")
         check(try Data(contentsOf: a) == Data("original-A".utf8) && Data(contentsOf: b) == Data("original-B".utf8),
               "Original photos remain untouched")
@@ -218,7 +413,7 @@ struct AdjustmentTransferSessionTests {
 
     static func saveAndLegacy(root: URL, a: URL) throws {
         let directory = root.appendingPathComponent("versions")
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         let session = AdjustmentTransferSession(store: store)
         let old = try session.prepare(payload: payload(1), targets: [target(a)])
         let before = try store.readState(for: a)
@@ -234,7 +429,7 @@ struct AdjustmentTransferSessionTests {
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         json["revisions"] = [a.resolvingSymlinksInPath().path: "legacy-revision"]
         try JSONSerialization.data(withJSONObject: json).write(to: file, options: .atomic)
-        let legacy = try EditPersistence(directory: directory)
+        let legacy = try MacEditPersistence(directory: directory)
         check(try legacy.state(for: a) == state(3),
               "Legacy registry with removed revision metadata remains readable")
         let saved = try legacy.readState(for: a)
@@ -246,7 +441,7 @@ struct AdjustmentTransferSessionTests {
     }
 
     static func preflight(root: URL, a: URL, b: URL) throws {
-        let store = try EditPersistence(directory: root.appendingPathComponent("preflight"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("preflight"))
         let session = AdjustmentTransferSession(store: store)
         var blocked = target(b); blocked.context.hasUncommittedDraft = true
         let operation = try session.prepare(payload: payload(1), targets: [target(a), blocked])
@@ -263,7 +458,7 @@ struct AdjustmentTransferSessionTests {
     }
 
     static func historyOrder(root: URL, a: URL) throws {
-        let store = try EditPersistence(directory: root.appendingPathComponent("history-order"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("history-order"))
         let session = AdjustmentTransferSession(store: store)
         let first = try session.prepare(payload: payload(1), targets: [target(a)])
         _ = session.apply(first)
@@ -286,7 +481,7 @@ struct AdjustmentTransferSessionTests {
         var writes = 0
         var failAt = 0
         let directory = root.appendingPathComponent("history-failure")
-        let store = try EditPersistence(directory: directory, writeData: { data, file in
+        let store = try MacEditPersistence(directory: directory, writeData: { data, file in
             writes += 1
             if writes == failAt { throw CocoaError(.fileWriteOutOfSpace) }
             try data.write(to: file, options: .atomic)
@@ -311,10 +506,10 @@ struct AdjustmentTransferSessionTests {
 
     static func storageFailures(root: URL, a: URL, b: URL) throws {
         let directory = root.appendingPathComponent("storage-failure")
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         try store.save(a, state: state(1))
         let expected = try store.readState(for: a)
-        let failing = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteOutOfSpace) })
+        let failing = try MacEditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteOutOfSpace) })
         let session = AdjustmentTransferSession(store: failing)
         check(session.commitEdit(expected: expected, state: state(2)).status == .failed, "Disk write failure is reported by ordinary commit")
         check(try store.readState(for: a) == expected && session.transactions.isEmpty, "Failed write preserves the existing record")
@@ -334,7 +529,7 @@ struct AdjustmentTransferSessionTests {
               "Future registry blocks existing store's write")
         check((try Data(contentsOf: file)) == futureBytes, "Future registry is preserved unchanged")
         try bytes.write(to: file, options: .atomic)
-        let other = try EditPersistence(directory: directory)
+        let other = try MacEditPersistence(directory: directory)
         let lock = NSLock()
         var errors = [Error]()
         DispatchQueue.concurrentPerform(iterations: 2) { index in
@@ -347,7 +542,7 @@ struct AdjustmentTransferSessionTests {
     }
 
     static func historyRace(root: URL, a: URL) throws {
-        let store = try EditPersistence(directory: root.appendingPathComponent("history-race"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("history-race"))
         let session = AdjustmentTransferSession(store: store)
         let pending = try session.prepare(payload: payload(1), targets: [target(a)])
         _ = session.commitEdit(expected: try store.readState(for: a), state: state(2))
@@ -357,7 +552,7 @@ struct AdjustmentTransferSessionTests {
     }
 
     static func clipboardAndEmptyTargets(root: URL, a: URL) throws {
-        let store = try EditPersistence(directory: root.appendingPathComponent("clipboard"))
+        let store = try MacEditPersistence(directory: root.appendingPathComponent("clipboard"))
         let session = AdjustmentTransferSession(store: store)
         let copy = try session.copy(scope: .custom([.exposure]), snapshot: state(1), context: context(a))
         var draft = context(a); draft.hasUncommittedDraft = true
@@ -375,15 +570,15 @@ struct AdjustmentTransferSessionTests {
 
     static func processingMigrationReset(root: URL, a: URL, b: URL) throws {
         let directory = root.appendingPathComponent("migration-reset")
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         let session = AdjustmentTransferSession(store: store)
         var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = -18
-        let original = PhotoEditState(settings: oldSettings, filmID: "saved-look")
+        let original = MacPhotoEditState(settings: oldSettings, filmID: "saved-look")
         try store.save(a, state: original)
         let initial = try store.readState(for: a)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
         var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = -12
-        let migrated = PhotoEditState(settings: migratedSettings, filmID: "saved-look")
+        let migrated = MacPhotoEditState(settings: migratedSettings, filmID: "saved-look")
         let accepted = try store.commitProcessingMigration(expected: initial, candidate: migrated, quality: quality)
         session.adoptProcessingMigration(accepted)
         check(try store.processingMigration(for: a)?.status == .migrated, "Migration receipt recorded before reset")
@@ -393,7 +588,7 @@ struct AdjustmentTransferSessionTests {
         check(try store.processingMigration(for: a)?.status == .migrated, "Ordinary edit without reset intent preserves migration receipt")
 
         var neutralSettings = Adjustments(); neutralSettings.processing = .current
-        let neutralCandidate = PhotoEditState(settings: neutralSettings, filmID: "")
+        let neutralCandidate = MacPhotoEditState(settings: neutralSettings, filmID: "")
         let resetOutcome = session.commitEdit(expected: try store.readState(for: a), state: neutralCandidate,
                                               clearsProcessingMigration: true)
         check(resetOutcome.status == .applied && resetOutcome.saved?.state == neutralCandidate,
@@ -403,7 +598,7 @@ struct AdjustmentTransferSessionTests {
             _ = try store.rollbackProcessingMigration(expected: try store.readState(for: a))
             fatalError("Rollback after reset must throw expired")
         } catch AdjustmentCommitError.expired { }
-        let reopened = try EditPersistence(directory: directory)
+        let reopened = try MacEditPersistence(directory: directory)
         check(try reopened.processingMigration(for: a) == nil, "Cleared receipt stays nil after reopening store")
         do {
             _ = try reopened.rollbackProcessingMigration(expected: try reopened.readState(for: a))
@@ -428,9 +623,9 @@ struct AdjustmentTransferSessionTests {
         check(try store.processingMigration(for: b)?.status == .kept, "Kept receipt recorded")
         var neutralLegacy = Adjustments(); neutralLegacy.processing = .c5
         _ = session.commitEdit(expected: try store.readState(for: b),
-                               state: PhotoEditState(settings: neutralLegacy, filmID: ""),
+                               state: MacPhotoEditState(settings: neutralLegacy, filmID: ""),
                                clearsProcessingMigration: true)
-        check(try EditPersistence(directory: directory).processingMigration(for: b) == nil,
+        check(try MacEditPersistence(directory: directory).processingMigration(for: b) == nil,
               "Reset-all clears kept receipt across reopen")
 
         try store.save(b, state: original)
@@ -440,9 +635,9 @@ struct AdjustmentTransferSessionTests {
         session.adoptProcessingMigration(rolledBack)
         check(try store.processingMigration(for: b)?.status == .rolledBack, "Rolled-back receipt recorded")
         _ = session.commitEdit(expected: rolledBack,
-                               state: PhotoEditState(settings: neutralLegacy, filmID: ""),
+                               state: MacPhotoEditState(settings: neutralLegacy, filmID: ""),
                                clearsProcessingMigration: true)
-        check(try EditPersistence(directory: directory).processingMigration(for: b) == nil,
+        check(try MacEditPersistence(directory: directory).processingMigration(for: b) == nil,
               "Reset-all clears rolled-back receipt across reopen")
     }
 
@@ -456,10 +651,10 @@ struct AdjustmentTransferSessionTests {
         for (index, url) in [healthyA, healthyB, brokenVer, brokenSub].enumerated() {
             try Data("fixture-\(index)".utf8).write(to: url)
         }
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         let session = AdjustmentTransferSession(store: store)
         var c5 = Adjustments(); c5.processing = .c5; c5.exposure = 0.5
-        let c5State = PhotoEditState(settings: c5, filmID: "look-a")
+        let c5State = MacPhotoEditState(settings: c5, filmID: "look-a")
         try store.save(healthyA, state: c5State)
         try store.save(healthyB, state: state(-0.25))
         try store.save(brokenVer, state: c5State)
@@ -467,10 +662,10 @@ struct AdjustmentTransferSessionTests {
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
         var migrated = c5; migrated.processing = .current
         _ = try store.commitProcessingMigration(expected: store.readState(for: healthyA),
-                                                candidate: PhotoEditState(settings: migrated, filmID: "look-a"),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: "look-a"),
                                                 quality: quality)
         _ = try store.commitProcessingMigration(expected: store.readState(for: brokenVer),
-                                                candidate: PhotoEditState(settings: migrated, filmID: "look-a"),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: "look-a"),
                                                 quality: quality)
 
         let file = directory.appendingPathComponent("edits.json")
@@ -498,7 +693,7 @@ struct AdjustmentTransferSessionTests {
         """
         try Data(injected.utf8).write(to: file)
 
-        let reopened = try EditPersistence(directory: directory)
+        let reopened = try MacEditPersistence(directory: directory)
         check(try reopened.state(for: healthyA)?.settings.exposure == 0.5 &&
               reopened.state(for: healthyB)?.settings.exposure == -0.25,
               "Healthy sibling records remain readable when other records are unusable")
@@ -523,7 +718,7 @@ struct AdjustmentTransferSessionTests {
         check(diskTextAfterHealthySave.contains("\(keyVerJSON):\(verbatimBrokenVerSlice)") &&
               diskTextAfterHealthySave.contains("\(keySubJSON):\(verbatimBrokenSubSlice)"),
               "Saving another photo preserves broken record JSON slices byte-for-byte verbatim")
-        check(try EditPersistence(directory: directory).state(for: healthyB)?.settings.exposure == 1.25,
+        check(try MacEditPersistence(directory: directory).state(for: healthyB)?.settings.exposure == 1.25,
               "Updated sibling record persists cleanly alongside preserved broken entries")
 
         // D3/c: resetToUnmodified clears ONLY the target photo's record and migration receipt.
@@ -538,28 +733,48 @@ struct AdjustmentTransferSessionTests {
         check(diskAfterReset.contains("\(keySubJSON):\(verbatimBrokenSubSlice)"),
               "resetToUnmodified on one broken photo leaves other broken photo verbatim")
         try reopened.save(brokenVer, state: state(0.4))
-        check(try EditPersistence(directory: directory).state(for: brokenVer)?.settings.exposure == 0.4,
+        check(try MacEditPersistence(directory: directory).state(for: brokenVer)?.settings.exposure == 0.4,
               "Recovered photo can save new adjustments normally")
 
-        // D2/d: Whole-table structural corruption still rejects the entire store.
+        // D2/d: Future version remains fail-closed, while root-level corruption self-heals via quarantine.
+        let futureStoreDir = root.appendingPathComponent("future-whole-store")
+        try FileManager.default.createDirectory(at: futureStoreDir, withIntermediateDirectories: true)
+        let futureFile = futureStoreDir.appendingPathComponent("edits.json")
+        let futureBytes = Data("{\"version\":2,\"records\":{}}".utf8)
+        try futureBytes.write(to: futureFile)
+        do {
+            _ = try MacEditPersistence(directory: futureStoreDir)
+            fatalError("Future version must fail closed")
+        } catch is CocoaError { }
+        check(try Data(contentsOf: futureFile) == futureBytes, "Future registry version bytes remain untouched")
+
         let corruptStoreDir = root.appendingPathComponent("corrupt-whole-store")
         try FileManager.default.createDirectory(at: corruptStoreDir, withIntermediateDirectories: true)
         let corruptFile = corruptStoreDir.appendingPathComponent("edits.json")
         for badJSON in [
             "{\"version\":1,\"records\":{",
-            "{\"version\":2,\"records\":{}}",
             "{\"records\":{}}",
             "{\"version\":1,\"records\":[]}",
             "{\"version\":1,\"records\":{},\"processingMigrations\":[]}",
             "{\"version\":1,\"version\":1,\"records\":{}}"
         ] {
-            try Data(badJSON.utf8).write(to: corruptFile)
-            do {
-                _ = try EditPersistence(directory: corruptStoreDir)
-                fatalError("Whole-store corruption must fail closed: \(badJSON)")
-            } catch is CocoaError { }
+            let badBytes = Data(badJSON.utf8)
+            try badBytes.write(to: corruptFile)
+            let healed = try MacEditPersistence(directory: corruptStoreDir)
+            let archived = healed.lastQuarantinedURL
+            check(archived != nil && archived!.lastPathComponent.hasPrefix("edits.json.corrupt-"),
+                  "Root corruption quarantines corrupt edits.json: \(badJSON)")
+            check(try Data(contentsOf: archived!) == badBytes && !FileManager.default.fileExists(atPath: corruptFile.path),
+                  "Quarantined file preserves exact bytes and clears active path: \(badJSON)")
+            check(healed.consumeQuarantinedError() != nil && healed.consumeQuarantinedError() == nil,
+                  "Quarantine error is surfaced once: \(badJSON)")
         }
-        check(true, "Whole-store structural corruption remains fail-closed")
+        let recoveryPhoto = root.appendingPathComponent("healed-photo.raw")
+        try Data("healed-photo-bytes".utf8).write(to: recoveryPhoto)
+        let recoveredStore = try MacEditPersistence(directory: corruptStoreDir)
+        try recoveredStore.save(recoveryPhoto, state: state(0.75))
+        check(try MacEditPersistence(directory: corruptStoreDir).state(for: recoveryPhoto)?.settings.exposure == 0.75,
+              "Recovered MacEditPersistence persists subsequent edits cleanly")
     }
 
     // Q3/S1 seam：提示按实际应用结果过滤；跳过与预检失败目标不产生误报。

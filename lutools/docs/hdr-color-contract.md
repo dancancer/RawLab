@@ -363,6 +363,27 @@ uses full-frame memory admission. `sony2fuji_hdr_heif_export_available` requires
 a successful in-memory encode and ISO HDR readback on the current Apple runtime.
 Windows and Android use the portable HEIF reader and export gain-map JPEG.
 
+### Tiled HEIF and rendered DNG export on Apple
+
+`sony2fuji_hdr_export_tiled` reuses complete-source stream color, geometry,
+resize, detail and effects processing. HDR JPEG/HEIF inputs provide bounded
+decoded rows; ProRAW uses the existing FINAL row-source contract. Camera RAW
+uses its complete owned FINAL pair from the existing LibRaw development path,
+without adding camera-model or ImageIO-format requirements.
+
+Both source renditions and rendered output use task-owned float files. HEIF
+consumes output tiles and retains the ISO gain-map and readback checks above.
+Rendered DNG consumes SDR rows through the existing 16-bit LinearRaw writer;
+it does not copy camera RAW calibration or EXIF. Source identity, cancellation,
+scratch cleanup and atomic publication follow the streamed JPEG contract.
+Camera RAW uses file stamps and does not read or hash unused source metadata.
+
+Reducing the output size still processes the complete original. This bounds
+intermediate pixel memory, but camera RAW development and the system HEIF codec
+retain their own memory requirements. Disk admission includes source planes,
+rendered planes and the encoded file. The original JPEG APIs remain unchanged;
+the tiled entry reports unsupported on non-Apple platforms.
+
 
 ## Complete-source streamed JPEG export
 

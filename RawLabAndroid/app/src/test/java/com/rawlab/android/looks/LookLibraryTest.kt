@@ -556,4 +556,57 @@ class LookLibraryTest {
             source.delete()
         }
     }
+
+    @Test
+    fun listSkipsValidationWhenFileStatIsUnchangedAndDetectsModificationAndDeletion() {
+        val root = Files.createTempDirectory("rawlab-look-stat-cache").toFile()
+        try {
+            val validations = java.util.concurrent.atomic.AtomicInteger()
+            val countingValidator = LookValidator { file ->
+                validations.incrementAndGet()
+                validator.validate(file)
+            }
+            val library = LookLibrary(root, countingValidator)
+            val imported = library.importLook("valid".byteInputStream(), "cached.cube")
+            assertEquals(1, validations.get())
+
+            // Same instance & fresh instance (simulating process restart): 0 full-file validations in list().
+            assertTrue(library.list().single().available)
+            assertTrue(library.list().single().available)
+            assertTrue(LookLibrary(root, countingValidator).list().single().available)
+            assertEquals(1, validations.get())
+
+            // Legacy registry entries without validatedSize/validatedModified still decode cleanly, validate once, and cache in memory.
+            val registry = File(root, "registry.properties")
+            val legacyProps = Properties().apply { registry.inputStream().use { load(it) } }
+            legacyProps.remove("item.0.validatedSize")
+            legacyProps.remove("item.0.validatedModified")
+            registry.outputStream().use { legacyProps.store(it, null) }
+            val legacyLibrary = LookLibrary(root, countingValidator)
+            assertTrue(legacyLibrary.list().single().available)
+            assertEquals(2, validations.get())
+            assertTrue(legacyLibrary.list().single().available)
+            assertEquals(2, validations.get())
+
+            // Modify managed file on disk (different length & bumped mtime) -> re-validated once and marked unavailable.
+            val managedFile = imported.file(root)
+            val oldModified = managedFile.lastModified()
+            managedFile.writeText("corrupted-look")
+            managedFile.setLastModified(oldModified + 5_000L)
+            val afterModify = legacyLibrary.list().single()
+            assertFalse(afterModify.available)
+            assertEquals(3, validations.get())
+
+            // Unchanged corrupted file stays cached as unavailable without re-validating.
+            assertFalse(legacyLibrary.list().single().available)
+            assertEquals(3, validations.get())
+
+            // Delete file on disk -> marked unavailable with 0 validator calls.
+            assertTrue(managedFile.delete())
+            assertFalse(legacyLibrary.list().single().available)
+            assertEquals(3, validations.get())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
 }

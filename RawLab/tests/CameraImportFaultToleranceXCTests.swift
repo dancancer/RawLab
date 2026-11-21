@@ -1,3 +1,4 @@
+import RawLabKit
 import XCTest
 
 final class CameraImportFaultToleranceXCTests: XCTestCase {
@@ -39,6 +40,11 @@ final class CameraImportFaultToleranceXCTests: XCTestCase {
     @MainActor
     func testP222_PerformBatchPersistFailureRollbackAndRecovery() async throws {
         try await CameraSkipAndLimitTests.testP222PerformBatchPersistFailureRollbackAndRecovery()
+    }
+
+    @MainActor
+    func testP3_508_ThumbnailsDoNotBlockCommandQueueOrHashFullFile() async throws {
+        try await CameraSkipAndLimitTests.test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile()
     }
 
     @MainActor

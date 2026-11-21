@@ -40,7 +40,8 @@ set(production_sources
     ../../src/core/photo_color_grading.cpp ../../src/core/color_converter.cpp
     ../../src/core/photo_effects.cpp ../../src/core/hdr_detail.cpp
     ../../src/core/hdr_look.cpp ../../src/core/lut_parser.cpp ../../src/core/lut_applicator.cpp
-    ../../src/core/hdr_jpeg.cpp ../../src/platform/hdr_image_apple.mm)
+    ../../src/core/hdr_jpeg.cpp ../../src/core/jpeg_mpf.cpp
+    ../../src/core/hdr_storage.cpp ../../src/platform/hdr_image_apple.mm)
 if(HDR_ULTRAHDR_SOURCE)
     if(NOT EXISTS "${HDR_JPEG_PREFIX}/lib/libjpeg.a" OR NOT EXISTS "${HDR_JPEG_PREFIX}/include/jpeglib.h")
         message(FATAL_ERROR "Ultra HDR probe requires an explicit target-specific static JPEG prefix")
@@ -87,7 +88,8 @@ set(HDR_FINAL_FIXTURE "" CACHE FILEPATH "Read-only fixture for full-resolution p
 get_filename_component(HDR_FINAL_FIXTURE_NAME "${HDR_FINAL_FIXTURE}" NAME)
 set(provenance_sources hdr_codec_probe.mm hdr_device_main.mm hdr_native_probe.mm ultrahdr_probe.mm
     ${production_sources}
-    ../../src/core/hdr_rendering.h ../../src/core/hdr_jpeg.h ../../src/platform/hdr_image.h
+    ../../src/core/hdr_rendering.h ../../src/core/hdr_jpeg.h ../../src/core/jpeg_mpf.h
+    ../../src/core/hdr_storage.h ../../src/core/hdr_stream.h ../../src/platform/hdr_image.h
     ../../src/core/photo_geometry.h ../../src/core/photo_tone_curve.h ../../src/core/photo_color.h
     ../../src/core/photo_color_grading.h ../../src/core/photo_effects.h ../../src/core/hdr_detail.h
     ../../src/core/hdr_look.h ../../include/sony2fuji/lut_parser.h ../../include/sony2fuji/lut_applicator.h

@@ -1,10 +1,14 @@
+#include "test_harness.h"
 #include "core/hdr_stream.h"
 #include "core/hdr_look.h"
 #include "core/hdr_jpeg.h"
+#include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
 #include "platform/hdr_image.h"
+#include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #ifdef _WIN32
@@ -22,7 +26,7 @@ using namespace sony2fuji;
 namespace fs = std::filesystem;
 
 namespace {
-void check(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
+using rawlab::test::require;
 HDRImagePair fixture() {
     HDRImagePair pair;
     pair.hdr = ImageData(529, 317); pair.sdr = ImageData(529, 317);
@@ -46,7 +50,7 @@ void interruptSDRJPEGAfterGrowth() {
     for (auto& pixel : pixels) pixel = {sample(), sample(), sample()};
     auto row = [&](uint32_t y) { return pixels.data() + size_t(y) * width; };
     // Even the prefix exceeds jpeg_mem_dest's initial 4096-byte buffer.
-    check(hdr::encodeSDRJPEGRows(width, interruptRow - 16, 100, row).size() > 4096,
+    require(hdr::encodeSDRJPEGRows(width, interruptRow - 16, 100, row).size() > 4096,
         "SDR cancellation fixture must grow the encoder buffer before interruption");
 
     bool cancel = false, cancelled = false;
@@ -60,7 +64,7 @@ void interruptSDRJPEGAfterGrowth() {
             return row(y);
         });
     } catch (const ProcessingCancelled&) { cancelled = true; }
-    check(cancelled && rowsRead == interruptRow, "SDR encode did not cancel after buffer growth");
+    require(cancelled && rowsRead == interruptRow, "SDR encode did not cancel after buffer growth");
 
     cancel = false;
     bool rejected = false;
@@ -70,8 +74,8 @@ void interruptSDRJPEGAfterGrowth() {
             return y == interruptRow ? nullptr : row(y);
         });
     } catch (const std::invalid_argument&) { rejected = true; }
-    check(rejected, "SDR encode did not reject a missing row after buffer growth");
-    check(!hdr::encodeSDRJPEGRows(width, height, 100, row).empty(), "SDR encode did not recover");
+    require(rejected, "SDR encode did not reject a missing row after buffer growth");
+    require(!hdr::encodeSDRJPEGRows(width, height, 100, row).empty(), "SDR encode did not recover");
 }
 
 void largeCanvasClarity(const fs::path& root) {
@@ -93,13 +97,13 @@ void largeCanvasClarity(const fs::path& root) {
     HDRRenderOptions options;
     options.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
     options.detail.clarity = .75f;
-    check(options.detail.halo(16, 8000) == 40, "8k stream clarity retained the preview-sized halo cap");
+    require(options.detail.halo(16, 8000) == 40, "8k stream clarity retained the preview-sized halo cap");
     const auto expected = renderHDRPair(pair, options);
     for (bool hdr : {true, false}) {
         const auto jpeg = hdr ? hdr::encodeJPEG(expected, 95, SONY2FUJI_HDR_COLOR_SRGB)
                               : hdr::encodeSDRJPEG(expected.sdr, 95);
         const auto streamed = hdr::encodeStream(source, options, hdr, 95, SONY2FUJI_HDR_COLOR_SRGB, root);
-        check(jpeg == streamed.jpeg && fs::is_empty(root), "8k clarity stream differs from full-frame output or leaked its spool");
+        require(jpeg == streamed.jpeg && fs::is_empty(root), "8k clarity stream differs from full-frame output or leaked its spool");
     }
 }
 }
@@ -120,7 +124,7 @@ int main(int argc, char* argv[]) {
         source.read = [&](bool hdr, uint32_t row, uint32_t count, RGB* result) {
             if (++reads == failAfter) throw std::runtime_error("injected decoder read failure");
             const auto& image = hdr ? pair.hdr : pair.sdr;
-            check(row + count <= uint32_t(image.height), "Source reader asked outside native canvas");
+            require(row + count <= uint32_t(image.height), "Source reader asked outside native canvas");
             std::copy_n(image.pixels.data() + size_t(row) * image.width, size_t(count) * image.width, result);
         };
         source.finish = [&] { ++finishes; };
@@ -128,7 +132,7 @@ int main(int argc, char* argv[]) {
         options.exposureEV = .25f; options.temperature = 7200; options.tint = 5;
         options.contrast = 12; options.highlights = -17; options.shadows = 7;
         int passed = 0;
-        for (int transform = 0; transform < 6; ++transform) for (bool hdr : {true, false}) {
+        for (int transform = 0; transform < 7; ++transform) for (bool hdr : {true, false}) {
             options.geometry = {};
             if (transform) {
                 options.geometry.quarter_turns = 1; options.geometry.flip_horizontal = true;
@@ -145,13 +149,17 @@ int main(int argc, char* argv[]) {
                 options.rendition.peakLimitEV = 1.5f;
             }
             if (transform >= 4) {
-                options.processingVersion = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
+                options.processingVersion = kHdrProcessingDetailVersion;
                 options.detail = {1.3f, .65f, -.4f, .72f};
             }
-            if (transform == 5) {
-                options.processingVersion = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
+            if (transform >= 5) {
+                options.processingVersion = kHdrProcessingLookVersion;
                 options.look = look;
                 options.lookStrength = 1.1f;
+            }
+            if (transform == 6) {
+                options.processingVersion = kHdrProcessingChannelCurvesVersion;
+                options.tone.channels[0] = {ToneCurveMode::Custom, 3, {{{0,0},{.5,.6},{1,1}}}};
             }
             for (uint32_t edge : {0u, 151u}) {
                 options.longEdge = edge;
@@ -159,21 +167,56 @@ int main(int argc, char* argv[]) {
                 const auto jpeg = hdr ? hdr::encodeJPEG(expected, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3)
                                       : hdr::encodeSDRJPEG(expected.sdr, 95);
                 const auto result = hdr::encodeStream(source, options, hdr, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
-                check(jpeg == result.jpeg, "Stream JPEG differs from full-frame reference");
-                check(result.width == uint32_t(expected.hdr.width) && result.height == uint32_t(expected.hdr.height), "Output size differs");
-                check(result.outputNativeWidth == expected.outputNativeWidth && result.outputNativeHeight == expected.outputNativeHeight,
+                require(jpeg == result.jpeg, "Stream JPEG differs from full-frame reference");
+                require(result.width == uint32_t(expected.hdr.width) && result.height == uint32_t(expected.hdr.height), "Output size differs");
+                require(result.outputNativeWidth == expected.outputNativeWidth && result.outputNativeHeight == expected.outputNativeHeight,
                     "Native geometry size differs after resize");
-                if (hdr) check(result.editedHeadroom == expected.editedHeadroom, "Edited headroom differs");
-                check(fs::is_empty(root), "Successful stream left temporary files");
-                ++passed;
+                if (hdr) require(result.editedHeadroom == expected.editedHeadroom, "Edited headroom differs");
+                require(fs::is_empty(root), "Successful stream left temporary files");
+                {
+                    const auto files = hdr::renderStreamFiles(source, options, hdr, root);
+                    require(files.result.width == uint32_t(expected.hdr.width) && files.result.height == uint32_t(expected.hdr.height),
+                        "Tiled output file dimensions differ");
+                    for (bool high : {false, true}) {
+                        if (high && !hdr) continue;
+                        const auto& plane = high ? expected.hdr : expected.sdr;
+                        hdr::storage::File pixels(high ? files.hdr : files.sdr);
+                        std::vector<RGB> row(plane.width);
+                        require(pixels.size() == plane.pixels.size() * sizeof(RGB), "Tiled output file is incomplete");
+                        // HEIF 会随机索取区域，反向读取同时验证尾块和稳定的全局坐标。
+                        for (int y = plane.height - 1; y >= 0; --y) {
+                            pixels.read(uint64_t(y) * row.size() * sizeof(RGB), row.data(), row.size() * sizeof(RGB));
+                            require(std::memcmp(row.data(), plane.pixels.data() + size_t(y) * plane.width, row.size() * sizeof(RGB)) == 0,
+                                "Tiled float output differs from full-frame pixels");
+                        }
+                    }
+                    if (hdr) {
+                        float peak = 1.001f;
+                        for (const auto& pixel : expected.hdr.pixels) peak = std::max({peak, pixel.r, pixel.g, pixel.b});
+                        require(files.rgbHeadroom == peak && files.result.editedHeadroom == expected.editedHeadroom,
+                            "Tiled RGB peak or luminance headroom differs");
+                    }
+                }
+                require(fs::is_empty(root), "Tiled output ownership left temporary files");
+                passed += 2;
             }
         }
-        check(finishes == passed, "Decoder was not released once per completed decode");
+        require(finishes == passed, "Decoder was not released once per completed decode");
         reads = 0; failAfter = 2;
         bool rejected = false;
         try { (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root); }
         catch (const std::runtime_error&) { rejected = true; }
-        check(rejected && fs::is_empty(root), "Decoder failure left partial files");
+        const bool emptyAfterFailure = fs::is_empty(root);
+        std::string failureDetail = "Decoder failure left partial files";
+        if (!(rejected && emptyAfterFailure)) {
+            failureDetail += " (rejected=" + std::to_string(rejected) + ", empty=" + std::to_string(emptyAfterFailure) + ", entries=[";
+            std::error_code ec;
+            for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec))
+                failureDetail += it->path().filename().u8string() + ",";
+            if (ec) failureDetail += "iter_err=" + std::to_string(ec.value());
+            failureDetail += "])";
+        }
+        require(rejected && emptyAfterFailure, failureDetail);
         failAfter = -1;
         const auto reader = source.read;
         source.read = [&](bool hdr, uint32_t row, uint32_t count, RGB* result) {
@@ -185,7 +228,7 @@ int main(int argc, char* argv[]) {
             (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
         }
         catch (const ProcessingCancelled&) { rejected = true; }
-        check(rejected && fs::is_empty(root), "Cancellation did not clean decode work");
+        require(rejected && fs::is_empty(root), "Cancellation did not clean decode work");
         source.read = reader; cancel = false;
         source.finish = [&] { cancel = true; };
         rejected = false;
@@ -194,20 +237,20 @@ int main(int argc, char* argv[]) {
             (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
         }
         catch (const ProcessingCancelled&) { rejected = true; }
-        check(rejected && fs::is_empty(root), "Post-decode cancellation continued to encode");
+        require(rejected && fs::is_empty(root), "Post-decode cancellation continued to encode");
         source.finish = [] {}; cancel = false;
         const auto recovered = [&] {
             ProcessingCancellationScope cancellation({[](void* context) { return *static_cast<bool*>(context) ? 1 : 0; }, &cancel});
             return hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
         }();
-        check(!recovered.jpeg.empty() && fs::is_empty(root), "Stream did not recover after failures");
+        require(!recovered.jpeg.empty() && fs::is_empty(root), "Stream did not recover after failures");
         options.geometry = {}; options.longEdge = 0;
         const float original = pair.hdr.pixels[0].r;
         pair.hdr.pixels[0].r = std::numeric_limits<float>::infinity();
         rejected = false;
         try { (void)hdr::encodeStream(source, options, true, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root); }
         catch (const std::invalid_argument&) { rejected = true; }
-        check(rejected && fs::is_empty(root), "Nonfinite source was exported or leaked files");
+        require(rejected && fs::is_empty(root), "Nonfinite source was exported or leaked files");
         pair.hdr.pixels[0].r = original;
         const auto abandoned = root / "RawLab-HDR-abandoned", active = root / "RawLab-HDR-active";
         const auto unrelated = root / "RawLab-HDR-unmarked";
@@ -218,13 +261,13 @@ int main(int argc, char* argv[]) {
 #ifdef _WIN32
         const auto activeLock = CreateFileW((active / ".rawlab-stream.lock").c_str(), GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-        check(activeLock != INVALID_HANDLE_VALUE, "Cannot lock live scratch fixture");
+        require(activeLock != INVALID_HANDLE_VALUE, "Cannot lock live scratch fixture");
 #else
         const int activeLock = open((active / ".rawlab-stream.lock").c_str(), O_CREAT | O_RDWR, 0600);
-        check(activeLock >= 0 && flock(activeLock, LOCK_EX | LOCK_NB) == 0, "Cannot lock live scratch fixture");
+        require(activeLock >= 0 && flock(activeLock, LOCK_EX | LOCK_NB) == 0, "Cannot lock live scratch fixture");
 #endif
         (void)hdr::encodeStream(source, options, false, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
-        check(!fs::exists(abandoned) && fs::exists(active / "keep") && fs::exists(unrelated / "keep"),
+        require(!fs::exists(abandoned) && fs::exists(active / "keep") && fs::exists(unrelated / "keep"),
             "Recovery retained an abandoned spool or removed active/unmarked files");
 #ifdef _WIN32
         CloseHandle(activeLock);
@@ -232,7 +275,7 @@ int main(int argc, char* argv[]) {
         close(activeLock);
 #endif
         (void)hdr::encodeStream(source, options, false, 95, SONY2FUJI_HDR_COLOR_DISPLAY_P3, root);
-        check(!fs::exists(active) && fs::exists(unrelated / "keep"), "Released scratch was not recovered safely");
+        require(!fs::exists(active) && fs::exists(unrelated / "keep"), "Released scratch was not recovered safely");
         fs::remove_all(unrelated);
         fs::remove(root);
         std::cout << "PASS " << passed << " byte-identical stream JPEGs; decoder failure, cancellation, cleanup and recovery\n";

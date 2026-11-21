@@ -36,7 +36,19 @@ extern "C" sony2fuji_status sony2fuji_compare_lut_previews(const sony2fuji_buffe
     sony2fuji_release_blob(output);
     if(!candidate || !reference || !conditions) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     try {
-        const auto text=sony2fuji::compareLUTPreviews(*candidate,*reference,conditions);
+        const auto toView = [](const sony2fuji_buffer& buf) {
+            sony2fuji::PixelBufferView view;
+            view.data = buf.data;
+            view.sizeBytes = buf.size_bytes;
+            view.width = buf.width;
+            view.height = buf.height;
+            view.strideBytes = buf.stride_bytes;
+            view.format = buf.pixel_format == SONY2FUJI_PIXEL_RGBA8 ? sony2fuji::PixelBufferFormat::RGBA8 :
+                (buf.pixel_format == SONY2FUJI_PIXEL_RGBA16 ? sony2fuji::PixelBufferFormat::RGBA16 :
+                    sony2fuji::PixelBufferFormat::RGB8);
+            return view;
+        };
+        const auto text=sony2fuji::compareLUTPreviews(toView(*candidate),toView(*reference),conditions);
         output->data=std::malloc(text.size());
         if(!output->data) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
         std::memcpy(output->data,text.data(),text.size());output->size_bytes=text.size();

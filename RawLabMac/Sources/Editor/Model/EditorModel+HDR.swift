@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 extension EditorModel {
@@ -33,7 +34,7 @@ extension EditorModel {
         preflightCameraHDR(file, snapshot: editState(settings: candidate))
     }
 
-    private func preflightCameraHDR(_ url: URL, snapshot: PhotoEditState) {
+    private func preflightCameraHDR(_ url: URL, snapshot: MacPhotoEditState) {
         let opening = pendingOpenID
         let previous = editState(settings: settings)
         let edge = renderPreviewLongEdge
@@ -57,7 +58,7 @@ extension EditorModel {
         }
     }
 
-    private func activateHDRMode(_ snapshot: PhotoEditState) {
+    private func activateHDRMode(_ snapshot: MacPhotoEditState) {
         guard commitAdjustment(snapshot) else { return }
         resetAITask(); cancelHSLTarget()
         restoreAdjustmentState(snapshot)

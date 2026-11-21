@@ -1,9 +1,32 @@
+import RawLabKit
 import PhotosUI
 import SwiftUI
 
 extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
+        if toolWorkspaceOpen {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: requestToolWorkspaceExit) {
+                    Label(L10n.text("返回"), systemImage: "chevron.left")
+                }
+                .disabled(editorBusy)
+                .accessibilityIdentifier("editor.tool.back")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: requestToolWorkspaceExit) {
+                    Label(L10n.text("收起调整栏"), systemImage: "slider.horizontal.3")
+                }
+                .disabled(editorBusy)
+                .accessibilityIdentifier("editor.adjustments")
+            }
+        } else {
+            editorOverviewToolbar
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var editorOverviewToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
             if viewModel.batchSelection.selection.current != nil {
                 Button { requestCollectionNavigation(.returnToCollection) } label: { Image(systemName: "square.grid.2x2") }
@@ -14,9 +37,7 @@ extension ContentView {
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
-                photoViewing.endTemporaryViewing()
-                preserveEditorDraft()
-                showingCameraWorkspace = true
+                coordinator.presentCameraWorkspace()
             } label: { Image(systemName: "camera") }
                 .disabled(editorBusy).accessibilityLabel(L10n.text("相机")).accessibilityIdentifier("editor.camera")
             if viewModel.isExportingHDR {
@@ -80,18 +101,18 @@ extension ContentView {
                 Button(L10n.text("批量编辑"), action: openBatchSelection)
                     .disabled(editorBusy).accessibilityIdentifier("collection.open")
                 Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
-                Button { photoInfoMode = photoInfoMode.next } label: {
+                Button { coordinator.photoInfoMode = coordinator.photoInfoMode.next } label: {
                     Label(L10n.text("照片信息"), systemImage: "info.circle")
                 }.disabled(!viewModel.hasImage)
-                Toggle(L10n.text("直方图"), isOn: $histogramExpanded)
+                Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
                 Menu(L10n.text("对比方式")) { comparisonModeMenu }
                 Menu(L10n.text("缩放与显示")) {
-                    Toggle(L10n.text("照片四周留白"), isOn: $photoViewing.photoMargin)
+                    Toggle(L10n.text("照片四周留白"), isOn: $coordinator.photoViewing.photoMargin)
                 }.disabled(!viewModel.hasImage)
-                Button { showingProcessingContext = true } label: {
+                Button { coordinator.presentProcessingContext() } label: {
                     Label(L10n.text("照片处理设置"), systemImage: "slider.horizontal.3")
                 }.disabled(!viewModel.hasImage)
-                Button { showingPrivacy = true } label: {
+                Button { coordinator.presentPrivacy() } label: {
                     Label(L10n.text("隐私设置"), systemImage: "gearshape")
                 }
                 .accessibilityIdentifier("editor.privacy.open")
@@ -124,35 +145,18 @@ extension ContentView {
             ZStack {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
-                    ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
-                                  label: L10n.text("调整后"), viewing: $photoViewing, viewport: $photoViewport,
-                                  isDraft: geometrySelected,
-                                  interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !showingDocumentImporter,
-                                  overlayAvoidanceRect: photoComparisonControlBounds,
-                                  onPreviewSizeChange: { viewModel.updatePreviewSize($0, settings: draftPreviewSettings) },
-                                  hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: hslTargetPoint,
-                                  nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
-                                  hdr:viewModel.hdrPresentation,referenceHDR:viewModel.hdrReference,hdrDisplay:hdrDisplay)
+                    editorPhotoCanvas(image, size: geometry.size,
+                                      onPreviewSizeChange: { edge in
+                        let apply = { viewModel.updatePreviewSize(edge, settings: draftPreviewSettings) }
+                        if let hook = testHooks.onPreviewSizeChange { hook(edge, apply) } else { apply() }
+                    })
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .allowsHitTesting(!geometrySelected)
                         .overlay(alignment: .bottom) {
                             if !adjustmentsExpanded && hslTargetActive {
-                                HSLTargetCanvasControls(axis: hslTargetAxis) {
-                                    cancelHSLTarget(); hslTargetEnabled = false
+                                HSLTargetCanvasControls(axis: coordinator.hslTargetAxis) {
+                                    cancelHSLTarget(); coordinator.hslTargetEnabled = false
                                 }.padding(8)
-                            }
-                        }
-                        .overlay {
-                            if geometrySelected && !geometryPerspective {
-                                EditorCropOverlay(settings: geometryDraftBinding, imageSize: image.size,
-                                                  aspectRatio: geometryDraftAspectRatio,
-                                                  isEnabled: !editorBusy && viewModel.hasImage,
-                                                  sourceRevision: viewModel.sourceRevision,
-                                                  onEditingChanged: setSliderEditing, showsGrid: geometryGrid)
-                                    .padding(PhotoZoomGeometry.marginInset(viewport: geometry.size,
-                                        margin: photoViewing.photoMargin ? PhotoZoomGeometry.defaultMargin : 0))
-                                    .id(viewModel.sourceRevision)
                             }
                         }
                 } else {
@@ -189,9 +193,9 @@ extension ContentView {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if viewModel.hasImage && !photoViewing.previewOnly && histogramExpanded {
+                if viewModel.hasImage && !photoViewing.previewOnly && coordinator.histogramExpanded {
                     FloatingHistogram(histogram: currentHistogram, showingBefore: showingBefore,
-                                      availableSize: geometry.size, expanded: $histogramExpanded,
+                                      availableSize: geometry.size, expanded: $coordinator.histogramExpanded,
                                       hdr:(showingBefore ? viewModel.hdrReference : viewModel.hdrPresentation)?.statistics,
                                       headroom:hdrDisplay.headroom)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
@@ -248,6 +252,43 @@ extension ContentView {
         }
     }
 
+    @ViewBuilder private func editorPhotoCanvas(_ image: UIImage, size: CGSize,
+                                                onPreviewSizeChange: @escaping (Int) -> Void) -> some View {
+        if let projection = geometryProjection(for: image) {
+            let margin = photoViewing.photoMargin ? PhotoZoomGeometry.defaultMargin : 0
+            let inset = PhotoZoomGeometry.marginInset(viewport: size, margin: margin)
+            let layout = projection.layout(in: size, margin: inset, editing: geometrySelected)
+            let photo = GeometryDraftImage(image: image, hdr: viewModel.hdrPresentation, hdrDisplay: hdrDisplay, layout: layout)
+            if geometrySelected {
+                let sizing = PhotoZoomGeometry(pixels: projection.source, viewport: size, displayScale: displayScale, margin: margin)
+                let edge = sizing.previewLongEdge(scale: sizing.fitScale, limit: viewModel.viewportPreviewLimit)
+                ZStack {
+                    photo
+                    EditorCropOverlay(settings: geometryDraftBinding, imageSize: projection.safeSize,
+                                      aspectRatio: geometryDraftAspectRatio, isEnabled: !editorBusy,
+                                      sourceRevision: viewModel.sourceRevision, onEditingChanged: setSliderEditing,
+                                                showsGrid: coordinator.geometryGrid, imageBounds: layout.safeBounds, imageOutline: layout.outline,
+                                      showsHandles: !coordinator.geometryPerspective)
+                }
+                .clipped()
+                .onChange(of: edge, initial: true) { _, edge in onPreviewSizeChange(edge) }
+            } else {
+                photo.mask { Path(layout.cropBounds) }.clipped()
+            }
+        } else {
+            ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
+                          label: L10n.text("调整后"), viewing: $coordinator.photoViewing, viewport: $coordinator.photoViewport,
+                          isDraft: geometrySelected,
+                          interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !coordinator.showingDocumentImporter,
+                          overlayAvoidanceRect: photoComparisonControlBounds,
+                          onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
+                          hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: coordinator.hslTargetPoint,
+                          nativePixelSize: viewModel.viewportNativeSize, previewLongEdgeLimit: viewModel.viewportPreviewLimit,
+                          hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay)
+                .allowsHitTesting(!geometrySelected)
+        }
+    }
+
     @ViewBuilder
     var comparisonModeMenu: some View {
         Button(L10n.text("并排")) { photoViewing.selectMode(.sideBySide) }
@@ -289,7 +330,7 @@ extension ContentView {
                             .padding(.horizontal, 16).id(revision).disabled(editorBusy || editingLocked || isEditorDraftActive)
                     }
                     IOSQuickPresetView(model: viewModel, requestAction: requestAdjustmentAction,
-                        manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: presetLibraryRevision)
+                        manage: { adjustmentSheet = .presets }, undo: undoQuickPreset, libraryRevision: coordinator.presetLibraryRevision)
                 }
             } else { valuePanel }
         }.disabled(settings.isHDREditing && !viewModel.quickPresetsVisible && !supportsHDR(currentEditorTool))
@@ -311,7 +352,7 @@ extension ContentView {
                             .accessibilityIdentifier("processing.migration.status")
                     }
                     if viewModel.processingMigrationReceipt?.status == .migrated {
-                        Button(L10n.text("回到迁移前")) { confirmingProcessingRollback = true }
+                        Button(L10n.text("回到迁移前")) { coordinator.confirmingProcessingRollback = true }
                             .disabled(isEditorDraftActive || editorBusy || viewModel.matchingProcessing)
                             .accessibilityIdentifier("processing.migration.rollback")
                     }
@@ -355,15 +396,15 @@ extension ContentView {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if viewModel.sourceKind == .raw && !settings.isHDREditing {
-                        Picker(L10n.text("曝光基准"), selection: $settings.exposureMode) {
+                        Picker(L10n.text("曝光基准"), selection: $coordinator.settings.exposureMode) {
                             ForEach(RawExposureMode.allCases) { Text($0.title).tag($0) }
                         }.disabled(isEditorDraftActive || editorBusy || usesNormalX3f)
                     }
                 }
                 .navigationTitle(L10n.text("照片处理设置"))
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("关闭")) { showingProcessingContext = false } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L10n.text("关闭")) { coordinator.dismissProcessingContext() } } }
             }.presentationDetents([.medium, .large])
-                .alert(L10n.text("回到迁移前"), isPresented: $confirmingProcessingRollback) {
+                .alert(L10n.text("回到迁移前"), isPresented: $coordinator.confirmingProcessingRollback) {
                     Button(L10n.text("回到迁移前")) { viewModel.rollbackProcessingMigration(settings: settings) }
                     Button(L10n.text("取消"), role: .cancel) { }
                 } message: { Text(L10n.text("将恢复迁移前的全部调整，之后的修改会被替换。")) }
@@ -373,19 +414,19 @@ extension ContentView {
         let source = viewModel.sourceRevision
         let tool = currentEditorTool
         let channel = hslChannel
-        let grading = gradingZone
-        let perspective = geometryPerspective, rotation = geometryRotation
+        let grading = coordinator.gradingZone
+        let perspective = coordinator.geometryPerspective, rotation = coordinator.geometryRotation
         let hdr = settings.isHDREditing
         return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective).\(rotation).\(hdr)", isCurrent: {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
-                (tool != .geometry || geometryPerspective == perspective && geometryRotation == rotation)
+                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
             if viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || gradingZone == grading) &&
-                (tool != .geometry || geometryPerspective == perspective && geometryRotation == rotation) {
+                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation) {
                 cancelSliderInteraction()
             }
         })
@@ -463,11 +504,17 @@ extension ContentView {
             VStack(spacing: 4) {
                 Text(group.title).font(.caption).lineLimit(singleLine ? 1 : 2)
                     .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                    .modifier(OptionalGeometryObserver(action: testHooks.onGroupTextFrame.map { hook in
+                        { frame in hook(group, frame) }
+                    }))
                 Circle().fill(resetModified(.group(group)) ? Color.yellow : .clear).frame(width: 4, height: 4)
             }
             .padding(.horizontal, 4)
             .frame(width: width, height: height)
             .contentShape(Rectangle())
+            .modifier(OptionalGeometryObserver(action: testHooks.onGroupButtonFrame.map { hook in
+                { frame in hook(group, frame, height) }
+            }))
             .foregroundStyle(selectedGroup == group ? Color.yellow : .primary)
 
         }

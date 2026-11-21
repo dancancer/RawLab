@@ -2,11 +2,13 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FRAMEWORK="${1:-$ROOT/build-ios/sony2fuji.xcframework}"
+libraw_env="$(python3 "$ROOT/cmake/libraw/manifest.py" --shell)"
+eval "$libraw_env"
 
 for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     binary="$FRAMEWORK/$slice/sony2fuji.framework/sony2fuji"
     test -f "$binary"
-    for marker in 0.22.2-Release GFX100RF 'EOS R6 Mark III'; do
+    for marker in "$RAWLAB_LIBRAW_TAG" GFX100RF 'EOS R6 Mark III'; do
         if ! strings "$binary" | grep -F "$marker" >/dev/null; then
             echo "FAIL: $slice is missing patched LibRaw marker: $marker" >&2
             exit 1
@@ -45,7 +47,7 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     nm -gU "$binary" | grep -E ' _sony2fuji_compile_hdr_camera_dcp$' >/dev/null
     nm -gU "$binary" | grep -F '_sony2fuji_release_blob' >/dev/null
     for symbol in probe decode probe_camera_raw probe_camera_profile decode_camera_raw camera_ai_key decode_camera_raw_with_ai \
-        probe_proraw decode_proraw export_proraw render export_jpeg export_sdr export_stream release_pair; do
+        probe_proraw decode_proraw export_proraw render export_jpeg export_sdr export_stream export_tiled release_pair; do
         nm -gU "$binary" | grep -E " _sony2fuji_hdr_${symbol}$" >/dev/null
     done
     for header in sony2fuji_c.h sony2fuji_hdr.h; do

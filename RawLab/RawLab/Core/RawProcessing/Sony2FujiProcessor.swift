@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -8,7 +9,6 @@ struct Sony2FujiProcessor {
     let gpuMode: sony2fuji_gpu_mode
     let lensDatabaseURL: URL?
     let lensCatalog = LensCatalogCache()
-    let recipeWhiteBalance = RecipeWhiteBalanceCache()
 
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil) {
         self.gpuMode = gpuMode
@@ -27,6 +27,11 @@ struct Sony2FujiProcessor {
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        if format == .hdrHEIF {
+            try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
+                proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_HEIF), cancelled: cancelled)
+            return
         }
         if format != .hdrHEIF, url.pathExtension.lowercased() == "dng",
            let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil {
@@ -47,6 +52,39 @@ struct Sony2FujiProcessor {
         case .hdrHEIF: try pair.exportHEIF(to: output)
         }
         if cancelled() { throw CancellationError() }
+    }
+
+    func exportHDRDNG(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
+                      processing: ProcessingIdentity = .current, proRAWDecodeVersion: Int? = nil,
+                      cancelled: () -> Bool = { false }) throws {
+        guard settings.mode == .hdr, settings.isValid else { throw HDRRequestError.invalidSettings }
+        guard gpuMode != SONY2FUJI_GPU_FORCE else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
+                reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
+        }
+        try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
+            proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_SDR_DNG), cancelled: cancelled)
+    }
+
+    private func exportTiledHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int?,
+                                processing: ProcessingIdentity, proRAWDecodeVersion: Int?, format: UInt32,
+                                cancelled: () -> Bool) throws {
+        guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
+            throw HDRSettings.ModeError.unsupportedSource
+        }
+        let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+        try withRawSession(reuse: false, inputType: inputType) { session in
+            if info.proRAW != nil {
+                try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
+                hdrSources.clear()
+                _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
+                    format: format == UInt32(SONY2FUJI_HDR_TILED_HEIF) ? .hdrHEIF : .renderedDNG,
+                    session: session, cancelled: cancelled)
+            } else {
+                _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
+                    longEdge: longEdge, format: format, session: session, cancelled: cancelled)
+            }
+        }
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
@@ -136,7 +174,7 @@ struct Sony2FujiProcessor {
         }
     }
 
-    private func withRawSession<T>(reuse: Bool, inputType: sony2fuji_input_type = SONY2FUJI_INPUT_RAW, body: (OpaquePointer) throws -> T) throws -> T {
+    func withRawSession<T>(reuse: Bool, inputType: sony2fuji_input_type = SONY2FUJI_INPUT_RAW, body: (OpaquePointer) throws -> T) throws -> T {
         let create = { () throws -> OpaquePointer in
             let session = try createSession()
             do { try loadLensDatabase(session, inputType: inputType) }
@@ -289,15 +327,7 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: settings.lensSettings)
-            try configureProcessing(session, identity: settings.processing)
-            try configureX3f(session, mode: settings.x3fMode)
-            try configureTone(session, settings: settings.toneSettings)
-            try configureAtmosphere(session, settings: settings.atmosphereSettings)
-            try configureLens(session, settings: settings.lensSettings)
-            let mode = sony2fuji_raw_exposure_mode(rawValue: UInt32(settings.exposureMode.rawValue))
-            guard sony2fuji_session_set_raw_exposure_mode(session, mode) == SONY2FUJI_STATUS_OK else {
-                throw ProcessorError.processFailed(L10n.text("无效的曝光基准"))
-            }
+            try applySessionParams(session, settings: settings, isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType
             var ev: Float = 0
@@ -318,6 +348,10 @@ struct Sony2FujiProcessor {
                 }
             } else { throw ProcessorError.rasterDecodeFailed }
             guard status == SONY2FUJI_STATUS_OK else {
+                if status == SONY2FUJI_STATUS_UNSUPPORTED,
+                   sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU {
+                    throw processingFailure(status, session: session)
+                }
                 let detail = sony2fuji_session_x3f_error(session).map { String(cString: $0) } ?? ""
                 throw ProcessorError.processFailed(L10n.format("无法自动调整曝光：%@", detail.isEmpty ? statusMessage(status) : detail))
             }
@@ -419,45 +453,67 @@ struct Sony2FujiProcessor {
         lutURL: URL?,
         interactive: Bool = false,
         viewportPreview: Bool = false,
-        exportLongEdge: Int? = nil
+        exportLongEdge: Int? = nil,
+        cancelled: () -> Bool = { false }
     ) throws -> ProcessResult {
         guard ExportSize.isValid(exportLongEdge) else {
             throw ProcessorError.invalidExportSize
         }
+        if cancelled() { throw CancellationError() }
         // 原生/缩放尺寸由 sony2fuji_process 在同一次 session 解包中确定，避免导出前二次读头/解包。
         _ = try url.checkResourceIsReachable()
         return try withRawSession(reuse: previewLongEdge != nil && exportLongEdge == nil) { session in
-            let settings = try prepareRecipe(settings, session: session, url: url)
-            try configureSession(session, settings: settings,
-                                 interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
-                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
+            try withoutActuallyEscaping(cancelled) { escapingCancelled in
+                final class CancellationBox {
+                    let check: () -> Bool
+                    init(_ check: @escaping () -> Bool) { self.check = check }
+                }
+                let box = CancellationBox(escapingCancelled)
+                return try withExtendedLifetime(box) {
+                    let context = Unmanaged.passUnretained(box).toOpaque()
+                    _ = sony2fuji_session_set_cancellation_callback(session, { pointer in
+                        guard let pointer else { return 0 }
+                        return Unmanaged<CancellationBox>.fromOpaque(pointer).takeUnretainedValue().check() ? 1 : 0
+                    }, context)
+                    defer { _ = sony2fuji_session_set_cancellation_callback(session, nil, nil) }
 
-            var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
-            request.input_type = SONY2FUJI_INPUT_RAW
-            applySize(&request, width: 0, height: 0,
-                      previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
-            let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
-            request.lut_strength = lutStrength
+                    if box.check() { throw CancellationError() }
+                    let settings = try prepareRecipe(settings, session: session, url: url)
+                    if box.check() { throw CancellationError() }
+                    try configureSession(session, settings: settings,
+                                         interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
+                                         viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
 
-            var buffer = sony2fuji_buffer()
-            defer { sony2fuji_release_buffer(&buffer) }
-            let status = processRaw(
-                session: session,
-                request: &request,
-                inputPath: url.path,
-                lutPath: lutURL?.path,
-                outBuffer: &buffer
-            )
-            guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status, session: session)
+                    var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
+                    request.input_type = SONY2FUJI_INPUT_RAW
+                    applySize(&request, width: 0, height: 0,
+                              previewLongEdge: previewLongEdge, exportLongEdge: exportLongEdge)
+                    let lutStrength = lutURL == nil ? 0 : settings.clampedLUTStrength
+                    request.lut_strength = lutStrength
+
+                    var buffer = sony2fuji_buffer()
+                    defer { sony2fuji_release_buffer(&buffer) }
+                    let status = processRaw(
+                        session: session,
+                        request: &request,
+                        inputPath: url.path,
+                        lutPath: lutURL?.path,
+                        outBuffer: &buffer
+                    )
+                    if status == SONY2FUJI_STATUS_CANCELLED || box.check() {
+                        throw CancellationError()
+                    }
+                    guard status == SONY2FUJI_STATUS_OK else {
+                        throw processingFailure(status, session: session)
+                    }
+
+                    let normalX3f = isNormalX3f(url, settings: settings)
+                    var output = try takeBuffer(&buffer, semantic: normalX3f ? .display : .legacy)
+                    output.nativeSize = geometrySize(session)
+                    let rawWhiteBalance = readRawWhiteBalance(from: session)
+                    return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: normalX3f ? nil : try readLens(session, url: url))
+                }
             }
-
-            let normalX3f = isNormalX3f(url, settings: settings)
-            var output = try takeBuffer(&buffer, semantic: normalX3f ? .display : .legacy)
-            output.nativeSize = geometrySize(session)
-            let rawWhiteBalance = normalX3f ? RawWhiteBalance(temperature: 6500, tint: 0, isCalibrated: true)
-                : readRawWhiteBalance(from: session)
-            return ProcessResult(buffer: output, orientation: .up, rawWhiteBalance: rawWhiteBalance, lensInfo: normalX3f ? nil : try readLens(session, url: url))
         }
     }
 
@@ -507,7 +563,7 @@ struct Sony2FujiProcessor {
                 outBuffer: &outBuffer
             )
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status)
+                throw processingFailure(status, session: session)
             }
 
             var output = try takeBuffer(&outBuffer, semantic: buffer.semantic)
@@ -587,7 +643,7 @@ struct Sony2FujiProcessor {
                                              lutPath: lutURL?.path, outputPath: outputURL.path)
             if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
             guard status == SONY2FUJI_STATUS_OK else {
-                throw processingFailure(status, look: lutURL, output: outputURL)
+                throw processingFailure(status, look: lutURL, output: outputURL, session: session)
             }
         }
     }
@@ -604,6 +660,82 @@ struct Sony2FujiProcessor {
                 stride:image.bytesPerRow,pixelFormat:SONY2FUJI_PIXEL_RGBA8,semantic:.display,
                 nativeSize:CGSize(width:pair.nativeWidth,height:pair.nativeHeight),isProxy:pair.isProxy),orientation:.up,rawWhiteBalance:nil)
         }
+        _ = applyingOrientation
+        if let edge = previewLongEdge {
+            let meta = try validateDisplayImageMetadata(url: url)
+            if meta.orientedMax > edge {
+                let nativeSize = CGSize(width: meta.orientedWidth, height: meta.orientedHeight)
+                if !meta.rgb16 && !meta.hasAlpha && !meta.tiffPair {
+                    let buffer = try autoreleasepool { () throws -> Buffer in
+                        let options: [CFString: Any] = [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: edge,
+                            kCGImageSourceShouldCacheImmediately: true
+                        ]
+                        guard var image = CGImageSourceCreateThumbnailAtIndex(meta.imageSource, 0, options as CFDictionary) else {
+                            throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+                        }
+                        guard image.bitsPerComponent == 8,
+                              !image.bitmapInfo.contains(.floatComponents),
+                              let decodedSpace = image.colorSpace,
+                              decodedSpace.model == .rgb,
+                              !isHDRColorSpace(decodedSpace) else {
+                            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+                        }
+                        if let expectedName = meta.pngColorSpaceName {
+                            guard let expectedSpace = CGColorSpace(name: expectedName),
+                                  expectedSpace == decodedSpace else {
+                                throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
+                            }
+                        }
+                        if !meta.hasProfile && meta.pngColorSpaceName == nil {
+                            guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+                                  let retagged = image.copy(colorSpace: sRGB) else {
+                                throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+                            }
+                            image = retagged
+                        }
+                        return try renderDisplayRGBA8Buffer(
+                            from: image,
+                            targetWidth: image.width,
+                            targetHeight: image.height,
+                            checkOpaqueAlpha: !isOpaqueAlphaInfo(image.alphaInfo),
+                            nativeSize: nativeSize,
+                            isProxy: true,
+                            sourceURL: url
+                        )
+                    }
+                    return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
+                }
+                var native = sony2fuji_buffer()
+                defer { sony2fuji_release_buffer(&native) }
+                let status = url.path.withCString { path in
+                    sony2fuji_load_display_image(path, &native)
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw displayImageFailure(status)
+                }
+                let buffer = try autoreleasepool { () throws -> Buffer in
+                    guard let fullImage = makeDisplayCGImage(from: native) else {
+                        throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
+                    }
+                    let scale = Double(edge) / Double(max(Int(native.width), Int(native.height)))
+                    let targetWidth = max(1, Int((Double(native.width) * scale).rounded()))
+                    let targetHeight = max(1, Int((Double(native.height) * scale).rounded()))
+                    return try renderDisplayRGBA8Buffer(
+                        from: fullImage,
+                        targetWidth: targetWidth,
+                        targetHeight: targetHeight,
+                        checkOpaqueAlpha: false,
+                        nativeSize: nativeSize,
+                        isProxy: true,
+                        sourceURL: url
+                    )
+                }
+                return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
+            }
+        }
         var native = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&native) }
         let status = url.path.withCString { path in
@@ -615,7 +747,6 @@ struct Sony2FujiProcessor {
         // The shared adapter has already validated color/alpha/depth and applied
         // EXIF orientation. Keep the parameter for source compatibility, but do
         // not permit a second orientation pass.
-        _ = applyingOrientation
         var buffer = try takeBuffer(&native, semantic: .display)
         buffer.sourceLensMetadata = DisplayLensMetadata.read(url)
         return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)

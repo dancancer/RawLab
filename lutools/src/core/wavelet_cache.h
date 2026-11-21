@@ -1,8 +1,9 @@
 #pragma once
 #include "wavelet_denoise.h"
-#include "sony2fuji/ffi/sony2fuji_c.h"
 #include <array>
 #include <cstdint>
+
+struct sony2fuji_session;
 
 namespace sony2fuji {
 

@@ -1,8 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 DEVICE="${1:?Pass an already booted dedicated simulator UDID}"
-OUT="${2:-$(mktemp -d /tmp/rawlab-ios-ruler-enabled.XXXXXX)}"
+if [[ "$#" -ge 2 ]]; then
+    OUT="$2"
+    mkdir -p "$OUT"
+else
+    rawlab_ios_make_temp_dir OUT rawlab-ios-ruler-enabled
+fi
 HARNESS="$OUT/AdjustmentRulerEnabledTests.app"
 mkdir -p "$HARNESS"
 cat > "$HARNESS/Info.plist" <<'PLIST'
@@ -25,12 +32,10 @@ cat > "$HARNESS/Info.plist" <<'PLIST'
 </dict></array></dict></dict>
 </dict></plist>
 PLIST
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET="${RAWLAB_SIMULATOR_ARCH:-$(uname -m)}-apple-ios18.0-simulator"
 RULER="${RAWLAB_RULER_SOURCE:-$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift}"
-xcrun --sdk iphonesimulator swiftc -parse-as-library -swift-version 5 -module-name RulerEnabledTests \
-    -sdk "$SDK" -target "$TARGET" -module-cache-path "$OUT/module-cache" \
-    "$ROOT/Shared/Localization.swift" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -module-name RulerEnabledTests \
+    -module-cache-path "$OUT/module-cache" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentScale.swift" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift" \
     "$ROOT/RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift" \
@@ -43,4 +48,6 @@ if [[ "${RAWLAB_RULER_BUILD_ONLY:-}" == 1 ]]; then
 fi
 SIMCTL_CHILD_RAWLAB_RULER_RESULT="$OUT/result.json" \
     xcrun simctl launch --console --terminate-running-process "$DEVICE" com.rawlab.tests.ruler-enabled
-echo "Method-level observations: $OUT/result.json"
+if [[ "$#" -ge 2 ]]; then
+    echo "Method-level observations: $OUT/result.json"
+fi

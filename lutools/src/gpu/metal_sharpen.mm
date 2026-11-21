@@ -1,4 +1,5 @@
 #include "metal_sharpen.h"
+#include "denoise.h"
 #include "metal_sharpen_shader.h"
 #include <algorithm>
 #include <array>
@@ -22,6 +23,7 @@ struct Context {
     std::array<id<MTLComputePipelineState>, KernelCount> pipelines{};
     std::mutex work;
     bool ready = false;
+    bool supportedOS = false;
 };
 Context& context() {
     static Context value;
@@ -29,6 +31,7 @@ Context& context() {
     std::call_once(once, [&] {
         @autoreleasepool {
             if (@available(macOS 15.0, iOS 18.0, *)) {
+                value.supportedOS = true;
                 value.device = MTLCreateSystemDefaultDevice();
                 value.queue = [value.device newCommandQueue];
                 if (!value.device || !value.queue) return;
@@ -77,9 +80,25 @@ bool encode(Context& ctx, id<MTLCommandBuffer> command, Kernel kernel, const Par
 bool filter(const float* rgb, const float* luma, const float* residual, const float* noise,
             int width, int height, float amount, float* output) {
     if (!rgb || !luma || !residual || !noise || !output || width < 1 || height < 1 ||
-        !std::isfinite(amount) || amount <= 0 || amount > 2 || uint64_t(width)*height > UINT32_MAX/4) return false;
+        !std::isfinite(amount) || amount <= 0 || amount > 2 || uint64_t(width)*height > UINT32_MAX/4) {
+        sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability, "Sharpen tile dimensions exceed Metal limit"};
+        return false;
+    }
     auto& ctx = context();
-    if (!ctx.ready) return false;
+    if (!ctx.ready) {
+        if (!ctx.supportedOS) {
+            sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+                sony2fuji::GpuBackendFault::UnsupportedCapability, "Metal sharpen requires macOS 15 or iOS 18"};
+        } else if (!ctx.device) {
+            sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::Unsupported,
+                sony2fuji::GpuBackendFault::NoAdapter, "No Metal GPU device available"};
+        } else {
+            sony2fuji::lastGpuFilterOutcome() = {sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::FilterError, "Metal sharpen pipeline initialization failed"};
+        }
+        return false;
+    }
     std::lock_guard<std::mutex> lock(ctx.work);
     const size_t count = size_t(width)*height, bytes = count*sizeof(float);
     auto source = allocate(ctx, 3*bytes, rgb), y = allocate(ctx, bytes, luma);

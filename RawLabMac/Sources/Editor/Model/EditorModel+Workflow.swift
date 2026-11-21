@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -5,9 +6,9 @@ import UniformTypeIdentifiers
 typealias MacDCPOptionsPrompt = (URL, DCPCompilerError, @escaping (DCPImportOptions?) -> Void) -> Void
 
 extension EditorModel {
-    func editState(settings: Adjustments) -> PhotoEditState {
+    func editState(settings: Adjustments) -> MacPhotoEditState {
         let filmID = selectedFilm.map { $0.managedID ?? "builtin:\($0.url.lastPathComponent)" } ?? selectedFilmID
-        return PhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID)
+        return MacPhotoEditState(settings: settings, filmID: filmID, masterRecipeID: settings.masterRecipeID)
     }
 
     func prepareReset(scope: EditorResetScope) -> ResetPreparation {
@@ -19,18 +20,18 @@ extension EditorModel {
             return .blocked(.geometryDraftRequired)
         }
         guard invalidGeometryDraftInputs.isEmpty else { return .blocked(.invalidDraftInputs) }
-        let context = EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+        let context = MacEditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
                                               defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
         let original = editState(settings: settings)
         var snapshot = original
         if let draft = geometryDraft {
-            if case .blocked(let reason) = EditorAdjustmentRules.prepareReset(scope: scope, snapshot: original, context: context) {
+            if case .blocked(let reason) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: original, context: context) {
                 return .blocked(.adjustment(reason))
             }
             snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
             snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
         }
-        switch EditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
+        switch MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
         case .unchanged: return .unchanged
         case .blocked(let reason): return .blocked(.adjustment(reason))
         case .candidate(let candidate):
@@ -72,8 +73,8 @@ extension EditorModel {
         return true
     }
 
-    var adjustmentContext: EditorAdjustmentContext {
-        EditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
+    var adjustmentContext: MacEditorAdjustmentContext {
+        MacEditorAdjustmentContext(isRaw: !RenderEngine.isRasterInput(file),
             defaultExposureMode: RenderEngine.isRasterInput(file) ? .sensor : Adjustments().exposureMode, neutralFilmID: "")
     }
 
@@ -83,15 +84,15 @@ extension EditorModel {
             snapshot.settings.geometry = draft.geometry.isIdentity ? nil : draft.geometry
             snapshot.settings.lensCorrection = draft.lens == LensCorrectionSettings() ? nil : draft.lens
         }
-        return EditorAdjustmentRules.isModified(scope: scope, snapshot: snapshot, context: adjustmentContext)
+        return MacEditorAdjustmentRules.isModified(scope: scope, snapshot: snapshot, context: adjustmentContext)
     }
 
-    func isRecordModified(_ record: PhotoEditRecord) -> Bool {
+    func isRecordModified(_ record: MacPhotoEditRecord) -> Bool {
         guard let state = record.state else { return false }
         let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: record.identity.path))
-        let context = EditorAdjustmentContext(isRaw: raw,
+        let context = MacEditorAdjustmentContext(isRaw: raw,
             defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: "")
-        return EditorAdjustmentRules.isModified(scope: .all, snapshot: state, context: context)
+        return MacEditorAdjustmentRules.isModified(scope: .all, snapshot: state, context: context)
     }
 
     func invalidateEditedThumbnail(for url: URL) {
@@ -105,8 +106,28 @@ extension EditorModel {
 
     func invalidateEditedThumbnails(forLookIDs lookIDs: Set<String>) {
         guard !lookIDs.isEmpty else { return }
-        var paths = editStore?.pathsReferencingFilms(lookIDs) ?? []
         if let file, lookIDs.contains(selectedFilmID) {
+            invalidateEditedThumbnail(for: file)
+        }
+        guard let editStore else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self, weak editStore] in
+            guard let editStore else { return }
+            let scan = editStore.scanPathsReferencingFilms(lookIDs)
+            DispatchQueue.main.async {
+                self?.applyFilmInvalidationScan(scan, forLookIDs: lookIDs, includeCurrentFile: false)
+            }
+        }
+    }
+
+    func applyFilmInvalidationScan(_ scan: MacEditPersistence.FilmReferenceScanResult,
+                                   forLookIDs lookIDs: Set<String>,
+                                   includeCurrentFile: Bool = true) {
+        recordLookInvalidationDiagnostics(scan.diagnostics)
+        var paths = scan.pathsToInvalidate
+        if includeCurrentFile, let file, lookIDs.contains(selectedFilmID) {
+            paths.insert(PhotoThumbnailCacheKey.canonicalPath(for: file))
+        }
+        if scan.registryUnreadable, let file, isRecordModified(committedEdit ?? MacPhotoEditRecord(identity: (try? OriginalFileIdentity(file)) ?? OriginalFileIdentity(path: file.path, size: 0, modified: .distantPast, fileNumber: 0), state: nil)) {
             paths.insert(PhotoThumbnailCacheKey.canonicalPath(for: file))
         }
         guard !paths.isEmpty else { return }
@@ -273,7 +294,7 @@ extension EditorModel {
         Set(filmChoices.filter { FileManager.default.isReadableFile(atPath: $0.url.path) }.map(\.browserID))
     }
 
-    func recordSavedLookChange(from previous: PhotoEditState?, to saved: PhotoEditState) {
+    func recordSavedLookChange(from previous: MacPhotoEditState?, to saved: MacPhotoEditState) {
         guard saved.settings.masterRecipeID == nil, saved.filmID != previous?.filmID else { return }
         recentLooks.record(saved.filmID, available: readableLookBrowserIDs)
         // 最近使用是界面偏好；偏好写入失败不能把已保存的照片报告为失败。
@@ -302,16 +323,29 @@ extension EditorModel {
         saveWork?.cancel()
         if !scheduler.interacting {
             // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
-            let work = DispatchWorkItem { [weak self] in _ = self?.saveEdits() }
+            let work = DispatchWorkItem { [weak self] in _ = self?.saveEditsAsync() }
             saveWork = work
             DispatchQueue.main.async(execute: work)
         }
         schedule()
     }
 
-    @discardableResult func saveEdits() -> Bool {
+    @discardableResult func saveEditsAsync() -> Bool {
         saveWork?.cancel()
         guard file != nil, dirty else { return true }
+        let clearsMigration = pendingAllResetRevision == editRevision
+        guard !scheduler.interacting,
+              commitAdjustmentAsync(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
+        dirty = false
+        return true
+    }
+
+    @discardableResult func saveEdits() -> Bool {
+        saveWork?.cancel()
+        let flushedOK = editStore?.flushPendingCommits() ?? true
+        guard flushedOK else { return false }
+        guard file != nil else { return true }
+        guard dirty else { return true }
         let clearsMigration = pendingAllResetRevision == editRevision
         guard !scheduler.interacting,
               commitAdjustment(editState(settings: settings), clearsProcessingMigration: clearsMigration) else { return false }
@@ -381,10 +415,10 @@ extension EditorModel {
             }
             let lookURL = settings.isHDREditing ? nil : (settings.masterRecipe?.lutURL() ?? selectedFilm?.url)
             let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "中性"
-            var job = BatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
+            var job = MacBatchExportJob(source: file, settings: settings, look: nil, lookName: lookName)
             if settings.isHDREditing { job.format = .hdrJPEG }
             job.longEdge = exportLongEdge
-            let copiedLook = try batchJournal.snapshotLook(lookURL, jobID: job.id, contentIdentifier: lookURL.map { try BatchFrozenSettings.checksum($0) })
+            let copiedLook = try batchJournal.snapshotLook(lookURL, jobID: job.id, contentIdentifier: lookURL.map { try MacBatchFrozenSettings.checksum($0) })
             job.look = copiedLook
             do {
                 try batchJournal.save(job)
@@ -409,9 +443,11 @@ extension EditorModel {
         }
     }
 
-    func attachBatch(_ job: BatchExportJob) {
+    func attachBatch(_ job: MacBatchExportJob) {
         let preparer=job.settings.isHDREditing ? editStore.map { MacHDRBatchPreparation(source:job.source,settings:job.settings,store:$0,films:filmChoices,probeHDRSource:probeHDRSource) } : nil
-        let x3fResolver = editStore.map { BatchExportJob.x3fModeResolver(store: $0) } ?? BatchExportJob.x3fModeResolver(directory: editDirectory)
+        let x3fResolver = editStore.map {
+            MacBatchExportJob.x3fModeResolver(store: $0, defaultMode: RenderEngine.x3fDefaultMode(for:))
+        } ?? MacBatchExportJob.x3fModeResolver(directory: editDirectory, defaultMode: RenderEngine.x3fDefaultMode(for:))
         let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,resolveX3fMode:x3fResolver,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
@@ -429,7 +465,7 @@ extension EditorModel {
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
     func open(_ url: URL) {
-        let url = (try? BatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
+        let url = (try? MacBatchExportItem.resourceKey(url)).flatMap { batchSelectionPhotos[$0]?.url } ?? url
         guard !exporting else { return }
         cancelQuickPreset()
         pendingOpenID=UUID(); importing=false
@@ -450,7 +486,7 @@ extension EditorModel {
             saveError = L10n.format("无法恢复调整：%@", String(describing: error.localizedDescription))
             return
         }
-        var restoredRecord: PhotoEditRecord
+        var restoredRecord: MacPhotoEditRecord
         do {
             restoredRecord = try editStore!.readState(for: url)
         } catch let unusable as UnusableEditRecordError {
@@ -537,7 +573,7 @@ extension EditorModel {
         activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
     }
 
-    private func recoverUnusableRecordOnOpen(_ url: URL, message: String, session: AdjustmentTransferSession) -> PhotoEditRecord? {
+    private func recoverUnusableRecordOnOpen(_ url: URL, message: String, session: AdjustmentTransferSession) -> MacPhotoEditRecord? {
         let formatted = L10n.format("无法恢复调整：%@", message)
         let confirmed: Bool
         if let prompt = confirmUnusableRecordReset {
@@ -569,7 +605,7 @@ extension EditorModel {
         }
     }
 
-    private func activateOpen(_ url: URL,record restoredRecord: PhotoEditRecord,settings candidate: Adjustments,
+    private func activateOpen(_ url: URL,record restoredRecord: MacPhotoEditRecord,settings candidate: Adjustments,
                               isHDR: Bool,cameraHDR: HDRSourceInfo?,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
                               hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
         resetAITask()
@@ -784,10 +820,13 @@ extension EditorModel {
                 })
                 let updated = library.looks.map { Film(name: $0.name, url: library.url(for: $0), managedID: $0.id, colorNotice: $0.colorNotice, isCompatibility: $0.isCompatibility) }
                 let unreadable = library.unreadableLooks
+                let filmScan = invalidatedLookIDs.isEmpty ? nil : self?.editStore?.scanPathsReferencingFilms(invalidatedLookIDs)
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.unreadableLooks = unreadable
-                    if !invalidatedLookIDs.isEmpty {
+                    if let filmScan {
+                        self.applyFilmInvalidationScan(filmScan, forLookIDs: invalidatedLookIDs)
+                    } else if !invalidatedLookIDs.isEmpty {
                         self.invalidateEditedThumbnails(forLookIDs: invalidatedLookIDs)
                     }
                     self.films = self.films.filter { $0.managedID == nil } + updated

@@ -1,5 +1,6 @@
 #include "core/hdr_rendering.h"
 #include "core/hdr_look.h"
+#include "core/hdr_resample.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_tone_curve.h"
 
@@ -87,11 +88,11 @@ RGB toneSDR(RGB p, const HDRRenderOptions& o) {
 }
 
 ToneCurve hdrCurve(const HDRToneOptions& tone) {
-    if (tone.curve.mode == SONY2FUJI_CURVE_CUSTOM) return ToneCurve(tone.curve);
+    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve);
     if (tone.curveStrength == 0) return {};
     auto config = tone.curve;
     const double offset = tone.curveStrength / 1600.0;
-    config.mode = SONY2FUJI_CURVE_CUSTOM;
+    config.mode = ToneCurveMode::Custom;
     config.count = 5;
     config.points[0] = {0, 0};
     config.points[1] = {.25, .25 - offset};
@@ -186,20 +187,20 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const float exposure = std::exp2(o.exposureEV);
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
     const bool toneActive = o.contrast != 0 || o.highlights != 0 || o.shadows != 0 || o.saturation != 0;
-    const bool useToneV2 = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
+    const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
     const auto curve = useToneV2 ? hdrCurve(o.tone) : ToneCurve();
     std::array<ToneCurve, 3> channels;
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION)
+    if (o.processingVersion >= kHdrProcessingChannelCurvesVersion)
         for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i]);
     const bool channelsActive = std::any_of(channels.begin(), channels.end(), [](const auto& value) { return value.active(); });
     const bool advancedToneActive = useToneV2 && (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active());
-    const bool useColor = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_COLOR_VERSION;
+    const bool useColor = o.processingVersion >= kHdrProcessingColorVersion;
     const bool vibranceActive = useColor && o.color.vibrance != 0;
     const bool hslActive = useColor && o.color.hsl.active();
     const bool gradingActive = useColor && o.color.grading.active();
     const auto grading = gradingActive ? colorGradingCoefficients(o.color.grading) : std::array<RGB, 3>{};
-    const bool lookActive = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION && o.look && o.lookStrength != 0;
-    const bool useRendition = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
+    const bool lookActive = o.processingVersion >= kHdrProcessingLookVersion && o.look && o.lookStrength != 0;
+    const bool useRendition = o.processingVersion >= kHdrProcessingRenditionVersion;
     const auto& rendition = o.rendition;
     const bool limitHDR = hdr && useRendition && rendition.peakLimitEV != 0;
     const double peak = limitHDR ? std::exp2(double(rendition.peakLimitEV)) : 1;
@@ -244,36 +245,11 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     return true;
 }
 
-template<class Reader> RGB sampleResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
-    const Reader& read) {
-    if (width == outputWidth && height == outputHeight) return read(x, y);
-    const float sy = outputHeight > 1 ? float(y) * (height - 1) / (outputHeight - 1) : (height - 1) * .5f;
-    const int y0 = int(sy), y1 = std::min(y0 + 1, height - 1);
-    const float fy = sy - y0;
-    const float sx = outputWidth > 1 ? float(x) * (width - 1) / (outputWidth - 1) : (width - 1) * .5f;
-    const int x0 = int(sx), x1 = std::min(x0 + 1, width - 1);
-    const float fx = sx - x0;
-    const auto a = read(x0, y0), b = read(x1, y0), c = read(x0, y1), d = read(x1, y1);
-    auto blend = [&](float av, float bv, float cv, float dv) {
-        return (av + (bv - av) * fx) * (1 - fy) + (cv + (dv - cv) * fx) * fy;
-    };
-    return {blend(a.r, b.r, c.r, d.r), blend(a.g, b.g, c.g, d.g), blend(a.b, b.b, c.b, d.b)};
-}
-
 void resize(ImageData& image, uint32_t longEdge) {
     const int edge = std::max(image.width, image.height);
     if (longEdge == 0 || longEdge >= uint32_t(edge)) return;
     const auto size = hdrResizeSize(image.width, image.height, longEdge);
-    const int width = size.first, height = size.second;
-    ImageData output(width, height);
-    parallelPixelRanges(output.pixels.size(), [&](size_t begin, size_t end) {
-        for (size_t i = begin; i < end; ++i) {
-            const int y = int(i / width), x = int(i % width);
-            output.at(x, y) = sampleResize(x, y, image.width, image.height, width, height,
-                [&](int sx, int sy) { return image.at(sx, sy); });
-        }
-    });
-    image = std::move(output);
+    image = hdr::resample(image, static_cast<uint32_t>(size.first), static_cast<uint32_t>(size.second));
 }
 
 } // namespace
@@ -415,8 +391,8 @@ RGB hdrRelativeWhiteBalance(float temperature, float tint) {
 }
 
 void validateHDRRenderOptions(const HDRRenderOptions& o) {
-    const bool useToneV2 = o.processingVersion >= SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
-    if (o.processingVersion < SONY2FUJI_HDR_PROCESSING_VERSION || o.processingVersion > SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION ||
+    const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
+    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingChannelCurvesVersion ||
         !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
         !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
         !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
@@ -426,22 +402,22 @@ void validateHDRRenderOptions(const HDRRenderOptions& o) {
     if (useToneV2 && (!inRange(o.tone.blackPoint, -100, 100) || !inRange(o.tone.whitePoint, -100, 100) ||
         !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve)))
         throw std::invalid_argument("Invalid HDR tone settings");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION &&
+    if (o.processingVersion >= kHdrProcessingChannelCurvesVersion &&
         !std::all_of(o.tone.channels.begin(), o.tone.channels.end(), validToneCurve))
         throw std::invalid_argument("Invalid HDR channel curves");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_COLOR_VERSION &&
+    if (o.processingVersion >= kHdrProcessingColorVersion &&
         (!inRange(o.color.vibrance, -100, 100) || !o.color.hsl.valid() || !o.color.grading.valid()))
         throw std::invalid_argument("Invalid HDR color settings");
     const auto& rendition = o.rendition;
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION &&
+    if (o.processingVersion >= kHdrProcessingRenditionVersion &&
         (!inRange(rendition.peakLimitEV, 0, 6) || !inRange(rendition.sdrExposureEV, -4, 4) ||
          !inRange(rendition.sdrContrast, -100, 100) || !inRange(rendition.sdrSaturation, -100, 100)))
         throw std::invalid_argument("Invalid HDR rendition settings");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION && !o.effects.valid())
+    if (o.processingVersion >= kHdrProcessingEffectsVersion && !o.effects.valid())
         throw std::invalid_argument("Invalid HDR photo effects");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION && !o.detail.valid())
+    if (o.processingVersion >= kHdrProcessingDetailVersion && !o.detail.valid())
         throw std::invalid_argument("Invalid HDR detail");
-    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION &&
+    if (o.processingVersion >= kHdrProcessingLookVersion &&
         (!inRange(o.lookStrength, 0, 2) || (!o.look && o.lookStrength != 0)))
         throw std::invalid_argument("Invalid HDR look strength or resource");
 }
@@ -462,7 +438,7 @@ std::pair<int, int> hdrResizeSize(int width, int height, uint32_t longEdge) {
 
 RGB sampleHDRResize(int x, int y, int width, int height, int outputWidth, int outputHeight,
     const GeometryPixelReader& read) {
-    return sampleResize(x, y, width, height, outputWidth, outputHeight, read);
+    return hdr::sampleResample(x, y, width, height, outputWidth, outputHeight, read);
 }
 
 } // namespace sony2fuji

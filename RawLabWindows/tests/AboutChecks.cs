@@ -1,8 +1,7 @@
 using System.IO;
 using System.Net.Http;
-using System.Reflection;
 using System.Windows;
-using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
@@ -12,8 +11,6 @@ using RawLab.Windows;
 
 internal static class AboutChecks
 {
-    private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
-
     internal static void Run(Action<bool, string> check)
     {
         // Startup can recover an existing batch and clean its temporary exports. Use a clean test account.
@@ -37,20 +34,21 @@ internal static class AboutChecks
             Loc.Initialize("en");
             ApplyLanguage();
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
-            window = new MainWindow();
-            TestWindowState.Isolate(window,directory);
+            window = TestWindowState.CreateIsolatedWindow(directory);
             window.Files.ItemsSource = Array.Empty<LibraryEntry>();
             window.Show();
             Pump();
             check(window.Welcome.Visibility == Visibility.Visible && !window.ExportButton.IsEnabled &&
-                  typeof(MainWindow).GetField("file", PrivateInstance)!.GetValue(window) == null,
+                  window.CurrentFile == null,
                 "Empty editor startup needs no RAW fixture");
 
             AboutWindow OpenAbout()
             {
-                var button = Descendants(window).OfType<Button>().Single(candidate =>
-                    AutomationProperties.GetName(candidate) == Loc.Text("关于 RawLab"));
-                button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                // The workspace redesign (8b55219a) moved About from the old toolbar button into the Help menu.
+                // Anchor the menu item by its localized screen-reader name and raise the menu item's own click.
+                var aboutItem = Descendants(window).OfType<MenuItem>().Single(candidate =>
+                    UIElementAutomationPeer.CreatePeerForElement(candidate)?.GetName() == Loc.Text("关于 RawLab"));
+                aboutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 Pump();
                 return window.OwnedWindows.OfType<AboutWindow>().Single();
             }
@@ -63,7 +61,7 @@ internal static class AboutChecks
             {
                 // Reload and notify the same subscribers as SetPreference, without writing language.txt.
                 Loc.Initialize(language);
-                ((Action?)typeof(Loc).GetField("Changed", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null))?.Invoke();
+                Loc.NotifyChangedForTests();
                 Pump();
                 CheckAbout(about, version, language, label, check);
                 var closed = about;
@@ -88,7 +86,6 @@ internal static class AboutChecks
             Loc.Changed -= ApplyLanguage;
             Loc.Initialize(previousLanguage);
             SynchronizationContext.SetSynchronizationContext(previousContext);
-            app.Shutdown();
             Directory.Delete(directory, recursive: true);
         }
     }

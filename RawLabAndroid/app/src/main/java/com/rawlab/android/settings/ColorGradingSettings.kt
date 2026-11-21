@@ -1,5 +1,6 @@
 package com.rawlab.android.settings
 
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import kotlin.math.*
 
 enum class ColorGradingZone(val id: String, val title: String) {
@@ -20,8 +21,11 @@ data class ColorGradingWheel(val hue: Float = 0f, val saturation: Float = 0f) {
         return fromNumbers(if (angle < 0) (angle + 360) % 360 else angle, min(1.0, radius) * 100)
     }
     companion object {
-        fun valid(hue: Double, saturation: Double) = hue.isFinite() && hue >= 0 && hue < 360 &&
-            saturation.isFinite() && saturation in 0.0..100.0
+        fun valid(hue: Double, saturation: Double): Boolean {
+            val sub = AdjustmentFieldSpec.SubFields.ColorGradingWheel
+            return hue.isFinite() && hue >= sub.hueMin && hue < sub.hueMax &&
+                saturation.isFinite() && saturation in sub.saturationMin..sub.saturationMax
+        }
         fun inputHue(value: Float): Float? = if (value.isFinite() && value in 0f..360f) {
             if (value == 360f) 0f else value.canonicalZero()
         } else null

@@ -1,8 +1,67 @@
 #pragma once
 
+#include "sony2fuji/common.h"
+
+#include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace sony2fuji {
+
+#define RAWLAB_HIGHLIGHTS_SHADOWS_BODY \
+RAWLAB_HS_FN float hsLuminance(RAWLAB_HS_RGB pixel) { \
+    return 0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b; \
+} \
+RAWLAB_HS_FN float hsShadows(float value, float shadows) { \
+    if (shadows == 0.0f) { \
+        return value; \
+    } \
+    float t = RAWLAB_HS_CLAMP(shadows, -1.0f, 1.0f); \
+    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f); \
+    return RAWLAB_HS_POW(RAWLAB_HS_CLAMP01(value), gamma); \
+} \
+RAWLAB_HS_FN float hsHighlights(float value, float highlights) { \
+    if (highlights == 0.0f) { \
+        return value; \
+    } \
+    float t = RAWLAB_HS_CLAMP(highlights, -1.0f, 1.0f); \
+    float inv = 1.0f - RAWLAB_HS_CLAMP01(value); \
+    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f); \
+    return 1.0f - RAWLAB_HS_POW(inv, gamma); \
+} \
+RAWLAB_HS_FN RAWLAB_HS_RGB hsApplyHighlightsShadows(RAWLAB_HS_RGB pixel, float highlights, float shadows) { \
+    if (highlights == 0.0f && shadows == 0.0f) { \
+        return pixel; \
+    } \
+    float luminance = hsLuminance(pixel); \
+    float adjusted = hsHighlights(hsShadows(luminance, shadows), highlights); \
+    if (luminance > 0.0f) { \
+        float ratio = adjusted / luminance; \
+        return RAWLAB_HS_RGB3(pixel.r * ratio, pixel.g * ratio, pixel.b * ratio); \
+    } \
+    return RAWLAB_HS_RGB3(adjusted, adjusted, adjusted); \
+}
+
+#define RAWLAB_HS_FN inline
+#define RAWLAB_HS_RGB sony2fuji::RGB
+#define RAWLAB_HS_RGB3(r, g, b) sony2fuji::RGB((r), (g), (b))
+#define RAWLAB_HS_CLAMP(x, low, high) std::max((low), std::min((high), (x)))
+#define RAWLAB_HS_CLAMP01(x) std::max(0.0f, std::min(1.0f, (x)))
+#define RAWLAB_HS_POW(x, y) std::pow((x), (y))
+
+namespace detail {
+RAWLAB_HIGHLIGHTS_SHADOWS_BODY
+} // namespace detail
+
+#undef RAWLAB_HS_FN
+#undef RAWLAB_HS_RGB
+#undef RAWLAB_HS_RGB3
+#undef RAWLAB_HS_CLAMP
+#undef RAWLAB_HS_CLAMP01
+#undef RAWLAB_HS_POW
+
+#define RAWLAB_TONE_SHADER_STR(...) #__VA_ARGS__
+#define RAWLAB_TONE_SHADER_TEXT(body) RAWLAB_TONE_SHADER_STR(body)
 
 // 三种 shader 共用同一公式和常量；只替换语言的向量类型。
 inline std::string toneControlsShader(const char* vectorType) {
@@ -55,7 +114,25 @@ TC_RGB tcVibrance(TC_RGB p, float vibrance) {
     TC_RGB result=TC_RGB(y,y,y)+(p-TC_RGB(y,y,y))*gain;
     return inGamut ? clamp(result,0.0,1.0) : result;
 }
+#define RAWLAB_HS_FN
+#define RAWLAB_HS_RGB TC_RGB
+#define RAWLAB_HS_RGB3(r, g, b) TC_RGB((r), (g), (b))
+#define RAWLAB_HS_CLAMP(x, low, high) clamp((x), (low), (high))
+#define RAWLAB_HS_CLAMP01(x) clamp((x), 0.0f, 1.0f)
+#define RAWLAB_HS_POW(x, y) pow((x), (y))
+)shader" + RAWLAB_TONE_SHADER_TEXT(RAWLAB_HIGHLIGHTS_SHADOWS_BODY) + R"shader(
+#undef RAWLAB_HS_FN
+#undef RAWLAB_HS_RGB
+#undef RAWLAB_HS_RGB3
+#undef RAWLAB_HS_CLAMP
+#undef RAWLAB_HS_CLAMP01
+#undef RAWLAB_HS_POW
 #undef TC_RGB
 )shader";
 }
+
+#undef RAWLAB_TONE_SHADER_TEXT
+#undef RAWLAB_TONE_SHADER_STR
+#undef RAWLAB_HIGHLIGHTS_SHADOWS_BODY
+
 } // namespace sony2fuji

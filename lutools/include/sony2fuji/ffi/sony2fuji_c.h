@@ -36,6 +36,24 @@ typedef enum sony2fuji_unsupported_reason {
     SONY2FUJI_UNSUPPORTED_FORCE_GPU = 1
 } sony2fuji_unsupported_reason;
 
+typedef enum sony2fuji_gpu_fallback_reason {
+    SONY2FUJI_GPU_FALLBACK_NONE = 0,
+    SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS = 1,
+    SONY2FUJI_GPU_FALLBACK_ATMOSPHERE = 2,
+    SONY2FUJI_GPU_FALLBACK_CURVES = 3,
+    SONY2FUJI_GPU_FALLBACK_C5_WAVELET = 4,
+    SONY2FUJI_GPU_FALLBACK_DCP_LOOK = 5,
+    SONY2FUJI_GPU_FALLBACK_LUT_CONTRACT = 6,
+    SONY2FUJI_GPU_FALLBACK_GEOMETRY = 7,
+    SONY2FUJI_GPU_FALLBACK_DISPLAY_INPUT = 8,
+    SONY2FUJI_GPU_FALLBACK_GPU_DISABLED = 9,
+    SONY2FUJI_GPU_FALLBACK_NO_ADAPTER = 10,
+    SONY2FUJI_GPU_FALLBACK_COOLDOWN = 11,
+    SONY2FUJI_GPU_FALLBACK_DEVICE_ERROR = 12,
+    SONY2FUJI_GPU_FALLBACK_FILTER_ERROR = 13,
+    SONY2FUJI_GPU_FALLBACK_UNSUPPORTED_CAPABILITY = 14
+} sony2fuji_gpu_fallback_reason;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -421,6 +439,8 @@ typedef struct sony2fuji_session sony2fuji_session;
 int32_t sony2fuji_x3f_available(void);
 // Identifies a source and chooses the renderer for a new edit.
 sony2fuji_status sony2fuji_x3f_default_mode(const char* input_path, sony2fuji_x3f_mode* mode);
+// Returns 1 when mode is NORMAL and input_path begins with the X3F "FOVb" header, else 0.
+int32_t sony2fuji_is_normal_x3f(const char* input_path, sony2fuji_x3f_mode mode);
 sony2fuji_status sony2fuji_session_set_x3f_mode(sony2fuji_session* session, sony2fuji_x3f_mode mode);
 // Last normal-X3F error on this session; owned by the session until its next render.
 const char* sony2fuji_session_x3f_error(const sony2fuji_session* session);
@@ -487,6 +507,18 @@ typedef enum sony2fuji_render_backend {
 
 sony2fuji_status sony2fuji_session_create(sony2fuji_session** out_session);
 
+// Atomically validates and replaces all session-level edit state from a canonical
+// SDR edit-recipe JSON document (schema_version 1..5 or 7). Omitted edit groups
+// reset to their canonical neutral defaults so prior photo or legacy setter state
+// cannot bleed across renders. Invalid or unsupported payloads leave existing
+// session state intact. Runtime configuration (GPU mode, lens database, display
+// lens metadata, AI denoise, preview proxy hints, cancellation) is preserved.
+sony2fuji_status sony2fuji_apply_params(
+    sony2fuji_session* session,
+    const char* recipe_json
+);
+
+// Legacy compatibility wrapper — frozen in W2-2. New callers must use sony2fuji_apply_params.
 // New sessions use LEGACY. Unsupported versions leave the session unchanged.
 sony2fuji_status sony2fuji_session_set_processing_version(
     sony2fuji_session* session, sony2fuji_processing_version version
@@ -501,6 +533,8 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
+// Inspects a display file for JPEG MPF secondary images (image count > 1 for MPF, 0 for single-image/non-MPF, -1 = error).
+int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path);
 
 sony2fuji_status sony2fuji_session_destroy(sony2fuji_session* session);
 
@@ -581,6 +615,10 @@ sony2fuji_status sony2fuji_session_set_interactive_preview(sony2fuji_session* se
 sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* session, int32_t enabled);
 sony2fuji_render_backend sony2fuji_session_get_last_backend(const sony2fuji_session* session);
 sony2fuji_unsupported_reason sony2fuji_session_get_unsupported_reason(const sony2fuji_session* session);
+sony2fuji_gpu_fallback_reason sony2fuji_session_get_gpu_fallback_reason(const sony2fuji_session* session);
+// UTF-8 diagnostic detail for the last GPU fallback or Force GPU failure on this session.
+// Valid until the next getter call on the calling thread; always returns a non-null string.
+const char* sony2fuji_session_get_gpu_error(const sony2fuji_session* session);
 // RAW decodes stored into this session's cache, including half-size proxy and exposure-anchor decodes.
 // A render that reuses the decoded cache does not increment it, so repeated previews and the export
 // that follows can be checked for re-decoding.
@@ -793,6 +831,49 @@ sony2fuji_status sony2fuji_session_get_raw_exposure(
 // UNSUPPORTED means the file lacks usable calibration; camera WB remains usable.
 sony2fuji_status sony2fuji_session_get_raw_white_balance(
     const sony2fuji_session* session, float* temperature, float* tint
+);
+
+// Effective as-shot RAW white balance rounded half-away-from-zero for UI display
+// (returns fixed 6500/0 for normal X3F; UNSUPPORTED for raster or uncalibrated files).
+sony2fuji_status sony2fuji_session_get_effective_raw_white_balance(
+    const sony2fuji_session* session, float* temperature, float* tint
+);
+
+#define SONY2FUJI_RECIPE_WB_REQUEST_VERSION 1u
+typedef struct sony2fuji_recipe_wb_request {
+    uint32_t version;
+    uint32_t struct_size;
+    const char* input_path;
+    sony2fuji_processing_version processing_version;
+    sony2fuji_x3f_mode x3f_mode;
+    sony2fuji_raw_exposure_mode exposure_mode;
+    int32_t recipe_active;
+    float recipe_strength;
+    int32_t custom_wb;
+    float temperature;
+    float tint;
+} sony2fuji_recipe_wb_request;
+
+#define SONY2FUJI_RECIPE_WB_RESULT_VERSION 1u
+typedef struct sony2fuji_recipe_wb_result {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_wb_mode wb_mode;
+    float temperature;
+    float tint;
+    float camera_temperature;
+    float camera_tint;
+    int32_t camera_calibrated;
+} sony2fuji_recipe_wb_result;
+
+// Resolves recipe white balance for a RAW file, using session file-identity cache and
+// a temporary 32px neutral RAW probe when calibration has not been read yet.
+// Normal X3F files resolve directly to calibrated 6500/0 without probing.
+// Uncalibrated RAW files return SONY2FUJI_STATUS_UNSUPPORTED (with camera_calibrated = 0).
+sony2fuji_status sony2fuji_session_resolve_recipe_wb(
+    sony2fuji_session* session,
+    const sony2fuji_recipe_wb_request* request,
+    sony2fuji_recipe_wb_result* result
 );
 
 sony2fuji_status sony2fuji_session_set_gpu_config(

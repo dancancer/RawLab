@@ -1,8 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
-CACHE="${RAWLAB_SPARKLE_CACHE:-$(dirname "$COMMON")/.cache/shared/sparkle/2.10.0}"
+if [ -z "${RAWLAB_SPARKLE_CACHE:-}" ]; then
+    COMMON=""
+    if [ -e "$ROOT/.git" ]; then
+        COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    fi
+    SHARED_ROOT="$ROOT"
+    if [ -n "$COMMON" ]; then SHARED_ROOT="$(dirname "$COMMON")"; fi
+    CACHE="$SHARED_ROOT/.cache/shared/sparkle/2.10.0"
+else
+    CACHE="$RAWLAB_SPARKLE_CACHE"
+fi
 ARCHIVE="$CACHE/Sparkle-for-Swift-Package-Manager.zip"
 EXPECTED=17e28312b8e18ab7cdbbe09a6fb28cc55a5479ec6c371dbc07cdecd2a14fd959
 mkdir -p "$CACHE"

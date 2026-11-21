@@ -1,0 +1,470 @@
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using RawLab.Windows;
+using Xunit;
+
+namespace RawLab.Windows.Tests;
+
+public sealed class ModelRegressionTests
+{
+    private static void Check(bool success, string message) => Assert.True(success, message);
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void WhiteBalanceRoundingAndPersistenceWork() => WhiteBalanceChecks.Run(Check);
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void HdrDisplayCopySdrOnlyWorks() => HDRDisplayChecks.Run(Check);
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void FeatureRegressionModelWorks() => FeatureRegressionChecks.Run(Check);
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void AdjustmentParametersLatestWorkAndRawExtensionsWork()
+    {
+        var settings = new Adjustments();
+        settings.Set(Parameter.Strength, 250);
+        Check(settings[Parameter.Strength] == 200 && settings.Request("test.arw", "test.cube", 2000, null).LutStrength == 2,
+            "Film strength clamps at 200% and reaches the native renderer");
+        var strengthSpec = ParameterSpec.All[(int)Parameter.Strength];
+        Check(strengthSpec.Parse("150") == 150 && strengthSpec.Parse("201") == null && strengthSpec.Value(.5) == 100,
+            "Film slider supports 0-200% and numeric input rejects out-of-range text");
+        settings.Reset(Parameter.Strength);
+        Check(settings[Parameter.Strength] == 100, "Film strength resets to 100%");
+
+        var wb = (Temperature: 4870.0, Tint: 17.0);
+        settings.ResolveWhiteBalance(wb);
+        settings.Set(Parameter.Temperature, 8000);
+        settings.Set(Parameter.Highlights, 30);
+        settings.Set(Parameter.Contrast, -20);
+        var mapped = settings.Request("test.arw", "test.cube", 2000, null);
+        Check(mapped.WbMode == 3 && mapped.Temperature == 8000 && Math.Abs(mapped.Highlights + .3) < 1e-6 && Math.Abs(mapped.Contrast - .8) < 1e-6,
+            "Mac adjustment mapping including highlight sign");
+        var clone = settings.Clone();
+        var resetCandidate = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("test.arw", 1, 2, 3), settings.Capture(), null));
+        Check(resetCandidate.Status == EditorResetStatus.Ready, "Production full reset prepares candidate");
+        settings = resetCandidate.Candidate!.Settings.Restore();
+        Check(settings.CameraWhiteBalance && settings[Parameter.Temperature] == 4870 && settings[Parameter.Tint] == 17 && clone[Parameter.Temperature] == 8000,
+            "As-shot reset and independent photo snapshots");
+        foreach (var spec in ParameterSpec.All)
+        {
+            Check(spec.Parse("NaN") == null && spec.Parse("Infinity") == null, "Reject nonfinite " + spec.Title);
+            foreach (var value in new[] { spec.Min, spec.Max })
+                Check(Math.Abs(spec.Value(spec.Position(value)) - value) < .01, "Slider endpoint " + spec.Title);
+        }
+        var queue = new LatestWork<string>();
+        queue.Submit("first");
+        var first = queue.Start()!;
+        for (var i = 0; i < 1000; i++) queue.Submit(i.ToString());
+        Check(queue.Start() == null && !queue.Finish(first), "No concurrent work or stale publication");
+        var last = queue.Start()!;
+        Check(last.Value == "999" && queue.Finish(last) && !queue.Busy, "Only latest pending request retained");
+        Check(LibraryEntry.IsRaw("中文.ARQ") && LibraryEntry.IsRaw("photo.DNG") && !LibraryEntry.IsRaw("photo.jpg"),
+            "Mac RAW extension parity");
+    }
+}
+
+public sealed class IsolatedProcessTests
+{
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "default-isolation")]
+    public void DefaultIsolationRefusesExistingBatchJournal() =>
+        IsolatedChildRunner.Run("--run-isolated", "default-isolation", TestInputs.Results("default-isolation"));
+
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "localization-admission")]
+    public void LocalizationAdmissionRefusesExistingBatchJournalBeforeWpf() =>
+        IsolatedChildRunner.Run("--run-isolated", "localization-admission", TestInputs.Results("localization-admission"));
+
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "localization-ui")]
+    public void LocalizationUiStartupAndLanguageSwitchingWork() =>
+        IsolatedChildRunner.Run("--run-isolated", "localization-ui");
+
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "unhandled-ui")]
+    public void UnhandledExceptionAppDialogAndFallbackWork() =>
+        IsolatedChildRunner.Run("--run-isolated", "unhandled-ui");
+
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "entry-selection")]
+    public void EntrySelectionNonInteractiveAndEditorPartsWork() =>
+        IsolatedChildRunner.Run("--run-isolated", "entry-selection", TestInputs.Repo());
+}
+
+[Collection("Wpf")]
+public sealed class WpfSuiteTests
+{
+    private static void Check(bool success, string message) => TestInputs.Check(success, message);
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    public void ComparisonCanvasAndViewportWork() =>
+        WpfTestHost.Run(() => ComparisonChecks.Run(Check));
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "about")]
+    public void AboutWindowWorks() =>
+        WpfTestHost.Run(() => AboutChecks.Run(Check));
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "profile-isolation")]
+    public void ProfileIsolationWorks() =>
+        WpfTestHost.Run(() => ProfileIsolationChecks.Run(TestInputs.Results("profile-isolation"), Check));
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "ai-panel")]
+    public void AiDenoisePanelWorks() =>
+        WpfTestHost.Run(() => AIDenoisePanelChecks.Run(TestInputs.Results("ai-panel"), Check));
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "editor-shell")]
+    public void EditorShellWorks() =>
+        WpfTestHost.Run(() => EditorShellChecks.Run(TestInputs.Results("screenshots"), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "geometry")]
+    public void GeometryWorks() =>
+        WpfTestHost.Run(() => GeometryChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "master-recipes")]
+    public void MasterRecipesWorks() =>
+        WpfTestHost.Run(() => MasterRecipeChecks.Run(TestInputs.Repo(), TestInputs.Raw()));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "rendered-dng")]
+    public void RenderedDngWorks() =>
+        WpfTestHost.Run(() => RenderedDngChecks.Run(TestInputs.Repo(), TestInputs.Raw()));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "denoise")]
+    public void DenoiseWorks() =>
+        WpfTestHost.Run(() => DenoiseChecks.Run(TestInputs.Repo(), TestInputs.Raw(), TestInputs.DenoiseRaw()));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "lens")]
+    public void LensWorks() =>
+        WpfTestHost.Run(() => LensChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "agent-recipe")]
+    public void AgentRecipeWorks() =>
+        WpfTestHost.Run(() => AgentRecipeChecks.Run(TestInputs.Repo(), TestInputs.Raw(), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "raster")]
+    public void RasterWorks() =>
+        WpfTestHost.Run(() => RasterChecks.Run(TestInputs.Repo(), TestInputs.Raw(), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "BatchSelection")]
+    [Trait("Suite", "batch-selection")]
+    public void BatchSelectionUiWorks() =>
+        WpfTestHost.Run(() => BatchSelectionUiChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "recipe-white-balance")]
+    public void RecipeWhiteBalanceCacheWorks() =>
+        WpfTestHost.Run(() => WhiteBalanceChecks.RecipeCache(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "atmosphere-render")]
+    public void AtmosphereRenderWorks() =>
+        WpfTestHost.Run(() => AtmosphereRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("atmosphere-render"), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "tone-render")]
+    public void ToneControlsRenderWorks() =>
+        WpfTestHost.Run(() => ToneControlsRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("tone-render"), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "grading-render")]
+    public void ColorGradingRenderWorks() =>
+        WpfTestHost.Run(() => ColorGradingRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("grading-render"), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "curve-render")]
+    public void ToneCurveRenderWorks() =>
+        WpfTestHost.Run(() => ToneCurveRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("curve-render"), TestInputs.Cli(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hsl-target-render")]
+    public void HslTargetRenderWorks() =>
+        WpfTestHost.Run(() => HslTargetRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("hsl-target-render"), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "x3f")]
+    public void X3fRenderingWorks() =>
+        WpfTestHost.Run(() => X3fRenderingChecks.Run(TestInputs.Repo(), TestInputs.Raw(), TestInputs.Results("x3f"), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrWorkflowWorks() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "first-preview")]
+    public void FirstPreviewWorks() =>
+        WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
+
+    [StaFact]
+    [Trait("Category", "AI")]
+    [Trait("Suite", "ai-window")]
+    public void AiDenoiseWindowWorks() =>
+        WpfTestHost.Run(() => AIDenoiseWindowChecks.Run(TestInputs.AiWindowRaw(), TestInputs.Results("ai-window"), Check));
+
+    [StaFact]
+    [Trait("Category", "AI")]
+    [Trait("Suite", "ai-denoise")]
+    public void AiDenoiseDirectMlWorks() =>
+        WpfTestHost.Run(() => AIDenoiseChecks.Run(RenderEngine.BundledAIModel, TestInputs.Raw(), TestInputs.Results("ai-denoise"), Check));
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    [Trait("Suite", "benchmark")]
+    public void BenchmarkNativeWorks() => PerformanceChecks.Run(TestInputs.Repo(), TestInputs.Raw());
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "default")]
+    public void DefaultNativeRenderAndWpfWorkflowWork()
+    {
+        WpfTestHost.Run(() =>
+        {
+            static byte[] Pixels(BitmapSource image)
+            {
+                var bytes = new byte[image.PixelWidth * image.PixelHeight * 4];
+                new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0).CopyPixels(bytes, image.PixelWidth * 4, 0);
+                return bytes;
+            }
+            static void PumpUntil(Func<bool> condition, TimeSpan timeout)
+            {
+                var watch = Stopwatch.StartNew();
+                while (!condition())
+                {
+                    if (watch.Elapsed > timeout) throw new TimeoutException("WPF render timed out");
+                    var frame = new DispatcherFrame();
+                    var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(30) };
+                    timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+                    timer.Start();
+                    Dispatcher.PushFrame(frame);
+                }
+            }
+
+            var repo = TestInputs.Repo();
+            var raw = TestInputs.Raw();
+            var output = Path.Combine(repo, "build", "windows-verification");
+            Directory.CreateDirectory(output);
+
+            ExportMetadataChecks.Run(output, Check);
+            LensChecks.Run(repo, raw, Check);
+            var film = Path.Combine(repo, "lutools", "flog-2-new", "FLog2_to_PROVIA_65grid_V.1.00.cube");
+            var unicodeDir = Path.Combine(output, "中文目录"); Directory.CreateDirectory(unicodeDir);
+            var unicodeRaw = Path.Combine(unicodeDir, "照片.ARW"); var unicodeLut = Path.Combine(unicodeDir, "胶片.cube");
+            File.Copy(raw, unicodeRaw, true); File.Copy(film, unicodeLut, true);
+            var originalHash = SHA256.HashData(File.ReadAllBytes(unicodeRaw));
+            var settings = new Adjustments();
+
+            using (var engine = new RenderEngine())
+            {
+                var thumb = RenderEngine.Thumbnail(unicodeRaw);
+                Check(thumb != null && Math.Max(thumb.PixelWidth, thumb.PixelHeight) <= 180, "Embedded thumbnail on Unicode path");
+                settings = new();
+                var neutral = engine.Render(unicodeRaw, settings, null, 800)!;
+                var rendered = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                Check(Math.Max(rendered.Image.PixelWidth, rendered.Image.PixelHeight) == 800, "Real ARW and UTF-8 LUT paths");
+                Check(rendered.Backend == 3, "Actual Direct3D 11 hardware completes RAW rendering");
+                Check(!Pixels(neutral.Image).SequenceEqual(Pixels(rendered.Image)), "Film branch changes pixels");
+                settings.Set(Parameter.Strength, 200);
+                var strong = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                Check(!Pixels(strong.Image).SequenceEqual(Pixels(rendered.Image)), "200% film differs from 100% on Direct3D 11");
+                using (var cpuStrength = new RenderEngine(0))
+                    Check(Pixels(strong.Image).Zip(Pixels(cpuStrength.Render(unicodeRaw, settings, unicodeLut, 800)!.Image), (x, y) => Math.Abs(x - y)).Max() <= 2,
+                        "200% film CPU/Direct3D 11 parity");
+                settings.Reset(Parameter.Strength);
+                Check(float.IsFinite(rendered.Baseline) && rendered.WhiteBalance != null, "Selected exposure baseline and calibrated as-shot WB");
+                Check(Math.Abs(engine.Render(unicodeRaw, new Adjustments { ExposureMode = 0 }, null, 32, statistics: false, clipping: false)!.Baseline - .7) < .001,
+                    "Explicit scene mode keeps the declared baseline");
+                WpfTestHost.CheckHistogram(rendered, Check, "rendered output");
+                var lean = engine.Render(unicodeRaw, settings, unicodeLut, 800, clipping: false)!;
+                Check(lean.Clipping == null && lean.Histogram.SequenceEqual(rendered.Histogram) && lean.Shadows == rendered.Shadows &&
+                      lean.Highlights == rendered.Highlights && Pixels(lean.Image).SequenceEqual(Pixels(rendered.Image)),
+                    "Optional clipping mask preserves pixels and exact statistics");
+                var referenceOnly = engine.Render(unicodeRaw, settings, null, 800, statistics: false, clipping: false)!;
+                Check(referenceOnly.Histogram.Length == 0 && referenceOnly.Clipping == null && Pixels(referenceOnly.Image).SequenceEqual(Pixels(neutral.Image)),
+                    "Neutral comparison skips unused statistics without changing pixels");
+                var viewport = engine.Render(unicodeRaw, settings, unicodeLut, 800, viewportPreview: true)!;
+                var single = engine.RenderPreview(unicodeRaw, settings, unicodeLut, 800, false, false, false);
+                Check(ReferenceEquals(single.Neutral, single.Result) && Pixels(single.Result.Image).SequenceEqual(Pixels(viewport.Image)),
+                    "Comparison off renders only the edited image without changing viewport pixels");
+                var masked = engine.RenderPreview(unicodeRaw, settings, unicodeLut, 800, false, true, true);
+                Check(masked.Neutral.Clipping == null && masked.Result.Clipping != null && Pixels(masked.Result.Clipping).SequenceEqual(Pixels(viewport.Clipping!)),
+                    "Clipping applies only to the edited result, never the original");
+                PreviewChecks.Run(engine, unicodeRaw, unicodeLut, Check);
+                LUTPreviewCleanupChecks.Run(output, unicodeRaw, unicodeLut, Check);
+                settings.ResolveWhiteBalance(rendered.WhiteBalance);
+                foreach (var parameter in new[] { Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve, Parameter.Saturation, Parameter.Sharpening })
+                {
+                    settings.Set(parameter, parameter == Parameter.Exposure ? 1 : 40);
+                    var changed = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                    Check(!Pixels(rendered.Image).SequenceEqual(Pixels(changed.Image)) && changed.Baseline == rendered.Baseline,
+                        "Adjustment affects pixels, preserves baseline: " + parameter);
+                    settings.Reset(parameter);
+                }
+                settings.Set(Parameter.Temperature, 8000);
+                var proxy = engine.Render(unicodeRaw, settings, unicodeLut, 1000, true)!;
+                var exact = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                Check(Math.Max(proxy.Image.PixelWidth, proxy.Image.PixelHeight) == 1000 && !Pixels(exact.Image).SequenceEqual(Pixels(rendered.Image)),
+                    "Interactive WB followed by exact WB");
+                settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(OriginalIdentity.Read(unicodeRaw), settings.Capture(), null)).Candidate!.Settings.Restore();
+                var reset = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                Check(Pixels(reset.Image).SequenceEqual(Pixels(rendered.Image)), "Reset returns exactly to as-shot rendering");
+                settings.ExposureMode = 2; Check(engine.Render(unicodeRaw, settings, null, 800)!.Baseline == 0, "Sensor exposure baseline");
+                settings.ExposureMode = 1; Check(float.IsFinite(engine.Render(unicodeRaw, settings, null, 800)!.Baseline), "Embedded preview exposure mode");
+                settings.ExposureMode = 0;
+                using (var cpu = new RenderEngine(0))
+                {
+                    var cpuResult = cpu.Render(unicodeRaw, settings, unicodeLut, 2000)!;
+                    var gpuResult = engine.Render(unicodeRaw, settings, unicodeLut, 2000)!;
+                    Check(Pixels(cpuResult.Image).Zip(Pixels(gpuResult.Image), (x, y) => Math.Abs(x - y)).Max() <= 2, "2000px Windows CPU/GPU parity");
+                    var previous = Environment.GetEnvironmentVariable("RAWLAB_DISABLE_D3D11");
+                    try
+                    {
+                        Environment.SetEnvironmentVariable("RAWLAB_DISABLE_D3D11", "1");
+                        engine.SetGpuMode(1); var fallback = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
+                        Check(fallback.Backend == 0 && Pixels(fallback.Image).SequenceEqual(Pixels(cpu.Render(unicodeRaw, settings, unicodeLut, 800)!.Image)),
+                            "Auto falls back to unchanged CPU pixels");
+                        engine.SetGpuMode(2);
+                        Assert.Throws<InvalidOperationException>(() => engine.Render(unicodeRaw, settings, unicodeLut, 800));
+                    }
+                    finally { Environment.SetEnvironmentVariable("RAWLAB_DISABLE_D3D11", previous); engine.SetGpuMode(1); }
+                }
+                var png = Path.Combine(unicodeDir, "原尺寸.png"); var jpeg = Path.Combine(unicodeDir, "原尺寸.jpg");
+                settings.Set(Parameter.Strength, 200);
+                engine.Render(unicodeRaw, settings, unicodeLut, 0, true, png); engine.Render(unicodeRaw, settings, unicodeLut, 0, false, jpeg);
+                var sourceTags = ExportMetadataChecks.Read(unicodeRaw);
+                foreach (var path in new[] { png, jpeg })
+                {
+                    var tags = ExportMetadataChecks.Read(path);
+                    Check(tags.GetProperty("Model").GetString() == sourceTags.GetProperty("Model").GetString() &&
+                        tags.GetProperty("DateTimeOriginal").GetString() == sourceTags.GetProperty("DateTimeOriginal").GetString() &&
+                        tags.GetProperty("ExposureTime").GetDouble() == sourceTags.GetProperty("ExposureTime").GetDouble(),
+                        "Real RAW capture EXIF survives full-resolution export: " + Path.GetExtension(path));
+                }
+                var pngBytes = File.ReadAllBytes(png); Check(pngBytes[24] == 16, "PNG export contains actual 16-bit channels");
+                using var pngStream = File.OpenRead(png); var pngFrame = BitmapFrame.Create(pngStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                using var jpegStream = File.OpenRead(jpeg); var jpegFrame = BitmapFrame.Create(jpegStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                var native = engine.Render(unicodeRaw, settings, unicodeLut, 0)!;
+                Check(pngFrame.PixelWidth == native.Image.PixelWidth && pngFrame.PixelHeight == native.Image.PixelHeight &&
+                      jpegFrame.PixelWidth == native.Image.PixelWidth && jpegFrame.PixelHeight == native.Image.PixelHeight,
+                    "JPEG and PNG retain active RAW resolution");
+                var a = Pixels(native.Image); var b = Pixels(pngFrame); var delta = a.Zip(b, (x, y) => Math.Abs(x - y)).Max();
+                Check(delta <= 1, "100% preview agrees with 16-bit PNG within 8-bit quantization");
+                Assert.Throws<InvalidOperationException>(() => engine.Render(unicodeRaw, settings, unicodeLut, 0, false, unicodeRaw));
+                Assert.Throws<FileNotFoundException>(() => engine.Render(Path.Combine(output, "missing.arw"), settings, null, 800));
+            }
+            Check(originalHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(unicodeRaw))), "RAW source remains byte-identical");
+
+            var window = TestWindowState.CreateIsolatedWindow(output, editDirectory: Path.Combine(output, "edits", Guid.NewGuid().ToString("N")), width: 1440, height: 920);
+            try
+            {
+                window.Show();
+                var folder = new LibraryEntry(Path.GetDirectoryName(raw)!, true);
+                window.Files.ItemsSource = new[] { folder };
+                var loading = folder.Load(); PumpUntil(() => loading.IsCompleted, TimeSpan.FromSeconds(30)); loading.GetAwaiter().GetResult();
+                Check(folder.Children.Any(p => !p.IsFolder) && folder.Children.Where(p => !p.IsFolder).All(p => LibraryEntry.IsImage(p.Path)),
+                    "Lazy file library lists supported RAW and ordinary images");
+                window.Measure(new Size(1440, 920)); window.Arrange(new Rect(0, 0, 1440, 920)); window.UpdateLayout();
+                var proxyPublished = false; var proxyAllowedExport = false;
+                var statusText = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock));
+                EventHandler previewChanged = (_, _) => { if (window.Status.Text.StartsWith("交互预览 ")) { proxyPublished = true; proxyAllowedExport |= window.ExportPng.IsEnabled; } };
+                statusText.AddValueChanged(window.Status, previewChanged);
+                window.OpenFile(raw, RenderEngine.ReadEmbeddedPreview(raw).Image);
+                window.Width = 1344; window.Height = 1048;
+                window.Measure(new Size(1344, 1048)); window.Arrange(new Rect(0, 0, 1344, 1048)); window.UpdateLayout();
+                PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                statusText.RemoveValueChanged(window.Status, previewChanged);
+                Check(proxyPublished && !proxyAllowedExport, "Opening publishes a fast RAW proxy before exact work and never exports the proxy");
+                var settled = window.CurrentResult!;
+                Check(window.Status.Text.StartsWith("预览 ") && Math.Max(settled.Image.PixelWidth, settled.Image.PixelHeight) == window.ResultCanvas.PreviewLongEdge,
+                    "WPF settled render uses the current viewport dimensions and enables export");
+                window.ValueSlider.Value = .625; Check(!window.ExportPng.IsEnabled, "Editing immediately blocks stale export");
+                window.ValueSlider.Value = .75; window.ValueSlider.Value = .625;
+                PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                window.OpenFile(unicodeRaw); Check(Math.Abs(window.ValueSlider.Value - .5) < .001, "New photo starts with default exposure");
+                PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                var switched = window.CurrentResult!;
+                Check(Math.Max(switched.Image.PixelWidth, switched.Image.PixelHeight) == window.ResultCanvas.PreviewLongEdge,
+                    "Opening without a supplied embedded image settles at the current viewport resolution");
+                window.OpenFile(raw); Check(Math.Abs(window.ValueSlider.Value - .625) < .001, "Photo switch restores its own exposure");
+                window.ValueSlider.Value = .5; PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                Check(window.BackendLabel.Text.Contains("Direct3D 11"), "WPF reports actual GPU backend");
+                Check(window.FilmStrip.Columns == 3 && window.FilmStrip.Children.OfType<Button>().Any(button =>
+                    System.Windows.Automation.AutomationProperties.GetName(button) == "EKTAR 100 RawLab edition"),
+                    "The inspector's three-column film grid retains the RawLab Ektar display name");
+                window.MasterRecipeCategory.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                window.Width = 1000; window.Height = 680; window.UpdateLayout();
+                Check(window.RecipeStrip.Columns == 3 && window.ToolsScroller.ScrollableHeight > 0,
+                    "The recipe chooser uses a three-column vertical viewport in a narrow inspector");
+                var recipe = window.RecipeStrip.Children.OfType<Button>().Last();
+                recipe.BringIntoView(); window.UpdateLayout();
+                recipe.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                Check(window.LookStrengthRow.IsVisible && window.LookStrengthRow.Slider.IsEnabled &&
+                    window.LookStrengthRow.Number.Text == "100" && Math.Abs(window.LookStrengthRow.Slider.Value - .5) < .001,
+                    "Look Strength stays above the recipe chooser and starts at its 100% midpoint");
+                window.LookStrengthRow.Slider.Value = 1;
+                Check(window.LookStrengthRow.Number.Text == "200" && !window.ExportPng.IsEnabled,
+                    "Look Strength reaches 200% and invalidates stale export for a master recipe");
+                PumpUntil(() => window.ExportPng.IsEnabled, TimeSpan.FromMinutes(3));
+                window.Width = 1440; window.Height = 920; window.Measure(new Size(1440, 920)); window.Arrange(new Rect(0, 0, 1440, 920)); window.UpdateLayout();
+                var content = (FrameworkElement)window.Content; window.Content = null;
+                content.Measure(new Size(1440, 920)); content.Arrange(new Rect(0, 0, 1440, 920)); content.UpdateLayout();
+                var screenshot = new RenderTargetBitmap(1440, 920, 96, 96, PixelFormats.Pbgra32); screenshot.Render(content);
+                Check(Pixels(screenshot).Where((_, i) => i % 4 != 3).Count(v => v > 40) > 10000, "WPF screenshot contains rendered content");
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(screenshot));
+                using (var stream = File.Create(Path.Combine(output, "editor.png"))) encoder.Save(stream);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+}

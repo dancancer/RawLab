@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -53,6 +55,8 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.canonicalZeros
+import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.X3fMode
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.settings.ColorGradingZone
@@ -113,8 +117,31 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
-    processingContext: Boolean = false, onDismissProcessingContext: () -> Unit = {}) {
+    processingContext: Boolean = false, onDismissProcessingContext: () -> Unit = {},
+    workspaceIsCurrent: () -> Boolean = { true }) {
     val edits = state.visibleEdits
+    val workspaceGroup = AdjustmentGroup.forTool(tool)
+    val parameterEnabled = state.controlsEnabled && toolOpen && !quickPresetsVisible && state.draft?.group == workspaceGroup
+    val liveState by rememberUpdatedState(state)
+    val liveGroup by rememberUpdatedState(workspaceGroup)
+    val liveWorkspace by rememberUpdatedState(toolOpen && !quickPresetsVisible)
+    fun ownsDraft(): Boolean = workspaceIsCurrent() && liveWorkspace && liveState.controlsEnabled && liveGroup == workspaceGroup &&
+        liveState.photo?.identity == state.photo?.identity && liveState.photo?.file == state.photo?.file &&
+        liveState.draft?.group == workspaceGroup
+    // Parameter callbacks never fall back to committed edits while a workspace opens/closes.
+    // Draft presence, not preview readiness, keeps continuous rendering-time edits available.
+    val editParameter: (EditSettings, Boolean) -> Unit = { next, dragging ->
+        if (ownsDraft()) {
+            hslTarget.cancel()
+            onDraftEdit(next.canonicalZeros().synchronizeHDR(), dragging)
+        }
+    }
+    val selectFilm: (String) -> Boolean = { id -> ownsDraft() && onSelectFilm(id) }
+    val autoExposure = { if (ownsDraft()) onAutoExposure() }
+    val importLook = { if (ownsDraft()) onImportLook() }
+    val importHDRLook = { if (ownsDraft()) onImportHDRLook() }
+    val applyHDRSilver: (Boolean) -> Unit = { master -> if (ownsDraft()) onApplyHDRSilver(master) }
+    val resetParameter: (EditorResetScope) -> Unit = { scope -> if (ownsDraft()) onResetScope(scope) }
     val context = LocalContext.current
     val rawInput = state.photo?.inputKind == PhotoInputKind.RAW
     val x3fInput = state.photo?.isX3f == true
@@ -157,7 +184,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 TextButton(onClick = onPresets, enabled = navigationEnabled && state.controlsEnabled,
                     colors = ButtonDefaults.textButtonColors(contentColor = if (quickPresetsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.heightIn(min = 48.dp).testTag("preset-dock").semantics { selected = quickPresetsVisible }) {
-                    Icon(Icons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Icon(AppIcons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.preset_library))
                 }
             }) else null, select = { if (it == 17) perspective = false; selectTool(it) })
@@ -169,9 +196,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val scrollTools = compactNavigation && !sideDock
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
         if (!toolOpen && !quickPresetsVisible) {
-            val large = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
-            val columns = if (large) 3 else 4
-            Column(Modifier.fillMaxWidth().height(if (large) 148.dp else 116.dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            val columns = com.rawlab.android.editor.controls.editorGridColumns(fontScale)
+            Column(Modifier.fillMaxWidth().height(com.rawlab.android.editor.controls.editorGridHeight(fontScale).dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
                 mobileEditorTools(group).chunked(columns).forEach { row ->
@@ -195,33 +222,33 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             0 -> if (edits.isHDREditing) {
                 val hdr = requireNotNull(edits.hdr)
                 val look = hdr.lookSettings
-                val enabled = state.controlsEnabled && navigationEnabled
+                val enabled = parameterEnabled && navigationEnabled
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("hdr-look")) {
                     Text(look.name ?: "HDR LUT", style = MaterialTheme.typography.titleSmall)
                     Row {
-                        TextButton(onClick = onImportHDRLook, enabled = enabled, modifier = Modifier.testTag("hdr-look-import")) {
+                        TextButton(onClick = importHDRLook, enabled = enabled, modifier = Modifier.testTag("hdr-look-import")) {
                             Text(stringResource(R.string.import_look))
                         }
-                        TextButton(onClick = { onEdit(edits.copy(hdr = hdr.withLook(HDRLookSettings())), false) },
+                        TextButton(onClick = { editParameter(edits.copy(hdr = hdr.withLook(HDRLookSettings())), false) },
                             enabled = enabled && !look.isDefault, modifier = Modifier.testTag("hdr-look-clear")) {
                             Text(stringResource(R.string.neutral_look))
                         }
                     }
                     Row {
-                        TextButton(onClick = { onApplyHDRSilver(false) }, enabled = enabled, modifier = Modifier.testTag("hdr-look-silver")) {
+                        TextButton(onClick = { applyHDRSilver(false) }, enabled = enabled, modifier = Modifier.testTag("hdr-look-silver")) {
                             Text("HDR Silver")
                         }
-                        TextButton(onClick = { onApplyHDRSilver(true) }, enabled = enabled, modifier = Modifier.testTag("hdr-look-silver-master")) {
+                        TextButton(onClick = { applyHDRSilver(true) }, enabled = enabled, modifier = Modifier.testTag("hdr-look-silver-master")) {
                             Text("HDR Silver Master")
                         }
                     }
                     if (!look.isDefault) NumericControl(R.string.transfer_field_strength, look.strength * 100, 0f..200f, "%",
-                        enabled, { value, dragging -> onEdit(edits.copy(hdr = hdr.withLook(look.copy(strength = value / 100))), dragging) },
-                        { onEdit(edits.copy(hdr = hdr.withLook(look.copy(strength = 1f))), false) }, defaultValue = 100f, stepOverride = 1f)
+                        enabled, { value, dragging -> editParameter(edits.copy(hdr = hdr.withLook(look.copy(strength = value / 100))), dragging) },
+                        { editParameter(edits.copy(hdr = hdr.withLook(look.copy(strength = 1f))), false) }, defaultValue = 100f, stepOverride = 1f)
                 }
             } else Column {
                 LookBrowserControls(lookCategory, { lookCategory = it }, lookQuery, { lookQuery = it },
-                    lookSearchExpanded, { lookSearchExpanded = it }, state.operation == Operation.NONE, onImportLook)
+                    lookSearchExpanded, { lookSearchExpanded = it }, parameterEnabled, importLook)
                 if (filmItems.isEmpty()) {
                     Column(Modifier.fillMaxWidth().testTag("looks.empty"), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(stringResource(R.string.look_search_empty))
@@ -241,9 +268,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                             .testTag("film-group-divider-${look.id}"))
                         Box(Modifier.width(if (additional) 132.dp else 96.dp)) {
                             Column(Modifier.fillMaxWidth().selectable(selected = edits.film == look.id,
-                                enabled = state.controlsEnabled && look.available,
+                                enabled = parameterEnabled && look.available,
                                 role = Role.RadioButton, onClick = {
-                                    if (onSelectFilm(look.id) && filmSelectionChanged(edits, look.id)) onFilmSelected(when {
+                                    if (selectFilm(look.id) && filmSelectionChanged(edits, look.id)) onFilmSelected(when {
                                         look.managed -> UsageFilmKind.Custom
                                         look.id == "neutral" -> UsageFilmKind.None
                                         else -> UsageFilmKind.BuiltIn
@@ -253,7 +280,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                                 Box(Modifier.size(64.dp).border(if (edits.film == look.id) 2.dp else 0.dp,
                                     if (edits.film == look.id) MaterialTheme.colorScheme.primary else Color.Transparent).padding(3.dp), contentAlignment = Alignment.Center) {
                                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("film-artwork-${look.id}"))
-                                    else Icon(Icons.Outlined.Image, null, Modifier.size(32.dp))
+                                    else Icon(AppIcons.Outlined.Image, null, Modifier.size(32.dp))
                                     if (look.compatibilityMode != 0) Icon(Icons.Outlined.Warning,
                                         stringResource(R.string.lut_compatibility_title), Modifier.align(Alignment.TopStart).size(20.dp)
                                             .testTag("film-compatibility-${look.id}"), tint = MaterialTheme.colorScheme.primary)
@@ -289,85 +316,85 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     (state.draft == null || state.draft.group == AdjustmentGroup.LOOK),
                     onDeleteUnreadableLook)
             }
-            1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
-                { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) }, { onEdit(edits.copy(strength = 1f), false) })
+            1 -> NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%", parameterEnabled && (edits.film != "neutral" || edits.recipeID != null),
+                { value, dragging -> editParameter(edits.copy(strength = value / 100), dragging) }, { editParameter(edits.copy(strength = 1f), false) })
             2 -> Column {
-                NumericControl(R.string.exposure, edits.exposure, if (edits.isHDREditing) -4f..4f else -5f..5f, "EV", state.controlsEnabled,
-                    { value, dragging -> onEdit(edits.copy(exposure = value), dragging) }, { onEdit(edits.copy(exposure = 0f), false) })
+                NumericControl(R.string.exposure, edits.exposure, if (edits.isHDREditing) -4f..4f else -5f..5f, "EV", parameterEnabled,
+                    { value, dragging -> editParameter(edits.copy(exposure = value), dragging) }, { editParameter(edits.copy(exposure = 0f), false) })
                 var modeMenu by remember { mutableStateOf(false) }
                 val modes = listOf(R.string.exposure_scene, R.string.exposure_preview, R.string.exposure_sensor)
                 Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
-                    TextButton(onClick = { modeMenu = true }, enabled = state.controlsEnabled && rawInput && !normalX3f,
+                    TextButton(onClick = { modeMenu = true }, enabled = parameterEnabled && rawInput && !normalX3f,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
                         Text(stringResource(modes[edits.exposureMode]), style = MaterialTheme.typography.labelMedium)
                     }
                     DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         modes.forEachIndexed { index, title ->
                             DropdownMenuItem(text = { Text(stringResource(title)) }, onClick = {
-                                modeMenu = false; onEdit(edits.copy(exposureMode = index), false)
+                                modeMenu = false; editParameter(edits.copy(exposureMode = index), false)
                             })
                         }
                     }
                 }
-                TextButton(onClick = onAutoExposure, enabled = state.controlsEnabled && !state.rendering,
+                TextButton(onClick = autoExposure, enabled = parameterEnabled && !state.rendering,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.testTag("exposure.auto")) {
-                    Icon(Icons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
+                    Icon(AppIcons.Outlined.AutoFixHigh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.auto_exposure), style = MaterialTheme.typography.labelMedium)
                 }
                 }
             }
-            3 -> NumericControl(R.string.highlights, edits.highlights * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(highlights = value / 100), dragging) }, { onEdit(edits.copy(highlights = 0f), false) })
-            4 -> NumericControl(R.string.shadows, edits.shadows * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(shadows = value / 100), dragging) }, { onEdit(edits.copy(shadows = 0f), false) })
-            5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(contrast = value / 100), dragging) }, { onEdit(edits.copy(contrast = 0f), false) })
-            6 -> ToneCurveControls(edits.editingCurve, edits.editingCurveStrength, state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingCurve(value), dragging) },
-                { value, dragging -> onEdit(edits.withEditingCurveStrength(value), dragging) }, edits.isHDREditing)
-            7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(saturation = value / 100), dragging) }, { onEdit(edits.copy(saturation = 0f), false) })
+            3 -> NumericControl(R.string.highlights, edits.highlights * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(highlights = value / 100), dragging) }, { editParameter(edits.copy(highlights = 0f), false) })
+            4 -> NumericControl(R.string.shadows, edits.shadows * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(shadows = value / 100), dragging) }, { editParameter(edits.copy(shadows = 0f), false) })
+            5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(contrast = value / 100), dragging) }, { editParameter(edits.copy(contrast = 0f), false) })
+            6 -> ToneCurveControls(edits.editingCurve, edits.editingCurveStrength, parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingCurve(value), dragging) },
+                { value, dragging -> editParameter(edits.withEditingCurveStrength(value), dragging) }, edits.isHDREditing)
+            7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(saturation = value / 100), dragging) }, { editParameter(edits.copy(saturation = 0f), false) })
             8 -> {
                 if (!calibrated) Text(stringResource(R.string.wb_unavailable), Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                 else Column {
-                    NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", state.controlsEnabled,
-                        { value, dragging -> onEdit(edits.copy(customWb = true, temperature = value), dragging) },
-                        { onEdit(edits.copy(temperature = neutralTemperature,
+                    NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", parameterEnabled,
+                        { value, dragging -> editParameter(edits.copy(customWb = true, temperature = value), dragging) },
+                        { editParameter(edits.copy(temperature = neutralTemperature,
                             customWb = edits.recipeID == null && edits.tint != neutralTint), false) }, reciprocal = true,
                             defaultValue = neutralTemperature)
-                    NumericControl(R.string.tint, edits.tint, -150f..150f, "", state.controlsEnabled,
-                        { value, dragging -> onEdit(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
-                        { onEdit(edits.copy(tint = if (edits.recipeID == null) neutralTint else 0f,
+                    NumericControl(R.string.tint, edits.tint, -150f..150f, "", parameterEnabled,
+                        { value, dragging -> editParameter(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
+                        { editParameter(edits.copy(tint = if (edits.recipeID == null) neutralTint else 0f,
                             customWb = edits.customWb && edits.temperature != neutralTemperature), false) },
                             defaultValue = if (edits.recipeID == null) neutralTint else 0f)
                 }
             }
             11 -> if (edits.isHDREditing) {
-                NumericControl(R.string.denoise, requireNotNull(edits.hdr).detailSettings.denoise * 100, 0f..100f, "%", state.controlsEnabled,
-                    { value, dragging -> onEdit(edits.withHDRDenoise(value / 100), dragging) }, { onResetScope(EditorResetScope.Tool(11)) })
+                NumericControl(R.string.denoise, requireNotNull(edits.hdr).detailSettings.denoise * 100, 0f..100f, "%", parameterEnabled,
+                    { value, dragging -> editParameter(edits.withHDRDenoise(value / 100), dragging) }, { resetParameter(EditorResetScope.Tool(11)) })
             } else {
-                DenoiseControls(edits.denoise, state.controlsEnabled, { onResetScope(EditorResetScope.Tool(11)) }) { value, dragging ->
-                    onEdit(edits.copy(denoise = value), dragging)
+                DenoiseControls(edits.denoise, parameterEnabled, { resetParameter(EditorResetScope.Tool(11)) }) { value, dragging ->
+                    editParameter(edits.copy(denoise = value), dragging)
                 }
             }
-            12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = state.controlsEnabled, onReset = { onResetScope(EditorResetScope.Tool(12)) }) { value, dragging ->
-                onEdit(edits.withEditingEffects(value), dragging)
+            12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = parameterEnabled, onReset = { resetParameter(EditorResetScope.Tool(12)) }) { value, dragging ->
+                editParameter(edits.withEditingEffects(value), dragging)
             }
-            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = state.controlsEnabled, onReset = { onResetScope(EditorResetScope.Tool(13)) }) { value, dragging ->
-                onEdit(edits.withEditingEffects(value), dragging)
+            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled, onReset = { resetParameter(EditorResetScope.Tool(13)) }) { value, dragging ->
+                editParameter(edits.withEditingEffects(value), dragging)
             }
-            21 -> ColorGradingControls(edits.editingGrading, state.controlsEnabled, gradingZone, onGradingZoneChange) { value, dragging ->
-                onEdit(edits.withEditingGrading(value), dragging)
+            21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange) { value, dragging ->
+                editParameter(edits.withEditingGrading(value), dragging)
             }
             14 -> Column {
-                if (hslTarget.state.enabled) HslTargetControls(hslTarget, state.controlsEnabled)
-                HslControls(edits.editingHsl, state.controlsEnabled, channel, onChannelChange,
-                    { all -> onResetScope(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> onEdit(edits.withEditingHsl(value), dragging) }
+                if (hslTarget.state.enabled) HslTargetControls(hslTarget, parameterEnabled)
+                HslControls(edits.editingHsl, parameterEnabled, channel, onChannelChange,
+                    { all -> resetParameter(if (all) EditorResetScope.AllHsl else EditorResetScope.HslChannel(channel)) }) { value, dragging -> editParameter(edits.withEditingHsl(value), dragging) }
             }
-            16 -> LensControls(edits.lens, state.preview?.lens, !normalX3f && state.controlsEnabled && state.draft != null, state.rendering, onReset = { onResetScope(EditorResetScope.Tool(16)) }) { value ->
-                onDraftEdit(edits.copy(lens = value), false)
+            16 -> LensControls(edits.lens, state.preview?.lens, !normalX3f && parameterEnabled && state.draft != null, state.rendering, onReset = { resetParameter(EditorResetScope.Tool(16)) }) { value ->
+                if (ownsDraft()) onDraftEdit(edits.copy(lens = value), false)
             }
             17 -> Column {
                 Row(Modifier.fillMaxWidth()) {
@@ -379,49 +406,49 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         }
                     }
                 }
-                GeometryControls(edits.geometry, state.controlsEnabled && state.draft != null,
+                GeometryControls(edits.geometry, parameterEnabled && state.draft != null,
                 ratio = state.draft?.geometryRatio ?: GeometryRatio.FREE,
                 portrait = state.draft?.geometryPortrait ?: false,
-                ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { onResetScope(EditorResetScope.Tool(17)) },
+                ratioEnabled = state.draftReady, onRatioChange = onGeometryRatio, onReset = { resetParameter(EditorResetScope.Tool(17)) },
                 lockedRatio = state.draft?.geometryLockedRatio, physicalAspect = state.draft?.geometryAspect,
                 canvasAspect = state.draft?.geometryCanvasAspect ?: 1f, onLock = onGeometryLock, onSwap = onGeometrySwap,
                 showsGrid = state.draft?.geometryGrid ?: true, onGrid = onGeometryGrid, perspective = perspective, rotation = rotation) { value, dragging ->
-                onDraftEdit(edits.copy(geometry = value), dragging)
+                if (ownsDraft()) onDraftEdit(edits.copy(geometry = value), dragging)
             }
             }
-            15 -> MasterRecipePicker(recipes, edits.recipeID, state.controlsEnabled) { recipe ->
-                if (recipe == null) onSelectFilm("neutral") else onEdit(edits.applyRecipe(recipe), false)
+            15 -> MasterRecipePicker(recipes, edits.recipeID, parameterEnabled) { recipe ->
+                if (recipe == null) selectFilm("neutral") else editParameter(edits.applyRecipe(recipe), false)
             }
-            18 -> NumericControl(R.string.black_point, edits.editingBlackPoint, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingBlackPoint(value), dragging) }, { onEdit(edits.withEditingBlackPoint(0f), false) })
-            19 -> NumericControl(R.string.white_point, edits.editingWhitePoint, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingWhitePoint(value), dragging) }, { onEdit(edits.withEditingWhitePoint(0f), false) })
-            20 -> NumericControl(R.string.vibrance, edits.editingVibrance, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingVibrance(value), dragging) }, { onEdit(edits.withEditingVibrance(0f), false) })
-            22 -> NumericControl(R.string.clarity, edits.editingClarity, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingClarity(value), dragging) }, { onEdit(edits.withEditingClarity(0f), false) })
-            23 -> NumericControl(R.string.dehaze, edits.editingDehaze, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingDehaze(value), dragging) }, { onEdit(edits.withEditingDehaze(0f), false) })
-            10 -> NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.withEditingSharpening(value / 100), dragging) }, { onEdit(edits.withEditingSharpening(0f), false) })
-            24 -> if (edits.isHDREditing) NumericControl(R.string.hdr_peak_limit, edits.hdr!!.renditionSettings.peakLimitEV, 0f..6f, "EV", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = value))), dragging) },
-                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = 0f))), false) }, stepOverride = .1f)
-            25 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_exposure, edits.hdr!!.renditionSettings.sdrExposureEV, -4f..4f, "EV", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = value))), dragging) },
-                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)
-            26 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_contrast, edits.hdr!!.renditionSettings.sdrContrast, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = value))), dragging) },
-                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = 0f))), false) })
-            27 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_saturation, edits.hdr!!.renditionSettings.sdrSaturation, -100f..100f, "%", state.controlsEnabled,
-                { value, dragging -> onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = value))), dragging) },
-                { onEdit(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = 0f))), false) })
+            18 -> NumericControl(R.string.black_point, edits.editingBlackPoint, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingBlackPoint(value), dragging) }, { editParameter(edits.withEditingBlackPoint(0f), false) })
+            19 -> NumericControl(R.string.white_point, edits.editingWhitePoint, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingWhitePoint(value), dragging) }, { editParameter(edits.withEditingWhitePoint(0f), false) })
+            20 -> NumericControl(R.string.vibrance, edits.editingVibrance, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingVibrance(value), dragging) }, { editParameter(edits.withEditingVibrance(0f), false) })
+            22 -> NumericControl(R.string.clarity, edits.editingClarity, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingClarity(value), dragging) }, { editParameter(edits.withEditingClarity(0f), false) })
+            23 -> NumericControl(R.string.dehaze, edits.editingDehaze, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingDehaze(value), dragging) }, { editParameter(edits.withEditingDehaze(0f), false) })
+            10 -> NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.withEditingSharpening(value / 100), dragging) }, { editParameter(edits.withEditingSharpening(0f), false) })
+            24 -> if (edits.isHDREditing) NumericControl(R.string.hdr_peak_limit, edits.hdr!!.renditionSettings.peakLimitEV, 0f..6f, "EV", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = value))), dragging) },
+                { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = 0f))), false) }, stepOverride = .1f)
+            25 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_exposure, edits.hdr!!.renditionSettings.sdrExposureEV, -4f..4f, "EV", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = value))), dragging) },
+                { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrExposureEV = 0f))), false) }, stepOverride = .1f)
+            26 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_contrast, edits.hdr!!.renditionSettings.sdrContrast, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = value))), dragging) },
+                { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrContrast = 0f))), false) })
+            27 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_saturation, edits.hdr!!.renditionSettings.sdrSaturation, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = value))), dragging) },
+                { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = 0f))), false) })
         }
         if (tool in listOf(0, 15) && !edits.isHDREditing) CompositionLocalProvider(
             com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides true) { NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%",
-            state.controlsEnabled && (edits.film != "neutral" || edits.recipeID != null),
-            { value, dragging -> onEdit(edits.copy(strength = value / 100), dragging) },
-            { onEdit(edits.copy(strength = 1f), false) }, defaultValue = 100f) }
+            parameterEnabled && (edits.film != "neutral" || edits.recipeID != null),
+            { value, dragging -> editParameter(edits.copy(strength = value / 100), dragging) },
+            { editParameter(edits.copy(strength = 1f), false) }, defaultValue = 100f) }
         }
         }
         }
@@ -524,7 +551,7 @@ internal fun MasterRecipePicker(recipes: List<MasterRecipe>, selected: String?, 
                     val artwork = recipe?.let { assetBitmap("MasterRecipeIcons/${it.id}.png", 64.dp) }
                     if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().testTag("recipe-artwork-${recipe?.id}"),
                         contentScale = ContentScale.Crop)
-                    else Icon(Icons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Icon(AppIcons.Outlined.Layers, null, Modifier.size(32.dp), tint = if (selected == recipe?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     if (selected == recipe?.id) Icon(Icons.Outlined.CheckCircle, null,
                         Modifier.align(Alignment.TopEnd).size(20.dp).background(MaterialTheme.colorScheme.surface, CircleShape)
                             .testTag("recipe-selected-${recipe?.id ?: "neutral"}"), tint = MaterialTheme.colorScheme.primary)

@@ -83,16 +83,11 @@ enum class AdjustmentField(val id: String) {
     HDR_LOOK("hdr.look"),
     HDR_CAMERA_DEVELOPMENT("hdr.camera_development");
 
-    val isHDRRelative get() = this == HDR_TEMPERATURE || this == HDR_TINT
-    val isHDRRendition get() = this in HDR_PEAK_LIMIT..HDR_SDR_SATURATION
-    val isHDROnly get() = isHDRRelative || isHDRRendition || this == HDR_LOOK || this == HDR_CAMERA_DEVELOPMENT
-    val group get() = when {
-        this == HDR_LOOK -> "looks"
-        this == HDR_CAMERA_DEVELOPMENT -> "detail"
-        isHDRRelative -> "color"
-        this == BLACK_POINT || this == WHITE_POINT || isHDRRendition -> "light"
-        else -> id.substringBefore('.')
-    }
+    val spec: AdjustmentFieldDefinition get() = AdjustmentFieldSpec.requireById(id)
+    val isHDRRelative get() = spec.protocol.isHDRRelative
+    val isHDRRendition get() = spec.protocol.isHDRRendition
+    val isHDROnly get() = spec.protocol.isHDROnly
+    val group get() = spec.group
     val gradingZone: ColorGradingZone? get() = when (this) {
         GRADING_SHADOWS -> ColorGradingZone.SHADOWS; GRADING_MIDTONES -> ColorGradingZone.MIDTONES
         GRADING_HIGHLIGHTS -> ColorGradingZone.HIGHLIGHTS; else -> null
@@ -103,24 +98,11 @@ enum class AdjustmentField(val id: String) {
         return listOf("hue", "saturation", "lightness").indexOf(parts[2]) to
             listOf("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta").indexOf(parts[3])
     }
-    val scalarRange: ClosedFloatingPointRange<Double>? get() = when {
-        hslLocation != null -> -100.0..100.0
-        else -> when (this) {
-            STRENGTH, CONTRAST, SATURATION, SHARPENING -> 0.0..2.0
-            HDR_TEMPERATURE -> 2000.0..50000.0
-            HDR_TINT -> -150.0..150.0
-            HDR_PEAK_LIMIT -> 0.0..6.0
-            HDR_SDR_EXPOSURE -> -4.0..4.0
-            HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> -100.0..100.0
-            EXPOSURE -> -20.0..20.0
-            HIGHLIGHTS, SHADOWS, S_CURVE, PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> -1.0..1.0
-            VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS, BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE -> -100.0..100.0
-            VIGNETTE_MIDPOINT, VIGNETTE_FEATHER, VIGNETTE_HIGHLIGHTS, GRAIN_AMOUNT, GRAIN_SIZE, GRAIN_ROUGHNESS -> 0.0..100.0
-            QUARTER_TURNS -> 0.0..3.0
-            CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT, POST_RGB_DENOISE -> 0.0..1.0
-            STRAIGHTEN -> -45.0..45.0
-            else -> null
-        }
+    val scalarRange: ClosedFloatingPointRange<Double>? get() {
+        val proto = spec.protocol
+        return if (!proto.nullable && (proto.valueType == AdjustmentProtocolValueType.NUMBER || this == QUARTER_TURNS)) {
+            proto.doubleRange
+        } else null
     }
 
     companion object {

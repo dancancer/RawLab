@@ -26,13 +26,13 @@ bool gradingGpuBoundary(Render render) {
     all.wheels={ColorGradingWheel{220,100},ColorGradingWheel{110,100},ColorGradingWheel{35,100}};
     pending.wheels={ColorGradingWheel{223,0},ColorGradingWheel{111,0},ColorGradingWheel{35,0}};
     shadows.wheels[0]={240,100};middle.wheels[1]={359.999f,100};tiny.wheels[0]={240,.0001f};
-    sony2fuji_request request{};request.brightness=request.saturation=1;request.temperature=6500;request.intent=SONY2FUJI_INTENT_FINAL;
+    RenderParams params; params.brightness=params.saturation=1; params.temperature=6500; params.intent=RenderIntent::Final;
     float maximum=0;
     for (float contrast : {1.f,1.8f}) {
-        request.contrast=contrast;
+        params.contrast=contrast;
         for (const auto& options : {ColorGradingOptions{},pending,all,shadows,middle,tiny}) {
             ImageData actual;
-            if (!render(input,request,options,actual) || actual.pixels.size()!=input.pixels.size())return false;
+            if (!render(input,params,options,actual) || actual.pixels.size()!=input.pixels.size())return false;
             for (size_t i=0;i<actual.pixels.size();++i) {
                 const auto p=input.pixels[i];RGB expected(neutralDisplay(p.r),neutralDisplay(p.g),neutralDisplay(p.b));
                 if (contrast!=1)expected=RGB((expected.r-.5f)*contrast+.5f,(expected.g-.5f)*contrast+.5f,(expected.b-.5f)*contrast+.5f);

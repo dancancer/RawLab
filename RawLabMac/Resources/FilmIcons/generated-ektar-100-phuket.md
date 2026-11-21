@@ -4,7 +4,7 @@
 
 Edited with the built-in `image_gen__imagegen` tool at the user's request. The upper yellow field is now approximately 43% of the square height rather than 60%, the black title band moves upward, and the red bars immediately left of 100 are straightened into a regular aligned row. Visual inspection confirmed the requested layout and bar corrections while preserving the wording, palette and square full-bleed format. The exact bar count requested in the generation prompt is not an acceptance requirement from the user.
 
-Current asset: `ektar-100-phuket.png`, 1254 x 1254 PNG. Selected output: `/Users/xupeng/.codex/generated_images/01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-2183d2c9-0614-40f6-a149-280fb7517826.png`. Edit input was the prior yellow-package artwork below. No post-generation pixel editing was applied.
+Current asset: `ektar-100-phuket.png`, 1254 x 1254 PNG. Selected output: `01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-2183d2c9-0614-40f6-a149-280fb7517826.png`. Edit input was the prior yellow-package artwork below. No post-generation pixel editing was applied.
 
 ### Refinement Prompt
 
@@ -12,7 +12,7 @@ Use case: precise-object-edit. Edit the attached CURRENT square Kodak Ektar 100 
 
 ## Previous Yellow Package Artwork
 
-Revised on 2026-09-28 with the built-in `image_gen__imagegen` tool after the user supplied a preferred yellow/black/red Kodak Ektar 100 120 five-roll package reference. Final asset: `ektar-100-phuket.png`, 1254 x 1254 PNG. Selected generated file: `/Users/xupeng/.codex/generated_images/01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-c320465e-02b7-4f5b-83af-a13c8848b5b6.png`.
+Revised on 2026-09-28 with the built-in `image_gen__imagegen` tool after the user supplied a preferred yellow/black/red Kodak Ektar 100 120 five-roll package reference. Final asset: `ektar-100-phuket.png`, 1254 x 1254 PNG. Selected generated file: `01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-c320465e-02b7-4f5b-83af-a13c8848b5b6.png`.
 
 Authoritative user reference: `/var/folders/lc/t457064n7gs2hqn0j69ypnlm0000gn/T/codex-clipboard-caa8b186-9fe7-41db-ac69-7c9fa484139f.png`. Its flat printed front-panel design replaces both the invented RAWLAB red/yellow concept and the intermediate older burgundy packaging rendition. The reference is temporary; the selected output is stored in this project.
 
@@ -24,7 +24,7 @@ Use case: product-mockup. Create ONE square, perfectly flat, front-facing, edge-
 
 ## Superseded First Draft
 
-Original generated file: `/Users/xupeng/.codex/generated_images/01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-766e9a3c-21ae-4bb5-ac7f-208c9c12540b.png`. The user rejected this invented packaging style; the description below is retained only as generation history.
+Original generated file: `01a0e634-436a-7a42-ab39-b2cae8e1cebd/exec-766e9a3c-21ae-4bb5-ac7f-208c9c12540b.png`. The user rejected this invented packaging style; the description below is retained only as generation history.
 
 The references were the existing `provia.png` and `classic-chrome.png` artwork in this directory. They were supplied for flat full-bleed packaging composition and printed texture, not as edit targets. The new label is a RawLab film-simulation concept, not official Kodak packaging or a claim of endorsement. It uses its own RAWLAB heading, red/yellow palette and explicit FILM SIMULATION LUT label.
 

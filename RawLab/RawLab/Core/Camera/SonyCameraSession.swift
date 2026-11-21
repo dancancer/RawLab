@@ -197,6 +197,41 @@ final class SonyCameraSession {
         return bytes
     }
 
+    private func hasMobileAsset(_ asset: CameraRemoteAsset) throws -> Bool {
+        guard let targetCreated = UInt64(asset.snapshot.created) else {
+            return try listAssets().contains(where: { $0.snapshot == asset.snapshot })
+        }
+        var cursor: UInt64 = targetCreated > 0 ? targetCreated - 1 : 0
+        do {
+            for _ in 0..<Self.maximumMobilePages {
+                try checkRunning()
+                let bytes = try client.operation(
+                    0x923c,
+                    parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
+                    requiresData: true,
+                    limit: CameraWire.dataLimit
+                )
+                let page = try CameraWire.mobilePage(bytes, owner: id)
+                if page.assets.contains(where: { $0.snapshot == asset.snapshot }) {
+                    return true
+                }
+                if page.count < 100 || page.cursor > targetCreated {
+                    return false
+                }
+                guard page.cursor > cursor else {
+                    throw CameraProtocolError.invalid("Camera page cursor did not advance")
+                }
+                cursor = page.cursor
+            }
+            return false
+        } catch CameraProtocolError.response(let op, let code) {
+            throw CameraProtocolError.response(op, code)
+        } catch {
+            client.close()
+            throw error
+        }
+    }
+
     private func readOriginal(_ asset: CameraRemoteAsset, progress: (UInt64) -> Void,
                               consume: (Data) throws -> Void) throws -> String {
         try checkRunning()
@@ -216,7 +251,7 @@ final class SonyCameraSession {
                 guard bytes.count == count else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
                 try receive(bytes)
             }
-            guard try listAssets().contains(where: { $0.snapshot == asset.snapshot }) else { throw CameraProtocolError.transientTransfer("Original metadata changed during transfer") }
+            guard try hasMobileAsset(asset) else { throw CameraProtocolError.transientTransfer("Original metadata changed during transfer") }
         } else {
             guard contentsEntered, try legacyAsset(asset.snapshot.content).snapshot == asset.snapshot else { throw CameraProtocolError.transientTransfer("Original metadata changed before transfer") }
             try client.streamObject(handle: asset.snapshot.content, size: asset.snapshot.size, sink: receive)

@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -76,7 +77,7 @@ struct MacLensDraftPresentationTests {
               localized.localizedString(forKey: "使用此镜头", value: "missing", table: nil) != "missing" else {
             throw RenderError.failed("Missing direct lens fixture localization")
         }
-        let info = LensInfo(state: SONY2FUJI_LENS_OFF, detectedLens: "FE 24–70mm F2.8 GM", selectedLens: "",
+        let info = LensInfo(state: .off, detectedLens: "FE 24–70mm F2.8 GM", selectedLens: "",
                             focalLength: 35, appliedDistortion: false, appliedTCA: false, cropScale: 1, candidates: candidates)
         let settings = LensCorrectionSettings()
         for width in [650, 980] {
@@ -90,7 +91,7 @@ struct MacLensDraftPresentationTests {
         manual.profileID = "za"
         manual.distortion = true
         manual.tca = true
-        let partial = LensInfo(state: SONY2FUJI_LENS_MATCHED, detectedLens: info.detectedLens,
+        let partial = LensInfo(state: .matched, detectedLens: info.detectedLens,
                                selectedLens: candidates[2].model, focalLength: 35,
                                appliedDistortion: true, appliedTCA: false, cropScale: 1.1, candidates: candidates)
         try await snapshot(LensDraftWorkspace(settings: manual, info: partial, previewIsCurrent: true,

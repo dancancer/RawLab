@@ -7,7 +7,8 @@ internal static class AdjustmentSummaryChecks
 {
     internal static void Run()
     {
-        using var document = JsonDocument.Parse(File.ReadAllText("Shared/fixtures/adjustment-summary-v1.json"));
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/adjustment-summary-v1.json")));
         var checks = 0;
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); checks++; }
         foreach (var row in document.RootElement.GetProperty("cases").EnumerateArray()) {

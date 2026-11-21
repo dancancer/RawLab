@@ -377,12 +377,34 @@ struct JpegDestination {
     }
 };
 
-void makePreviewRow(const ImageData& image, PreviewSize size, uint32_t y, std::vector<uint8_t>& row) {
+class RowReader {
+    const RenderedDNGRows& source_;
+    uint32_t previous_ = UINT32_MAX;
+    const RGB* pixels_ = nullptr;
+public:
+    const uint32_t width, height;
+    explicit RowReader(const RenderedDNGRows& source) : source_(source), width(source.width), height(source.height) {}
+    const RGB* row(uint32_t y) {
+        if (y >= height) throw std::invalid_argument("DNG row is outside the rendered image");
+        if (previous_ != y) {
+            const RGB* pixels = source_.read(y);
+            if (!pixels) throw std::invalid_argument("Missing rendered DNG row");
+            for (uint32_t x = 0; x < width; ++x)
+                if (!std::isfinite(pixels[x].r) || !std::isfinite(pixels[x].g) || !std::isfinite(pixels[x].b))
+                    throw std::invalid_argument("Nonfinite rendered DNG row");
+            pixels_ = pixels; previous_ = y;
+        }
+        return pixels_;
+    }
+};
+
+void makePreviewRow(RowReader& image, PreviewSize size, uint32_t y, std::vector<uint8_t>& row) {
     const uint64_t sourceWidth = static_cast<uint64_t>(image.width);
     const uint64_t sourceHeight = static_cast<uint64_t>(image.height);
     if (sourceWidth == size.width && sourceHeight == size.height) {
+        const RGB* pixels = image.row(y);
         for (uint32_t x = 0; x < size.width; ++x) {
-            const RGB& pixel = image.at(static_cast<int>(x), static_cast<int>(y));
+            const RGB& pixel = pixels[x];
             const size_t offset = static_cast<size_t>(x) * 3;
             row[offset] = static_cast<uint8_t>(std::lround(std::clamp(pixel.r, 0.0f, 1.0f) * 255));
             row[offset + 1] = static_cast<uint8_t>(std::lround(std::clamp(pixel.g, 0.0f, 1.0f) * 255));
@@ -399,33 +421,36 @@ void makePreviewRow(const ImageData& image, PreviewSize size, uint32_t y, std::v
     const uint64_t firstY = top / size.height;
     const uint64_t endY = (bottom - 1) / size.height + 1;
     const double scale = 255.0 / static_cast<double>(sourceWidth * sourceHeight);
-    for (uint32_t x = 0; x < size.width; ++x) {
-        const uint64_t left = static_cast<uint64_t>(x) * sourceWidth;
-        const uint64_t right = static_cast<uint64_t>(x + 1) * sourceWidth;
-        const uint64_t firstX = left / size.width;
-        const uint64_t endX = (right - 1) / size.width + 1;
-        double r = 0, g = 0, b = 0;
-        for (uint64_t sourceY = firstY; sourceY < endY; ++sourceY) {
-            const uint64_t weightY = std::min(bottom, (sourceY + 1) * size.height) -
-                std::max(top, sourceY * size.height);
+    std::vector<double> sums(size_t(size.width) * 3, 0);
+    for (uint64_t sourceY = firstY; sourceY < endY; ++sourceY) {
+        const RGB* pixels = image.row(uint32_t(sourceY));
+        const uint64_t weightY = std::min(bottom, (sourceY + 1) * size.height) -
+            std::max(top, sourceY * size.height);
+        for (uint32_t x = 0; x < size.width; ++x) {
+            const uint64_t left = static_cast<uint64_t>(x) * sourceWidth;
+            const uint64_t right = static_cast<uint64_t>(x + 1) * sourceWidth;
+            const uint64_t firstX = left / size.width;
+            const uint64_t endX = (right - 1) / size.width + 1;
             for (uint64_t sourceX = firstX; sourceX < endX; ++sourceX) {
                 const uint64_t weightX = std::min(right, (sourceX + 1) * size.width) -
                     std::max(left, sourceX * size.width);
                 const double weight = static_cast<double>(weightX * weightY);
-                const RGB& pixel = image.at(static_cast<int>(sourceX), static_cast<int>(sourceY));
-                r += std::clamp(pixel.r, 0.0f, 1.0f) * weight;
-                g += std::clamp(pixel.g, 0.0f, 1.0f) * weight;
-                b += std::clamp(pixel.b, 0.0f, 1.0f) * weight;
+                const RGB& pixel = pixels[sourceX];
+                sums[size_t(x) * 3] += std::clamp(pixel.r, 0.0f, 1.0f) * weight;
+                sums[size_t(x) * 3 + 1] += std::clamp(pixel.g, 0.0f, 1.0f) * weight;
+                sums[size_t(x) * 3 + 2] += std::clamp(pixel.b, 0.0f, 1.0f) * weight;
             }
         }
+    }
+    for (uint32_t x = 0; x < size.width; ++x) {
         const size_t offset = static_cast<size_t>(x) * 3;
-        row[offset] = static_cast<uint8_t>(std::lround(std::clamp(r * scale, 0.0, 255.0)));
-        row[offset + 1] = static_cast<uint8_t>(std::lround(std::clamp(g * scale, 0.0, 255.0)));
-        row[offset + 2] = static_cast<uint8_t>(std::lround(std::clamp(b * scale, 0.0, 255.0)));
+        row[offset] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset] * scale, 0.0, 255.0)));
+        row[offset + 1] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset + 1] * scale, 0.0, 255.0)));
+        row[offset + 2] = static_cast<uint8_t>(std::lround(std::clamp(sums[offset + 2] * scale, 0.0, 255.0)));
     }
 }
 
-ErrorCode writeJpegPreview(TIFF* tif, const ImageData& image, PreviewSize size, uint64_t& remaining) {
+ErrorCode writeJpegPreview(TIFF* tif, RowReader& image, PreviewSize size, uint64_t& remaining) {
     struct State {
         jpeg_compress_struct codec{};
         JpegError error{};
@@ -509,6 +534,15 @@ bool exceedsRenderedDngCapacity(uint32_t width, uint32_t height, uint64_t* remai
 
 ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     if (filepath.empty() || !validImage(image)) return ErrorCode::ProcessingError;
+    return saveRenderedDNGRows({uint32_t(image.width), uint32_t(image.height), [&](uint32_t row) {
+        return image.pixels.data() + size_t(row) * image.width;
+    }}, filepath);
+}
+
+ErrorCode saveRenderedDNGRows(const RenderedDNGRows& source, const std::string& filepath,
+    const std::function<void()>& beforePublish) {
+    if (filepath.empty() || !source.width || !source.height || !source.read) return ErrorCode::ProcessingError;
+    RowReader image(source);
 
     const uint32_t width = static_cast<uint32_t>(image.width);
     const uint32_t height = static_cast<uint32_t>(image.height);
@@ -625,7 +659,7 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     }
-    if (ok) {
+    try { if (ok) {
         constexpr size_t kCancelCheckPixels = 65536;
         size_t pixelsSinceCheck = 0;
         for (uint32_t y = 0; y < height && ok; ++y) {
@@ -634,8 +668,9 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
                 pixelsSinceCheck = 0;
                 checkProcessingCancellation();
             }
+            const RGB* pixels = image.row(y);
             for (uint32_t x = 0; x < width; ++x) {
-                const RGB& pixel = image.at(static_cast<int>(x), static_cast<int>(y));
+                const RGB& pixel = pixels[x];
                 const size_t offset = static_cast<size_t>(x) * 3;
                 row[offset] = linear16(pixel.r);
                 row[offset + 1] = linear16(pixel.g);
@@ -643,6 +678,12 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
             }
             ok = TIFFWriteScanline(tif, row.data(), y, 0) >= 0;
         }
+    } } catch (const ProcessingCancelled&) {
+        throw;
+    } catch (const std::bad_alloc&) {
+        return ErrorCode::OutOfMemory;
+    } catch (...) {
+        return ErrorCode::ProcessingError;
     }
 
     if (ok) ok = TIFFFlushData(tif) == 1;
@@ -663,6 +704,7 @@ ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath) {
     if (!TIFFWriteDirectory(tif) || !TIFFFlush(tif)) return ErrorCode::IOError;
     // 提交点：编码完成后、替换目标文件之前再看一次取消。
     checkProcessingCancellation();
+    if (beforePublish) beforePublish();
     try {
         if (!staging.publish(outputPath)) return ErrorCode::IOError;
     } catch (const std::bad_alloc&) {

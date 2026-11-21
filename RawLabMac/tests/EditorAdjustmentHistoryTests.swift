@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private func check(_ value: @autoclosure () throws -> Bool, _ label: String) throws {
@@ -107,8 +108,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try hslTargetChecks(root: root, second: second)
         try curveNavigationChecks(root: root, photo: first)
         var aiSettings = Adjustments(); aiSettings.aiDenoiseEnabled = true
-        let aiBatch = BatchExportModel(job: BatchExportJob(source: first, settings: aiSettings, look: nil, lookName: "Neutral"),
-            journal: BatchJournal(directory: root.appendingPathComponent("ai-batch")))
+        let aiBatch = BatchExportModel(job: MacBatchExportJob(source: first, settings: aiSettings, look: nil, lookName: "Neutral"),
+            journal: MacBatchJournal(directory: root.appendingPathComponent("ai-batch")))
         aiBatch.add([second])
         let deadline = Date().addingTimeInterval(30)
         while aiBatch.validating && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
@@ -119,6 +120,275 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "AI batch export disables AI for raster targets while retaining the source settings")
         try check(aiBatch.notice(for: rasterItem) == L10n.text("普通图片未使用 AI 降噪"),
             "AI batch raster targets explain that AI denoise was not used")
+        try asyncCommitAndTerminationFlushChecks(root: root, photo: first)
+    }
+
+    static func asyncCommitAndTerminationFlushChecks(root: URL, photo: URL) throws {
+        let dir = root.appendingPathComponent("async-editor-model")
+        let editsDir = dir.appendingPathComponent("edits")
+        let looksDir = dir.appendingPathComponent("looks")
+        let batchDir = dir.appendingPathComponent("batch")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let target = dir.appendingPathComponent("target.png")
+        try FileManager.default.copyItem(at: photo, to: target)
+
+        let model = EditorModel(lookDirectory: looksDir, editDirectory: editsDir, batchDirectory: batchDir)
+        model.open(target); try rendered(model)
+
+        let gate = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var shouldFail = false
+        let controlledStore = try MacEditPersistence(directory: editsDir, writeData: { data, url in
+            lock.lock()
+            let fail = shouldFail
+            lock.unlock()
+            if gate.wait(timeout: .now()) == .success {
+                // no-op; use separate block flag below
+            }
+            if fail {
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        _ = controlledStore
+
+        // Verify interaction end enqueues async commit and saveEdits() acts as flush barrier.
+        model.setInteracting(true)
+        model.settings.exposure = 1.75
+        model.setInteracting(false)
+        try check(model.adjustmentSession!.transactions.count == 1 && !model.dirty,
+                  "Async gesture commit records optimistic transaction and clears dirty immediately")
+        try check(model.saveEdits(), "saveEdits() flushes pending async commit cleanly")
+        try check(!model.hasPendingEditCommits &&
+                  (try MacEditPersistence(directory: editsDir).state(for: target)?.settings.exposure == 1.75),
+                  "saveEdits() flush barrier durably persists async edit to disk")
+
+        // Verify async failure rolls back committed state and marks dirty + saveError.
+        let failStore = try MacEditPersistence(directory: editsDir, writeData: { data, url in
+            if gate.wait(timeout: .now()) == .success { /* unused */ }
+            lock.lock()
+            let fail = shouldFail
+            lock.unlock()
+            if fail { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        _ = release
+        let priorCommitted = model.committedEdit
+        model.editStore = failStore
+        model.committedEdit = priorCommitted
+        let baseTransactions = model.adjustmentSession!.transactions.count
+        lock.lock(); shouldFail = true; lock.unlock()
+        model.setInteracting(true)
+        model.settings.exposure = 2.5
+        model.setInteracting(false)
+        try check(!model.saveEdits() && model.dirty && model.saveError != nil &&
+                  model.adjustmentSession!.transactions.count == baseTransactions &&
+                  model.committedEdit?.state?.settings.exposure == 1.75,
+                  "Failed async edit commit rolls back history transaction, preserves committedEdit, restores dirty=true, and surfaces saveError on flush")
+
+        // Reopen a photo with pre-existing persisted exposure=1.25 in a fresh EditorModel (knownRecords[path] == nil):
+        // failing the first async edit must preserve committedEdit.state?.settings.exposure == 1.25 and undo baseline.
+        let reopenPhoto = dir.appendingPathComponent("reopen-preexisting.png")
+        try FileManager.default.copyItem(at: photo, to: reopenPhoto)
+        let reopenEditsDir = dir.appendingPathComponent("reopen-edits")
+        let reopenLooksDir = dir.appendingPathComponent("reopen-looks")
+        let reopenBatchDir = dir.appendingPathComponent("reopen-batch")
+        let preStore = try MacEditPersistence(directory: reopenEditsDir)
+        var preSettings = Adjustments(); preSettings.exposure = 1.25
+        try preStore.save(reopenPhoto, state: MacPhotoEditState(settings: preSettings, filmID: ""))
+
+        let reopenModel = EditorModel(lookDirectory: reopenLooksDir, editDirectory: reopenEditsDir, batchDirectory: reopenBatchDir)
+        let failLock = NSLock()
+        var reopenShouldFail = true
+        reopenModel.editStore = try MacEditPersistence(directory: reopenEditsDir, writeData: { data, url in
+            failLock.lock()
+            let fail = reopenShouldFail
+            failLock.unlock()
+            if fail { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        reopenModel.open(reopenPhoto); try rendered(reopenModel)
+        try check(reopenModel.committedEdit?.state?.settings.exposure == 1.25 &&
+                  reopenModel.settings.exposure == 1.25,
+                  "Reopened EditorModel loads pre-existing exposure=1.25")
+        reopenModel.setInteracting(true)
+        reopenModel.settings.exposure = 2.5
+        reopenModel.setInteracting(false)
+        try check(!reopenModel.saveEdits() && reopenModel.dirty && reopenModel.saveError != nil,
+                  "First async commit failure on reopened photo reports error and marks dirty")
+        try check(reopenModel.committedEdit?.state?.settings.exposure == 1.25,
+                  "First async commit failure preserves pre-existing committedEdit exposure == 1.25 (not nil)")
+
+        failLock.lock(); reopenShouldFail = false; failLock.unlock()
+        reopenModel.setInteracting(true)
+        reopenModel.settings.exposure = 3.0
+        reopenModel.setInteracting(false)
+        try check(reopenModel.saveEdits(), "Subsequent edit after recovery flushes cleanly")
+        reopenModel.undoAdjustment(); try rendered(reopenModel)
+        try check(reopenModel.settings.exposure == 2.5,
+                  "First undo restores the prior recovered 2.5 edit")
+        reopenModel.undoAdjustment(); try rendered(reopenModel)
+        try check(reopenModel.settings.exposure == 1.25 && reopenModel.committedEdit?.state?.settings.exposure == 1.25,
+                  "Second undo after post-failure edit restores pre-existing 1.25, not nil")
+
+        // Verify pendingAllResetRevision and processingMigrationReceipt are restored if async reset-all fails.
+        let migPhoto = dir.appendingPathComponent("migration-reset-fail.png")
+        try FileManager.default.copyItem(at: photo, to: migPhoto)
+        let migEditsDir = dir.appendingPathComponent("mig-edits")
+        let migStore = try MacEditPersistence(directory: migEditsDir)
+        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.8
+        let oldState = MacPhotoEditState(settings: oldSettings, filmID: "")
+        try migStore.save(migPhoto, state: oldState)
+        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.exposure = 0.9
+        let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
+        _ = try migStore.commitProcessingMigration(
+            expected: try migStore.readState(for: migPhoto),
+            candidate: MacPhotoEditState(settings: migratedSettings, filmID: ""),
+            quality: quality
+        )
+        let migModel = EditorModel(lookDirectory: reopenLooksDir, editDirectory: migEditsDir, batchDirectory: reopenBatchDir)
+        migModel.editStore = try MacEditPersistence(directory: migEditsDir, writeData: { _, _ in
+            throw CocoaError(.fileWriteOutOfSpace)
+        })
+        migModel.open(migPhoto); try rendered(migModel)
+        try check(migModel.processingMigrationReceipt?.status == .migrated,
+                  "Migration receipt loaded on reopen")
+        guard case .prepared(let preparedReset) = migModel.prepareReset(scope: .all) else {
+            throw NSError(domain: "Expected .prepared reset", code: 1)
+        }
+        try check(migModel.commitReset(preparedReset), "All reset commits to model")
+        try check(migModel.saveEditsAsync(), "All reset enqueues async commit optimistically")
+        try check(!migModel.saveEdits(), "Flush reports failure for async reset-all")
+        try check(migModel.processingMigrationReceipt?.status == .migrated &&
+                  migModel.pendingAllResetRevision == migModel.editRevision &&
+                  migModel.committedEdit?.state?.settings.exposure == 0.9,
+                  "Failed async reset-all restores processingMigrationReceipt, pendingAllResetRevision, and committedEdit")
+
+        // PROBE_498_RUNLOOP: A1 fails on ioQueue before RunLoop.main drains -> A2 enqueued on main -> no split-brain.
+        let runloopDir = dir.appendingPathComponent("runloop-split-brain")
+        let runloopEditsDir = runloopDir.appendingPathComponent("edits")
+        try FileManager.default.createDirectory(at: runloopDir, withIntermediateDirectories: true)
+        let runloopPhoto = runloopDir.appendingPathComponent("runloop.png")
+        try FileManager.default.copyItem(at: photo, to: runloopPhoto)
+        let runloopModel = EditorModel(lookDirectory: looksDir, editDirectory: runloopEditsDir, batchDirectory: batchDir)
+        let rlLock = NSLock()
+        var rlWriteAttempts = 0
+        runloopModel.editStore = try MacEditPersistence(directory: runloopEditsDir, writeData: { data, url in
+            rlLock.lock(); rlWriteAttempts += 1; let idx = rlWriteAttempts; rlLock.unlock()
+            if idx == 1 { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        runloopModel.open(runloopPhoto); try rendered(runloopModel)
+        runloopModel.settings.exposure = 1.0
+        runloopModel.edited()
+        try check(runloopModel.saveEditsAsync(), "First async edit enqueues optimistically")
+        runloopModel.editStore?.waitForPendingIO()
+        // Before RunLoop.main drains A1's failure, enqueue A2 via saveEditsAsync().
+        runloopModel.settings.exposure = 2.0
+        runloopModel.edited()
+        try check(runloopModel.saveEditsAsync(), "Second async edit enqueues before RunLoop.main drains A1")
+        let rlDeadline = Date().addingTimeInterval(5)
+        while runloopModel.hasPendingEditCommits && Date() < rlDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        let diskAfterRunLoop = try MacEditPersistence(directory: runloopEditsDir).state(for: runloopPhoto)?.settings.exposure
+        try check(!runloopModel.hasPendingEditCommits &&
+                  runloopModel.committedEdit?.state?.settings.exposure == diskAfterRunLoop &&
+                  runloopModel.adjustmentSession?.knownRecord(forPath: runloopPhoto.resolvingSymlinksInPath().standardizedFileURL.path)?.state?.settings.exposure == diskAfterRunLoop &&
+                  diskAfterRunLoop == 2.0 &&
+                  runloopModel.adjustmentSession?.transactions.count == 1,
+                  "EditorModel RunLoop pre-drain async failure never split-brains committedEdit vs disk")
+
+        // Verify saveEdits() never masks flushedOK == false when an undrained async commit fails transiently.
+        let maskDir = dir.appendingPathComponent("save-edits-mask")
+        let maskEditsDir = maskDir.appendingPathComponent("edits")
+        try FileManager.default.createDirectory(at: maskDir, withIntermediateDirectories: true)
+        let maskPhoto = maskDir.appendingPathComponent("mask.png")
+        try FileManager.default.copyItem(at: photo, to: maskPhoto)
+        let maskModel = EditorModel(lookDirectory: looksDir, editDirectory: maskEditsDir, batchDirectory: batchDir)
+        let maskLock = NSLock()
+        var maskWriteAttempts = 0
+        maskModel.editStore = try MacEditPersistence(directory: maskEditsDir, writeData: { data, url in
+            maskLock.lock(); maskWriteAttempts += 1; let idx = maskWriteAttempts; maskLock.unlock()
+            if idx == 1 { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        })
+        maskModel.open(maskPhoto); try rendered(maskModel)
+        maskModel.settings.exposure = 1.2
+        maskModel.edited()
+        try check(maskModel.saveEditsAsync(), "Transient failing async edit enqueues")
+        maskModel.editStore?.waitForPendingIO()
+        try check(!maskModel.saveEdits() && maskModel.dirty && maskModel.saveError != nil,
+                  "saveEdits() preserves flushedOK == false and saveError instead of masking via synchronous retry")
+        try check((try MacEditPersistence(directory: maskEditsDir).state(for: maskPhoto)) == nil,
+                  "Disk stays unmodified when saveEdits() surfaces undrained async flush failure")
+        try check(maskModel.saveEdits() && !maskModel.dirty && maskModel.saveError == nil &&
+                  (try MacEditPersistence(directory: maskEditsDir).state(for: maskPhoto)?.settings.exposure == 1.2),
+                  "Subsequent explicit saveEdits() retry after flush failure succeeds cleanly")
+
+        // Verify stale rolled-back A2 completion does not clobber newer A3 saveError/committedEdit.
+        let staleDir = dir.appendingPathComponent("stale-a2-clobber")
+        let staleEditsDir = staleDir.appendingPathComponent("edits")
+        try FileManager.default.createDirectory(at: staleDir, withIntermediateDirectories: true)
+        let stalePhoto = staleDir.appendingPathComponent("stale.png")
+        let stalePhotoB = staleDir.appendingPathComponent("stale-b.png")
+        try FileManager.default.copyItem(at: photo, to: stalePhoto)
+        try FileManager.default.copyItem(at: photo, to: stalePhotoB)
+        let staleModel = EditorModel(lookDirectory: looksDir, editDirectory: staleEditsDir, batchDirectory: batchDir)
+        let staleLock = NSLock()
+        var staleAttempts = 0
+        let a1Entered = DispatchSemaphore(value: 0)
+        let a1Release = DispatchSemaphore(value: 0)
+        let b1Entered = DispatchSemaphore(value: 0)
+        let b1Release = DispatchSemaphore(value: 0)
+        staleModel.editStore = try MacEditPersistence(directory: staleEditsDir, writeData: { data, url in
+            staleLock.lock(); staleAttempts += 1; let idx = staleAttempts; staleLock.unlock()
+            if idx == 1 {
+                a1Entered.signal()
+                a1Release.wait()
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            if idx == 2 {
+                b1Entered.signal()
+                b1Release.wait()
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        staleModel.open(stalePhoto); try rendered(staleModel)
+        staleModel.settings.exposure = 1.0; staleModel.edited()
+        try check(staleModel.saveEditsAsync(), "Stale-clobber A1 enqueues")
+        try check(a1Entered.wait(timeout: .now() + 5) == .success, "Stale-clobber A1 entered ioQueue")
+
+        var bSettings = Adjustments(); bSettings.exposure = 0.5
+        try staleModel.editStore!.enqueueSaveState(identity: try OriginalFileIdentity(stalePhotoB),
+                                                   state: MacPhotoEditState(settings: bSettings, filmID: ""))
+        staleModel.settings.exposure = 2.0; staleModel.edited()
+        try check(staleModel.saveEditsAsync(), "Stale-clobber A2 enqueues behind B1")
+        a1Release.signal()
+        try check(b1Entered.wait(timeout: .now() + 5) == .success, "Stale-clobber B1 pauses ioQueue")
+
+        // Drain A1 while B1 holds ioQueue; A1 rolls back [A1, A2].
+        let staleDeadline = Date().addingTimeInterval(5)
+        while staleModel.saveError == nil && Date() < staleDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        try check(staleModel.saveError != nil && staleModel.committedEdit?.state == nil, "A1 failure drains cleanly")
+
+        // Enqueue A3 while B1 still holds ioQueue (ahead of A2's failure delivery).
+        staleModel.settings.exposure = 3.0; staleModel.edited()
+        try check(staleModel.saveEditsAsync(), "Stale-clobber A3 enqueues after A1 rollback")
+        b1Release.signal()
+        let postA3Deadline = Date().addingTimeInterval(5)
+        while staleModel.hasPendingEditCommits && Date() < postA3Deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.005))
+        }
+        try check(!staleModel.hasPendingEditCommits && staleModel.saveEdits() &&
+                  staleModel.saveError == nil && !staleModel.dirty &&
+                  staleModel.committedEdit?.state?.settings.exposure == 3.0 &&
+                  (try MacEditPersistence(directory: staleEditsDir).state(for: stalePhoto)?.settings.exposure == 3.0),
+                  "Stale rolled-back A2 completion does not clobber newer A3 saveError or committedEdit")
     }
 
     static func curveNavigationChecks(root: URL, photo: URL) throws {
@@ -248,7 +518,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(recaptured.fields == [.exposure] && model.presetStore.list() == [preset] &&
             model.adjustmentSession!.transactions.count == beforePresetCaptureHistory && model.adjustmentClipboard == clipboard && model.saveError == nil,
             "preset capture uses the current in-memory saved state without a disk revision gate")
-        model.editStore = try EditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
+        model.editStore = try MacEditPersistence(directory: directory, writeData: { _, _ in throw CocoaError(.fileWriteUnknown) })
         model.settings.exposure = 1.3
         do { _ = try model.capturePresetAdjustments(scope: .custom([.exposure])); throw NSError(domain: "Expected preset source save failure", code: 1) }
         catch AdjustmentTransferError.draftRequiresPreflight {}

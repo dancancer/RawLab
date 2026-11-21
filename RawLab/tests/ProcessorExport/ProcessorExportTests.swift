@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import ImageIO
 import UIKit
@@ -141,7 +142,10 @@ struct ProcessorExportTests {
             _ = try forcedProcessor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                    previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
             check(false, "Force must reject active C5")
-        } catch { print("PASS: Force rejects active C5") }
+        } catch {
+            check(error.localizedDescription == "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。",
+                  "Force rejects active C5 with Force GPU fallback prompt: \(error.localizedDescription)")
+        }
         let combinedAgain = try processor.processBuffer(buffer: noiseBuffer, settings: combined,
                                                                 previewLongEdge: nil, lutURL: nil, exportLongEdge: 64)
         check(combinedAgain.data == combinedGPU.data, "iOS GPU grain is deterministic")
@@ -269,7 +273,7 @@ struct ProcessorExportTests {
         var unselectedLens = RawSettings.default
         unselectedLens.lensCorrection = LensCorrectionSettings(distortion: true, mode: .manual)
         let unselected = try cpuProcessor.processRaw(url: raw, settings: unselectedLens, previewLongEdge: 180, lutURL: nil)
-        check(unselected.lensInfo?.state == SONY2FUJI_LENS_NO_LENS && unselected.buffer.data == lensOff.buffer.data,
+        check(unselected.lensInfo?.state == .unmatched && unselected.buffer.data == lensOff.buffer.data,
               "iOS manual mode without selection reports a skipped correction, never auto")
         guard let candidate = lensOff.lensInfo?.candidates.first(where: { $0.isMatch && $0.hasDistortion }) else {
             fatalError("Lens regression requires a RAW with a matching distortion calibration")
@@ -287,7 +291,7 @@ struct ProcessorExportTests {
         let autoLens = try cpuProcessor.processRaw(url: raw, settings: lensAuto, previewLongEdge: 180, lutURL: nil)
         if lensOff.lensInfo!.candidates.filter(\.isMatch).count == 1 {
             check(autoLens.buffer.data == lensOn.buffer.data, "iOS automatic and manual unique matching agree")
-        } else { check(autoLens.lensInfo?.state == SONY2FUJI_LENS_AMBIGUOUS, "iOS automatic matching never guesses") }
+        } else { check(autoLens.lensInfo?.state == .ambiguous, "iOS automatic matching never guesses") }
         check(try cpuProcessor.processRaw(url: raw, settings: .default, previewLongEdge: 180, lutURL: nil).buffer.data == lensOff.buffer.data,
               "iOS lens reset restores exact baseline")
         lensSettings.applyMasterRecipe(MasterRecipe.allRecipes[0]); lensSettings.tint = 20

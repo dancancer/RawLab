@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PRODUCTS="${1:?Pass the current build-for-testing Build/Products directory}"
 OUT="${2:?Pass a new output directory}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
-TEST_FILTER="${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/DocumentImportUITests}"
+TEST_FILTER="${RAWLAB_DOCUMENT_IMPORT_TEST:-RawLabUITests/ImportAndDocumentSmokeTests}"
 if [[ -e "$OUT" ]]; then echo "Output already exists: $OUT" >&2; exit 1; fi
 mkdir -p "$OUT"
 python3 - "$ROOT" "$PRODUCTS" "$OUT" <<'PY'
@@ -84,7 +84,7 @@ for target in targets:
     (documents / 'RawLabImportFixture.cube').write_text(
         '#Gamma:F-Log2 to Test\n#Gamut:F-Gamut to ITU-R BT.709\nLUT_3D_SIZE 2\n' + values)
     (documents / 'RawLabUnknownLook.cube').write_text('LUT_3D_SIZE 2\n' + values)
-    if os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST', '').endswith('/testUnreadableLooksShowReasonAndCanBeDeleted'):
+    if os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST', '').endswith('/testDocumentAndUnreadableLookDeleteSurvivesRestartSmoke'):
         import uuid
         subprocess.run(['xcrun', 'simctl', 'addmedia', device, str(documents / 'RawLabImportFixture.png')], check=True)
         subprocess.run(['xcrun', 'simctl', 'privacy', device, 'grant', 'photos', info['CFBundleIdentifier']], check=True)
@@ -101,7 +101,7 @@ for target in targets:
     source_files = ['RawLab/RawLab/UI/Editor/ContentView.swift',
                     'RawLab/RawLab/UI/Editor/ContentView+Helpers.swift',
                     'RawLab/RawLab/UI/Editor/ContentView+Panels.swift',
-                    'RawLab/RawLabUITests/DocumentImportUITests.swift']
+                    'RawLab/RawLabUITests/ImportAndDocumentSmokeTests.swift']
     binaries = [info['CFBundleExecutable'], 'RawLab.debug.dylib', 'Frameworks/sony2fuji.framework/sony2fuji']
     (out / 'source-receipt.json').write_text(json.dumps({
         'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
@@ -118,13 +118,11 @@ plistlib.dump(config, (out / 'document-import.xctestrun').open('wb'))
 PY
 STATUS=0
 TEST_FILTERS=(-only-testing:"$TEST_FILTER")
-# The large-photo detail check requires an iPad and its own fixture; select it explicitly.
-if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testIPadJPEGPreviewResolvesFineDetailAfterZoom ]]; then
-    TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testIPadJPEGPreviewResolvesFineDetailAfterZoom)
+if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testDocumentAndUnreadableLookDeleteSurvivesRestartSmoke ]]; then
+    TEST_FILTERS+=(-skip-testing:RawLabUITests/ImportAndDocumentSmokeTests/testDocumentAndUnreadableLookDeleteSurvivesRestartSmoke)
 fi
-# The damaged-look check seeds a dedicated registry; select it explicitly.
-if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testUnreadableLooksShowReasonAndCanBeDeleted ]]; then
-    TEST_FILTERS+=(-skip-testing:RawLabUITests/DocumentImportUITests/testUnreadableLooksShowReasonAndCanBeDeleted)
+if [[ "${RAWLAB_DOCUMENT_IMPORT_TEST:-}" != */testRecentPhotoFilterRestartAndResetSmoke ]]; then
+    TEST_FILTERS+=(-skip-testing:RawLabUITests/ImportAndDocumentSmokeTests/testRecentPhotoFilterRestartAndResetSmoke)
 fi
 xcodebuild test-without-building -xctestrun "$OUT/document-import.xctestrun" \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
@@ -156,10 +154,10 @@ import json, os, sys
 result = json.load(open(sys.argv[1]))
 assert result['failedTests'] == 0 and result['passedTests'] > 0 and result['skippedTests'] == 0, result
 if not os.environ.get('RAWLAB_DOCUMENT_IMPORT_TEST'):
-    assert result['passedTests'] == result['totalTestCount'] == 6, result
+    assert result['passedTests'] == result['totalTestCount'], result
 PY
-if [[ "$TEST_FILTER" == RawLabUITests/DocumentImportUITests ||
-      "$TEST_FILTER" == RawLabUITests/DocumentImportUITests/testTargetSelectionErrorsAreExported ]]; then
+if [[ "$TEST_FILTER" == RawLabUITests/ImportAndDocumentSmokeTests ||
+      "$TEST_FILTER" == RawLabUITests/ImportAndDocumentSmokeTests/testDocumentImportLookAndErrorLogSmoke ]]; then
     APP_ID="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$OUT/RawLabImportUI.app/Info.plist")"
     DATA="$(xcrun simctl get_app_container "$IOS_SIMULATOR_UDID" "$APP_ID" data)"
     python3 - "$DATA/Documents" <<'PY'

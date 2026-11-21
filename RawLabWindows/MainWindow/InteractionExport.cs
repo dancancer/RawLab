@@ -15,7 +15,7 @@ using Microsoft.Win32;
 namespace RawLab.Windows;
 public partial class MainWindow
 {
-    private string exportStagingDirectory = TempCleanup.DefaultExportStagingDirectory;
+    private string exportStagingDirectory = "";
     private void CompareClicked(object sender,RoutedEventArgs e)
     {if(compare)SetComparisonMode(false,false);else SetComparisonMode(true,view.PreferredMode==ComparisonMode.Wipe);}
     private void ExportMenuClicked(object sender,RoutedEventArgs e)=>ZoomClicked(sender,e);
@@ -47,14 +47,13 @@ public partial class MainWindow
     }
     private void RefreshComparisonLayout()
     {
-        var sideBySide=file!=null && compare && !swipe;
-        var vertical=sideBySide && PhotoArea.ActualHeight>PhotoArea.ActualWidth;
-        NeutralCanvas.Visibility=sideBySide ? Visibility.Visible : Visibility.Collapsed;
-        NeutralColumn.Width=sideBySide && !vertical ? new(1,GridUnitType.Star) : new(0);
-        NeutralRow.Height=vertical ? new(1,GridUnitType.Star) : new(0);
-        Grid.SetRow(NeutralCanvas,vertical ? 0 : 1);Grid.SetRow(ResultCanvas,1);
-        Grid.SetColumn(NeutralCanvas,vertical ? 1 : 0);
-        ResultCanvas.ComparisonEnabled=file!=null && swipe && ReferenceCurrent;
+        var placement=WorkspaceLayout.ComparisonLayout(file!=null,compare,swipe,PhotoArea.ActualWidth,PhotoArea.ActualHeight);
+        NeutralCanvas.Visibility=placement.ShowsNeutralCanvas ? Visibility.Visible : Visibility.Collapsed;
+        NeutralColumn.Width=placement.ShowsNeutralCanvas && !placement.StackedVertically ? new(1,GridUnitType.Star) : new(0);
+        NeutralRow.Height=placement.StackedVertically ? new(1,GridUnitType.Star) : new(0);
+        Grid.SetRow(NeutralCanvas,placement.NeutralRow);Grid.SetRow(ResultCanvas,placement.ResultRow);
+        Grid.SetColumn(NeutralCanvas,placement.NeutralColumn);
+        ResultCanvas.ComparisonEnabled=placement.ShowWipeOverlay && ReferenceCurrent;
         RefreshPhotoLabels();
     }
     private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
@@ -200,7 +199,7 @@ public partial class MainWindow
         CancelParameterInputs();CancelViewingInput();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
-        closing=true;
+        Volatile.Write(ref closing, true);
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();
@@ -213,7 +212,7 @@ public partial class MainWindow
         }
         RefreshViewingFrames();
         thumbnailRefresh.Stop();foreach(var entry in visibleThumbnails)entry.ReleaseThumbnail();visibleThumbnails.Clear();
-        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;closing=true;IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
+        if(scheduler.Busy || exporting || !aiJob.Completion.IsCompleted){e.Cancel=true;Volatile.Write(ref closing, true);IsEnabled=false;SetStatus(() => Loc.Text("正在完成当前任务后关闭…"));return;}
         e.Cancel = true;
         Dispatcher.BeginInvoke(new Action(FinishClose));
     }

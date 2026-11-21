@@ -416,6 +416,7 @@
 "当前显示 SDR 兼容预览。" = "Showing the SDR-compatible preview.";
 "当前构建未配置使用统计，未采集或上报。" = "Usage analytics is not configured in this build; nothing is collected or reported.";
 "当前照片" = "Current photo";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back.";
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前通道 %@，修改仅作用于该颜色。" = "Current channel: %@. Changes apply only to this color.";
@@ -530,6 +531,7 @@
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "The HDR camera profile could not be read or does not match this camera.";
+"无法读取 X3F 显影模式：%@" = "Unable to read X3F rendering mode: %@";
 "无法读取上次批量任务：%@" = "Unable to read last batch task: %@";
 "无法读取基础曝光" = "Unable to read base exposure";
 "无法读取外观文件。" = "Unable to read the look file.";

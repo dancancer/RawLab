@@ -1,4 +1,5 @@
 #include "sony2fuji/color_converter.h"
+#include "gpu/photo_log_shader.h"
 #include "parallel_pixels.h"
 #include <algorithm>
 #include <cmath>
@@ -370,22 +371,7 @@ float GammaConverter::removeSRGBGamma(float encoded) {
 }
 
 float GammaConverter::applyFLog2(float linear) {
-    const float a = 5.555556f;
-    const float b = 0.064829f;
-    const float c = 0.245281f;
-    const float d = 0.384316f;
-    const float e = 8.799461f;
-    const float f = 0.092864f;
-    const float cut = 0.00088899597f;
-
-    float lin = linear;
-
-    if (lin < cut) {
-        return std::max(0.0f, std::min(1.0f, e * lin + f));
-    }
-
-    float encoded = std::log10(lin * a + b) * c + d;
-    return std::max(0.0f, std::min(1.0f, encoded));
+    return detail::flog2(linear);
 }
 
 RGB GammaConverter::applyFLog2ToRGB(const RGB& rgb) {

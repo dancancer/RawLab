@@ -9,9 +9,12 @@ mkdir -p "$OUT"
 # Files 提供确定的 RAW 原片，避免 Photos picker 返回 JPEG 表示。
 python3 - "$ROOT" "$IOS_SIMULATOR_UDID" <<'PYSEED'
 from pathlib import Path
-import os, plistlib, shutil, sys
+import os, plistlib, shutil, subprocess, sys
 root, device = sys.argv[1:]
-source = Path(os.environ.get('RAWLAB_TEST_RAW', root + '/lutools/examples/DJI_20250602164503_0444_D.DNG'))
+default_raw = Path(root) / 'lutools/examples/DJI_20250602164503_0444_D.DNG'
+if 'RAWLAB_TEST_RAW' not in os.environ and not default_raw.is_file():
+    subprocess.run(['python3', root + '/scripts/assets/prepare.py', '--group', 'raw', '--quiet'], check=True)
+source = Path(os.environ.get('RAWLAB_TEST_RAW', str(default_raw)))
 if not source.is_file(): raise SystemExit('RAWLAB_TEST_RAW must point to the seeded DNG fixture')
 groups = Path.home() / 'Library/Developer/CoreSimulator/Devices' / device / 'data/Containers/Shared/AppGroup'
 for group in groups.iterdir():
@@ -28,7 +31,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 xcodebuild test -project "$ROOT/RawLab/RawLab.xcodeproj" -scheme RawLab \
     -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_UDID" \
     -derivedDataPath "$OUT/DerivedData" -resultBundlePath "$OUT/EditorUITests.xcresult" \
-    -parallel-testing-enabled NO -only-testing:RawLabUITests/EditorUITests \
+    -parallel-testing-enabled NO -only-testing:RawLabUITests/EditorWorkflowSmokeTests \
     > "$OUT/EditorUITests.log" 2>&1
 # Verify new simulator files from the host; the UI runner needs no Photos access.
 sqlite3 -readonly -json "$DB" \

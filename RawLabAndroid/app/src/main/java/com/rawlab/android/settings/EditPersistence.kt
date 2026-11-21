@@ -1,13 +1,19 @@
 package com.rawlab.android.settings
 
+import android.util.Log
+import com.rawlab.android.io.replaceFileAtomically
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import java.nio.file.LinkOption
+import java.text.SimpleDateFormat
 import java.util.Base64
+import java.util.Date
+import java.util.Locale
 import java.util.Properties
+import java.util.TimeZone
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -47,9 +53,20 @@ class AdjustmentNotReadyException : IllegalStateException("The current adjustmen
 
 data class EditStoreChange(val directory: String, val state: PhotoEditState)
 
-class EditStore(private val directory: File,
-    private val replaceFile: (File, File) -> Unit = ::replaceEditFileAtomically,
+class EditStore internal constructor(
+    private val directory: File,
+    private val replaceFile: (File, File) -> Unit,
+    private val onQuarantine: (String, Throwable) -> Unit,
 ) {
+    constructor(
+        directory: File,
+        replaceFile: (File, File) -> Unit = { from, to -> replaceFileAtomically(from, to) },
+    ) : this(directory, replaceFile, defaultOnQuarantine)
+
+    private class UnsupportedFutureStoreException(message: String) : IllegalArgumentException(message)
+
+    @Volatile var lastQuarantinedPath: String? = null
+        private set
     private val file = File(directory, "edits.properties")
     private val directoryPath = directory.canonicalPath
     private val processLock = locks.getOrPut(directoryPath) { ReentrantLock() }
@@ -181,9 +198,20 @@ class EditStore(private val directory: File,
         return updated.record(identity)
     }
 
+    private fun clearCaches() {
+        cachedBytes = null
+        cachedSnapshot = null
+        cachedStat = null
+        lastReadableRecords = emptyMap()
+        lastUnusableRecords = emptyMap()
+    }
+
     private fun read(): Snapshot {
         if (file.exists() && !file.isFile) throw IOException("Edit record path is not a file")
-        if (!file.exists()) return Snapshot(emptyMap()).also { lastReadableRecords = it.records }
+        if (!file.exists()) {
+            clearCaches()
+            return Snapshot(emptyMap())
+        }
         // (mtime, length) 与上次成功解析一致 ⇒ 文件未变，直接复用已解析快照，连文件都不再读；
         // 任一项不符再回退到内容比对（部分文件系统的时间戳精度不足，内容未变时才复用解析结果）。
         val stat = file.lastModified() to file.length()
@@ -194,10 +222,29 @@ class EditStore(private val directory: File,
             cachedStat = stat
             cachedSnapshot?.let { return it }
         }
+        try {
+            return parseSnapshot(bytes, stat)
+        } catch (future: UnsupportedFutureStoreException) {
+            cachedBytes = null
+            cachedSnapshot = null
+            cachedStat = null
+            throw future
+        } catch (error: IllegalArgumentException) {
+            return quarantineCorruptStore(error)
+        }
+    }
+
+    private fun parseSnapshot(bytes: ByteArray, stat: Pair<Long, Long>): Snapshot {
+        if (bytes.isEmpty()) throw IllegalArgumentException("Empty edit store")
         val properties = Properties()
         bytes.inputStream().use(properties::load)
         val rawLines = parseRawPropertyLines(bytes, properties)
-        require(properties.getProperty("format.version") in setOf(null, "1")) { "Unsupported edit store version" }
+        val versionRaw = properties.getProperty("format.version")
+        val parsedVersion = versionRaw?.toIntOrNull()
+        if (parsedVersion != null && parsedVersion > 1) {
+            throw UnsupportedFutureStoreException("Unsupported edit store version")
+        }
+        require(versionRaw in setOf(null, "1")) { "Unsupported edit store version" }
         val recordSuffixes = setOf("values", "film", "recipe", "lens", "geometry", "processing")
         val recordKeysByPhoto = linkedMapOf<PhotoIdentity, MutableList<Pair<String, String>>>()
         for (key in properties.stringPropertyNames()) {
@@ -218,7 +265,7 @@ class EditStore(private val directory: File,
                     val identity = decodeIdentity(encoded)
                     recordKeysByPhoto.getOrPut(identity) { mutableListOf() } += key to suffix
                 }
-                else -> throw IllegalArgumentException("Unknown edit store property")
+                else -> Unit
             }
         }
         val records = linkedMapOf<PhotoIdentity, EditSettings>()
@@ -262,6 +309,26 @@ class EditStore(private val directory: File,
         }
     }
 
+    private fun quarantineCorruptStore(error: Throwable): Snapshot {
+        clearCaches()
+        val ts = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date())
+        val baseName = "${file.name}.corrupt-$ts"
+        var target = File(directory, baseName)
+        var suffix = 1
+        while (Files.exists(target.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+            target = File(directory, "$baseName-$suffix")
+            suffix += 1
+        }
+        if (!file.renameTo(target)) {
+            throw IOException("Cannot quarantine corrupt edit store ${file.name}", error)
+        }
+        lastQuarantinedPath = target.name
+        onQuarantine(target.name, error)
+        return Snapshot(emptyMap())
+    }
+
     private fun parseRawPropertyLines(bytes: ByteArray, expected: Properties): Map<String, String> {
         val text = String(bytes, StandardCharsets.ISO_8859_1)
         if (text.isEmpty()) return emptyMap()
@@ -281,14 +348,41 @@ class EditStore(private val directory: File,
                 chunkLines += lines[index]
             }
             val chunk = chunkLines.joinToString("\n")
+            require(hasKeyValueSeparator(chunk)) { "Malformed edit store property" }
             val single = Properties().apply { chunk.byteInputStream(StandardCharsets.ISO_8859_1).use(::load) }
             val key = single.stringPropertyNames().singleOrNull()
                 ?: throw IllegalArgumentException("Malformed edit store property")
+            require(key.isNotEmpty() && !key.startsWith('{') && !key.startsWith('[')) {
+                "Malformed edit store property"
+            }
             require(rawLines.put(key, chunk) == null) { "Duplicate edit store key" }
             index += 1
         }
         require(rawLines.keys == expected.stringPropertyNames()) { "Corrupt edit store structure" }
         return rawLines
+    }
+
+    private fun hasKeyValueSeparator(chunk: String): Boolean {
+        var i = 0
+        val n = chunk.length
+        while (i < n && chunk[i] in charArrayOf(' ', '\t', '\u000c')) i++
+        while (i < n) {
+            val c = chunk[i]
+            if (c == '\\') {
+                if (i + 1 < n && chunk[i + 1] == '\n') {
+                    i += 2
+                    while (i < n && chunk[i] in charArrayOf(' ', '\t', '\u000c')) i++
+                    continue
+                }
+                i += 2
+                continue
+            }
+            if (c == '=' || c == ':') return true
+            if (c == ' ' || c == '\t' || c == '\u000c' || c == '\n' || c == '\r') break
+            i++
+        }
+        while (i < n && chunk[i] in charArrayOf(' ', '\t', '\u000c')) i++
+        return i < n && (chunk[i] == '=' || chunk[i] == ':')
     }
 
     private fun hasTrailingContinuation(line: String): Boolean {
@@ -421,17 +515,13 @@ class EditStore(private val directory: File,
     }
 
     companion object {
+        private const val LOG_TAG = "RawLabEdits"
+        private val defaultOnQuarantine: (String, Throwable) -> Unit = { name, err ->
+            Log.w(LOG_TAG, "Quarantined corrupt edit store edits.properties -> $name (${err.message ?: err.javaClass.simpleName})")
+        }
         private val changed = MutableSharedFlow<EditStoreChange>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         val changes = changed.asSharedFlow()
         // JVM 内先串行，再取文件锁；否则同进程的不同 FileChannel 会直接抛 overlapping lock。
         private val locks = ConcurrentHashMap<String, ReentrantLock>()
-    }
-}
-
-private fun replaceEditFileAtomically(from: File, to: File) {
-    try {
-        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-        Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 }

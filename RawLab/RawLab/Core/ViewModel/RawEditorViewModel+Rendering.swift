@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreGraphics
 import Foundation
 import UIKit
@@ -46,7 +47,13 @@ extension RawEditorViewModel {
     }
 
     var viewportNativeSize: CGSize? {
-        viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
+        if let image = hdrPresentation?.image {
+            // HDR 的长边请求缩放整张源图，按交付帧的旋转方向计算 Fit。
+            let source = CGSize(width: image.nativeWidth, height: image.nativeHeight)
+            return basePreviewGeometry.quarterTurns.isMultiple(of: 2)
+                ? source : CGSize(width: source.height, height: source.width)
+        }
+        return viewportPreviewLimit > Int(previewMaxDimension) ? nativeImageSize : nil
     }
 
     func updatePreviewSize(_ requestedEdge: Int, settings: RawSettings) {
@@ -67,6 +74,8 @@ extension RawEditorViewModel {
             self.previewResizeWorkItem = nil
             guard !self.isBusy else { return }
             self.previewLongEdge = self.requestedPreviewLongEdge
+            self.onViewportResize?(true)
+            defer { self.onViewportResize?(false) }
             self.updatePreview(settings: self.currentPreviewSettings)
         }
         previewResizeWorkItem = commit
@@ -120,12 +129,13 @@ extension RawEditorViewModel {
             previewFailed = true
             isBusy = false
             // V-UIIOS P1-05：SDR 帧未出即早退，上一帧的缺资源警告必须经统一入口退役，
-            // 否则同图切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（b-task-table.md:17）。
+            // 否则同图切回 HDR 时相同警告被 change() 的 `.keep` 吞掉（docs/archive/architecture/remediation-plan-2026-11-13/b-task-table.md:17）。
             hdrResourceNotice = hdrResourceNotice.afterUndeliveredFrame
             statusMessage = L10n.text("所选外观不可用，请重新选择外观。")
             return
         }
 
+        onPreviewRequest?(request, sourceRevision)
         lastPreviewRequest = request
         previewRendering = true
         previewFailed = false

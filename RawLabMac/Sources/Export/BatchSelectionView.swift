@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 import AppKit
 
@@ -120,7 +121,7 @@ struct BatchSelectionView: View {
                 Text(L10n.format("来源：%@", model.file?.lastPathComponent ?? ""))
                 if let url = model.file { PhotoLocationButton(url: url) }
             }
-            let source = model.file.flatMap { try? BatchExportItem.resourceKey($0) }
+            let source = model.file.flatMap { try? MacBatchExportItem.resourceKey($0) }
             let count = model.batchSelection.targets(excluding: source).count
             Text(L10n.format("目标：%@ 张照片", String(count))).fontWeight(.medium)
             Text(L10n.text("来源已排除。未选中的调整保持每张照片的原值。")).foregroundStyle(.secondary)
@@ -263,7 +264,7 @@ private struct BatchCollectionExportView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 DisclosureGroup(L10n.format("%@ · 曝光 %@ · 查看最终调整", L10n.text(snapshot.lookName), AdjustmentParameter.exposure.spec.display(AdjustmentParameter.exposure.value(from:snapshot.settings)))) {
-                    BatchSettingsSummary(settings: snapshot.settings).padding(.top, 8)
+                    MacBatchSettingsSummaryView(settings: snapshot.settings).padding(.top, 8)
                 }
             }
             if let error = row?.error ?? model.collectionFailure(photo.id), !skipped.contains(photo.id) {
@@ -294,7 +295,7 @@ private struct BatchCollectionExportView: View {
     }
 }
 
-struct BatchSettingsSummary: View {
+struct MacBatchSettingsSummaryView: View {
     let settings: Adjustments
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {

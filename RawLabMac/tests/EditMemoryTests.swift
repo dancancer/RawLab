@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 private struct Failure: Error { let message: String }
@@ -13,16 +14,16 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         let photo = root.appendingPathComponent("migration.dng")
         try Data("original".utf8).write(to: photo)
         let directory = root.appendingPathComponent("edits")
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         var settings = Adjustments(); settings.processing = .c5; settings.exposure = 0.5
         settings.highlights = -20; settings.vibrance = 17.5
-        let original = PhotoEditState(settings: settings, filmID: "saved-look")
+        let original = MacPhotoEditState(settings: settings, filmID: "saved-look")
         try store.save(photo, state: original)
         let expected = try store.readState(for: photo)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.003, worstTileRMSE: 0.002,
             detailRMSE: 0.001, evaluations: 24)
         var candidate = original; candidate.settings.processing = .current; candidate.settings.highlights = -14
-        let failing = try EditPersistence(directory: directory, writeData: { _, _ in throw Failure(message: "disk full") })
+        let failing = try MacEditPersistence(directory: directory, writeData: { _, _ in throw Failure(message: "disk full") })
         let file = directory.appendingPathComponent("edits.json"), before = try Data(contentsOf: file)
         do {
             _ = try failing.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
@@ -30,7 +31,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         } catch let error as Failure { try check(error.message == "disk full", "migration write failure is propagated") }
         try check(try Data(contentsOf: file) == before, "failed atomic write preserves old pixels and does not lose backup")
         _ = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: quality)
-        let reopened = try EditPersistence(directory: directory)
+        let reopened = try MacEditPersistence(directory: directory)
         try check(try reopened.state(for: photo) == candidate, "accepted migration survives restart")
         try check(try reopened.processingMigration(for: photo)?.original == original, "full original look and settings are durable")
         do {
@@ -72,8 +73,8 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let input = root.appendingPathComponent("photo.ARW")
         try Data("fixture".utf8).write(to: input)
-        let store = try EditPersistence(directory: root)
-        let state = PhotoEditState(settings: Adjustments(), filmID: "")
+        let store = try MacEditPersistence(directory: root)
+        let state = MacPhotoEditState(settings: Adjustments(), filmID: "")
         try store.save(input, state: state)
         let file = root.appendingPathComponent("edits.json")
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
@@ -86,7 +87,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         savedState["settings"] = settings; record["state"] = savedState; records[key] = record; object["records"] = records
         let protectedBytes = try JSONSerialization.data(withJSONObject: object)
         try protectedBytes.write(to: file)
-        let reopened = try EditPersistence(directory: root)
+        let reopened = try MacEditPersistence(directory: root)
         do {
             _ = try reopened.readState(for: input)
             throw Failure(message: "unknown processing must fail strict per-photo read")
@@ -182,7 +183,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
             try Data("raw fixture".utf8).write(to: file)
         }
         let directory = root.appendingPathComponent("records")
-        let store = try EditPersistence(directory: directory)
+        let store = try MacEditPersistence(directory: directory)
         var settings = Adjustments()
         settings.exposure = 0.75
         settings.exposureMode = .sensor
@@ -203,42 +204,42 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         settings.setGeometry(.straightenDegrees, to: -7.5)
         settings.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 8))
         settings.set(.temperature, to: 6000)
-        try store.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
-        let reopened = try EditPersistence(directory: directory)
+        try store.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
+        let reopened = try MacEditPersistence(directory: directory)
         let restored = try reopened.state(for: a)
         try check(restored?.settings == settings, "all settings survive reopening the store")
         try check(restored?.settings.geometrySettings == settings.geometrySettings, "geometry survives persistence restart")
         try check(restored?.filmID == "look-id", "look identity survives restart")
         try check(try reopened.state(for: b) == nil, "same basename must not share edits")
         settings.denoiseMode = 2
-        try reopened.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
-        let chroma = try EditPersistence(directory: directory).state(for: a)?.settings
+        try reopened.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
+        let chroma = try MacEditPersistence(directory: directory).state(for: a)?.settings
         try check(chroma?.chromaNoiseReduction == 2 && chroma?.rawNoiseReduction == 0,
                   "new denoise mode survives restart without re-enabling legacy FBDD")
         settings.applyDenoisePreset(.clean)
         settings.setDenoiseParameter(.luma, to: 53)
         settings.setDenoiseEnabled(false)
-        try reopened.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
-        let wavelet = try EditPersistence(directory: directory).state(for: a)?.settings
+        try reopened.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
+        let wavelet = try MacEditPersistence(directory: directory).state(for: a)?.settings
         try check(wavelet?.waveletSettings.luma == 53 && wavelet?.waveletSettings.preset == .custom &&
                   wavelet?.waveletSettings.enabled == false && wavelet?.chromaNoiseReduction == nil,
                   "disabled custom wavelet settings survive restart without reviving old algorithms")
         settings.resetAll()
-        try reopened.save(a, state: PhotoEditState(settings: settings, filmID: "look-id"))
-        try check(try EditPersistence(directory: directory).state(for: a)?.settings.exposure == 0,
+        try reopened.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
+        try check(try MacEditPersistence(directory: directory).state(for: a)?.settings.exposure == 0,
                   "reset must persist, not resurrect old values")
         try Data("replacement raw".utf8).write(to: a)
         try check(try reopened.state(for: a) == nil, "a replaced file must not inherit prior edits")
         let blocked = root.appendingPathComponent("not-a-directory")
         try Data().write(to: blocked)
-        let cannotSave = try EditPersistence(directory: blocked)
+        let cannotSave = try MacEditPersistence(directory: blocked)
         do {
-            try cannotSave.save(b, state: PhotoEditState(settings: settings, filmID: ""))
+            try cannotSave.save(b, state: MacPhotoEditState(settings: settings, filmID: ""))
             throw Failure(message: "failed write must propagate")
         } catch is CocoaError { }
         try Data("not JSON".utf8).write(to: directory.appendingPathComponent("edits.json"))
         do {
-            _ = try EditPersistence(directory: directory)
+            _ = try MacEditPersistence(directory: directory)
             throw Failure(message: "corrupt store must not be silently replaced")
         } catch is CocoaError { }
         print("PASS: edit restart, identity, reset, all fields, failed writes and corrupt store")

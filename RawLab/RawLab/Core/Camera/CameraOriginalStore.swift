@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import CryptoKit
 import Darwin
@@ -220,6 +221,17 @@ final class CameraOriginalStore {
     private var batchDepth = 0
     private var batchDirty = false
     private var batchRollbackState: CameraOriginalManifest?
+    private struct SamplingCandidateKey: Hashable {
+        let kind: String
+        let name: String
+        let size: UInt64
+        let captureDate: Date
+    }
+    private var jobIndexByID: [UUID: Int] = [:]
+    private var itemIndexByJobID: [UUID: [UUID: Int]] = [:]
+    private var originalIndexByID: [UUID: Int] = [:]
+    private var originalIDsBySourceDigest: [String: [UUID]] = [:]
+    private var samplingCandidateCountsByKey: [SamplingCandidateKey: [UUID: Int]] = [:]
     var snapshot: CameraOriginalManifest { locked { state } }
 
     static func applicationDirectory() throws -> URL {
@@ -257,6 +269,7 @@ final class CameraOriginalStore {
                 throw CameraProtocolError.invalid("Invalid camera storage manifest")
             }
         } else { state = CameraOriginalManifest() }
+        rebuildIndices()
         try recover()
     }
     deinit { _ = flock(directoryLock.fileDescriptor, LOCK_UN); try? directoryLock.close() }
@@ -295,6 +308,7 @@ final class CameraOriginalStore {
                 } catch {
                     if let rollback = batchRollbackState {
                         state = rollback
+                        rebuildIndices()
                     }
                     batchDirty = false
                     throw error
@@ -320,6 +334,7 @@ final class CameraOriginalStore {
                 return result
             } catch {
                 state = previous
+                rebuildIndices()
                 throw error
             }
         }
@@ -341,9 +356,41 @@ final class CameraOriginalStore {
         let descriptor = open(url.path, O_RDONLY)
         if descriptor >= 0 { _ = fsync(descriptor); _ = Darwin.close(descriptor) }
     }
+    private func rebuildIndices() {
+        jobIndexByID.removeAll(keepingCapacity: true)
+        itemIndexByJobID.removeAll(keepingCapacity: true)
+        originalIndexByID.removeAll(keepingCapacity: true)
+        originalIDsBySourceDigest.removeAll(keepingCapacity: true)
+        samplingCandidateCountsByKey.removeAll(keepingCapacity: true)
+        for (j, job) in state.jobs.enumerated() {
+            jobIndexByID[job.id] = j
+            var itemMap: [UUID: Int] = Dictionary(minimumCapacity: job.items.count)
+            for (i, item) in job.items.enumerated() {
+                itemMap[item.id] = i
+                indexSavedSamplingItem(item)
+            }
+            itemIndexByJobID[job.id] = itemMap
+        }
+        for (idx, source) in state.originals.enumerated() {
+            indexOriginal(source, at: idx)
+        }
+    }
+    private func indexOriginal(_ source: CameraStoredOriginal, at index: Int) {
+        originalIndexByID[source.id] = index
+        let key = source.jpegSource?.digest ?? source.digest
+        originalIDsBySourceDigest[key, default: []].append(source.id)
+    }
+    private func indexSavedSamplingItem(_ item: CameraTransferItem) {
+        guard item.phase == .saved,
+              let sourceID = item.sourceID,
+              Self.sampleOffsets(forSize: item.asset.size) != nil,
+              let captureDate = item.asset.captureDate else { return }
+        let key = SamplingCandidateKey(kind: item.asset.kind, name: item.asset.name, size: item.asset.size, captureDate: captureDate)
+        samplingCandidateCountsByKey[key, default: [:]][sourceID, default: 0] += 1
+    }
     private func indices(job: UUID, item: UUID) throws -> (Int, Int) {
-        guard let j = state.jobs.firstIndex(where: { $0.id == job }),
-              let i = state.jobs[j].items.firstIndex(where: { $0.id == item }) else { throw CameraProtocolError.invalid("Camera transfer item is missing") }
+        guard let j = jobIndexByID[job],
+              let i = itemIndexByJobID[job]?[item] else { throw CameraProtocolError.invalid("Camera transfer item is missing") }
         return (j, i)
     }
     func originalURL(_ source: CameraStoredOriginal) -> URL {
@@ -389,13 +436,31 @@ final class CameraOriginalStore {
     }
     func verifiedURL(_ sourceID: UUID) throws -> URL {
         try locked {
-            guard let index = state.originals.firstIndex(where: { $0.id == sourceID }),
+            guard let index = originalIndexByID[sourceID],
                   state.originals[index].availability != .prepared else { throw CameraProtocolError.invalid("Original is not published") }
             let status = availability(state.originals[index])
             if status != state.originals[index].availability { try change { state.originals[index].availability = status } }
             guard status == .available else { throw CameraProtocolError.invalid("Saved camera original is missing or changed") }
             return originalURL(state.originals[index])
         }
+    }
+    /// Read-only thumbnail path lookup using POSIX lstat (no full-file SHA-256 or manifest mutation).
+    func thumbnailURL(_ sourceID: UUID) throws -> URL {
+        let (expectedSize, url) = try locked { () -> (UInt64, URL) in
+            guard let index = originalIndexByID[sourceID] else { throw CameraProtocolError.invalid("Original is not published") }
+            let source = state.originals[index]
+            guard source.availability == .available else { throw CameraProtocolError.invalid("Original is not published") }
+            return (source.size, originalURL(source))
+        }
+        var st = Darwin.stat()
+        guard Darwin.lstat(url.path, &st) == 0,
+              (st.st_mode & S_IFMT) == S_IFREG,
+              st.st_size > 0,
+              st.st_size <= 1 << 30,
+              UInt64(st.st_size) == expectedSize else {
+            throw CameraProtocolError.invalid("Saved camera original is missing or changed")
+        }
+        return url
     }
     func enqueue(device: CameraDeviceIdentity, connectionKey: String, assets: [CameraAssetSnapshot],
                  listingOwner: UUID? = nil, incremental: CameraIncrementalPlan? = nil) throws -> CameraTransferJob {
@@ -504,6 +569,7 @@ final class CameraOriginalStore {
             let orphanIDs = Set(orphans.map(\.id))
             state.jobs.removeAll { prunableIDs.contains($0.id) }
             state.originals.removeAll { orphanIDs.contains($0.id) }
+            rebuildIndices()
             return (orphans.count, orphans.reduce(UInt64(0)) { $0 + $1.size })
         }
     }
@@ -522,7 +588,11 @@ final class CameraOriginalStore {
         }
         let job = CameraTransferJob(id: UUID(), camera: device, connectionKey: connectionKey, createdAt: Date(),
             items: assets.map { CameraTransferItem(id: UUID(), asset: $0) }, incremental: incremental, listingOwner: listingOwner)
-        state.jobs.append(job); return job
+        let jobIndex = state.jobs.count
+        state.jobs.append(job)
+        jobIndexByID[job.id] = jobIndex
+        itemIndexByJobID[job.id] = Dictionary(uniqueKeysWithValues: job.items.enumerated().map { ($1.id, $0) })
+        return job
     }
     func begin(job: UUID, item: UUID) throws -> (url: URL, handle: FileHandle) {
         try locked {
@@ -567,10 +637,18 @@ final class CameraOriginalStore {
                 plan.jpeg.adjust && transfer.asset.kind == "JPEG" ? CameraJPEGSource(digest: digest, options: plan.jpeg) : nil
             }
             let adjustableSource = try jpegSource.map { _ in try CameraJPEGProcessing.adjustableSource(partial) }
-            if let existing = state.originals.first(where: { source in
-                guard source.availability != .prepared, source.jpegSource == jpegSource else { return false }
-                return (jpegSource != nil || (source.digest == digest && source.size == transfer.asset.size)) && availability(source) == .available
-            }) {
+            let lookupDigest = jpegSource?.digest ?? digest
+            var matchedExisting: CameraStoredOriginal?
+            for candidateID in originalIDsBySourceDigest[lookupDigest] ?? [] {
+                guard let idx = originalIndexByID[candidateID] else { continue }
+                let source = state.originals[idx]
+                guard source.availability != .prepared, source.jpegSource == jpegSource,
+                      (jpegSource != nil || (source.digest == digest && source.size == transfer.asset.size)),
+                      availability(source) == .available else { continue }
+                matchedExisting = source
+                break
+            }
+            if let existing = matchedExisting {
                 try change {
                     state.jobs[j].items[i].sourceID = existing.id
                     state.jobs[j].items[i].digest = existing.digest
@@ -578,6 +656,7 @@ final class CameraOriginalStore {
                     state.jobs[j].items[i].failureKind = nil
                     state.jobs[j].items[i].phase = .saved
                     state.jobs[j].items[i].reused = true
+                    indexSavedSamplingItem(state.jobs[j].items[i])
                 }
                 try? FileManager.default.removeItem(at: partial)
                 return existing
@@ -596,7 +675,10 @@ final class CameraOriginalStore {
             let source = CameraStoredOriginal(id: UUID(), name: transfer.asset.name, size: output.size, digest: output.digest,
                                               savedAt: Date(), jpegSource: jpegSource)
             try change {
-                state.originals.append(source); state.jobs[j].items[i].sourceID = source.id
+                let newIndex = state.originals.count
+                state.originals.append(source)
+                indexOriginal(source, at: newIndex)
+                state.jobs[j].items[i].sourceID = source.id
                 state.jobs[j].items[i].digest = output.digest; state.jobs[j].items[i].phase = .prepared
             }
             try FileManager.default.createDirectory(at: originalURL(source).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -608,11 +690,15 @@ final class CameraOriginalStore {
                 state.jobs[j].items[i].failure = nil
                 state.jobs[j].items[i].failureKind = nil
                 state.jobs[j].items[i].phase = .saved
+                indexSavedSamplingItem(state.jobs[j].items[i])
             }
             if staged != partial { try? FileManager.default.removeItem(at: partial) }
             return state.originals.last!
         }
     }
+    /// Wireless transfer skip heuristic: reuses an existing verified local original when `(kind, name, size, captureDate)`
+    /// and 3x64KiB head/mid/tail reads (`sampleOffsets`) match. Not an archival hash substitute — distinct files sharing
+    /// metadata and differing strictly outside those three 64KiB windows can collide; see `docs/design/camera-transfer/`.
     func samplingCandidate(job: UUID, item: UUID) -> (source: CameraStoredOriginal, url: URL)? {
         locked {
             guard let (j, i) = try? indices(job: job, item: item) else { return nil }
@@ -621,20 +707,11 @@ final class CameraOriginalStore {
             if currentJob.incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG" { return nil }
             let target = transfer.asset
             guard Self.sampleOffsets(forSize: target.size) != nil, let captureDate = target.captureDate else { return nil }
-            var matchedIDs = Set<UUID>()
-            for pastJob in state.jobs {
-                for pastItem in pastJob.items where pastItem.phase == .saved {
-                    guard let sourceID = pastItem.sourceID,
-                          pastItem.asset.kind == target.kind,
-                          pastItem.asset.name == target.name,
-                          pastItem.asset.size == target.size,
-                          pastItem.asset.captureDate == captureDate else { continue }
-                    matchedIDs.insert(sourceID)
-                }
-            }
-            guard !matchedIDs.isEmpty else { return nil }
+            let key = SamplingCandidateKey(kind: target.kind, name: target.name, size: target.size, captureDate: captureDate)
+            guard let candidateCounts = samplingCandidateCountsByKey[key], !candidateCounts.isEmpty else { return nil }
+            let candidateIndices = candidateCounts.keys.compactMap { originalIndexByID[$0] }.sorted()
             var validSources: [CameraStoredOriginal] = []
-            for index in state.originals.indices where matchedIDs.contains(state.originals[index].id) {
+            for index in candidateIndices {
                 let source = state.originals[index]
                 guard source.jpegSource == nil, source.availability == .available, source.size == target.size,
                       transfer.sourceDigest == nil || transfer.sourceDigest == source.digest else { continue }
@@ -658,7 +735,7 @@ final class CameraOriginalStore {
                 throw CameraProtocolError.invalid("Published original cannot be reused again")
             }
             guard !(state.jobs[j].incremental?.jpeg.adjust == true && transfer.asset.kind == "JPEG"),
-                  let sourceIndex = state.originals.firstIndex(where: { $0.id == sourceID }) else {
+                  let sourceIndex = originalIndexByID[sourceID] else {
                 throw CameraProtocolError.invalid("Sampled original is unavailable")
             }
             let existing = state.originals[sourceIndex]
@@ -682,6 +759,7 @@ final class CameraOriginalStore {
                 state.jobs[j].items[i].failureKind = nil
                 state.jobs[j].items[i].phase = .saved
                 state.jobs[j].items[i].reused = true
+                indexSavedSamplingItem(state.jobs[j].items[i])
             }
             return state.originals[sourceIndex]
         }
@@ -763,6 +841,7 @@ final class CameraOriginalStore {
                         }
                     }
                     state.originals.removeAll { discardSources.contains($0.id) }
+                    rebuildIndices()
                 }
             }
             // 仅清理该 Store 命名的未发布文件；最终原件及未知文件不属于垃圾。
@@ -805,7 +884,11 @@ final class CameraOriginalStore {
             if !reAdopted.isEmpty {
                 reAdopted.sort { ($0.savedAt, $0.name, $0.id.uuidString) < ($1.savedAt, $1.name, $1.id.uuidString) }
                 try change {
+                    let baseIndex = state.originals.count
                     state.originals.append(contentsOf: reAdopted)
+                    for (offset, adopted) in reAdopted.enumerated() {
+                        indexOriginal(adopted, at: baseIndex + offset)
+                    }
                 }
             }
             if removedOrphans {
@@ -915,7 +998,8 @@ final class CameraOriginalStore {
     func finishConfirmedShutter(owner: UUID) throws {
         try locked {
             guard let tether = state.tether, tether.shutterOwner == owner, tether.shutterAcknowledged,
-                  !tether.shutterJobs.isEmpty, tether.shutterJobs.allSatisfy({ id in state.jobs.first { $0.id == id }?.complete == true }) else { return }
+                  !tether.shutterJobs.isEmpty,
+                  tether.shutterJobs.allSatisfy({ id in jobIndexByID[id].map { state.jobs[$0].complete } == true }) else { return }
             try change {
                 state.tether?.shutterRequestedAt = nil; state.tether?.shutterOwner = nil
                 state.tether?.shutterAcknowledged = false; state.tether?.shutterJobs = []

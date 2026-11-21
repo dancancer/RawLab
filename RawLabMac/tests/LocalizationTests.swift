@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 @main struct LocalizationTests {
@@ -53,6 +54,9 @@ import Foundation
                 check(message == expected, "\(catalog.bundleURL.lastPathComponent) \(language) localizes both percentages")
                 check(L10n.text("线性 sRGB", bundle: catalog).contains("sRGB"),
                       "\(catalog.bundleURL.lastPathComponent) \(language) preserves the sRGB spelling")
+                let forceGpuText = L10n.text("当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。", bundle: catalog)
+                check(!forceGpuText.isEmpty && (language == "zh-Hans" || forceGpuText != "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"),
+                      "\(catalog.bundleURL.lastPathComponent) \(language) translates Force GPU unsupported message")
             }
         }
     }

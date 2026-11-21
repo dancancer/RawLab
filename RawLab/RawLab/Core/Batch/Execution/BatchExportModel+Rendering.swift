@@ -1,3 +1,4 @@
+import RawLabKit
 import Photos
 import PhotosUI
 import SwiftUI
@@ -106,9 +107,10 @@ extension BatchExportModel {
             _ = try BatchFileOutputStore.directory(for: jobID)
             do {
                 if let hdr=settings.hdr,settings.isHDREditing {
-                    let pair=try processor.processHDR(url:target.sourceURL,settings:hdr,previewLongEdge:nil,
-                        exportLongEdge:longEdge,processing:settings.processing,proRAWDecodeVersion:settings.proRAWDecodeVersion)
-                    try pair.exportSDR(to:output,format:SONY2FUJI_OUTPUT_DNG)
+                    try processor.exportHDRDNG(url: target.sourceURL, settings: hdr, output: output,
+                        longEdge: longEdge, processing: settings.processing,
+                        proRAWDecodeVersion: settings.proRAWDecodeVersion,
+                        cancelled: { self.isCancellationRequested })
                 } else if target.sourceKind == .raw {
                     try processor.exportDNG(url: target.sourceURL, settings: settings, lutURL: look,
                                             outputURL: output, exportLongEdge: longEdge)

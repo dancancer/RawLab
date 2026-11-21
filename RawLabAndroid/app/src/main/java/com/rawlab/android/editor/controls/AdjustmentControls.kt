@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.controls
 
+import com.rawlab.android.ui.AppIcons
+
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.accessibility.AccessibilityManager
@@ -21,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Exposure
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -178,7 +179,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                 OutlinedTextField(input, { input = it }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("adjustment-input"),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = parsed == null,
                     leadingIcon = if (range.start < 0f) ({
-                        ToolIcon(Icons.Outlined.Exposure, R.string.adjustment_toggle_sign) {
+                        ToolIcon(AppIcons.Outlined.Exposure, R.string.adjustment_toggle_sign) {
                             val draft = input.trim()
                             input = if (draft.startsWith("-")) draft.removePrefix("-") else "-" + draft.removePrefix("+")
                         }

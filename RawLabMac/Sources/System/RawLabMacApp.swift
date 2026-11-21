@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 import AppKit
 import Combine
@@ -10,6 +11,7 @@ struct RawLabMacApp: App {
     @Environment(\.openWindow) private var openWindow
     init() {
         SystemMenuLanguage.apply(UserDefaults.standard.string(forKey: L10n.preferenceKey))
+        MacBatchExportEnvironment.defaultX3fMode = RenderEngine.x3fDefaultMode(for:)
         let args = CommandLine.arguments
         if args.count == 4 && args[1] == "--smoke" {
             do {

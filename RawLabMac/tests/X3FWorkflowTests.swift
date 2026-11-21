@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import Foundation
 import ImageIO
@@ -81,9 +82,9 @@ private func image(_ url: URL) throws -> CGImage {
         let cliImage = try image(cliOutput)
         try require(cliImage.bitsPerComponent == 16 && pixels(apiImage) == pixels(cliImage), "GUI and CLI export identical RGB16 pixels")
 
-        let store = try EditPersistence(directory: work.appendingPathComponent("edits"))
-        try store.save(source, state: PhotoEditState(settings: settings, filmID: "builtin:preserved-look.cube"))
-        let restored = try EditPersistence(directory: work.appendingPathComponent("edits")).state(for: source)!
+        let store = try MacEditPersistence(directory: work.appendingPathComponent("edits"))
+        try store.save(source, state: MacPhotoEditState(settings: settings, filmID: "builtin:preserved-look.cube"))
+        let restored = try MacEditPersistence(directory: work.appendingPathComponent("edits")).state(for: source)!
         try require(restored.settings.x3fMode == .normal && restored.filmID == "builtin:preserved-look.cube",
                     "save/reopen preserves mode, look identity and edits")
         let reopened = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF).render(source, settings: restored.settings, lut: nil, edge: nil)!

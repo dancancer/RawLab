@@ -14,7 +14,7 @@ These instructions apply to `lutools/`, the C++17 RAW/LUT core and CLI shared by
 
 - Rendering or color changes: [color contract](docs/color-contract.md).
 - Public interfaces: `include/sony2fuji/`; the shared C ABI is `include/sony2fuji/ffi/sony2fuji_c.h`.
-- Mobile integration: [iOS](platform/ios/README.md) or [Android](platform/android/README.md).
+- Mobile integration: [iOS](platform/ios/README.md) or [Android](../RawLabAndroid/README.md).
 - Desktop UI or packaging: [RawLab Mac](../RawLabMac/README.md).
 - Do not load every document or re-read unchanged files for a small edit.
 

@@ -64,6 +64,10 @@ public sealed partial class PhotoCanvas : FrameworkElement
     public event Action? DividerChanged;
     public bool PhotoMargin {get=>photoMargin;set{if(photoMargin==value)return;photoMargin=value;UpdateTransform();}}
     public bool ShowingBefore {get=>showingBefore;set{showingBefore=value;UpdateComparison();}}
+    internal BitmapSource? ImageSource => image;
+    internal BitmapSource? MaskSource => mask;
+    internal Point? DragPoint => drag;
+    internal DispatcherTimer HoldTimer => holdTimer;
     internal Rect VisibleImageBounds=>Rect.Intersect(ImageBounds,new Rect(RenderSize));
     private double DividerX=>ImageBounds.X+ImageBounds.Width*Divider;
     private bool showClipping;
@@ -165,16 +169,17 @@ public sealed partial class PhotoCanvas : FrameworkElement
         if(Viewport==null)return;
         var size=Viewport.SourceSize.Width>0 ? Viewport.SourceSize : image!=null ? new Size(image.PixelWidth,image.PixelHeight) : default;
         var dpi=VisualTreeHelper.GetDpi(this);
+        var margin=WorkspaceLayout.ContentCanvasMargin(PhotoMargin);
         if(image!=null)
         {
             var oldBounds=ImageBounds;
-            ImageBounds=Viewport.Project(RenderSize,size,dpi,PhotoMargin ? 16 : 0);
+            ImageBounds=Viewport.Project(RenderSize,size,dpi,margin);
             if(oldBounds!=ImageBounds)CancelHslPointer();
             var w=ImageBounds.Width;var h=ImageBounds.Height;
             // Keep image drawing commands and bitmap resources resident while panning.
             imageTransform.Matrix=new Matrix(w,0,0,h,ImageBounds.X,ImageBounds.Y);
         }
-        var demand=PhotoMargin ? new Size(Math.Max(1,ActualWidth-32),Math.Max(1,ActualHeight-32)) : RenderSize;
+        var demand=PhotoMargin ? new Size(Math.Max(1,ActualWidth-margin*2),Math.Max(1,ActualHeight-margin*2)) : RenderSize;
         var edge=Viewport.PreviewLongEdge(demand,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
         DrawCrop();DrawHslTarget();UpdateComparison();ImageBoundsChanged?.Invoke();

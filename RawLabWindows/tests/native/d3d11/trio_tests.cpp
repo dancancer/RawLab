@@ -13,16 +13,15 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
-sony2fuji_request request() {
-    sony2fuji_request r{};
-    r.intent = SONY2FUJI_INTENT_PREVIEW;
-    r.brightness = r.contrast = r.saturation = 1;
-    return r;
+RenderParams makeParams() {
+    RenderParams p{};
+    p.intent = RenderIntent::Preview;
+    return p;
 }
 bool render(D3D11PhotoRenderer& renderer, ImageData& output) {
     ImageData input(17, 19);
     for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
-    return renderer.render(input, ColorSpace::sRGB, request(), {}, RGB(1, 1, 1), 17, 19, 0, output);
+    return renderer.render(input, ColorSpace::sRGB, makeParams(), 17, 19, 0, output);
 }
 void recovery() {
     D3D11PhotoRenderer renderer;
@@ -57,7 +56,7 @@ void recovery() {
     require(render(renderer, output), "cancellation incorrectly entered cooldown");
     require(d3d11_test::photoInitializations == before, "cancellation discarded the healthy device");
     ImageData input(17, 19);
-    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+    require(!renderer.render(input, ColorSpace::SonyNative, makeParams(), 17, 19, 0, output),
         "unsupported color conversion must fail");
     require(render(renderer, output), "non-device failure entered cooldown");
     require(d3d11_test::photoInitializations == before, "non-device failure discarded a healthy device");
@@ -92,7 +91,7 @@ void filterRecovery() {
 void firstRenderError() {
     D3D11PhotoRenderer renderer;
     ImageData input(17, 19), output;
-    require(!renderer.render(input, ColorSpace::SonyNative, request(), {}, {1, 1, 1}, 17, 19, 0, output),
+    require(!renderer.render(input, ColorSpace::SonyNative, makeParams(), 17, 19, 0, output),
         "first render must reject implicit camera-native conversion");
     require(d3d11_test::photoInitializations == 1, "test did not initialize a device");
     require(render(renderer, output), "C7: first non-device render error entered cooldown");
@@ -106,6 +105,46 @@ void firstFilterError() {
     require(gpuDetailFilter(input, .2f, 0), "C7: first non-device filter error entered cooldown");
     require(d3d11_test::filterInitializations == 1, "first filter error discarded a healthy device");
 }
+void diagnostics() {
+    d3d11_test::initializationFailures = 0;
+    d3d11_test::allocationFailures = 0;
+    d3d11_test::deviceStatus = S_OK;
+    D3D11PhotoRenderer renderer;
+    ImageData input(17, 19), output;
+    for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
+
+    // 1. Oversized image with nativeFilters must return Unsupported before pw/ph dispatch.
+    ImageData oversized;
+    oversized.width = 65536;
+    oversized.height = 1;
+    auto params = makeParams();
+    params.sharpening = 0.25f;
+    const auto oversizedOutcome = renderer.renderWithOutcome(
+        oversized, ColorSpace::sRGB, params, 65536, 1, 0, output);
+    require(oversizedOutcome.failure == GpuFailureKind::Unsupported &&
+            oversizedOutcome.fault == GpuBackendFault::UnsupportedCapability &&
+            !oversizedOutcome.message.empty(),
+        "65536-wide nativeFilters render must return Unsupported with diagnostic message");
+
+    // 2. Device removal during render must report ProcessingError / DeviceError with non-empty message,
+    //    and subsequent render during cooldown must report ProcessingError / Cooldown.
+    require(renderer.renderWithOutcome(input, ColorSpace::sRGB, makeParams(), 17, 19, 0, output).succeeded(),
+        "healthy WARP render must succeed before device removal check");
+    d3d11_test::deviceStatus = DXGI_ERROR_DEVICE_REMOVED;
+    const auto lostOutcome = renderer.renderWithOutcome(
+        input, ColorSpace::sRGB, makeParams(), 17, 19, 0, output);
+    require(lostOutcome.failure == GpuFailureKind::ProcessingError &&
+            lostOutcome.fault == GpuBackendFault::DeviceError &&
+            !lostOutcome.message.empty(),
+        "device removal must return ProcessingError / DeviceError with diagnostic message");
+    d3d11_test::deviceStatus = S_OK;
+    const auto cooldownOutcome = renderer.renderWithOutcome(
+        input, ColorSpace::sRGB, makeParams(), 17, 19, 0, output);
+    require(cooldownOutcome.failure == GpuFailureKind::ProcessingError &&
+            cooldownOutcome.fault == GpuBackendFault::Cooldown &&
+            !cooldownOutcome.message.empty(),
+        "cooldown after device removal must return ProcessingError / Cooldown with diagnostic message");
+}
 }
 int main(int argc, char** argv) {
     try {
@@ -115,6 +154,7 @@ int main(int argc, char** argv) {
         else if (name == "filter-recovery") filterRecovery();
         else if (name == "first-render-error") firstRenderError();
         else if (name == "first-filter-error") firstFilterError();
+        else if (name == "diagnostics") diagnostics();
         else require(false, "unknown test case");
         std::cout << "PASS: D3D11 " << argv[1] << " (WARP software adapter; no hardware GPU claim)\n";
         return 0;

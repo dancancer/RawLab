@@ -1,15 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/RawLabMac/tests/native-env.sh"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_native_env
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
-TEMP="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-hdr-bridge.XXXXXX")"
-trap 'rm -rf "$TEMP"' EXIT
+rawlab_mac_make_temp_dir TEMP rawlab-hdr-bridge
 "$BUILD/hdr_image_tests" --fixture "$TEMP/source.jpg"
-swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-    -target "$ARCH-apple-macosx$MACOSX_DEPLOYMENT_TARGET" \
+rawlabkit_flags link "$BUILD/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/Shared/HDRRecipe.swift" "$ROOT/Shared/HDRDisplay.swift" \
+    "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/Shared/Native/HDRPresentation.swift" \
     "$ROOT/Shared/Native/ProRAWSource.swift" "$ROOT/Shared/Native/ProRAWExport.swift" "$ROOT/Shared/Native/HDRRequest.swift" "$ROOT/Shared/Native/HDRSource.swift" "$ROOT/Shared/Native/HDRImage.swift" \
     "$ROOT/RawLabMac/tests/HDRBridgeTests.swift" "${CORE_LINK[@]}" \

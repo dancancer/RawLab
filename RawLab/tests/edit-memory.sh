@@ -1,16 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT="$(mktemp -d /tmp/rawlab-ios-edit-memory.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-SDK="$(xcrun --sdk macosx --show-sdk-path)"
-swiftc -whole-module-optimization "$ROOT/Shared/Localization.swift" -swift-version 5 -sdk "$SDK" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_host_init
+rawlab_ios_make_temp_dir OUT rawlab-ios-edit-memory
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization \
     "$ROOT/RawLab/RawLab/Core/Models/PhotoImportTypes.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/EditPersistence.swift" \
-    "$ROOT/RawLab/RawLab/Core/Persistence/FileDigestCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/AdjustmentKind.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/EditorAdjustmentRules.swift" \
     "$ROOT/RawLab/tests/EditMemoryTests.swift" \
     -o "$OUT/edit-memory"
 "$OUT/edit-memory"

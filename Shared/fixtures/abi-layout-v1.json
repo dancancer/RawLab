@@ -328,6 +328,37 @@
       ]
     },
     {
+      "name": "sony2fuji_recipe_wb_request",
+      "size": 48,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "input_path", "offset": 8, "size": 8},
+        {"name": "processing_version", "offset": 16, "size": 4},
+        {"name": "x3f_mode", "offset": 20, "size": 4},
+        {"name": "exposure_mode", "offset": 24, "size": 4},
+        {"name": "recipe_active", "offset": 28, "size": 4},
+        {"name": "recipe_strength", "offset": 32, "size": 4},
+        {"name": "custom_wb", "offset": 36, "size": 4},
+        {"name": "temperature", "offset": 40, "size": 4},
+        {"name": "tint", "offset": 44, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_recipe_wb_result",
+      "size": 32,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "wb_mode", "offset": 8, "size": 4},
+        {"name": "temperature", "offset": 12, "size": 4},
+        {"name": "tint", "offset": 16, "size": 4},
+        {"name": "camera_temperature", "offset": 20, "size": 4},
+        {"name": "camera_tint", "offset": 24, "size": 4},
+        {"name": "camera_calibrated", "offset": 28, "size": 4}
+      ]
+    },
+    {
       "name": "sony2fuji_processing_migration_result",
       "size": 80,
       "fields": [
@@ -661,6 +692,12 @@
       "symbol": "sony2fuji_x3f_default_mode"
     },
     {
+      "name": "sony2fuji_is_normal_x3f",
+      "return_type": "int32_t",
+      "params": ["const char*", "sony2fuji_x3f_mode"],
+      "symbol": "sony2fuji_is_normal_x3f"
+    },
+    {
       "name": "sony2fuji_session_set_x3f_mode",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "sony2fuji_x3f_mode"],
@@ -679,6 +716,12 @@
       "symbol": "sony2fuji_session_create"
     },
     {
+      "name": "sony2fuji_apply_params",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*"],
+      "symbol": "sony2fuji_apply_params"
+    },
+    {
       "name": "sony2fuji_session_set_processing_version",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "sony2fuji_processing_version"],
@@ -689,6 +732,12 @@
       "return_type": "sony2fuji_status",
       "params": ["const char*", "sony2fuji_buffer*"],
       "symbol": "sony2fuji_load_display_image"
+    },
+    {
+      "name": "sony2fuji_inspect_sdr_jpeg_mpf",
+      "return_type": "int32_t",
+      "params": ["const char*"],
+      "symbol": "sony2fuji_inspect_sdr_jpeg_mpf"
     },
     {
       "name": "sony2fuji_session_destroy",
@@ -833,6 +882,18 @@
       "return_type": "sony2fuji_unsupported_reason",
       "params": ["const sony2fuji_session*"],
       "symbol": "sony2fuji_session_get_unsupported_reason"
+    },
+    {
+      "name": "sony2fuji_session_get_gpu_fallback_reason",
+      "return_type": "sony2fuji_gpu_fallback_reason",
+      "params": ["const sony2fuji_session*"],
+      "symbol": "sony2fuji_session_get_gpu_fallback_reason"
+    },
+    {
+      "name": "sony2fuji_session_get_gpu_error",
+      "return_type": "const char*",
+      "params": ["const sony2fuji_session*"],
+      "symbol": "sony2fuji_session_get_gpu_error"
     },
     {
       "name": "sony2fuji_session_get_raw_decode_count",
@@ -1033,6 +1094,18 @@
       "symbol": "sony2fuji_session_get_raw_white_balance"
     },
     {
+      "name": "sony2fuji_session_get_effective_raw_white_balance",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_session*", "float*", "float*"],
+      "symbol": "sony2fuji_session_get_effective_raw_white_balance"
+    },
+    {
+      "name": "sony2fuji_session_resolve_recipe_wb",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_recipe_wb_request*", "sony2fuji_recipe_wb_result*"],
+      "symbol": "sony2fuji_session_resolve_recipe_wb"
+    },
+    {
       "name": "sony2fuji_session_set_gpu_config",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_gpu_config*"],
@@ -1225,6 +1298,12 @@
       "symbol": "sony2fuji_hdr_export_stream"
     },
     {
+      "name": "sony2fuji_hdr_export_tiled",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_stream_source_v1*", "const char*", "const sony2fuji_hdr_request_v1*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_tiled"
+    },
+    {
       "name": "sony2fuji_hdr_release_pair",
       "return_type": "void",
       "params": ["sony2fuji_hdr_image_pair_v1*"],
@@ -1253,6 +1332,27 @@
       "values": [
         {"name": "SONY2FUJI_UNSUPPORTED_NONE", "value": 0},
         {"name": "SONY2FUJI_UNSUPPORTED_FORCE_GPU", "value": 1}
+      ]
+    },
+    {
+      "enum": "sony2fuji_gpu_fallback_reason",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_GPU_FALLBACK_NONE", "value": 0},
+        {"name": "SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS", "value": 1},
+        {"name": "SONY2FUJI_GPU_FALLBACK_ATMOSPHERE", "value": 2},
+        {"name": "SONY2FUJI_GPU_FALLBACK_CURVES", "value": 3},
+        {"name": "SONY2FUJI_GPU_FALLBACK_C5_WAVELET", "value": 4},
+        {"name": "SONY2FUJI_GPU_FALLBACK_DCP_LOOK", "value": 5},
+        {"name": "SONY2FUJI_GPU_FALLBACK_LUT_CONTRACT", "value": 6},
+        {"name": "SONY2FUJI_GPU_FALLBACK_GEOMETRY", "value": 7},
+        {"name": "SONY2FUJI_GPU_FALLBACK_DISPLAY_INPUT", "value": 8},
+        {"name": "SONY2FUJI_GPU_FALLBACK_GPU_DISABLED", "value": 9},
+        {"name": "SONY2FUJI_GPU_FALLBACK_NO_ADAPTER", "value": 10},
+        {"name": "SONY2FUJI_GPU_FALLBACK_COOLDOWN", "value": 11},
+        {"name": "SONY2FUJI_GPU_FALLBACK_DEVICE_ERROR", "value": 12},
+        {"name": "SONY2FUJI_GPU_FALLBACK_FILTER_ERROR", "value": 13},
+        {"name": "SONY2FUJI_GPU_FALLBACK_UNSUPPORTED_CAPABILITY", "value": 14}
       ]
     },
     {

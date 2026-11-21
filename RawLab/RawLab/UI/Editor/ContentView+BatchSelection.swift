@@ -1,51 +1,40 @@
+import RawLabKit
 import SwiftUI
-
-enum IOSCollectionNavigation { case edit(String), returnToCollection }
 
 extension ContentView {
     func openBatchSelection() {
-        guard closeEditorDraftCleanly() else { return }
-        if let photo = viewModel.currentAdjustmentPhoto { viewModel.batchSelection.append(photo) }
-        showingBatchSelection = true
+        coordinator.openBatchSelection()
     }
 
     func finishBatchSelection() {
-        if collectionBatchHandoff.promote(sceneIsActive: scenePhase == .active, configure: { model in
+        if coordinator.collectionBatchHandoff.promote(as: BatchExportModel.self, sceneIsActive: scenePhase == .active, configure: { model in
             batchModel = model
+            testHooks.onBatchModelCreated?(model)
             model.onUsage = { UsageAnalytics.shared.record($0) }
             model.onDiscard = { batchModel = nil; showingBatchExport = false; recoverBatchExport() }
-        }) != nil {
+        }, start: { $0.start() }) != nil {
             showingBatchExport = true
-        } else if let id = queuedCollectionEdit {
-            queuedCollectionEdit = nil
+        } else if let id = coordinator.queuedCollectionEdit {
+            coordinator.queuedCollectionEdit = nil
             requestCollectionNavigation(.edit(id))
-        } else if queuedCollectionExistingBatch {
-            queuedCollectionExistingBatch = false
+        } else if coordinator.queuedCollectionExistingBatch {
+            coordinator.queuedCollectionExistingBatch = false
             showingBatchExport = true
         }
     }
 
     func requestCollectionNavigation(_ action: IOSCollectionNavigation) {
-        guard !editorBusy else { return }
-        cancelSliderInteraction()
-        pendingCollectionNavigation = action
-        if isEditorDraftChanged { draftExitPresented = true; return }
-        if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
-        continueCollectionNavigation()
+        coordinator.requestCollectionNavigation(action, onEdit: { openCollectionPhotoByID($0) })
     }
 
     func continueCollectionNavigation() {
-        guard let action = pendingCollectionNavigation, viewModel.saveCurrentSettings(settings) else { return }
-        pendingCollectionNavigation = nil
-        switch action {
-        case .returnToCollection:
-            viewModel.batchSelection.selection.returnToCollection()
-            showingBatchSelection = true
-        case .edit(let id):
-            guard let stored = viewModel.batchSelection.photos[id] else { return }
-            isImporting = true
-            Task { await openCollectionPhoto(stored) }
-        }
+        coordinator.continueCollectionNavigation(onEdit: { openCollectionPhotoByID($0) })
+    }
+
+    private func openCollectionPhotoByID(_ id: String) {
+        guard let stored = viewModel.batchSelection.photos[id] else { return }
+        coordinator.isImporting = true
+        Task { await openCollectionPhoto(stored) }
     }
 
     @MainActor
@@ -58,7 +47,7 @@ extension ContentView {
             if resolved { try stored.validate() }
             if !resolved, viewModel.sourceIdentity == stored.photo.identity {
                 _ = viewModel.batchSelection.selection.beginEditing(stored.id)
-                isImporting = false
+                coordinator.isImporting = false
                 return
             }
             file.withReadAccess { url in
@@ -70,9 +59,9 @@ extension ContentView {
                     })
             }
         } catch is CancellationError {
-            isImporting = false
+            coordinator.isImporting = false
         } catch {
-            isImporting = false
+            coordinator.isImporting = false
             viewModel.reportError(error, operation: .photoImport, stage: "readBatchSelection",
                                   context: ["entryPoint": "batchSelection"])
         }
@@ -81,14 +70,7 @@ extension ContentView {
     func resolveCollectionDraft(_ key: String, apply: Bool) -> Bool {
         guard viewModel.sourceIdentity?.key == key, !editorBusy else { return false }
         if apply {
-            if viewModel.adjustmentInteraction != nil {
-                guard viewModel.endAdjustmentInteraction(settings: settings) else { return false }
-                isAdjustingSlider = false
-            }
-            if isEditorDraftChanged && !commitEditorDraft() { return false }
-            if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
-            viewModel.hasAdjustmentDraft = false
-            return viewModel.saveCurrentSettings(settings)
+            return coordinator.resolveCollectionDraft(key, apply: true)
         }
         cancelSliderInteraction()
         discardEditorDraft()

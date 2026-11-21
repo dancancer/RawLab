@@ -1,12 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-OUT="$(mktemp -d /tmp/rawlab-render-scheduling.XXXXXX)"
-swiftc -swift-version 5 -O -sdk "$SDK" \
-    -target "$(uname -m)-apple-macosx26.0" \
-    "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift" \
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-render-scheduling
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -O \
     "$ROOT/RawLabMac/tests/RenderSchedulingTests.swift" \
     -o "$OUT/render-scheduling"
 "$OUT/render-scheduling"

@@ -242,6 +242,7 @@
     <string name="exposure_sensor">"Referencia del sensor"</string>
     <string name="film">"Película"</string>
     <string name="follow_system">"Seguir el sistema"</string>
+    <string name="force_gpu_unsupported">"GPU forzada no está disponible para esta foto, look o modo de procesamiento. Cambia a Auto para usar el respaldo."</string>
     <string name="geometry">"Geometría"</string>
     <string name="geometry_crop_height">"Alto del recorte"</string>
     <string name="geometry_crop_hint">"El recorte se aplica después del giro, los volteos, la perspectiva y el enderezado."</string>

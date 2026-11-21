@@ -1,16 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-master-recipe.XXXXXX)"
-SDK="${SDKROOT:-$(xcrun --show-sdk-path 2>/dev/null || echo /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk)}"
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" \
-    -target "$(uname -m)-apple-macosx26.0" \
-    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" \
-    "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-master-recipe
+rawlab_mac_adjustment_native_sources SOURCES
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+    -import-objc-header "$RAWLAB_MAC_BRIDGING_HEADER" \
+    "${SOURCES[@]}" \
     "$ROOT/RawLabMac/tests/MasterRecipeTests.swift" \
     -framework Foundation -framework ImageIO -o "$OUT/master-recipe-tests"
 "$OUT/master-recipe-tests"
-rm -rf "$OUT"

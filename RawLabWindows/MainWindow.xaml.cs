@@ -20,7 +20,8 @@ public partial class MainWindow : Window
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other,bool AppearanceUnverified=false,int CompatibilityMode=0);
     private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity? Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null,long SourceGeneration=0,long LookGeneration=0);
-    private readonly Library library=new();
+    private AppPaths appPaths;
+    private readonly Library library;
     private LookLibrary? lookLibrary;
     private Exception? lookLibraryLoadError;
     private readonly Viewport viewport=new();
@@ -45,14 +46,15 @@ public partial class MainWindow : Window
     private readonly EditorViewState view=new();
     private bool compare=>view.Enabled;
     private bool swipe=>view.Enabled && view.PreferredMode==ComparisonMode.Wipe;
-    private bool clipping,choosingFilm,choosingDenoise,choosingPhotoEffects,choosingLens,choosingGeometry,choosingWhiteBalance;
+    private bool clipping;
+    private EditorToolMode toolMode = EditorToolMode.Parameter;
     private RenderedImage? neutralResult;
     private long neutralRevision;
     private NeutralReferenceKey? acceptedReference;
     private NeutralReferenceKey? acceptedAfter;
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
-    private bool choosingHsl,choosingGrading,autoExposing;
+    private bool autoExposing;
     private long editRevision;
     private int? exportLongEdge;
     private string? lastExportedPath;
@@ -69,26 +71,51 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer previewResize=new(){Interval=TimeSpan.FromMilliseconds(200)};
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
     private bool previewDeferred;
-    private readonly UsageAnalytics usageAnalytics;
+    private UsageAnalytics usageAnalytics;
     private AboutWindow? aboutWindow;
     private bool startupReported, analyticsDisposed;
     private long photoImportReportedRevision;
-    public MainWindow() : this(new UsageAnalytics()) { }
-    public MainWindow(UsageAnalytics usageAnalytics) : this(usageAnalytics,null) { }
-    internal MainWindow(string lookLibraryDirectory) : this(new UsageAnalytics(),lookLibraryDirectory) { }
+    public MainWindow() : this(AppPaths.Default) { }
+    public MainWindow(UsageAnalytics usageAnalytics) : this(AppPaths.Default, usageAnalytics) { }
+    internal MainWindow(string lookLibraryDirectory) : this(AppPaths.Default, new UsageAnalytics(), lookLibraryDirectory) { }
     internal MainWindow(UsageAnalytics usageAnalytics,string? lookLibraryDirectory,AIDenoiseJob? aiJob=null,DesktopUpdateController? desktopUpdates=null)
+        : this(AppPaths.Default, usageAnalytics, lookLibraryDirectory, aiJob, desktopUpdates) { }
+    internal MainWindow(
+        AppPaths appPaths,
+        UsageAnalytics? usageAnalytics = null,
+        string? lookLibraryDirectory = null,
+        AIDenoiseJob? aiJob = null,
+        DesktopUpdateController? desktopUpdates = null,
+        EditStore? editStore = null,
+        BatchJournal? batchJournal = null,
+        AdjustmentPresetStore? presetStore = null,
+        Library? library = null,
+        AIGpuPreferenceStore? aiPreferenceStore = null,
+        AIDiagnosticStore? aiDiagnostics = null)
     {
-        this.usageAnalytics = usageAnalytics;
-        aiPreference=aiPreferenceStore.Read();
-        this.desktopUpdates=desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"),new(),new(UpdateStore.DefaultDirectory),typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown","");
-        this.aiJob=aiJob ?? new((identity,snapshot,progress)=>{
-            using var worker=new RenderEngine(gpuMode:0,aiBackend:identity.Backend,aiDeviceID:identity.DeviceID,aiDiagnostics:aiDiagnostics);
+        this.appPaths = appPaths;
+        ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path, appPaths: this.appPaths);
+        this.usageAnalytics = usageAnalytics ?? new UsageAnalytics(appPaths.UsageSettingsPath);
+        this.library = library ?? new(appPaths.FoldersPath);
+        this.editStore = editStore;
+        this.batchJournal = batchJournal ?? new(appPaths.BatchDirectory);
+        this.presetStore = presetStore ?? new(appPaths.PresetsDirectory);
+        this.aiPreferenceStore = aiPreferenceStore ?? new(appPaths.AiGpuPreferencesPath);
+        this.aiDiagnostics = aiDiagnostics ?? new(appPaths.AiDiagnosticsDirectory);
+        workspaceWidthsPath = appPaths.WorkspaceWidthsPath;
+        recentLooksPath = appPaths.RecentLooksPath;
+        photoPreviewCacheDirectory = appPaths.EditedPhotoPreviewCacheDirectory;
+        exportStagingDirectory = appPaths.ExportStagingDirectory;
+        aiPreference = this.aiPreferenceStore.Read();
+        this.desktopUpdates = desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"), new(), new(appPaths.UpdatesDirectory), typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown", "");
+        this.aiJob = aiJob ?? new((identity,snapshot,progress)=>{
+            using var worker = CreateRenderEngine(gpuMode:0, aiBackend:identity.Backend, aiDeviceID:identity.DeviceID);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
-        },(error,identity)=>aiDiagnostics.Capture(error,new("prepare",identity.DeviceID,identity.Backend,
+        },(error,identity)=>this.aiDiagnostics.Capture(error,new("prepare",identity.DeviceID,identity.Backend,
             identity.Source.Path,Devices:RenderEngine.GetAIDevices().JSON,ModelDirectory:RenderEngine.BundledAIModel)));
         InitializeComponent();
         InitializeAI();
-        if (!LookLibrary.TryLoad(lookLibraryDirectory, out lookLibrary, out lookLibraryLoadError))
+        if (!LookLibrary.TryLoad(lookLibraryDirectory ?? appPaths.LooksDirectory, out lookLibrary, out lookLibraryLoadError))
             lookLibrary = null;
         AutomationProperties.SetAutomationId(this,"MainWindow");
         foreach(var control in new FrameworkElement[]{OpenPhoto,CompareButton,CompareModeButton,CompareOff,CompareSide,CompareSwipe,
@@ -101,7 +128,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();
+            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();PhotoEffectsEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();

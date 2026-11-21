@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 
 // Coordinates are in the containing photo view; the crop stays normalized.

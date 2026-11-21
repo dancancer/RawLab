@@ -23,24 +23,23 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
-sony2fuji_request makeRequest() {
-    sony2fuji_request r{};
-    r.version = SONY2FUJI_REQUEST_VERSION;
-    r.struct_size = sizeof(r);
-    r.input_type = SONY2FUJI_INPUT_BUFFER;
-    r.brightness = 1.f;
-    r.contrast = 1.f;
-    r.saturation = 1.f;
-    return r;
+RenderParams makeParams() {
+    RenderParams p{};
+    p.inputType = RenderInputType::Buffer;
+    p.brightness = 1.f;
+    p.contrast = 1.f;
+    p.saturation = 1.f;
+    return p;
 }
 
 bool renderPhotoSize(GlesPhotoRenderer& renderer, int w, int h, ImageData& output,
                      const std::shared_ptr<LUT3D>& lut = {}) {
     ImageData input(w, h);
     for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
-    auto req = makeRequest();
-    req.lut_strength = lut ? 1.0f : 0.0f;
-    return renderer.render(input, ColorSpace::sRGB, req, lut, RGB(1, 1, 1),
+    auto params = makeParams();
+    params.lut = lut;
+    params.lutStrength = lut ? 1.0f : 0.0f;
+    return renderer.render(input, ColorSpace::sRGB, params,
                            static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0, output);
 }
 
@@ -309,6 +308,41 @@ void readbackMapUnmapErrorsAndStickyDrain() {
     require(gpuDetailFilter(filterImg, .2f, 0.f), "filter must recover after cooldown");
 }
 
+void photoOutcomeDistinguishesUnsupportedFromProcessingError() {
+    rawlabtest::glesVmConfig() = {};
+    rawlabtest::glesVmConfig().maxTexture3DSize = 1;
+    gles_test::now = {};
+
+    GlesPhotoRenderer renderer;
+    ImageData input(17, 19), output;
+    for (auto& p : input.pixels) p = RGB(.2f, .3f, .4f);
+    auto params = makeParams();
+    params.lut = makeSimpleLut();
+    params.lutStrength = 1.0f;
+
+    const auto unsupported = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(unsupported.failure == GpuFailureKind::Unsupported &&
+            unsupported.fault == GpuBackendFault::UnsupportedCapability &&
+            !unsupported.message.empty(),
+        "oversized 3D LUT must report Unsupported / UnsupportedCapability with diagnostic message");
+
+    params.lut.reset();
+    params.lutStrength = 0.0f;
+    rawlabtest::glesVmConfig().maxTexture3DSize = 64;
+    rawlabtest::glesVmConfig().failNextMapBufferError = GL_CONTEXT_LOST;
+    const auto lost = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(lost.failure == GpuFailureKind::ProcessingError &&
+            lost.fault == GpuBackendFault::DeviceError &&
+            !lost.message.empty(),
+        "GL_CONTEXT_LOST readback fault must report ProcessingError / DeviceError with diagnostic message");
+
+    const auto cooldown = renderer.renderWithOutcome(input, ColorSpace::sRGB, params, 17, 19, 0, output);
+    require(cooldown.failure == GpuFailureKind::ProcessingError &&
+            cooldown.fault == GpuBackendFault::Cooldown &&
+            !cooldown.message.empty(),
+        "post-lost-device cooldown must report ProcessingError / Cooldown with diagnostic message");
+}
+
 } // namespace
 
 int main() {
@@ -320,6 +354,7 @@ int main() {
         photoResizeOomAndLutOomResetState();
         photoStickyErrorsAreDrainedAfterNonGlExceptions();
         readbackMapUnmapErrorsAndStickyDrain();
+        photoOutcomeDistinguishesUnsupportedFromProcessingError();
         std::cout << "PASS: gpu_gles_renderer_retry\n";
         return 0;
     } catch (const std::exception& error) {

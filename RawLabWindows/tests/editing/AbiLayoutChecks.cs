@@ -29,19 +29,70 @@ internal static class AbiLayoutChecks
         string? FlattenedBaseCStruct = null);
 
     // C ABI structs defined in the shared headers that intentionally have no mirror inside Native.*:
-    // - sony2fuji_blob: mirrored separately in PInvokeNative.DcpBlob (outside EditWorkflow.Tests compile set).
     // - sony2fuji_curve_point: flattened into double[66] Points inside Native.ToneCurveConfig.
     // - sony2fuji_lens_metadata / sony2fuji_lens_profile_v2: corresponding C entrypoints are not bound on Windows.
     private static readonly HashSet<string> UnmappedInNative = new(StringComparer.Ordinal)
     {
-        "sony2fuji_blob",
         "sony2fuji_curve_point",
         "sony2fuji_lens_metadata",
         "sony2fuji_lens_profile_v2",
     };
 
+    // Shared C ABI functions declared in sony2fuji_c.h / sony2fuji_hdr.h that Windows intentionally does not bind.
+    private static readonly HashSet<string> UnboundAbiFunctions = new(StringComparer.Ordinal)
+    {
+        "sony2fuji_compile_hdr_camera_dcp",
+        "sony2fuji_compute_histogram",
+        "sony2fuji_hdr_camera_ai_available",
+        "sony2fuji_hdr_export_heif",
+        "sony2fuji_hdr_export_tiled",
+        "sony2fuji_hdr_heif_export_available",
+        "sony2fuji_hdr_probe_camera_raw",
+        "sony2fuji_inspect_sdr_jpeg_mpf",
+        "sony2fuji_session_get_raw_decode_count",
+        "sony2fuji_session_get_raw_noise_reduction_support",
+        "sony2fuji_session_inspect_lens_metadata",
+        "sony2fuji_session_inspect_lens_metadata_v2",
+        "sony2fuji_session_inspect_lens_v2",
+        "sony2fuji_session_set_atmosphere",
+        "sony2fuji_session_set_chroma_denoise",
+        "sony2fuji_session_set_color_grading",
+        "sony2fuji_session_set_display_lens_metadata",
+        "sony2fuji_session_set_geometry",
+        "sony2fuji_session_set_hsl",
+        "sony2fuji_session_set_lens_correction",
+        "sony2fuji_session_set_lens_correction_v2",
+        "sony2fuji_session_set_perspective",
+        "sony2fuji_session_set_photo_effects",
+        "sony2fuji_session_set_processing_version",
+        "sony2fuji_session_set_raw_exposure_mode",
+        "sony2fuji_session_set_raw_noise_reduction",
+        "sony2fuji_session_set_tone_controls",
+        "sony2fuji_session_set_tone_curve",
+        "sony2fuji_session_set_tone_curves",
+        "sony2fuji_session_set_wavelet_denoise",
+        "sony2fuji_session_set_x3f_mode",
+        "sony2fuji_status_message",
+    };
+
+    // Windows-local exports compiled into sony2fuji.dll (thumbnail.cpp / display_image_windows.cpp)
+    // rather than declared in the shared C ABI headers.
+    private static readonly HashSet<string> LocalNativeEntryPoints = new(StringComparer.Ordinal)
+    {
+        "rawlab_display_preview",
+        "rawlab_preview",
+        "rawlab_thumbnail",
+    };
+
     private static readonly Dictionary<string, StructMapping> Mappings = new(StringComparer.Ordinal)
     {
+        ["sony2fuji_blob"] = new(
+            typeof(Native.DcpBlob),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["data"] = nameof(Native.DcpBlob.Data),
+                ["size_bytes"] = nameof(Native.DcpBlob.SizeBytes),
+            }),
         ["sony2fuji_request"] = new(
             typeof(Native.Request),
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -108,6 +159,35 @@ internal static class AbiLayoutChecks
                 ["version"] = nameof(Native.GpuConfig.Version),
                 ["struct_size"] = nameof(Native.GpuConfig.StructSize),
                 ["mode"] = nameof(Native.GpuConfig.Mode),
+            }),
+        ["sony2fuji_recipe_wb_request"] = new(
+            typeof(Native.RecipeWbRequest),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.RecipeWbRequest.Version),
+                ["struct_size"] = nameof(Native.RecipeWbRequest.StructSize),
+                ["input_path"] = nameof(Native.RecipeWbRequest.InputPath),
+                ["processing_version"] = nameof(Native.RecipeWbRequest.ProcessingVersion),
+                ["x3f_mode"] = nameof(Native.RecipeWbRequest.X3fMode),
+                ["exposure_mode"] = nameof(Native.RecipeWbRequest.ExposureMode),
+                ["recipe_active"] = nameof(Native.RecipeWbRequest.RecipeActive),
+                ["recipe_strength"] = nameof(Native.RecipeWbRequest.RecipeStrength),
+                ["custom_wb"] = nameof(Native.RecipeWbRequest.CustomWb),
+                ["temperature"] = nameof(Native.RecipeWbRequest.Temperature),
+                ["tint"] = nameof(Native.RecipeWbRequest.Tint),
+            }),
+        ["sony2fuji_recipe_wb_result"] = new(
+            typeof(Native.RecipeWbResult),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.RecipeWbResult.Version),
+                ["struct_size"] = nameof(Native.RecipeWbResult.StructSize),
+                ["wb_mode"] = nameof(Native.RecipeWbResult.WbMode),
+                ["temperature"] = nameof(Native.RecipeWbResult.Temperature),
+                ["tint"] = nameof(Native.RecipeWbResult.Tint),
+                ["camera_temperature"] = nameof(Native.RecipeWbResult.CameraTemperature),
+                ["camera_tint"] = nameof(Native.RecipeWbResult.CameraTint),
+                ["camera_calibrated"] = nameof(Native.RecipeWbResult.CameraCalibrated),
             }),
         ["sony2fuji_wavelet_denoise_config"] = new(
             typeof(Native.WaveletConfig),
@@ -1166,11 +1246,139 @@ internal static class AbiLayoutChecks
             }
         }
 
+        var boundFunctionCount = ReconcileNativeBindings(root, errors);
+
         if (errors.Count > 0)
         {
             throw new Exception("ABI layout drift detected:\n" + string.Join("\n", errors));
         }
 
-        Console.WriteLine($"PASS: Windows Native.cs ABI layout matches {Mappings.Count} C struct definitions ({cSizes.Count} total in fixture)");
+        Console.WriteLine($"PASS: Windows Native.cs ABI layout matches {Mappings.Count} C struct definitions ({cSizes.Count} total in fixture) and {boundFunctionCount} [DllImport] bindings");
+    }
+
+    private static int ReconcileNativeBindings(JsonElement root, List<string> errors)
+    {
+        var abiFunctions = new Dictionary<string, (string ReturnType, int ParamCount)>(StringComparer.Ordinal);
+        foreach (var entry in root.GetProperty("functions").EnumerateArray())
+        {
+            var name = entry.GetProperty("name").GetString()
+                ?? throw new InvalidDataException("Missing function name in ABI layout fixture");
+            var symbol = entry.GetProperty("symbol").GetString()
+                ?? throw new InvalidDataException($"Missing symbol for {name} in ABI layout fixture");
+            if (symbol != name)
+            {
+                errors.Add($"{name}: ABI fixture symbol '{symbol}' differs from name");
+            }
+            var returnType = entry.GetProperty("return_type").GetString()
+                ?? throw new InvalidDataException($"Missing return_type for {name} in ABI layout fixture");
+            var paramCount = entry.GetProperty("params").GetArrayLength();
+            if (!abiFunctions.TryAdd(name, (returnType, paramCount)))
+            {
+                errors.Add($"Duplicate function in ABI layout fixture: {name}");
+            }
+        }
+
+        const BindingFlags StaticMethods = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly;
+        var assemblies = new[] { typeof(Native).Assembly, typeof(MainWindow).Assembly }.Distinct();
+        foreach (var assembly in assemblies)
+        {
+            foreach (var type in assembly.GetTypes())
+            {
+                foreach (var method in type.GetMethods(StaticMethods))
+                {
+                    var dllImport = method.GetCustomAttribute<DllImportAttribute>();
+                    if (dllImport is null || !string.Equals(dllImport.Value, "sony2fuji.dll", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (type != typeof(Native))
+                    {
+                        errors.Add($"{type.FullName}.{method.Name}: sony2fuji.dll [DllImport] must be consolidated in Native");
+                    }
+                }
+            }
+        }
+
+        var boundEntryPoints = new HashSet<string>(StringComparer.Ordinal);
+        var bindingCount = 0;
+        foreach (var method in typeof(Native).GetMethods(StaticMethods))
+        {
+            var dllImport = method.GetCustomAttribute<DllImportAttribute>();
+            if (dllImport is null) continue;
+            bindingCount++;
+            if (!string.Equals(dllImport.Value, "sony2fuji.dll", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add($"Native.{method.Name}: unexpected [DllImport] library '{dllImport.Value}'");
+                continue;
+            }
+            if (dllImport.CallingConvention != CallingConvention.Cdecl)
+            {
+                errors.Add($"Native.{method.Name}: expected CallingConvention.Cdecl, got {dllImport.CallingConvention}");
+            }
+
+            var entryPoint = string.IsNullOrEmpty(dllImport.EntryPoint) ? method.Name : dllImport.EntryPoint;
+            boundEntryPoints.Add(entryPoint);
+
+            if (LocalNativeEntryPoints.Contains(entryPoint))
+            {
+                if (abiFunctions.ContainsKey(entryPoint))
+                {
+                    errors.Add($"Native.{method.Name} ({entryPoint}): listed in LocalNativeEntryPoints but present in shared ABI fixture");
+                }
+                continue;
+            }
+
+            if (!abiFunctions.TryGetValue(entryPoint, out var abiFunc))
+            {
+                errors.Add($"Native.{method.Name}: entry point '{entryPoint}' not found in abi-layout-v1.json functions");
+                continue;
+            }
+
+            var actualParamCount = method.GetParameters().Length;
+            if (actualParamCount != abiFunc.ParamCount)
+            {
+                errors.Add($"Native.{method.Name} ({entryPoint}): C param count={abiFunc.ParamCount}, C# param count={actualParamCount}");
+            }
+
+            var cIsVoid = string.Equals(abiFunc.ReturnType, "void", StringComparison.Ordinal);
+            var csIsVoid = method.ReturnType == typeof(void);
+            if (cIsVoid != csIsVoid)
+            {
+                errors.Add($"Native.{method.Name} ({entryPoint}): C return='{abiFunc.ReturnType}', C# return={method.ReturnType.Name}");
+            }
+        }
+
+        if (bindingCount == 0)
+        {
+            errors.Add("Native: no [DllImport] bindings discovered via reflection");
+        }
+
+        foreach (var localEntryPoint in LocalNativeEntryPoints)
+        {
+            if (!boundEntryPoints.Contains(localEntryPoint))
+            {
+                errors.Add($"LocalNativeEntryPoints: '{localEntryPoint}' is no longer declared on Native");
+            }
+        }
+
+        foreach (var unbound in UnboundAbiFunctions)
+        {
+            if (!abiFunctions.ContainsKey(unbound))
+            {
+                errors.Add($"UnboundAbiFunctions: '{unbound}' is absent from abi-layout-v1.json functions");
+            }
+            else if (boundEntryPoints.Contains(unbound))
+            {
+                errors.Add($"UnboundAbiFunctions: '{unbound}' is now bound on Native; remove from UnboundAbiFunctions");
+            }
+        }
+
+        foreach (var abiName in abiFunctions.Keys)
+        {
+            if (!boundEntryPoints.Contains(abiName) && !UnboundAbiFunctions.Contains(abiName))
+            {
+                errors.Add($"{abiName}: present in abi-layout-v1.json functions but neither bound on Native nor registered in UnboundAbiFunctions");
+            }
+        }
+
+        return bindingCount;
     }
 }

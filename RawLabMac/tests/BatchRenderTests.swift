@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import ImageIO
 
@@ -8,7 +9,7 @@ import ImageIO
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let original = try OriginalFileIdentity(input)
-        let journal = BatchJournal(directory: root.appendingPathComponent("journal"))
+        let journal = MacBatchJournal(directory: root.appendingPathComponent("journal"))
         var settings = Adjustments()
         settings.exposure = 0.5; settings.highlights = 25; settings.contrast = 20
         settings.setEffect(.vignetteAmount, to: -40)
@@ -22,9 +23,9 @@ import ImageIO
             for longEdge: Int? in [nil, 2048] {
             let single = root.appendingPathComponent(png ? "single.png" : "single.jpg")
             _ = try engine.render(input, settings: settings, lut: nil, edge: nil, output: single, exportLongEdge: longEdge)
-            var job = BatchExportJob(source: input, settings: settings, look: nil, lookName: "Neutral")
+            var job = MacBatchExportJob(source: input, settings: settings, look: nil, lookName: "Neutral")
             job.outputDirectory = root; job.png = png; job.longEdge = longEdge
-            var item = try BatchExportItem(url: input); item.selected = true
+            var item = try MacBatchExportItem(url: input); item.selected = true
             job.items = [item]
             let model = BatchExportModel(job: job, journal: journal)
             model.start()

@@ -1,59 +1,73 @@
+import RawLabKit
 import SwiftUI
 
 extension ContentView {
-    var hslTargetActive: Bool {
-        hslTargetEnabled && selectedAdjustment == .hsl && isEditorDraftActive && currentEditorTool == .adjustment(.hsl) &&
-        !editorBusy && adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
-    }
+    var hslTargetActive: Bool { coordinator.hslTargetActive }
+
     var hslTargetInput: HSLTargetCanvasInput {
-        let source = viewModel.sourceRevision, draftID = workspaceDraftID, axis = hslTargetAxis, hdr = workingSettings.isHDREditing
-        func current() -> Bool { viewModel.sourceRevision == source && workspaceDraftID == draftID && hslTargetAxis == axis && workingSettings.isHDREditing == hdr }
+        let source = viewModel.sourceRevision, draftID = workspaceDraftID, axis = coordinator.hslTargetAxis, hdr = workingSettings.isHDREditing
+        func current() -> Bool {
+            viewModel.sourceRevision == source && workspaceDraftID == draftID &&
+                coordinator.hslTargetAxis == axis && workingSettings.isHDREditing == hdr
+        }
         return HSLTargetCanvasInput(scope: "\(source)-\(draftID)-\(axis.rawValue)-\(hdr)",
             begin: { if current() { beginHSLTarget($0) } }, change: { if current() { moveHSLTarget($0) } },
             end: { if current() { endHSLTarget() } }, cancel: { if current() { cancelHSLTarget() } },
-            key: { if current() { keyHSLTarget($0) } }, reject: { if current() { cancelHSLTarget(); hslTargetNotice = .outside } })
+            key: { if current() { keyHSLTarget($0) } }, reject: { if current() { cancelHSLTarget(); coordinator.hslTargetNotice = .outside } })
     }
+
     func beginHSLTarget(_ point: CGPoint, keyDelta: Double? = nil) {
         cancelHSLTarget()
-        guard hslTargetActive, let revision = viewModel.hslTargetRevision else { hslTargetNotice = .stale; return }
-        let before = workingSettings, source = viewModel.sourceRevision, draftID = workspaceDraftID, axis = hslTargetAxis
-        let token = hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
-        hslTargetPoint = point
-        if let keyDelta { hslTargetInteraction.move(delta: keyDelta); hslTargetInteraction.end() }
+        guard hslTargetActive, let revision = viewModel.hslTargetRevision else { coordinator.hslTargetNotice = .stale; return }
+        let before = workingSettings, source = viewModel.sourceRevision, draftID = workspaceDraftID, axis = coordinator.hslTargetAxis
+        let token = coordinator.hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
+        coordinator.hslTargetPoint = point
+        if let keyDelta {
+            coordinator.hslTargetInteraction.move(delta: keyDelta)
+            coordinator.hslTargetInteraction.end()
+        }
         viewModel.sampleHSL(point: point, settings: before, revision: revision) { sample in
-            guard hslTargetInteraction.matches(token) else { return }
-            guard viewModel.sourceRevision == source, workspaceDraftID == draftID, workingSettings == before, hslTargetActive, hslTargetAxis == axis else {
-                cancelHSLTarget(); hslTargetNotice = .stale; return
+            guard coordinator.hslTargetInteraction.matches(token) else { return }
+            guard viewModel.sourceRevision == source, workspaceDraftID == draftID, workingSettings == before,
+                  hslTargetActive, coordinator.hslTargetAxis == axis else {
+                cancelHSLTarget(); coordinator.hslTargetNotice = .stale; return
             }
-            guard let next = hslTargetInteraction.accept(sample, token: token, currentRevision: viewModel.hslTargetRevision) else {
-                hslTargetNotice = hslTargetInteraction.selection == sample ? sample.availability : .stale; return
+            guard let next = coordinator.hslTargetInteraction.accept(sample, token: token, currentRevision: viewModel.hslTargetRevision) else {
+                coordinator.hslTargetNotice = coordinator.hslTargetInteraction.selection == sample ? sample.availability : .stale
+                return
             }
             setSliderEditing(true)
             guard workspaceDraft != nil || (viewModel.adjustmentInteraction != nil && !viewModel.adjustmentInteractionRejected) else {
-                cancelHSLTarget(); hslTargetNotice = .failed; return
+                cancelHSLTarget(); coordinator.hslTargetNotice = .failed; return
             }
-            hslTargetHistoryActive = true
+            coordinator.hslTargetHistoryActive = true
             workingSettings.editingHSLSettings = next
-            if !hslTargetInteraction.isDragging { endHSLTarget() }
+            if !coordinator.hslTargetInteraction.isDragging { endHSLTarget() }
         }
     }
+
     func moveHSLTarget(_ delta: Double) {
-        guard hslTargetActive, let next = hslTargetInteraction.move(delta: delta), hslTargetHistoryActive else { return }
+        guard hslTargetActive, let next = coordinator.hslTargetInteraction.move(delta: delta),
+              coordinator.hslTargetHistoryActive else { return }
         workingSettings.editingHSLSettings = next
     }
+
     func endHSLTarget() {
-        hslTargetInteraction.end()
-        if hslTargetHistoryActive { hslTargetHistoryActive = false; setSliderEditing(false) }
+        coordinator.hslTargetInteraction.end()
+        if coordinator.hslTargetHistoryActive {
+            coordinator.hslTargetHistoryActive = false
+            setSliderEditing(false)
+        }
     }
-    func cancelHSLTarget() {
-        guard hslTargetPoint != nil || hslTargetNotice != nil || hslTargetInteraction.isWaiting ||
-              hslTargetInteraction.isDragging || hslTargetInteraction.selection != nil || hslTargetHistoryActive else { return }
-        hslTargetInteraction.cancel(); hslTargetPoint = nil; hslTargetNotice = nil
-        if hslTargetHistoryActive { hslTargetHistoryActive = false; cancelSliderInteraction() }
-    }
+
+    func cancelHSLTarget() { coordinator.cancelHSLTarget() }
+
     func keyHSLTarget(_ delta: Double) {
-        guard !hslTargetInteraction.isDragging, let point = hslTargetPoint else { return }
-        if hslTargetInteraction.isWaiting { hslTargetInteraction.accumulateReleased(delta: delta); return }
+        guard !coordinator.hslTargetInteraction.isDragging, let point = coordinator.hslTargetPoint else { return }
+        if coordinator.hslTargetInteraction.isWaiting {
+            coordinator.hslTargetInteraction.accumulateReleased(delta: delta)
+            return
+        }
         beginHSLTarget(point, keyDelta: delta)
     }
 }

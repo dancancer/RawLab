@@ -1,4 +1,6 @@
 #include "gpu/photo_gpu.h"
+#include "gpu/denoise.h"
+#include "gpu/photo_log_shader.h"
 #include "gpu/photo_tone_shader.h"
 #include "gpu/photo_color_grading_shader.h"
 #include "gpu/photo_tone_curve_shader.h"
@@ -17,6 +19,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -130,7 +133,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -244,33 +247,6 @@ inline float neutralDisplay(float linear) {
     return srgbGamma(1.0f / (1.0f + shoulder));
 }
 
-inline float flog2(float linear) {
-    constexpr float a = 5.555556f;
-    constexpr float b = 0.064829f;
-    constexpr float c = 0.245281f;
-    constexpr float d = 0.384316f;
-    constexpr float e = 8.799461f;
-    constexpr float f = 0.092864f;
-    constexpr float cut = 0.00088899597f;
-    if (linear < cut) {
-        return clamp(e * linear + f, 0.0f, 1.0f);
-    }
-    return clamp(log10(linear * a + b) * c + d, 0.0f, 1.0f);
-}
-
-inline float encodeLog(float linear, bool isFLog) {
-    if (!isFLog) return flog2(linear);
-    return clamp(linear < 0.00089f ? 8.735631f * linear + 0.092864f
-        : 0.344676f * log10(0.555556f * linear + 0.009468f) + 0.790453f, 0.0f, 1.0f);
-}
-
-inline float decodeLog(float encoded, bool isFLog) {
-    if (isFLog) return encoded < 0.100537775223865f ? (encoded - 0.092864f) / 8.735631f
-        : (pow(10.0f, (encoded - 0.790453f) / 0.344676f) - 0.009468f) / 0.555556f;
-    return encoded < 0.100686685370811f ? (encoded - 0.092864f) / 8.799461f
-        : (pow(10.0f, (encoded - 0.384316f) / 0.245281f) - 0.064829f) / 5.555556f;
-}
-
 inline float3 readLUT(
     texture3d<float, access::read> lut,
     uint r,
@@ -337,25 +313,6 @@ inline float applyToneCurve(float value, float p1, float p2, float p3) {
         return p2 + (p3 - p2) * ((value - 0.5f) / 0.25f);
     }
     return p3 + (1.0f - p3) * ((value - 0.75f) / 0.25f);
-}
-
-inline float adjustShadows(float value, float shadows) {
-    if (shadows == 0.0f) {
-        return value;
-    }
-    float t = clamp(shadows, -1.0f, 1.0f);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return pow(clamp01(value), gamma);
-}
-
-inline float adjustHighlights(float value, float highlights) {
-    if (highlights == 0.0f) {
-        return value;
-    }
-    float t = clamp(highlights, -1.0f, 1.0f);
-    float inverse = 1.0f - clamp01(value);
-    float gamma = t > 0.0f ? (1.0f - t * 0.5f) : (1.0f + (-t) * 0.5f);
-    return 1.0f - pow(inverse, gamma);
 }
 
 inline float3 blur3x3(
@@ -435,14 +392,14 @@ kernel void baseAndLUT(
     float3 filmInput = base;
     if (params.inputIsSRGB == 0u) {
         float3 gamut = lutMatrixRGB(value, params);
-        filmInput = float3(encodeLog(gamut.r, params.inputIsFLog != 0u),
-            encodeLog(gamut.g, params.inputIsFLog != 0u), encodeLog(gamut.b, params.inputIsFLog != 0u));
+        filmInput = float3(encodePhotoLog(gamut.r, params.inputIsFLog != 0u),
+            encodePhotoLog(gamut.g, params.inputIsFLog != 0u), encodePhotoLog(gamut.b, params.inputIsFLog != 0u));
     }
     float3 film = applyLUT(lut, filmInput, params);
     if (params.outputIsLog != 0u) {
-        film = float3(neutralDisplay(decodeLog(film.r, params.outputIsFLog != 0u)),
-            neutralDisplay(decodeLog(film.g, params.outputIsFLog != 0u)),
-            neutralDisplay(decodeLog(film.b, params.outputIsFLog != 0u)));
+        film = float3(neutralDisplay(decodePhotoLog(film.r, params.outputIsFLog != 0u)),
+            neutralDisplay(decodePhotoLog(film.g, params.outputIsFLog != 0u)),
+            neutralDisplay(decodePhotoLog(film.b, params.outputIsFLog != 0u)));
     }
     destination[gid] = packed_float3(lerp3(base, film, params.lutStrength));
 }
@@ -507,19 +464,7 @@ kernel void toneAdjustments(
         destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
         return;
     }
-    float highlights = clamp(params.highlights, -1.0f, 1.0f);
-    float shadows = clamp(params.shadows, -1.0f, 1.0f);
-    if (highlights != 0.0f || shadows != 0.0f) {
-        float luminance = 0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b;
-        float shadowed = adjustShadows(luminance, shadows);
-        float adjusted = adjustHighlights(shadowed, highlights);
-        if (luminance > 0.0f) {
-            float ratio = adjusted / luminance;
-            pixel *= ratio;
-        } else {
-            pixel = float3(adjusted);
-        }
-    }
+    pixel = hsApplyHighlightsShadows(pixel, params.highlights, params.shadows);
     if (params.customCurveCount != 0u) {
         pixel = float3(customToneCurve(pixel.r, params), customToneCurve(pixel.g, params), customToneCurve(pixel.b, params));
     } else if (params.toneCurve != 0.0f) {
@@ -808,14 +753,10 @@ PhotoParams makeParams(
     uint32_t dstHeight,
     ColorConverter::Matrix3x3 matrix,
     ColorConverter::Matrix3x3 lutMatrix,
-    const sony2fuji_request& request,
-    const RGB& relativeWB,
+    const sony2fuji::RenderParams& renderParams,
     const CachedLUT* cachedLUT,
     float lutStrength,
-    const sony2fuji::HslOptions& hsl = {},
-    const sony2fuji::ToneControlsOptions& toneControls = {},
-    const sony2fuji::ColorGradingOptions& colorGrading = {},
-    const sony2fuji::ToneCurve& customCurve = {}
+    bool includeOptionalCurves = true
 ) {
     PhotoParams params{};
     params.srcWidth = srcWidth;
@@ -825,13 +766,7 @@ PhotoParams makeParams(
     params.srcRows = srcHeight; params.dstRows = dstHeight;
     params.lutSize = cachedLUT ? static_cast<uint32_t>(cachedLUT->size) : 0;
     params.useLut = cachedLUT ? 1u : 0u;
-    params.toneEnabled =
-        request.exposure_ev != 0.0f || request.brightness != 1.0f ||
-        request.contrast != 1.0f || request.saturation != 1.0f ||
-        request.temperature != 6500.0f || request.tint != 0.0f ||
-        request.wb_mode == SONY2FUJI_WB_CUSTOM ||
-        request.highlights != 0.0f || request.shadows != 0.0f ||
-        request.tone_curve != 0.0f || customCurve.active();
+    params.toneEnabled = renderParams.needsToneAdjustments();
     size_t matrixOffset = 0;
     for (const auto& row : matrix) {
         for (float value : row) {
@@ -844,32 +779,48 @@ PhotoParams makeParams(
             params.lutMatrix[matrixOffset++] = value;
         }
     }
-    params.exposureScale = std::exp2(request.exposure_ev) * request.brightness;
-    params.wbR = relativeWB.r;
-    params.wbG = relativeWB.g;
-    params.wbB = relativeWB.b;
+    params.exposureScale = std::exp2(renderParams.exposureEV) * renderParams.brightness;
+    params.wbR = renderParams.relativeWB.r;
+    params.wbG = renderParams.relativeWB.g;
+    params.wbB = renderParams.relativeWB.b;
     params.lutStrength = lutStrength;
-    params.contrast = request.contrast;
-    params.saturation = request.saturation;
-    params.highlights = request.highlights;
-    params.shadows = request.shadows;
-    params.toneCurve = request.tone_curve;
-    const auto custom = sony2fuji::toneCurveGpuParameters(customCurve);
-    params.customCurveCount = custom.count;
-    std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
-    std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
-    params.noiseReduction = request.noise_reduction;
-    params.sharpening = request.sharpening;
-    params.hslEnabled = hsl.active();
-    params.blackPoint = toneControls.blackPoint; params.whitePoint = toneControls.whitePoint;
-    params.vibrance = toneControls.vibrance;
-    const auto grading=sony2fuji::colorGradingCoefficients(colorGrading);
-    for (size_t zone=0;zone<3;++zone) {
-        params.colorGrading[zone*3]=grading[zone].r;params.colorGrading[zone*3+1]=grading[zone].g;params.colorGrading[zone*3+2]=grading[zone].b;
+    params.contrast = renderParams.contrast;
+    params.saturation = renderParams.saturation;
+    params.highlights = renderParams.highlights;
+    params.shadows = renderParams.shadows;
+    params.toneCurve = renderParams.toneCurve;
+    if (includeOptionalCurves) {
+        const auto custom = sony2fuji::toneCurveGpuParameters(renderParams.customCurve);
+        params.customCurveCount = custom.count;
+        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
+        params.hslEnabled = renderParams.hsl.active();
+        params.blackPoint = renderParams.toneControls.blackPoint;
+        params.whitePoint = renderParams.toneControls.whitePoint;
+        params.vibrance = renderParams.toneControls.vibrance;
+        const auto grading = sony2fuji::colorGradingCoefficients(renderParams.colorGrading);
+        for (size_t zone = 0; zone < 3; ++zone) {
+            params.colorGrading[zone * 3] = grading[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        }
+        std::copy(renderParams.hsl.hue.begin(), renderParams.hsl.hue.end(), params.hslHue);
+        std::copy(renderParams.hsl.saturation.begin(), renderParams.hsl.saturation.end(), params.hslSaturation);
+        std::copy(renderParams.hsl.lightness.begin(), renderParams.hsl.lightness.end(), params.hslLightness);
+    } else {
+        const auto custom = sony2fuji::toneCurveGpuParameters(sony2fuji::ToneCurve{});
+        params.customCurveCount = custom.count;
+        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
+        const auto grading = sony2fuji::colorGradingCoefficients(sony2fuji::ColorGradingOptions{});
+        for (size_t zone = 0; zone < 3; ++zone) {
+            params.colorGrading[zone * 3] = grading[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        }
     }
-    std::copy(hsl.hue.begin(), hsl.hue.end(), params.hslHue);
-    std::copy(hsl.saturation.begin(), hsl.saturation.end(), params.hslSaturation);
-    std::copy(hsl.lightness.begin(), hsl.lightness.end(), params.hslLightness);
+    params.noiseReduction = renderParams.noiseReduction;
+    params.sharpening = renderParams.sharpening;
     if (cachedLUT) {
         params.inputIsSRGB = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::SRGB;
         params.inputIsFLog = cachedLUT->owner->inputTransfer() == sony2fuji::LUTTransfer::FLog;
@@ -948,61 +899,89 @@ bool encodeKernel(
 bool renderPhotoMetalImpl(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const sony2fuji::RenderParams& renderParams,
     uint32_t targetWidth,
     uint32_t targetHeight,
     ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp,
-    const sony2fuji::PhotoEffectsOptions& effects,
-    int chromaDenoise,
-    bool preserveSourceResolution,
-    const sony2fuji::HslOptions& hsl,
-    const sony2fuji::ToneControlsOptions& toneControls,
-    const sony2fuji::ColorGradingOptions& colorGrading,
-    const sony2fuji::ToneCurve& customCurve
+    sony2fuji::GpuRenderOutcome& outcome
 ) {
+    outcome = {};
+    auto failWith = [&](sony2fuji::GpuFailureKind failure, sony2fuji::GpuBackendFault fault, const char* message) {
+        outcome = {failure, fault, message};
+        return false;
+    };
     if (input.width <= 0 || input.height <= 0 || targetWidth == 0 || targetHeight == 0 ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height ||
-        !std::isfinite(request.exposure_ev) || !std::isfinite(request.brightness) ||
-        !std::isfinite(request.contrast) || !std::isfinite(request.saturation) ||
-        !std::isfinite(request.temperature) || !std::isfinite(request.tint) ||
-        !std::isfinite(request.highlights) || !std::isfinite(request.shadows) ||
-        !std::isfinite(request.tone_curve) || !std::isfinite(request.noise_reduction) ||
-        !std::isfinite(request.sharpening) || !std::isfinite(request.lut_strength) ||
-        !std::isfinite(relativeWB.r) || !std::isfinite(relativeWB.g) ||
-        !std::isfinite(relativeWB.b) || !effects.valid() || !hsl.valid() || !toneControls.valid() || !colorGrading.valid() || !customCurve.gpuSupported() || (customCurve.custom() && request.tone_curve != 0) || chromaDenoise < 0 || chromaDenoise > 2) {
-        return false;
+        !renderParams.validForGpu()) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Image dimensions or parameters invalid for Metal");
     }
     size_t inputCount = 0;
     size_t targetCount = 0;
     if (!checkedCount(static_cast<uint32_t>(input.width), static_cast<uint32_t>(input.height), &inputCount) ||
         !checkedCount(targetWidth, targetHeight, &targetCount)) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Image pixel count exceeds Metal 32-bit limit");
     }
 
     MetalContext& context = metalContext();
-    if (!context.ready || (effects.active() && !context.effectsPipeline)) {
-        return false;
+    if (!context.device) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::NoAdapter,
+            "No Metal GPU device available");
+    }
+    if (!context.ready) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Metal shader or pipeline initialization failed");
+    }
+    if (renderParams.effects.active() && !context.effectsPipeline) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Metal photo effects require macOS 15 or iOS 18");
     }
 
-    const float lutStrength = std::max(0.0f, std::min(2.0f, request.lut_strength));
-    const bool useLUT = lut && lutStrength > 0.0f;
-    if (useLUT && lut->requiresCPU()) return false;
-    const bool useDcp = dcp && lutStrength > 0.0f;
-    if (useDcp && (useLUT || !context.baseDcpPipeline)) return false;
+    const float lutStrength = std::max(0.0f, std::min(2.0f, renderParams.lutStrength));
+    const bool useLUT = renderParams.lut && lutStrength > 0.0f;
+    if (useLUT && renderParams.lut->requiresCPU()) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "LUT requires CPU evaluation");
+    }
+    const bool useDcp = renderParams.dcp && lutStrength > 0.0f;
+    if (useDcp && useLUT) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Cannot combine DCP look and 3D LUT in Metal pass");
+    }
+    if (useDcp && !context.baseDcpPipeline) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Metal DCP look requires macOS 15 or iOS 18");
+    }
     CachedDcp cachedDcp;
     id<MTLBuffer> invalid = nil;
     if (useDcp) {
-        if (!getCachedDcp(context, dcp, cachedDcp)) return false;
+        if (!getCachedDcp(context, renderParams.dcp, cachedDcp)) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to upload DCP look buffers to Metal");
+        }
         invalid = makeBuffer(context.device, sizeof(uint32_t));
-        if (!invalid) return false;
+        if (!invalid) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal DCP validation buffer");
+        }
         *static_cast<uint32_t*>(invalid.contents) = 0;
     }
     CachedLUT cachedLUT;
-    if (useLUT && !getCachedLUT(context, lut, &cachedLUT)) {
-        return false;
+    if (useLUT && !getCachedLUT(context, renderParams.lut, &cachedLUT)) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Failed to upload 3D LUT texture to Metal");
     }
 
     ColorConverter::Matrix3x3 toSRGB;
@@ -1017,25 +996,31 @@ bool renderPhotoMetalImpl(
         } else {
             toSRGB = ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB);
         }
-        if (useLUT && lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
+        if (useLUT && renderParams.lut->inputTransfer() == sony2fuji::LUTTransfer::SRGB) {
             toFGamut = ColorConverter::Matrix3x3{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
         } else {
-            toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
+            toFGamut = sony2fuji::photoLUTInputMatrix(useLUT ? renderParams.lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
         }
-    } catch (...) {
-        return false;
+    } catch (const std::exception& error) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            error.what());
     }
 
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
-    const bool earlyResize = request.intent == SONY2FUJI_INTENT_PREVIEW &&
-        request.sharpening <= 0.0f && request.noise_reduction <= 0.0f && !effects.active() && chromaDenoise == 0 && !preserveSourceResolution &&
+    const bool earlyResize = renderParams.intent == sony2fuji::RenderIntent::Preview &&
+        renderParams.sharpening <= 0.0f && renderParams.noiseReduction <= 0.0f &&
+        !renderParams.effects.active() && renderParams.chromaDenoise == 0 &&
+        !renderParams.preserveSourceResolution &&
         (targetWidth != inputWidth || targetHeight != inputHeight);
     const uint32_t processingWidth = earlyResize ? targetWidth : inputWidth;
     const uint32_t processingHeight = earlyResize ? targetHeight : inputHeight;
     size_t processingCount = 0;
     if (!checkedCount(processingWidth, processingHeight, &processingCount)) {
-        return false;
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Processing pixel count exceeds Metal 32-bit limit");
     }
 
     // 每个 GPU 缓冲区最多 16 MiB。主图只保留一份待提交结果；失败时调用方的
@@ -1048,13 +1033,21 @@ bool renderPhotoMetalImpl(
         const uint32_t dstHeight = resultHeight ? resultHeight : destination.height;
         const uint32_t workWidth = resizeFirst ? dstWidth : srcWidth;
         const uint32_t workHeight = resizeFirst ? dstHeight : srcHeight;
-        const uint32_t halo = afterChroma ? uint32_t(request.noise_reduction > 0) + uint32_t(request.sharpening > 0) : 0;
+        const uint32_t halo = afterChroma ? uint32_t(renderParams.noiseReduction > 0) + uint32_t(renderParams.sharpening > 0) : 0;
         const size_t srcRowBytes = size_t(srcWidth) * sizeof(RGB);
         const size_t workRowBytes = size_t(workWidth) * sizeof(RGB);
         const size_t dstRowBytes = size_t(dstWidth) * sizeof(RGB);
-        if (srcRowBytes > budget || workRowBytes > budget || dstRowBytes > budget) return false;
+        if (srcRowBytes > budget || workRowBytes > budget || dstRowBytes > budget) {
+            return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                sony2fuji::GpuBackendFault::UnsupportedCapability,
+                "Image row exceeds Metal buffer limit");
+        }
         const bool inplace = &source == &destination;
-        if (inplace && (resizeFirst || srcWidth < dstWidth || srcHeight < dstHeight)) return false;
+        if (inplace && (resizeFirst || srcWidth < dstWidth || srcHeight < dstHeight)) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Invalid inplace Metal band configuration");
+        }
         std::vector<RGB> previousRows;
         uint32_t previousFirst = 0, previousEnd = 0;
         const auto range = [](uint32_t row, uint32_t rows, uint32_t src, uint32_t dst, uint32_t padding) {
@@ -1073,7 +1066,11 @@ bool renderPhotoMetalImpl(
         id<MTLBuffer> a = makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes));
         id<MTLBuffer> b = resizeFirst ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : uploaded;
         id<MTLBuffer> final = makeBuffer(context.device, std::min(budget, size_t(dstHeight) * dstRowBytes));
-        if (!uploaded || !a || !b || !final) return false;
+        if (!uploaded || !a || !b || !final) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal working buffers");
+        }
         for (uint32_t row = 0; row < dstHeight;) {
             // 每带在 waitUntilCompleted 后已同步写回 destination，带顶是安全边界：取消时后续带不再写入，
             // ProcessingCancelled 由 renderPhotoMetal 外层重抛（不吞成 false），调用方丢弃整个输出。
@@ -1091,10 +1088,18 @@ bool renderPhotoMetalImpl(
                 const size_t uploadBytes = size_t(upload.second - upload.first) * srcRowBytes;
                 const size_t workBytes = size_t(work.second - work.first) * workRowBytes;
                 const size_t destinationBytes = size_t(rows) * dstRowBytes;
-                if (uploadBytes > budget || workBytes > budget) return false;
+                if (uploadBytes > budget || workBytes > budget) {
+                    return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                        sony2fuji::GpuBackendFault::UnsupportedCapability,
+                        "Image band exceeds Metal buffer limit");
+                }
                 std::memcpy(uploaded.contents, source.pixels.data() + size_t(upload.first) * srcWidth, uploadBytes);
                 if (inplace && upload.first < previousEnd) {
-                    if (upload.first < previousFirst) return false;
+                    if (upload.first < previousFirst) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Invalid inplace Metal overlap");
+                    }
                     const size_t count = size_t(previousEnd - upload.first) * srcWidth;
                     std::memcpy(uploaded.contents, previousRows.data() + size_t(upload.first - previousFirst) * srcWidth,
                         count * sizeof(RGB));
@@ -1109,23 +1114,35 @@ bool renderPhotoMetalImpl(
                         original + size_t(previousEnd - upload.first) * srcWidth);
                 }
                 id<MTLCommandBuffer> command = [context.queue commandBuffer];
-                if (!command) return false;
+                if (!command) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to create Metal command buffer");
+                }
                 if (useDcp) *static_cast<uint32_t*>(invalid.contents) = 0;
                 id<MTLBuffer> current = uploaded, next = a;
                 if (resizeFirst) {
                     auto params = makeParams(srcWidth, srcHeight, workWidth, workHeight,
-                        toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                        toSRGB, toFGamut, renderParams, nullptr, lutStrength, false);
                     params.srcRowOffset = upload.first; params.dstRowOffset = work.first;
                     params.srcRows = upload.second - upload.first; params.dstRows = work.second - work.first;
                     auto constants = makeParamsBuffer(context.device, params);
                     if (!constants || !encodeKernel(command, context.resizePipeline, constants, current, a, nil,
-                        size_t(workWidth) * params.dstRows)) return false;
+                        size_t(workWidth) * params.dstRows)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal resize pass");
+                    }
                     current = a; next = b;
                 }
                 const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, useLUT ? &cachedLUT : nullptr, lutStrength, hsl, toneControls, colorGrading, customCurve);
+                    toSRGB, toFGamut, renderParams, useLUT ? &cachedLUT : nullptr, lutStrength, true);
                 auto constants = makeParamsBuffer(context.device, params);
-                if (!constants) return false;
+                if (!constants) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to allocate Metal parameter buffer");
+                }
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
                                const CachedDcp* stages = nullptr) {
                     if (!encodeKernel(command, pipeline, constants, current, next, texture,
@@ -1136,30 +1153,51 @@ bool renderPhotoMetalImpl(
                 if (beforeChroma && (!run(context.matrixExposurePipeline, nil) ||
                     !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
                         useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
-                    !run(context.tonePipeline, nil))) return false;
+                    !run(context.tonePipeline, nil))) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to encode Metal color/tone pass");
+                }
                 if (afterChroma) {
-                    if (request.noise_reduction > 0 && !run(context.noisePipeline, nil)) return false;
-                    if (request.sharpening > 0 && !run(context.sharpenPipeline, nil)) return false;
-                    if (effects.active()) {
-                        const PhotoEffectsParams values{workWidth, workHeight, effects, work.first, work.second - work.first};
+                    if ((renderParams.noiseReduction > 0 && !run(context.noisePipeline, nil)) ||
+                        (renderParams.sharpening > 0 && !run(context.sharpenPipeline, nil))) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal detail pass");
+                    }
+                    if (renderParams.effects.active()) {
+                        const PhotoEffectsParams values{workWidth, workHeight, renderParams.effects, work.first, work.second - work.first};
                         id<MTLBuffer> effectConstants = [context.device newBufferWithBytes:&values
                             length:sizeof(values) options:MTLResourceStorageModeShared];
                         if (!effectConstants || !encodeKernel(command, context.effectsPipeline, effectConstants,
-                            current, next, nil, size_t(workWidth) * (work.second - work.first))) return false;
+                            current, next, nil, size_t(workWidth) * (work.second - work.first))) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal photo effects pass");
+                        }
                         std::swap(current, next);
                     }
                 }
                 auto resize = makeParams(workWidth, workHeight, dstWidth, dstHeight,
-                    toSRGB, toFGamut, request, relativeWB, nullptr, lutStrength);
+                    toSRGB, toFGamut, renderParams, nullptr, lutStrength, false);
                 resize.srcRowOffset = work.first; resize.dstRowOffset = row;
                 resize.srcRows = work.second - work.first; resize.dstRows = rows;
                 auto resizeConstants = makeParamsBuffer(context.device, resize);
                 if (!resizeConstants || !encodeKernel(command, context.resizePipeline, resizeConstants,
-                    current, final, nil, size_t(dstWidth) * rows)) return false;
+                    current, final, nil, size_t(dstWidth) * rows)) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to encode Metal output resize pass");
+                }
                 [command commit];
                 [command waitUntilCompleted];
                 if (command.status != MTLCommandBufferStatusCompleted ||
-                    (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) return false;
+                    (useDcp && *static_cast<const uint32_t*>(invalid.contents) != 0)) {
+                    const char* detail = command.error ? command.error.localizedDescription.UTF8String : nullptr;
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        detail && *detail ? detail : "Metal command buffer execution failed");
+                }
                 std::memcpy(destination.pixels.data() + size_t(row) * dstWidth, final.contents, destinationBytes);
                 row += rows;
             }
@@ -1169,12 +1207,27 @@ bool renderPhotoMetalImpl(
         return true;
     };
     ImageData result;
-    if (chromaDenoise != 0) {
+    if (renderParams.chromaDenoise != 0) {
         ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
         if (!runBands(input, display, earlyResize, true, false)) return false;
         // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
-        if (sony2fuji::applyChromaDenoiseWorking(display, chromaDenoise, nullptr, sony2fuji::GpuMode::Force) !=
-            sony2fuji::ErrorCode::Success) return false;
+        sony2fuji::lastGpuFilterOutcome() = {};
+        const auto chromaErr = sony2fuji::applyChromaDenoiseWorking(display, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force);
+        if (chromaErr != sony2fuji::ErrorCode::Success) {
+            const auto filterOutcome = sony2fuji::lastGpuFilterOutcome();
+            if (chromaErr == sony2fuji::ErrorCode::OutOfMemory || filterOutcome.failure == sony2fuji::GpuFailureKind::OutOfMemory) {
+                outcome = {sony2fuji::GpuFailureKind::OutOfMemory, sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Out of memory during Metal chroma denoise" : filterOutcome.message};
+            } else if (chromaErr == sony2fuji::ErrorCode::Unsupported || filterOutcome.failure == sony2fuji::GpuFailureKind::Unsupported) {
+                outcome = {sony2fuji::GpuFailureKind::Unsupported,
+                    filterOutcome.fault != sony2fuji::GpuBackendFault::None ? filterOutcome.fault : sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Metal chroma denoise unavailable" : filterOutcome.message};
+            } else {
+                outcome = {sony2fuji::GpuFailureKind::ProcessingError, sony2fuji::GpuBackendFault::FilterError,
+                    filterOutcome.message.empty() ? "Metal chroma denoise failed" : filterOutcome.message};
+            }
+            return false;
+        }
         if (processingWidth >= targetWidth && processingHeight >= targetHeight) {
             if (!runBands(display, display, false, false, true, targetWidth, targetHeight)) return false;
             result = std::move(display);
@@ -1194,35 +1247,62 @@ bool renderPhotoMetalImpl(
 
 namespace sony2fuji {
 
+GpuRenderOutcome renderPhotoMetalWithOutcome(
+    const ImageData& input,
+    ColorSpace inputSpace,
+    const RenderParams& params,
+    uint32_t targetWidth,
+    uint32_t targetHeight,
+    ImageData& output
+) {
+    GpuRenderOutcome outcome;
+    @try {
+        @autoreleasepool {
+            try {
+                if (renderPhotoMetalImpl(input, inputSpace, params, targetWidth, targetHeight, output, outcome)) {
+                    outcome = {};
+                } else if (outcome.succeeded()) {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Metal photo render failed"};
+                }
+            } catch (const ProcessingCancelled&) {
+                throw;
+            } catch (const std::bad_alloc& error) {
+                outcome = {GpuFailureKind::OutOfMemory, GpuBackendFault::DeviceError, error.what()};
+            } catch (const std::exception& error) {
+                outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, error.what()};
+            } catch (...) {
+                outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Metal photo render failed"};
+            }
+        }
+    } @catch (NSException* exception) {
+        const char* reason = exception.reason ? exception.reason.UTF8String : nullptr;
+        outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError,
+            reason && *reason ? reason : "Metal Objective-C exception"};
+    }
+    return outcome;
+}
+
 bool renderPhotoMetal(
     const ImageData& input,
     ColorSpace inputSpace,
-    const sony2fuji_request& request,
-    const std::shared_ptr<LUT3D>& lut,
-    const RGB& relativeWB,
+    const RenderParams& params,
     uint32_t targetWidth,
     uint32_t targetHeight,
-    ImageData& output,
-    const std::shared_ptr<const DcpLook>& dcp,
-    const PhotoEffectsOptions& effects,
-    int chromaDenoise,
-    bool preserveSourceResolution,
-    const HslOptions& hsl,
-    const ToneControlsOptions& toneControls,
-    const ColorGradingOptions& colorGrading,
-    const ToneCurve& customCurve
+    ImageData& output
 ) {
     bool result = false;
+    GpuRenderOutcome outcome;
     @try {
         @autoreleasepool {
             try {
                 result = renderPhotoMetalImpl(
-                    input, inputSpace, request, lut, relativeWB,
-                    targetWidth, targetHeight, output, dcp, effects, chromaDenoise, preserveSourceResolution, hsl, toneControls, colorGrading, customCurve
+                    input, inputSpace, params, targetWidth, targetHeight, output, outcome
                 );
             } catch (const ProcessingCancelled&) {
                 // 取消不是渲染失败：在 catch(...) 之前原样重抛（对齐 gles_photo 的先例），
                 // 否则 Auto 会把它当成 GPU 失败静默回退 CPU 重跑整张图。
+                throw;
+            } catch (const std::bad_alloc&) {
                 throw;
             } catch (...) {
                 result = false;
@@ -1240,23 +1320,24 @@ bool renderPhotoMetal(
 
 namespace sony2fuji {
 
+GpuRenderOutcome renderPhotoMetalWithOutcome(
+    const ImageData&,
+    ColorSpace,
+    const RenderParams&,
+    uint32_t,
+    uint32_t,
+    ImageData&
+) {
+    return {GpuFailureKind::Unsupported, GpuBackendFault::GpuDisabled, "Metal backend is not enabled in this build"};
+}
+
 bool renderPhotoMetal(
     const ImageData&,
     ColorSpace,
-    const sony2fuji_request&,
-    const std::shared_ptr<LUT3D>&,
-    const RGB&,
+    const RenderParams&,
     uint32_t,
     uint32_t,
-    ImageData&,
-    const std::shared_ptr<const DcpLook>&,
-    const PhotoEffectsOptions&,
-    int,
-    bool,
-    const HslOptions&,
-    const ToneControlsOptions&,
-    const ColorGradingOptions&,
-    const ToneCurve&
+    ImageData&
 ) {
     return false;
 }

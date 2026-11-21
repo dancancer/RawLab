@@ -24,6 +24,13 @@ public:
     std::optional<Tensor> load(const std::string& key, CacheKind kind, int width, int height,
                                const std::string& dependency = {}, std::string* producer = nullptr,
                                std::string* payloadDigest = nullptr) const;
+    bool verify(const std::string& key, CacheKind kind, int width, int height,
+                const std::string& dependency = {}, std::string* producer = nullptr,
+                std::string* payloadDigest = nullptr) const;
+    std::optional<std::vector<RGB>> loadRGBCorrection(const std::string& key, int width, int height,
+                                                      const std::string& dependency = {},
+                                                      std::string* producer = nullptr,
+                                                      std::string* payloadDigest = nullptr) const;
     void store(const std::string& key, CacheKind kind, int width, int height, const float* values, size_t count,
                const std::string& dependency = {}, const std::string& producer = {},
                const std::function<void()>& beforePublish = {},

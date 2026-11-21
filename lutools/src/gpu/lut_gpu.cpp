@@ -47,25 +47,18 @@ bool applyLutGles(const LUT3D& lut, ImageData& image, size_t* completedPixels);
 
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES)
 namespace {
-bool tryMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
+ErrorCode tryGpuStatus(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
 #if defined(SONY2FUJI_ENABLE_METAL)
-    return applyLutMetal(lut, image, completedPixels);
+    return applyLutMetal(lut, image, completedPixels)
+        ? ErrorCode::Success
+        : ErrorCode::ProcessingError;
+#elif defined(SONY2FUJI_ENABLE_GLES)
+    return applyLutGlesStatus(lut, image, completedPixels);
 #else
     (void)lut;
     (void)image;
     (void)completedPixels;
-    return false;
-#endif
-}
-
-bool tryGles(const LUT3D& lut, ImageData& image, size_t* completedPixels) {
-#if defined(SONY2FUJI_ENABLE_GLES)
-    return applyLutGles(lut, image, completedPixels);
-#else
-    (void)lut;
-    (void)image;
-    (void)completedPixels;
-    return false;
+    return ErrorCode::Unsupported;
 #endif
 }
 }
@@ -131,13 +124,21 @@ ErrorCode applyLUTWithConfig(
             working = &staged;
         }
         size_t completedPixels = 0;
-        if (tryMetal(*lut, *working, &completedPixels) ||
-            tryGles(*lut, *working, unitDomain ? &completedPixels : nullptr)) {
+        const auto gpuStatus = tryGpuStatus(
+            *lut,
+            *working,
+#if defined(SONY2FUJI_ENABLE_METAL)
+            &completedPixels
+#else
+            unitDomain ? &completedPixels : nullptr
+#endif
+        );
+        if (gpuStatus == ErrorCode::Success) {
             if (working != &image) image = std::move(staged);
             return ErrorCode::Success;
         }
         if (config.mode == GpuMode::Force) {
-            return ErrorCode::ProcessingError;
+            return gpuStatus;
         }
         // Auto：单位域下失败点之前已有整块瓦片提交进 image（后端仅在瓦片完整成功后回写），
         // 回退只补未提交的尾部 [completedPixels, end)，避免对已提交像素二次套 LUT；

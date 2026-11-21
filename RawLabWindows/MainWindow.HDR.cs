@@ -128,8 +128,15 @@ public partial class MainWindow
     private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
         if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
+        var initialPath = file;
+        var initialOpened = openRevision;
         CancelParameterInputs();
-        if (!ResolveTransformDraft() || !SaveEdits()) { RefreshHDRControls(); return; }
+        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
+        if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
+        {
+            RefreshHDRControls();
+            return;
+        }
         var before = settings;
         var candidate = before.Clone();
         var enabled = HDREditMenu.IsChecked;
@@ -155,7 +162,7 @@ public partial class MainWindow
             {
                 await Task.Run(() =>
                 {
-                    using var validator = new RenderEngine(gpuMode: gpu);
+                    using var validator = CreateRenderEngine(gpuMode: gpu);
                     var preflight = candidate.Clone();
                     preflight.HDRCameraAIEnabled = false;
                     validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
@@ -177,7 +184,7 @@ public partial class MainWindow
         ResetAITask();
         settings = candidate;
         MarkEdited();
-        if (!SaveEdits()) { settings = before; RefreshControls(); return; }
+        if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
         RefreshControls();
         Schedule();
     }
@@ -226,7 +233,7 @@ public partial class MainWindow
         }
         HDRSettings Bundled(HDRSettings target, bool applyMaster) {
             var directory = System.IO.Path.Combine(AppContext.BaseDirectory,"BundledLooks","HDR");
-            var look = HDRNative.ImportLook(System.IO.Path.Combine(directory,"HDR Silver.cube"));
+            var look = HDRNative.ImportLook(System.IO.Path.Combine(directory,"HDR Silver.cube"), appPaths.HdrLooksDirectory);
             if (!applyMaster) return target.WithLook(look);
             var payload = AdjustmentPayload.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory,"HDR Silver Master.json")));
             if (AdjustmentPayload.HDRLookValue(payload[AdjustmentField.HdrLook]) != look) throw new HDRSourceException(1,18,10);
@@ -237,7 +244,7 @@ public partial class MainWindow
             var picker = new Microsoft.Win32.OpenFileDialog { Title="HDR LUT", Filter="CUBE (*.cube)|*.cube", CheckFileExists=true };
             if (picker.ShowDialog(dialog)!=true) return;
             var before = draft;
-            await Load(()=>before.WithLook(HDRNative.ImportLook(picker.FileName)));
+            await Load(()=>before.WithLook(HDRNative.ImportLook(picker.FileName, appPaths.HdrLooksDirectory)));
         };
         silver.Click += async (_,_) => { var before = draft; await Load(()=>Bundled(before,false)); };
         master.Click += async (_,_) => { var before = draft; await Load(()=>Bundled(before,true)); };
@@ -339,7 +346,7 @@ public partial class MainWindow
             chooseProfile.IsEnabled=clearProfile.IsEnabled=reset.IsEnabled=apply.IsEnabled=false;
             profileError.Text="";
             try {
-                var profile = await Task.Run(() => HDRNative.ImportCameraProfile(picker.FileName));
+                var profile = await Task.Run(() => HDRNative.ImportCameraProfile(picker.FileName, appPaths.HdrCameraProfilesDirectory));
                 draft=draft with { CameraProfile=profile };
             } catch (Exception failure) { profileError.Text=failure.Message; }
             finally { chooseProfile.IsEnabled=reset.IsEnabled=apply.IsEnabled=true; RefreshProfile(); }
@@ -374,14 +381,14 @@ public partial class MainWindow
         cameraHDRPreflight=true; RefreshHDRControls();
         try {
             await Task.Run(() => {
-                using var validator = new RenderEngine(gpuMode:gpu);
+                using var validator = CreateRenderEngine(gpuMode:gpu);
                 var preflight = candidate.Clone();
                 preflight.HDRCameraAIEnabled = false;
                 validator.Render(path,preflight,null,edge,statistics:false,clipping:false);
             });
             if (!IsCurrent()) return;
             settings=candidate; MarkEdited();
-            if (!SaveEdits()) { settings=previous; RefreshControls(); return; }
+            if (!await FlushSaveEditsAsync()) { settings=previous; RefreshControls(); return; }
             RefreshControls(); Schedule();
         } catch (Exception failure) { if (IsCurrent()) Report(failure); }
         finally { cameraHDRPreflight=false; if (!closing) RefreshHDRControls(); }

@@ -1,3 +1,4 @@
+import RawLabKit
 import Darwin
 import Foundation
 import ImageIO
@@ -93,9 +94,6 @@ struct PreviewPerformanceTests {
 
         func execute() throws {
             try fixtureMetadata()
-            #if RAWLAB_RECIPE_CACHE_TESTS
-            try cacheInvariants()
-            #endif
             let copied = output.appendingPathComponent("copied-source.\(raw.pathExtension)")
             guard !FileManager.default.fileExists(atPath: copied.path) else {
                 throw Failure.message("Copied fixture path already exists; use a new output directory")
@@ -295,56 +293,5 @@ struct PreviewPerformanceTests {
             }
             return status == KERN_SUCCESS ? UInt64(info.resident_size) : nil
         }
-
-        #if RAWLAB_RECIPE_CACHE_TESTS
-        func cacheInvariants() throws {
-            let directory = output.appendingPathComponent("cache-fixtures")
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: directory) }
-            let first = directory.appendingPathComponent("first.txt"), second = directory.appendingPathComponent("second.txt")
-            let missing = directory.appendingPathComponent("missing.txt")
-            try Data([1]).write(to: first); try Data([1, 2]).write(to: second)
-            let cache = RecipeWhiteBalanceCache()
-            var loads = 0
-            let load = { () -> Sony2FujiProcessor.RawWhiteBalance in
-                loads += 1
-                return Sony2FujiProcessor.RawWhiteBalance(temperature: Double(4000 + loads), tint: Double(loads), isCalibrated: true)
-            }
-            let original = try cache.resolve(url: first, load: load)
-            try check(try cache.resolve(url: first, load: load) == original && loads == 1, "cache: identical source loads once")
-            try Data([1, 2]).write(to: first)
-            _ = try cache.resolve(url: first, load: load)
-            try check(loads == 2, "cache: size changes invalidate")
-            let modified = try first.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
-            try FileManager.default.setAttributes([.modificationDate: modified.addingTimeInterval(60)], ofItemAtPath: first.path)
-            _ = try cache.resolve(url: first, load: load)
-            try check(loads == 3, "cache: mtime changes invalidate")
-            try FileManager.default.setAttributes([.modificationDate: modified.addingTimeInterval(60)], ofItemAtPath: second.path)
-            let other = try cache.resolve(url: second, load: load)
-            try check(loads == 4 && other != original, "cache: different URL loads its own camera baseline")
-            var errors = 0
-            for _ in 0..<2 {
-                do {
-                    _ = try cache.resolve(url: first) { errors += 1; throw Failure.expected }
-                    try check(false, "cache: loader error propagates")
-                } catch Failure.expected { }
-            }
-            try check(errors == 2, "cache: failed loads are retried")
-            try check(try cache.resolve(url: second, load: load) == other && loads == 4,
-                      "cache: failed load preserves the previous successful key")
-            _ = try cache.resolve(url: first, load: load)
-            try check(loads == 5, "cache: successful retry replaces the key")
-            _ = try cache.resolve(url: missing, load: load); _ = try cache.resolve(url: missing, load: load)
-            try check(loads == 7, "cache: unreadable resource identity is never reused")
-            _ = try cache.resolve(url: first, load: load)
-            try check(loads == 8, "cache: unknown identity clears previous cached metadata")
-            _ = try cache.resolve(url: first, processing: .legacy, load: load)
-            try check(loads == 9, "cache: processing version changes invalidate the camera baseline")
-            _ = try cache.resolve(url: first, processing: .legacy, load: load)
-            try check(loads == 9, "cache: unchanged legacy identity reuses the baseline")
-            _ = try cache.resolve(url: first, processing: .current, load: load)
-            try check(loads == 10, "cache: returning to current identity loads its own baseline")
-        }
-        #endif
     }
 }

@@ -13,18 +13,22 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','build-localization-ui','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','status-layout','appearance','ai-panel','ai-window','editor-shell','ui-details','geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','comparison-default')
+$names=@('build','editing','looks','denoise-model','localization','updates','about','default-isolation','localization-admission','profile-isolation','localization-ui','ai-panel','ai-window','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
+$savedEnv=@{}
+foreach($key in @('RAWLAB_TEST_REPO','RAWLAB_TEST_RAW','RAWLAB_TEST_DENOISE_RAW','RAWLAB_TEST_CLI','RAWLAB_TEST_RESULTS')) {
+    $savedEnv[$key]=[Environment]::GetEnvironmentVariable($key)
+}
 function Record-CheckResult([string]$Name,$Result) {
     $script:summary+=@{name=$Name;exitCode=$Result.exitCode;log=($Name+'.log');timedOut=$Result.timedOut;durationSeconds=$Result.durationSeconds;pid=$Result.pid}
     ConvertTo-Json -InputObject @($script:summary) -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8
 }
 function Invoke-Check([string]$Name,[string[]]$Arguments) {
-    if($Name -notlike 'build*' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
+    if($Name -ne 'build' -and $selected.Count -gt 0 -and $Name -notin $selected){return}
     $log=Join-Path $results ($Name+'.log')
     $result=Invoke-CheckProcess -Name $Name -Executable $DotNet -Arguments $Arguments -Directory $repo -Log $log -TimeoutSeconds $CheckTimeoutSeconds
     Record-CheckResult $Name $result
-    if($Name -like 'build*' -and $result.exitCode -ne 0){throw 'Managed WPF build failed.'}
+    if($Name -eq 'build' -and $result.exitCode -ne 0){throw 'Managed WPF build failed.'}
 }
 function Resolve-Target([string]$Project){
     $name='target-'+[IO.Path]::GetFileNameWithoutExtension($Project)
@@ -40,58 +44,43 @@ try{
     if($Only.Length -gt 0 -and $selected.Count -eq 0){throw 'Only must contain at least one suite name, or be empty for all suites.'}
     $unknown=@($selected | Where-Object {$_ -notin $names})
     if($unknown.Count -gt 0){throw "Unknown suite selection: $($unknown -join ', '). Available: $($names -join ', ')."}
-Invoke-Check 'build' @('build',"$PSScriptRoot/RawLabWindows.Tests.csproj",'-c','Release','--no-incremental')
-Invoke-Check 'build-localization-ui' @('build',"$PSScriptRoot/localization-ui/LocalizationUiChecks.csproj",'-c','Release','--no-incremental')
-$target=Resolve-Target "$PSScriptRoot/RawLabWindows.Tests.csproj"
-$uiTarget=Resolve-Target "$PSScriptRoot/localization-ui/LocalizationUiChecks.csproj"
-foreach($destination in @($target,$uiTarget)){
-foreach($name in @('sony2fuji.dll','raw.dll')){
-    Copy-Item -LiteralPath (Join-Path $NativeArtifacts $name) -Destination $destination -Force
-}
-Get-ChildItem -LiteralPath $NativeArtifacts -File -Filter '*.dll' |
-    Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
-    Copy-Item -Destination $destination -Force
-Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $destination -Recurse -Force
-if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
-    foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) { Copy-Item (Join-Path $NativeArtifacts $name) $destination -Force }
-    Copy-Item (Join-Path $NativeArtifacts 'AI') $destination -Recurse -Force
-}
-}
-$runner=Join-Path $target 'RawLabWindows.Tests.dll'
-$localizationRunner=Join-Path $uiTarget 'LocalizationUiChecks.dll'
-Invoke-Check 'editing' @('run','--project',"$PSScriptRoot/editing/EditWorkflow.Tests.csproj",'-c','Release')
-Invoke-Check 'looks' @('run','--project',"$PSScriptRoot/looks/LookGrouping.Tests.csproj",'-c','Release')
-Invoke-Check 'denoise-model' @('run','--project',"$PSScriptRoot/denoise/DenoiseSettingsTests.csproj",'-c','Release')
-Invoke-Check 'localization' @('run','--project',"$PSScriptRoot/localization/LocalizationChecks.csproj",'-c','Release')
-Invoke-Check 'updates' @('run','--project',"$PSScriptRoot/updates/UpdateChecks.csproj",'-c','Release')
-Invoke-Check 'about' @($runner,'--about')
-Invoke-Check 'default-isolation' @($runner,'--default-isolation',"$results/default-isolation")
-Invoke-Check 'localization-admission' @($localizationRunner,'--default-isolation',"$results/localization-admission")
-Invoke-Check 'profile-isolation' @($runner,'--profile-isolation',"$results/profile-isolation")
-Invoke-Check 'localization-ui' @($localizationRunner)
-Invoke-Check 'status-layout' @($runner,'--status-layout',"$results/status-layout")
-Invoke-Check 'appearance' @($runner,'--appearance',"$results/appearance")
-Invoke-Check 'ai-panel' @($runner,'--ai-panel',"$results/ai-panel")
-if(Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')) {
-    Invoke-Check 'ai-window' @($runner,'--ai-window',"$repo/lutools/tests/fixtures/bayer-demosaic.dng","$results/ai-window")
-}
-Invoke-Check 'editor-shell' @($runner,'--editor-shell',"$results/screenshots")
-Invoke-Check 'ui-details' @($runner,'--ui-details',"$results/ui-details")
-foreach($name in @('geometry','transform-ui','adjustment-history','hsl-target','adjustment-presets','editor-review','tool-groups','workspace-looks','photo-features','interactions','master-recipes','rendered-dng','denoise','lens')){
-    $arguments=@($runner,('--'+$name),$repo,$RawPath)
-    if($name -eq 'denoise'){$arguments+=$DenoiseRaw}
-    Invoke-Check $name $arguments
-}
-Invoke-Check 'agent-recipe' @($runner,'--agent-recipe',$repo,$RawPath,(Join-Path $NativeArtifacts 'sony2fuji.exe'))
-Invoke-Check 'raster' @($runner,'--raster',$repo,$RawPath,(Join-Path $NativeArtifacts 'sony2fuji.exe'))
-Invoke-Check 'comparison-default' @($runner,'--comparison-default',$repo,$RawPath)
-$missing=@($selected | Where-Object {$_ -notin $summary.name})
-if($missing.Count -gt 0){throw "Selected suites did not run: $($missing -join ', ')."}
-if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -gt 0){throw 'Some checks failed; inspect summary.json and individual logs.'}
+    $testProject="$PSScriptRoot/RawLabWindows.Tests.csproj"
+    Invoke-Check 'build' @('build',$testProject,'-c','Release','--no-incremental')
+    $target=Resolve-Target $testProject
+    foreach($name in @('sony2fuji.dll','raw.dll')){
+        Copy-Item -LiteralPath (Join-Path $NativeArtifacts $name) -Destination $target -Force
+    }
+    $hdrDll=Join-Path $NativeArtifacts 'rawlab-hdr-display.dll'
+    if(Test-Path -LiteralPath $hdrDll){Copy-Item -LiteralPath $hdrDll -Destination $target -Force}
+    Get-ChildItem -LiteralPath $NativeArtifacts -File -Filter '*.dll' |
+        Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
+        Copy-Item -Destination $target -Force
+    Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $target -Recurse -Force
+    $hasAiModel=Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')
+    if($hasAiModel) {
+        foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) { Copy-Item (Join-Path $NativeArtifacts $name) $target -Force }
+        Copy-Item (Join-Path $NativeArtifacts 'AI') $target -Recurse -Force
+    }
+    $env:RAWLAB_TEST_REPO=$repo
+    $env:RAWLAB_TEST_RAW=$RawPath
+    $env:RAWLAB_TEST_DENOISE_RAW=$DenoiseRaw
+    $env:RAWLAB_TEST_CLI=(Join-Path $NativeArtifacts 'sony2fuji.exe')
+    $env:RAWLAB_TEST_RESULTS=$results
+    foreach($name in $names){
+        if($name -eq 'build'){continue}
+        if($name -eq 'ai-window' -and !$hasAiModel){continue}
+        Invoke-Check $name @('test',$testProject,'-c','Release','--no-build','--filter',"Suite=$name",'--logger','console;verbosity=normal')
+    }
+    $missing=@($selected | Where-Object {$_ -notin $summary.name})
+    if($missing.Count -gt 0){throw "Selected suites did not run: $($missing -join ', ')."}
+    if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -gt 0){throw 'Some checks failed; inspect summary.json and individual logs.'}
 }
 catch{
     if(@($summary | Where-Object {$_.exitCode -ne 0}).Count -eq 0){$summary+=@{name='runner';exitCode=1;error=$_.Exception.Message}}
     throw
 }
-finally{ConvertTo-Json -InputObject @($summary) -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8}
+finally{
+    foreach($key in $savedEnv.Keys){[Environment]::SetEnvironmentVariable($key,$savedEnv[$key])}
+    ConvertTo-Json -InputObject @($summary) -Depth 4 | Set-Content (Join-Path $results 'summary.json') -Encoding utf8
+}
 Write-Host 'PASS: Windows v08 targeted checks. Physical DPI, Narrator, Snap and hardware require separate evidence.'

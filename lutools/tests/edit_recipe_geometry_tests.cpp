@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/edit_recipe.h"
 #include <iostream>
 #include <stdexcept>
@@ -7,13 +8,7 @@
 namespace {
 
 using sony2fuji::EditRecipe;
-size_t checks = 0;
-
-void check(bool condition, const std::string& name) {
-    ++checks;
-    if (!condition) throw std::runtime_error(name);
-}
-
+using rawlab::test::require;
 std::string document(uint32_t version, const std::string& geometry = "") {
     return "{\"schema_version\":" + std::to_string(version) +
         R"(,"input":{"path":"photo.dng"},"edits":{"exposure":{"mode":"scene"})" +
@@ -24,8 +19,8 @@ std::string document(uint32_t version, const std::string& geometry = "") {
 EditRecipe parse(const std::string& value) {
     EditRecipe recipe;
     std::string error = "old error";
-    check(sony2fuji::parseEditRecipe(value, recipe, error), "valid geometry recipe: " + error);
-    check(error.empty(), "valid parse clears error");
+    require(sony2fuji::parseEditRecipe(value, recipe, error), "valid geometry recipe: " + error);
+    require(error.empty(), "valid parse clears error");
     return recipe;
 }
 
@@ -38,8 +33,8 @@ bool sameGeometry(const sony2fuji_geometry_config& a, const sony2fuji_geometry_c
 
 void identity(const EditRecipe& recipe, const std::string& name) {
     const auto& geometry = recipe.geometry;
-    check(geometry.version == SONY2FUJI_GEOMETRY_CONFIG_VERSION && geometry.struct_size == sizeof(geometry), name + " valid setter config");
-    check(geometry.crop_x == 0 && geometry.crop_y == 0 && geometry.crop_width == 1 && geometry.crop_height == 1 &&
+    require(geometry.version == SONY2FUJI_GEOMETRY_CONFIG_VERSION && geometry.struct_size == sizeof(geometry), name + " valid setter config");
+    require(geometry.crop_x == 0 && geometry.crop_y == 0 && geometry.crop_width == 1 && geometry.crop_height == 1 &&
           geometry.quarter_turns == 0 && geometry.flip_horizontal == 0 && geometry.flip_vertical == 0 && geometry.straighten_degrees == 0,
           name + " identity geometry");
 }
@@ -66,27 +61,27 @@ void reject(const std::string& value, const std::string& name) {
     auto recipe = before;
     const auto serialized = sony2fuji::serializeEditRecipe(before);
     std::string error;
-    check(!sony2fuji::parseEditRecipe(value, recipe, error), "reject " + name);
-    check(!error.empty(), name + " returns a diagnostic");
-    check(recipe.schemaVersion == before.schemaVersion && sameGeometry(recipe.geometry, before.geometry), name + " preserves schema and geometry");
-    check(sony2fuji::serializeEditRecipe(recipe) == serialized, name + " preserves every previous recipe field");
+    require(!sony2fuji::parseEditRecipe(value, recipe, error), "reject " + name);
+    require(!error.empty(), name + " returns a diagnostic");
+    require(recipe.schemaVersion == before.schemaVersion && sameGeometry(recipe.geometry, before.geometry), name + " preserves schema and geometry");
+    require(sony2fuji::serializeEditRecipe(recipe) == serialized, name + " preserves every previous recipe field");
 }
 
 void defaultsAndVersions() {
     const EditRecipe fresh;
-    check(fresh.schemaVersion == 1, "default constructed recipe preserves v1");
+    require(fresh.schemaVersion == 1, "default constructed recipe preserves v1");
     identity(fresh, "fresh recipe");
     for (uint32_t version : {1u, 2u}) {
         const auto recipe = parse(document(version));
-        check(recipe.schemaVersion == version, "parsed schema version is retained");
+        require(recipe.schemaVersion == version, "parsed schema version is retained");
         identity(recipe, "omitted geometry v" + std::to_string(version));
         const auto serialized = sony2fuji::serializeEditRecipe(recipe);
         const auto restored = parse(serialized);
-        check(restored.schemaVersion == version && sameGeometry(restored.geometry, recipe.geometry), "schema-preserving identity round trip");
-        if (version == 1) check(serialized.find("geometry") == std::string::npos, "v1 serialization does not introduce geometry");
+        require(restored.schemaVersion == version && sameGeometry(restored.geometry, recipe.geometry), "schema-preserving identity round trip");
+        if (version == 1) require(serialized.find("geometry") == std::string::npos, "v1 serialization does not introduce geometry");
         else for (const char* field : {"geometry", "crop", "x", "y", "width", "height", "quarter_turns", "flip_horizontal", "flip_vertical", "straighten_degrees"})
-            check(serialized.find('"' + std::string(field) + '"') != std::string::npos, std::string("v2 serialization emits default ") + field);
-        check(recipe.toRequest().version == SONY2FUJI_REQUEST_VERSION, "JSON schema does not change request ABI version");
+            require(serialized.find('"' + std::string(field) + '"') != std::string::npos, std::string("v2 serialization emits default ") + field);
+        require(recipe.toRequest().version == SONY2FUJI_REQUEST_VERSION, "JSON schema does not change request ABI version");
     }
     identity(parse(document(2, "{}")), "empty v2 geometry");
     identity(parse(document(2, R"({"crop":{"x":0,"y":0,"width":1,"height":1}})")), "explicit v2 crop identity");
@@ -97,19 +92,19 @@ void defaultsAndVersions() {
 void validGeometry() {
     const auto recipe = parse(document(2, R"({"crop":{"x":0.125,"y":0.25,"width":0.5,"height":0.5},"quarter_turns":1,"flip_horizontal":true,"flip_vertical":false,"straighten_degrees":12.5})"));
     const auto& geometry = recipe.geometry;
-    check(geometry.crop_x == .125f && geometry.crop_y == .25f && geometry.crop_width == .5f && geometry.crop_height == .5f,
+    require(geometry.crop_x == .125f && geometry.crop_y == .25f && geometry.crop_width == .5f && geometry.crop_height == .5f,
           "normalized crop maps without percent conversion");
-    check(geometry.quarter_turns == 1 && geometry.flip_horizontal == 1 && geometry.flip_vertical == 0 && geometry.straighten_degrees == 12.5f,
+    require(geometry.quarter_turns == 1 && geometry.flip_horizontal == 1 && geometry.flip_vertical == 0 && geometry.straighten_degrees == 12.5f,
           "rotation, booleans and clockwise degrees map to setter config");
     const auto restored = parse(sony2fuji::serializeEditRecipe(recipe));
-    check(restored.schemaVersion == 2 && sameGeometry(restored.geometry, geometry), "full geometry round trip");
+    require(restored.schemaVersion == 2 && sameGeometry(restored.geometry, geometry), "full geometry round trip");
     for (const auto& value : {R"({"quarter_turns":0})", R"({"quarter_turns":3})", R"({"flip_horizontal":false,"flip_vertical":true})",
                             R"({"straighten_degrees":-45})", R"({"straighten_degrees":45})",
                             R"({"crop":{"x":0,"y":0,"width":0.000001,"height":1}})",
                             R"({"crop":{"x":0.6666667,"y":0,"width":0.33333334,"height":1}})",
                             R"({"crop":{"x":0.5,"y":0,"width":0.5000008,"height":1}})"}) {
         const auto parsed = parse(document(2, value));
-        check(sameGeometry(parse(sony2fuji::serializeEditRecipe(parsed)).geometry, parsed.geometry), "valid boundary geometry round trip");
+        require(sameGeometry(parse(sony2fuji::serializeEditRecipe(parsed)).geometry, parsed.geometry), "valid boundary geometry round trip");
     }
 }
 
@@ -145,7 +140,7 @@ int main() {
         defaultsAndVersions();
         validGeometry();
         invalidGeometry();
-        std::cout << checks << " geometry recipe compatibility and validation checks passed\n";
+        std::cout << rawlab::test::checkCount() << " geometry recipe compatibility and validation rawlab::test::checkCount() passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

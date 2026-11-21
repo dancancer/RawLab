@@ -36,29 +36,38 @@ fail_on_logged_skip() {
 }
 case "${1:-}" in
     macos)
+        python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet
         pre_checks=(RawLabMac/tests/test_build_environment.py lutools/tests/test_lens_dependencies.py)
         # HDR 渲染重置按钮契约由不依赖辅助功能授权的 hdr-rendition-reset.sh 覆盖；
         # 依赖 AXUIElement 的 hdr-rendition-ui.sh 保留为本地/发布前手工检查，CI 不执行。
-        suites=(Shared/tests/edited-photo-preview-cache.sh Shared/tests/hdr-settings.sh Shared/tests/hdr-transfer.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/hdr-display.sh RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-rendition-reset.sh
+        suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/color-grading-interaction.sh
+            RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-canvas.sh RawLabMac/tests/hdr-rendition-reset.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/reset-scenarios.sh
             RawLabMac/tests/edit-records.sh
-            RawLabMac/tests/adjustment-transfer-session.sh Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh
-            RawLabMac/tests/adjustment-preset-application.sh Shared/tests/usage-analytics.sh
-            Shared/tests/usage-transport.sh RawLabMac/tests/rum-configuration.sh
+            RawLabMac/tests/adjustment-transfer-session.sh
+            RawLabMac/tests/adjustment-preset-application.sh RawLabMac/tests/rum-configuration.sh
             RawLabMac/tests/localization.sh
-            RawLabMac/tests/update-install.sh RawLabMac/tests/thumbnail-cache.sh)
+            RawLabMac/tests/update-install.sh RawLabMac/tests/thumbnail-cache.sh
+            RawLabMac/tests/geometry-settings.sh RawLabMac/tests/master-recipe.sh
+            RawLabMac/tests/lens-localization.sh RawLabMac/tests/chroma-settings.sh
+            RawLabMac/tests/wavelet-settings.sh RawLabMac/tests/workspace-browser.sh
+            RawLabMac/tests/workspace-layout.sh RawLabMac/tests/render-scheduling.sh
+            RawLabMac/tests/histogram.sh RawLabMac/tests/mac-crop-interaction.sh
+            RawLabMac/tests/update-trust.sh RawLabMac/tests/usage-privacy-presentation.sh)
         ;;
     ios)
-        pre_checks=()
-        suites=(Shared/tests/edited-photo-preview-cache.sh Shared/tests/hdr-settings.sh Shared/tests/hdr-transfer.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-display.sh RawLab/tests/hdr-model.sh RawLab/tests/hdr-resource-notice.sh
+        pre_checks=(scripts/rum/test_embed_ios.py)
+        suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/color-grading-interaction.sh
+            RawLab/tests/hdr-model.sh RawLab/tests/hdr-canvas.sh RawLab/tests/hdr-resource-notice.sh
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
-            RawLab/tests/ios-reset-entry-ui.sh
+            RawLab/tests/editor-coordinator.sh RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh RawLab/tests/adjustment-persistence.sh
             RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh
-            Shared/tests/adjustment-presets.sh Shared/tests/adjustment-summary.sh)
+            RawLab/tests/error-diagnostics.sh RawLab/tests/rum-configuration.sh RawLab/tests/rum-threading.sh RawLab/tests/rum-transport.sh
+            RawLab/tests/system-open.sh RawLab/tests/viewing-state.sh RawLab/tests/lut-library-selection.sh)
         ;;
     *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;
 esac
@@ -66,12 +75,17 @@ esac
 MODEL_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-apple-models.XXXXXX")"
 trap 'rm -rf "$MODEL_CACHE"' EXIT
 export RAWLAB_TRANSFER_MODULE_CACHE="$MODEL_CACHE/transfer"
+export RAWLAB_SWIFTPM_CACHE="$MODEL_CACHE/swiftpm"
 for pre in ${pre_checks[@]+"${pre_checks[@]}"}; do
     printf '[check] %s\n' "$pre"
     pre_log="$MODEL_CACHE/suite.log"
     python3 "$pre" 2>&1 | tee "$pre_log"
     fail_on_logged_skip "$pre_log" "$pre"
 done
+printf '[spm] swift test (RawLabKitTests)\n'
+spm_log="$MODEL_CACHE/swift-test.log"
+swift test --package-path "$ROOT" --scratch-path "$MODEL_CACHE/swiftpm-tests" 2>&1 | tee "$spm_log"
+fail_on_logged_skip "$spm_log" "swift test"
 for suite in "${suites[@]}"; do
     printf '[model] %s\n' "$suite"
     suite_log="$MODEL_CACHE/suite.log"

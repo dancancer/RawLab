@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import PhotosUI
 import SwiftUI
@@ -8,20 +9,47 @@ extension RawEditorViewModel {
             : AdjustmentTransferField.legacyFields
     }
 
+    struct LookAvailabilitySnapshot {
+        let availableLookIDs: Set<String>
+        let builtinLookIDs: [String: String]
+
+        static func capture(lutMap: [String: LUTReference]) -> LookAvailabilitySnapshot {
+            let fileManager = FileManager.default
+            let available = lutMap.values.filter { fileManager.isReadableFile(atPath: $0.sourceURL.path) }
+            let builtins = Dictionary(
+                available.filter { !$0.isCustom }.map { ($0.sourceURL.lastPathComponent, $0.id) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let recipes = MasterRecipe.allRecipes.filter {
+                $0.lutURL().map { fileManager.isReadableFile(atPath: $0.path) } == true
+            }
+            let lookIDs = Set(available.map { $0.isCustom ? $0.id : "builtin:\($0.sourceURL.lastPathComponent)" })
+                .union(recipes.map { "recipe:\($0.id)" })
+            return LookAvailabilitySnapshot(availableLookIDs: lookIDs, builtinLookIDs: builtins)
+        }
+    }
+
+    private static func payloadNeedsRawWhiteBalance(_ payload: AdjustmentTransferPayload) -> Bool {
+        if payload.source.recipe != nil {
+            return true
+        }
+        if let look = payload[.look]?.object, look["kind"]?.string == "recipe" {
+            return true
+        }
+        let wbSelected = payload.fields.intersection(AdjustmentTransferField.whiteBalanceFields)
+        return !wbSelected.isEmpty && payload.source.isRaw
+    }
+
     func adjustmentContext(identifier: String, isRaw: Bool,
-                           whiteBalance: Sony2FujiProcessor.RawWhiteBalance? = nil) -> IOSAdjustmentTransferContext {
-        let available = lutMap.values.filter { FileManager.default.isReadableFile(atPath: $0.sourceURL.path) }
-        let builtins = Dictionary(available.filter { !$0.isCustom }.map { ($0.sourceURL.lastPathComponent, $0.id) },
-                                  uniquingKeysWith: { first, _ in first })
-        let recipes = MasterRecipe.allRecipes.filter { $0.lutURL().map { FileManager.default.isReadableFile(atPath: $0.path) } == true }
-        let lookIDs = Set(available.map { $0.isCustom ? $0.id : "builtin:\($0.sourceURL.lastPathComponent)" })
-            .union(recipes.map { "recipe:\($0.id)" })
+                           whiteBalance: Sony2FujiProcessor.RawWhiteBalance? = nil,
+                           looks: LookAvailabilitySnapshot? = nil) -> IOSAdjustmentTransferContext {
+        let lookSnapshot = looks ?? LookAvailabilitySnapshot.capture(lutMap: lutMap)
         return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
             sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,
             sourceSupportsCameraHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR,
             sourceIsBayerHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR && sourceProRAW == nil,
-            availableLookIDs: lookIDs,
-            builtinLookIDs: builtins,
+            availableLookIDs: lookSnapshot.availableLookIDs,
+            builtinLookIDs: lookSnapshot.builtinLookIDs,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
             cameraTint: whiteBalance?.isCalibrated == true ? whiteBalance?.tint : nil)
     }
@@ -50,7 +78,11 @@ extension RawEditorViewModel {
         adjustmentPreparationID = generation
         adjustmentPreparing = true
         let activeSource = editorEditSource, source = sourceRevision
-        let contexts = photos.map { adjustmentContext(identifier: $0.id, isRaw: $0.isRaw) }
+        let lutSnapshot = lutMap
+        let activeKey = sourceIdentity?.key
+        let activeSourceIsHDR = sourceIsHDR
+        let activeSupportsCameraHDR = sourceSupportsCameraHDR
+        let activeIsBayerHDR = sourceSupportsCameraHDR && sourceProRAW == nil
         let validateCurrent: (String) -> Bool = { [weak self] key in
             let check = {
                 guard let self else { return false }
@@ -60,87 +92,86 @@ extension RawEditorViewModel {
             return Thread.isMainThread ? check() : DispatchQueue.main.sync(execute: check)
         }
         adjustmentQueue.async {
-            let targets = zip(photos, contexts).map { photo, initial -> IOSAdjustmentTransferTarget in
-                var context = initial
-                var validation: (() throws -> Void)?
-                var defaults = RawSettings.default
-                do {
-                    if let error = photo.error { throw error }
-                    guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
-                    let original = try Self.adjustmentSourceValidation(file)
-                    validation = { try photo.validateSource?(); try original() }
-                    try validation?()
-                    defaults = try self.editPersistence?.readState(for: photo.identity).state?.settings ??
-                        file.withReadAccess { try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: photo.isRaw) }
-                    if photo.isRaw {
-                        let saved = defaults
-                        var neutral = RawSettings.default
-                        neutral.processing = saved.processing
-                        neutral.x3fMode = saved.x3fMode
-                        let rawHDR = try file.withReadAccess(HDRSourceInfo.probeRAW)
-                        context.sourceSupportsCameraHDR = rawHDR != nil
-                        context.sourceIsBayerHDR = rawHDR?.isCameraRAW == true
-                        if saved.isHDREditing {
-                            guard let rawHDR else { throw HDRSettings.ModeError.unsupportedSource }
-                            try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
-                            if rawHDR.isCameraRAW {
-                                context.validateHDRCameraRequest = { candidate in
-                                    guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
-                                    _ = try file.withReadAccess {
-                                        try Sony2FujiProcessor().processHDR(url: $0, settings: hdr, previewLongEdge: 128,
-                                            processing: candidate.processing)
+            let result = Result<IOSPreparedAdjustmentTransfer, Error> {
+                let lookSnapshot = LookAvailabilitySnapshot.capture(lutMap: lutSnapshot)
+                let effectivePayload = payload.source.isHDR ? try HDRAdjustmentTransfer.legacyPayload(payload) : payload
+                let payloadNeedsWB = Self.payloadNeedsRawWhiteBalance(effectivePayload)
+                let processor = Sony2FujiProcessor()
+                let targets = photos.map { photo -> IOSAdjustmentTransferTarget in
+                    var context = IOSAdjustmentTransferContext(
+                        identifier: photo.id,
+                        isRaw: photo.isRaw,
+                        sourceIsHDR: photo.id == activeKey && activeSourceIsHDR,
+                        sourceSupportsCameraHDR: photo.id == activeKey && activeSupportsCameraHDR,
+                        sourceIsBayerHDR: photo.id == activeKey && activeIsBayerHDR,
+                        availableLookIDs: lookSnapshot.availableLookIDs,
+                        builtinLookIDs: lookSnapshot.builtinLookIDs
+                    )
+                    var validation: (() throws -> Void)?
+                    var defaults = RawSettings.default
+                    do {
+                        if let error = photo.error { throw error }
+                        guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
+                        let original = try Self.adjustmentSourceValidation(file)
+                        validation = { try photo.validateSource?(); try original() }
+                        try validation?()
+                        defaults = try self.editPersistence?.readState(for: photo.identity).state?.settings ??
+                            file.withReadAccess { try processor.defaultSettings(for: $0, isRaw: photo.isRaw) }
+                        if photo.isRaw {
+                            let saved = defaults
+                            let rawHDR = try file.withReadAccess {
+                                try HDRSourceInfo.probeRAW($0, processing: saved.processing.core)
+                            }
+                            context.sourceSupportsCameraHDR = rawHDR != nil
+                            context.sourceIsBayerHDR = rawHDR?.isCameraRAW == true
+                            if saved.isHDREditing {
+                                guard let rawHDR else { throw HDRSettings.ModeError.unsupportedSource }
+                                try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
+                                if rawHDR.isCameraRAW {
+                                    context.validateHDRCameraRequest = { candidate in
+                                        guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
+                                        _ = try file.withReadAccess {
+                                            try processor.processHDR(url: $0, settings: hdr, previewLongEdge: 128,
+                                                processing: candidate.processing)
+                                        }
+                                    }
+                                }
+                            } else {
+                                try file.withReadAccess {
+                                    try processor.validateRawFileForTransfer(url: $0, x3fMode: saved.x3fMode)
+                                }
+                                if payloadNeedsWB || saved.masterRecipeID != nil {
+                                    if let wb = try file.withReadAccess({
+                                        try processor.resolveRawWhiteBalanceForTransfer(url: $0, settings: saved)
+                                    }), wb.isCalibrated {
+                                        context.cameraTemperature = wb.temperature
+                                        context.cameraTint = wb.tint
+                                    }
+                                }
+                                context.validateLensRequest = { lens in
+                                    try file.withReadAccess {
+                                        try processor.validateLensForTransfer(url: $0, isRaw: true, x3fMode: saved.x3fMode, lens: lens)
                                     }
                                 }
                             }
                         } else {
-                            let processor = Sony2FujiProcessor()
-                            let result = try file.withReadAccess {
-                                try processor.processRaw(url: $0, settings: neutral, previewLongEdge: 128, lutURL: nil)
-                            }
-                            if result.rawWhiteBalance?.isCalibrated == true {
-                                context.cameraTemperature = result.rawWhiteBalance?.temperature
-                                context.cameraTint = result.rawWhiteBalance?.tint
-                            }
-                            context.validateLensRequest = { lens in
-                                let processor = Sony2FujiProcessor()
-                                var settings = neutral
-                                settings.lensCorrection = lens
-                                let result = try file.withReadAccess {
-                                    try processor.processRaw(url: $0, settings: settings, previewLongEdge: 128, lutURL: nil)
-                                }
-                                guard let report = result.lensInfo,
-                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA), (!lens.vignetting || report.appliedVignetting) else {
-                                    throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
+                            context.sourceIsHDR = try file.withReadAccess { try HDRSourceInfo.probe($0) != nil }
+                            if !context.sourceIsHDR {
+                                _ = try file.withReadAccess { try processor.validateDisplayImageMetadata(url: $0) }
+                                context.validateLensRequest = { lens in
+                                    try file.withReadAccess {
+                                        try processor.validateLensForTransfer(url: $0, isRaw: false, x3fMode: .normal, lens: lens)
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        context.sourceIsHDR=try file.withReadAccess { try HDRSourceInfo.probe($0) != nil }
-                        if context.sourceIsHDR {
-                            _ = try file.withReadAccess { try Sony2FujiProcessor().processHDR(url:$0,settings:HDRSettings(),previewLongEdge:128) }
-                        } else {
-                            _ = try file.withReadAccess { try Sony2FujiProcessor().loadRasterBuffer(url:$0) }
-                            context.validateLensRequest = { lens in
-                                let processor = Sony2FujiProcessor()
-                                var settings = RawSettings.default
-                                settings.lensCorrection = lens
-                                let result = try file.withReadAccess { url in
-                                    let input = try processor.loadRasterBuffer(url: url).buffer
-                                    return try processor.processBuffer(buffer: input, settings: settings, previewLongEdge: 128, lutURL: nil)
-                                }
-                                guard let report = result.lensInfo,
-                                      (!lens.distortion || report.appliedDistortion), (!lens.tca || report.appliedTCA), (!lens.vignetting || report.appliedVignetting) else {
-                                    throw AdjustmentTransferError.incompatible(result.lensInfo?.message ?? L10n.text("镜头配置"))
-                                }
-                            }
-                        }
-                    }
-                } catch { validation = { throw error } }
-                return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
-                    defaultState: PhotoEditState(settings:defaults), context: context,
-                    isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
+                    } catch { validation = { throw error } }
+                    return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
+                        defaultState: PhotoEditState(settings:defaults), context: context,
+                        isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
+                }
+                return try session.prepare(payload: effectivePayload, targets: targets, action: action)
             }
-            let result = Result { try session.prepare(payload: payload, targets: targets, action: action) }
             self.resultDelivery {
                 guard self.adjustmentPreparationID == generation else { return }
                 self.adjustmentPreparing = false

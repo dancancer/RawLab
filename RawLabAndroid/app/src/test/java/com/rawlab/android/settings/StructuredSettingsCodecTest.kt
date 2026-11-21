@@ -201,6 +201,22 @@ class StructuredSettingsCodecTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun structuredNumericValuesRemainFiniteAndNullableFieldsRoundTrip() {
+        val settings = EditSettings(exposure = .25f, film = "特殊\n\"look\\", recipeID = null)
+        for (format in listOf("photo_edit", "batch_settings")) {
+            val encoded = StructuredSettingsCodec.encode(settings, format)
+            assertEquals(settings, StructuredSettingsCodec.decode(encoded, format))
+            val scientific = encoded.replace("\"exposure\":0.25", "\"exposure\":2.5e-1")
+            assertNotEquals(encoded, scientific)
+            assertEquals(settings, StructuredSettingsCodec.decode(scientific, format))
+            for (number in listOf("1e309", "-1e309", "NaN", "Infinity", "\"0.25\"", "true", "null")) {
+                val invalid = encoded.replace("\"exposure\":0.25", "\"exposure\":$number")
+                assertNotEquals(encoded, invalid)
+                assertThrows(Exception::class.java) { StructuredSettingsCodec.decode(invalid, format) }
+            }
+        }
+    }
+
     @Test fun toneBoundsAreCheckedBeforeFloatRounding() {
         val settings = EditSettings()
         for (field in listOf("blackPoint", "whitePoint", "vibrance")) for (invalid in listOf(-100.000001, 100.000001)) {

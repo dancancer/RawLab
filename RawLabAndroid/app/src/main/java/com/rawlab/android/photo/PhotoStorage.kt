@@ -1,5 +1,6 @@
 package com.rawlab.android.photo
 
+import com.rawlab.android.io.replaceFileAtomically
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
@@ -81,6 +82,7 @@ class PhotoStorage(
     looksDirectory: File = File(context.filesDir, "looks"),
     lookValidator: LookValidator = NativeLookValidator,
     dcpCompiler: DcpCompiler = NativeDcpCompiler,
+    bundledFilms: List<Film>? = null,
 ) : AutoCloseable {
     private val resolver = context.contentResolver
     private val mediaLibrary = MediaPhotoLibrary(context)
@@ -89,7 +91,7 @@ class PhotoStorage(
     private val lookLibrary = LookLibrary(looksDirectory, lookValidator, dcpCompiler)
     internal val hdrLookDirectory = File(looksDirectory, "HDR")
     internal val hdrCameraProfileDirectory = File(context.filesDir, "HDRCameraProfiles")
-    private val films = Film.all + BundledLooks.load(context)
+    private val films = Film.all + (bundledFilms ?: BundledLooks.load(context))
     private var lensDirectory: File? = null
 
     @Synchronized
@@ -201,6 +203,18 @@ class PhotoStorage(
         }.getOrDefault(false)
     }
 
+    fun preflightImportSpace(uris: Iterable<Uri>) {
+        var totalBytes = 0L
+        for (uri in uris) {
+            val source = knownCameraSource(uri) ?: uri
+            val bytes = WorkingCopy.declaredBytes(resolver, source)
+            if (bytes > 0L) {
+                totalBytes = if (Long.MAX_VALUE - totalBytes < bytes) Long.MAX_VALUE else totalBytes + bytes
+            }
+        }
+        WorkingCopy.requireTotalSpace(directory, totalBytes)
+    }
+
     fun import(uri: Uri): ImportedPhoto {
         val source = knownCameraSource(uri) ?: uri
         runCatching {
@@ -218,8 +232,9 @@ class PhotoStorage(
             ?: throw IOException("Selected item is not a supported photo")
         val original = OriginalPhotoSource.snapshot(resolver, source)
         val validate = original.validate
+        val expectedBytes = WorkingCopy.declaredBytes(resolver, source)
         val stream = resolver.openInputStream(source) ?: throw IOException("Cannot open input")
-        val file = WorkingCopy.import(directory, stream, retained?.name ?: name)
+        val file = WorkingCopy.import(directory, stream, retained?.name ?: name, expectedBytes = expectedBytes)
         try {
             validate()
             val hdrSource = when (inputKind) {
@@ -273,8 +288,7 @@ class PhotoStorage(
             val input = resolver.openInputStream(uri) ?: throw HDRProcessingException(1, 21, 11)
             input.use { source -> staging.outputStream().use { copyHDRCameraProfileSource(source, it) } }
             val profile = HDRCameraProfile(NativeHDRBridge.probeCameraProfile(staging), name.substringBeforeLast('.'))
-            java.nio.file.Files.move(staging.toPath(), profile.asset(directory).toPath(),
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+            replaceFileAtomically(staging, profile.asset(directory))
             return profile
         } finally { staging.delete() }
     }
@@ -315,16 +329,20 @@ class PhotoStorage(
         } finally { temporary.delete() }
     }
 
+    private fun openStream(uri: Uri): java.io.InputStream? =
+        resolver?.openInputStream(uri)
+            ?: uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf(File::isFile)?.inputStream()
+
     fun importLook(uri: Uri, compatibility: LUTCompatibility? = null, dcp: DcpImportChoices? = null): ManagedLook {
         val name = lookSourceName(uri)
         try {
             val curve = dcp?.toneCurve?.let { curveUri ->
-                val input = resolver.openInputStream(curveUri) ?: throw IOException("Cannot open tone curve")
+                val input = openStream(curveUri) ?: throw IOException("Cannot open tone curve")
                 input.use { readDcpInput(it, 1024 * 1024) }.also {
                     if (it.isEmpty()) throw DcpCompilationException(DcpFailureReason.INVALID_TONE_CURVE)
                 }
             }
-            val stream = resolver.openInputStream(uri) ?: throw IOException("Cannot open look")
+            val stream = openStream(uri) ?: throw IOException("Cannot open look")
             return stream.use { lookLibrary.importLook(it, name, compatibility, curve, dcp?.omitAutomaticBlack == true) }
         } catch (error: Exception) {
             throw IOException("${name}: ${error.message ?: error.javaClass.simpleName}", error)

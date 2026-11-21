@@ -242,6 +242,7 @@
     <string name="exposure_sensor">"Sensor reference"</string>
     <string name="film">"Film"</string>
     <string name="follow_system">"Follow system"</string>
+    <string name="force_gpu_unsupported">"Force GPU is unavailable for this photo, look, or processing mode. Switch to Auto to fall back."</string>
     <string name="geometry">"Geometry"</string>
     <string name="geometry_crop_height">"Crop height"</string>
     <string name="geometry_crop_hint">"Crop percentages apply after rotation, flips, perspective and straightening."</string>

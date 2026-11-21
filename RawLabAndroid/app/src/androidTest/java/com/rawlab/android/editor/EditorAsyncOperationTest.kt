@@ -79,7 +79,7 @@ class EditorAsyncOperationTest {
             val persisted = EditStore(File(context.filesDir, "edits")).readState(identity)
             val existing = model.state.value.looks.map { it.id }.toSet()
             main { model.beginDraft(AdjustmentGroup.LOOK) }
-            (field(model, "lookQueue") as RenderQueue<*, *>).performAfterPending {
+            model.lookQueue.performAfterPending {
                 entered.countDown(); check(release.await(30, TimeUnit.SECONDS))
             }
             assertTrue(entered.await(5, TimeUnit.SECONDS))
@@ -252,7 +252,7 @@ class EditorAsyncOperationTest {
             main { model.closeAdjustmentOperation() }
             release.countDown(); blocker.join(5000)
             // Drain the queue that owns preparation, then the UI callbacks.
-            val preparation = runCatching { field(model, "adjustmentPreparationQueue") as SerialWorkQueue }.getOrElse { queue(model) }
+            val preparation = model.adjustmentPreparationQueue
             val drained = CountDownLatch(1); preparation.submit({}) { drained.countDown() }
             assertTrue(drained.await(10, TimeUnit.SECONDS)); main {}
             assertNull(model.adjustmentTransfer.value.prepared)
@@ -272,7 +272,7 @@ class EditorAsyncOperationTest {
                 model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready(model)
             release = block(queue(model))
             main { model.edit(model.state.value.edits.copy(exposure = .3f)); model.importLook(Uri.fromFile(look)) }
-            val lookQueue = field(model, "lookQueue") as RenderQueue<*, *>
+            val lookQueue = model.lookQueue
             val loaded = CountDownLatch(1); lookQueue.performAfterPending { loaded.countDown() }
             assertTrue(loaded.await(10, TimeUnit.SECONDS)); main {}
             release.countDown()
@@ -291,7 +291,7 @@ class EditorAsyncOperationTest {
             lateinit var model: EditorViewModel
             main { model = EditorViewModel(context.applicationContext as Application); owner.put("editor", model)
                 model.setGpuEnabled(false); model.importPhoto(Uri.fromFile(source)) }; ready(model)
-            val collection = field(model, "collections") as EditorCollections
+            val collection = model.collections
             main { collection.add(listOf(Uri.fromFile(target))) }
             await { !collection.state.value.busy }
             val imported = collection.photo(Uri.fromFile(target).toString())!!.file
@@ -334,7 +334,7 @@ class EditorAsyncOperationTest {
             main { model.prepareAdjustmentPaste(model.copyAdjustments(AdjustmentScope.All)!!, listOf(Uri.fromFile(target))) }
             await { model.adjustmentTransfer.value.prepared != null }
             val prepared = model.adjustmentTransfer.value.prepared!!
-            @Suppress("UNCHECKED_CAST") val owned = (field(model, "adjustmentOwnedFiles") as Map<String, File>).values.toList()
+            val owned = model.adjustmentOwnedFiles.values.toList()
             assertEquals(1, owned.size); assertTrue(owned.single().exists())
             release = block(queue(model))
             var calls = 0

@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 enum BatchFlowModelTests {
@@ -40,12 +41,12 @@ enum BatchFlowModelTests {
                     model.editStore?.state(for: photo)?.settings.exposure == 0.6,
                     "fallback preset targets reuse the injected probe and centralized SDR defaults")
         var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
-        try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: savedHDR, filmID: ""))
         let savedRecord = try model.editStore!.readState(for: photo)
         var batchSource = savedHDR; batchSource.hdr?.exposure = 0.4
         let preparation = MacHDRBatchPreparation(source: fixture, settings: batchSource, store: model.editStore!, films: [],
             probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
-        let frozen = try preparation.prepare(BatchExportItem(url: photo), ordinal: 0, format: .jpeg, longEdge: nil)
+        let frozen = try preparation.prepare(MacBatchExportItem(url: photo), ordinal: 0, format: .jpeg, longEdge: nil)
         try require(!frozen.settings.isHDREditing && frozen.settings.exposure == 0.4 &&
                     model.editStore!.readState(for: photo) == savedRecord,
                     "HDR uniform batch uses fallback SDR settings without rewriting the saved HDR layer")
@@ -78,7 +79,7 @@ enum BatchFlowModelTests {
             try require(model.saveEdits(), "SDR fallback edits save")
         } else {
             var settings = Adjustments(); settings.hdr = HDRSettings()
-            try model.editStore!.save(photo, state: PhotoEditState(settings: settings, filmID: ""))
+            try model.editStore!.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
         }
         model.addCollectionPhotos([photo])
         let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
@@ -89,9 +90,9 @@ enum BatchFlowModelTests {
         try require(frozen.items[0].noticeKey != nil && frozen.items[0].frozen?.outputFormat == .png,
                     "collection export freezes its SDR format and notice")
         guard exerciseOpening else { return }
-        var job = BatchExportJob(source: photo, settings: Adjustments(), look: nil, lookName: "neutral")
+        var job = MacBatchExportJob(source: photo, settings: Adjustments(), look: nil, lookName: "neutral")
         job.outputDirectory = directory; job.format = .jpeg
-        let batch = BatchExportModel(job: job, journal: BatchJournal(directory: directory.appendingPathComponent("uniform")),
+        let batch = BatchExportModel(job: job, journal: MacBatchJournal(directory: directory.appendingPathComponent("uniform")),
                                     probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
         batch.add([photo]); try wait { !batch.validating }
         try require(batch.job.selectedCount == 1 && batch.job.items[0].validationError == nil &&
@@ -105,7 +106,7 @@ enum BatchFlowModelTests {
         try FileManager.default.copyItem(at: photo, to: other)
         model.open(other); try BatchSelectionModelTests.rendered(model)
         var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
-        try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: savedHDR, filmID: ""))
         model.open(photo); try BatchSelectionModelTests.rendered(model)
         try require(!model.settings.isHDREditing && model.settings.hdr?.mode == .sdr,
                     "saved HDR edits retain their dormant snapshot when opening as SDR")
@@ -131,7 +132,7 @@ enum BatchFlowModelTests {
         var savedHDR = Adjustments(); savedHDR.hdr = HDRSettings()
         savedHDR.hdr?.exposure = 1.7
         savedHDR.hdr?.geometry.quarterTurns = 1
-        try model.editStore!.save(photo, state: PhotoEditState(settings: savedHDR, filmID: ""))
+        try model.editStore!.save(photo, state: MacPhotoEditState(settings: savedHDR, filmID: ""))
         model.open(photo)
         try require(model.file == photo && !model.settings.isHDREditing,
                     "opening a stored HDR record activates its SDR fallback session")
@@ -179,8 +180,8 @@ enum BatchFlowModelTests {
         let review = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: nil, directory: directory)
         try require(!review.ready && review.rows.first?.error?.localizedDescription == diagnostic,
                     "Apple gain maps are rejected during collection export preflight")
-        let job = BatchExportJob(source: fixture, settings: Adjustments(), look: nil, lookName: "neutral")
-        let batch = BatchExportModel(job: job, journal: BatchJournal(directory: directory.appendingPathComponent("uniform")),
+        let job = MacBatchExportJob(source: fixture, settings: Adjustments(), look: nil, lookName: "neutral")
+        let batch = BatchExportModel(job: job, journal: MacBatchJournal(directory: directory.appendingPathComponent("uniform")),
                                     probeHDRSource: HDRSourceProbeTests.unsupportedSystem)
         batch.add([apple]); try wait { !batch.validating }
         try require(batch.job.selectedCount == 0 && batch.job.items[0].validationError == diagnostic &&
@@ -201,7 +202,7 @@ enum BatchFlowModelTests {
             url == hdrPhoto ? HDRSourceInfo(native: sony2fuji_hdr_source_info_v1()) : nil
         }
         var settings = Adjustments(); settings.hdr = HDRSettings()
-        try model.editStore!.save(hdrPhoto, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(hdrPhoto, state: MacPhotoEditState(settings: settings, filmID: ""))
         let strict = try model.prepareCollectionExport(skipping: [], format: .hdrJPEG, longEdge: 512, directory: directory)
         try require(!strict.ready && strict.rows[1].error != nil, "explicit HDR JPEG still rejects SDR targets")
         let heif = try model.prepareCollectionExport(skipping: [], format: .hdrHEIF, longEdge: 512, directory: directory)
@@ -216,7 +217,7 @@ enum BatchFlowModelTests {
         try require(restored.items.map { $0.frozen!.outputFormat } == [.hdrJPEG, .jpeg],
                     "mixed JPEG formats survive task recovery")
         settings.hdr?.mode = .sdr
-        try model.editStore!.save(hdrPhoto, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(hdrPhoto, state: MacPhotoEditState(settings: settings, filmID: ""))
         try require(restored.items[0].frozen?.outputFormat == .hdrJPEG,
                     "later photo mode changes cannot alter frozen formats")
     }
@@ -272,12 +273,12 @@ enum BatchFlowModelTests {
         let raw = directory.appendingPathComponent("source.arw")
         try Data("RAW identity fixture".utf8).write(to: raw)
         var settings = Adjustments(); settings.aiDenoiseEnabled = true; settings.exposure = 0.7
-        var job = BatchExportJob(source: raw, settings: settings, look: nil, lookName: "neutral")
+        var job = MacBatchExportJob(source: raw, settings: settings, look: nil, lookName: "neutral")
         job.outputDirectory = directory; job.format = .png
-        let raster = try BatchExportItem(url: fixture), rawItem = try BatchExportItem(url: raw)
+        let raster = try MacBatchExportItem(url: fixture), rawItem = try MacBatchExportItem(url: raw)
         try require(!job.snapshot(for: raster).settings.aiDenoiseEnabled && job.snapshot(for: rawItem).settings.aiDenoiseEnabled,
                     "uniform snapshots disable AI only for ordinary image targets")
-        let model = BatchExportModel(job: job, journal: BatchJournal(directory: directory.appendingPathComponent("journal")))
+        let model = BatchExportModel(job: job, journal: MacBatchJournal(directory: directory.appendingPathComponent("journal")))
         model.add([fixture]); try wait { !model.validating }
         try require(model.job.selectedCount == 1 && model.job.items[0].validationError == nil,
                     "ordinary images remain selected after preflight with an AI-enabled RAW source")
@@ -309,15 +310,15 @@ enum BatchFlowModelTests {
         model.addCollectionPhotos([normal, legacy])
         var settings = Adjustments()
         settings.x3fMode = .normal; settings.aiDenoiseEnabled = true
-        try model.editStore!.save(normal, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(normal, state: MacPhotoEditState(settings: settings, filmID: ""))
         settings.x3fMode = .legacy; settings.aiDenoiseEnabled = false
-        try model.editStore!.save(legacy, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(legacy, state: MacPhotoEditState(settings: settings, filmID: ""))
         let rejected = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
         try require(!rejected.ready && rejected.rows.first?.error?.localizedDescription ==
                     L10n.text("此 X3F 显影模式不支持 AI 降噪。"),
                     "moved collection preflight preserves the normal X3F AI restriction")
         settings.selectX3fMode(.normal)
-        try model.editStore!.save(normal, state: PhotoEditState(settings: settings, filmID: ""))
+        try model.editStore!.save(normal, state: MacPhotoEditState(settings: settings, filmID: ""))
         let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
         try require(review.ready && review.snapshots.map { $0.settings.x3fMode } == [.normal, .legacy],
                     "collection preparation retains each photo's saved X3F mode")
@@ -335,11 +336,11 @@ enum BatchFlowModelTests {
                     "no-record collection export uses the source's Legacy default without creating an edit")
         let replacedInspect = directory.appendingPathComponent("inspect-replaced.X3F")
         try Data("initial".utf8).write(to: replacedInspect)
-        let replacedItem = try BatchExportItem(url: replacedInspect)
+        let replacedItem = try MacBatchExportItem(url: replacedInspect)
         try Data("FOVb-replaced-corrupt-header".utf8).write(to: replacedInspect)
         let inspectBatch = BatchExportModel(
-            job: BatchExportJob(source: normal, settings: Adjustments(), look: nil, lookName: "neutral"),
-            journal: BatchJournal(directory: directory.appendingPathComponent("inspect-journal"))
+            job: MacBatchExportJob(source: normal, settings: Adjustments(), look: nil, lookName: "neutral"),
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("inspect-journal"))
         )
         inspectBatch.inspect(replacedItem)
         try wait { !inspectBatch.previewing }
@@ -349,38 +350,109 @@ enum BatchFlowModelTests {
         var aiSettings = Adjustments()
         aiSettings.x3fMode = .legacy
         aiSettings.aiDenoiseEnabled = true
-        let normalNoticeItem = try BatchExportItem(url: normal)
-        let legacyNoticeItem = try BatchExportItem(url: legacy)
-        var failedNoticeItem = try BatchExportItem(url: normal)
+        let normalNoticeItem = try MacBatchExportItem(url: normal)
+        let legacyNoticeItem = try MacBatchExportItem(url: legacy)
+        var failedNoticeItem = try MacBatchExportItem(url: normal)
         failedNoticeItem.validationError = "broken"
-        var noticeJob = BatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        var noticeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
         noticeJob.items = [normalNoticeItem, legacyNoticeItem, failedNoticeItem]
         var noticeProbeCount = 0
+        var noticeProbeOnMainThread = false
+        let noticeLock = NSLock()
         let noticeBatch = BatchExportModel(
             job: noticeJob,
-            journal: BatchJournal(directory: directory.appendingPathComponent("notice-journal")),
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("notice-journal")),
             resolveX3fMode: { url in
+                let isMain = Thread.isMainThread
+                noticeLock.lock()
                 noticeProbeCount += 1
+                if isMain { noticeProbeOnMainThread = true }
+                noticeLock.unlock()
                 return url.standardizedFileURL == normal.standardizedFileURL ? .normal : .legacy
             }
         )
+        try wait { !noticeBatch.isProbingX3fNotices }
+        noticeLock.lock()
+        let probedCount = noticeProbeCount
+        let probedOnMain = noticeProbeOnMainThread
+        noticeLock.unlock()
+        try require(!probedOnMain,
+                    "X3F batch notice probing executes off the main thread")
         try require(noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
                     noticeBatch.notice(for: normalNoticeItem) == L10n.text("此 X3F 显影模式不支持 AI 降噪。") &&
-                    noticeProbeCount == 1,
-                    "normal X3F batch items explain why AI denoise is omitted and cache fallback mode lookups")
+                    probedCount == 2,
+                    "normal X3F batch items explain why AI denoise is omitted without re-probing on main thread")
         try require(noticeBatch.notice(for: legacyNoticeItem) == nil &&
                     noticeBatch.notice(for: failedNoticeItem) == nil,
                     "legacy X3F and validation-failed X3F items do not show the normal AI omission notice")
+
+        // #496: Probe failure surfaces a visible localized notice instead of silently caching nil.
+        let brokenProbeFile = directory.appendingPathComponent("broken-probe.X3F")
+        try Data("FOVb-broken-probe".utf8).write(to: brokenProbeFile)
+        let brokenProbeItem = try MacBatchExportItem(url: brokenProbeFile)
+        var brokenProbeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        brokenProbeJob.items = [brokenProbeItem]
+        var failureProbeCalls = 0
+        let expectedProbeError = RenderError.failed("corrupt X3F header")
+        let failureProbeBatch = BatchExportModel(
+            job: brokenProbeJob,
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("broken-probe-journal")),
+            resolveX3fMode: { _ in
+                try require(!Thread.isMainThread, "failing X3F probe must run off the main thread")
+                noticeLock.lock()
+                failureProbeCalls += 1
+                noticeLock.unlock()
+                throw expectedProbeError
+            }
+        )
+        try wait { !failureProbeBatch.isProbingX3fNotices }
+        let expectedNotice = L10n.format("无法读取 X3F 显影模式：%@", expectedProbeError.localizedDescription)
+        try require(failureProbeBatch.hasX3fProbeFailure(for: brokenProbeItem) &&
+                    failureProbeBatch.notice(for: brokenProbeItem) == expectedNotice &&
+                    failureProbeBatch.notice(for: brokenProbeItem) == expectedNotice,
+                    "X3F probe failure surfaces a visible localized notice instead of caching nil")
+        noticeLock.lock()
+        let recordedFailureProbes = failureProbeCalls
+        noticeLock.unlock()
+        try require(recordedFailureProbes == 1,
+                    "failed X3F probe does not synchronously re-probe on main thread during repeated notice reads")
+
+        // #496: Removing or cancelling an in-flight probe discards late completions safely.
+        let enteredCancelProbe = DispatchSemaphore(value: 0)
+        let releaseCancelProbe = DispatchSemaphore(value: 0)
+        let cancelProbeItem = try MacBatchExportItem(url: normal)
+        var cancelProbeJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        cancelProbeJob.items = [cancelProbeItem]
+        let cancelProbeBatch = BatchExportModel(
+            job: cancelProbeJob,
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("cancel-probe-journal")),
+            resolveX3fMode: { _ in
+                enteredCancelProbe.signal()
+                releaseCancelProbe.wait()
+                return .normal
+            }
+        )
+        try require(enteredCancelProbe.wait(timeout: .now() + 5) == .success, "in-flight X3F probe entered background queue")
+        cancelProbeBatch.remove(cancelProbeItem.id)
+        cancelProbeBatch.cancel()
+        releaseCancelProbe.signal()
+        try wait { !cancelProbeBatch.isProbingX3fNotices }
+        try require(cancelProbeBatch.x3fProbeStates[cancelProbeItem.id] == nil &&
+                    cancelProbeBatch.notice(for: cancelProbeItem) == nil,
+                    "cancelled/removed in-flight X3F probe leaves no stale probe state")
 
         let dp2SavedLegacy = directory.appendingPathComponent("dp2-saved-legacy.X3F")
         try Data("FOVb-corrupt-if-probed".utf8).write(to: dp2SavedLegacy)
         var savedLegacyState = Adjustments()
         savedLegacyState.x3fMode = .legacy
-        try model.editStore!.save(dp2SavedLegacy, state: PhotoEditState(settings: savedLegacyState, filmID: ""))
-        let dp2Item = try BatchExportItem(url: dp2SavedLegacy)
-        var attachedAIJob = BatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
+        try model.editStore!.save(dp2SavedLegacy, state: MacPhotoEditState(settings: savedLegacyState, filmID: ""))
+        let dp2Item = try MacBatchExportItem(url: dp2SavedLegacy)
+        var attachedAIJob = MacBatchExportJob(source: legacy, settings: aiSettings, look: nil, lookName: "neutral")
         attachedAIJob.items = [dp2Item]
         model.attachBatch(attachedAIJob)
+        if let attachedBatch = model.batch {
+            try wait { !attachedBatch.isProbingX3fNotices }
+        }
         try require(model.batch?.notice(for: dp2Item) == nil,
                     "EditorModel.attachBatch wires editStore so a DP2 Merrill saved as legacy keeps AI without probing header")
         _ = model.batch?.discardDraft()
@@ -389,9 +461,9 @@ enum BatchFlowModelTests {
         try FileManager.default.copyItem(at: fixture, to: singleProbeTarget)
         let singleProbeOutput = directory.appendingPathComponent("single-probe-output")
         try FileManager.default.createDirectory(at: singleProbeOutput, withIntermediateDirectories: true)
-        var singleProbeItem = try BatchExportItem(url: singleProbeTarget)
+        var singleProbeItem = try MacBatchExportItem(url: singleProbeTarget)
         singleProbeItem.selected = true
-        var singleProbeJob = BatchExportJob(source: legacy, settings: Adjustments(), look: nil, lookName: "neutral")
+        var singleProbeJob = MacBatchExportJob(source: legacy, settings: Adjustments(), look: nil, lookName: "neutral")
         singleProbeJob.outputDirectory = singleProbeOutput
         singleProbeJob.format = .png
         singleProbeJob.longEdge = 64
@@ -399,7 +471,7 @@ enum BatchFlowModelTests {
         var exportProbes = 0
         let singleProbeBatch = BatchExportModel(
             job: singleProbeJob,
-            journal: BatchJournal(directory: directory.appendingPathComponent("single-probe-journal")),
+            journal: MacBatchJournal(directory: directory.appendingPathComponent("single-probe-journal")),
             resolveX3fMode: { _ in
                 exportProbes += 1
                 if exportProbes > 1 { throw RenderError.failed("duplicate X3F mode probe during export") }
@@ -524,7 +596,7 @@ enum BatchFlowModelTests {
             case "selection": model.batchSelection.selectAll(false)
             case "conflict":
                 let expected = try model.editStore!.readState(for: second)
-                var state = try expected.state ?? PhotoEditState(
+                var state = try expected.state ?? MacPhotoEditState(
                     settings: RenderEngine.defaultSettings(for: second, sourceIsHDR: false), filmID: "")
                 state.settings.exposure = 0.6
                 try require(model.adjustmentSession!.commitEdit(expected: expected, state: state).status == .applied,
@@ -594,7 +666,7 @@ enum BatchFlowModelTests {
         print("PASS: \(label)")
     }
 
-    static func declinedStart(job: BatchExportJob, journal: BatchJournal) throws {
+    static func declinedStart(job: MacBatchExportJob, journal: MacBatchJournal) throws {
         var unavailable = job
         unavailable.outputDirectory = nil
         let batch = BatchExportModel(job: unavailable, journal: journal)
@@ -605,12 +677,12 @@ enum BatchFlowModelTests {
             "declined admission preserves the existing frozen job identity")
     }
 
-    static func initializationFailure(job: BatchExportJob, root: URL) throws {
+    static func initializationFailure(job: MacBatchExportJob, root: URL) throws {
         let destination = root.appendingPathComponent("blocked-output")
         try Data("blocked".utf8).write(to: destination)
         var blocked = job
         blocked.outputDirectory = destination
-        let journal = BatchJournal(directory: root.appendingPathComponent("failed-start"))
+        let journal = MacBatchJournal(directory: root.appendingPathComponent("failed-start"))
         try journal.save(blocked)
         let failed = BatchExportModel(job: blocked, journal: journal)
         try require(failed.start(), "the runner accepts a structurally valid frozen task")
@@ -630,7 +702,7 @@ enum BatchFlowModelTests {
         try wait { !recovered.running }
         try require(recovered.job.id == job.id && recovered.job.succeededCount == job.selectedCount,
             "startup retry exports the original frozen job without creating another one")
-        var draft = BatchExportJob(source: job.source, settings: Adjustments(), look: nil, lookName: "neutral")
+        var draft = MacBatchExportJob(source: job.source, settings: Adjustments(), look: nil, lookName: "neutral")
         draft.outputDirectory = destination
         try journal.save(draft)
         let uniform = BatchExportModel(job: draft, journal: journal)

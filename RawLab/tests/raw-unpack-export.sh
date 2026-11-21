@@ -1,20 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/Shared/tests/hdr-native-sources.sh"
+source "$ROOT/RawLab/tests/lib/ios-harness.sh"
+rawlab_ios_sim_init
 APP="${1:?Pass the built arm64-simulator RawLab.app absolute path}"
 DEVICE="${2:?Pass the dedicated simulator UDID}"
 RAW="${3:?Pass a real RAW fixture path}"
-OUT="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-ios-unpack-export.XXXXXX")"
-trap 'rm -rf "$OUT"' EXIT
+rawlab_ios_make_temp_dir OUT rawlab-ios-unpack-export
 HARNESS="$OUT/RawUnpackExportTests.app"
-mkdir -p "$HARNESS/Frameworks"
-cp "$APP/Info.plist" "$HARNESS/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set CFBundleIdentifier com.rawlab.tests.raw-unpack-export' \
-    -c 'Set CFBundleExecutable raw-unpack-export' "$HARNESS/Info.plist"
-cp -R "$APP/Frameworks/sony2fuji.framework" "$HARNESS/Frameworks/"
-SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-TARGET="${RAWLAB_SIMULATOR_ARCH:-$(uname -m)}-apple-ios18.0-simulator"
+rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.raw-unpack-export raw-unpack-export "$APP"
 
 cat > "$OUT/unpack_counter.cpp" <<'CPP'
 #include <atomic>
@@ -118,28 +112,23 @@ sony2fuji_status hook_create_hsl_probe(sony2fuji_session* session, const sony2fu
 DYLD_INTERPOSE_NAME(hook_create_hsl_probe, sony2fuji_session_create_hsl_probe, create_hsl_probe)
 CPP
 
-xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$TARGET" -isysroot "$SDK" \
+xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$RAWLAB_IOS_SIM_TARGET" -isysroot "$RAWLAB_IOS_SIM_SDK" \
     -install_name @rpath/libunpack_counter.dylib \
     -I "$ROOT/lutools/include" "$OUT/unpack_counter.cpp" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks \
     -o "$HARNESS/Frameworks/libunpack_counter.dylib"
 
-xcrun --sdk iphonesimulator clang++ -std=c++17 -target "$TARGET" -isysroot "$SDK" \
-    -I "$ROOT/lutools/include" -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" -o "$OUT/bridge.o"
+rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
+rawlab_ios_processor_export_sources SOURCES full
 
-xcrun --sdk iphonesimulator swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$TARGET" \
+rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
+rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/RawLab/RawLab/Core/Models/RawSettings.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
-    "$ROOT/RawLab/RawLab/Core/Models/ExportSize.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift" "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/RecipeWhiteBalanceCache.swift" \
-    "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift" \
-    "$ROOT/RawLab/RawLab/UI/Preview/PhotoZoomGeometry.swift" "$ROOT/RawLab/RawLab/UI/Preview/ZoomablePhoto.swift" "$ROOT/RawLab/RawLab/UI/Preview/PhotoHSLTargetInput.swift" \
-    "$ROOT/Shared/ExportMetadata.swift" "$ROOT/RawLab/tests/RawUnpackExportTests.swift" "$OUT/bridge.o" \
+    "${SOURCES[@]}" \
+    "$ROOT/RawLab/tests/RawUnpackExportTests.swift" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -L "$HARNESS/Frameworks" -framework sony2fuji -lunpack_counter -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/raw-unpack-export"
 

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using RawLab.Windows;
+using RawLab.Windows.Tests;
 
 // ExifTool stay_open 会话的行为测试：用 EditWorkflow.Tests 自身重启为
 // --exif-stub 替身进程实现协议，不依赖打包的 ExifTool.exe（真机 ExifTool
@@ -71,15 +72,11 @@ internal static class ExifToolSessionChecks
                 captured = start.ArgumentList.ToList();
                 var sessionMode = start.ArgumentList.Contains("-stay_open");
                 if (sessionMode && failNextStartup) throw new IOException("stub refuses session start");
-                var path = Environment.ProcessPath ?? throw new IOException("no re-exec process path");
-                start.FileName = path;
+                var stubStart = RawLab.Windows.Tests.IsolatedChildRunner.CreateStartInfo(
+                    sessionMode ? ["--exif-stub", marker, "-stay_open"] : ["--exif-stub", marker]);
+                start.FileName = stubStart.FileName;
                 start.ArgumentList.Clear();
-                // dotnet X.dll 形态下需把入口程序集放在参数首位；apphost 形态直接自重启。
-                if (string.Equals(Path.GetFileNameWithoutExtension(path), "dotnet", StringComparison.OrdinalIgnoreCase))
-                    start.ArgumentList.Add(Assembly.GetEntryAssembly()!.Location);
-                start.ArgumentList.Add("--exif-stub");
-                start.ArgumentList.Add(marker);
-                if (sessionMode) start.ArgumentList.Add("-stay_open");
+                foreach (var arg in stubStart.ArgumentList) start.ArgumentList.Add(arg);
                 var spawned = new Process { StartInfo = start };
                 if (!spawned.Start()) throw new IOException("stub did not start");
                 return spawned;
@@ -110,7 +107,7 @@ internal static class ExifToolSessionChecks
                 catch (IOException ex)
                 {
                     failed = true;
-                    Check(ex.Message.StartsWith("写入 EXIF 失败", StringComparison.Ordinal) &&
+                    Check(ex.Message.StartsWith(Loc.Text("写入 EXIF 失败："), StringComparison.Ordinal) &&
                         ex.Message.Contains("stub warning"), "Failure message carries ExifTool stderr");
                 }
                 Check(failed, "Non-zero command status surfaces as a write failure");
@@ -126,7 +123,7 @@ internal static class ExifToolSessionChecks
                 try { ExifToolSession.Run(["-fake-sleep=10000"]); }
                 catch (IOException ex)
                 {
-                    timedOut = ex.Message.Contains("超时");
+                    timedOut = ex.Message == Loc.Text("写入 EXIF 超时，未保存导出结果。");
                 }
                 clock.Stop();
                 Check(timedOut && clock.ElapsedMilliseconds < 4000, "Stalled command fails inside the timeout budget instead of hanging");

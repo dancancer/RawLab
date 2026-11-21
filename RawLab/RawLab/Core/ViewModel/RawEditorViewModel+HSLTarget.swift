@@ -1,3 +1,4 @@
+import RawLabKit
 import UIKit
 
 extension RawEditorViewModel {

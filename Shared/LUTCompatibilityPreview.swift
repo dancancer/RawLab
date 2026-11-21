@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import CoreGraphics
 import Combine
@@ -146,9 +147,10 @@ final class LUTPreviewWorker {
         var session: OpaquePointer?
         guard sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, let session else { throw LUTPreviewError.failed }
         var gpu = sony2fuji_gpu_config(version: SONY2FUJI_GPU_CONFIG_VERSION, struct_size: UInt32(MemoryLayout<sony2fuji_gpu_config>.size), mode: SONY2FUJI_GPU_OFF)
+        let paramsStatus = CanonicalEditRecipe.processingOnlyJSON(processingVersion: 2, exposureMode: "scene")
+            .withCString { sony2fuji_apply_params(session, $0) }
         guard sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK,
-              sony2fuji_session_set_processing_version(session, SONY2FUJI_PROCESSING_C5_V2) == SONY2FUJI_STATUS_OK,
-              sony2fuji_session_set_raw_exposure_mode(session, SONY2FUJI_EXPOSURE_SCENE) == SONY2FUJI_STATUS_OK else {
+              paramsStatus == SONY2FUJI_STATUS_OK else {
             sony2fuji_session_destroy(session); throw LUTPreviewError.failed
         }
         return session

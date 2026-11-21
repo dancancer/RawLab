@@ -1,18 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-OUT="$(mktemp -d /tmp/rawlab-lens-localization.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-lens-localization
 APP="$OUT/LensLocalization.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/RawLabMac/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Shared/master-recipes.json" "$APP/Contents/Resources/"
 cp -R "$ROOT"/RawLabMac/Resources/*.lproj "$APP/Contents/Resources/"
-swiftc -swift-version 5 -sdk /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
+rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/Shared/Localization.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" \
-    "$ROOT/RawLabMac/Sources/Editor/Storage/EditPersistence.swift" "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
+    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
+    "$ROOT/RawLabMac/tests/LensLocalizationTests.swift" \
     -o "$APP/Contents/MacOS/LensLocalization"
 "$APP/Contents/MacOS/LensLocalization"

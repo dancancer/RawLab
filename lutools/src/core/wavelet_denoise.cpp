@@ -18,7 +18,11 @@
 #include <wavelib.h>
 
 namespace {
-struct WaveletGpuFailure {};
+struct WaveletGpuFailure {
+    sony2fuji::GpuFailureKind failure = sony2fuji::GpuFailureKind::ProcessingError;
+    sony2fuji::GpuBackendFault fault = sony2fuji::GpuBackendFault::FilterError;
+    std::string message;
+};
 constexpr int levels = 4, halo = 96, tileSize = 512;
 constexpr int coarseLevels = 6, coarseHalo = 256;
 using Bands = std::array<std::array<float,3>,levels>;
@@ -90,13 +94,29 @@ bool periodic(const cv::Mat& residual) {
 }
 
 std::vector<Sample> flatSamples(const cv::Mat& rgb, sony2fuji::WaveletNoiseEstimateDiagnostics& diagnostics,
-                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2) {
+                              sony2fuji::ProcessingVersion version = sony2fuji::ProcessingVersion::C5V2,
+                              sony2fuji::ColorSpace sourceSpace = sony2fuji::ColorSpace::sRGB) {
     std::vector<Sample> samples;
+    sony2fuji::ColorConverter::Matrix3x3 toSRGB{};
+    if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+        toSRGB = sony2fuji::ColorConverter::getConversionMatrix(sourceSpace, sony2fuji::ColorSpace::sRGB);
+    }
     for (int y:positions(rgb.rows)) for (int x:positions(rgb.cols)) {
+        sony2fuji::checkProcessingCancellation();
         ++diagnostics.candidateTiles;
-        const cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
+        cv::Mat patch=rgb(cv::Rect(x,y,std::min(64,rgb.cols-x),std::min(64,rgb.rows-y))).clone();
         // Calibration uses full 64-pixel tiles, keeping SWT's size contract explicit.
         if (patch.rows<64 || patch.cols<64) { ++diagnostics.rejectedSmall; continue; }
+        if (sourceSpace != sony2fuji::ColorSpace::sRGB) {
+            for (int py = 0; py < patch.rows; ++py) {
+                auto* row = patch.ptr<cv::Vec3f>(py);
+                for (int px = 0; px < patch.cols; ++px) {
+                    const auto converted = sony2fuji::ColorConverter::applyMatrix(
+                        sony2fuji::RGB(row[px][0], row[px][1], row[px][2]), toSRGB);
+                    row[px] = cv::Vec3f(converted.r, converted.g, converted.b);
+                }
+            }
+        }
         cv::Mat smooth;
         cv::GaussianBlur(patch,smooth,{},3);
         const cv::Mat residual=patch-smooth;
@@ -424,11 +444,23 @@ cv::Mat filterPlane(const cv::Mat& plane,const NoiseModel& model,const sony2fuji
                 settings.sigma[scale * 3 + direction] = bandSigma(model, channel, sourceLevel, direction);
         }
         cv::Mat result(plane.size(), CV_32F);
+        sony2fuji::lastGpuFilterOutcome() = {};
         if (sony2fuji::gpuWaveletFilter(plane.ptr<float>(), plane.cols, plane.rows, settings, result.ptr<float>())) {
             gpuUsed.store(true, std::memory_order_relaxed);
             return result;
         }
-        if (gpuMode == sony2fuji::GpuMode::Force) throw WaveletGpuFailure{};
+        if (gpuMode == sony2fuji::GpuMode::Force) {
+            const auto outcome = sony2fuji::lastGpuFilterOutcome();
+            throw WaveletGpuFailure{
+                outcome.failure != sony2fuji::GpuFailureKind::None
+                    ? outcome.failure
+                    : sony2fuji::GpuFailureKind::ProcessingError,
+                outcome.fault != sony2fuji::GpuBackendFault::None
+                    ? outcome.fault
+                    : sony2fuji::GpuBackendFault::FilterError,
+                outcome.message
+            };
+        }
     }
     StationaryWavelet transform(plane,depth);
     for (int scale=0;scale<depth;++scale) {
@@ -617,6 +649,7 @@ struct WaveletDenoiseAnalysisCache::Impl {
     NoiseModel model{};
     eaw::Analysis eawAnalysis{};
     bool eawReady = false;
+    int fitSampleCount = 0;
     std::vector<Sample> samples;
 #endif
 };
@@ -660,7 +693,7 @@ bool validWaveletDenoiseOptions(const WaveletDenoiseOptions& options) {
 }
 ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& options, WaveletDenoiseDiagnostics* diagnostics,
     GpuMode gpuMode, WaveletDenoiseAnalysisCache* analysis, const std::string& sourceKey,
-    const ImageData* immutableSource, ColorSpace sourceSpace) {
+    const ImageData* immutableSource, ColorSpace sourceSpace, const ImageData* noiseSource) {
     if (diagnostics) *diagnostics = {};
     auto finish = [&](WaveletDenoiseOutcome outcome, ErrorCode code) {
         if (diagnostics) diagnostics->outcome=outcome;
@@ -707,24 +740,38 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
             }
             state = analysis->state.get();
         }
-        if (!reused) state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+        if (!reused) {
+            state->samples=flatSamples(rgb,state->estimate,options.processingVersion);
+            std::vector<Sample> sourceSamples;
+            const auto* noiseSamples=&state->samples;
+            if (noiseSource && usesC5Denoise(options.processingVersion)) {
+                // 原生样块拟合噪声；小图的平坦样块只负责 guide/band MAD，不承担拟合的 8 块门槛。
+                // 最多读取 12x12 个 64x64 样块，不复制或滤波完整源图。
+                cv::Mat source(noiseSource->height,noiseSource->width,CV_32FC3,
+                    const_cast<RGB*>(noiseSource->pixels.data()));
+                state->estimate={};
+                sourceSamples=flatSamples(source,state->estimate,options.processingVersion,sourceSpace);
+                noiseSamples=&sourceSamples;
+            }
+            state->fitSampleCount=static_cast<int>(noiseSamples->size());
+            if (state->fitSampleCount>=8) {
+                state->model=fitNoise(*noiseSamples);
+                describeFit(*noiseSamples,state->model,state->estimate);
+            }
+        }
         const auto& samples = state->samples;
         if (diagnostics) {
-            diagnostics->flatTiles=static_cast<int>(samples.size());
+            diagnostics->flatTiles=state->fitSampleCount;
             diagnostics->analysisReused=reused;
             diagnostics->estimate=state->estimate;
         }
-        if (samples.size()<8) {
+        if (state->fitSampleCount<8 || samples.empty()) {
             state->ready=true;
             const auto& estimate=state->estimate;
             const auto outcome=estimate.rejectedSmall==estimate.candidateTiles ? WaveletDenoiseOutcome::SmallImage :
                 estimate.rejectedLowNoise==estimate.candidateTiles ? WaveletDenoiseOutcome::LowNoise :
                 WaveletDenoiseOutcome::InsufficientSamples;
             return finish(outcome, ErrorCode::Success);
-        }
-        if (!reused) {
-            state->model=fitNoise(samples);
-            describeFit(samples,state->model,state->estimate);
         }
         auto& model = state->model;
         if (diagnostics) {
@@ -733,8 +780,14 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
         }
         if (usesC5Denoise(options.processingVersion)) {
             // C5 暂无 GPU 滤波后端，Force 不能把 CPU 结果当作 GPU 成功。
-            if (gpuMode == GpuMode::Force)
+            if (gpuMode == GpuMode::Force) {
+                lastGpuFilterOutcome() = {
+                    GpuFailureKind::Unsupported,
+                    GpuBackendFault::UnsupportedCapability,
+                    "C5 wavelet denoise requires CPU"
+                };
                 return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::Unsupported);
+            }
             const float strengthScale=eaw::noiseScale(model);
             if (strengthScale==0) {
                 state->ready=true;
@@ -798,9 +851,15 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
                 transformed.release();
                 restore(rgb,std::move(filtered),model,options.processingVersion);
             }
-        } catch (const WaveletGpuFailure&) {
+        } catch (const WaveletGpuFailure& failure) {
             if (reloadable) { transformed.release(); rgb.release(); image={}; }
-            return finish(WaveletDenoiseOutcome::GpuFailure, ErrorCode::ProcessingError);
+            lastGpuFilterOutcome() = {failure.failure, failure.fault, failure.message};
+            const ErrorCode code = failure.failure == GpuFailureKind::Unsupported
+                ? ErrorCode::Unsupported
+                : failure.failure == GpuFailureKind::OutOfMemory
+                    ? ErrorCode::OutOfMemory
+                    : ErrorCode::ProcessingError;
+            return finish(WaveletDenoiseOutcome::GpuFailure, code);
         }
         if (diagnostics) {
             diagnostics->applied=true;
@@ -826,6 +885,7 @@ ErrorCode applyWaveletDenoise(ImageData& image, const WaveletDenoiseOptions& opt
     (void)image;
     (void)gpuMode;
     (void)analysis;
+    (void)noiseSource;
     (void)sourceKey;
     (void)immutableSource;
     (void)sourceSpace;

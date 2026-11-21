@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import UniformTypeIdentifiers
 
@@ -10,7 +11,7 @@ extension EditorModel {
                 guard DirectoryContents.supportedExtensions.contains(url.pathExtension.lowercased()) else {
                     throw RenderError.failed(L10n.text("不是支持的图像文件"))
                 }
-                let input = file.flatMap { (try? BatchExportItem.resourceKey($0)) == (try? BatchExportItem.resourceKey(url)) ? $0 : nil } ?? url
+                let input = file.flatMap { (try? MacBatchExportItem.resourceKey($0)) == (try? MacBatchExportItem.resourceKey(url)) ? $0 : nil } ?? url
                 let photo = try MacCollectionPhoto(input)
                 if batchSelectionPhotos[photo.id] == nil { batchSelectionPhotos[photo.id] = photo }
                 batchSelection.append([photo.id])
@@ -39,7 +40,7 @@ extension EditorModel {
 
     func collectionHasDraft(_ id: String) -> Bool {
         guard let photo = batchSelectionPhotos[id], file == photo.url else { return false }
-        return dirty || geometryDraft != nil || scheduler.interacting || ParameterValueField.hasPendingInputs
+        return dirty || hasPendingEditCommits || geometryDraft != nil || scheduler.interacting || ParameterValueField.hasPendingInputs
     }
 
     // 所有窗口共享同一个 EditorModel；集合导航也经过该编辑器的草稿与保存守卫。
@@ -82,9 +83,10 @@ extension EditorModel {
         cancelHSLTarget()
         if geometryDraft != nil { cancelGeometryDraft() }
         saveWork?.cancel(); scheduler.setInteracting(false); interactionEntry = nil
+        _ = editStore?.flushPendingCommits()
         guard let committedEdit else { return false }
         do {
-            let restored = try committedEdit.state ?? PhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: sourceIsHDR), filmID: "")
+            let restored = try committedEdit.state ?? MacPhotoEditState(settings: RenderEngine.defaultSettings(for: photo.url, sourceIsHDR: sourceIsHDR), filmID: "")
             restoreAdjustmentState(restored)
         } catch { saveError = error.localizedDescription; return false }
         normalizeAdjustmentNavigation()
@@ -113,7 +115,7 @@ extension EditorModel {
         guard let committedEdit, try OriginalFileIdentity(file) == committedEdit.identity else {
             throw AdjustmentCommitError.photoChanged
         }
-        let sourceIdentity = try BatchExportItem.resourceKey(file)
+        let sourceIdentity = try MacBatchExportItem.resourceKey(file)
         let targets = batchSelection.targets(excluding: sourceIdentity).compactMap { batchSelectionPhotos[$0]?.url }
         guard !targets.isEmpty else { throw BatchExportFailure.noSelection }
         let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: editState(settings: settings),
@@ -137,6 +139,7 @@ extension EditorModel {
 
     private func collectionExportPreparation(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
                                              directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportPreparation {
+        _ = editStore?.flushPendingCommits()
         let session = try requireAdjustmentSession()
         let selection = batchSelection.targets()
         return MacCollectionExportPreparation(selection: selection, photos: batchSelectionPhotos,
@@ -163,6 +166,7 @@ extension EditorModel {
         guard !collectionExportPreparing, !exporting else { return }
         cancelCollectionExportPreparation()
         do {
+            _ = editStore?.flushPendingCommits()
             let input = try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory,
                                                        adaptiveJPEG: adaptiveJPEG)
             let generation = collectionExportGeneration, source = sourceRevision, revision = editRevision
@@ -183,6 +187,7 @@ extension EditorModel {
                         return
                     }
                     self.collectionExportPreparing = false
+                    _ = self.editStore?.flushPendingCommits()
                     guard self.sourceRevision == source, self.editRevision == revision,
                           self.batchSelection.targets() == input.selection else {
                         Self.releaseFrozenLooks(result)
@@ -205,7 +210,7 @@ extension EditorModel {
                             guard !self.collectionExportBlockedByTask else {
                                 throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
                             }
-                            let job = try self.attachFrozenCollectionExport(frozen)
+                            let job = try self.attachFrozenCollectionExport(frozen, snapshots: review.snapshots)
                             self.collectionExportReview = nil
                             self.collectionExportError = nil
                             _ = self.batch?.start()
@@ -235,7 +240,8 @@ extension EditorModel {
 
     // 主线程同步冻结（模型测试与直接调用方使用）：与异步路径共用冻结核心，语义一致——
     // 前后双遍全集重验、look 副本拷贝、日志落盘、隔离提示、上一任务释放与 attach。
-    func freezeCollectionExport(_ review: MacCollectionExportReview) throws -> BatchExportJob {
+    func freezeCollectionExport(_ review: MacCollectionExportReview) throws -> MacBatchExportJob {
+        _ = editStore?.flushPendingCommits()
         guard review.ready, !exporting, batchSelection.targets() == review.selection else { throw AdjustmentCommitError.expired }
         if collectionExportBlockedByTask {
             throw RenderError.failed(L10n.text("请先完成或关闭现有批量任务。"))
@@ -244,12 +250,35 @@ extension EditorModel {
         let frozen = try MacCollectionExportFreeze(session: session,
             drafts: Set(review.snapshots.map(\.photo.id).filter { collectionHasDraft($0) }),
             activeFile: file, activeRevision: editRevision, journal: batchJournal).freeze(review)
-        return try attachFrozenCollectionExport(frozen)
+        return try attachFrozenCollectionExport(frozen, snapshots: review.snapshots)
     }
 
     // 日志落盘、隔离提示、上一任务释放与 attach 在主线程一次完成，与 UI 切换保持原子。
-    private func attachFrozenCollectionExport(_ frozen: MacFrozenCollectionExport) throws -> BatchExportJob {
+    private func attachFrozenCollectionExport(_ frozen: MacFrozenCollectionExport,
+                                              snapshots: [MacCollectionExportReview.Snapshot] = []) throws -> MacBatchExportJob {
         do {
+            guard !(editStore?.hasPendingCommits == true || adjustmentSession?.hasPendingCommits == true) else {
+                throw AdjustmentCommitError.expired
+            }
+            if let activeFile = file {
+                let activePath = activeFile.resolvingSymlinksInPath().standardizedFileURL.path
+                let activeID = try? MacBatchExportItem.resourceKey(activeFile)
+                if let activeItem = frozen.job.items.first(where: { $0.identity.path == activePath || (activeID != nil && $0.resourceIdentifier == activeID) }) {
+                    let hasActiveDraft = activeItem.resourceIdentifier.map(collectionHasDraft) ??
+                        (dirty || hasPendingEditCommits || geometryDraft != nil || scheduler.interacting || ParameterValueField.hasPendingInputs)
+                    guard !dirty, !hasActiveDraft,
+                          let committedEdit, committedEdit.identity == activeItem.identity else {
+                        throw AdjustmentCommitError.expired
+                    }
+                    if let snapshot = snapshots.first(where: { $0.photo.id == activeItem.resourceIdentifier }),
+                       snapshot.record != committedEdit {
+                        throw AdjustmentCommitError.expired
+                    }
+                    if let store = editStore, (try store.readState(for: activeFile)) != committedEdit {
+                        throw AdjustmentCommitError.expired
+                    }
+                }
+            }
             try batchJournal.save(frozen.job)
         } catch {
             _ = batchJournal.consumeQuarantinedError()

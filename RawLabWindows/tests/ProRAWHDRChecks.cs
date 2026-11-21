@@ -1,19 +1,14 @@
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RawLab.Windows;
 
 internal static class ProRAWHDRChecks
 {
-    private static readonly BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
-
     internal static void Run(Action<bool, string> check)
     {
         SourceIdentity(check);
         ProRAWDecoderVersion(check);
-        NativeEntrypoints(check);
         Console.WriteLine("PASS: Windows ProRAW HDR model");
     }
 
@@ -132,19 +127,15 @@ internal static class ProRAWHDRChecks
             }
         }
 
-        if (typeof(Adjustments).Assembly.GetType("RawLab.Windows.RenderEngine")
-                ?.GetMethod("ValidateHDRRender", Static) is { } validateRender)
+        try
         {
-            try
-            {
-                validateRender.Invoke(null, [restoredUnknown, true]);
-                check(false, "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
-            }
-            catch (TargetInvocationException wrapped) when (wrapped.InnerException is HDRModeException error)
-            {
-                check(error.Failure == HDRModeFailure.InvalidSettings,
-                    "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
-            }
+            RenderEngine.ValidateHDRRender(restoredUnknown, true);
+            check(false, "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
+        }
+        catch (HDRModeException error)
+        {
+            check(error.Failure == HDRModeFailure.InvalidSettings,
+                "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
         }
 
         if (TryFindProjectRoot() is { } projectRoot)
@@ -197,19 +188,6 @@ internal static class ProRAWHDRChecks
         catch (AdjustmentTransferException error)
         {
             check(error.Detail == "hdr.camera_raw", "Generic Bayer RAW HDR transfer remains gated");
-        }
-    }
-
-    private static void NativeEntrypoints(Action<bool, string> check)
-    {
-        foreach (var name in new[] {
-            "sony2fuji_hdr_probe_proraw", "sony2fuji_hdr_decode_proraw", "sony2fuji_hdr_export_proraw",
-            "sony2fuji_hdr_export_stream", "sony2fuji_session_set_cancellation_callback"
-        })
-        {
-            var method = typeof(Native).GetMethod(name, Static);
-            var entryPoint = method?.GetCustomAttribute<DllImportAttribute>()?.EntryPoint;
-            check(method != null && (entryPoint == null || entryPoint == name), "P/Invoke declares " + name);
         }
     }
 

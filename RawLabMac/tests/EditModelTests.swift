@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 private struct Failure: Error { let message: String }
@@ -48,17 +49,17 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try writeRasterFixture(rasterFixtureImage(), to: brokenPNG, type: "public.png" as CFString)
         try writeRasterFixture(rasterFixtureImage(), to: healthyPNG, type: "public.png" as CFString)
 
-        let store = try EditPersistence(directory: editDir)
+        let store = try MacEditPersistence(directory: editDir)
         var c5 = Adjustments(); c5.processing = .c5; c5.exposure = 0.65
-        try store.save(healthyPNG, state: PhotoEditState(settings: c5, filmID: ""))
-        try store.save(brokenPNG, state: PhotoEditState(settings: c5, filmID: ""))
+        try store.save(healthyPNG, state: MacPhotoEditState(settings: c5, filmID: ""))
+        try store.save(brokenPNG, state: MacPhotoEditState(settings: c5, filmID: ""))
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
         var migrated = c5; migrated.processing = .current
         _ = try store.commitProcessingMigration(expected: store.readState(for: healthyPNG),
-                                                candidate: PhotoEditState(settings: migrated, filmID: ""),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: ""),
                                                 quality: quality)
         _ = try store.commitProcessingMigration(expected: store.readState(for: brokenPNG),
-                                                candidate: PhotoEditState(settings: migrated, filmID: ""),
+                                                candidate: MacPhotoEditState(settings: migrated, filmID: ""),
                                                 quality: quality)
 
         let file = editDir.appendingPathComponent("edits.json")
@@ -104,7 +105,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try waitForRender(editor, "recovered broken PNG")
         try check(promptedURL == brokenPNG && editor.file == brokenPNG && editor.saveError == nil && editor.error == nil && editor.settings.exposure == 0,
                   "Confirming unusable-record reset opens photo with default unmodified settings")
-        let reopenedStore = try EditPersistence(directory: editDir)
+        let reopenedStore = try MacEditPersistence(directory: editDir)
         try check(try reopenedStore.state(for: brokenPNG) == nil &&
                   reopenedStore.processingMigration(for: brokenPNG) == nil &&
                   reopenedStore.state(for: healthyPNG)?.settings.exposure == 0.65 &&
@@ -117,8 +118,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         var settings = Adjustments()
         settings.processing = .legacy
         settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 65, chroma: 72, coarse: 100)
-        let store = try EditPersistence(directory: directory)
-        try store.save(input, state: PhotoEditState(settings: settings, filmID: ""))
+        let store = try MacEditPersistence(directory: directory)
+        try store.save(input, state: MacPhotoEditState(settings: settings, filmID: ""))
         let registryURL = directory.appendingPathComponent("edits.json")
         var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as! [String: Any]
         var records = registry["records"] as! [String: Any]
@@ -174,8 +175,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
 
     static func protectedRestoreCheck(root: URL, input: URL) throws {
         let directory = root.appendingPathComponent("unsupported-edits")
-        let store = try EditPersistence(directory: directory)
-        try store.save(input, state: PhotoEditState(settings: Adjustments(), filmID: ""))
+        let store = try MacEditPersistence(directory: directory)
+        try store.save(input, state: MacPhotoEditState(settings: Adjustments(), filmID: ""))
         let file = directory.appendingPathComponent("edits.json")
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var records = object["records"] as! [String: Any]
@@ -586,16 +587,16 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try FileManager.default.removeItem(at: directory)
         try FileManager.default.moveItem(at: backup, to: directory)
         try check(model.saveEdits() && !model.dirty && model.saveError == nil &&
-                  EditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
+                  MacEditPersistence(directory: directory).state(for: source)?.settings.exposure == 0,
                   "failed reset save can retry the candidate")
 
         // Full reset (.all) clears processing migration receipt both on disk and in EditorModel memory; partial reset keeps it.
-        let migrationStore = try EditPersistence(directory: directory)
+        let migrationStore = try MacEditPersistence(directory: directory)
         var legacySettings = Adjustments(); legacySettings.processing = .c5; legacySettings.exposure = 0.7; legacySettings.saturation = 12
-        let legacyState = PhotoEditState(settings: legacySettings, filmID: "")
+        let legacyState = MacPhotoEditState(settings: legacySettings, filmID: "")
         try migrationStore.save(source, state: legacyState)
         var migratedSettings = legacySettings; migratedSettings.processing = .current
-        let migratedState = PhotoEditState(settings: migratedSettings, filmID: "")
+        let migratedState = MacPhotoEditState(settings: migratedSettings, filmID: "")
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 20)
         let migratedRecord = try migrationStore.commitProcessingMigration(expected: try migrationStore.readState(for: source),
                                                                           candidate: migratedState, quality: quality)
@@ -625,7 +626,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             _ = try migrationStore.rollbackProcessingMigration(expected: try migrationStore.readState(for: source))
             throw Failure(message: "rollback after reset all must throw expired")
         } catch AdjustmentCommitError.expired { }
-        try check(try EditPersistence(directory: directory).processingMigration(for: source) == nil,
+        try check(try MacEditPersistence(directory: directory).processingMigration(for: source) == nil,
                   "cleared migration receipt stays nil after reopening EditPersistence")
         model.undoAdjustment()
         try check(model.settings.saturation == 12 && model.processingMigrationReceipt == nil &&
@@ -743,10 +744,10 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         second.open(a)
         try check(second.settings.exposure == 0.75, "editor must restore from disk")
         let legacyDirectory = root.appendingPathComponent("legacy-edits")
-        let legacyStore = try EditPersistence(directory: legacyDirectory)
+        let legacyStore = try MacEditPersistence(directory: legacyDirectory)
         var legacySettings = Adjustments()
         legacySettings.masterRecipeID = MasterRecipe.hamadaDaylightV2.id
-        try legacyStore.save(a, state: PhotoEditState(settings: legacySettings, filmID: "",
+        try legacyStore.save(a, state: MacPhotoEditState(settings: legacySettings, filmID: "",
                                                      masterRecipeID: legacySettings.masterRecipeID))
         let legacyFile = legacyDirectory.appendingPathComponent("edits.json")
         var legacyRegistry = try JSONSerialization.jsonObject(with: Data(contentsOf: legacyFile)) as! [String: Any]

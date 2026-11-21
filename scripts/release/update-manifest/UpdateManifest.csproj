@@ -5,9 +5,9 @@
     <RawLabWindowsSourceRoot Condition="'$(RawLabWindowsSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../../RawLabWindows</RawLabWindowsSourceRoot>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdateTrust.cs" Link="UpdateTrust.cs" />
-    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdateState.cs" Link="UpdateState.cs" />
-    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/UpdatePackageVerifier.cs" Link="UpdatePackageVerifier.cs" />
-    <Compile Include="$(RawLabWindowsSourceRoot)/Updates/AuthenticodeTrust.cs" Link="AuthenticodeTrust.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Core/Updates/UpdateTrust.cs" Link="UpdateTrust.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Core/Updates/UpdateState.cs" Link="UpdateState.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Core/Updates/UpdatePackageVerifier.cs" Link="UpdatePackageVerifier.cs" />
+    <Compile Include="$(RawLabWindowsSourceRoot)/Core/Updates/AuthenticodeTrust.cs" Link="AuthenticodeTrust.cs" />
   </ItemGroup>
 </Project>

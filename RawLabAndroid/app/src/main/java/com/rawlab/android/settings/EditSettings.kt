@@ -2,6 +2,7 @@ package com.rawlab.android.settings
 
 import kotlin.math.ceil
 import kotlin.math.floor
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 
@@ -66,20 +67,25 @@ data class EditSettings(
     val proRAWDecodeVersion: Int? = null,
 ) {
     init {
+        val f = AdjustmentFieldSpec.Fields
         require(masterRecipeSettingsVersion in 2..4)
-        require(listOf(blackPoint, whitePoint, vibrance, clarity, dehaze).all { it.isFinite() && it in -100f..100f })
-        require(exposureMode in 0..2)
-        require(strength.isFinite() && strength in 0f..2f)
-        require(exposure.isFinite() && exposure in -5f..5f)
-        require(highlights.isFinite() && highlights in -1f..1f)
-        require(shadows.isFinite() && shadows in -1f..1f)
-        require(contrast.isFinite() && contrast in -1f..1f)
-        require(toneCurve.isFinite() && toneCurve in -1f..1f)
-        require(saturation.isFinite() && saturation in -1f..1f)
-        require(temperature.isFinite() && temperature in 2000f..50000f)
-        require(tint.isFinite() && tint in -150f..150f)
-        require(sharpening.isFinite() && sharpening in 0f..2f)
-        require(displayChromaDenoise in 0..2)
+        require(blackPoint.isFinite() && blackPoint in f.TONE_BLACK_POINT.androidModel.floatRange!!)
+        require(whitePoint.isFinite() && whitePoint in f.TONE_WHITE_POINT.androidModel.floatRange!!)
+        require(vibrance.isFinite() && vibrance in f.COLOR_VIBRANCE.androidModel.floatRange!!)
+        require(clarity.isFinite() && clarity in f.EFFECTS_CLARITY.androidModel.floatRange!!)
+        require(dehaze.isFinite() && dehaze in f.EFFECTS_DEHAZE.androidModel.floatRange!!)
+        require(exposureMode in f.LIGHT_EXPOSURE_MODE.androidModel.min!!.toInt()..f.LIGHT_EXPOSURE_MODE.androidModel.max!!.toInt())
+        require(strength.isFinite() && strength in f.LOOKS_STRENGTH.androidModel.floatRange!!)
+        require(exposure.isFinite() && exposure in f.LIGHT_EXPOSURE.androidModel.floatRange!!)
+        require(highlights.isFinite() && highlights in f.LIGHT_HIGHLIGHTS.androidModel.floatRange!!)
+        require(shadows.isFinite() && shadows in f.LIGHT_SHADOWS.androidModel.floatRange!!)
+        require(contrast.isFinite() && contrast in f.LIGHT_CONTRAST.androidModel.floatRange!!)
+        require(toneCurve.isFinite() && toneCurve in f.LIGHT_S_CURVE.androidModel.floatRange!!)
+        require(saturation.isFinite() && saturation in f.COLOR_SATURATION.androidModel.floatRange!!)
+        require(temperature.isFinite() && temperature in f.COLOR_WHITE_BALANCE_TEMPERATURE_KELVIN.androidModel.floatRange!!)
+        require(tint.isFinite() && tint in f.COLOR_WHITE_BALANCE_TINT.androidModel.floatRange!!)
+        require(sharpening.isFinite() && sharpening in f.DETAIL_SHARPENING.androidModel.floatRange!!)
+        require(displayChromaDenoise in f.DETAIL_DENOISE_CHROMA_MODE.androidModel.min!!.toInt()..f.DETAIL_DENOISE_CHROMA_MODE.androidModel.max!!.toInt())
         if (hdr == null) require(sdrSnapshot == null)
         else require(sdrSnapshot == null || sdrSnapshot.startsWith("v2:"))
     }
@@ -194,35 +200,35 @@ enum class PhotoEffectParameter(
     val range: ClosedFloatingPointRange<Float>,
     val defaultValue: Float,
 ) {
-    VIGNETTE_AMOUNT(true, -100f..100f, 0f),
-    VIGNETTE_MIDPOINT(true, 0f..100f, 50f),
-    VIGNETTE_ROUNDNESS(true, -100f..100f, 0f),
-    VIGNETTE_FEATHER(true, 0f..100f, 50f),
-    VIGNETTE_HIGHLIGHTS(true, 0f..100f, 0f),
-    GRAIN_AMOUNT(false, 0f..100f, 0f),
-    GRAIN_SIZE(false, 0f..100f, 25f),
-    GRAIN_ROUGHNESS(false, 0f..100f, 50f),
+    VIGNETTE_AMOUNT(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_AMOUNT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_AMOUNT.androidModel.defaultFloat!!),
+    VIGNETTE_MIDPOINT(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_MIDPOINT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_MIDPOINT.androidModel.defaultFloat!!),
+    VIGNETTE_ROUNDNESS(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_ROUNDNESS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_ROUNDNESS.androidModel.defaultFloat!!),
+    VIGNETTE_FEATHER(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_FEATHER.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_FEATHER.androidModel.defaultFloat!!),
+    VIGNETTE_HIGHLIGHTS(true, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_HIGHLIGHTS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_VIGNETTE_HIGHLIGHTS.androidModel.defaultFloat!!),
+    GRAIN_AMOUNT(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_AMOUNT.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_AMOUNT.androidModel.defaultFloat!!),
+    GRAIN_SIZE(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_SIZE.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_SIZE.androidModel.defaultFloat!!),
+    GRAIN_ROUGHNESS(false, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_ROUGHNESS.androidModel.floatRange!!, AdjustmentFieldSpec.Fields.EFFECTS_GRAIN_ROUGHNESS.androidModel.defaultFloat!!),
 }
 
 data class PhotoEffectsSettings(
-    val vignetteAmount: Float = 0f,
-    val vignetteMidpoint: Float = 50f,
-    val vignetteRoundness: Float = 0f,
-    val vignetteFeather: Float = 50f,
-    val vignetteHighlights: Float = 0f,
-    val grainAmount: Float = 0f,
-    val grainSize: Float = 25f,
-    val grainRoughness: Float = 50f,
+    val vignetteAmount: Float = PhotoEffectParameter.VIGNETTE_AMOUNT.defaultValue,
+    val vignetteMidpoint: Float = PhotoEffectParameter.VIGNETTE_MIDPOINT.defaultValue,
+    val vignetteRoundness: Float = PhotoEffectParameter.VIGNETTE_ROUNDNESS.defaultValue,
+    val vignetteFeather: Float = PhotoEffectParameter.VIGNETTE_FEATHER.defaultValue,
+    val vignetteHighlights: Float = PhotoEffectParameter.VIGNETTE_HIGHLIGHTS.defaultValue,
+    val grainAmount: Float = PhotoEffectParameter.GRAIN_AMOUNT.defaultValue,
+    val grainSize: Float = PhotoEffectParameter.GRAIN_SIZE.defaultValue,
+    val grainRoughness: Float = PhotoEffectParameter.GRAIN_ROUGHNESS.defaultValue,
 ) {
     init {
-        require(vignetteAmount.isFinite() && vignetteAmount in -100f..100f)
-        require(vignetteMidpoint.isFinite() && vignetteMidpoint in 0f..100f)
-        require(vignetteRoundness.isFinite() && vignetteRoundness in -100f..100f)
-        require(vignetteFeather.isFinite() && vignetteFeather in 0f..100f)
-        require(vignetteHighlights.isFinite() && vignetteHighlights in 0f..100f)
-        require(grainAmount.isFinite() && grainAmount in 0f..100f)
-        require(grainSize.isFinite() && grainSize in 0f..100f)
-        require(grainRoughness.isFinite() && grainRoughness in 0f..100f)
+        require(vignetteAmount.isFinite() && vignetteAmount in PhotoEffectParameter.VIGNETTE_AMOUNT.range)
+        require(vignetteMidpoint.isFinite() && vignetteMidpoint in PhotoEffectParameter.VIGNETTE_MIDPOINT.range)
+        require(vignetteRoundness.isFinite() && vignetteRoundness in PhotoEffectParameter.VIGNETTE_ROUNDNESS.range)
+        require(vignetteFeather.isFinite() && vignetteFeather in PhotoEffectParameter.VIGNETTE_FEATHER.range)
+        require(vignetteHighlights.isFinite() && vignetteHighlights in PhotoEffectParameter.VIGNETTE_HIGHLIGHTS.range)
+        require(grainAmount.isFinite() && grainAmount in PhotoEffectParameter.GRAIN_AMOUNT.range)
+        require(grainSize.isFinite() && grainSize in PhotoEffectParameter.GRAIN_SIZE.range)
+        require(grainRoughness.isFinite() && grainRoughness in PhotoEffectParameter.GRAIN_ROUGHNESS.range)
     }
 
     /** Numeric controls clamp finite input and ignore non-finite drafts. */

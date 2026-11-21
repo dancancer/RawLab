@@ -1,19 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/Shared/tests/hdr-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 INPUT="${1:?Pass a real RAW fixture}"
-BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
-OUT="$(mktemp -d /tmp/rawlab-wavelet-render.XXXXXX)"
-trap 'rm -rf "$OUT"' EXIT
-swiftc "$ROOT/Shared/Localization.swift" -swift-version 5 -O -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
-    "$ROOT/Shared/BundledLook.swift" \
-  -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-  "$ROOT/RawLabMac/Sources/Rendering/Engine.swift" "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift" "$ROOT/RawLabMac/Sources/Looks/Film.swift" "$ROOT/Shared/ExportMetadata.swift" \
-  "$ROOT/RawLabMac/Sources/Adjustments/Adjustments.swift" "$ROOT/RawLabMac/Sources/Adjustments/AdjustmentTypes.swift" "$ROOT/RawLabMac/Sources/Looks/MasterRecipe.swift" "$ROOT/Shared/HSLSettings.swift" "$ROOT/Shared/HSLTargetAdjustment.swift" "$ROOT/Shared/GeometrySettings.swift" "$ROOT/Shared/HDRSettings.swift" "$ROOT/Shared/ProcessingMigration.swift" "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "${HDR_SWIFT_SOURCES[@]}" "$ROOT/Shared/ToneControlsSettings.swift" "$ROOT/Shared/AtmosphereSettings.swift" "$ROOT/Shared/ColorGradingSettings.swift" "$ROOT/Shared/ToneCurveSettings.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" "$ROOT/RawLabMac/tests/WaveletRenderTests.swift" \
-  "${CORE_LINK[@]}" $(pkg-config --libs libraw_r opencv4 wavelib rawlab-dng-sdk lensfun libtiff-4) -lc++ -lz \
-  -framework AppKit -framework ImageIO -framework Metal -o "$OUT/test"
+rawlab_mac_make_temp_dir OUT rawlab-wavelet-render
+rawlab_mac_compile_native render-engine "$OUT/swiftpm" "$OUT/test" -- \
+    -O "$ROOT/RawLabMac/tests/WaveletRenderTests.swift"
 "$OUT/test" "$INPUT" "${@:2}"

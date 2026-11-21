@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -282,7 +283,25 @@ private struct WorkspacePhotoGrid: View {
                 Text(L10n.text("无照片")).font(.caption).foregroundStyle(.secondary)
                     .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                photos
+                VStack(spacing: 0) {
+                    if let ai = previews.aiPreparationProgress {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(ai.total > 0 ? "\(ai.fileName) · \(ai.title) · \(ai.done)/\(ai.total)" : "\(ai.fileName) · \(ai.title)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .monospacedDigit()
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, grid ? 12 : 7)
+                        .padding(.vertical, 5)
+                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65))
+                        .accessibilityIdentifier("workspace.thumbnails.aiProgress")
+                    }
+                    photos
+                }
             }
         }
     }
@@ -451,9 +470,15 @@ private struct WorkspacePhotoTile: View {
     let grid: Bool
     @EnvironmentObject private var previews: MacEditedPhotoPreviews
     @State private var state = WorkspacePhotoTileState()
+    private var activeAIProgress: AIPreparationProgress? {
+        guard state.edited, !state.adjustedThumbnail,
+              let ai = previews.aiPreparationProgress,
+              ai.path == PhotoThumbnailCacheKey.canonicalPath(for: url) else { return nil }
+        return ai
+    }
     private var accessibilityStatus: String {
         [checked ? L10n.text("已选") : nil, active ? L10n.text("当前照片") : nil,
-         state.edited ? L10n.text("已编辑") : nil, state.notice.map { L10n.text($0) }]
+         state.edited ? L10n.text("已编辑") : nil, activeAIProgress?.title ?? state.notice.map { L10n.text($0) }]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -479,7 +504,15 @@ private struct WorkspacePhotoTile: View {
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if state.edited, let notice = state.notice {
+                    if let ai = activeAIProgress {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text(ai.title).font(.system(size: 9))
+                        }
+                        .padding(3).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 3)).padding(4)
+                        .help(ai.total > 0 ? "\(ai.title) · \(ai.done)/\(ai.total)" : ai.title)
+                        .accessibilityHidden(true)
+                    } else if state.edited, let notice = state.notice {
                         Text(L10n.text(state.adjustedThumbnail ? notice : "原始预览")).font(.system(size: 9))
                             .padding(3).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 3)).padding(4)
                             .help(L10n.text(notice)).accessibilityHidden(true)

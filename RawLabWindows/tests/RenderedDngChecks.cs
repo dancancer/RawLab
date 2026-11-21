@@ -28,7 +28,7 @@ internal static class RenderedDngChecks
 
     private static string StatusMessage(int status)
     {
-        try { Native.Check(status); }
+        try { Native.CheckWithoutSession(status); }
         catch (InvalidOperationException error) { return error.Message; }
         throw new ArgumentOutOfRangeException(nameof(status));
     }
@@ -217,6 +217,6 @@ internal static class RenderedDngChecks
             Console.WriteLine("PASS Windows rendered DNG runtime regression");
             Console.WriteLine("NOT REACHED MainWindow SaveFileDialog and Explorer desktop integration");
         }
-        finally { batch.Close(); app.Shutdown(); }
+        finally { batch.Close(); }
     }
 }

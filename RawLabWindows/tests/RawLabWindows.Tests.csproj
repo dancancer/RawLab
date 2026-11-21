@@ -1,21 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF>
-    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><PlatformTarget>x64</PlatformTarget>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="denoise/**/*.cs" />
-    <Compile Remove="updates/**/*.cs" />
-    <Compile Remove="updates-sdk/**/*.cs" />
-    <Compile Remove="update-fixture/**/*.cs" />
-    <Compile Remove="editing/**/*.cs" />
-    <Compile Remove="looks/**/*.cs" />
-    <Compile Remove="localization/**/*.cs" />
-    <Compile Remove="localization-ui/**/*.cs" />
-    <Compile Remove="ui-automation/**/*.cs" />
-    <Compile Remove="usage/**/*.cs" />
-    <Compile Remove="system-open/**/*.cs" />
-    <!-- 测试永远不带统计 SDK：只用不可用或假的 transport，不可能发出正式数据 -->
+    <Compile Remove="ui-automation/**/*.cs;update-fixture/**/*.cs" />
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Xunit.StaFact" Version="1.2.69" />
+    <!-- 测试永远不带统计 SDK：只用不可用或假的 transport，不可能发出正式数据；Core 经 RawLabWindows 传递引用以免并行双构建 -->
     <ProjectReference Include="../RawLabWindows.csproj" AdditionalProperties="RawLabRumSdk=false" />
     <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.EnableHardwareAccelerationInRdp" Value="true" />
   </ItemGroup>

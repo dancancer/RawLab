@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import UIKit
 import SwiftUI
@@ -8,14 +9,12 @@ enum SubtoolDraftProbe {
     static var attached: ContentView?
     static var checks = 0
 
-    static func installHooks() {
-        SubtoolProbeBridge.onAttach = { view in
-            if attached == nil {
-                attached = view
-                DispatchQueue.main.async {
-                    Task { @MainActor in
-                        await runSuite()
-                    }
+    static func attach(_ view: ContentView) {
+        if attached == nil {
+            attached = view
+            DispatchQueue.main.async {
+                Task { @MainActor in
+                    await runSuite()
                 }
             }
         }
@@ -133,8 +132,8 @@ enum SubtoolDraftProbe {
 
         func resetToCleanEditor() async {
             view.finishEditorTool()
-            view.draftExitPresented = false
-            view.adjustmentSheet = nil
+            view.coordinator.draftExitPresented = false
+            view.coordinator.adjustmentSheet = nil
             view.viewModel.closeQuickPresets()
             view.viewModel.cancelQuickPreset()
             view.viewModel.hasAdjustmentDraft = false
@@ -178,7 +177,7 @@ enum SubtoolDraftProbe {
                     }
                 case "paste":
                     check(view.adjustmentSheet == .paste, "[\(label)+paste] opened paste sheet")
-                    view.adjustmentSheet = nil
+                    view.coordinator.adjustmentSheet = nil
                     _ = await waitUntil(5) { noPresentedSheet() && !view.viewModel.adjustmentPreparing }
                     await yieldFrames(4)
                     guard let target = view.viewModel.currentAdjustmentPhoto else {
@@ -225,7 +224,7 @@ enum SubtoolDraftProbe {
         check(view.draftExitPresented && view.adjustmentSheet == nil,
               "Modified contrast draft triggers draftExitPresented before paste sheet")
 
-        view.draftExitPresented = false
+        view.coordinator.draftExitPresented = false
         view.finishDraftNavigation(apply: false)
         await yieldFrames(8)
         check(!view.draftExitPresented && !view.toolWorkspaceOpen && !view.viewModel.hasAdjustmentDraft,
@@ -235,7 +234,7 @@ enum SubtoolDraftProbe {
         await resetToCleanEditor()
         view.selectEditorTool(.geometry)
         await yieldFrames(6)
-        view.geometryDraft?.straightenDegrees = 3.0
+        view.coordinator.geometryDraft?.straightenDegrees = 3.0
         await yieldFrames(4)
         check(view.isEditorDraftChanged, "Modified geometry draft reports isEditorDraftChanged=true")
         view.requestAdjustmentAction(.copy)
@@ -276,7 +275,7 @@ enum SubtoolDraftProbe {
         await resetToCleanEditor()
         view.selectEditorTool(.geometry)
         await yieldFrames(6)
-        view.geometryDraft?.straightenDegrees = 2.0
+        view.coordinator.geometryDraft?.straightenDegrees = 2.0
         await yieldFrames(4)
         check(view.resolveCollectionDraft(sourceKey, apply: true),
               "resolveCollectionDraft(apply: true) succeeds for modified geometry draft")
@@ -323,7 +322,7 @@ enum SubtoolDraftProbe {
               "requestSingleExport closes workspace and clears hasAdjustmentDraft")
         check(abs(view.settings.contrast - exportContrast) < 0.001,
               "requestSingleExport commits modified contrast before export")
-        view.showingExportSize = false
+        view.coordinator.showingExportSize = false
         _ = await waitUntil(5) { noPresentedSheet() }
 
         await resetToCleanEditor()
@@ -335,8 +334,8 @@ enum SubtoolDraftProbe {
               "openBatchExport opens batch export with active draft")
         check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
               "openBatchExport closes workspace and clears hasAdjustmentDraft")
-        view.batchModel = nil
-        view.showingBatchExport = false
+        view.coordinator.batchExportHandle = nil
+        view.coordinator.showingBatchExport = false
         _ = await waitUntil(5) { noPresentedSheet() }
 
         // 6. Collection navigation and openBatchSelection must close active draft cleanly so
@@ -350,8 +349,8 @@ enum SubtoolDraftProbe {
               "requestCollectionNavigation(.returnToCollection) opens collection sheet for unchanged draft")
         check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
               "requestCollectionNavigation(.returnToCollection) closes workspace and keeps hasAdjustmentDraft=false")
-        view.showingBatchSelection = false
-        view.pendingCollectionNavigation = nil
+        view.coordinator.showingBatchSelection = false
+        view.coordinator.pendingCollectionNavigation = nil
         _ = await waitUntil(5) { noPresentedSheet() }
 
         await resetToCleanEditor()
@@ -363,7 +362,7 @@ enum SubtoolDraftProbe {
               "openBatchSelection opens collection sheet with unchanged active draft")
         check(!view.toolWorkspaceOpen && !view.isEditorDraftActive && !view.viewModel.hasAdjustmentDraft,
               "openBatchSelection closes unchanged draft workspace and keeps hasAdjustmentDraft=false")
-        view.showingBatchSelection = false
+        view.coordinator.showingBatchSelection = false
         _ = await waitUntil(5) { noPresentedSheet() }
 
         await resetToCleanEditor()
@@ -380,7 +379,7 @@ enum SubtoolDraftProbe {
               "openBatchSelection closes modified draft workspace and keeps hasAdjustmentDraft=false")
         check(abs(view.settings.contrast - batchContrast) < 0.001,
               "openBatchSelection commits modified contrast before opening collection")
-        view.showingBatchSelection = false
+        view.coordinator.showingBatchSelection = false
         _ = await waitUntil(5) { noPresentedSheet() }
 
         writeResult(passed: true)
@@ -399,10 +398,13 @@ final class SubtoolDraftAppDelegate: UIResponder, UIApplicationDelegate, UIWindo
     }
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
-        SubtoolDraftProbe.installHooks()
         guard let ws = scene as? UIWindowScene else { return }
         let w = UIWindow(windowScene: ws)
-        w.rootViewController = UIHostingController(rootView: ContentView())
+        w.rootViewController = UIHostingController(rootView: ContentView(
+            testHooks: EditorTestHooks(onAppear: { view in
+                SubtoolDraftProbe.attach(view)
+            })
+        ))
         w.makeKeyAndVisible()
         self.window = w
     }

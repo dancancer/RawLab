@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 // 本地验证构建（环境变量配置、独立包名）只能是 Debug；正式构建用 RAWLAB_RUM

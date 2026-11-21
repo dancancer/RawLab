@@ -11,7 +11,7 @@ public partial class MainWindow
     private LookBrowserCategory lookCategory;
     private string lookQuery="";
     private RecentLooks recentLooks=new();
-    private string recentLooksPath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","recent-looks.json");
+    private string recentLooksPath="";
     private bool updatingLookCategories;
 
     private string LookBrowserID(Film film)=>film.Path==null ? "" : IsBuiltInLook(film.Path)

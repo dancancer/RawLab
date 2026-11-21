@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import com.rawlab.android.editor.controls.HslTargetActions
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -136,6 +138,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var resetMenu by remember { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var toolOpen by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
+    var draftOpened by rememberSaveable(state.photo?.identity) { mutableStateOf(state.draft != null) }
     var workspaceHistogram by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var fine by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var toolMenu by remember { mutableStateOf(false) }
@@ -163,7 +166,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (pendingAll) return
         onCancelAdjustment()
         if (state.draft?.changed == true) pendingLeave = action
-        else { if (state.draft != null) onDiscardDraft(); toolOpen = false; action() }
+        else { toolOpen = false; if (state.draft != null) onDiscardDraft(); action() }
     }
     fun applyAndLeave() {
         onApplyDraft { accepted ->
@@ -201,7 +204,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val retrySave = { if (state.draft != null) { applyAndLeave(); Unit } else onSaveRetry() }
     val selectTool: (Int) -> Unit = { next ->
         if (quickPresetsVisible) onClosePresets()
-        if (next != tool || !toolOpen) leave { tool = next; fine = false; toolOpen = true; expanded = true }
+        if (next != tool || !toolOpen) leave { tool = next; fine = false; draftOpened = false; toolOpen = true; expanded = true }
     }
     fun openQuickPresets() { onCancelAdjustment(); expanded = true; onPresets() }
     val selectGroup: (EditorAdjustmentGroup) -> Unit = { group ->
@@ -249,11 +252,21 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             prepareReset(EditorResetScope.All)
         }
     }
-    LaunchedEffect(tool, toolOpen, state.canExport, pendingAll) {
-        if (toolOpen && !pendingAll && state.draft == null && state.canExport)
+    LaunchedEffect(tool, toolOpen, draftOpened, state.canExport, pendingAll) {
+        if (toolOpen && !draftOpened && !pendingAll && state.draft == null && state.canExport)
             onBeginDraft(AdjustmentGroup.forTool(tool))
     }
-    LaunchedEffect(state.draft?.group) { state.draft?.let { tool = it.group.tool; toolOpen = true } }
+    LaunchedEffect(state.draft?.group) {
+        val draft = state.draft
+        if (draft != null) {
+            tool = draft.group.tool
+            toolOpen = true
+            draftOpened = true
+        } else if (draftOpened) {
+            draftOpened = false
+            toolOpen = false
+        }
+    }
     BackHandler(enabled = toolOpen) { leave { toolOpen = false } }
     BackHandler(enabled = state.operation == Operation.EXPORT, onBack = onCancelExport)
     BackHandler(enabled = state.importingHDRLook, onBack = onCancelHDRLookImport)
@@ -263,7 +276,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             enabled = state.canApplyDraft) { Text(stringResource(R.string.adjustment_apply)) } },
         dismissButton = {
             Column {
-                TextButton(onClick = { onDiscardDraft(); toolOpen = false; pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
+                TextButton(onClick = { toolOpen = false; onDiscardDraft(); pendingLeave?.invoke(); pendingLeave = null }) { Text(stringResource(R.string.adjustment_discard)) }
                 TextButton(onClick = { cancelLeave() }) { Text(stringResource(R.string.adjustment_continue)) }
             }
         })
@@ -421,20 +434,22 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     CompositionLocalProvider(LocalEditorHaptics provides haptics, LocalAdjustmentFocus provides { adjusting = it },
         LocalAdjustmentHapticGate provides hapticGate, LocalAdjustmentCancellation provides cancelRuler) {
     val currentDock by rememberUpdatedState<@Composable (Modifier, Boolean, Boolean) -> Unit>({ modifier, side, compact ->
-        AdjustmentDock(state, modifier, tool, selectTool, expanded, {
+        val dockTool = tool
+        AdjustmentDock(state, modifier, dockTool, selectTool, expanded, {
             if (quickPresetsVisible) onClosePresets()
             if (targetMode) expanded = !expanded else leave { expanded = !expanded }
         },
             compare, { view = view.toggleComparison() }, onEdit, onImportLook,
             { id, name -> leave { onRenameLook(id, name) } }, { id -> leave { onDeleteLook(id) } },
-            onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { onDiscardDraft(); toolOpen = false },
+            onAutoExposure, onDraftEdit, { applyAndLeave(); Unit }, { toolOpen = false; onDiscardDraft() },
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
-            processingContext = processingContext, onDismissProcessingContext = { processingContext = false })
+            processingContext = processingContext, onDismissProcessingContext = { processingContext = false },
+            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll })
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
@@ -444,11 +459,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     @Composable fun workspaceActions(modifier: Modifier) {
         if (state.photo != null && !view.purePreview) Row(modifier.fillMaxWidth().padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            ToolIcon(Icons.Outlined.Undo, R.string.transfer_undo, (if (toolOpen) state.draft?.canUndo == true else canUndoAdjustment) && state.controlsEnabled, if (toolOpen) onUndoDraft else onUndoAdjustment)
-            ToolIcon(Icons.Outlined.Redo, R.string.transfer_redo, (if (toolOpen) state.draft?.canRedo == true else canRedoAdjustment) && state.controlsEnabled, if (toolOpen) onRedoDraft else onRedoAdjustment)
+            ToolIcon(AppIcons.Outlined.Undo, R.string.transfer_undo, (if (toolOpen) state.draft?.canUndo == true else canUndoAdjustment) && state.controlsEnabled, if (toolOpen) onUndoDraft else onUndoAdjustment)
+            ToolIcon(AppIcons.Outlined.Redo, R.string.transfer_redo, (if (toolOpen) state.draft?.canRedo == true else canRedoAdjustment) && state.controlsEnabled, if (toolOpen) onRedoDraft else onRedoAdjustment)
             resetPresentation?.let { presentation ->
                 Box {
-                    ToolIcon(Icons.Outlined.SettingsBackupRestore, R.string.reset, presentation.isEnabled) {
+                    ToolIcon(AppIcons.Outlined.SettingsBackupRestore, R.string.reset, presentation.isEnabled) {
                         resetMenu = true
                     }
                     if (resetMenu) EditorResetMenu(presentation, onDismiss = { resetMenu = false }) { scope ->
@@ -458,11 +473,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 }
             }
             Spacer(Modifier.weight(1f))
-            ToolIcon(Icons.Outlined.Compare, R.string.editor_compare_enable, state.draft?.group != AdjustmentGroup.GEOMETRY) {
+            ToolIcon(AppIcons.Outlined.Compare, R.string.editor_compare_enable, state.draft?.group != AdjustmentGroup.GEOMETRY) {
                 view = view.toggleComparison()
             }
             if (toolOpen) Box(Modifier.testTag("workspace-more")) {
-                ToolIcon(Icons.Outlined.MoreHoriz, R.string.more) { toolMenu = true }
+                ToolIcon(AppIcons.Outlined.MoreHoriz, R.string.more) { toolMenu = true }
                 DropdownMenu(toolMenu, { toolMenu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.camera_title)) },
                         modifier = Modifier.testTag("workspace-camera"), enabled = state.operation == Operation.NONE,
@@ -499,18 +514,18 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (!view.purePreview && !toolOpen) CenterAlignedTopAppBar(modifier = Modifier.alpha(surroundingAlpha), title = {
             Text(state.photo?.name ?: "RawLab", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }, navigationIcon = {
-            ToolIcon(if (state.photo != null) Icons.AutoMirrored.Outlined.ArrowBack else Icons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE) { leave(onAlbum) }
+            ToolIcon(if (state.photo != null) Icons.AutoMirrored.Outlined.ArrowBack else AppIcons.Outlined.PhotoLibrary, R.string.open_album, state.operation == Operation.NONE) { leave(onAlbum) }
         }, actions = {
             IconButton(onClick = { onCancelAdjustment(); onCamera() }, enabled = state.operation == Operation.NONE,
                 modifier = Modifier.testTag("editor-camera")) {
-                Icon(Icons.Outlined.CameraAlt, stringResource(R.string.camera_title))
+                Icon(AppIcons.Outlined.CameraAlt, stringResource(R.string.camera_title))
             }
-            ToolIcon(Icons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
+            ToolIcon(AppIcons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
             Box(Modifier.testTag("editor-menu")) {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,
-                        leadingIcon = { Icon(Icons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
+                        leadingIcon = { Icon(AppIcons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.camera_import)) },
                         modifier = Modifier.testTag("camera-entry"), enabled = state.operation == Operation.NONE,
                         onClick = { menu = false; onCancelAdjustment(); onCamera() })
@@ -518,46 +533,46 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
                         modifier = Modifier.testTag("preset-menu"), onClick = { menu = false; openQuickPresets() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_copy)) }, enabled = state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-copy"), leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                        modifier = Modifier.testTag("adjustment-menu-copy"), leadingIcon = { Icon(AppIcons.Outlined.ContentCopy, null) },
                         onClick = { menu = false; leave(onCopyAdjustments) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_paste)) }, enabled = state.controlsEnabled && canPasteAdjustment,
-                        modifier = Modifier.testTag("adjustment-menu-paste"), leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
+                        modifier = Modifier.testTag("adjustment-menu-paste"), leadingIcon = { Icon(AppIcons.Outlined.ContentPaste, null) },
                         onClick = { menu = false; leave(onPasteAdjustments) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_undo)) }, enabled = canUndoAdjustment && state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-undo"), leadingIcon = { Icon(Icons.Outlined.Undo, null) },
+                        modifier = Modifier.testTag("adjustment-menu-undo"), leadingIcon = { Icon(AppIcons.Outlined.Undo, null) },
                         onClick = { menu = false; leave(onUndoAdjustment) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_redo)) }, enabled = canRedoAdjustment && state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-redo"), leadingIcon = { Icon(Icons.Outlined.Redo, null) },
+                        modifier = Modifier.testTag("adjustment-menu-redo"), leadingIcon = { Icon(AppIcons.Outlined.Redo, null) },
                         onClick = { menu = false; leave(onRedoAdjustment) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_history)) }, enabled = state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(Icons.Outlined.History, null) },
+                        modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(AppIcons.Outlined.History, null) },
                         onClick = { menu = false; leave(onAdjustmentHistory) })
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text(if (collectionEditing) stringResource(R.string.collection_return) else stringResource(R.string.collection_title)) },
                         enabled = state.operation == Operation.NONE, modifier = Modifier.testTag("collection-menu"),
-                        leadingIcon = { Icon(Icons.Outlined.Collections, null) }, onClick = {
+                        leadingIcon = { Icon(AppIcons.Outlined.Collections, null) }, onClick = {
                             menu = false
                             if (collectionEditing) leave(onCollection) else { onCancelAdjustment(); onCollection() }
                         })
                     DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
-                        leadingIcon = { Icon(Icons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
+                        leadingIcon = { Icon(AppIcons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,
                         leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; view = view.copy(infoMode = (view.infoMode + 1) % 3) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
                         onClick = { workspaceHistogram = !workspaceHistogram; menu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_zoom_display)) }, enabled = state.preview != null && state.draft == null,
-                        leadingIcon = { Icon(Icons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
+                        leadingIcon = { Icon(AppIcons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
                         enabled = state.photo != null, modifier = Modifier.testTag("processing-settings"),
                         onClick = { menu = false; processingContext = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_settings)) },
                         leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { menu = false; settings = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) },
-                        leadingIcon = { Icon(Icons.Outlined.Description, null) }, onClick = { menu = false; leave(onLicenses) })
+                        leadingIcon = { Icon(AppIcons.Outlined.Description, null) }, onClick = { menu = false; leave(onLicenses) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.about_rawlab)) },
                         leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; leave(onAbout) })
                     if (updateVersion != null) DropdownMenuItem(text = { Text(stringResource(R.string.view_update)) },
-                        leadingIcon = { Icon(Icons.Outlined.SystemUpdate, null) }, onClick = { menu = false; leave(onAbout) })
+                        leadingIcon = { Icon(AppIcons.Outlined.SystemUpdate, null) }, onClick = { menu = false; leave(onAbout) })
                 }
                 DropdownMenu(zoomMenu, { zoomMenu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.zoom_fit)) }, onClick = { zoomMenu = false; photoCanvas.view = com.rawlab.android.editor.canvas.PhotoViewTransform() })
@@ -573,8 +588,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale)
             // 顶部进度区与底部分隔线不属于照片/面板可分配高度。
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
-            val dockHeight = if (!toolOpen && !quickPresetsVisible) (if (density.fontScale > 1.3f) 196 else 164).dp else dockLayout.height.dp
-            val sideDockWidth = 336.dp
+            val dockHeight = if (!toolOpen && !quickPresetsVisible) com.rawlab.android.editor.controls.editorHomeDockHeight(density.fontScale).dp else dockLayout.height.dp
+            val sideDockWidth = com.rawlab.android.editor.controls.EDITOR_SIDE_DOCK_WIDTH.dp
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {

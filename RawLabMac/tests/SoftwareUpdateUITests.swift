@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 
@@ -17,34 +18,22 @@ import SwiftUI
         app.run()
     }
     static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {
-        guard try condition() else { throw RenderError.failed(message) }; print("PASS: \(message)")
+        try MacUITestRobot.check(condition(), message)
     }
     @MainActor static func settle(_ model: EditorModel) async throws {
-        try await Task.sleep(for: .milliseconds(350))
-        for _ in 0..<600 {
-            if !model.busy, !model.workerActive, model.result != nil { return }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        throw RenderError.failed("Native editor render timed out")
+        try await MacUITestRobot.settle(model)
     }
     @MainActor static func fields(_ view: NSView) -> [NumericTextField] {
-        (view as? NumericTextField).map { [$0] } ?? view.subviews.flatMap { fields($0) }
+        MacUITestRobot.fields(view)
     }
     @MainActor static func scrollViews(_ view: NSView) -> [NSScrollView] {
-        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrollViews($0) }
+        MacUITestRobot.scrollViews(view)
     }
     @MainActor static func png(_ host: NSView) throws -> Data {
-        host.layoutSubtreeIfNeeded()
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:]) ?? Data()
+        try MacUITestRobot.png(host)
     }
     @MainActor static func window<V: View>(_ view: V, width: CGFloat, height: CGFloat) -> (NSWindow, NSHostingView<V>) {
-        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        host.appearance = NSAppearance(named: .darkAqua)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentView = host; host.layoutSubtreeIfNeeded()
-        return (window, host)
+        MacUITestRobot.window(view, width: width, height: height)
     }
     @MainActor static func run() async throws {
         guard CommandLine.arguments.count == 3 else { throw RenderError.failed("Pass a fixture and output directory") }
@@ -100,7 +89,7 @@ import SwiftUI
         updates.cancel(); model.cancelGeometryDraft(); try await settle(model)
         for language in ["zh-Hans", "en", "de", "fr", "ja", "es"] {
             UserDefaults.standard.setVolatileDomain([L10n.preferenceKey: language, "photoFolders": [String]()], forName: UserDefaults.argumentDomain)
-            let (dialog, host) = window(SoftwareUpdateView(updates: updates).environment(\.locale, Locale(identifier: language)).dynamicTypeSize(.accessibility3)
+            let (dialog, host) = window(SoftwareUpdateView(updates: updates).environment(\.locale, Locale(identifier: language))
                 .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
             try await Task.sleep(for: .milliseconds(150)); host.layoutSubtreeIfNeeded()
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw RenderError.failed("No native update bitmap") }
@@ -131,7 +120,7 @@ import SwiftUI
         _ = pending.pendingUpdate.installing(token: token); _ = pending.pendingUpdate.fail("test", detail: "Injected failed install", token: token)
         try recoveryStore.save(pending); try Data("new format".utf8).write(to: original)
         let recovery = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: recoveryStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery).dynamicTypeSize(.accessibility3)
+        let (recoveryWindow, recoveryHost) = window(SoftwareUpdateView(updates: recovery)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100)); recoveryHost.layoutSubtreeIfNeeded()
         try check(recovery.canRestorePreviousData && !recovery.canCheck, "Native recovery screen exposes the explicit restore action and blocks new checks")
@@ -150,7 +139,7 @@ import SwiftUI
         recoveryWindow.contentView = nil; recoveryWindow.close()
         let unsupported = DesktopUpdateController(adapter: UnavailableUpdateAdapter("configuration"), gate: UpdateInstallGate(),
             store: UpdateStore(directory: output.appendingPathComponent("unsupported/Updates")), currentVersion: "0.8.2", currentBuild: "14", automaticCheck: false)
-        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported).dynamicTypeSize(.accessibility3)
+        let (unsupportedWindow, unsupportedHost) = window(SoftwareUpdateView(updates: unsupported)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100))
         let unsupportedPNG = try png(unsupportedHost)
@@ -159,7 +148,7 @@ import SwiftUI
         try FileManager.default.createDirectory(at: repairStore.directory, withIntermediateDirectories: true)
         let damaged = Data("{broken".utf8); try damaged.write(to: repairStore.stateURL)
         let repair = DesktopUpdateController(adapter: Adapter(), gate: UpdateInstallGate(), store: repairStore, currentVersion: "0.8.2", currentBuild: "14")
-        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair).dynamicTypeSize(.accessibility3)
+        let (repairWindow, repairHost) = window(SoftwareUpdateView(updates: repair)
             .background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark), width: 560, height: 680)
         try await Task.sleep(for: .milliseconds(100))
         let degradedPNG = try png(repairHost)

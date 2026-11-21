@@ -21,8 +21,8 @@ namespace sony2fuji::hdr::storage {
 namespace fs = std::filesystem;
 namespace {
 [[noreturn]] void ioError(const char* message) {
-    throw Error(SONY2FUJI_STATUS_OUTPUT_IO_ERROR, SONY2FUJI_HDR_REASON_OUTPUT_IO,
-        SONY2FUJI_HDR_FIELD_EXPORT, message);
+    throw Error(RenderStatus::OutputIoError, kHdrReasonOutputIo,
+        kHdrFieldExport, message);
 }
 constexpr const char* marker = ".rawlab-stream.lock";
 #ifdef _WIN32
@@ -55,6 +55,23 @@ Handle lockMarker(const fs::path& path, bool create) {
     return fd;
 }
 #endif
+void removeDirectoryTree(const fs::path& path) noexcept {
+    if (path.empty()) return;
+    std::error_code error;
+    fs::remove_all(path, error);
+#ifdef _WIN32
+    // Windows real-time AV/indexer filters or delete-pending handles on freshly closed
+    // scratch files can briefly return ERROR_SHARING_VIOLATION / ERROR_DIR_NOT_EMPTY.
+    for (int attempt = 0; attempt < 15; ++attempt) {
+        std::error_code existsError;
+        const bool present = fs::exists(path, existsError);
+        if (!error && !existsError && !present) break;
+        Sleep(DWORD(attempt < 6 ? (1u << attempt) : 40u));
+        error.clear();
+        fs::remove_all(path, error);
+    }
+#endif
+}
 }
 struct Directory::State { Handle lock = invalid; ~State() { close(lock); } };
 void Directory::recover(const fs::path& root) {
@@ -72,6 +89,7 @@ void Directory::recover(const fs::path& root) {
         std::error_code ignored;
         fs::remove_all(candidate, ignored);
         close(lock);
+        removeDirectoryTree(candidate);
     }
 }
 void requireSpace(const fs::path& root, uint64_t required) {
@@ -101,11 +119,11 @@ Directory::Directory(const fs::path& root, uint64_t required) : state_(std::make
     state_->lock = lockMarker(pending, true);
     if (state_->lock != invalid) fs::rename(pending, path / marker, error);
     if (state_->lock == invalid || error) {
-        state_.reset(); fs::remove_all(path, error);
+        state_.reset(); removeDirectoryTree(path);
         ioError("Cannot lock private HDR export directory");
     }
 }
-Directory::~Directory() { std::error_code error; fs::remove_all(path, error); }
+Directory::~Directory() { state_.reset(); removeDirectoryTree(path); }
 
 struct File::State {
     Handle handle = invalid;

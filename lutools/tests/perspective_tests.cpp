@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "core/photo_geometry.h"
 
 #include <algorithm>
@@ -12,13 +13,7 @@ using namespace sony2fuji;
 
 namespace {
 
-size_t checks = 0;
-
-void check(bool condition, const std::string& message) {
-    ++checks;
-    if (!condition) throw std::runtime_error(message);
-}
-
+using rawlab::test::require;
 bool same(const RGB& a, const RGB& b) {
     return a.r == b.r && a.g == b.g && a.b == b.b;
 }
@@ -100,11 +95,11 @@ Point referencePoint(int x, int y, int width, int height, const ReferenceCanvas&
     const double qx = (m11 * px - m01 * py) / determinant;
     const double qy = (m00 * py - m10 * px) / determinant;
     const double forwardDenominator = 1 - a * qx - b * qy;
-    check(determinant > 0 && forwardDenominator > 0, "projective map must have no poles");
-    check(std::abs(qx / forwardDenominator - px) < 1e-10 &&
+    require(determinant > 0 && forwardDenominator > 0, "projective map must have no poles");
+    require(std::abs(qx / forwardDenominator - px) < 1e-10 &&
         std::abs(qy / forwardDenominator - py) < 1e-10, "projective forward/inverse residual");
     const Point result{qx + (width - 1) * .5, qy + (height - 1) * .5};
-    check(result.x >= -.5 - 1e-9 && result.x <= width - .5 + 1e-9 &&
+    require(result.x >= -.5 - 1e-9 && result.x <= width - .5 + 1e-9 &&
         result.y >= -.5 - 1e-9 && result.y <= height - .5 + 1e-9,
         "safe canvas samples must remain inside source pixel support");
     return result;
@@ -123,19 +118,19 @@ RGB affineSample(const ImageData& image, Point point) {
 
 void compareGradient(const ImageData& source, const GeometryOptions& options) {
     auto actual = source;
-    check(options.valid() && options.active() && applyGeometry(actual, options) == ErrorCode::Success,
+    require(options.valid() && options.active() && applyGeometry(actual, options) == ErrorCode::Success,
         "active perspective must succeed");
     const auto canvas = referenceCanvas(source.width, source.height, options);
     const auto rotated = oriented(source, options);
-    check(actual.width == canvas.right - canvas.left && actual.height == canvas.bottom - canvas.top,
+    require(actual.width == canvas.right - canvas.left && actual.height == canvas.bottom - canvas.top,
         "perspective dimensions must shrink before straightening and crop");
     for (int y = 0; y < actual.height; ++y) for (int x = 0; x < actual.width; ++x) {
         const auto point = referencePoint(x + canvas.left, y + canvas.top,
             rotated.width, rotated.height, canvas, options);
         const auto expected = affineSample(rotated, point), pixel = actual.at(x, y);
-        check(std::abs(pixel.r - expected.r) < 2e-6f && std::abs(pixel.g - expected.g) < 2e-6f &&
+        require(std::abs(pixel.r - expected.r) < 2e-6f && std::abs(pixel.g - expected.g) < 2e-6f &&
             std::abs(pixel.b - expected.b) < 4e-6f, "analytic projective gradient differs");
-        check(pixel.r < 0 && pixel.g > 1 && pixel.b > 1, "perspective must preserve negatives and super-whites");
+        require(pixel.r < 0 && pixel.g > 1 && pixel.b > 1, "perspective must preserve negatives and super-whites");
     }
 }
 
@@ -162,26 +157,26 @@ void mappingTests() {
     centered.perspective_horizontal = centered.perspective_vertical = .5f;
     auto image = gradient(79, 59);
     const RGB center = image.at(39, 29);
-    check(applyGeometry(image, centered) == ErrorCode::Success && image.width == 63 && image.height == 47 &&
+    require(applyGeometry(image, centered) == ErrorCode::Success && image.width == 63 && image.height == 47 &&
         same(image.at(31, 23), center), "perspective must keep the original rotated center fixed");
 }
 
 void identityAndCropTests() {
     const auto source = gradient(8, 6);
     GeometryOptions options;
-    check(options.valid() && !options.active(), "zero perspective is valid inactive identity");
+    require(options.valid() && !options.active(), "zero perspective is valid inactive identity");
     auto image = source;
     const auto* storage = image.pixels.data();
-    check(applyGeometry(image, options) == ErrorCode::Success && same(image, source) && image.pixels.data() == storage,
+    require(applyGeometry(image, options) == ErrorCode::Success && same(image, source) && image.pixels.data() == storage,
         "zero perspective identity must preserve exact pixels and storage");
     options.quarter_turns = 1; options.flip_horizontal = true; options.flip_vertical = true;
     options.crop_x = .5f; options.crop_width = .5f; options.crop_y = .25f; options.crop_height = .5f;
     const auto rotated = oriented(source, options);
     image = source;
-    check(applyGeometry(image, options) == ErrorCode::Success && image.width == 3 && image.height == 4,
+    require(applyGeometry(image, options) == ErrorCode::Success && image.width == 3 && image.height == 4,
         "zero perspective retains integer geometry dimensions");
     for (int y = 0; y < image.height; ++y) for (int x = 0; x < image.width; ++x)
-        check(same(image.at(x, y), rotated.at(x + 3, y + 2)), "zero perspective must retain exact integer geometry");
+        require(same(image.at(x, y), rotated.at(x + 3, y + 2)), "zero perspective must retain exact integer geometry");
 
     auto textured = gradient(79, 59);
     for (int y = 0; y < textured.height; ++y) for (int x = 0; x < textured.width; ++x)
@@ -189,7 +184,7 @@ void identityAndCropTests() {
     options = {};
     options.perspective_horizontal = .7f; options.perspective_vertical = -.4f; options.straighten_degrees = 13;
     auto full = textured;
-    check(applyGeometry(full, options) == ErrorCode::Success, "perspective plus straightening succeeds");
+    require(applyGeometry(full, options) == ErrorCode::Success, "perspective plus straightening succeeds");
     const auto fullCanvas = referenceCanvas(textured.width, textured.height, options);
     for (int y = 0; y < full.height; ++y) for (int x = 0; x < full.width; ++x) {
         const auto point = referencePoint(x, y, textured.width, textured.height, fullCanvas, options);
@@ -201,15 +196,15 @@ void identityAndCropTests() {
         const double expected = (1 - u) * (1 - v) * textured.at(left, top).b +
             u * (1 - v) * textured.at(right, top).b + (1 - u) * v * textured.at(left, bottom).b +
             u * v * textured.at(right, bottom).b;
-        check(std::abs(full.at(x, y).b - expected) < 4e-6,
+        require(std::abs(full.at(x, y).b - expected) < 4e-6,
             "combined perspective and straightening must sample the original texture once");
     }
     options.crop_x = .125f; options.crop_y = .25f; options.crop_width = .625f; options.crop_height = .5f;
     auto cropped = textured;
-    check(applyGeometry(cropped, options) == ErrorCode::Success, "combined crop succeeds");
+    require(applyGeometry(cropped, options) == ErrorCode::Success, "combined crop succeeds");
     const int left = int(std::floor(.125 * full.width)), top = int(std::floor(.25 * full.height));
     for (int y = 0; y < cropped.height; ++y) for (int x = 0; x < cropped.width; ++x)
-        check(same(cropped.at(x, y), full.at(left + x, top + y)), "crop must select samples without resampling again");
+        require(same(cropped.at(x, y), full.at(left + x, top + y)), "crop must select samples without resampling again");
 }
 
 void tinyAndValidationTests() {
@@ -221,9 +216,9 @@ void tinyAndValidationTests() {
             ImageData image(dimensions.first, dimensions.second);
             const RGB constant{-2, 3, 10};
             std::fill(image.pixels.begin(), image.pixels.end(), constant);
-            check(applyGeometry(image, options) == ErrorCode::Success && image.width >= 1 && image.height >= 1,
+            require(applyGeometry(image, options) == ErrorCode::Success && image.width >= 1 && image.height >= 1,
                 "tiny perspective canvas must retain a pixel");
-            for (const auto& pixel : image.pixels) check(same(pixel, constant), "edge extension must preserve constants without black borders");
+            for (const auto& pixel : image.pixels) require(same(pixel, constant), "edge extension must preserve constants without black borders");
         }
     }
     const auto source = gradient();
@@ -234,7 +229,7 @@ void tinyAndValidationTests() {
             (horizontal ? options.perspective_horizontal : options.perspective_vertical) = invalid;
             auto image = source;
             const auto* storage = image.pixels.data();
-            check(!options.valid() && applyGeometry(image, options) == ErrorCode::InvalidFormat &&
+            require(!options.valid() && applyGeometry(image, options) == ErrorCode::InvalidFormat &&
                 same(image, source) && image.pixels.data() == storage, "invalid perspective must reject atomically");
         }
     }
@@ -247,10 +242,10 @@ int main() {
         identityAndCropTests();
         mappingTests();
         tinyAndValidationTests();
-        std::cout << "PASS " << checks << " perspective homography, bounds, dimensions, float-range and zero-path checks\n";
+        std::cout << "PASS " << rawlab::test::checkCount() << " perspective homography, bounds, dimensions, float-range and zero-path rawlab::test::checkCount()\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "FAIL after " << checks << " checks: " << error.what() << '\n';
+        std::cerr << "FAIL after " << rawlab::test::checkCount() << " rawlab::test::checkCount(): " << error.what() << '\n';
         return 1;
     }
 }

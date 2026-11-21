@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 import UIKit
 
@@ -14,6 +15,62 @@ struct ViewingRenderTests {
         let deadline = Date().addingTimeInterval(4)
         while model.histogram == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     }
+
+    @MainActor
+    static func checkHDRGeometryViewport(_ model: RawEditorViewModel, geometry: GeometrySettings, name: String,
+                                         viewportSize: CGSize = CGSize(width: 430, height: 500)) {
+        var settings = RawSettings.default
+        settings.hdr = HDRSettings()
+        settings.hdr?.geometry = geometry
+        let limit = model.viewportPreviewLimit
+        if model.previewLongEdge == limit { model.updatePreview(settings: settings) }
+        else { model.updatePreviewSize(limit, settings: settings) }
+        wait(model)
+        guard let initial = model.previewImage, let hdr = model.hdrPresentation else {
+            check(false, "HDR \(name) must produce a preview")
+            return
+        }
+        check(!model.previewRendering && !model.previewFailed && model.acceptedPreviewRequest?.settings == settings,
+              "HDR \(name) must render the requested geometry")
+        if geometry.cropWidth < 1 {
+            check(max(hdr.image.outputNativeWidth, hdr.image.outputNativeHeight) < limit,
+                  "The cropped native canvas must be smaller than the preview limit")
+        }
+        let expectedEdge = min(limit, max(hdr.image.nativeWidth, hdr.image.nativeHeight))
+
+        let view = PhotoCanvasView(frame: CGRect(origin: .zero, size: viewportSize))
+        var viewport = PhotoViewport()
+        var reportedEdge: Int?
+        view.onViewportChange = { viewport = $0 }
+        view.onPreviewSizeChange = { edge in
+            reportedEdge = edge
+            model.updatePreviewSize(edge, settings: settings)
+        }
+        func layoutPreview() {
+            view.configure(image: model.previewImage!, reference: nil, label: "HDR preview",
+                           state: PhotoViewingState(), viewport: viewport, displayScale: 3,
+                           isDraft: false, interactionEnabled: true, nativePixelSize: model.viewportNativeSize,
+                           previewLongEdgeLimit: model.viewportPreviewLimit, hdr: model.hdrPresentation)
+            view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            wait(model)
+        }
+        for _ in 0..<4 {
+            layoutPreview()
+            check(reportedEdge != nil, "HDR canvas must report a viewport size")
+            check(!model.previewRendering && !model.previewFailed && model.previewImage?.size == initial.size,
+                  "HDR \(name) shrank after viewport feedback from \(initial.size) to \(String(describing: model.previewImage?.size)) (request: \(reportedEdge!))")
+            check(reportedEdge == expectedEdge, "HDR \(name) viewport must request \(expectedEdge) source pixels")
+        }
+        view.result.setZoomScale(1, animated: false)
+        layoutPreview()
+        layoutPreview()
+        check(model.previewImage?.size == initial.size && view.result.accessibilityValue == "100%",
+              "HDR \(name) changed size at 100% zoom (request: \(reportedEdge!), zoom: \(view.result.zoomScale))")
+        print("PASS: HDR \(name) remains \(initial.size) across viewport updates and 100% zoom (source request \(expectedEdge))")
+    }
+
+    @MainActor
     static func main() throws {
         setbuf(stdout, nil)
         let out = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -208,6 +265,7 @@ struct ViewingRenderTests {
             let model = RawEditorViewModel(editPersistence: try EditPersistence(directory: out.appendingPathComponent("hdr-edits")))
             model.hasImage = true
             model.sourceKind = .raster
+            model.sourceIsHDR = true
             model.sourceFile = .externallyManaged(url)
             var settings = RawSettings.default
             settings.hdr = HDRSettings()
@@ -260,6 +318,26 @@ struct ViewingRenderTests {
             check(!model.previewFailed && model.acceptedPreviewFrameID != acceptedFrameID && model.hdrReference === reference,
                   "HDR retry accepts a preview and reuses the still-valid reference")
             print("PASS: HDR preview failure retains pixels, exports diagnostics and preserves comparison reuse on retry")
+
+            let source = model.hdrPresentation!.image
+            let limit = model.viewportPreviewLimit
+            let sourceEdge = max(source.nativeWidth, source.nativeHeight)
+            var straighten = GeometrySettings()
+            straighten.straightenDegrees = 15.1
+            checkHDRGeometryViewport(model, geometry: straighten, name: "straighten 15.1°")
+
+            let fraction = min(0.5, Double(limit) * 0.75 / Double(sourceEdge))
+            var crop = GeometrySettings()
+            crop.cropX = (1 - fraction) / 2; crop.cropY = crop.cropX
+            crop.cropWidth = fraction; crop.cropHeight = fraction
+            crop.quarterTurns = 1
+            // 视口按旋转后的源图比例留出 1280 px，宽高颠倒会在窄边先触顶。
+            let viewportScale = CGFloat(limit) / (3 * CGFloat(sourceEdge))
+            let viewport = CGSize(width: (CGFloat(source.nativeHeight) * viewportScale).rounded(.up),
+                                  height: (CGFloat(source.nativeWidth) * viewportScale).rounded(.up))
+            checkHDRGeometryViewport(model, geometry: crop, name: "small crop and rotation 90°", viewportSize: viewport)
+        } else {
+            print("SKIP: HDR viewport checks require an HDR input via RAWLAB_TEST_HDR")
         }
     }
 }

@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 /// V-RESET：iOS 消费共享重置场景向量 `reset-scenarios-v1.json`。

@@ -1,3 +1,4 @@
+#include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <algorithm>
 #include <cmath>
@@ -16,22 +17,19 @@
 #endif
 
 namespace {
-void check(bool condition, const std::string& name) {
-    std::cout << (condition ? "PASS " : "FAIL ") << name << std::endl;
-    if (!condition) std::exit(1);
-}
+using rawlab::test::requirePass;
 struct Session {
     sony2fuji_session* value = nullptr;
     explicit Session(sony2fuji_gpu_mode mode) {
-        check(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "create session");
+        requirePass(sony2fuji_session_create(&value) == SONY2FUJI_STATUS_OK, "create session");
         sony2fuji_gpu_config config{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(config), mode};
-        check(sony2fuji_session_set_gpu_config(value, &config) == SONY2FUJI_STATUS_OK, "set GPU mode");
+        requirePass(sony2fuji_session_set_gpu_config(value, &config) == SONY2FUJI_STATUS_OK, "set GPU mode");
     }
     ~Session() { sony2fuji_session_destroy(value); }
 };
 std::vector<uint8_t> render(Session& session, const sony2fuji_request& request) {
     sony2fuji_buffer buffer{};
-    check(sony2fuji_process(session.value, &request, &buffer) == SONY2FUJI_STATUS_OK, "render");
+    requirePass(sony2fuji_process(session.value, &request, &buffer) == SONY2FUJI_STATUS_OK, "render");
     auto* bytes = static_cast<uint8_t*>(buffer.data);
     std::vector<uint8_t> output(bytes, bytes + buffer.size_bytes);
     sony2fuji_release_buffer(&buffer);
@@ -39,10 +37,10 @@ std::vector<uint8_t> render(Session& session, const sony2fuji_request& request) 
 }
 void compare(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b, int tolerance,
              const std::string& name) {
-    check(a.size() == b.size() && !a.empty(), name + " dimensions");
+    requirePass(a.size() == b.size() && !a.empty(), name + " dimensions");
     int maximum = 0;
     for (size_t i = 0; i < a.size(); ++i) maximum = std::max(maximum, std::abs(int(a[i])-int(b[i])));
-    check(maximum <= tolerance, name + " max DN=" + std::to_string(maximum));
+    requirePass(maximum <= tolerance, name + " max DN=" + std::to_string(maximum));
 }
 std::vector<uint8_t> readFile(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::binary);
@@ -51,6 +49,7 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
 }
 
 int main(int argc, char** argv) {
+try {
     bool defaultRaw = false;
     if (argc >= 2 && std::string(argv[1]) == "--default-raw") {
         defaultRaw = true;
@@ -100,7 +99,7 @@ int main(int argc, char** argv) {
     if (nativeCpuOnly) {
         Session forced(SONY2FUJI_GPU_FORCE);
         sony2fuji_buffer buffer{};
-        check(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED,
+        requirePass(sony2fuji_process(forced.value, &request, &buffer) == SONY2FUJI_STATUS_UNSUPPORTED,
               "CPU-only look explicitly rejects forced GPU");
         sony2fuji_release_buffer(&buffer);
     }
@@ -111,19 +110,19 @@ int main(int argc, char** argv) {
         compare(reference, render(gpu, request), nativeCpuOnly ? 0 : 2,
                 (nativeCpuOnly ? "RAW CPU/Auto WB " : "RAW CPU/GPU WB ") + std::to_string(temperature));
         if (nativeCpuOnly) {
-            check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_CPU,
+            requirePass(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_CPU,
                   "CPU-only look reports actual CPU backend");
         } else {
 #ifdef SONY2FUJI_ENABLE_D3D11
-        check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "actual Direct3D 11 hardware backend");
+        requirePass(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "actual Direct3D 11 hardware backend");
         sony2fuji_gpu_config automatic{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(automatic), SONY2FUJI_GPU_AUTO};
-        check(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "switch RAW rendering to Auto");
+        requirePass(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "switch RAW rendering to Auto");
         compare(reference, render(gpu, request), 2, "RAW CPU/Auto WB " + std::to_string(temperature));
-        check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "Auto retains actual Direct3D 11 hardware backend");
+        requirePass(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_D3D11, "Auto retains actual Direct3D 11 hardware backend");
         automatic.mode = SONY2FUJI_GPU_FORCE;
-        check(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "restore forced RAW rendering");
+        requirePass(sony2fuji_session_set_gpu_config(gpu.value, &automatic) == SONY2FUJI_STATUS_OK, "restore forced RAW rendering");
 #else
-        check(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_METAL, "actual Metal backend");
+        requirePass(sony2fuji_session_get_last_backend(gpu.value) == SONY2FUJI_BACKEND_METAL, "actual Metal backend");
 #endif
         }
     }
@@ -132,13 +131,13 @@ int main(int argc, char** argv) {
     request.noise_reduction = .3f; request.sharpening = .4f;
     compare(render(cpu, request), render(gpu, request), 2, "RAW all adjustments and full-resolution detail");
     const auto cachedExact = render(gpu, request);
-    check(sony2fuji_session_set_interactive_preview(gpu.value, 1) == SONY2FUJI_STATUS_OK, "enable interactive");
+    requirePass(sony2fuji_session_set_interactive_preview(gpu.value, 1) == SONY2FUJI_STATUS_OK, "enable interactive");
     compare(cachedExact, render(gpu, request), 0, "interactive may reuse a matching exact RAW cache");
     request.temperature = 5000;
     const auto proxy = render(gpu, request);
     sony2fuji_session_set_interactive_preview(gpu.value, 0);
     const auto exact = render(gpu, request);
-    check(proxy != exact, "new WB interactive preview uses reduced RAW processing");
+    requirePass(proxy != exact, "new WB interactive preview uses reduced RAW processing");
     compare(render(cpu, request), exact, 2, "exact output restored after interactive preview");
 
     request.intent = SONY2FUJI_INTENT_FINAL;
@@ -154,11 +153,15 @@ int main(int argc, char** argv) {
         ("rawtools-acceleration-" + std::to_string(getpid()) + ".png");
     const auto outputPath = path.u8string();
     request.output_path = outputPath.c_str();
-    check(sony2fuji_process(gpu.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "export with interactive flag");
+    requirePass(sony2fuji_process(gpu.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "export with interactive flag");
     const auto interactiveFile = readFile(path);
     sony2fuji_session_set_interactive_preview(gpu.value, 0);
-    check(sony2fuji_process(gpu.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "export exact");
+    requirePass(sony2fuji_process(gpu.value, &request, nullptr) == SONY2FUJI_STATUS_OK, "export exact");
     compare(interactiveFile, readFile(path), 0, "file export ignores interactive flag");
     std::filesystem::remove(path);
     return 0;
+} catch (const std::exception& error) {
+    std::cerr << "FAIL " << error.what() << '\n';
+    return 1;
+}
 }

@@ -27,10 +27,12 @@ internal object NativeHDRBridge {
         require(!result.isProRAW && (info.cameraStamp == null || result.cameraStamp == info.cameraStamp)) { "HDR source changed" }
         return result
     }
-    fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = nativeGeometry(
+    fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = geometrySize(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
-        HDRSettings(geometry = geometry).requestValues())
+        geometry)
+    fun geometrySize(width: Int, height: Int, geometry: GeometrySettings): IntArray =
+        nativeGeometry(width, height, geometry.toNativeGeometry())
 
     fun decode(file: File, info: HDRSourceInfo, edge: Int): NativeHDRImage {
         if (edge == 0) HDRSourceCache.clear()
@@ -74,9 +76,7 @@ internal object NativeHDRBridge {
     fun render(session: Long, source: NativeHDRImage, settings: HDRSettings, edge: Int, cancellationGeneration: Long,
         lookDirectory: File?): NativeHDRImage {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
-        val curve = settings.tone?.curve
-        val handle = nativeRender(session, source.handle, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, cancellationGeneration, settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
+        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory), cancellationGeneration)
         if (handle == 0L) error("HDR render returned an empty owner")
         try {
             return NativeHDRImage(handle, source.sourceInfo, nativeMetadata(handle))
@@ -91,10 +91,8 @@ internal object NativeHDRBridge {
         nativeEstimateAutoExposure(session, source.handle, settings.temperature, settings.tint, cancellationGeneration)
     fun sampleHsl(session: Long, source: NativeHDRImage, settings: HDRSettings, edge: Int,
         sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long, lookDirectory: File?) {
-        val curve = settings.tone?.curve
-        nativeSampleHsl(session, source.handle, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, sourceRevision, requestRevision, probe, cancellationGeneration,
-            settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
+        nativeSampleHsl(session, source.handle, settings.toNativeRequest(edge, lookDirectory),
+            sourceRevision, requestRevision, probe, cancellationGeneration)
     }
     fun sdrBitmap(pair: NativeHDRImage, bitmap: Bitmap) = nativeSdrBitmap(pair.handle, bitmap)
     fun release(pair: Long) = nativeRelease(pair)
@@ -113,11 +111,8 @@ internal object NativeHDRBridge {
             val bytes = ByteArray(1024 * 1024)
             while (true) { val count = input.read(bytes); if (count < 0) break; digest.update(bytes, 0, count) }
         }
-        val curve = settings.tone?.curve
-        nativeExportProRAW(processor, file.absolutePath, settings.renderRequestValues(), curve?.mode?.nativeValue ?: 0,
-            curve?.packed(), curve.channelModes(), curve.channelPoints(), edge, keepHDR,
-            digest.digest(), requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration,
-            settings.look?.asset(lookDirectory)?.absolutePath, settings.look?.sha256)
+        nativeExportProRAW(processor, file.absolutePath, settings.toNativeRequest(edge, lookDirectory), keepHDR,
+            digest.digest(), requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration)
     }
 
     @JvmStatic
@@ -129,7 +124,7 @@ internal object NativeHDRBridge {
     @JvmStatic
     private external fun nativeProbeCameraRaw(path: String, processingVersion: Int): ByteArray?
     @JvmStatic
-    private external fun nativeGeometry(width: Int, height: Int, values: FloatArray): IntArray
+    private external fun nativeGeometry(width: Int, height: Int, geometry: NativeGeometry): IntArray
     @JvmStatic
     private external fun nativeDecode(path: String, longEdge: Int): Long
     @JvmStatic
@@ -138,18 +133,16 @@ internal object NativeHDRBridge {
         sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?,
         processingVersion: Int): Long
     @JvmStatic
-    private external fun nativeExportProRAW(session: Long, path: String, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?, channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int,
-        keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long,
-        lookPath: String?, lookSha256: String?)
+    private external fun nativeExportProRAW(session: Long, path: String, request: NativeHDRRenderRequest,
+        keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String, cancellationGeneration: Long)
     @JvmStatic
-    private external fun nativeRender(session: Long, source: Long, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?,
-        channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int, cancellationGeneration: Long, lookPath: String?, lookSha256: String?): Long
+    private external fun nativeRender(session: Long, source: Long, request: NativeHDRRenderRequest,
+        cancellationGeneration: Long): Long
     @JvmStatic
     private external fun nativeEstimateAutoExposure(session: Long, source: Long, temperature: Float, tint: Float, cancellationGeneration: Long): Float
     @JvmStatic
-    private external fun nativeSampleHsl(session: Long, source: Long, values: FloatArray, curveMode: Int, curvePoints: DoubleArray?,
-        channelModes: IntArray?, channelPoints: Array<DoubleArray>?, longEdge: Int, sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long,
-        lookPath: String?, lookSha256: String?)
+    private external fun nativeSampleHsl(session: Long, source: Long, request: NativeHDRRenderRequest,
+        sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long)
     @JvmStatic
     private external fun nativeMetadata(pair: Long): FloatArray
     @JvmStatic
@@ -210,33 +203,3 @@ internal class NativeHDRImage internal constructor(
     }
 
 }
-
-internal fun HDRSettings.requestValues(): FloatArray = floatArrayOf(
-    exposure, temperature, tint, contrast, highlights, shadows, saturation,
-    geometry.cropX, geometry.cropY, geometry.cropWidth, geometry.cropHeight, geometry.quarterTurns.toFloat(),
-    if (geometry.flipHorizontal) 1f else 0f, if (geometry.flipVertical) 1f else 0f,
-    geometry.straightenDegrees, geometry.perspectiveHorizontal, geometry.perspectiveVertical)
-
-internal fun HDRSettings.renderRequestValues(): FloatArray {
-    val base = requestValues()
-    val tone = tone ?: return base
-    val extended = base + floatArrayOf(tone.blackPoint, tone.whitePoint, tone.curveStrength)
-    val color = color ?: return extended
-    val grading = color.grading
-    val colorValues = extended + color.vibrance + color.hsl.packed() + floatArrayOf(
-        grading.shadows.hue, grading.shadows.saturation, grading.midtones.hue, grading.midtones.saturation,
-        grading.highlights.hue, grading.highlights.saturation)
-    val rendition = rendition ?: return colorValues
-    val renditionValues = colorValues + floatArrayOf(rendition.peakLimitEV, rendition.sdrExposureEV, rendition.sdrContrast, rendition.sdrSaturation)
-    val effects = effects ?: return renditionValues
-    val effectValues = renditionValues + floatArrayOf(effects.vignetteAmount, effects.vignetteMidpoint, effects.vignetteRoundness,
-        effects.vignetteFeather, effects.vignetteHighlights, effects.grainAmount, effects.grainSize, effects.grainRoughness)
-    val detail = detail ?: return effectValues
-    val detailValues = effectValues + floatArrayOf(detail.sharpening, detail.clarity, detail.dehaze, detail.denoise)
-    return look?.let { detailValues + it.strength } ?: detailValues
-}
-
-private fun com.rawlab.android.settings.ToneCurveSettings?.channelModes(): IntArray? =
-    if (this?.hasChannelCurves == true) intArrayOf(channels.red.mode.nativeValue, channels.green.mode.nativeValue, channels.blue.mode.nativeValue) else null
-private fun com.rawlab.android.settings.ToneCurveSettings?.channelPoints(): Array<DoubleArray>? =
-    if (this?.hasChannelCurves == true) arrayOf(channels.red.packed(), channels.green.packed(), channels.blue.packed()) else null

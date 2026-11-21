@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-OUT=$(mktemp -d /tmp/rawlab-sparkle-adapter.XXXXXX)
-trap 'rm -rf "$OUT"' EXIT
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
+rawlab_mac_test_init
+rawlab_mac_make_temp_dir OUT rawlab-sparkle-adapter
 FRAMEWORK="$(bash "$ROOT/RawLabMac/prepare-sparkle.sh")"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-swiftc -swift-version 5 -warnings-as-errors -sdk "${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}" \
+rawlab_mac_swiftc -warnings-as-errors \
     -F "$(dirname "$FRAMEWORK")" -framework Sparkle -Xlinker -rpath -Xlinker "$(dirname "$FRAMEWORK")" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/MacUpdateTrust.swift" "$ROOT/RawLabMac/Sources/System/Updates/MacUpdatePackage.swift" \

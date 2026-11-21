@@ -15,6 +15,12 @@ public sealed class ToneCurvePanel : StackPanel
     private readonly Grid content = new();
     private readonly Grid exposureAxis = new() { Margin = new Thickness(12, 0, 12, 0) };
     private readonly TextBlock referenceWhite = new() { TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
+    internal ToneCurveCanvas CanvasControl => canvas;
+    internal Grid ExposureAxis => exposureAxis;
+    internal TextBlock ReferenceWhiteText => referenceWhite;
+    internal ParameterRow XRow => x;
+    internal Button SwitchModeButton => switchMode;
+    internal Button RemoveButton => remove;
     private readonly StackPanel plot = new(), rows = new(), custom = new();
     private ToneCurveSettings settings = new();
     private double scalar;

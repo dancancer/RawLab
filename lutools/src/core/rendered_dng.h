@@ -6,6 +6,7 @@
 #include "sony2fuji/common.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace sony2fuji {
@@ -34,5 +35,13 @@ bool exceedsRenderedDngCapacity(uint32_t width, uint32_t height,
  * never comes back as a generic ErrorCode.
  */
 ErrorCode saveRenderedDNG(const ImageData& image, const std::string& filepath);
+
+struct RenderedDNGRows {
+    uint32_t width = 0, height = 0;
+    // 显示编码 sRGB；允许缩略图、主图和 JPEG 预览重复读取。返回值有效到下一次读取。
+    std::function<const RGB*(uint32_t)> read;
+};
+ErrorCode saveRenderedDNGRows(const RenderedDNGRows& image, const std::string& filepath,
+    const std::function<void()>& beforePublish = {});
 
 } // namespace sony2fuji

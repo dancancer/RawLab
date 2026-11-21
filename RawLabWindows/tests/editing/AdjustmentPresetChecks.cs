@@ -115,7 +115,7 @@ internal static class AdjustmentPresetChecks
         Reject(() => new AdjustmentPresetStore(directory, makeID: () => future).Create("Collision", Payload()),
             "unreadable entry ID stays reserved", PresetFailure.IdentityCollision);
         var dialogItems = PresetLibraryDataSource.Load(store);
-        Check(dialogItems.Count == 3 && dialogItems.Any(item => item.IsCorrupt && item.DisplayName == "Future（损坏）" && item.ID == future),
+        Check(dialogItems.Count == 3 && dialogItems.Any(item => item.IsCorrupt && item.DisplayName == Loc.Format("{0}（损坏）", "Future") && item.ID == future),
             "corrupt preset is surfaced in preset library dialog data source with damaged label");
         store.Delete(updated); store.Delete(created);
         Check(store.List().Count == 0 && File.ReadAllText(path).Contains(raw), "deleting readable presets keeps the unreadable entry");
@@ -201,7 +201,8 @@ internal static class AdjustmentPresetChecks
     {
         Directory.CreateDirectory(directory);
         var store = new AdjustmentPresetStore(directory); var path = Path.Combine(directory, "presets.json");
-        using var fixtures = JsonDocument.Parse(File.ReadAllText("Shared/fixtures/adjustment-presets-v1.json"));
+        using var fixtures = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/adjustment-presets-v1.json")));
         Check(fixtures.RootElement.GetArrayLength() == 55, "complete shared fixture catalog");
         foreach (var fixture in fixtures.RootElement.EnumerateArray()) {
             var id = fixture.GetProperty("id").GetString()!;

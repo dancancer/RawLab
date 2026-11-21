@@ -1,34 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "$ROOT/Shared/tests/mac-native-sources.sh"
-source "$ROOT/RawLabMac/tests/native-env.sh"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SDK="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk}"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 OUT="${RAWLAB_STRAIGHTEN_PREVIEW_OUTPUT_DIR:-$ROOT/build/mac-straighten-evidence}"
 RAW="${1:-${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DNG}}"
 test -f "$RAW" || { echo "Missing RAW fixture: $RAW" >&2; exit 1; }
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 mkdir -p "$OUT"
-
-SOURCES=()
-while IFS= read -r -d '' source; do
-    case "$source" in */RawLabMacApp.swift) continue ;; esac
-    SOURCES+=("$source")
-done < <(find "$ROOT/RawLabMac/Sources" -name '*.swift' -print0)
-
-swiftc -parse-as-library -swift-version 5 -O -whole-module-optimization \
+rawlab_mac_compile_native full-app "$OUT/swiftpm" "$OUT/test" -- \
+    -parse-as-library -O -whole-module-optimization \
     -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}" \
-    -sdk "$SDK" -target "$(uname -m)-apple-macosx26.0" \
     -module-cache-path "$OUT/ModuleCache" \
-    -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
-    "${SOURCES[@]}" "${MAC_SHARED_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/MacStraightenPreviewTests.swift" \
+    "$ROOT/RawLabMac/tests/MacStraightenPreviewTests.swift" \
     "$ROOT/RawLabMac/tests/StraightenPreviewFixtures.swift" \
-    "${CORE_LINK[@]}" $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) \
-    -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" \
-    -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework Metal \
-    -o "$OUT/test"
-
+    -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)"
 "$OUT/test" "$RAW" "$OUT"
 echo "Artifacts: $OUT"

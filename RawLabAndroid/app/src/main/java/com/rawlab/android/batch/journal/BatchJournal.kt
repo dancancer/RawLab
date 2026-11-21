@@ -1,5 +1,6 @@
 package com.rawlab.android.batch.journal
 
+import com.rawlab.android.io.replaceFileAtomically
 import android.util.Log
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchRowStatus
@@ -16,8 +17,6 @@ import java.io.IOException
 import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.io.UTFDataFormatException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -252,11 +251,7 @@ class BatchJournal internal constructor(
         val temporary = File(directory, "${file.name}.${System.nanoTime()}.tmp")
         try {
             FileOutputStream(temporary).use { write(it); it.fd.sync() }
-            try {
-                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
+            replaceFileAtomically(temporary, file)
         } finally { temporary.delete() }
     }
 

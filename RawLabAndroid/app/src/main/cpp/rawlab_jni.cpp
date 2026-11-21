@@ -1,9 +1,6 @@
 #include <jni.h>
 #include <android/bitmap.h>
 #include "render_request.h"
-#include "recipe_probe_stages.h"
-#include "recipe_white_balance_cache.h"
-#include "core/jpeg_mpf.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include <cstdio>
 #include <cstring>
@@ -48,8 +45,6 @@ struct Session {
     bool closed = false;
     DisplayLensMetadata displayLens;
     std::unique_ptr<sony2fuji_session, SessionDeleter> value;
-    rawlab::RecipeProbeStages stages;
-    rawlab::RecipeWhiteBalanceCache recipeWhiteBalance;
     std::shared_ptr<std::atomic<jlong>> generation = std::make_shared<std::atomic<jlong>>(0);
     explicit Session(sony2fuji_session* pointer) : value(pointer) {}
     sony2fuji_session* get() const { return value.get(); }
@@ -89,7 +84,502 @@ struct CancellationScope {
 };
 
 void throwJava(JNIEnv* env, const char* type, const char* message) {
-    if (!env->ExceptionCheck()) env->ThrowNew(env->FindClass(type), message);
+    if (!env->ExceptionCheck()) {
+        jclass clazz = env->FindClass(type);
+        if (clazz) {
+            env->ThrowNew(clazz, message);
+            env->DeleteLocalRef(clazz);
+        }
+    }
+}
+
+struct LocalRef {
+    JNIEnv* env;
+    jobject ref;
+    LocalRef(JNIEnv* e, jobject r) : env(e), ref(r) {}
+    ~LocalRef() { if (ref) env->DeleteLocalRef(ref); }
+    LocalRef(const LocalRef&) = delete;
+    LocalRef& operator=(const LocalRef&) = delete;
+    LocalRef(LocalRef&& other) noexcept : env(other.env), ref(other.ref) { other.ref = nullptr; }
+    void reset(jobject next = nullptr) {
+        if (ref) env->DeleteLocalRef(ref);
+        ref = next;
+    }
+    jobject release() {
+        jobject released = ref;
+        ref = nullptr;
+        return released;
+    }
+    jobject get() const { return ref; }
+    jclass asClass() const { return static_cast<jclass>(ref); }
+    jstring asString() const { return static_cast<jstring>(ref); }
+    jfloatArray asFloatArray() const { return static_cast<jfloatArray>(ref); }
+    jintArray asIntArray() const { return static_cast<jintArray>(ref); }
+    jdoubleArray asDoubleArray() const { return static_cast<jdoubleArray>(ref); }
+    jbyteArray asByteArray() const { return static_cast<jbyteArray>(ref); }
+    explicit operator bool() const { return ref != nullptr; }
+};
+
+struct JniCache {
+    struct ClassRef {
+        jclass clazz = nullptr;
+    };
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID ctor = nullptr;
+        jmethodID allocateBitmap = nullptr;
+    } nativeFrame;
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID ctor = nullptr;
+    } nativeProcessingException;
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID ctor = nullptr;
+    } hdrProcessingException;
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID ctor = nullptr;
+    } dcpCompilationException;
+
+    struct {
+        jclass clazz = nullptr;
+        jmethodID bytesCtor = nullptr;
+    } javaString;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID path = nullptr;
+        jfieldID pixels = nullptr;
+        jfieldID width = nullptr;
+        jfieldID height = nullptr;
+        jfieldID pixelFormat = nullptr;
+    } processInput;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID path = nullptr;
+        jfieldID format = nullptr;
+        jfieldID edge = nullptr;
+        jfieldID longEdge = nullptr;
+        jfieldID interactive = nullptr;
+        jfieldID viewportPreview = nullptr;
+        jfieldID reusableBitmap = nullptr;
+    } processOutput;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID custom = nullptr;
+        jfieldID temperature = nullptr;
+        jfieldID tint = nullptr;
+        jfieldID recipeActive = nullptr;
+        jfieldID recipeStrength = nullptr;
+    } processWhiteBalance;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID exposureEv = nullptr;
+        jfieldID contrast = nullptr;
+        jfieldID highlights = nullptr;
+        jfieldID shadows = nullptr;
+        jfieldID toneCurve = nullptr;
+        jfieldID saturation = nullptr;
+        jfieldID sharpening = nullptr;
+    } processTone;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID enabled = nullptr;
+        jfieldID luma = nullptr;
+        jfieldID chroma = nullptr;
+        jfieldID coarse = nullptr;
+        jfieldID displayChroma = nullptr;
+    } denoiseConfig;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID vignetteAmount = nullptr;
+        jfieldID vignetteMidpoint = nullptr;
+        jfieldID vignetteRoundness = nullptr;
+        jfieldID vignetteFeather = nullptr;
+        jfieldID vignetteHighlights = nullptr;
+        jfieldID grainAmount = nullptr;
+        jfieldID grainSize = nullptr;
+        jfieldID grainRoughness = nullptr;
+    } photoEffectsConfig;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID sourceRevision = nullptr;
+        jfieldID requestRevision = nullptr;
+        jfieldID output = nullptr;
+    } hslProbeTarget;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID input = nullptr;
+        jfieldID output = nullptr;
+        jfieldID lutPath = nullptr;
+        jfieldID lutStrength = nullptr;
+        jfieldID whiteBalance = nullptr;
+        jfieldID tone = nullptr;
+        jfieldID denoise = nullptr;
+        jfieldID effects = nullptr;
+        jfieldID hsl = nullptr;
+        jfieldID exposureMode = nullptr;
+        jfieldID processingVersion = nullptr;
+        jfieldID x3fMode = nullptr;
+        jfieldID cancellationGeneration = nullptr;
+        jfieldID backendOut = nullptr;
+        jfieldID hslProbe = nullptr;
+        jfieldID migrationOut = nullptr;
+    } processRequest;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID cropX = nullptr;
+        jfieldID cropY = nullptr;
+        jfieldID cropWidth = nullptr;
+        jfieldID cropHeight = nullptr;
+        jfieldID quarterTurns = nullptr;
+        jfieldID flipHorizontal = nullptr;
+        jfieldID flipVertical = nullptr;
+        jfieldID straightenDegrees = nullptr;
+        jfieldID perspectiveHorizontal = nullptr;
+        jfieldID perspectiveVertical = nullptr;
+    } geometry;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID mode = nullptr;
+        jfieldID points = nullptr;
+    } toneCurve;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID shadowsHue = nullptr;
+        jfieldID shadowsSaturation = nullptr;
+        jfieldID midtonesHue = nullptr;
+        jfieldID midtonesSaturation = nullptr;
+        jfieldID highlightsHue = nullptr;
+        jfieldID highlightsSaturation = nullptr;
+    } colorGrading;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID blackPoint = nullptr;
+        jfieldID whitePoint = nullptr;
+        jfieldID curveStrength = nullptr;
+        jfieldID curve = nullptr;
+    } hdrTone;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID vibrance = nullptr;
+        jfieldID hsl = nullptr;
+        jfieldID grading = nullptr;
+    } hdrColor;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID peakLimitEv = nullptr;
+        jfieldID sdrExposureEv = nullptr;
+        jfieldID sdrContrast = nullptr;
+        jfieldID sdrSaturation = nullptr;
+    } hdrRendition;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID sharpening = nullptr;
+        jfieldID clarity = nullptr;
+        jfieldID dehaze = nullptr;
+        jfieldID denoise = nullptr;
+    } hdrDetail;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID path = nullptr;
+        jfieldID sha256 = nullptr;
+        jfieldID strength = nullptr;
+    } hdrLook;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID red = nullptr;
+        jfieldID green = nullptr;
+        jfieldID blue = nullptr;
+    } hdrChannelCurves;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID exposureEv = nullptr;
+        jfieldID temperature = nullptr;
+        jfieldID tint = nullptr;
+        jfieldID contrast = nullptr;
+        jfieldID highlights = nullptr;
+        jfieldID shadows = nullptr;
+        jfieldID saturation = nullptr;
+        jfieldID geometry = nullptr;
+        jfieldID longEdge = nullptr;
+        jfieldID tone = nullptr;
+        jfieldID color = nullptr;
+        jfieldID rendition = nullptr;
+        jfieldID effects = nullptr;
+        jfieldID detail = nullptr;
+        jfieldID look = nullptr;
+        jfieldID channelCurves = nullptr;
+    } hdrRenderRequest;
+};
+
+JniCache gJniCache{};
+std::once_flag gJniCacheOnce;
+std::atomic<bool> gJniCacheReady{false};
+
+jclass cacheGlobalClass(JNIEnv* env, const char* name) {
+    LocalRef local(env, env->FindClass(name));
+    if (!local) throw std::runtime_error(std::string("Missing JNI class: ") + name);
+    auto global = static_cast<jclass>(env->NewGlobalRef(local.get()));
+    if (!global) throw std::bad_alloc();
+    return global;
+}
+
+jfieldID cacheField(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
+    jfieldID field = env->GetFieldID(clazz, name, sig);
+    if (!field) throw std::runtime_error(std::string("Missing JNI field: ") + name + " " + sig);
+    return field;
+}
+
+jmethodID cacheMethod(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
+    jmethodID method = env->GetMethodID(clazz, name, sig);
+    if (!method) throw std::runtime_error(std::string("Missing JNI method: ") + name + " " + sig);
+    return method;
+}
+
+jmethodID cacheStaticMethod(JNIEnv* env, jclass clazz, const char* name, const char* sig) {
+    jmethodID method = env->GetStaticMethodID(clazz, name, sig);
+    if (!method) throw std::runtime_error(std::string("Missing JNI static method: ") + name + " " + sig);
+    return method;
+}
+
+void releaseJniCache(JNIEnv* env) {
+    if (!gJniCacheReady.exchange(false, std::memory_order_acq_rel)) return;
+    jclass* classes[] = {
+        &gJniCache.nativeFrame.clazz,
+        &gJniCache.nativeProcessingException.clazz,
+        &gJniCache.hdrProcessingException.clazz,
+        &gJniCache.dcpCompilationException.clazz,
+        &gJniCache.javaString.clazz,
+        &gJniCache.processInput.clazz,
+        &gJniCache.processOutput.clazz,
+        &gJniCache.processWhiteBalance.clazz,
+        &gJniCache.processTone.clazz,
+        &gJniCache.denoiseConfig.clazz,
+        &gJniCache.photoEffectsConfig.clazz,
+        &gJniCache.hslProbeTarget.clazz,
+        &gJniCache.processRequest.clazz,
+        &gJniCache.geometry.clazz,
+        &gJniCache.toneCurve.clazz,
+        &gJniCache.colorGrading.clazz,
+        &gJniCache.hdrTone.clazz,
+        &gJniCache.hdrColor.clazz,
+        &gJniCache.hdrRendition.clazz,
+        &gJniCache.hdrDetail.clazz,
+        &gJniCache.hdrLook.clazz,
+        &gJniCache.hdrChannelCurves.clazz,
+        &gJniCache.hdrRenderRequest.clazz,
+    };
+    for (jclass* slot : classes) {
+        if (*slot) {
+            env->DeleteGlobalRef(*slot);
+            *slot = nullptr;
+        }
+    }
+}
+
+void initJniCache(JNIEnv* env) {
+    JniCache c{};
+    try {
+        c.nativeFrame.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeFrame");
+        c.nativeFrame.ctor = cacheMethod(env, c.nativeFrame.clazz, "<init>", "(IILandroid/graphics/Bitmap;FFI[I)V");
+        c.nativeFrame.allocateBitmap = cacheStaticMethod(env, c.nativeFrame.clazz, "allocateBitmap",
+            "(IILandroid/graphics/Bitmap;)Landroid/graphics/Bitmap;");
+
+        c.nativeProcessingException.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessingException");
+        c.nativeProcessingException.ctor = cacheMethod(env, c.nativeProcessingException.clazz, "<init>", "(ILjava/lang/String;I)V");
+
+        c.hdrProcessingException.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/HDRProcessingException");
+        c.hdrProcessingException.ctor = cacheMethod(env, c.hdrProcessingException.clazz, "<init>", "(III)V");
+
+        c.dcpCompilationException.clazz = cacheGlobalClass(env, "com/rawlab/android/looks/DcpCompilationException");
+        c.dcpCompilationException.ctor = cacheMethod(env, c.dcpCompilationException.clazz, "<init>", "(I)V");
+
+        c.javaString.clazz = cacheGlobalClass(env, "java/lang/String");
+        c.javaString.bytesCtor = cacheMethod(env, c.javaString.clazz, "<init>", "([BLjava/lang/String;)V");
+
+        c.processInput.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessInput");
+        c.processInput.path = cacheField(env, c.processInput.clazz, "path", "Ljava/lang/String;");
+        c.processInput.pixels = cacheField(env, c.processInput.clazz, "pixels", "Ljava/lang/Object;");
+        c.processInput.width = cacheField(env, c.processInput.clazz, "width", "I");
+        c.processInput.height = cacheField(env, c.processInput.clazz, "height", "I");
+        c.processInput.pixelFormat = cacheField(env, c.processInput.clazz, "pixelFormat", "I");
+
+        c.processOutput.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessOutput");
+        c.processOutput.path = cacheField(env, c.processOutput.clazz, "path", "Ljava/lang/String;");
+        c.processOutput.format = cacheField(env, c.processOutput.clazz, "format", "I");
+        c.processOutput.edge = cacheField(env, c.processOutput.clazz, "edge", "I");
+        c.processOutput.longEdge = cacheField(env, c.processOutput.clazz, "longEdge", "I");
+        c.processOutput.interactive = cacheField(env, c.processOutput.clazz, "interactive", "Z");
+        c.processOutput.viewportPreview = cacheField(env, c.processOutput.clazz, "viewportPreview", "Z");
+        c.processOutput.reusableBitmap = cacheField(env, c.processOutput.clazz, "reusableBitmap", "Landroid/graphics/Bitmap;");
+
+        c.processWhiteBalance.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessWhiteBalance");
+        c.processWhiteBalance.custom = cacheField(env, c.processWhiteBalance.clazz, "custom", "Z");
+        c.processWhiteBalance.temperature = cacheField(env, c.processWhiteBalance.clazz, "temperature", "F");
+        c.processWhiteBalance.tint = cacheField(env, c.processWhiteBalance.clazz, "tint", "F");
+        c.processWhiteBalance.recipeActive = cacheField(env, c.processWhiteBalance.clazz, "recipeActive", "Z");
+        c.processWhiteBalance.recipeStrength = cacheField(env, c.processWhiteBalance.clazz, "recipeStrength", "F");
+
+        c.processTone.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessTone");
+        c.processTone.exposureEv = cacheField(env, c.processTone.clazz, "exposureEv", "F");
+        c.processTone.contrast = cacheField(env, c.processTone.clazz, "contrast", "F");
+        c.processTone.highlights = cacheField(env, c.processTone.clazz, "highlights", "F");
+        c.processTone.shadows = cacheField(env, c.processTone.clazz, "shadows", "F");
+        c.processTone.toneCurve = cacheField(env, c.processTone.clazz, "toneCurve", "F");
+        c.processTone.saturation = cacheField(env, c.processTone.clazz, "saturation", "F");
+        c.processTone.sharpening = cacheField(env, c.processTone.clazz, "sharpening", "F");
+
+        c.denoiseConfig.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeDenoiseConfig");
+        c.denoiseConfig.enabled = cacheField(env, c.denoiseConfig.clazz, "enabled", "Z");
+        c.denoiseConfig.luma = cacheField(env, c.denoiseConfig.clazz, "luma", "F");
+        c.denoiseConfig.chroma = cacheField(env, c.denoiseConfig.clazz, "chroma", "F");
+        c.denoiseConfig.coarse = cacheField(env, c.denoiseConfig.clazz, "coarse", "F");
+        c.denoiseConfig.displayChroma = cacheField(env, c.denoiseConfig.clazz, "displayChroma", "I");
+
+        c.photoEffectsConfig.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativePhotoEffectsConfig");
+        c.photoEffectsConfig.vignetteAmount = cacheField(env, c.photoEffectsConfig.clazz, "vignetteAmount", "F");
+        c.photoEffectsConfig.vignetteMidpoint = cacheField(env, c.photoEffectsConfig.clazz, "vignetteMidpoint", "F");
+        c.photoEffectsConfig.vignetteRoundness = cacheField(env, c.photoEffectsConfig.clazz, "vignetteRoundness", "F");
+        c.photoEffectsConfig.vignetteFeather = cacheField(env, c.photoEffectsConfig.clazz, "vignetteFeather", "F");
+        c.photoEffectsConfig.vignetteHighlights = cacheField(env, c.photoEffectsConfig.clazz, "vignetteHighlights", "F");
+        c.photoEffectsConfig.grainAmount = cacheField(env, c.photoEffectsConfig.clazz, "grainAmount", "F");
+        c.photoEffectsConfig.grainSize = cacheField(env, c.photoEffectsConfig.clazz, "grainSize", "F");
+        c.photoEffectsConfig.grainRoughness = cacheField(env, c.photoEffectsConfig.clazz, "grainRoughness", "F");
+
+        c.hslProbeTarget.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHslProbeTarget");
+        c.hslProbeTarget.sourceRevision = cacheField(env, c.hslProbeTarget.clazz, "sourceRevision", "J");
+        c.hslProbeTarget.requestRevision = cacheField(env, c.hslProbeTarget.clazz, "requestRevision", "J");
+        c.hslProbeTarget.output = cacheField(env, c.hslProbeTarget.clazz, "output", "[F");
+
+        c.processRequest.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeProcessRequest");
+        c.processRequest.input = cacheField(env, c.processRequest.clazz, "input", "Lcom/rawlab/android/engine/NativeProcessInput;");
+        c.processRequest.output = cacheField(env, c.processRequest.clazz, "output", "Lcom/rawlab/android/engine/NativeProcessOutput;");
+        c.processRequest.lutPath = cacheField(env, c.processRequest.clazz, "lutPath", "Ljava/lang/String;");
+        c.processRequest.lutStrength = cacheField(env, c.processRequest.clazz, "lutStrength", "F");
+        c.processRequest.whiteBalance = cacheField(env, c.processRequest.clazz, "whiteBalance", "Lcom/rawlab/android/engine/NativeProcessWhiteBalance;");
+        c.processRequest.tone = cacheField(env, c.processRequest.clazz, "tone", "Lcom/rawlab/android/engine/NativeProcessTone;");
+        c.processRequest.denoise = cacheField(env, c.processRequest.clazz, "denoise", "Lcom/rawlab/android/engine/NativeDenoiseConfig;");
+        c.processRequest.effects = cacheField(env, c.processRequest.clazz, "effects", "Lcom/rawlab/android/engine/NativePhotoEffectsConfig;");
+        c.processRequest.hsl = cacheField(env, c.processRequest.clazz, "hsl", "[F");
+        c.processRequest.exposureMode = cacheField(env, c.processRequest.clazz, "exposureMode", "I");
+        c.processRequest.processingVersion = cacheField(env, c.processRequest.clazz, "processingVersion", "I");
+        c.processRequest.x3fMode = cacheField(env, c.processRequest.clazz, "x3fMode", "I");
+        c.processRequest.cancellationGeneration = cacheField(env, c.processRequest.clazz, "cancellationGeneration", "J");
+        c.processRequest.backendOut = cacheField(env, c.processRequest.clazz, "backendOut", "[I");
+        c.processRequest.hslProbe = cacheField(env, c.processRequest.clazz, "hslProbe", "Lcom/rawlab/android/engine/NativeHslProbeTarget;");
+        c.processRequest.migrationOut = cacheField(env, c.processRequest.clazz, "migrationOut", "[F");
+
+        c.geometry.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeGeometry");
+        c.geometry.cropX = cacheField(env, c.geometry.clazz, "cropX", "F");
+        c.geometry.cropY = cacheField(env, c.geometry.clazz, "cropY", "F");
+        c.geometry.cropWidth = cacheField(env, c.geometry.clazz, "cropWidth", "F");
+        c.geometry.cropHeight = cacheField(env, c.geometry.clazz, "cropHeight", "F");
+        c.geometry.quarterTurns = cacheField(env, c.geometry.clazz, "quarterTurns", "I");
+        c.geometry.flipHorizontal = cacheField(env, c.geometry.clazz, "flipHorizontal", "Z");
+        c.geometry.flipVertical = cacheField(env, c.geometry.clazz, "flipVertical", "Z");
+        c.geometry.straightenDegrees = cacheField(env, c.geometry.clazz, "straightenDegrees", "F");
+        c.geometry.perspectiveHorizontal = cacheField(env, c.geometry.clazz, "perspectiveHorizontal", "F");
+        c.geometry.perspectiveVertical = cacheField(env, c.geometry.clazz, "perspectiveVertical", "F");
+
+        c.toneCurve.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeToneCurve");
+        c.toneCurve.mode = cacheField(env, c.toneCurve.clazz, "mode", "I");
+        c.toneCurve.points = cacheField(env, c.toneCurve.clazz, "points", "[D");
+
+        c.colorGrading.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeColorGrading");
+        c.colorGrading.shadowsHue = cacheField(env, c.colorGrading.clazz, "shadowsHue", "F");
+        c.colorGrading.shadowsSaturation = cacheField(env, c.colorGrading.clazz, "shadowsSaturation", "F");
+        c.colorGrading.midtonesHue = cacheField(env, c.colorGrading.clazz, "midtonesHue", "F");
+        c.colorGrading.midtonesSaturation = cacheField(env, c.colorGrading.clazz, "midtonesSaturation", "F");
+        c.colorGrading.highlightsHue = cacheField(env, c.colorGrading.clazz, "highlightsHue", "F");
+        c.colorGrading.highlightsSaturation = cacheField(env, c.colorGrading.clazz, "highlightsSaturation", "F");
+
+        c.hdrTone.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRTone");
+        c.hdrTone.blackPoint = cacheField(env, c.hdrTone.clazz, "blackPoint", "F");
+        c.hdrTone.whitePoint = cacheField(env, c.hdrTone.clazz, "whitePoint", "F");
+        c.hdrTone.curveStrength = cacheField(env, c.hdrTone.clazz, "curveStrength", "F");
+        c.hdrTone.curve = cacheField(env, c.hdrTone.clazz, "curve", "Lcom/rawlab/android/engine/NativeToneCurve;");
+
+        c.hdrColor.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRColor");
+        c.hdrColor.vibrance = cacheField(env, c.hdrColor.clazz, "vibrance", "F");
+        c.hdrColor.hsl = cacheField(env, c.hdrColor.clazz, "hsl", "[F");
+        c.hdrColor.grading = cacheField(env, c.hdrColor.clazz, "grading", "Lcom/rawlab/android/engine/NativeColorGrading;");
+
+        c.hdrRendition.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRRendition");
+        c.hdrRendition.peakLimitEv = cacheField(env, c.hdrRendition.clazz, "peakLimitEv", "F");
+        c.hdrRendition.sdrExposureEv = cacheField(env, c.hdrRendition.clazz, "sdrExposureEv", "F");
+        c.hdrRendition.sdrContrast = cacheField(env, c.hdrRendition.clazz, "sdrContrast", "F");
+        c.hdrRendition.sdrSaturation = cacheField(env, c.hdrRendition.clazz, "sdrSaturation", "F");
+
+        c.hdrDetail.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRDetail");
+        c.hdrDetail.sharpening = cacheField(env, c.hdrDetail.clazz, "sharpening", "F");
+        c.hdrDetail.clarity = cacheField(env, c.hdrDetail.clazz, "clarity", "F");
+        c.hdrDetail.dehaze = cacheField(env, c.hdrDetail.clazz, "dehaze", "F");
+        c.hdrDetail.denoise = cacheField(env, c.hdrDetail.clazz, "denoise", "F");
+
+        c.hdrLook.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRLook");
+        c.hdrLook.path = cacheField(env, c.hdrLook.clazz, "path", "Ljava/lang/String;");
+        c.hdrLook.sha256 = cacheField(env, c.hdrLook.clazz, "sha256", "Ljava/lang/String;");
+        c.hdrLook.strength = cacheField(env, c.hdrLook.clazz, "strength", "F");
+
+        c.hdrChannelCurves.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRChannelCurves");
+        c.hdrChannelCurves.red = cacheField(env, c.hdrChannelCurves.clazz, "red", "Lcom/rawlab/android/engine/NativeToneCurve;");
+        c.hdrChannelCurves.green = cacheField(env, c.hdrChannelCurves.clazz, "green", "Lcom/rawlab/android/engine/NativeToneCurve;");
+        c.hdrChannelCurves.blue = cacheField(env, c.hdrChannelCurves.clazz, "blue", "Lcom/rawlab/android/engine/NativeToneCurve;");
+
+        c.hdrRenderRequest.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRRenderRequest");
+        c.hdrRenderRequest.exposureEv = cacheField(env, c.hdrRenderRequest.clazz, "exposureEv", "F");
+        c.hdrRenderRequest.temperature = cacheField(env, c.hdrRenderRequest.clazz, "temperature", "F");
+        c.hdrRenderRequest.tint = cacheField(env, c.hdrRenderRequest.clazz, "tint", "F");
+        c.hdrRenderRequest.contrast = cacheField(env, c.hdrRenderRequest.clazz, "contrast", "F");
+        c.hdrRenderRequest.highlights = cacheField(env, c.hdrRenderRequest.clazz, "highlights", "F");
+        c.hdrRenderRequest.shadows = cacheField(env, c.hdrRenderRequest.clazz, "shadows", "F");
+        c.hdrRenderRequest.saturation = cacheField(env, c.hdrRenderRequest.clazz, "saturation", "F");
+        c.hdrRenderRequest.geometry = cacheField(env, c.hdrRenderRequest.clazz, "geometry", "Lcom/rawlab/android/engine/NativeGeometry;");
+        c.hdrRenderRequest.longEdge = cacheField(env, c.hdrRenderRequest.clazz, "longEdge", "I");
+        c.hdrRenderRequest.tone = cacheField(env, c.hdrRenderRequest.clazz, "tone", "Lcom/rawlab/android/engine/NativeHDRTone;");
+        c.hdrRenderRequest.color = cacheField(env, c.hdrRenderRequest.clazz, "color", "Lcom/rawlab/android/engine/NativeHDRColor;");
+        c.hdrRenderRequest.rendition = cacheField(env, c.hdrRenderRequest.clazz, "rendition", "Lcom/rawlab/android/engine/NativeHDRRendition;");
+        c.hdrRenderRequest.effects = cacheField(env, c.hdrRenderRequest.clazz, "effects", "Lcom/rawlab/android/engine/NativePhotoEffectsConfig;");
+        c.hdrRenderRequest.detail = cacheField(env, c.hdrRenderRequest.clazz, "detail", "Lcom/rawlab/android/engine/NativeHDRDetail;");
+        c.hdrRenderRequest.look = cacheField(env, c.hdrRenderRequest.clazz, "look", "Lcom/rawlab/android/engine/NativeHDRLook;");
+        c.hdrRenderRequest.channelCurves = cacheField(env, c.hdrRenderRequest.clazz, "channelCurves", "Lcom/rawlab/android/engine/NativeHDRChannelCurves;");
+
+        gJniCache = c;
+        gJniCacheReady.store(true, std::memory_order_release);
+    } catch (...) {
+        gJniCache = c;
+        gJniCacheReady.store(true, std::memory_order_release);
+        releaseJniCache(env);
+        throw;
+    }
+}
+
+const JniCache& jniCache(JNIEnv* env) {
+    std::call_once(gJniCacheOnce, [&] { initJniCache(env); });
+    return gJniCache;
 }
 
 struct HDRStatusError : std::runtime_error {
@@ -101,38 +591,41 @@ void throwHDRFailure(JNIEnv* env,const std::exception& error) {
     const auto* detail=dynamic_cast<const HDRStatusError*>(&error);
     if(!detail) {throwJava(env,"java/io/IOException",error.what());return;}
     if(env->ExceptionCheck())return;
-    auto type=env->FindClass("com/rawlab/android/engine/HDRProcessingException");
-    if(!type)return;
-    auto constructor=env->GetMethodID(type,"<init>","(III)V");if(!constructor)return;
-    auto object=env->NewObject(type,constructor,jint(detail->status),jint(detail->diagnostic.reason),jint(detail->diagnostic.field));
-    if(object){env->Throw(static_cast<jthrowable>(object));env->DeleteLocalRef(object);}
-    env->DeleteLocalRef(type);
+    try {
+        const auto& cache = jniCache(env);
+        LocalRef object(env, env->NewObject(cache.hdrProcessingException.clazz, cache.hdrProcessingException.ctor,
+            jint(detail->status), jint(detail->diagnostic.reason), jint(detail->diagnostic.field)));
+        if (object) env->Throw(static_cast<jthrowable>(object.get()));
+    } catch (...) {
+        env->ExceptionClear();
+        throwJava(env, "java/io/IOException", error.what());
+    }
 }
 
 struct NativeStatusError : std::runtime_error {
     sony2fuji_status status;
-    NativeStatusError(sony2fuji_status value)
-        : std::runtime_error(sony2fuji_status_message(value)), status(value) {}
+    sony2fuji_unsupported_reason unsupportedReason;
+    explicit NativeStatusError(
+        sony2fuji_status value,
+        sony2fuji_unsupported_reason reason = SONY2FUJI_UNSUPPORTED_NONE)
+        : std::runtime_error(sony2fuji_status_message(value)),
+          status(value),
+          unsupportedReason(reason) {}
 };
 
 void throwNativeStatus(JNIEnv* env, const NativeStatusError& error) {
     if (env->ExceptionCheck()) return;
-    auto type = env->FindClass("com/rawlab/android/engine/NativeProcessingException");
-    if (!type) {
+    try {
+        const auto& cache = jniCache(env);
+        LocalRef message(env, env->NewStringUTF(error.what()));
+        if (!message) return;
+        LocalRef exception(env, env->NewObject(cache.nativeProcessingException.clazz, cache.nativeProcessingException.ctor,
+            static_cast<jint>(error.status), message.get(), static_cast<jint>(error.unsupportedReason)));
+        if (exception) env->Throw(static_cast<jthrowable>(exception.get()));
+    } catch (...) {
         env->ExceptionClear();
         throwJava(env, "java/io/IOException", error.what());
-        return;
     }
-    auto constructor = env->GetMethodID(type, "<init>", "(ILjava/lang/String;)V");
-    if (!constructor) {
-        env->ExceptionClear();
-        throwJava(env, "java/io/IOException", error.what());
-        return;
-    }
-    auto message = env->NewStringUTF(error.what());
-    if (!message) return;
-    auto exception = env->NewObject(type, constructor, static_cast<jint>(error.status), message);
-    if (exception) env->Throw(static_cast<jthrowable>(exception));
 }
 
 std::shared_ptr<const HdrPairOwner> acquireHdrPair(jlong id) {
@@ -173,6 +666,11 @@ void check(sony2fuji_status status, sony2fuji_session* session = nullptr) {
         const char* message = sony2fuji_session_x3f_error(session);
         if (message && *message) throw std::runtime_error(message);
     }
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
+        throw NativeStatusError(
+            status,
+            session ? sony2fuji_session_get_unsupported_reason(session) : SONY2FUJI_UNSUPPORTED_NONE);
+    }
     if (status == SONY2FUJI_STATUS_IO_ERROR || status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR ||
         status == SONY2FUJI_STATUS_CANCELLED)
         throw NativeStatusError(status);
@@ -181,7 +679,8 @@ void check(sony2fuji_status status, sony2fuji_session* session = nullptr) {
 sony2fuji_tone_curve_config curveConfig(JNIEnv* env, jint mode, jdoubleArray points) {
     if (!points) throw std::invalid_argument("Missing curve points");
     const jsize length = env->GetArrayLength(points);
-    if (length % 2 || length > 2 * SONY2FUJI_TONE_CURVE_MAX_POINTS || (mode != 0 && mode != 1))
+    if (length < 0 || length % 2 != 0 ||
+        static_cast<uint32_t>(length) > 2u * SONY2FUJI_TONE_CURVE_MAX_POINTS || (mode != 0 && mode != 1))
         throw std::invalid_argument("Invalid curve points");
     sony2fuji_tone_curve_config config{};
     config.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION; config.struct_size = sizeof(config);
@@ -193,24 +692,60 @@ sony2fuji_tone_curve_config curveConfig(JNIEnv* env, jint mode, jdoubleArray poi
     return config;
 }
 
-sony2fuji_hdr_request_v8 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint curveMode,
-    jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, const char* lookPath, const char* lookSha256) {
-    const auto count = values ? env->GetArrayLength(values) : 0;
-    constexpr jsize baseSize = 17, toneSize = 20, colorSize = 51, renditionSize = 55, effectsSize = 63, detailSize = 67, lookSize = 68;
-    const bool hasLook = count == lookSize;
-    const bool hasDetail = count == detailSize || hasLook;
-    const bool hasEffects = count == effectsSize || hasDetail;
-    const bool hasRendition = count == renditionSize || hasEffects;
-    const bool hasColor = count == colorSize || hasRendition;
-    const bool hasTone = count == toneSize || hasColor;
-    if ((count != baseSize && !hasTone) || longEdge < 0 || longEdge > 65535 ||
-        (!hasTone && (curveMode != 0 || curvePoints)) || (lookPath && !hasLook) ||
-        ((lookPath != nullptr) != (lookSha256 != nullptr)) || (lookSha256 && std::strlen(lookSha256) != 64))
-        throw std::invalid_argument("Invalid HDR render request");
-    std::array<jfloat, lookSize> input{};
-    env->GetFloatArrayRegion(values, 0, count, input.data());
-    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR settings");
-    sony2fuji_hdr_request_v8 result{};
+sony2fuji_tone_curve_config marshalToneCurve(JNIEnv* env, const JniCache& cache, jobject curveObj) {
+    if (!curveObj) throw std::invalid_argument("Missing tone curve");
+    const jint mode = env->GetIntField(curveObj, cache.toneCurve.mode);
+    LocalRef pointsRef(env, env->GetObjectField(curveObj, cache.toneCurve.points));
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read tone curve");
+    return curveConfig(env, mode, pointsRef.asDoubleArray());
+}
+
+sony2fuji_photo_effects_config marshalPhotoEffects(JNIEnv* env, const JniCache& cache, jobject effectsObj) {
+    if (!effectsObj) throw std::invalid_argument("Missing photo effects config");
+    sony2fuji_photo_effects_config config{
+        SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
+        sizeof(sony2fuji_photo_effects_config),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.vignetteAmount),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.vignetteMidpoint),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.vignetteRoundness),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.vignetteFeather),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.vignetteHighlights),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.grainAmount),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.grainSize),
+        env->GetFloatField(effectsObj, cache.photoEffectsConfig.grainRoughness),
+    };
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read photo effects config");
+    return config;
+}
+
+void marshalGeometryFields(JNIEnv* env, const JniCache& cache, jobject geometryObj, sony2fuji_hdr_request_v1& request) {
+    if (!geometryObj) throw std::invalid_argument("Missing HDR geometry");
+    request.crop_x = env->GetFloatField(geometryObj, cache.geometry.cropX);
+    request.crop_y = env->GetFloatField(geometryObj, cache.geometry.cropY);
+    request.crop_width = env->GetFloatField(geometryObj, cache.geometry.cropWidth);
+    request.crop_height = env->GetFloatField(geometryObj, cache.geometry.cropHeight);
+    request.quarter_turns = env->GetIntField(geometryObj, cache.geometry.quarterTurns);
+    request.flip_horizontal = env->GetBooleanField(geometryObj, cache.geometry.flipHorizontal) ? 1u : 0u;
+    request.flip_vertical = env->GetBooleanField(geometryObj, cache.geometry.flipVertical) ? 1u : 0u;
+    request.straighten_degrees = env->GetFloatField(geometryObj, cache.geometry.straightenDegrees);
+    request.perspective_horizontal = env->GetFloatField(geometryObj, cache.geometry.perspectiveHorizontal);
+    request.perspective_vertical = env->GetFloatField(geometryObj, cache.geometry.perspectiveVertical);
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR geometry");
+}
+
+struct MarshalledHdrRequest {
+    sony2fuji_hdr_request_v8 value{};
+    std::string lookPath;
+    MarshalledHdrRequest() = default;
+    MarshalledHdrRequest(const MarshalledHdrRequest&) = delete;
+    MarshalledHdrRequest& operator=(const MarshalledHdrRequest&) = delete;
+    sony2fuji_hdr_request_v1& base() { return value.base.base.base.base.base.base.base; }
+};
+
+void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrRequest& out) {
+    if (!requestObj) throw std::invalid_argument("Missing HDR render request");
+    const auto& cache = jniCache(env);
+    auto& result = out.value;
     auto& look = result.base;
     auto& detail = look.base;
     auto& effectsRequest = detail.base;
@@ -218,70 +753,137 @@ sony2fuji_hdr_request_v8 hdrRenderRequest(JNIEnv* env, jfloatArray values, jint 
     auto& color = rendition.base;
     auto& tone = color.base;
     auto& request = tone.base;
+
     request.version = SONY2FUJI_HDR_VERSION;
     request.struct_size = sizeof(request);
     request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_VERSION;
-    request.exposure_ev = input[0]; request.temperature = input[1]; request.tint = input[2];
-    request.contrast = input[3]; request.highlights = input[4]; request.shadows = input[5]; request.saturation = input[6];
-    request.crop_x = input[7]; request.crop_y = input[8]; request.crop_width = input[9]; request.crop_height = input[10];
-    request.quarter_turns = static_cast<int32_t>(input[11]); request.flip_horizontal = input[12] != 0;
-    request.flip_vertical = input[13] != 0; request.straighten_degrees = input[14];
-    request.perspective_horizontal = input[15]; request.perspective_vertical = input[16]; request.long_edge = longEdge;
-    if (hasTone) {
+    request.exposure_ev = env->GetFloatField(requestObj, cache.hdrRenderRequest.exposureEv);
+    request.temperature = env->GetFloatField(requestObj, cache.hdrRenderRequest.temperature);
+    request.tint = env->GetFloatField(requestObj, cache.hdrRenderRequest.tint);
+    request.contrast = env->GetFloatField(requestObj, cache.hdrRenderRequest.contrast);
+    request.highlights = env->GetFloatField(requestObj, cache.hdrRenderRequest.highlights);
+    request.shadows = env->GetFloatField(requestObj, cache.hdrRenderRequest.shadows);
+    request.saturation = env->GetFloatField(requestObj, cache.hdrRenderRequest.saturation);
+    const jint longEdge = env->GetIntField(requestObj, cache.hdrRenderRequest.longEdge);
+    if (env->ExceptionCheck() || longEdge < 0 || longEdge > 65535)
+        throw std::invalid_argument("Invalid HDR render request");
+    request.long_edge = static_cast<uint32_t>(longEdge);
+    LocalRef geometryRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.geometry));
+    marshalGeometryFields(env, cache, geometryRef.get(), request);
+
+    LocalRef toneRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.tone));
+    LocalRef colorRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.color));
+    LocalRef renditionRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.rendition));
+    LocalRef effectsRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.effects));
+    LocalRef detailRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.detail));
+    LocalRef lookRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.look));
+    LocalRef channelCurvesRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.channelCurves));
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR request sections");
+
+    if ((colorRef && !toneRef) || (renditionRef && !colorRef) || (effectsRef && !renditionRef) ||
+        (detailRef && !effectsRef) || (lookRef && !detailRef) || (channelCurvesRef && !lookRef)) {
+        throw std::invalid_argument("Invalid HDR render request");
+    }
+
+    if (toneRef) {
         request.struct_size = sizeof(tone);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
-        tone.black_point = input[17]; tone.white_point = input[18]; tone.curve_strength = input[19];
-        tone.curve = curveConfig(env, curveMode, curvePoints);
+        tone.black_point = env->GetFloatField(toneRef.get(), cache.hdrTone.blackPoint);
+        tone.white_point = env->GetFloatField(toneRef.get(), cache.hdrTone.whitePoint);
+        tone.curve_strength = env->GetFloatField(toneRef.get(), cache.hdrTone.curveStrength);
+        LocalRef curveRef(env, env->GetObjectField(toneRef.get(), cache.hdrTone.curve));
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR tone settings");
+        tone.curve = marshalToneCurve(env, cache, curveRef.get());
     }
-    if (hasColor) {
+    if (colorRef) {
         request.struct_size = sizeof(color);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_COLOR_VERSION;
-        color.vibrance = input[20];
+        color.vibrance = env->GetFloatField(colorRef.get(), cache.hdrColor.vibrance);
+        LocalRef hslRef(env, env->GetObjectField(colorRef.get(), cache.hdrColor.hsl));
+        auto hslArr = hslRef.asFloatArray();
+        if (!hslArr || env->GetArrayLength(hslArr) != 3 * SONY2FUJI_HSL_CHANNELS)
+            throw std::invalid_argument("Invalid HDR HSL settings");
+        jfloat hslData[3 * SONY2FUJI_HSL_CHANNELS]{};
+        env->GetFloatArrayRegion(hslArr, 0, 3 * SONY2FUJI_HSL_CHANNELS, hslData);
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR HSL settings");
         color.hsl.version = SONY2FUJI_HSL_CONFIG_VERSION;
         color.hsl.struct_size = sizeof(color.hsl);
-        std::copy_n(input.data() + 21, SONY2FUJI_HSL_CHANNELS, color.hsl.hue);
-        std::copy_n(input.data() + 29, SONY2FUJI_HSL_CHANNELS, color.hsl.saturation);
-        std::copy_n(input.data() + 37, SONY2FUJI_HSL_CHANNELS, color.hsl.lightness);
-        color.grading = {SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(color.grading),
-            input[45], input[46], input[47], input[48], input[49], input[50]};
+        std::copy_n(hslData, SONY2FUJI_HSL_CHANNELS, color.hsl.hue);
+        std::copy_n(hslData + SONY2FUJI_HSL_CHANNELS, SONY2FUJI_HSL_CHANNELS, color.hsl.saturation);
+        std::copy_n(hslData + 2 * SONY2FUJI_HSL_CHANNELS, SONY2FUJI_HSL_CHANNELS, color.hsl.lightness);
+        LocalRef gradingRef(env, env->GetObjectField(colorRef.get(), cache.hdrColor.grading));
+        if (!gradingRef) throw std::invalid_argument("Missing HDR color grading");
+        color.grading = {
+            SONY2FUJI_COLOR_GRADING_CONFIG_VERSION,
+            sizeof(color.grading),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.shadowsHue),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.shadowsSaturation),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.midtonesHue),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.midtonesSaturation),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.highlightsHue),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.highlightsSaturation),
+        };
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR color grading");
     }
-    if (hasRendition) {
+    if (renditionRef) {
         request.struct_size = sizeof(rendition);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_RENDITION_VERSION;
-        rendition.peak_limit_ev = input[51]; rendition.sdr_exposure_ev = input[52];
-        rendition.sdr_contrast = input[53]; rendition.sdr_saturation = input[54];
+        rendition.peak_limit_ev = env->GetFloatField(renditionRef.get(), cache.hdrRendition.peakLimitEv);
+        rendition.sdr_exposure_ev = env->GetFloatField(renditionRef.get(), cache.hdrRendition.sdrExposureEv);
+        rendition.sdr_contrast = env->GetFloatField(renditionRef.get(), cache.hdrRendition.sdrContrast);
+        rendition.sdr_saturation = env->GetFloatField(renditionRef.get(), cache.hdrRendition.sdrSaturation);
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR rendition settings");
     }
-    if (hasEffects) {
+    if (effectsRef) {
         request.struct_size = sizeof(effectsRequest);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_EFFECTS_VERSION;
-        effectsRequest.effects = {SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION, sizeof(effectsRequest.effects),
-            input[55], input[56], input[57], input[58], input[59], input[60], input[61], input[62]};
+        effectsRequest.effects = marshalPhotoEffects(env, cache, effectsRef.get());
     }
-    if (hasDetail) {
+    if (detailRef) {
         request.struct_size = sizeof(detail);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION;
-        detail.sharpening = input[63]; detail.clarity = input[64]; detail.dehaze = input[65]; detail.denoise = input[66];
+        detail.sharpening = env->GetFloatField(detailRef.get(), cache.hdrDetail.sharpening);
+        detail.clarity = env->GetFloatField(detailRef.get(), cache.hdrDetail.clarity);
+        detail.dehaze = env->GetFloatField(detailRef.get(), cache.hdrDetail.dehaze);
+        detail.denoise = env->GetFloatField(detailRef.get(), cache.hdrDetail.denoise);
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR detail settings");
     }
-    if (hasLook) {
+    if (lookRef) {
         request.struct_size = sizeof(look);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
-        look.look_path = lookPath;
-        look.look_strength = input[67];
-        if (lookSha256) std::copy_n(lookSha256, 64, look.look_sha256);
-    }
-    if (channelModes || channelPoints) {
-        if (!hasLook || !channelModes || !channelPoints || env->GetArrayLength(channelModes) != 3 || env->GetArrayLength(channelPoints) != 3)
-            throw std::invalid_argument("Invalid HDR channel curves");
-        jint modes[3]; env->GetIntArrayRegion(channelModes, 0, 3, modes);
-        for (int i = 0; i < 3; ++i) {
-            auto points = static_cast<jdoubleArray>(env->GetObjectArrayElement(channelPoints, i));
-            result.channels[i] = curveConfig(env, modes[i], points);
-            env->DeleteLocalRef(points);
+        look.look_strength = env->GetFloatField(lookRef.get(), cache.hdrLook.strength);
+        LocalRef pathRef(env, env->GetObjectField(lookRef.get(), cache.hdrLook.path));
+        LocalRef shaRef(env, env->GetObjectField(lookRef.get(), cache.hdrLook.sha256));
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR look settings");
+        if (bool(pathRef) != bool(shaRef)) throw std::invalid_argument("Invalid HDR render request");
+        if (pathRef && shaRef) {
+            const char* pChars = env->GetStringUTFChars(pathRef.asString(), nullptr);
+            if (!pChars) throw std::bad_alloc();
+            out.lookPath = pChars;
+            env->ReleaseStringUTFChars(pathRef.asString(), pChars);
+            const char* sChars = env->GetStringUTFChars(shaRef.asString(), nullptr);
+            if (!sChars) throw std::bad_alloc();
+            const size_t sLen = std::strlen(sChars);
+            if (sLen != 64) {
+                env->ReleaseStringUTFChars(shaRef.asString(), sChars);
+                throw std::invalid_argument("Invalid HDR render request");
+            }
+            std::copy_n(sChars, 64, look.look_sha256);
+            env->ReleaseStringUTFChars(shaRef.asString(), sChars);
+            look.look_path = out.lookPath.c_str();
         }
+    }
+    if (channelCurvesRef) {
+        LocalRef redRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.red));
+        LocalRef greenRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.green));
+        LocalRef blueRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.blue));
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR channel curves");
+        result.channels[0] = marshalToneCurve(env, cache, redRef.get());
+        result.channels[1] = marshalToneCurve(env, cache, greenRef.get());
+        result.channels[2] = marshalToneCurve(env, cache, blueRef.get());
         request.struct_size = sizeof(result);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
     }
-    return result;
 }
 
 void sampleHslProbe(JNIEnv* env, const sony2fuji_hsl_probe* probe, jlong sourceRevision, jlong requestRevision,
@@ -362,6 +964,85 @@ struct BitmapPixels {
     }
     ~BitmapPixels() { if (locked) AndroidBitmap_unlockPixels(env, value); }
 };
+
+struct OutputBitmapLock {
+    JNIEnv* env;
+    jobject bitmap;
+    void* locked = nullptr;
+    OutputBitmapLock(JNIEnv* e, jobject bmp, AndroidBitmapInfo& info, uint32_t expectedWidth, uint32_t expectedHeight)
+        : env(e), bitmap(bmp) {
+        if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 ||
+            info.width != expectedWidth ||
+            info.height != expectedHeight ||
+            info.stride < static_cast<uint64_t>(expectedWidth) * 4) {
+            throw std::runtime_error("Invalid output bitmap");
+        }
+        const auto lockResult = AndroidBitmap_lockPixels(env, bitmap, &locked);
+        if (lockResult == ANDROID_BITMAP_RESULT_ALLOCATION_FAILED) throw std::bad_alloc();
+        if (lockResult != ANDROID_BITMAP_RESULT_SUCCESS) throw std::runtime_error("Unable to lock output bitmap");
+        if (!locked) {
+            AndroidBitmap_unlockPixels(env, bitmap);
+            locked = nullptr;
+            throw std::runtime_error("Output bitmap has no pixels");
+        }
+    }
+    ~OutputBitmapLock() {
+        if (locked) AndroidBitmap_unlockPixels(env, bitmap);
+    }
+};
+
+jobject writeRgba8Bitmap(JNIEnv* env, const sony2fuji_buffer& b, jobject reusableBitmap, const CancellationScope* cancellation) {
+    if (!b.data || b.width == 0 || b.height == 0 || b.pixel_format != SONY2FUJI_PIXEL_RGBA8 ||
+        b.width > static_cast<uint32_t>(std::numeric_limits<jint>::max()) ||
+        b.height > static_cast<uint32_t>(std::numeric_limits<jint>::max()) ||
+        b.stride_bytes < static_cast<uint64_t>(b.width) * 4) {
+        throw std::runtime_error("Invalid preview buffer");
+    }
+    const size_t row = static_cast<size_t>(b.width) * 4;
+    const size_t bytes = rawlab::previewByteCount(b);
+    if (bytes > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
+        throw std::runtime_error("Invalid preview buffer");
+    }
+    const auto& cache = jniCache(env);
+    LocalRef bitmap(env, env->CallStaticObjectMethod(
+        cache.nativeFrame.clazz, cache.nativeFrame.allocateBitmap,
+        static_cast<jint>(b.width), static_cast<jint>(b.height), reusableBitmap));
+    if (env->ExceptionCheck()) return nullptr;
+    if (!bitmap) throw std::bad_alloc();
+    {
+        AndroidBitmapInfo info{};
+        OutputBitmapLock lock(env, bitmap.get(), info, b.width, b.height);
+        if (b.stride_bytes == row && info.stride == row && !cancellation) {
+            std::memcpy(lock.locked, b.data, bytes);
+        } else {
+            const auto* src = static_cast<const uint8_t*>(b.data);
+            auto* dst = static_cast<uint8_t*>(lock.locked);
+            for (uint32_t y = 0; y < b.height; ++y) {
+                if (cancellation && cancellation->isCancelled()) {
+                    throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
+                }
+                std::memcpy(dst + static_cast<size_t>(y) * info.stride,
+                    src + static_cast<size_t>(y) * b.stride_bytes, row);
+            }
+        }
+    }
+    return bitmap.release();
+}
+
+const std::array<float, 4097>& srgbEncodeLut() {
+    static const std::array<float, 4097> table = [] {
+        std::array<float, 4097> t{};
+        for (size_t i = 0; i <= 4096; ++i) {
+            const float v = static_cast<float>(i) / 4096.0f;
+            t[i] = v <= 0.0031308f
+                ? 12.92f * v
+                : 1.055f * static_cast<float>(std::pow(static_cast<double>(v), 1.0 / 2.4)) - 0.055f;
+        }
+        return t;
+    }();
+    return table;
+}
 struct ByteArrayElements {
     JNIEnv* env;
     jbyteArray value;
@@ -379,53 +1060,42 @@ struct DcpBlob {
     sony2fuji_blob value{};
     ~DcpBlob() { sony2fuji_release_blob(&value); }
 };
-bool isNormalX3f(const char* input, jint mode) {
-    if (mode != SONY2FUJI_X3F_NORMAL || !input) return false;
-    // 导入副本可能没有扩展名；白平衡基准跟随实际文件格式。
-    std::ifstream file(input, std::ios::binary);
-    char signature[4]{};
-    return file.read(signature, sizeof(signature)) && std::memcmp(signature, "FOVb", 4) == 0;
-}
-std::optional<rawlab::RecipeWhiteBalance> probeRecipeWhiteBalance(Session& owner, const char* input) {
-    auto* session = owner.get();
-    rawlab::RecipeProbeStageScope stages(session, owner.stages);
-    // 临时显影只解析目标 RAW 的拍摄白平衡，随后正式请求重设完整配置。
-    sony2fuji_hsl_config hsl{SONY2FUJI_HSL_CONFIG_VERSION, sizeof(sony2fuji_hsl_config)};
-    sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(sony2fuji_wavelet_denoise_config)};
-    sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION, sizeof(sony2fuji_photo_effects_config)};
-    check(sony2fuji_session_set_hsl(session, &hsl));
-    check(sony2fuji_session_set_wavelet_denoise(session, &denoise));
-    check(sony2fuji_session_set_photo_effects(session, &effects));
-    check(sony2fuji_session_set_chroma_denoise(session, 0));
-    check(sony2fuji_session_set_interactive_preview(session, 0));
-    auto neutral = rawlab::makeRequest(input, nullptr, nullptr, 0, 0, false, 6500, 0, 32, rawlab::ExportFormat::JPEG);
-    Buffer buffer;
-    check(sony2fuji_process(session, &neutral, &buffer.value), session);
-    float cameraTemperature = 0, cameraTint = 0;
-    const auto status = sony2fuji_session_get_raw_white_balance(session, &cameraTemperature, &cameraTint);
-    if (status == SONY2FUJI_STATUS_UNSUPPORTED) return std::nullopt;
-    check(status);
-    if (!std::isfinite(cameraTemperature) || !std::isfinite(cameraTint))
-        throw std::runtime_error("Cannot resolve target RAW white balance for master recipe");
-    return rawlab::RecipeWhiteBalance{std::round(cameraTemperature), std::round(cameraTint)};
+std::string processingOnlyParamsJson(int processingVersion, const char* exposureMode = "scene") {
+    const int version = std::max(1, std::min(3, processingVersion));
+    return "{\"schema_version\":5,\"processing\":{\"family\":\"rawlab\",\"version\":" +
+        std::to_string(version) + ",\"quality\":\"standard\"},\"input\":{\"path\":\"session.raw\",\"type\":\"raw\"},"
+        "\"edits\":{\"exposure\":{\"mode\":\"" + std::string(exposureMode) +
+        "\",\"ev\":0.0,\"brightness\":1.0},\"white_balance\":{\"mode\":\"camera\"},"
+        "\"look\":{\"path\":null,\"strength\":1.0},\"detail\":{\"sharpening\":0.0}},"
+        "\"output\":{\"path\":\"session.png\",\"format\":\"png\",\"size\":{\"mode\":\"native\"}}}";
 }
 
-void prepareRecipeWb(Session& owner, const char* input, bool active, float strength,
+void resolveRecipeWb(sony2fuji_session* session, const char* input, bool active, float strength,
     bool& custom, float& temperature, float& tint, int processingVersion, int x3fMode, int exposureMode) {
-    if (!active || (!custom && tint * strength == 0)) return;
-    const auto camera = owner.recipeWhiteBalance.resolve(input, processingVersion, x3fMode, exposureMode,
-        [&]() -> std::optional<rawlab::RecipeWhiteBalance> {
-            if (isNormalX3f(input, x3fMode)) return rawlab::RecipeWhiteBalance{6500, 0};
-            return probeRecipeWhiteBalance(owner, input);
-        });
-    if (!camera) {
+    if (!active) return;
+    sony2fuji_recipe_wb_request req{};
+    req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION;
+    req.struct_size = sizeof(req);
+    req.input_path = input;
+    req.processing_version = static_cast<sony2fuji_processing_version>(processingVersion);
+    req.x3f_mode = static_cast<sony2fuji_x3f_mode>(x3fMode);
+    req.exposure_mode = static_cast<sony2fuji_raw_exposure_mode>(exposureMode);
+    req.recipe_active = 1;
+    req.recipe_strength = strength;
+    req.custom_wb = custom ? 1 : 0;
+    req.temperature = temperature;
+    req.tint = tint;
+    sony2fuji_recipe_wb_result res{};
+    const auto status = sony2fuji_session_resolve_recipe_wb(session, &req, &res);
+    if (status == SONY2FUJI_STATUS_UNSUPPORTED) {
         // 无法校准色温和色调时，沿用基础显影的相机白平衡。
         custom = false;
         return;
     }
-    if (!custom) temperature = camera->temperature;
-    tint = std::clamp(camera->tint + tint * strength, -150.0f, 150.0f);
-    custom = true;
+    check(status, session);
+    custom = res.wb_mode == SONY2FUJI_WB_TEMPERATURE;
+    temperature = res.temperature;
+    tint = res.tint;
 }
 }
 
@@ -447,22 +1117,19 @@ struct SessionGuard {
     sony2fuji_session* get() const { return owner->get(); }
 };
 jobjectArray strings(JNIEnv* env, const std::vector<std::string>& values) {
-    auto type = env->FindClass("java/lang/String");
-    if (!type) return nullptr;
-    auto constructor = env->GetMethodID(type, "<init>", "([BLjava/lang/String;)V");
-    auto charset = env->NewStringUTF("UTF-8");
-    if (!constructor || !charset) return nullptr;
-    auto result = env->NewObjectArray(static_cast<jsize>(values.size()), type, nullptr);
+    const auto& cache = jniCache(env);
+    LocalRef charset(env, env->NewStringUTF("UTF-8"));
+    if (!charset) return nullptr;
+    auto result = env->NewObjectArray(static_cast<jsize>(values.size()), cache.javaString.clazz, nullptr);
     if (!result) return nullptr;
     for (size_t i = 0; i < values.size() && !env->ExceptionCheck(); ++i) {
-        auto bytes = env->NewByteArray(static_cast<jsize>(values[i].size()));
+        LocalRef bytes(env, env->NewByteArray(static_cast<jsize>(values[i].size())));
         if (!bytes) return nullptr;
-        env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(values[i].size()), reinterpret_cast<const jbyte*>(values[i].data()));
-        auto value = env->NewObject(type, constructor, bytes, charset);
+        env->SetByteArrayRegion(bytes.asByteArray(), 0, static_cast<jsize>(values[i].size()),
+            reinterpret_cast<const jbyte*>(values[i].data()));
+        LocalRef value(env, env->NewObject(cache.javaString.clazz, cache.javaString.bytesCtor, bytes.get(), charset.get()));
         if (!value) return nullptr;
-        env->SetObjectArrayElement(result, static_cast<jsize>(i), value);
-        env->DeleteLocalRef(value);
-        env->DeleteLocalRef(bytes);
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), value.get());
     }
     return env->ExceptionCheck() ? nullptr : result;
 }
@@ -487,7 +1154,7 @@ Java_com_rawlab_android_raster_NativeMpf_nativeInspectSdrJpegMpf(JNIEnv* env, jo
     try {
         UtfChars source(env, path);
         if (!source.chars) return -1;
-        return static_cast<jint>(sony2fuji::inspectSdrJpegMpf(std::filesystem::u8path(source.chars)));
+        return static_cast<jint>(sony2fuji_inspect_sdr_jpeg_mpf(source.chars));
     } catch (...) {
         return -1;
     }
@@ -512,7 +1179,7 @@ Java_com_rawlab_android_raster_NativePng16_nativeConvert(JNIEnv* env, jobject, j
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_raster_NativePng16_nativeRelease(JNIEnv* env, jobject, jobject pixels) {
-    stbi_image_free(env->GetDirectBufferAddress(pixels));
+    rawlab::Png16Deleter{}(static_cast<uint16_t*>(env->GetDirectBufferAddress(pixels)));
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -555,34 +1222,14 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeSetDisplayLensMetadata(JNIE
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetLensCorrection(JNIEnv* env, jobject, jlong id,
-    jboolean distortion, jboolean tca, jboolean crop, jboolean vignetting, jbyteArray profile) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeApplyParams(JNIEnv* env, jobject, jlong id, jstring recipeJson) {
     try {
+        UtfChars json(env, recipeJson);
+        if (!json.chars || !*json.chars) throw std::invalid_argument("Missing recipe parameters");
         SessionGuard guard(id);
-        if (!profile) throw std::invalid_argument("Missing lens profile ID");
-        std::string value(static_cast<size_t>(env->GetArrayLength(profile)), '\0');
-        env->GetByteArrayRegion(profile, 0, static_cast<jsize>(value.size()), reinterpret_cast<jbyte*>(value.data()));
-        if (env->ExceptionCheck()) return;
-        sony2fuji_lens_correction_config_v2 config{{SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION,
-            sizeof(config), distortion ? 1 : 0, tca ? 1 : 0, crop ? 1 : 0, value.c_str()}, vignetting ? 1 : 0};
-        check(sony2fuji_session_set_lens_correction_v2(guard.get(), &config));
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneCurves(JNIEnv* env, jobject, jlong id,
-    jint mode, jdoubleArray points, jint redMode, jdoubleArray redPoints,
-    jint greenMode, jdoubleArray greenPoints, jint blueMode, jdoubleArray bluePoints) {
-    try {
-        const sony2fuji_tone_curve_set_config config{SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION, sizeof(config),
-            {curveConfig(env, mode, points), curveConfig(env, redMode, redPoints),
-             curveConfig(env, greenMode, greenPoints), curveConfig(env, blueMode, bluePoints)}};
-        SessionGuard guard(id);
-        check(sony2fuji_session_set_tone_curves(guard.get(), &config));
-        auto& stages = guard.session().stages;
-        stages.curve = config.curves[0];
-        std::copy_n(config.curves + 1, 3, stages.channels);
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+        check(sony2fuji_apply_params(guard.get(), json.chars), guard.get());
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+    catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
@@ -597,60 +1244,6 @@ Java_com_rawlab_android_engine_ToneCurveSampling_nativeSamples(JNIEnv* env, jcla
         if (result) env->SetDoubleArrayRegion(result, 0, count, values.data());
         return result;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); return nullptr; }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetColorGrading(JNIEnv* env, jobject, jlong id,
-    jfloat shadowsHue, jfloat shadowsSaturation, jfloat midtonesHue, jfloat midtonesSaturation,
-    jfloat highlightsHue, jfloat highlightsSaturation) {
-    try {
-        SessionGuard guard(id);
-        sony2fuji_color_grading_config config{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(config),
-            shadowsHue, shadowsSaturation, midtonesHue, midtonesSaturation, highlightsHue, highlightsSaturation};
-        check(sony2fuji_session_set_color_grading(guard.get(), &config));
-        guard.session().stages.grading = config;
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetToneControls(JNIEnv* env, jobject, jlong id,
-    jfloat blackPoint, jfloat whitePoint, jfloat vibrance) {
-    try {
-        SessionGuard guard(id);
-        sony2fuji_tone_controls_config config{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(config),
-            blackPoint, whitePoint, vibrance};
-        check(sony2fuji_session_set_tone_controls(guard.get(), &config));
-        guard.session().stages.tone = config;
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetAtmosphere(JNIEnv* env, jobject, jlong id,
-    jfloat clarity, jfloat dehaze) {
-    try {
-        SessionGuard guard(id);
-        sony2fuji_atmosphere_config config{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(config),
-            clarity, dehaze};
-        check(sony2fuji_session_set_atmosphere(guard.get(), &config));
-        guard.session().stages.atmosphere = config;
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeSetGeometry(JNIEnv* env, jobject, jlong id,
-    jfloat x, jfloat y, jfloat width, jfloat height, jint turns,
-    jboolean horizontal, jboolean vertical, jfloat straighten,
-    jfloat perspectiveHorizontal, jfloat perspectiveVertical) {
-    try {
-        SessionGuard guard(id);
-        sony2fuji_geometry_config config{SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(config),
-            x, y, width, height, turns, horizontal ? 1 : 0, vertical ? 1 : 0, straighten};
-        auto* session = guard.get();
-        check(sony2fuji_session_set_geometry(session, &config));
-        sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION, sizeof(perspective),
-            perspectiveHorizontal, perspectiveVertical};
-        check(sony2fuji_session_set_perspective(session, &perspective));
-    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -708,6 +1301,71 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeLensReport(JNIEnv* env, job
         return strings(env, {std::to_string(report.base.state), report.base.lens_model, report.base.profile.model,
             report.base.applied_distortion ? "1" : "0", report.base.applied_tca ? "1" : "0", std::to_string(report.base.crop_scale), report.applied_vignetting ? "1" : "0"});
     } catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jbooleanArray JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeInspectLens(JNIEnv* env, jobject, jlong id, jstring input) {
+    try {
+        SessionGuard guard(id);
+        auto* session = guard.get();
+        UtfChars path(env, input);
+        sony2fuji_lens_report_v2 report{};
+        uint32_t count = 0;
+        const auto& display = guard.session().displayLens;
+        const auto metadata = display.value();
+        if (!input && !display.present) throw std::invalid_argument("Display lens metadata not configured");
+        const auto status = input
+            ? sony2fuji_session_inspect_lens_v2(session, path.chars, &report, nullptr, 0, &count)
+            : sony2fuji_session_inspect_lens_metadata_v2(session, &metadata, &report, nullptr, 0, &count);
+        check(status, session);
+        auto result = env->NewBooleanArray(3);
+        if (!result) return nullptr;
+        const jboolean values[3] = {
+            static_cast<jboolean>(report.base.applied_distortion ? JNI_TRUE : JNI_FALSE),
+            static_cast<jboolean>(report.base.applied_tca ? JNI_TRUE : JNI_FALSE),
+            static_cast<jboolean>(report.applied_vignetting ? JNI_TRUE : JNI_FALSE),
+        };
+        env->SetBooleanArrayRegion(result, 0, 3, values);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+      catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
+    return nullptr;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeResolveCameraWhiteBalance(JNIEnv* env, jobject, jlong id,
+    jstring input, jint processingVersion, jint x3fMode, jint exposureMode) {
+    try {
+        SessionGuard guard(id);
+        auto* session = guard.get();
+        UtfChars path(env, input);
+        if (!path.chars || !*path.chars) throw std::invalid_argument("Missing input path");
+        sony2fuji_recipe_wb_request req{};
+        req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION;
+        req.struct_size = sizeof(req);
+        req.input_path = path.chars;
+        req.processing_version = static_cast<sony2fuji_processing_version>(processingVersion);
+        req.x3f_mode = static_cast<sony2fuji_x3f_mode>(x3fMode);
+        req.exposure_mode = static_cast<sony2fuji_raw_exposure_mode>(exposureMode);
+        req.recipe_active = 1;
+        req.recipe_strength = 1.0f;
+        req.custom_wb = 0;
+        req.temperature = 6500.0f;
+        req.tint = 1.0f;
+        sony2fuji_recipe_wb_result res{};
+        const auto status = sony2fuji_session_resolve_recipe_wb(session, &req, &res);
+        if (status == SONY2FUJI_STATUS_UNSUPPORTED || !res.camera_calibrated) return nullptr;
+        check(status, session);
+        auto result = env->NewFloatArray(2);
+        if (!result) return nullptr;
+        const jfloat values[2] = {res.camera_temperature, res.camera_tint};
+        env->SetFloatArrayRegion(result, 0, 2, values);
+        return env->ExceptionCheck() ? nullptr : result;
+    } catch (const NativeStatusError& error) { throwNativeStatus(env, error); }
+      catch (const std::bad_alloc&) { throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to inspect white balance"); }
+      catch (const std::invalid_argument& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); }
+      catch (const std::exception& error) { throwJava(env, "java/io/IOException", error.what()); }
     return nullptr;
 }
 
@@ -790,34 +1448,24 @@ Java_com_rawlab_android_engine_NativeDcpBridge_compile(JNIEnv* env, jclass, jbyt
                 throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory to compile DCP");
             } else {
                 if (reason == SONY2FUJI_DCP_ERROR_NONE) reason = SONY2FUJI_DCP_ERROR_MALFORMED;
-                auto type = env->FindClass("com/rawlab/android/looks/DcpCompilationException");
-                if (!type) {
+                try {
+                    const auto& cache = jniCache(env);
+                    LocalRef exception(env, env->NewObject(cache.dcpCompilationException.clazz,
+                        cache.dcpCompilationException.ctor, static_cast<jint>(reason)));
+                    if (exception) env->Throw(static_cast<jthrowable>(exception.get()));
+                } catch (...) {
                     env->ExceptionClear();
                     throwJava(env, "java/io/IOException", "DCP compilation failed");
-                } else {
-                    auto constructor = env->GetMethodID(type, "<init>", "(I)V");
-                    if (!constructor) {
-                        env->ExceptionClear();
-                        throwJava(env, "java/io/IOException", "DCP compilation failed");
-                    } else {
-                        auto exception = env->NewObject(type, constructor, static_cast<jint>(reason));
-                        if (exception) env->Throw(static_cast<jthrowable>(exception));
-                    }
                 }
             }
             return nullptr;
         }
         if (!blob.value.data || blob.value.size_bytes == 0 ||
             blob.value.size_bytes > 64u * 1024u * 1024u || blob.value.size_bytes > INT32_MAX) {
-            auto type = env->FindClass("com/rawlab/android/looks/DcpCompilationException");
-            if (type) {
-                auto constructor = env->GetMethodID(type, "<init>", "(I)V");
-                if (constructor) {
-                    auto exception = env->NewObject(type, constructor,
-                        static_cast<jint>(SONY2FUJI_DCP_ERROR_TOO_LARGE));
-                    if (exception) env->Throw(static_cast<jthrowable>(exception));
-                }
-            }
+            const auto& cache = jniCache(env);
+            LocalRef exception(env, env->NewObject(cache.dcpCompilationException.clazz,
+                cache.dcpCompilationException.ctor, static_cast<jint>(SONY2FUJI_DCP_ERROR_TOO_LARGE)));
+            if (exception) env->Throw(static_cast<jthrowable>(exception.get()));
             return nullptr;
         }
         auto result = env->NewByteArray(static_cast<jsize>(blob.value.size_bytes));
@@ -1047,8 +1695,10 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
-        if (!proRAW) check(sony2fuji_session_set_processing_version(guard.get(),
-            static_cast<sony2fuji_processing_version>(processingVersion)));
+        if (!proRAW) {
+            const auto paramsJson = processingOnlyParamsJson(processingVersion, "preview");
+            check(sony2fuji_apply_params(guard.get(), paramsJson.c_str()));
+        }
         sony2fuji_hdr_decode_options_v1 options{};
         options.version = SONY2FUJI_HDR_VERSION;
         options.struct_size = sizeof(options);
@@ -1100,13 +1750,13 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecodeCameraRaw(JNIEnv* env
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, jclass, jlong sessionId,
-    jstring path, jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, jboolean keepHDR, jbyteArray fingerprint,
-    jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration, jstring lookPath, jstring lookSha256) {
+    jstring path, jobject requestObj, jboolean keepHDR, jbyteArray fingerprint,
+    jstring temporaryRoot, jstring outputPath, jlong cancellationGeneration) {
     try {
         if (!fingerprint || env->GetArrayLength(fingerprint) != 32) throw std::invalid_argument("Invalid ProRAW export fingerprint");
-        UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base.base;
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
         base.intent = SONY2FUJI_INTENT_FINAL;
         UtfChars source(env, path), temporary(env, temporaryRoot), output(env, outputPath);
         SessionGuard guard(sessionId);
@@ -1129,34 +1779,35 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportProRAW(JNIEnv* env, j
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(JNIEnv* env,jclass,jint width,jint height,jfloatArray values) {
+Java_com_rawlab_android_engine_NativeHDRBridge_nativeGeometry(JNIEnv* env, jclass, jint width, jint height, jobject geometryObj) {
     try {
-        if (width<=0 || height<=0 || !values || env->GetArrayLength(values)!=17)
+        if (width <= 0 || height <= 0 || !geometryObj)
             throw std::invalid_argument("Invalid HDR geometry request");
-        std::array<jfloat,17> input{}; env->GetFloatArrayRegion(values,0,17,input.data());
-        if (env->ExceptionCheck()) return nullptr;
-        sony2fuji_hdr_request_v1 request{}; request.version=1; request.struct_size=sizeof(request);
-        request.hdr_processing_version=1; request.temperature=6500;
-        request.crop_x=input[7]; request.crop_y=input[8]; request.crop_width=input[9]; request.crop_height=input[10];
-        request.quarter_turns=static_cast<int32_t>(input[11]); request.flip_horizontal=input[12]!=0; request.flip_vertical=input[13]!=0;
-        request.straighten_degrees=input[14]; request.perspective_horizontal=input[15]; request.perspective_vertical=input[16];
-        uint32_t outputWidth=0,outputHeight=0;
-        sony2fuji_hdr_diagnostic_v1 diagnostic{}; diagnostic.version=1; diagnostic.struct_size=sizeof(diagnostic);
-        if (sony2fuji_hdr_geometry_size(width,height,&request,&outputWidth,&outputHeight,&diagnostic)!=SONY2FUJI_STATUS_OK)
+        const auto& cache = jniCache(env);
+        sony2fuji_hdr_request_v1 request{};
+        request.version = 1;
+        request.struct_size = sizeof(request);
+        request.hdr_processing_version = 1;
+        request.temperature = 6500;
+        marshalGeometryFields(env, cache, geometryObj, request);
+        uint32_t outputWidth = 0, outputHeight = 0;
+        sony2fuji_hdr_diagnostic_v1 diagnostic{}; diagnostic.version = 1; diagnostic.struct_size = sizeof(diagnostic);
+        if (sony2fuji_hdr_geometry_size(width, height, &request, &outputWidth, &outputHeight, &diagnostic) != SONY2FUJI_STATUS_OK)
             throw std::invalid_argument("Invalid HDR geometry");
-        const jint output[]={jint(outputWidth),jint(outputHeight)}; auto result=env->NewIntArray(2);
-        if (result) env->SetIntArrayRegion(result,0,2,output); return result;
-    } catch (const std::exception& error) { throwJava(env,"java/lang/IllegalArgumentException",error.what()); return nullptr; }
+        const jint output[] = {jint(outputWidth), jint(outputHeight)};
+        auto result = env->NewIntArray(2);
+        if (result) env->SetIntArrayRegion(result, 0, 2, output);
+        return result;
+    } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); return nullptr; }
 }
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
-    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge, jlong cancellationGeneration,
-    jstring lookPath, jstring lookSha256) {
+    jobject requestObj, jlong cancellationGeneration) {
     try {
-        UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base.base;
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
         if (cancellation.isCancelled()) throw NativeStatusError(SONY2FUJI_STATUS_CANCELLED);
@@ -1176,7 +1827,7 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
         }
         if (status != SONY2FUJI_STATUS_OK) {
             sony2fuji_hdr_release_pair(&result);
-            throw HDRStatusError(status,diagnostic);
+            throw HDRStatusError(status, diagnostic);
         }
         return retainHdrPair(result);
     } catch (const std::bad_alloc&) {
@@ -1186,20 +1837,18 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(JNIEnv* env, jclass,
     } catch (const std::invalid_argument& error) {
         throwJava(env, "java/lang/IllegalArgumentException", error.what());
     } catch (const std::exception& error) {
-        throwHDRFailure(env,error);
+        throwHDRFailure(env, error);
     }
     return 0;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_rawlab_android_engine_NativeHDRBridge_nativeSampleHsl(JNIEnv* env, jclass, jlong sessionId, jlong sourceId,
-    jfloatArray values, jint curveMode, jdoubleArray curvePoints, jintArray channelModes, jobjectArray channelPoints, jint longEdge,
-    jlong sourceRevision, jlong requestRevision, jfloatArray output, jlong cancellationGeneration,
-    jstring lookPath, jstring lookSha256) {
+    jobject requestObj, jlong sourceRevision, jlong requestRevision, jfloatArray output, jlong cancellationGeneration) {
     try {
-        UtfChars look(env, lookPath), sha(env, lookSha256);
-        auto request = hdrRenderRequest(env, values, curveMode, curvePoints, channelModes, channelPoints, longEdge, look.chars, sha.chars);
-        auto& base = request.base.base.base.base.base.base.base;
+        MarshalledHdrRequest marshalled;
+        marshalHdrRenderRequest(env, requestObj, marshalled);
+        auto& base = marshalled.base();
         base.intent = SONY2FUJI_INTENT_PREVIEW;
         SessionGuard guard(sessionId);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
@@ -1319,12 +1968,18 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativePlane(JNIEnv* env, jclass, 
         if (count > static_cast<uint64_t>(std::numeric_limits<jsize>::max())) throw std::runtime_error("HDR plane is too large");
         auto result = env->NewFloatArray(static_cast<jsize>(count));
         if (!result) return nullptr;
-        std::vector<float> compact(static_cast<size_t>(count));
-        for (uint32_t y = 0; y < buffer.height; ++y)
-            std::memcpy(compact.data() + static_cast<size_t>(y) * buffer.width * 3,
-                static_cast<const uint8_t*>(buffer.data) + static_cast<size_t>(y) * buffer.stride_bytes,
-                static_cast<size_t>(buffer.width) * 3 * sizeof(float));
-        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(count), compact.data());
+        const size_t rowFloats = static_cast<size_t>(buffer.width) * 3;
+        const size_t rowBytes = rowFloats * sizeof(float);
+        if (buffer.stride_bytes == rowBytes) {
+            env->SetFloatArrayRegion(result, 0, static_cast<jsize>(count), static_cast<const jfloat*>(buffer.data));
+        } else {
+            for (uint32_t y = 0; y < buffer.height && !env->ExceptionCheck(); ++y) {
+                const auto* row = reinterpret_cast<const jfloat*>(
+                    static_cast<const uint8_t*>(buffer.data) + static_cast<size_t>(y) * buffer.stride_bytes);
+                env->SetFloatArrayRegion(result, static_cast<jsize>(static_cast<size_t>(y) * rowFloats),
+                    static_cast<jsize>(rowFloats), row);
+            }
+        }
         return env->ExceptionCheck() ? nullptr : result;
     } catch (const std::bad_alloc&) {
         throwJava(env, "java/lang/OutOfMemoryError", "Not enough memory for HDR plane");
@@ -1343,12 +1998,15 @@ Java_com_rawlab_android_engine_NativeHDRBridge_nativeSdrBitmap(JNIEnv* env, jcla
             buffer.stride_bytes < static_cast<uint64_t>(buffer.width) * 3 * sizeof(float))
             throw std::runtime_error("Invalid SDR float plane");
         BitmapPixels output(env, bitmap, buffer.width, buffer.height, SONY2FUJI_PIXEL_RGBA8, false);
-        const auto encode = [](float value) -> uint8_t {
+        const auto& lut = srgbEncodeLut();
+        const auto encode = [&lut](float value) -> uint8_t {
             if (!std::isfinite(value)) throw std::runtime_error("Nonfinite SDR rendition");
             const float v = std::clamp(value, 0.0f, 1.0f);
-            const float encoded = v <= .0031308f ? 12.92f * v :
-                1.055f * static_cast<float>(std::pow(static_cast<double>(v), 1.0 / 2.4)) - .055f;
-            return static_cast<uint8_t>(std::clamp(std::lround(encoded * 255.0f), 0L, 255L));
+            const float scaled = v * 4096.0f;
+            const size_t idx = std::min<size_t>(static_cast<size_t>(scaled), 4095);
+            const float frac = scaled - static_cast<float>(idx);
+            const float encoded = lut[idx] + (lut[idx + 1] - lut[idx]) * frac;
+            return static_cast<uint8_t>(std::clamp(static_cast<int>(encoded * 255.0f + 0.5f), 0, 255));
         };
         // 直接写位图，避免完整尺寸 SDR 导出在 Java 堆同时持有 RGB32F 和 ARGB 数组。
         for (uint32_t y = 0; y < buffer.height; ++y) {
@@ -1418,8 +2076,8 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(JNIEnv
         auto* session=guard.get();
         UtfChars source(env,input),look(env,lut),contract(env,configuration);
         BitmapPixels pixels(env,bitmap,width,height,pixelFormat);
-        check(sony2fuji_session_set_processing_version(session,SONY2FUJI_PROCESSING_C5_V2));
-        check(sony2fuji_session_set_raw_exposure_mode(session,SONY2FUJI_EXPOSURE_SCENE));
+        const auto paramsJson = processingOnlyParamsJson(SONY2FUJI_PROCESSING_C5_V2, "scene");
+        check(sony2fuji_apply_params(session, paramsJson.c_str()));
         auto request=rawlab::makeRequest(source.chars,look.chars,nullptr,look.chars?1:0,0,false,6500,0,512,rawlab::ExportFormat::JPEG);
         if(bitmap) {
             request.input_type=SONY2FUJI_INPUT_DISPLAY_BUFFER;request.input_pixels=pixels.bytes;
@@ -1433,16 +2091,11 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeCompatibilityPreview(JNIEnv
         const auto& b=result.value;
         const auto count=rawlab::previewByteCount(b);
         if(b.width>1024 || b.height>1024 || count>std::numeric_limits<jsize>::max()) throw std::runtime_error("Invalid preview output");
-        auto bytes=env->NewByteArray(static_cast<jsize>(count));if(!bytes)return nullptr;
-        for(uint32_t row=0;row<b.height;++row) {
-            env->SetByteArrayRegion(bytes,static_cast<jsize>(row*b.width*4),static_cast<jsize>(b.width*4),
-                reinterpret_cast<const jbyte*>(static_cast<const uint8_t*>(b.data)+size_t(row)*b.stride_bytes));
-            if(env->ExceptionCheck())return nullptr;
-        }
-        if(env->ExceptionCheck())return nullptr;
-        auto type=env->FindClass("com/rawlab/android/engine/NativeFrame");if(!type)return nullptr;
-        auto constructor=env->GetMethodID(type,"<init>","(II[BFFI[I)V");if(!constructor)return nullptr;
-        return env->NewObject(type,constructor,static_cast<jint>(b.width),static_cast<jint>(b.height),bytes,6500.f,0.f,0,nullptr);
+        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, nullptr, nullptr));
+        if(!bitmapOut)return nullptr;
+        const auto& cache = jniCache(env);
+        return env->NewObject(cache.nativeFrame.clazz, cache.nativeFrame.ctor,
+            static_cast<jint>(b.width), static_cast<jint>(b.height), bitmapOut.get(), 6500.f, 0.f, 0, nullptr);
     } catch(const std::bad_alloc&) {throwJava(env,"java/lang/OutOfMemoryError","Not enough memory for LUT preview");
     } catch(const std::exception& error) {throwJava(env,"java/io/IOException",error.what());}
     return nullptr;
@@ -1493,75 +2146,110 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeX3fDefaultMode(JNIEnv* env,
     return SONY2FUJI_X3F_NORMAL;
 }
 
+extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
+    JNIEnv* env = nullptr;
+    if (vm && vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK && env) {
+        releaseJniCache(env);
+    }
+}
+
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id,
-    jstring input, jobject inputPixels, jint inputWidth, jint inputHeight, jint inputPixelFormat,
-    jstring lut, jstring output, jfloat strength, jfloat exposure,
-    jboolean customWb, jfloat temperature, jfloat tint, jfloat highlights, jfloat shadows,
-    jfloat contrast, jfloat toneCurve, jfloat saturation, jfloat sharpening,
-    jint edge, jboolean interactive, jint format, jint longEdge,
-    jboolean denoiseEnabled, jfloat luma, jfloat chroma, jfloat coarse, jint displayChromaDenoise,
-    jfloat vignetteAmount, jfloat vignetteMidpoint, jfloat vignetteRoundness, jfloat vignetteFeather,
-    jfloat vignetteHighlights, jfloat grainAmount, jfloat grainSize, jfloat grainRoughness,
-    jint exposureMode, jfloatArray hslValues, jboolean recipeActive, jint processingVersion, jint x3fMode, jintArray backendOut,
-    jlong sourceRevision, jlong requestRevision, jfloatArray hslProbe, jlong cancellationGeneration, jfloatArray migrationValues) {
+Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobject, jlong id, jobject requestObj) {
     try {
+        if (!requestObj) throw std::invalid_argument("Missing native process request");
+        const auto& cache = jniCache(env);
+
+        LocalRef inputObj(env, env->GetObjectField(requestObj, cache.processRequest.input));
+        LocalRef outputObj(env, env->GetObjectField(requestObj, cache.processRequest.output));
+        LocalRef wbObj(env, env->GetObjectField(requestObj, cache.processRequest.whiteBalance));
+        LocalRef toneObj(env, env->GetObjectField(requestObj, cache.processRequest.tone));
+        LocalRef denoiseObj(env, env->GetObjectField(requestObj, cache.processRequest.denoise));
+        LocalRef effectsObj(env, env->GetObjectField(requestObj, cache.processRequest.effects));
+        LocalRef lutRef(env, env->GetObjectField(requestObj, cache.processRequest.lutPath));
+        LocalRef backendRef(env, env->GetObjectField(requestObj, cache.processRequest.backendOut));
+        LocalRef hslProbeObj(env, env->GetObjectField(requestObj, cache.processRequest.hslProbe));
+        LocalRef migrationRef(env, env->GetObjectField(requestObj, cache.processRequest.migrationOut));
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read native process request");
+        if (!inputObj || !outputObj || !wbObj || !toneObj || !denoiseObj || !effectsObj)
+            throw std::invalid_argument("Missing native process request section");
+
+        const jfloat lutStrength = env->GetFloatField(requestObj, cache.processRequest.lutStrength);
+        const jint exposureMode = env->GetIntField(requestObj, cache.processRequest.exposureMode);
+        const jint processingVersion = env->GetIntField(requestObj, cache.processRequest.processingVersion);
+        const jint x3fMode = env->GetIntField(requestObj, cache.processRequest.x3fMode);
+        const jlong cancellationGeneration = env->GetLongField(requestObj, cache.processRequest.cancellationGeneration);
+
+        LocalRef inputPathRef(env, env->GetObjectField(inputObj.get(), cache.processInput.path));
+        LocalRef inputPixelsRef(env, env->GetObjectField(inputObj.get(), cache.processInput.pixels));
+        const jint inputWidth = env->GetIntField(inputObj.get(), cache.processInput.width);
+        const jint inputHeight = env->GetIntField(inputObj.get(), cache.processInput.height);
+        const jint inputPixelFormat = env->GetIntField(inputObj.get(), cache.processInput.pixelFormat);
+
+        LocalRef outputPathRef(env, env->GetObjectField(outputObj.get(), cache.processOutput.path));
+        const jint format = env->GetIntField(outputObj.get(), cache.processOutput.format);
+        const jint edge = env->GetIntField(outputObj.get(), cache.processOutput.edge);
+        const jint longEdge = env->GetIntField(outputObj.get(), cache.processOutput.longEdge);
+        const jboolean interactive = env->GetBooleanField(outputObj.get(), cache.processOutput.interactive);
+        const jboolean viewportPreview = env->GetBooleanField(outputObj.get(), cache.processOutput.viewportPreview);
+        LocalRef reusableBitmapRef(env, env->GetObjectField(outputObj.get(), cache.processOutput.reusableBitmap));
+
+        const jboolean customWb = env->GetBooleanField(wbObj.get(), cache.processWhiteBalance.custom);
+        jfloat temperature = env->GetFloatField(wbObj.get(), cache.processWhiteBalance.temperature);
+        jfloat tint = env->GetFloatField(wbObj.get(), cache.processWhiteBalance.tint);
+        const jboolean recipeActive = env->GetBooleanField(wbObj.get(), cache.processWhiteBalance.recipeActive);
+        const jfloat recipeStrength = env->GetFloatField(wbObj.get(), cache.processWhiteBalance.recipeStrength);
+
+        const jfloat exposureEv = env->GetFloatField(toneObj.get(), cache.processTone.exposureEv);
+        const jfloat contrast = env->GetFloatField(toneObj.get(), cache.processTone.contrast);
+        const jfloat highlights = env->GetFloatField(toneObj.get(), cache.processTone.highlights);
+        const jfloat shadows = env->GetFloatField(toneObj.get(), cache.processTone.shadows);
+        const jfloat toneCurve = env->GetFloatField(toneObj.get(), cache.processTone.toneCurve);
+        const jfloat saturation = env->GetFloatField(toneObj.get(), cache.processTone.saturation);
+        const jfloat sharpening = env->GetFloatField(toneObj.get(), cache.processTone.sharpening);
+
+        jlong sourceRevision = 0;
+        jlong requestRevision = 0;
+        LocalRef hslProbeRef(env, nullptr);
+        if (hslProbeObj) {
+            sourceRevision = env->GetLongField(hslProbeObj.get(), cache.hslProbeTarget.sourceRevision);
+            requestRevision = env->GetLongField(hslProbeObj.get(), cache.hslProbeTarget.requestRevision);
+            hslProbeRef.reset(env->GetObjectField(hslProbeObj.get(), cache.hslProbeTarget.output));
+        }
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read native process fields");
+
         SessionGuard guard(id);
         CancellationScope cancellation(guard.session(), cancellationGeneration);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         auto* session = guard.get();
-        check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
-        check(sony2fuji_session_set_x3f_mode(session, static_cast<sony2fuji_x3f_mode>(x3fMode)));
+        auto backendOut = backendRef.asIntArray();
         if (backendOut && env->GetArrayLength(backendOut) != 1) throw std::invalid_argument("Invalid backend output");
-        check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
-        UtfChars in(env, input), film(env, lut), out(env, output);
-        BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
-        const bool displayInput = inputPixels != nullptr;
 
-        bool effectiveCustom = customWb;
+        UtfChars in(env, inputPathRef.asString()), film(env, lutRef.asString()), out(env, outputPathRef.asString());
+        BitmapPixels inputBytes(env, inputPixelsRef.get(), inputWidth, inputHeight, inputPixelFormat);
+        const bool displayInput = inputPixelsRef.get() != nullptr;
+
+        bool effectiveCustom = customWb != JNI_FALSE;
         if (!displayInput)
-            prepareRecipeWb(guard.session(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
-                            processingVersion, x3fMode, exposureMode);
-        if (!hslValues || env->GetArrayLength(hslValues) != 24) throw std::invalid_argument("Invalid HSL values");
-        float hslData[24];
-        env->GetFloatArrayRegion(hslValues, 0, 24, hslData);
-        if (env->ExceptionCheck()) return nullptr;
-        sony2fuji_hsl_config hsl{};
-        hsl.version = SONY2FUJI_HSL_CONFIG_VERSION;
-        hsl.struct_size = sizeof(hsl);
-        std::copy(hslData, hslData+8, hsl.hue);
-        std::copy(hslData+8, hslData+16, hsl.saturation);
-        std::copy(hslData+16, hslData+24, hsl.lightness);
-        check(sony2fuji_session_set_hsl(session, &hsl));
+            resolveRecipeWb(session, in.chars, recipeActive != JNI_FALSE, recipeStrength,
+                effectiveCustom, temperature, tint, processingVersion, x3fMode, exposureMode);
+
+        auto migrationValues = migrationRef.asFloatArray();
+        auto hslProbe = hslProbeRef.asFloatArray();
         const auto outputFormat = rawlab::parseExportFormat(format);
-        const int requestEdge = migrationValues ? 1 : edge;
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
                 static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
-                film.chars, out.chars, strength, exposure, effectiveCustom, temperature, tint,
-                highlights, shadows, contrast, toneCurve, saturation, sharpening, requestEdge, outputFormat,
-                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge))
-            : rawlab::makeRequest(in.chars, film.chars, out.chars, strength,
-                exposure, effectiveCustom, temperature, tint, highlights, shadows, contrast,
-                toneCurve, saturation, sharpening, requestEdge, outputFormat,
-                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge));
-        if (recipeActive) {
-            request.exposure_ev *= strength;
-            request.highlights *= strength;
-            request.shadows *= strength;
-            request.contrast = 1 + contrast * strength;
-            request.saturation = 1 + saturation * strength;
-        }
-        check(sony2fuji_session_set_interactive_preview(session, interactive && !out.chars));
-        check(sony2fuji_session_set_viewport_preview(session, !out.chars && edge > 0));
-        sony2fuji_wavelet_denoise_config denoise{SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION,
-            sizeof(sony2fuji_wavelet_denoise_config), denoiseEnabled ? 1 : 0, luma, chroma, coarse};
-        check(sony2fuji_session_set_wavelet_denoise(session, &denoise));
-        sony2fuji_photo_effects_config effects{SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
-            sizeof(sony2fuji_photo_effects_config), vignetteAmount, vignetteMidpoint, vignetteRoundness,
-            vignetteFeather, vignetteHighlights, grainAmount, grainSize, grainRoughness};
-        check(sony2fuji_session_set_photo_effects(session, &effects));
-        check(sony2fuji_session_set_chroma_denoise(session, displayChromaDenoise));
+                film.chars, out.chars, lutStrength, exposureEv, highlights, shadows, contrast,
+                toneCurve, saturation, sharpening, edge, outputFormat,
+                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge), migrationValues != nullptr)
+            : rawlab::makeRequest(in.chars, film.chars, out.chars, lutStrength,
+                exposureEv, effectiveCustom, temperature, tint, highlights, shadows, contrast,
+                toneCurve, saturation, sharpening, edge, outputFormat,
+                longEdge < 0 ? 0u : static_cast<uint32_t>(longEdge), migrationValues != nullptr);
+
+        check(sony2fuji_session_set_interactive_preview(session, interactive != JNI_FALSE ? 1 : 0));
+        check(sony2fuji_session_set_viewport_preview(session, viewportPreview != JNI_FALSE ? 1 : 0));
+
         if (migrationValues) {
             if (env->GetArrayLength(migrationValues) != 20 || out.chars || hslProbe)
                 throw std::invalid_argument("Invalid processing migration output");
@@ -1603,50 +2291,34 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
             env->SetIntArrayRegion(backendOut, 0, 1, &backend);
             if (env->ExceptionCheck()) return nullptr;
         }
-        if (output) return nullptr;
+        if (outputPathRef) return nullptr;
         const auto& b = buffer.value;
-        const size_t row = static_cast<size_t>(b.width) * 4;
-        const size_t bytes = rawlab::previewByteCount(b);
-        if (bytes > static_cast<size_t>(std::numeric_limits<jsize>::max()))
-            throw std::runtime_error("Invalid preview buffer");
-        auto pixels = env->NewByteArray(static_cast<jsize>(bytes));
-        if (!pixels) return nullptr;
-        for (uint32_t y = 0; y < b.height && !env->ExceptionCheck(); ++y) {
-            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
-            env->SetByteArrayRegion(pixels, static_cast<jsize>(y * row), static_cast<jsize>(row),
-                reinterpret_cast<const jbyte*>(b.data) + y * b.stride_bytes);
-        }
-        if (env->ExceptionCheck()) return nullptr;
-        jintArray histogram = nullptr;
+        LocalRef bitmapOut(env, writeRgba8Bitmap(env, b, reusableBitmapRef.get(), &cancellation));
+        if (!bitmapOut) return nullptr;
+        LocalRef histogram(env, nullptr);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         if (!interactive) {
             uint32_t counts[768]{};
-            uint32_t shadows = 0, highlights = 0;
+            uint32_t shadowsCount = 0, highlightsCount = 0;
             // 统计当前 CPU 显示 buffer，独立于照片渲染 backend；失败仍交付像素。
-            if (sony2fuji_analyze_image(&b, SONY2FUJI_GPU_OFF, counts, &shadows, &highlights, nullptr) == SONY2FUJI_STATUS_OK) {
+            if (sony2fuji_analyze_image(&b, SONY2FUJI_GPU_OFF, counts, &shadowsCount, &highlightsCount, nullptr) == SONY2FUJI_STATUS_OK) {
                 jint signedCounts[768];
                 static_assert(sizeof(signedCounts) == sizeof(counts));
                 std::memcpy(signedCounts, counts, sizeof(counts));
-                histogram = env->NewIntArray(768);
+                histogram.reset(env->NewIntArray(768));
                 if (!histogram) return nullptr;
-                env->SetIntArrayRegion(histogram, 0, 768, signedCounts);
+                env->SetIntArrayRegion(histogram.asIntArray(), 0, 768, signedCounts);
                 if (env->ExceptionCheck()) return nullptr;
             }
         }
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         float kelvin = NAN, wbTint = NAN;
-        if (!displayInput && isNormalX3f(in.chars, x3fMode)) {
-            kelvin = 6500; wbTint = 0;
-        } else if (!displayInput) {
-            sony2fuji_session_get_raw_white_balance(session, &kelvin, &wbTint);
-            kelvin = std::round(kelvin); wbTint = std::round(wbTint);
+        if (displayInput || sony2fuji_session_get_effective_raw_white_balance(session, &kelvin, &wbTint) != SONY2FUJI_STATUS_OK) {
+            kelvin = NAN; wbTint = NAN;
         }
-        auto type = env->FindClass("com/rawlab/android/engine/NativeFrame");
-        if (!type) return nullptr;
-        auto constructor = env->GetMethodID(type, "<init>", "(II[BFFI[I)V");
-        if (!constructor) return nullptr;
-        return env->NewObject(type, constructor, static_cast<jint>(b.width),
-            static_cast<jint>(b.height), pixels, kelvin, wbTint, static_cast<jint>(sony2fuji_session_get_last_backend(session)), histogram);
+        return env->NewObject(cache.nativeFrame.clazz, cache.nativeFrame.ctor, static_cast<jint>(b.width),
+            static_cast<jint>(b.height), bitmapOut.get(), kelvin, wbTint,
+            static_cast<jint>(sony2fuji_session_get_last_backend(session)), histogram.get());
     } catch (const NativeStatusError& error) {
         throwNativeStatus(env, error);
     } catch (const std::bad_alloc&) {
@@ -1672,21 +2344,17 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeAutoExposure(JNIEnv* env, j
         BitmapPixels inputBytes(env, inputPixels, inputWidth, inputHeight, inputPixelFormat);
         const bool displayInput = inputPixels != nullptr;
 
-        check(sony2fuji_session_set_processing_version(session, static_cast<sony2fuji_processing_version>(processingVersion)));
-        check(sony2fuji_session_set_x3f_mode(session, static_cast<sony2fuji_x3f_mode>(x3fMode)));
-        check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
         bool effectiveCustom = customWb;
         if (!displayInput)
-            prepareRecipeWb(guard.session(), in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
+            resolveRecipeWb(session, in.chars, recipeActive, strength, effectiveCustom, temperature, tint,
                             processingVersion, x3fMode, exposureMode);
         auto request = displayInput
             ? rawlab::makeDisplayRequest(in.chars, inputBytes.bytes, static_cast<uint32_t>(inputWidth),
                 static_cast<uint32_t>(inputHeight), static_cast<sony2fuji_pixel_format>(inputPixelFormat),
-                nullptr, nullptr, 0, 0, effectiveCustom, temperature, tint,
-                0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG)
+                nullptr, nullptr, 0, 0,
+                0, 0, 1, 0, 1, 0, 1, rawlab::ExportFormat::JPEG)
             : rawlab::makeRequest(in.chars, nullptr, nullptr, 0, 0, effectiveCustom,
-                temperature, tint, 0, 0, 0, 0, 0, 0, 1, rawlab::ExportFormat::JPEG);
-        check(sony2fuji_session_set_raw_exposure_mode(session, static_cast<sony2fuji_raw_exposure_mode>(exposureMode)));
+                temperature, tint, 0, 0, 1, 0, 1, 0, 1, rawlab::ExportFormat::JPEG);
         float ev = 0;
         const auto status = sony2fuji_session_estimate_auto_exposure(session, &request, &ev);
         if (status == SONY2FUJI_STATUS_OUT_OF_MEMORY) throw std::bad_alloc();

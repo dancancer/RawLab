@@ -62,6 +62,39 @@ internal static class ControllerChecks
             }
         }
     }
+    private static Task RunOnDedicatedSerialUiContext(Func<Task> body)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            var previous = SynchronizationContext.Current;
+            var context = new SerialSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(context);
+            try
+            {
+                var task = body();
+                _ = task.ContinueWith(_ => context.Complete(), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                context.Pump();
+                task.GetAwaiter().GetResult();
+                completion.TrySetResult(true);
+            }
+            catch (Exception error)
+            {
+                completion.TrySetException(error);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ControllerChecks.SerialUiPump"
+        };
+        thread.Start();
+        return completion.Task;
+    }
     internal static Task Run(Action<bool, string> check)
     {
         var previous = SynchronizationContext.Current;
@@ -89,6 +122,9 @@ internal static class ControllerChecks
         await InstallationFailureStaysEditable(check);
         await UpdateExeLaunchFailureStaysRetryable(check);
         await RuntimeSaveFailureRecovery(check);
+        await NonBlockingSerializedSaves(check);
+        await ConcurrentPreferenceTogglePreservesInFlightSaveState(check);
+        await CancelDuringAvailableSaveDoesNotClobberState(check);
         var root = Path.Combine(Path.GetTempPath(), "rawlab-update-controller-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -98,7 +134,7 @@ internal static class ControllerChecks
             var controller = new DesktopUpdateController(adapter, gate, store, "0.8.2", "14");
             await controller.CheckAsync(true);
             check(controller.State.Phase == UpdatePhase.Available && adapter.Downloads == 0, "Checking alone never downloads");
-            controller.Skip();
+            await controller.SkipAsync();
             var later = new DesktopUpdateController(adapter, gate, store, "0.8.2", "14", now: () => DateTimeOffset.UtcNow.AddDays(2));
             await later.CheckAsync(false);
             check(later.State.Phase == UpdatePhase.Idle && adapter.Downloads == 0, "Skipped version is suppressed when automatic install is off");
@@ -174,7 +210,7 @@ internal static class ControllerChecks
                 "Fresh state distinguishes never-checked from up-to-date");
 
             await controller.CheckAsync(false);
-            controller.Cancel();
+            await controller.CancelAsync();
             check(adapter.Checks == 1 && !controller.CanCancel && controller.State.Phase == UpdatePhase.Failed &&
                 controller.Preferences.LastCheck == null &&
                 controller.State.Failure is { Stage: UpdatePhase.Checking, Code: "network" } &&
@@ -205,13 +241,14 @@ internal static class ControllerChecks
             now = retryBase.AddMinutes(30);
             adapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var inFlightRetry = reopened.RefreshGateAsync();
+            await reopened.FlushSavesAsync();
             check(adapter.Checks == 3 && !inFlightRetry.IsCompleted &&
                 reopened.State.Phase == UpdatePhase.Checking && reopened.CanCancel,
                 "Expired backoff launches an in-flight automatic retry that can be cancelled");
 
             now = now.AddSeconds(5);
             var cancelAt = now;
-            reopened.Cancel();
+            await reopened.CancelAsync();
             await inFlightRetry;
             adapter.PendingCheck = null;
             check(reopened.State.Phase == UpdatePhase.Idle && reopened.State.Failure == null &&
@@ -262,6 +299,7 @@ internal static class ControllerChecks
 
             adapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var inFlightManual = reopened.CheckAsync(true);
+            await reopened.FlushSavesAsync();
             now = now.AddSeconds(5);
             var quitCancelled = await reopened.PrepareForQuitAsync();
             await inFlightManual;
@@ -313,6 +351,7 @@ internal static class ControllerChecks
             now = quitFailAt.AddMinutes(15);
             quitAdapter.PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously);
             var inFlightQuitRetry = reopenedQuit.RefreshGateAsync();
+            await reopenedQuit.FlushSavesAsync();
             now = now.AddSeconds(5);
             var quitCancelAt = now;
             check(quitAdapter.Checks == 3 && !inFlightQuitRetry.IsCompleted &&
@@ -629,7 +668,7 @@ internal static class ControllerChecks
             File.WriteAllText(store.StatePath, "{broken"); var adapter = new Adapter();
             var damaged = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
             check(damaged.StorageError != null && damaged.CanRepairState && !damaged.CanCheck, "Corrupt pre-install state offers explicit repair");
-            damaged.RepairState(); damaged.SetAutomaticCheck(true); damaged.SetAutomaticInstall(true); damaged.Cancel(); await damaged.FinishStartupHealthCheckAsync(true);
+            await damaged.RepairStateAsync(); await damaged.SetAutomaticCheckAsync(true); await damaged.SetAutomaticInstallAsync(true); await damaged.CancelAsync(); await damaged.FinishStartupHealthCheckAsync(true);
             check(damaged.StorageError == null && damaged.RecoveryNeedsRestart && damaged.RequiresRecovery && !damaged.CanCheck && adapter.Installs == 0,
                 "Repair cannot reopen editing or install in the current process");
             check(!damaged.Preferences.AutomaticCheck && !damaged.Preferences.AutomaticInstall && damaged.Preferences.StateRepairReceipt != null,
@@ -895,7 +934,7 @@ internal static class ControllerChecks
             check(saveThrew && writeCalls == 1 && moveCalls == 1 && delays.Count == 0 && files.Count == 0,
                 "UpdateStore.Save throws non-transient UnauthorizedAccessException upward without retrying or leaking temporaries");
 
-            controller.SetAutomaticCheck(false);
+            await controller.SetAutomaticCheckAsync(false);
             await controller.CheckAsync(true);
             check(controller.StorageError != null && !controller.BlocksEditing && !controller.CanRepairState &&
                 controller.UnavailableReason == null && controller.CanCheck &&
@@ -903,7 +942,7 @@ internal static class ControllerChecks
                 "Runtime state save failure does not lock editing or permanently disable update retry");
 
             moveFault = null;
-            controller.SetAutomaticCheck(false);
+            await controller.SetAutomaticCheckAsync(false);
             await controller.CheckAsync(true);
             check(controller.StorageError == null && !controller.BlocksEditing &&
                 !controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Available &&
@@ -1019,4 +1058,282 @@ internal static class ControllerChecks
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
+
+    private static Task NonBlockingSerializedSaves(Action<bool, string> check) => RunOnDedicatedSerialUiContext(async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-update-nonblocking-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            check(SynchronizationContext.Current is SerialSynchronizationContext && !Thread.CurrentThread.IsThreadPoolThread,
+                "NonBlockingSerializedSaves runs on a dedicated single-threaded UI pump");
+            var uiThreadId = Environment.CurrentManagedThreadId;
+            var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            using var writeStarted = new ManualResetEventSlim(false);
+            using var allowWriteFinish = new ManualResetEventSlim(true);
+            var blockNextWrite = 0;
+            var activeWrites = 0;
+            var maxConcurrentWrites = 0;
+            var writeThreadIds = new List<int>();
+            var allOnThreadPool = true;
+            var gateObj = new object();
+
+            var store = new UpdateStore(
+                Path.Combine(root, "Updates"),
+                (temporary, bytes) =>
+                {
+                    var concurrent = Interlocked.Increment(ref activeWrites);
+                    lock (gateObj)
+                    {
+                        if (concurrent > maxConcurrentWrites) maxConcurrentWrites = concurrent;
+                        writeThreadIds.Add(Environment.CurrentManagedThreadId);
+                        allOnThreadPool &= Thread.CurrentThread.IsThreadPoolThread;
+                    }
+                    try
+                    {
+                        if (Interlocked.Exchange(ref blockNextWrite, 0) == 1)
+                        {
+                            writeStarted.Set();
+                            if (!allowWriteFinish.Wait(TimeSpan.FromSeconds(5)))
+                                throw new TimeoutException("Timed out waiting for blocked UpdateStore write");
+                        }
+                        files[temporary] = bytes.ToArray();
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref activeWrites);
+                    }
+                },
+                (source, destination) =>
+                {
+                    files[destination] = files[source];
+                    files.Remove(source);
+                },
+                _ => { },
+                () => TimeSpan.Zero,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+
+            var adapter = new Adapter();
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+
+            writeStarted.Reset();
+            allowWriteFinish.Reset();
+            Volatile.Write(ref blockNextWrite, 1);
+            var saveTask = controller.SetAutomaticCheckAsync(false);
+            check(writeStarted.Wait(TimeSpan.FromSeconds(5)), "UpdateStore write starts in background");
+
+            var uiCallbackRanWhileBlocked = false;
+            SynchronizationContext.Current!.Post(_ => uiCallbackRanWhileBlocked = true, null);
+            await Task.Yield();
+            check(uiCallbackRanWhileBlocked && !saveTask.IsCompleted,
+                "UI SynchronizationContext continues pumping callbacks while UpdateStore write is blocked");
+
+            allowWriteFinish.Set();
+            await saveTask;
+            check(!controller.Preferences.AutomaticCheck && !store.Load(true).AutomaticCheck,
+                "Background UpdateStore save persists preferences cleanly");
+
+            await controller.CheckAsync(true);
+            writeStarted.Reset();
+            allowWriteFinish.Reset();
+            Volatile.Write(ref blockNextWrite, 1);
+            var skipTask = controller.SkipAsync();
+            check(writeStarted.Wait(TimeSpan.FromSeconds(5)), "SkipAsync write starts in background");
+            var uiCallbackDuringSkip = false;
+            SynchronizationContext.Current!.Post(_ => uiCallbackDuringSkip = true, null);
+            await Task.Yield();
+            check(uiCallbackDuringSkip && !skipTask.IsCompleted,
+                "UI SynchronizationContext stays unblocked during SkipAsync persistence");
+            allowWriteFinish.Set();
+            await skipTask;
+            check(controller.State.Phase == UpdatePhase.Idle && store.Load(true).SkippedVersion == adapter.Release.Identity,
+                "SkipAsync persists skipped version on disk");
+
+            check(maxConcurrentWrites == 1 && allOnThreadPool && writeThreadIds.All(id => id != uiThreadId),
+                "All UpdateStore writes execute serially off the UI thread");
+
+            var repairDir = Path.Combine(root, "RepairUpdates");
+            Directory.CreateDirectory(repairDir);
+            var repairStatePath = Path.Combine(repairDir, "state.json");
+            File.WriteAllText(repairStatePath, "{broken");
+            var repairStore = new UpdateStore(repairDir);
+            var damaged = new DesktopUpdateController(adapter, new(), repairStore, "0.8.2", "14");
+            check(damaged.CanRepairState, "Corrupt disk state is repairable");
+            await damaged.RepairStateAsync();
+            check(damaged.StorageError == null && damaged.RecoveryNeedsRestart && damaged.Preferences.StateRepairReceipt != null,
+                "RepairStateAsync repairs state off UI thread and updates controller state");
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    });
+
+    private static Task ConcurrentPreferenceTogglePreservesInFlightSaveState(Action<bool, string> check) => RunOnDedicatedSerialUiContext(async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-update-concurrent-toggle-" + Guid.NewGuid().ToString("N"));
+        using var allowSaveFinish = new ManualResetEventSlim(true);
+        try
+        {
+            var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            UpdatePhase? phaseToBlock = null;
+            var blockEverySave = false;
+            TaskCompletionSource<bool>? saveBlocked = null;
+
+            var store = new UpdateStore(
+                Path.Combine(root, "Updates"),
+                (temporary, bytes) =>
+                {
+                    var saved = JsonSerializer.Deserialize<UpdatePreferences>(bytes)!;
+                    if (blockEverySave || phaseToBlock is { } target && saved.PendingUpdate.Phase == target)
+                    {
+                        phaseToBlock = null;
+                        blockEverySave = false;
+                        Volatile.Read(ref saveBlocked)?.TrySetResult(true);
+                        if (!allowSaveFinish.Wait(TimeSpan.FromSeconds(5)))
+                            throw new TimeoutException("Timed out waiting for blocked UpdateStore save");
+                    }
+                    files[temporary] = bytes.ToArray();
+                },
+                (source, destination) =>
+                {
+                    files[destination] = files[source];
+                    files.Remove(source);
+                },
+                _ => { },
+                () => TimeSpan.Zero,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+
+            var adapter = new Adapter();
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14", automaticCheck: true);
+
+            // (a1) Toggling AutomaticCheck while CheckAsync is blocked saving Available preserves both
+            var availableSaveBlocked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref saveBlocked, availableSaveBlocked);
+            allowSaveFinish.Reset();
+            phaseToBlock = UpdatePhase.Available;
+            var checkTask = controller.CheckAsync(true);
+            check(await availableSaveBlocked.Task.WaitAsync(TimeSpan.FromSeconds(5)), "CheckAsync blocks inside Available store.Save");
+            var toggleTask = controller.SetAutomaticCheckAsync(false);
+            await Task.Yield();
+            check(!checkTask.IsCompleted && !toggleTask.IsCompleted,
+                "SetAutomaticCheckAsync waits on saveGate while Available save is in flight");
+            allowSaveFinish.Set();
+            await checkTask;
+            await toggleTask;
+            var persistedAfterCheck = store.Load(true);
+            check(!controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.Available &&
+                !persistedAfterCheck.AutomaticCheck && persistedAfterCheck.PendingUpdate.Phase == UpdatePhase.Available,
+                "Concurrent SetAutomaticCheckAsync(false) during Available save preserves both AutomaticCheck=false and Available");
+
+            // (a2) Toggling AutomaticCheck while DownloadAsync is blocked saving PackageReady preserves both
+            await controller.SetAutomaticCheckAsync(true);
+            var packageReadySaveBlocked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref saveBlocked, packageReadySaveBlocked);
+            allowSaveFinish.Reset();
+            phaseToBlock = UpdatePhase.PackageReady;
+            var downloadTask = controller.DownloadAsync();
+            check(await packageReadySaveBlocked.Task.WaitAsync(TimeSpan.FromSeconds(5)), "DownloadAsync blocks inside PackageReady store.Save");
+            var toggleDuringDownload = controller.SetAutomaticCheckAsync(false);
+            await Task.Yield();
+            check(!downloadTask.IsCompleted && !toggleDuringDownload.IsCompleted,
+                "SetAutomaticCheckAsync waits on saveGate while PackageReady save is in flight");
+            allowSaveFinish.Set();
+            await downloadTask;
+            await toggleDuringDownload;
+            var persistedAfterDownload = store.Load(true);
+            check(!controller.Preferences.AutomaticCheck && controller.State.Phase == UpdatePhase.PackageReady &&
+                !persistedAfterDownload.AutomaticCheck && persistedAfterDownload.PendingUpdate.Phase == UpdatePhase.PackageReady,
+                "Concurrent SetAutomaticCheckAsync(false) during PackageReady save preserves both AutomaticCheck=false and PackageReady");
+
+            // (a3) Reverse order: CheckAsync starting while SetAutomaticCheckAsync(false) is blocked in store.Save
+            files.Clear();
+            var controller2 = new DesktopUpdateController(new Adapter(), new(), store, "0.8.2", "14", automaticCheck: true);
+            var toggleSaveBlocked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref saveBlocked, toggleSaveBlocked);
+            allowSaveFinish.Reset();
+            blockEverySave = true;
+            var toggleFirst = controller2.SetAutomaticCheckAsync(false);
+            check(await toggleSaveBlocked.Task.WaitAsync(TimeSpan.FromSeconds(5)), "SetAutomaticCheckAsync blocks inside store.Save");
+            var checkSecond = controller2.CheckAsync(true);
+            await Task.Yield();
+            allowSaveFinish.Set();
+            await toggleFirst;
+            await checkSecond;
+            var persistedReverse = store.Load(true);
+            check(!controller2.Preferences.AutomaticCheck && controller2.State.Phase == UpdatePhase.Available &&
+                !persistedReverse.AutomaticCheck && persistedReverse.PendingUpdate.Phase == UpdatePhase.Available,
+                "CheckAsync starting during SetAutomaticCheckAsync(false) save preserves both AutomaticCheck=false and Available");
+        }
+        finally { allowSaveFinish.Set(); if (Directory.Exists(root)) Directory.Delete(root, true); }
+    });
+
+    private static Task CancelDuringAvailableSaveDoesNotClobberState(Action<bool, string> check) => RunOnDedicatedSerialUiContext(async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-update-cancel-race-" + Guid.NewGuid().ToString("N"));
+        using var allowSaveFinish = new ManualResetEventSlim(true);
+        try
+        {
+            var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+            UpdatePhase? phaseToBlock = null;
+            var saveBlocked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var store = new UpdateStore(
+                Path.Combine(root, "Updates"),
+                (temporary, bytes) =>
+                {
+                    var saved = JsonSerializer.Deserialize<UpdatePreferences>(bytes)!;
+                    if (phaseToBlock is { } target && saved.PendingUpdate.Phase == target)
+                    {
+                        phaseToBlock = null;
+                        saveBlocked.TrySetResult(true);
+                        if (!allowSaveFinish.Wait(TimeSpan.FromSeconds(5)))
+                            throw new TimeoutException("Timed out waiting for blocked UpdateStore save");
+                    }
+                    files[temporary] = bytes.ToArray();
+                },
+                (source, destination) =>
+                {
+                    files[destination] = files[source];
+                    files.Remove(source);
+                },
+                _ => { },
+                () => TimeSpan.Zero,
+                path => files.TryGetValue(path, out var bytes) ? bytes.ToArray() : null,
+                path => { files.Remove(path); return true; });
+
+            var adapter = new Adapter();
+            var controller = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
+
+            // (b1) CancelAsync during CheckAsync's Available SaveAsync must not clobber Available back to Idle
+            allowSaveFinish.Reset();
+            phaseToBlock = UpdatePhase.Available;
+            var checkTask = controller.CheckAsync(true);
+            check(await saveBlocked.Task.WaitAsync(TimeSpan.FromSeconds(5)), "CheckAsync blocks inside Available store.Save");
+            var cancelTask = controller.CancelAsync();
+            await Task.Yield();
+            allowSaveFinish.Set();
+            await checkTask;
+            await cancelTask;
+            var persisted = store.Load(true);
+            check(controller.State.Phase == UpdatePhase.Available && controller.State.Release != null &&
+                persisted.PendingUpdate.Phase == UpdatePhase.Available && persisted.PendingUpdate.Release != null,
+                "CancelAsync called while Available save is in flight does not clobber Available back to Idle");
+
+            // (b2) CancelAsync during adapter.CheckAsync does not get clobbered if adapter completes concurrently
+            files.Clear();
+            var raceAdapter = new Adapter { PendingCheck = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+            var raceController = new DesktopUpdateController(raceAdapter, new(), store, "0.8.2", "14");
+            var racingCheck = raceController.CheckAsync(true);
+            await raceController.FlushSavesAsync();
+            check(raceController.State.Phase == UpdatePhase.Checking && raceController.CanCancel,
+                "In-flight CheckAsync enters Checking state before adapter completes");
+            var racingCancel = raceController.CancelAsync();
+            raceAdapter.PendingCheck.TrySetResult(raceAdapter.Release);
+            await racingCheck;
+            await racingCancel;
+            var persistedRace = store.Load(true);
+            check(raceController.State.Phase == UpdatePhase.Idle && persistedRace.PendingUpdate.Phase == UpdatePhase.Idle,
+                "CancelAsync during Checking keeps Idle consistently when adapter result races with cancellation");
+        }
+        finally { allowSaveFinish.Set(); if (Directory.Exists(root)) Directory.Delete(root, true); }
+    });
 }

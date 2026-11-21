@@ -11,7 +11,6 @@ namespace RawLab.Windows;
 
 public partial class MainWindow
 {
-    private bool choosingRecipes;
     private readonly Dictionary<string, Button> recipeButtons = new();
     // ┌─ 当前外观的显示名：标题栏、对比标签、批量任务和导出文件名共用 ─────────────┐
     // │ 大师配方与“中性”按界面语言显示；胶片和导入外观用自己的名字                    │

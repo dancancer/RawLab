@@ -15,6 +15,47 @@ sys.path.insert(0, str(ROOT / "scripts/localization"))
 import formats
 SHARED_SWIFT_SOURCES = [path for path in (ROOT / "Shared").rglob("*.swift")
                         if "tests" not in path.relative_to(ROOT / "Shared").parts]
+SHARED_CLIENT_SCOPED_SWIFT = {
+    "RawLabMac": {
+        "HistogramPresentation.swift",
+        "MacAdjustmentTransfer.swift",
+        "MacAdjustmentTransferSession.swift",
+        "MacAdjustmentTypes.swift",
+        "MacAdjustments.swift",
+        "MacBatchExport.swift",
+        "MacEditPersistence.swift",
+        "MacEditorAdjustmentRules.swift",
+        "MacExportFormat.swift",
+        "MacFilm.swift",
+        "ParameterPrecision.swift",
+        "RenderScheduling.swift",
+    },
+    "RawLab/RawLab": {
+        "AdjustmentKind.swift",
+        "BatchSettingsSummary.swift",
+        "EditorAdjustmentRules.swift",
+        "EditorToolDraft.swift",
+        "ExportEvidenceStore.swift",
+        "ExportSize.swift",
+        "FileDigestCache.swift",
+        "FilmPresentation.swift",
+        "IOSAdjustmentTransfer.swift",
+        "IOSAdjustmentTransferSession.swift",
+        "IOSBatchExport.swift",
+        "IOSBatchSelection.swift",
+        "PhotoEditPersistence.swift",
+        "PhotoSourceFile.swift",
+        "RawSettings.swift",
+        "RecentPhotoStore.swift",
+        "RetentionPolicy.swift",
+    },
+}
+
+
+def shared_swift_sources_for(client):
+    excluded = set().union(*(files for owner, files in SHARED_CLIENT_SCOPED_SWIFT.items() if owner != client))
+    return [path for path in SHARED_SWIFT_SOURCES
+            if path.parent.name != "RawLabKit" or path.name not in excluded]
 LANGUAGES = ("en", "zh-Hans", "de", "fr", "ja", "es")
 PRINTF = re.compile(r"%(?:\d+\$)?[-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc]", re.I)
 APPLE_PRINTF = re.compile(r"%(?:(\d+)\$)?([-+0 #]*(?:\d+)?(?:\.\d+)?(?:[hlLzjt]+)?[@diufegsc])", re.I)
@@ -128,7 +169,7 @@ class GeneratorSourceTests(unittest.TestCase):
         key = "无效或不可用的相机显影设置（白平衡或镜头校正）。"
         mappings = (
             ("Shared/Native/HDRSource.swift", r'case SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT:\s*return L10n\.text\("([^"]+)"\)', key),
-            ("RawLabWindows/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
+            ("RawLabWindows/Core/HDRSourceInfo.cs", r'19\s*=>\s*Loc\.Text\("([^"]+)"\)', key),
             ("RawLabAndroid/app/src/main/java/com/rawlab/android/engine/HDRProcessingException.kt",
              r'19\s*->\s*AppStrings\.text\(R\.string\.([a-z_]+)\)', "hdr_camera_development_unavailable"),
         )
@@ -343,7 +384,7 @@ class LocalizationTests(unittest.TestCase):
                             for lang in LANGUAGES}
                 self.assert_parity(catalogs, apple_placeholders)
                 missing = sorted({(source.name, json.loads('"' + raw + '"'))
-                                  for source in list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+                                  for source in list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
                                   for raw in re.findall(r'L10n\.(?:text|format)\("((?:[^"\\]|\\.)*)"', source.read_text())
                                   if json.loads('"' + raw + '"') not in catalogs["en"]})
                 self.assertEqual(missing, [], client)
@@ -353,7 +394,7 @@ class LocalizationTests(unittest.TestCase):
     def test_source_literals_are_translated(self):
         for client, sources in APPLE_CLIENTS.items():
             catalog = apple_catalog(ROOT / client / "Resources/en.lproj/Localizable.strings")
-            files = list((ROOT / sources).rglob("*.swift")) + SHARED_SWIFT_SOURCES
+            files = list((ROOT / sources).rglob("*.swift")) + shared_swift_sources_for(client)
             self.assertEqual(untranslated(files, catalog, "L10n."), [], client)
         windows = ROOT / "RawLabWindows"
         self.assertEqual(untranslated(windows_sources(), windows_catalog("en"), "Loc.", windows_internal_group), [], "RawLabWindows")
@@ -396,6 +437,65 @@ class LocalizationTests(unittest.TestCase):
             keys.update(re.findall(r"\{DynamicResource '([^']+)'\}", source.read_text()))
         self.assertEqual(sorted(keys - catalogs["en"].keys()), [])
 
+    def test_ios_catalog_terms(self):
+        catalog = {
+            language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+            for language in ("en", "de", "fr", "es", "ja")
+        }
+        # 白平衡的"色调"（tint）和 HSL 的"色相"（hue）同屏出现，不能译成同一个词
+        # 法语沿用 Lightroom 的惯例两处都叫 Teinte，此处不查
+        for language in ("en", "de", "es", "ja"):
+            self.assertNotEqual(
+                catalog[language]["色调"],
+                catalog[language]["色相"],
+                f"{language}: tint {catalog[language]['色调']!r} matches hue {catalog[language]['色相']!r}",
+            )
+        # 进行中的状态（正在…）不能和动作按钮同文；德语统一用"wird / werden"被动进行式
+        for key, value in catalog["de"].items():
+            if key.startswith("正在"):
+                lowered = value.lower()
+                self.assertTrue(" wird " in f" {lowered} " or "werden" in lowered, f"de: progress {key} -> {value!r}")
+        # "重置某项"与通用的"重置%@"套出来的说法一致（英文大小写、日文语序）
+        for language in ("en", "ja"):
+            expected = catalog[language]["重置%@"].replace("%@", catalog[language]["降噪"])
+            self.assertEqual(catalog[language]["重置降噪"], expected, language)
+
+    def test_force_gpu_unsupported_uses_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        common = json.loads((ROOT / "Shared/strings/common/catalog.json").read_text())
+        self.assertIn(key, common)
+        expected = common[key]
+        self.assertEqual(set(expected), set(LANGUAGES))
+
+        macos = {language: apple_catalog(ROOT / f"RawLabMac/Resources/{language}.lproj/Localizable.strings")
+                 for language in LANGUAGES}
+        ios = {language: apple_catalog(ROOT / f"RawLab/RawLab/Resources/{language}.lproj/Localizable.strings")
+               for language in LANGUAGES}
+        windows = {language: windows_catalog(language) for language in LANGUAGES}
+        android = android_catalogs()
+
+        for language in LANGUAGES:
+            self.assertEqual(macos[language][key], expected[language], f"macOS {language}")
+            self.assertEqual(ios[language][key], expected[language], f"iOS {language}")
+            self.assertEqual(windows[language][key], expected[language], f"Windows {language}")
+            self.assertEqual(android[language]["force_gpu_unsupported"].strip('"'), expected[language], f"Android {language}")
+            if language != "zh-Hans":
+                self.assertNotEqual(expected[language], expected["zh-Hans"], language)
+
+    def test_force_gpu_unsupported_maps_to_shared_wording(self):
+        key = "当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。"
+        mac_err = (ROOT / "RawLabMac/Sources/Rendering/RenderError.swift").read_text()
+        ios_err = (ROOT / "RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift").read_text()
+        win_native = (ROOT / "RawLabWindows/Core/Native.cs").read_text()
+        android_exc = (ROOT / "RawLabAndroid/app/src/main/java/com/rawlab/android/engine/NativeProcessor.kt").read_text()
+
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", mac_err)
+        self.assertIn(key, mac_err)
+        self.assertIn("SONY2FUJI_UNSUPPORTED_FORCE_GPU", ios_err)
+        self.assertIn(key, ios_err)
+        self.assertIn("UnsupportedReason.ForceGpu", win_native)
+        self.assertIn(key, win_native)
+        self.assertIn("R.string.force_gpu_unsupported", android_exc)
 
 
 if __name__ == "__main__":

@@ -24,14 +24,14 @@ RGB sample(const ImageData& input, int x, int y, int width, int height, bool fin
     return final || display ? result : tone(result);
 }
 void check(const ImageData& input, int width, int height, bool final, bool preserve = false) {
-    sony2fuji_request request{};
-    request.brightness = request.contrast = request.saturation = 1;
-    request.intent = final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW;
+    RenderParams params{};
+    params.intent = final ? RenderIntent::Final : RenderIntent::Preview;
+    params.preserveSourceResolution = preserve;
     D3D11PhotoRenderer renderer;
     ImageData output;
     d3d11_test::largestPhotoBuffer = 0;
-    require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, width, height, 0,
-        output, {}, 0, preserve), "C6: tiled photo render failed");
+    require(renderer.render(input, ColorSpace::sRGB, params, width, height, 0,
+        output), "C6: tiled photo render failed");
     require(d3d11_test::largestPhotoBuffer > 0 && d3d11_test::largestPhotoBuffer <= 16 * 1024 * 1024,
         "C6: renderer allocated a full-frame buffer above the tile budget");
     float maximum = 0;
@@ -68,18 +68,18 @@ void nativeFilters(bool resize) {
         input.pixels[i] = {.03f + .3f * float(i % 13) / 12, .11f, .31f};
         expected.pixels[i] = tone(input.pixels[i]);
     }
-    sony2fuji_request request{};
-    request.brightness = request.contrast = request.saturation = 1;
-    request.intent = SONY2FUJI_INTENT_PREVIEW;
-    request.noise_reduction = .35f; request.sharpening = .6f;
+    RenderParams params{};
+    params.intent = RenderIntent::Preview;
+    params.noiseReduction = .35f; params.sharpening = .6f;
     PhotoEffectsOptions effects;
     effects.vignetteAmount = -30; effects.grainAmount = 15;
+    params.effects = effects;
     expected = detail(detail(expected, .35f, false), .6f, true);
     applyPhotoEffects(expected, effects);
     D3D11PhotoRenderer renderer;
     ImageData output;
     const int width = resize ? 33 : 65, height = resize ? 25 : 49;
-    require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, width, height, 0, output, effects),
+    require(renderer.render(input, ColorSpace::sRGB, params, width, height, 0, output),
         "C6: source-resolution shared filter chain failed");
     float maximum = 0;
     for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
@@ -94,12 +94,11 @@ void cacheTransitions() {
     ImageData input(65, 49), output;
     for (int y = 0; y < 49; ++y) for (int x = 0; x < 65; ++x)
         input.at(x, y) = {.01f + .3f * float(y) / 48, .1f + .2f * float(x) / 64, .3f};
-    sony2fuji_request request{};
-    request.brightness = request.contrast = request.saturation = 1;
-    request.intent = SONY2FUJI_INTENT_PREVIEW;
+    RenderParams params{};
+    params.intent = RenderIntent::Preview;
     D3D11PhotoRenderer renderer;
     auto run = [&](int width, int height, uint64_t revision) {
-        require(renderer.render(input, ColorSpace::sRGB, request, {}, {1, 1, 1}, width, height, revision, output),
+        require(renderer.render(input, ColorSpace::sRGB, params, width, height, revision, output),
             "C6: revision-cache transition failed");
     };
     auto verify = [&](float gain) {
@@ -113,9 +112,9 @@ void cacheTransitions() {
         }
     };
     run(65, 49, 41); verify(1);
-    request.exposure_ev = 1;
+    params.exposureEV = 1;
     run(65, 49, 41); verify(2);
-    request.exposure_ev = 0;
+    params.exposureEV = 0;
     run(1024, 1367, 41); // 超过分带阈值，最后两行只上传原图末尾的少数行。
     run(65, 49, 41); verify(1);
     for (auto& p : input.pixels) p = {.13f, .27f, .41f};

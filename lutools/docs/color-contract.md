@@ -228,7 +228,7 @@ An active master recipe's tint remains a relative style offset against that
 target WB, not a source-camera WB value to copy or discard.
 Mobile Agent interfaces remain out
 of scope. Desktop evidence and remaining ICC/physical-device limits are recorded
-in `RawLabWindows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
+in `docs/archive/verification/windows/VERIFICATION-agent-v08.md`; mobile evidence is recorded in
 the [PR #62 delivery record](https://github.com/dancancer/RawLab/pull/62).
 
 ## Rendering Order
@@ -787,6 +787,12 @@ above the native geometry size remain exact. The immutable RAW cache is sampled 
 copying the entire image. Wavelet cache keys include the viewport dimensions and
 quality mode; reduced results cannot serve exact requests. GPU Auto fallback
 preserves the reduced source, while Force still requires GPU success.
+C5 fits its noise model and low-noise strength guard from up to 12x12 native
+64x64 patches of the immutable source, converting only those patches to linear sRGB. Resizing
+therefore cannot hide source noise from this guard. Band statistics and filtering
+still use flat patches and pixels from the reduced image; the eight-sample fit
+requirement applies to the source patches. The source model is cached with that
+viewport's analysis. Requests that do not reduce the source retain the exact path.
 
 Mac fit/zoom previews derive their long edge from the actual photo pane, display
 scale and magnification, rounded upward in 64-pixel steps and capped by source
@@ -910,7 +916,7 @@ cached by RAW decode revision. Native-resolution exports never use that preview.
 `SONY2FUJI_BACKEND_GLES` reports actual GPU completion, including neutral renders;
 Auto preserves the CPU source when GPU work fails. RAW decoding and encoding
 remain on CPU. Physical-device parity and timing are recorded in
-`../../RawLabAndroid/gpu-verification.md`.
+`../../docs/archive/verification/android/gpu-verification.md`.
 
 `sony2fuji_analyze_image` returns exact channel-major 256-bin RGB counts and an
 optional RGBA clipping mask. Its Auto mode prefers CPU for CPU-resident bytes,

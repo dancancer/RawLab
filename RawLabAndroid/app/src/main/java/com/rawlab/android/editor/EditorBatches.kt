@@ -31,9 +31,18 @@ internal class EditorBatches(
     private val storage: PhotoStorage,
     private val scope: CoroutineScope,
     private val processorFactory: (Int, File?) -> NativeProcessor,
-    private val usage: UsageAnalytics,
+    private val usageProvider: () -> UsageAnalytics,
+    private val strings: EditorStrings = EditorStrings(),
     private val onError: (String?) -> Unit,
 ) {
+    constructor(
+        application: Application,
+        storage: PhotoStorage,
+        scope: CoroutineScope,
+        processorFactory: (Int, File?) -> NativeProcessor,
+        usage: UsageAnalytics,
+        onError: (String?) -> Unit,
+    ) : this(application, storage, scope, processorFactory, { usage }, EditorStrings(), onError)
     private val mutableActive = MutableStateFlow<BatchExportModel?>(null)
     val active = mutableActive.asStateFlow()
     private val mutablePending = MutableStateFlow<List<BatchJob>>(emptyList())
@@ -84,7 +93,7 @@ internal class EditorBatches(
                     journal.pending().mapNotNull(journal::load)
                 }
                 if (revision == pendingRevision) mutablePending.value = pending
-            } catch (error: Exception) { onError(AppStrings.format(R.string.message_unable_to_read_batch_task, error.message.toString())) }
+            } catch (error: Exception) { onError(strings.format(R.string.message_unable_to_read_batch_task, arrayOf(error.message.toString()))) }
         }
     }
 
@@ -94,5 +103,5 @@ internal class EditorBatches(
 
     private fun model(source: BatchSourceSnapshot, job: BatchJob?, gpuMode: Int) = BatchExportModel(application, storage,
         source, job, gpuMode = gpuMode, processorFactory = processorFactory,
-        onTerminal = { succeeded, failed, outcome -> usage.record(UsageEvent.BatchExportCompleted(succeeded, failed, outcome)) })
+        onTerminal = { succeeded, failed, outcome -> usageProvider().record(UsageEvent.BatchExportCompleted(succeeded, failed, outcome)) })
 }

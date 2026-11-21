@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -7,23 +8,35 @@ using System.Windows.Threading;
 namespace RawLab.Windows;
 public partial class App : Application
 {
+#if RAWLAB_RUM_SDK
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void RegisterUsageAnalyticsTransport() =>
+        UsageAnalytics.DefaultTransportFactory = RumUsageAnalyticsTransport.CreateDefault;
+#endif
     private static App? currentApp;
     private static int processHooksInstalled;
+    private readonly AppPaths appPaths;
+    private readonly bool automaticUpdateCheck;
+    private readonly UsageAnalytics? injectedUsageAnalytics;
     private readonly UnhandledExceptionCoordinator coordinator;
     private readonly SystemPhotoOpenQueue systemPhotoRequests = new();
     private MainWindow? systemEditor;
     private DispatcherTimer? systemPhotoTimer;
     private bool drainingSystemPhotos;
     private bool startupCompleted;
+    internal bool StartupCompleted { get => startupCompleted; set => startupCompleted = value; }
 
-    public App() : this(null) { }
+    public App() : this(null, null) { }
 
-    internal App(AIDiagnosticStore? diagnosticStore)
+    internal App(AIDiagnosticStore? diagnosticStore = null, AppPaths? appPaths = null, bool automaticUpdateCheck = true, UsageAnalytics? usageAnalytics = null)
     {
         currentApp = this;
+        this.appPaths = appPaths ?? AppPaths.Default;
+        this.automaticUpdateCheck = automaticUpdateCheck;
+        injectedUsageAnalytics = usageAnalytics;
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         coordinator = new UnhandledExceptionCoordinator(
-            diagnosticStore ?? AIDiagnosticStore.Default,
+            diagnosticStore ?? new(this.appPaths.AiDiagnosticsDirectory),
             () => new(startupCompleted, Dispatcher.HasShutdownStarted, Dispatcher.HasShutdownFinished,
                 this.MainWindow is MainWindow { IsVisible: true, IsEnabled: true }),
             ShowUnhandledExceptionDialog,
@@ -150,7 +163,7 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         Exit+=(_,_)=>HDRSourceCache.Clear();
-        Loc.Initialize();
+        Loc.Initialize(null, appPaths.LanguagePreferencePath);
         void ApplyLanguage() { foreach (var pair in Loc.Strings) Resources[pair.Key] = pair.Value; }
         ApplyLanguage();
         Loc.Changed += ApplyLanguage;
@@ -173,15 +186,20 @@ public partial class App : Application
         // 目录；首窗之后本实例创建的 UUID 新目录 mtime 晚于清扫起点、在保留期内，且带
         // 存活的 owner 标记，不会被误删；分析缓存目录另有 in-use 短路，导出 staging 按
         // 租约进程存活判断，与并发窗口创建互不干扰。
-        var startupSweep = Task.Run(TempCleanup.SweepStartup);
-        var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current));
+        var analytics = injectedUsageAnalytics ?? new UsageAnalytics(appPaths.UsageSettingsPath);
+        var analyticsCache = analytics.CacheDirectory;
+        var exportStaging = appPaths.ExportStagingDirectory;
+        var startupSweep = Task.Run(() => TempCleanup.SweepStartup(
+            Path.GetTempPath(), analyticsCache, exportStaging, DateTime.UtcNow, TempCleanup.DefaultRetention));
+        var adapter = await Task.Run(() => VelopackUpdateAdapter.Create(current, appPaths));
         var fileVersion=System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(App).Assembly.Location);
-        var updates = new DesktopUpdateController(adapter, new(), new(UpdateStore.DefaultDirectory), current,
-            fileVersion.FilePrivatePart.ToString());
+        var privateBuild = fileVersion.FilePrivatePart.ToString();
+        var updates = await Task.Run(() => new DesktopUpdateController(adapter, new(), new(appPaths.UpdatesDirectory), current,
+            privateBuild, automaticCheck: automaticUpdateCheck));
         MainWindow? editor = null;
         if (!updates.RequiresRecovery)
         {
-            editor = new MainWindow(new UsageAnalytics(), null, desktopUpdates: updates);
+            editor = new MainWindow(appPaths, analytics, desktopUpdates: updates);
             await updates.FinishStartupHealthCheckAsync(editor.UpdateDataHealthy);
         }
         if (updates.BlocksEditing)

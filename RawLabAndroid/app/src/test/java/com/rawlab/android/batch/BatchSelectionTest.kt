@@ -242,4 +242,56 @@ class BatchSelectionTest {
         }
     }
 
+    @Test fun freezeChecksTotalBatchSpaceBeforeCreatingJobFolder() {
+        val root = Files.createTempDirectory("batch-freeze-space").toFile()
+        try {
+            val batchDir = object : File(root, "batch") {
+                override fun getUsableSpace(): Long = 100L
+            }.apply { mkdirs() }
+            val source1 = File(root, "a.dng").apply { writeBytes(ByteArray(60) { 1 }) }
+            val source2 = File(root, "b.dng").apply { writeBytes(ByteArray(60) { 2 }) }
+            val t1 = BatchTarget(PhotoIdentity("a"), source1, "a.dng", inputKind = PhotoInputKind.RAW)
+            val t2 = BatchTarget(PhotoIdentity("b"), source2, "b.dng", inputKind = PhotoInputKind.RAW)
+            val selection = BatchSelectionState().append(listOf(t1, t2))
+            val store = EditStore(File(root, "edits"))
+            val exporter = BatchSelectionExport(
+                directory = batchDir,
+                readRecord = store::readState,
+                resolveLook = { null },
+            )
+            val review = exporter.prepare(selection, emptySet(), ExportFormat.JPEG, null, null) {}
+            assertTrue(review.ready)
+
+            val result = runCatching { exporter.freeze(selection, review) {} }
+            assertTrue(result.exceptionOrNull() is com.rawlab.android.photo.WorkingCopyStorageFull)
+            assertEquals("Total space preflight must fail before creating any batch job folder",
+                emptyList<String>(), batchDir.list()?.toList().orEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun freezeDetectsSourceModificationViaSinglePassChecksum() {
+        val root = Files.createTempDirectory("batch-freeze-sha").toFile()
+        try {
+            val batchDir = File(root, "batch").apply { mkdirs() }
+            val source = File(root, "a.dng").apply { writeBytes(ByteArray(64) { 7 }) }
+            val target = BatchTarget(PhotoIdentity("a"), source, "a.dng", inputKind = PhotoInputKind.RAW)
+            val selection = BatchSelectionState().append(listOf(target))
+            val store = EditStore(File(root, "edits"))
+            val exporter = BatchSelectionExport(
+                directory = batchDir,
+                readRecord = store::readState,
+                resolveLook = { null },
+            )
+            val review = exporter.prepare(selection, emptySet(), ExportFormat.JPEG, null, null) {}
+            assertTrue(review.ready)
+
+            source.writeBytes(ByteArray(64) { 9 })
+            val result = runCatching { exporter.freeze(selection, review) {} }
+            val error = result.exceptionOrNull()
+            assertTrue(error is IllegalStateException && error.message == "Photo source changed")
+            assertEquals("Failed freeze must discard partial job folder",
+                emptyList<String>(), batchDir.list()?.toList().orEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
 }

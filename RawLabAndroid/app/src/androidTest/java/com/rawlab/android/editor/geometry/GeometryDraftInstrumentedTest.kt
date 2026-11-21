@@ -124,16 +124,23 @@ class GeometryDraftInstrumentedTest {
                 val original = model.state.value.edits
                 val identity = model.state.value.photo!!.identity
                 fun stored() = EditStore(File(context.filesDir, "edits")).load(identity)
+                val preview = model.state.value.preview
                 compose.runOnUiThread {
                     model.beginDraft(AdjustmentGroup.GEOMETRY)
-                    model.changeDraft(original.copy(geometry = GeometrySettings(perspectiveHorizontal = .25f, perspectiveVertical = -.2f)))
-                    assertFalse(model.state.value.canApplyDraft)
-                    model.applyDraft()
+                    for (angle in listOf(8f, 15.1f, -20f)) {
+                        val geometry = GeometrySettings(straightenDegrees = angle,
+                            perspectiveHorizontal = angle / 50f, perspectiveVertical = -angle / 100f)
+                        model.changeDraft(original.copy(geometry = geometry), interactive = true)
+                        assertFalse("A geometry gesture must keep the accepted frame", model.state.value.rendering)
+                        assertSame(preview, model.state.value.preview)
+                    }
+                    model.changeDraft(model.state.value.visibleEdits)
+                    assertTrue(model.state.value.canApplyDraft)
+                    assertSame(preview, model.state.value.preview)
                     assertEquals(original, model.state.value.edits)
                 }
                 ready(true)
                 compose.runOnUiThread { model.chooseGeometryRatio(GeometryRatio.FOUR_THREE, false) }
-                val preview = model.state.value.preview
                 compose.runOnUiThread {
                     val edits = model.state.value.visibleEdits
                     model.changeDraft(edits.copy(geometry = GeometryCropMath.resize(edits.geometry, GeometryCropCorner.BOTTOM_RIGHT,
@@ -144,13 +151,15 @@ class GeometryDraftInstrumentedTest {
                 val beforeTransform = model.state.value.visibleEdits.geometry
                 var newestCrop = beforeTransform
                 compose.runOnUiThread {
-                    model.changeDraft(model.state.value.visibleEdits.copy(geometry = beforeTransform.copy(quarterTurns = 1, straightenDegrees = 7f)))
-                    assertFalse(model.state.value.canApplyDraft)
+                    model.changeDraft(model.state.value.visibleEdits.copy(geometry = beforeTransform.copy(
+                        quarterTurns = 1, flipHorizontal = true, flipVertical = true, straightenDegrees = 7f)))
+                    assertTrue(model.state.value.canApplyDraft)
+                    assertSame(preview, model.state.value.preview)
                     model.beginExport { assertFalse(it) }
                     model.beginBatch()
                     assertNull(model.batch.value)
                     newestCrop = model.state.value.visibleEdits.geometry.moveCrop(.03f, -.02f)
-                    model.changeDraft(model.state.value.visibleEdits.copy(geometry = newestCrop), true)
+                    model.changeDraft(model.state.value.visibleEdits.copy(geometry = newestCrop))
                 }
                 ready(true)
                 val refitted = model.state.value.visibleEdits.geometry
@@ -159,6 +168,7 @@ class GeometryDraftInstrumentedTest {
                 assertEquals(newestCrop.cropX + newestCrop.cropWidth / 2f, refitted.cropX + refitted.cropWidth / 2f, .00001f)
                 assertEquals(newestCrop.cropY + newestCrop.cropHeight / 2f, refitted.cropY + refitted.cropHeight / 2f, .00001f)
                 assertEquals(original, stored())
+                compose.onNodeWithTag("geometry-crop-tab").assertIsDisplayed()
                 compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
                 compose.onNodeWithText(context.getString(R.string.adjustment_continue)).performClick()
                 assertNotNull(model.state.value.draft)
@@ -176,7 +186,7 @@ class GeometryDraftInstrumentedTest {
                 compose.activityRule.scenario.recreate()
                 compose.activityRule.scenario.onActivity { model = it.model }
                 assertEquals(expectedDraft, model.state.value.draft)
-                compose.runOnUiThread { model.applyDraft() }
+                compose.onNodeWithTag("draft.apply").performClick()
                 ready()
                 val applied = model.state.value.edits
                 assertEquals(refitted, applied.geometry)
@@ -208,7 +218,7 @@ class GeometryDraftInstrumentedTest {
                                 events += SystemClock.elapsedRealtime() to current.saveState
                         }
                     }
-                    model.setGpuEnabled(false)
+                    if (model.state.value.gpuEnabled) model.setGpuEnabled(false)
                     model.importPhoto(Uri.fromFile(source))
                 }
                 ready()
@@ -236,8 +246,8 @@ class GeometryDraftInstrumentedTest {
             compose.runOnUiThread {
                 model.changeDraft(model.state.value.visibleEdits.copy(
                     geometry = model.state.value.visibleEdits.geometry.copy(perspectiveHorizontal = -.5f)), true)
-                model.discardDraft()
             }
+            compose.onNodeWithTag("draft.cancel").performClick()
             ready()
             assertEquals(expected, model.state.value.edits)
         } finally {

@@ -4,11 +4,11 @@ using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
 
-internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirectory = null) : IAsyncDisposable
+internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirectory = null, AppPaths? appPaths = null) : IAsyncDisposable
 {
+    private readonly AppPaths resolvedPaths = appPaths ?? AppPaths.Default;
     internal EditStore Store { get; } = store;
-    private readonly EditedPhotoPreviewCache cache = new(cacheDirectory ?? Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","Cache","EditedPhotoPreviews"));
+    private readonly EditedPhotoPreviewCache cache = new(cacheDirectory ?? (appPaths ?? AppPaths.Default).EditedPhotoPreviewCacheDirectory);
     private readonly SemaphoreSlim queue = new(1,1);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object gate = new();
@@ -43,7 +43,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
         record=EditedPhotoPreviewKey.PrepareState(record);
         if(record.Edit is {} edit) {
             resourceWatch ??=new PhotoPreviewResourceWatch(()=>Ready?.Invoke(""));
-            resourceWatch.Watch(EditedPhotoPreviewKey.ResourcePaths(edit.Settings,look));
+            resourceWatch.Watch(EditedPhotoPreviewKey.ResourcePaths(edit.Settings,look,resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory));
         }
         var task=RenderAsync(record,look,aiBackend,aiDevice,cancellation);
         Track(task);return task;
@@ -57,7 +57,8 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
             await WaitForEditor(token).ConfigureAwait(false);
             return await Task.Run(async()=> {
                 token.ThrowIfCancellationRequested();
-                var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice);
+                var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice,
+                    hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory);
                 RequireCurrent(record,look,key,aiBackend,aiDevice);
                 BitmapSource? cached=null;
                 try {if(cache.Read(key) is {} bytes)cached=Decode(bytes);}
@@ -69,7 +70,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
                 if(record.Edit is not {} edit)throw new AdjustmentOperationExpiredException();
                 if(edit.Look!=null && look==null || edit.Settings.MasterRecipeID!=null && look==null)
                     throw new FileNotFoundException(Loc.Text("外观不可用。"));
-                using var engine=new RenderEngine(gpuMode:1,aiBackend:aiBackend,aiDeviceID:aiDevice);
+                using var engine=new RenderEngine(gpuMode:1,aiBackend:aiBackend,aiDeviceID:aiDevice,appPaths:resolvedPaths);
                 engine.SetCancellation(token);
                 var settings=edit.Settings.Restore();
                 settings.RepairLegacyNormalX3f(record.Identity.Path);
@@ -114,8 +115,10 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
         var task=Task.Run(()=> {
             lifetime.Token.ThrowIfCancellationRequested();
             if(!EditedPhotoPreviewKey.IsEdited(record) ||
-                EditedPhotoPreviewKey.ResourceFingerprint(record.Edit!.Settings,look,aiBackend,aiDevice)!=expectedResources)return;
-            var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice);
+                EditedPhotoPreviewKey.ResourceFingerprint(record.Edit!.Settings,look,aiBackend,aiDevice,
+                    resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory)!=expectedResources)return;
+            var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice,
+                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory);
             RequireCurrent(record,look,key,aiBackend,aiDevice);
             var encoded=Encode(image);
             RequireCurrent(record,look,key,aiBackend,aiDevice);
@@ -127,7 +130,8 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     private void RequireCurrent(PhotoEditState record,string? look,string key,int backend,string device)
     {
         if(!record.SameAs(EditedPhotoPreviewKey.ReadState(Store,record.Identity.Path)) ||
-            key!=EditedPhotoPreviewKey.Create(record,look,aiBackend:backend,aiDevice:device))throw new AdjustmentOperationExpiredException();
+            key!=EditedPhotoPreviewKey.Create(record,look,aiBackend:backend,aiDevice:device,
+                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory))throw new AdjustmentOperationExpiredException();
     }
     internal static byte[] Encode(BitmapSource image)
     {

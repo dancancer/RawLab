@@ -1,3 +1,4 @@
+import RawLabKit
 import Foundation
 
 /// P2-01 (S1): iOS 消费共享持久化编辑记录 fixture `Shared/fixtures/edit-records-v1.json`。

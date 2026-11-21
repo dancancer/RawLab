@@ -166,9 +166,9 @@ extension ContentView {
             "editorBusy": String(editorBusy),
             "previewRendering": String(viewModel.previewRendering),
             "previewResizePending": String(viewModel.previewResizePending),
-            "request": photoImportRequestID?.uuidString ?? "nil",
-            "task": String(photoImportTask != nil),
-            "selectedPhoto": selectedPhotoItem?.itemIdentifier ?? "nil",
+            "request": coordinator.photoImportRequestID?.uuidString ?? "nil",
+            "task": String(coordinator.photoImportTask != nil),
+            "selectedPhoto": coordinator.selectedPhotoItem?.itemIdentifier ?? "nil",
             "status": viewModel.statusMessage ?? "nil"
         ]
     }
@@ -186,7 +186,21 @@ final class PickerCancelProbe: UILabel {
 
 @MainActor
 final class PickerCancelShell: UIViewController {
-    private let editor = UIHostingController(rootView: AnyView(ContentView().environment(\.locale, Locale(identifier: "en"))))
+    private let editor = UIHostingController(rootView: AnyView(
+        ContentView(
+            coordinator: EditorCoordinator(photoSourceLoader: { item in
+                try await PickerCancelHarnessState.shared.acquire(item)
+            }),
+            testHooks: EditorTestHooks(
+                onAppear: { view in
+                    PickerCancelHarnessState.shared.readEditor = { view.pickerCancelSnapshot() }
+                },
+                onDisappear: {
+                    PickerCancelHarnessState.shared.disappearances += 1
+                }
+            )
+        ).environment(\.locale, Locale(identifier: "en"))
+    ))
     private let navigation = UINavigationController()
 
     override func viewDidLoad() {

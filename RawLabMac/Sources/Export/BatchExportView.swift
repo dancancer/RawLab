@@ -1,3 +1,4 @@
+import RawLabKit
 import SwiftUI
 import AppKit
 
@@ -113,7 +114,8 @@ struct BatchExportView: View {
                                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                             }
                             if let notice = model.notice(for: item) {
-                                Text(notice).font(.caption).foregroundStyle(.secondary)
+                                Text(notice).font(.caption)
+                                    .foregroundStyle(model.hasX3fProbeFailure(for: item) ? Color.orange : Color.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).help(item.input.path)
@@ -138,7 +140,7 @@ struct BatchExportView: View {
                 ForEach(model.job.items) { item in
                     if let frozen = item.frozen {
                         DisclosureGroup(item.input.lastPathComponent + " · " + L10n.text(frozen.lookName)) {
-                            BatchSettingsSummary(settings: frozen.settings)
+                            MacBatchSettingsSummaryView(settings: frozen.settings)
                         }
                     }
                 }
@@ -153,7 +155,7 @@ struct BatchExportView: View {
                 }
             }
             if model.job.settings.isHDREditing {
-                BatchSettingsSummary(settings:model.job.settings)
+                MacBatchSettingsSummaryView(settings: model.job.settings)
             } else {
             valueRow(L10n.text("曝光"), AdjustmentParameter.exposure.spec.display(model.job.settings.exposure))
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)

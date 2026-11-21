@@ -1,3 +1,4 @@
+import RawLabKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -44,6 +45,13 @@ final class RawEditorViewModel: ObservableObject {
     }
     var hdrExportCancellation: ExportCancellation?
     func cancelHDRExport() { hdrExportCancellation?.cancel() }
+    final class ImportCancellation {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
+    var activeImportCancellation: ImportCancellation?
     @Published var previewRendering = false
     @Published var previewResizePending = false
     @Published var previewFailed = false
@@ -220,6 +228,8 @@ final class RawEditorViewModel: ObservableObject {
     var previewWorkItem: DispatchWorkItem?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
+    var onPreviewRequest: ((PreviewRequest, UUID) -> Void)?
+    var onViewportResize: ((Bool) -> Void)?
     var completedPreviewCache: [CompletedPreview] = []
     let completedPreviewCacheLimit = 3
     var completedPreviewCacheBytes = 0
@@ -229,15 +239,11 @@ final class RawEditorViewModel: ObservableObject {
     var currentPreviewSettings = RawSettings.default {
         didSet { if oldValue != currentPreviewSettings { cancelProcessingMigration() } }
     }
-    let sampleResourceName = "sample"
-    let sampleResourceExtension = "ARW"
     let previewMaxDimension: CGFloat = 1280
     let interactivePreviewMaxDimension: CGFloat = 720
     let histogramDelay: TimeInterval = 0.25
     var lutMap: [String: LUTReference] = [:]
     var didStartLUTLoad = false
-    var rawLUTID: String?
-    var rawLUTApplied = false
 
     var editPersistence: EditPersistence?
     var openEditPersistence: () throws -> EditPersistence = EditPersistence.appStore
@@ -255,8 +261,11 @@ final class RawEditorViewModel: ObservableObject {
         self.exportQueue = exportQueue
         self.importQueue = importQueue
         do {
-            let store = try editPersistence ?? EditPersistence.appStore()
+            let store = try editPersistence ?? openEditPersistence()
             self.editPersistence = store
+            if let quarantined = store.consumeQuarantinedError() {
+                ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
+            }
             adjustmentSession = IOSAdjustmentTransferSession(store: store)
             recentLooksURL = store.directory.appendingPathComponent("recent-looks.json")
             recentLooks = RecentLooks.load(from: recentLooksURL!)

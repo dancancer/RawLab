@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 // ============================================================================
 //  Q6 保留策略：常量集中定义
-//  裁定（docs/architecture/remediation-plan-2026-11-13/g-product-decisions.md）：
+//  裁定（docs/archive/architecture/remediation-plan-2026-11-13/g-product-decisions.md）：
 //  「批量产物保留 30 天 / 100 条；相机原件不自动删、只提供手动清理入口；联机记录保留 90 天」
 //  回收只在进程入口执行（RawLabApplication.onCreate，与 WorkingCopyCleanup 同一时机）：
 //  此刻界面、批量任务与联机会话尚未启动，不引入后台任务框架也不会与写入方竞争。

@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$ROOT/RawLabMac/tests/lib/compile.sh"
 APP="$ROOT/build/RawLab Mac.app"
-WORK="$(mktemp -d /tmp/rawlab-icon-test.XXXXXX)"
-trap 'rm -rf "$WORK"' EXIT
+rawlab_mac_make_temp_dir WORK rawlab-icon-test
 NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")"
 test "$NAME" = AppIcon
 iconutil -c iconset "$APP/Contents/Resources/$NAME.icns" -o "$WORK/AppIcon.iconset"

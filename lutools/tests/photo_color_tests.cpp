@@ -96,7 +96,10 @@ static void hslSession() {
         assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
     // Without a compiled GPU backend a Force request must say "unsupported",
     // never fake a CPU result and never report a processing failure.
-    } else assert(status == SONY2FUJI_STATUS_UNSUPPORTED);
+    } else {
+        assert(status == SONY2FUJI_STATUS_UNSUPPORTED);
+        assert(sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_FORCE_GPU);
+    }
     sony2fuji_release_buffer(&buffer);
     gpu.mode = SONY2FUJI_GPU_AUTO;
     assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);

@@ -11,6 +11,8 @@ import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.geometry.uncropped
+import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.editor.PendingDcpImport
@@ -46,7 +48,12 @@ data class PreviewPair(val neutral: Bitmap, val result: Bitmap, val temperature:
     val comparisonHeight: Float = neutral.height.toFloat(),
     val originalAspect: Float = neutral.width.toFloat() / neutral.height,
     val neutralHistogram: RgbHistogram? = null, val resultHistogram: RgbHistogram? = null,
-    val hdr: HDRPreview? = null)
+    val hdr: HDRPreview? = null, val renderedGeometry: GeometrySettings = GeometrySettings(),
+    val nativeWidth: Int = result.width, val nativeHeight: Int = result.height)
+
+/** 内接画布由共享渲染核心测量，供 SDR 和 HDR 的几何编辑使用。 */
+internal fun PreviewPair.uncroppedGeometrySize(geometry: GeometrySettings): IntArray =
+    NativeHDRBridge.geometrySize(nativeWidth, nativeHeight, geometry.uncropped())
 
 /** A transformed comparison must never reuse the uncropped original or another viewport. */
 internal data class ComparisonPreviewKey(val inputPath: String, val geometry: GeometrySettings,
@@ -72,7 +79,8 @@ internal sealed interface Work {
     data class Preview(val photo: ImportedPhoto, val edits: EditSettings, val interactive: Boolean,
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
-        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : Work
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
+        val includeNeutral: Boolean = true) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,
@@ -93,6 +101,11 @@ internal sealed interface WorkResult {
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult
 }
+
+internal fun Work.canFinishPreviewBefore(next: Work): Boolean =
+    this is Work.Preview && next is Work.Preview && interactive && next.interactive &&
+        !importing && !next.importing && photo == next.photo && draft == next.draft && gpuMode == next.gpuMode
+
 internal fun interface ExportDestinationDeleter {
     fun deleteIncomplete(destination: Uri, original: Uri?)
 }

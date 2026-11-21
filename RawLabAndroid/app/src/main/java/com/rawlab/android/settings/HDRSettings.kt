@@ -1,5 +1,6 @@
 package com.rawlab.android.settings
 
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.geometry.GeometrySettings
 import java.io.File
 import java.io.IOException
@@ -47,8 +48,11 @@ data class HDRRenditionSettings(
     val sdrSaturation: Float = 0f,
 ) {
     init {
-        require(peakLimitEV in 0f..6f && sdrExposureEV in -4f..4f &&
-            sdrContrast in -100f..100f && sdrSaturation in -100f..100f)
+        val f = AdjustmentFieldSpec.Fields
+        require(peakLimitEV in f.HDR_PEAK_LIMIT_EV.androidModel.floatRange!! &&
+            sdrExposureEV in f.HDR_SDR_EXPOSURE_EV.androidModel.floatRange!! &&
+            sdrContrast in f.HDR_SDR_CONTRAST.androidModel.floatRange!! &&
+            sdrSaturation in f.HDR_SDR_SATURATION.androidModel.floatRange!!)
     }
     val isDefault get() = peakLimitEV == 0f && sdrExposureEV == 0f && sdrContrast == 0f && sdrSaturation == 0f
 }
@@ -59,7 +63,13 @@ data class HDRDetailSettings(
     val dehaze: Float = 0f,
     val denoise: Float = 0f,
 ) {
-    init { require(sharpening in 0f..2f && clarity in -1f..1f && dehaze in -1f..1f && denoise in 0f..1f) }
+    init {
+        val f = AdjustmentFieldSpec.Fields
+        require(sharpening in f.DETAIL_SHARPENING.androidModel.floatRange!! &&
+            clarity in f.EFFECTS_CLARITY.androidModel.hdrFloatRange!! &&
+            dehaze in f.EFFECTS_DEHAZE.androidModel.hdrFloatRange!! &&
+            denoise in f.DETAIL_DENOISE_POST_RGB.androidModel.floatRange!!)
+    }
     val isDefault get() = sharpening == 0f && clarity == 0f && dehaze == 0f && denoise == 0f
 }
 

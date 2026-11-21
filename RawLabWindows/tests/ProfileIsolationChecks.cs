@@ -1,42 +1,38 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Windows;
 using RawLab.Windows;
 
 internal static class ProfileIsolationChecks
 {
-    private const BindingFlags Private=BindingFlags.Instance|BindingFlags.NonPublic;
     internal static void Run(string output,Action<bool,string> check)
     {
         var root=Path.Combine(Path.GetFullPath(output),Guid.NewGuid().ToString("N")[..8]);Directory.CreateDirectory(root);
-        var initialize=typeof(Loc).GetMethod("Initialize",[typeof(string),typeof(string)]);
-        var setPreference=typeof(Loc).GetMethod("SetPreference",[typeof(string),typeof(string)]);
-        check(initialize!=null && setPreference!=null,"Language persistence accepts an explicit private file without replacing the default profile");
-        var defaultPreference=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RawLab","language.txt");
+        var defaultPreference=AppPaths.Default.LanguagePreferencePath;
         var languageBefore=Stamp(defaultPreference);var privatePreference=Path.Combine(root,"language.txt");
-        setPreference!.Invoke(null,["de",privatePreference]);initialize!.Invoke(null,[null,privatePreference]);
+        Loc.SetPreference("de",privatePreference);Loc.Initialize(null,privatePreference);
         check(Loc.Preference=="de" && Loc.Language=="de" && File.ReadAllText(privatePreference)=="de","Private language preference survives the real persistence/reload path");
         check(languageBefore==Stamp(defaultPreference),"Private language changes leave the default preference existence, bytes and timestamp unchanged");
         Loc.Initialize("zh-Hans");
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/Controls.xaml",UriKind.Relative)});
         app.Resources.MergedDictionaries.Add(new(){Source=new Uri("/RawLab;component/FileTreeStyles.xaml",UriKind.Relative)});
+        var initialPaths=TestWindowState.CreateIsolatedPaths(root);
         var usagePath=Path.Combine(root,"existing-usage.json");File.WriteAllText(usagePath,"{\"Enabled\":true}");
         var usageBefore=Stamp(usagePath);var transport=new UsageTransport();
         var existingUsage=new UsageAnalytics(usagePath,transport);
-        var window=new MainWindow(existingUsage);
-        var existingUpdates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",Private)!.GetValue(window)!;
-        var existingStore=typeof(DesktopUpdateController).GetField("store",Private)!.GetValue(existingUpdates)!;
+        var window=new MainWindow(initialPaths,existingUsage);
+        var existingUpdates=window.DesktopUpdates;
+        var existingStore=existingUpdates.Store;
         window.UpdateNotice.Visibility=Visibility.Visible;
         try
         {
             TestWindowState.Isolate(window,root);
-            var updates=(DesktopUpdateController)typeof(MainWindow).GetField("desktopUpdates",Private)!.GetValue(window)!;
-            var isolatedStore=(UpdateStore)typeof(DesktopUpdateController).GetField("store",Private)!.GetValue(updates)!;
-            var usage=(UsageAnalytics)typeof(MainWindow).GetField("usageAnalytics",Private)!.GetValue(window)!;
+            var updates=window.DesktopUpdates;
+            var isolatedStore=updates.Store;
+            var usage=window.UsageAnalyticsInstance;
             check(!ReferenceEquals(existingUsage,usage) && !usage.ConsentGiven && !usage.CanEnable,
                 "Every test window gets private disabled analytics instead of retaining existing consent or transport");
             check(!ReferenceEquals(existingStore,isolatedStore) && !updates.Preferences.AutomaticCheck && window.UpdateNotice.Visibility==Visibility.Collapsed,
@@ -44,24 +40,23 @@ internal static class ProfileIsolationChecks
             window.Show();window.UpdateLayout();
             check(transport.Starts==0 && usageBefore==Stamp(usagePath),
                 "Test window Loaded leaves existing analytics consent bytes/timestamp and transport untouched");
-            var privateConsent=(string)typeof(UsageAnalytics).GetField("settingsPath",Private)!.GetValue(usage)!;
+            var privateConsent=usage.SettingsPath;
             check(File.ReadAllText(privateConsent).Contains("false") && !File.Exists(UsageAnalytics.InstallIdPathFor(privateConsent)) &&
                 !File.Exists(UsageAnalytics.InstallIdPathFor(usagePath)),
                 "Default-on analytics never reaches test windows: private consent is explicitly off and no install ID is created");
             check(isolatedStore.DirectoryPath.StartsWith(Path.GetFullPath(root),StringComparison.OrdinalIgnoreCase),
                 "Test window isolates update store under private test directory");
-            foreach(var field in new[]{"editStore","batchJournal","library","usageAnalytics"})
+            foreach(var (field, path) in new (string, string)[]{
+                ("editStore", window.EditStoreInstance!.RegistryPath),
+                ("batchJournal", window.BatchJournalInstance.DirectoryPath),
+                ("library", window.LibraryInstance.SettingsPath),
+                ("usageAnalytics", window.UsageAnalyticsInstance.SettingsPath)
+            })
             {
-                var value=typeof(MainWindow).GetField(field,Private)!.GetValue(window)!;
-                var path=field switch {
-                    "editStore"=>(string)value.GetType().GetField("path",Private)!.GetValue(value)!,
-                    "batchJournal"=>((BatchJournal)value).DirectoryPath,
-                    _=>(string)value.GetType().GetField("settingsPath",Private)!.GetValue(value)!
-                };
                 check(Path.GetFullPath(path).StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase),"Private window persistence: "+field);
             }
         }
-        finally{window.Close();app.Shutdown();}
+        finally{window.Close();}
         var folderRoot=Path.Combine(root,"folders-p108");
         var foldersPath=Path.Combine(folderRoot,"folders.json");
         var folderMoves=0;

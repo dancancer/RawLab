@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 
 extension EditorModel {
@@ -23,7 +24,8 @@ extension EditorModel {
     }
 
     func startProcessingMigrationIfNeeded() {
-        guard let file, result != nil, !busy, !importing, !dirty, !exporting, !autoExposing,
+        _ = editStore?.deliverReadyCompletedCommits()
+        guard let file, result != nil, !busy, !importing, !dirty, !hasPendingEditCommits, !exporting, !autoExposing,
               !scheduler.interacting, !ParameterValueField.hasPendingInputs, !aiState.isRunning, geometryDraft == nil,
               !settings.isHDREditing, !settings.activeAIDenoise, settings.masterRecipeID == nil,
               settings.processing.version < 3, !sourceUsesSDRFallback,
@@ -56,13 +58,13 @@ extension EditorModel {
                 self.matchingProcessing = false
                 guard !cancellation.isCancelled, self.file == file, self.sourceRevision == source,
                       self.pendingOpenID == opening, self.editRevision == edit, self.settings == snapshot,
-                      self.selectedFilm?.url == look, !self.dirty, !self.exporting,
+                      self.selectedFilm?.url == look, !self.dirty, !self.hasPendingEditCommits, !self.exporting,
                       !self.scheduler.interacting, !ParameterValueField.hasPendingInputs,
                       self.geometryDraft == nil, !self.aiState.isRunning,
                       case .success(let fitted) = outcome else { return }
                 do {
                     try lookIdentity?.requireCurrent()
-                    var candidate: PhotoEditState?
+                    var candidate: MacPhotoEditState?
                     if fitted.accepted && fitted.quality.passes {
                         var adjusted = original.settings
                         let p = fitted.parameters
@@ -77,13 +79,14 @@ extension EditorModel {
                         adjusted.vibrance = p.vibrance * 100
                         adjusted.clarity = p.clarity * 100
                         adjusted.dehaze = p.dehaze * 100
-                        candidate = PhotoEditState(settings: adjusted, filmID: original.filmID,
+                        candidate = MacPhotoEditState(settings: adjusted, filmID: original.filmID,
                             masterRecipeID: original.masterRecipeID)
                     }
                     let saved = try store.commitProcessingMigration(expected: expected, candidate: candidate, quality: fitted.quality)
                     self.committedEdit = saved
                     self.adjustmentSession?.adoptProcessingMigration(saved)
                     self.processingMigrationReceipt = try store.processingMigration(for: file)
+                    self.pendingMigrationClearToken = nil
                     if candidate != nil, let state = saved.state {
                         self.adjustmentHistoryRevision &+= 1
                         self.restoreAdjustmentState(state)
@@ -113,6 +116,7 @@ extension EditorModel {
             committedEdit = saved
             adjustmentSession?.adoptProcessingMigration(saved)
             processingMigrationReceipt = try store.processingMigration(for: file)
+            pendingMigrationClearToken = nil
             adjustmentHistoryRevision &+= 1
             if let state = saved.state { restoreAdjustmentState(state) }
             editRevision = UUID()

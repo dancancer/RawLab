@@ -38,8 +38,8 @@ Pass：`PRODUCT.md` 存在；HEAD 为 `b296b00`。`PRODUCT.md`、`DESIGN.md` 相
 
 ## material_fixes
 
-1. 修正 [NativeValueWheel.swift:54](/Users/xupeng/mycode/rawtools/.worktrees/ios-editor-v4/RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift:54)：打开／旋转时的 `.scrollTo(..., anchor: .center)` 不得裁掉参数身份、范围或默认信息；为普通 iPad、AX iPad、AX iPhone 横屏保留完整标题，其他内容以明确顺序滚动可达，Cancel／Apply 持续可达，并复核这三张原路径截图。
-2. 修正 [ContentView+Panels.swift:49](/Users/xupeng/mycode/rawtools/.worktrees/ios-editor-v4/RawLab/RawLab/UI/ContentView+Panels.swift:49)：按几何／镜头草稿是否处于活动状态禁用全部导出入口，包括未修改和恢复原值的草稿；目前 `isEditorDraftChanged` 加 `editorBusy` 无法覆盖这两种状态。
+1. 修正 [NativeValueWheel.swift:54](../../../RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift#L54)：打开／旋转时的 `.scrollTo(..., anchor: .center)` 不得裁掉参数身份、范围或默认信息；为普通 iPad、AX iPad、AX iPhone 横屏保留完整标题，其他内容以明确顺序滚动可达，Cancel／Apply 持续可达，并复核这三张原路径截图。
+2. 修正 [ContentView+Panels.swift:49](../../../RawLab/RawLab/UI/ContentView+Panels.swift#L49)：按几何／镜头草稿是否处于活动状态禁用全部导出入口，包括未修改和恢复原值的草稿；目前 `isEditorDraftChanged` 加 `editorBusy` 无法覆盖这两种状态。
 
 ## keep
 

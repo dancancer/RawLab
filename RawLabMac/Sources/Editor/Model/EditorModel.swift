@@ -1,3 +1,4 @@
+import RawLabKit
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -51,8 +52,8 @@ final class EditorModel: ObservableObject {
         let source: URL
         let identity: OriginalFileIdentity
         let revision: UUID
-        let original: PhotoEditState
-        let candidate: PhotoEditState
+        let original: MacPhotoEditState
+        let candidate: MacPhotoEditState
         let selectedFilmID: String
         let draft: MacGeometryDraft?
     }
@@ -180,6 +181,7 @@ final class EditorModel: ObservableObject {
         cancelProcessingMigration()
         processingMigrationReceipt = nil
         pendingAllResetRevision = nil
+        pendingMigrationClearToken = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -284,25 +286,36 @@ final class EditorModel: ObservableObject {
     var acceptedOriginalSource: MacReferenceSource?
     var originalCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
     var geometryReferenceCache: (key: MacNeutralReferenceKey, frame: RenderedImage)?
-    var editStore: EditPersistence? {
+    var editStore: MacEditPersistence? {
         didSet {
             if editStore !== oldValue {
                 adjustmentSession = editStore.map(AdjustmentTransferSession.init)
                 committedEdit = nil
+                unsettledAsyncCommitTokens.removeAll()
             }
         }
     }
     var adjustmentSession: AdjustmentTransferSession?
-    var committedEdit: PhotoEditRecord?
-    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<PhotoEditState>?
+    var committedEdit: MacPhotoEditRecord?
+    var unsettledAsyncCommitTokens: [UUID] = []
+    var hasPendingEditCommits: Bool {
+        editStore?.hasPendingCommits == true || adjustmentSession?.hasPendingCommits == true
+    }
+    private(set) var lookInvalidationDiagnostics: [String] = []
+    func recordLookInvalidationDiagnostics(_ messages: [String]) {
+        guard !messages.isEmpty else { return }
+        lookInvalidationDiagnostics = messages
+    }
+    @Published var processingMigrationReceipt: ProcessingMigrationReceipt<MacPhotoEditState>?
     @Published var matchingProcessing = false
     var processingMigrationCancellation: ProcessingMigrationCancellation?
     var processingMigrationAttemptSource: UUID?
     var pendingAllResetRevision: UUID?
+    var pendingMigrationClearToken: UUID?
     static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
-    var interactionEntry: PhotoEditState?
+    var interactionEntry: MacPhotoEditState?
     var interactionWasDirty = false
-    @Published var completedEditPreview: (record: PhotoEditRecord, image: CGImage)?
+    @Published var completedEditPreview: (record: MacPhotoEditRecord, image: CGImage)?
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?
@@ -327,7 +340,7 @@ final class EditorModel: ObservableObject {
     }
     var confirmUnusableRecordReset: ((URL, String) -> Bool)?
     let editDirectory: URL
-    let batchJournal: BatchJournal
+    let batchJournal: MacBatchJournal
     var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
@@ -356,15 +369,15 @@ final class EditorModel: ObservableObject {
 
 
     init(lookDirectory: URL = LookLibrary.defaultDirectory,
-         editDirectory: URL = EditPersistence.defaultDirectory,
-         batchDirectory: URL = BatchJournal.defaultDirectory,
+         editDirectory: URL = MacEditPersistence.defaultDirectory,
+         batchDirectory: URL = MacBatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
-        batchJournal = BatchJournal(directory: batchDirectory)
+        batchJournal = MacBatchJournal(directory: batchDirectory)
         recentLooks = RecentLooks.load(from: recentLooksURL)
         independentRecipeLookIDs.formUnion(recentLooks.ids.filter { $0.hasPrefix("recipe-lut:") })
         do {
@@ -377,7 +390,7 @@ final class EditorModel: ObservableObject {
             self.error = error.localizedDescription
         }
         selectedFilmID = ""
-        do { editStore = try EditPersistence(directory: editDirectory) }
+        do { editStore = try MacEditPersistence(directory: editDirectory) }
         catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
         do {
             if let job = try batchJournal.load() {

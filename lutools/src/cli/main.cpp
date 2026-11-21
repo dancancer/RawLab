@@ -182,8 +182,14 @@ OutputFormat getOutputFormat(const std::string& filename) {
 int processRequest(const sony2fuji_request& request, sony2fuji_raw_exposure_mode exposureMode) {
     sony2fuji_session* session = nullptr;
     auto status = sony2fuji_session_create(&session);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_raw_exposure_mode(session, exposureMode);
+    if (status == SONY2FUJI_STATUS_OK) {
+        const char* mode = exposureMode == SONY2FUJI_EXPOSURE_PREVIEW ? "preview"
+            : exposureMode == SONY2FUJI_EXPOSURE_SENSOR ? "sensor" : "scene";
+        const std::string recipeJson = std::string(
+            R"({"schema_version":5,"processing":{"family":"rawlab","version":1,"quality":"standard"},"input":{"path":"cli.arw","type":"raw"},"edits":{"exposure":{"mode":")") +
+            mode + R"("}},"output":{"path":"cli.jpg","format":"jpeg"}})";
+        status = sony2fuji_apply_params(session, recipeJson.c_str());
+    }
     if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session, &request, nullptr);
     sony2fuji_session_destroy(session);
     if (status != SONY2FUJI_STATUS_OK) {

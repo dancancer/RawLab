@@ -416,6 +416,7 @@
 "当前显示 SDR 兼容预览。" = "Die SDR-kompatible Vorschau wird angezeigt.";
 "当前构建未配置使用统计，未采集或上报。" = "Die Nutzungsanalyse ist in dieser Version nicht konfiguriert. Es werden keine Daten erfasst oder übermittelt.";
 "当前照片" = "Aktuelles Foto";
+"当前照片、外观或处理方式不支持强制 GPU，可切换为自动（Auto）回退。" = "GPU erzwingen ist für dieses Foto, diesen Look oder diese Verarbeitungsart nicht verfügbar. Wechseln Sie für den Fallback zu Auto.";
 "当前照片或调整记录无效，无法安全重置。" = "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.";
 "当前照片的设置尚不可用。" = "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.";
 "当前通道 %@，修改仅作用于该颜色。" = "Aktueller Kanal: %@. Änderungen gelten nur für diese Farbe.";
@@ -530,6 +531,7 @@
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法计算直方图" = "Histogramm kann nicht berechnet werden";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera.";
+"无法读取 X3F 显影模式：%@" = "X3F-Entwicklungsmodus konnte nicht gelesen werden: %@";
 "无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
 "无法读取基础曝光" = "Die Basisbelichtung kann nicht gelesen werden";
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";

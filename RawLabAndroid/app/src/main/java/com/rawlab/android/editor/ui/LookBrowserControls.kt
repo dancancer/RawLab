@@ -1,5 +1,7 @@
 package com.rawlab.android.editor.ui
 
+import com.rawlab.android.ui.AppIcons
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,7 +46,7 @@ internal fun LookBrowserControls(category: LookBrowserCategory, onCategory: (Loo
         Box(modifier) {
             TextButton({ categoryExpanded = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("looks.category")) {
                 Text(stringResource(category.title()), Modifier.weight(1f))
-                Icon(Icons.Outlined.ExpandMore, stringResource(R.string.look_category))
+                Icon(AppIcons.Outlined.ExpandMore, stringResource(R.string.look_category))
             }
             DropdownMenu(categoryExpanded, { categoryExpanded = false }) {
                 LookBrowserCategory.entries.forEach { item ->

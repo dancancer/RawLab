@@ -1,8 +1,20 @@
 package com.rawlab.android.photo
 
+import com.rawlab.android.editor.TestBitmaps
+import com.rawlab.android.editor.TestEditorApplication
+import com.rawlab.android.editor.render.EditorRenderer
+import com.rawlab.android.editor.render.HDRPreviewFrame
+import com.rawlab.android.editor.render.RenderCancellation
+import com.rawlab.android.editor.render.Work
+import com.rawlab.android.editor.render.WorkResult
+import com.rawlab.android.engine.NativeFrame
+import com.rawlab.android.engine.NativeProcessor
+import com.rawlab.android.engine.RgbHistogram
+import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.*
 import com.rawlab.android.geometry.GeometrySettings
+import android.net.TestUri
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.junit.Assert.*
@@ -158,6 +170,153 @@ class EditedPhotoPreviewTest {
             assertNull(result[1].state.settings)
         } finally { root.deleteRecursively() }
     }
+    @Test fun thumbnailPreviewSkipsNeutralReferenceRenderForSdrAndGeometryEdits() {
+        val root = Files.createTempDirectory("rawlab-thumb-sdr").toFile()
+        try {
+            val app = TestEditorApplication(root)
+            val looksDir = File(root, "looks")
+            val validator = com.rawlab.android.looks.LookValidator {
+                com.rawlab.android.engine.LookValidation(com.rawlab.android.engine.LookFormat.CUBE, 0)
+            }
+            val storage = PhotoStorage(app, looksDir, lookValidator = validator, bundledFilms = emptyList())
+            val cubeFile = File(root, "velvia-test.cube").apply {
+                writeText("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n")
+            }
+            val managedLook = com.rawlab.android.looks.LookLibrary(looksDir, validator).importLook(cubeFile)
+            val sourceFile = File(root, "photo.arw").apply { writeText("raw") }
+            val photo = ImportedPhoto(TestUri.of("/1", authority = "photos"), "photo.arw", sourceFile, inputKind = PhotoInputKind.RAW)
+            val edits = EditSettings(
+                film = managedLook.id,
+                exposure = 0.7f,
+                geometry = GeometrySettings(cropWidth = 0.8f),
+                lens = LensSettings(distortion = true),
+            )
+            val previewEdges = mutableListOf<Int>()
+            val previewLutNames = mutableListOf<String?>()
+            var neutralPreviewCalls = 0
+            val engine = object : EditorRenderer.RenderEngine {
+                override fun setGpuMode(mode: Int) = Unit
+                override fun cancellationGeneration(): Long = 0L
+                override fun cancelPreview() = Unit
+                override fun releaseRasterCache() = Unit
+                override fun preview(
+                    input: File,
+                    lut: File?,
+                    settings: EditSettings,
+                    edge: Int,
+                    interactive: Boolean,
+                    inputKind: PhotoInputKind,
+                    cancellationGeneration: Long,
+                ): NativeFrame {
+                    previewEdges += edge
+                    previewLutNames += lut?.name
+                    if (lut == null && settings.film == "neutral") neutralPreviewCalls++
+                    return NativeFrame(edge, edge, TestBitmaps.stub(), 5500f, 0f, NativeProcessor.CPU, IntArray(768))
+                }
+                override fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long) = error("unused")
+                override fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int?, inputKind: PhotoInputKind, cancellationGeneration: Long) = error("unused")
+                override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind) = error("unused")
+                override fun decodeHDRCamera(file: File, info: HDRSourceInfo, edge: Int, cancellationGeneration: Long, camera: HDRCameraDevelopmentSettings, profileDirectory: File?) = error("unused")
+                override fun renderHDR(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun sampleHDRHsl(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun estimateHDRExposure(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long) = error("unused")
+                override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun close() = Unit
+            }
+            val renderer = EditorRenderer(storage, { null }, false, engineFactory = { engine })
+            val thumbWork = EditedPhotoPreviews.thumbnailPreviewWork(photo, edits)
+            assertFalse(thumbWork.includeNeutral)
+            assertEquals(EditedPhotoPreviewKey.EDGE, thumbWork.edge)
+            val result = renderer.perform(thumbWork, RenderCancellation()) as WorkResult.Preview
+            assertEquals(0, neutralPreviewCalls)
+            assertEquals(listOf(EditedPhotoPreviewKey.EDGE), previewEdges)
+            assertSame(result.pair.result, result.pair.neutral)
+
+            // Editor path (default includeNeutral = true) still renders the 1600px neutral reference + transformed neutral.
+            previewEdges.clear()
+            renderer.perform(Work.Preview(photo, edits, false, NativeProcessor.AUTO, edge = EditedPhotoPreviewKey.EDGE), RenderCancellation())
+            assertTrue("Editor preview must render 1600px neutral reference", neutralPreviewCalls >= 1 && 1600 in previewEdges)
+            storage.close()
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun thumbnailPreviewSkipsNeutralReferenceRenderForHdr() {
+        val root = Files.createTempDirectory("rawlab-thumb-hdr").toFile()
+        try {
+            val app = TestEditorApplication(root)
+            val storage = PhotoStorage(app, File(root, "looks"), bundledFilms = Film.all.map { it.copy(file = null) })
+            val sourceFile = File(root, "photo.jpg").apply { writeText("hdr") }
+            val hdrInfo = HDRSourceInfo(
+                width = 4000,
+                height = 3000,
+                orientation = 1,
+                container = 1,
+                protocol = 1,
+                colorDescription = 1,
+                contentHeadroom = 2f,
+                headroomKind = 1,
+                fingerprint = ByteArray(32) { 1 },
+            )
+            val photo = ImportedPhoto(TestUri.of("/hdr", authority = "photos"), "photo.jpg", sourceFile, inputKind = PhotoInputKind.RASTER, hdrSource = hdrInfo)
+            val edits = EditSettings(exposure = 0.5f).withHDRMode(true, sourceIsHDR = true)
+            var neutralHdrRenderCalls = 0
+            var resultHdrRenderCalls = 0
+            val fakeHdrHandle = object : EditorRenderer.HdrImageHandle {
+                override val sourceInfo: HDRSourceInfo = hdrInfo
+                override val outputNativeWidth: Int = 4000
+                override val outputNativeHeight: Int = 3000
+                override fun snapshot(): HDRPreviewFrame = HDRPreviewFrame(
+                    2, 2, FloatArray(12), FloatArray(12), 2.0f, 2.0f, 4000, 3000,
+                )
+                override fun sdrBitmap() = TestBitmaps.stub()
+                override fun close() = Unit
+            }
+            val fakeHdrBridge = object : EditorRenderer.HdrRenderBridge {
+                override fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int): HDRSourceInfo = info
+                override fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = intArrayOf(4000, 3000)
+                override fun acquireCamera(file: File, info: HDRSourceInfo, edge: Int, camera: HDRCameraDevelopmentSettings?, lensDatabase: File?, decode: () -> EditorRenderer.HdrImageHandle) = error("unused")
+                override fun acquireGainMap(file: File, info: HDRSourceInfo, edge: Int) = object : EditorRenderer.HdrSourceHandle {
+                    override val image = fakeHdrHandle
+                    override fun close() = Unit
+                }
+                override fun decodeGainMap(file: File, info: HDRSourceInfo, edge: Int) = fakeHdrHandle
+                override fun exportJpeg(rendered: EditorRenderer.HdrImageHandle, metadataSource: File?, output: File) = Unit
+                override fun exportSdr(rendered: EditorRenderer.HdrImageHandle, metadataSource: File?, output: File, format: Int) = Unit
+                override fun clearCache() = Unit
+            }
+            val engine = object : EditorRenderer.RenderEngine {
+                override fun setGpuMode(mode: Int) = Unit
+                override fun cancellationGeneration(): Long = 0L
+                override fun cancelPreview() = Unit
+                override fun releaseRasterCache() = Unit
+                override fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, cancellationGeneration: Long) = error("unused")
+                override fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long) = error("unused")
+                override fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int?, inputKind: PhotoInputKind, cancellationGeneration: Long) = error("unused")
+                override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind) = error("unused")
+                override fun decodeHDRCamera(file: File, info: HDRSourceInfo, edge: Int, cancellationGeneration: Long, camera: HDRCameraDevelopmentSettings, profileDirectory: File?) = error("unused")
+                override fun renderHDR(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, cancellationGeneration: Long, lookDirectory: File?): EditorRenderer.HdrImageHandle {
+                    if (lookDirectory == null) neutralHdrRenderCalls++ else resultHdrRenderCalls++
+                    return fakeHdrHandle
+                }
+                override fun sampleHDRHsl(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun estimateHDRExposure(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long) = error("unused")
+                override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun close() = Unit
+            }
+            val renderer = EditorRenderer(storage, { null }, false, engineFactory = { engine }, hdrBridge = fakeHdrBridge)
+            val result = renderer.perform(EditedPhotoPreviews.thumbnailPreviewWork(photo, edits), RenderCancellation()) as WorkResult.Preview
+            assertEquals(0, neutralHdrRenderCalls)
+            assertEquals(1, resultHdrRenderCalls)
+            assertNull(result.pair.hdr)
+
+            // Editor path (includeNeutral = true) renders the neutral HDR reference too.
+            renderer.perform(Work.Preview(photo, edits, false, NativeProcessor.AUTO, edge = EditedPhotoPreviewKey.EDGE), RenderCancellation())
+            assertEquals(1, neutralHdrRenderCalls)
+            assertEquals(2, resultHdrRenderCalls)
+            storage.close()
+        } finally { root.deleteRecursively() }
+    }
+
     private fun jpegBytes(body: Int): ByteArray =
         byteArrayOf(0xFF.toByte(), 0xD8.toByte(), body.toByte(), 0xFF.toByte(), 0xD9.toByte())
 }
