@@ -60,6 +60,14 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
         new(Parameter.Sharpening,"锐化","细节",AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Max!.Value,.1,"%",1)];
 }
 
+internal readonly record struct ResolvedNativeWhiteBalance(int WbMode, float Temperature, float Tint);
+
+internal readonly record struct PreparedRecipeSettings(Adjustments Settings, ResolvedNativeWhiteBalance? WhiteBalance)
+{
+    internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null) =>
+        Settings.Request(path, lut, edge, output, longEdge, WhiteBalance);
+}
+
 public sealed class Adjustments
 {
     internal const int CurrentProRAWDecodeVersion = 2;
@@ -419,22 +427,36 @@ public sealed class Adjustments
         if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };
     }
 
-    internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null)
+    internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null, ResolvedNativeWhiteBalance? resolvedWhiteBalance = null)
     {
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
             throw new ArgumentOutOfRangeException(nameof(longEdge), Loc.Text("导出长边必须为 1-65535 像素。"));
         var limitedFinal = output != null && longEdge.HasValue;
         var scale = MasterRecipeID == null ? 1 : this[Parameter.Strength] / 100;
-        var tintOffset = MasterRecipeID == null ? 0 : this[Parameter.Tint] * scale;
-        var temperatureWb = !CameraWhiteBalance || tintOffset != 0;
-        var tint = MasterRecipeID == null ? this[Parameter.Tint] : Math.Clamp((AsShot?.Tint ?? 0) + tintOffset, -150, 150);
+        int wbMode;
+        float temperature, tint;
+        if (resolvedWhiteBalance is { } wb)
+        {
+            wbMode = wb.WbMode;
+            temperature = wb.WbMode == 3 ? wb.Temperature : 6500f;
+            tint = wb.WbMode == 3 ? wb.Tint : 0f;
+        }
+        else
+        {
+            var tintOffset = MasterRecipeID == null ? 0 : this[Parameter.Tint] * scale;
+            var temperatureWb = !CameraWhiteBalance || tintOffset != 0;
+            var effectiveTint = MasterRecipeID == null ? this[Parameter.Tint] : Math.Clamp((AsShot?.Tint ?? 0) + tintOffset, -150, 150);
+            wbMode = temperatureWb ? 3 : 0;
+            temperature = temperatureWb ? (float)this[Parameter.Temperature] : 6500f;
+            tint = temperatureWb ? (float)effectiveTint : 0f;
+        }
         return new Native.Request {
             Version=2, StructSize=(uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.Request>(), InputPath=path,
             LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength]/100,
-            WbMode=temperatureWb ? 3 : 0, Wb0=1,Wb1=1,Wb2=1,Wb3=1,
+            WbMode=wbMode, Wb0=1,Wb1=1,Wb2=1,Wb3=1,
             ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)(this[Parameter.Contrast]*scale)/100,
-            Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperatureWb ? (float)this[Parameter.Temperature] : 6500,
-            Tint=temperatureWb ? (float)tint : 0, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
+            Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperature,
+            Tint=tint, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
             Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)Math.Clamp(this[Parameter.ToneCurve]*RefinementScale,-100,100)/100,Sharpening=(float)this[Parameter.Sharpening]/100,
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
             // remains independent and is never used to size an export.

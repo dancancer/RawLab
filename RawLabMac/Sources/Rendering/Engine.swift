@@ -264,6 +264,7 @@ final class RenderEngine {
 
     var lastBackend: sony2fuji_render_backend { sony2fuji_session_get_last_backend(session) }
     var lastAIBackend: String { String(cString: sony2fuji_session_get_ai_backend(session)) }
+    var rawDecodeCount: UInt64 { sony2fuji_session_get_raw_decode_count(session) }
 
     private func validationMessage(for error: CanonicalEditRecipeError) -> String {
         switch error {
@@ -392,7 +393,8 @@ final class RenderEngine {
         guard !Self.isNormalX3f(url, settings: settings) else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
-        let settings = try resolvedSettings(url, settings: settings)
+        let resolved = try resolvedRenderSettings(url, settings: settings)
+        let settings = resolved.settings
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: false)
         try configureAI(enabled: true)
         var request = sony2fuji_request()
@@ -400,7 +402,7 @@ final class RenderEngine {
         request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
         request.input_type = SONY2FUJI_INPUT_RAW
         request.wb_mul = (1,1,1,1)
-        settings.apply(to: &request)
+        resolved.apply(to: &request)
         let context = Unmanaged.passUnretained(progress).toOpaque()
         let status = url.path.withCString { path in
             request.input_path = path
@@ -426,7 +428,8 @@ final class RenderEngine {
                     session: session, lensDatabase: lensDatabaseURL, cameraAIKey: key, processing: settings.processing.core)
             }
         }
-        let settings = try resolvedSettings(url, settings: settings)
+        let resolved = try resolvedRenderSettings(url, settings: settings)
+        let settings = resolved.settings
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: false)
         try configureAI(enabled: settings.aiDenoiseEnabled)
         var request = sony2fuji_request()
@@ -435,7 +438,7 @@ final class RenderEngine {
         request.input_type = SONY2FUJI_INPUT_RAW
         request.wb_mode = SONY2FUJI_WB_CAMERA
         request.wb_mul = (1,1,1,1)
-        settings.apply(to: &request)
+        resolved.apply(to: &request)
         request.output_target = SONY2FUJI_TARGET_BUFFER
         // 栅格测光仅采样有限像素，HDR 双图解码前也需限制尺寸。
         if Self.isRasterInput(url) {
@@ -455,12 +458,14 @@ final class RenderEngine {
         return Double(ev)
     }
 
-    func resolvedSettings(_ url: URL, settings: Adjustments) throws -> Adjustments {
+    func resolvedRenderSettings(_ url: URL, settings: Adjustments) throws -> ResolvedRenderSettings {
         if Self.isRasterInput(url) {
             // 批量可混合两类输入；相机专属状态不解释成普通图像的 RGB 白平衡或镜头参数。
-            return settings.resolvedForRaster
+            return ResolvedRenderSettings(settings: settings.resolvedForRaster, whiteBalance: nil)
         }
-        guard settings.masterRecipe != nil else { return settings }
+        guard settings.masterRecipe != nil else {
+            return ResolvedRenderSettings(settings: settings, whiteBalance: nil)
+        }
         var settings = settings
         var req = sony2fuji_recipe_wb_request()
         req.version = SONY2FUJI_RECIPE_WB_REQUEST_VERSION
@@ -489,7 +494,16 @@ final class RenderEngine {
                 WhiteBalance(temperature: Double(res.camera_temperature), tint: Double(res.camera_tint))
             )
         }
-        return settings
+        let whiteBalance = ResolvedNativeWhiteBalance(
+            wbMode: res.wb_mode,
+            temperature: res.wb_mode == SONY2FUJI_WB_TEMPERATURE ? res.temperature : 6500,
+            tint: res.wb_mode == SONY2FUJI_WB_TEMPERATURE ? res.tint : 0
+        )
+        return ResolvedRenderSettings(settings: settings, whiteBalance: whiteBalance)
+    }
+
+    func resolvedSettings(_ url: URL, settings: Adjustments) throws -> Adjustments {
+        try resolvedRenderSettings(url, settings: settings).settings
     }
 
     private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
@@ -498,7 +512,8 @@ final class RenderEngine {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
-        let settings = try resolvedSettings(url, settings: settings)
+        let resolved = try resolvedRenderSettings(url, settings: settings)
+        let settings = resolved.settings
         if settings.aiDenoiseEnabled && Self.isRasterInput(url) {
             throw RenderError.failed(L10n.text("AI 降噪仅支持 RAW 照片。"))
         }
@@ -520,7 +535,7 @@ final class RenderEngine {
         request.input_type = SONY2FUJI_INPUT_RAW
         request.wb_mode = SONY2FUJI_WB_CAMERA
         request.wb_mul = (1,1,1,1)
-        settings.apply(to: &request)
+        resolved.apply(to: &request)
         request.lut_strength = lut == nil ? 0 : Float(settings.strength)
         request.intent = edge == nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW
         request.size_mode = SONY2FUJI_SIZE_NATIVE

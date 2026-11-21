@@ -10,9 +10,10 @@ internal static class AgentRecipeTestTool
     internal static string AgentRecipe(this RenderEngine engine,string path,Adjustments settings,string? look,string output,int? longEdge=null)
     {
         if(settings.AIDenoiseEnabled)throw new NotSupportedException(Loc.Text("Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。"));
-        var state=engine.PrepareRecipe(path,settings);
+        var prepared=engine.PrepareRecipe(path,settings);
+        var state=prepared.Settings;
         var raster=LibraryEntry.IsRaster(path);
-        var request=state.Request(path,look,0,output,longEdge);
+        var request=prepared.Request(path,look,0,output,longEdge);
         var hsl=state.RenderHsl.NativeConfig();var effects=state.Effects.NativeConfig();
         var denoise=state.Denoise.NativeConfig();var geometry=state.Geometry.NativeConfig();
         var perspective=state.Geometry.NativePerspectiveConfig();
