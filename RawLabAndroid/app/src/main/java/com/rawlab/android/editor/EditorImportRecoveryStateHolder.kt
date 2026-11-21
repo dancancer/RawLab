@@ -130,6 +130,7 @@ internal class EditorImportRecoveryStateHolder(
         // Successful import publishes B and B's receipt together in accept().
         mutable.value = mutable.value.copy(
             operation = Operation.IMPORT,
+            exportStep = SingleExportStep.NONE,
             rendering = true,
             error = null,
             retryLegacyX3f = false,

@@ -268,7 +268,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     BackHandler(enabled = toolOpen) { leave { toolOpen = false } }
-    BackHandler(enabled = state.operation == Operation.EXPORT, onBack = onCancelExport)
+    BackHandler(enabled = state.operation == Operation.PREPARE_EXPORT || state.operation == Operation.EXPORT, onBack = onCancelExport)
     BackHandler(enabled = state.importingHDRLook, onBack = onCancelHDRLookImport)
     if (pendingLeave != null) AlertDialog(onDismissRequest = { cancelLeave() },
         title = { Text(stringResource(R.string.adjustment_leave)) },

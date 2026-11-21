@@ -13,6 +13,7 @@ import com.rawlab.android.editor.EditorState
 import com.rawlab.android.editor.EditorStateReducer
 import com.rawlab.android.editor.ExportSubmission
 import com.rawlab.android.editor.Operation
+import com.rawlab.android.editor.SingleExportStep
 import com.rawlab.android.editor.prepareExportSubmission
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.ExportDestinationDeleter
@@ -465,10 +466,20 @@ class ExportCancellationTest {
                 invalidSizeDest, ExportFormat.PNG, 0, 0, cleanup,
             ) as ExportSubmission.Rejected
             assertEquals(Operation.NONE, invalidSizeResult.state.operation)
+            assertEquals(SingleExportStep.NONE, invalidSizeResult.state.exportStep)
             assertEquals(R.string.output_size_error, invalidSizeResult.errorKey)
             assertTrue(invalidSizeResult.refreshPreviewSize)
             assertEquals(listOf(invalidSizeDest to sourceUri), deleted)
             deleted.clear()
+
+            // 4b. DNG gallery submission rejects and clears exportStep.
+            val dngGalleryResult = prepareExportSubmission(
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT, exportStep = SingleExportStep.OPTIONS),
+                null, ExportFormat.DNG, null, 0, cleanup,
+            ) as ExportSubmission.Rejected
+            assertEquals(Operation.NONE, dngGalleryResult.state.operation)
+            assertEquals(SingleExportStep.NONE, dngGalleryResult.state.exportStep)
+            assertEquals(R.string.dng_file_only, dngGalleryResult.errorKey)
 
             // 5. Source URI passed as destination must never be deleted even on validation failure.
             val rejectedSameSource = prepareExportSubmission(
@@ -478,13 +489,15 @@ class ExportCancellationTest {
             assertTrue(rejectedSameSource is ExportSubmission.Rejected)
             assertTrue("Source URI must never be deleted", deleted.isEmpty())
 
-            // 6. Valid submission transitions to EXPORT without deleting destination.
+            // 6. Valid submission from PICKING_DESTINATION transitions to EXPORT + WRITING without deleting destination.
             val validDest = TestUri.of("/Downloads/valid.dng")
             val ready = prepareExportSubmission(
-                EditorState(photo = photo, operation = Operation.PICK_EXPORT),
+                EditorState(photo = photo, operation = Operation.PICK_EXPORT, exportStep = SingleExportStep.PICKING_DESTINATION),
                 validDest, ExportFormat.DNG, 1024, 0, cleanup,
             ) as ExportSubmission.Ready
             assertEquals(Operation.EXPORT, ready.state.operation)
+            assertEquals(SingleExportStep.WRITING, ready.state.exportStep)
+            assertFalse(ready.state.exportOptionsVisible)
             assertEquals(validDest, ready.work.destination)
             assertTrue(deleted.isEmpty())
         } finally {

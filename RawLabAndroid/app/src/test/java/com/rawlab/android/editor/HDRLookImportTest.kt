@@ -63,10 +63,17 @@ class HDRLookImportTest {
     }
 
     @Test fun finishingLeavesAnotherOwnersOperationUntouched() {
-        val exporting = importing.copy(operation = Operation.EXPORT)
+        val exporting = importing.copy(operation = Operation.EXPORT, exportStep = SingleExportStep.WRITING)
         val finished = EditorStateReducer.hdrLookImportFinished(exporting,
             Result.failure<Unit>(CancellationException()), "cancelled", "unavailable")
         assertEquals(Operation.EXPORT, finished.operation)
+        assertEquals(SingleExportStep.WRITING, finished.exportStep)
         assertFalse(finished.importingHDRLook)
+
+        val staleImport = importing.copy(exportStep = SingleExportStep.OPTIONS)
+        val cleared = EditorStateReducer.hdrLookImportFinished(staleImport,
+            Result.success(EditSettings()), "cancelled", "unavailable")
+        assertEquals(Operation.NONE, cleared.operation)
+        assertEquals(SingleExportStep.NONE, cleared.exportStep)
     }
 }

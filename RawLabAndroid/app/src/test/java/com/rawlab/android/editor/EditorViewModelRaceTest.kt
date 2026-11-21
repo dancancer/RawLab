@@ -22,11 +22,14 @@ import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.HslTargetSample
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.ProcessingIdentity
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -533,6 +536,186 @@ class EditorViewModelRaceTest {
                 assertFalse("Owned copy is deleted once commit releases", ownedCopy.exists())
             } finally {
                 releaseCommit.countDown()
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun beginExportTracksPrepareStepAndSurvivesCollectorRecreationAndDestinationPick() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("export-step-recreate.raw")
+            val holdPersist = AtomicBoolean(false)
+            val persistEntered = CountDownLatch(1)
+            val releasePersist = CountDownLatch(1)
+            val model = harness.createViewModel(
+                sourceValidator = { photo ->
+                    {
+                        check(photo.file.isFile)
+                        if (holdPersist.get()) {
+                            persistEntered.countDown()
+                            check(releasePersist.await(5, TimeUnit.SECONDS))
+                        }
+                    }
+                },
+            )
+            var collectorJob: kotlinx.coroutines.Job? = null
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                holdPersist.set(true)
+                val completedLatch = CountDownLatch(1)
+                val completedResult = AtomicBoolean(false)
+                harness.onMain {
+                    model.beginExport {
+                        completedResult.set(it)
+                        completedLatch.countDown()
+                    }
+                    val preparing = model.state.value
+                    assertEquals(Operation.PREPARE_EXPORT, preparing.operation)
+                    assertEquals(SingleExportStep.PREPARING, preparing.exportStep)
+                    assertFalse(preparing.exportOptionsVisible)
+                    assertFalse(preparing.canExport)
+                }
+                assertTrue(persistEntered.await(5, TimeUnit.SECONDS))
+
+                // Simulate recreated UI subscribing after beginExport() started but before onPersist finishes.
+                val freshObserved = CopyOnWriteArrayList<EditorState>()
+                val sawPreparing = CountDownLatch(1)
+                val sawOptions = CountDownLatch(1)
+                harness.onMain {
+                    collectorJob = harness.scope.launch {
+                        model.state.collect { snapshot ->
+                            freshObserved += snapshot
+                            if (snapshot.operation == Operation.PREPARE_EXPORT &&
+                                snapshot.exportStep == SingleExportStep.PREPARING &&
+                                !snapshot.exportOptionsVisible
+                            ) {
+                                sawPreparing.countDown()
+                            }
+                            if (snapshot.operation == Operation.PICK_EXPORT &&
+                                snapshot.exportStep == SingleExportStep.OPTIONS &&
+                                snapshot.exportOptionsVisible
+                            ) {
+                                sawOptions.countDown()
+                            }
+                        }
+                    }
+                }
+                assertTrue(sawPreparing.await(5, TimeUnit.SECONDS))
+
+                releasePersist.countDown()
+                assertTrue(completedLatch.await(5, TimeUnit.SECONDS))
+                assertTrue(completedResult.get())
+                assertTrue(sawOptions.await(5, TimeUnit.SECONDS))
+                assertTrue(freshObserved.last().exportOptionsVisible)
+
+                harness.onMain {
+                    model.beginExportDestinationPick()
+                    val picking = model.state.value
+                    assertEquals(Operation.PICK_EXPORT, picking.operation)
+                    assertEquals(SingleExportStep.PICKING_DESTINATION, picking.exportStep)
+                    assertFalse(picking.exportOptionsVisible)
+                }
+
+                harness.onMain {
+                    model.returnToExportOptions()
+                    val restored = model.state.value
+                    assertEquals(Operation.PICK_EXPORT, restored.operation)
+                    assertEquals(SingleExportStep.OPTIONS, restored.exportStep)
+                    assertTrue(restored.exportOptionsVisible)
+                }
+
+                harness.onMain {
+                    model.cancelExport()
+                    val cancelled = model.state.value
+                    assertEquals(Operation.NONE, cancelled.operation)
+                    assertEquals(SingleExportStep.NONE, cancelled.exportStep)
+                    assertFalse(cancelled.exportOptionsVisible)
+                }
+            } finally {
+                collectorJob?.cancel()
+                releasePersist.countDown()
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun cancelDuringPrepareExportInvalidatesInFlightPersistAndFailureResetsStep() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("export-prepare-cancel.raw")
+            val holdPersist = AtomicBoolean(false)
+            val failPersist = AtomicBoolean(false)
+            val persistEntered = CountDownLatch(1)
+            val releasePersist = CountDownLatch(1)
+            val model = harness.createViewModel(
+                sourceValidator = { photo ->
+                    {
+                        check(photo.file.isFile)
+                        if (holdPersist.get()) {
+                            persistEntered.countDown()
+                            check(releasePersist.await(5, TimeUnit.SECONDS))
+                        }
+                        if (failPersist.get()) throw IOException("disk full")
+                    }
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                holdPersist.set(true)
+                val cancelledLatch = CountDownLatch(1)
+                val cancelledResult = AtomicBoolean(true)
+                harness.onMain {
+                    model.beginExport {
+                        cancelledResult.set(it)
+                        cancelledLatch.countDown()
+                    }
+                    assertEquals(Operation.PREPARE_EXPORT, model.state.value.operation)
+                    assertEquals(SingleExportStep.PREPARING, model.state.value.exportStep)
+                }
+                assertTrue(persistEntered.await(5, TimeUnit.SECONDS))
+
+                harness.onMain {
+                    model.cancelExport()
+                    assertEquals(Operation.NONE, model.state.value.operation)
+                    assertEquals(SingleExportStep.NONE, model.state.value.exportStep)
+                    assertFalse(model.state.value.exportOptionsVisible)
+                }
+
+                releasePersist.countDown()
+                assertTrue(cancelledLatch.await(5, TimeUnit.SECONDS))
+                assertFalse(cancelledResult.get())
+                harness.awaitState(model) { !it.committingAdjustments }
+                harness.drainMain()
+                assertEquals(Operation.NONE, model.state.value.operation)
+                assertEquals(SingleExportStep.NONE, model.state.value.exportStep)
+                assertFalse(model.state.value.exportOptionsVisible)
+                assertTrue(model.state.value.canExport)
+
+                // A persist failure during PREPARE_EXPORT resets operation & exportStep and surfaces saveError.
+                holdPersist.set(false)
+                failPersist.set(true)
+                val failedLatch = CountDownLatch(1)
+                val failedResult = AtomicBoolean(true)
+                harness.onMain {
+                    model.beginExport {
+                        failedResult.set(it)
+                        failedLatch.countDown()
+                    }
+                }
+                assertTrue(failedLatch.await(5, TimeUnit.SECONDS))
+                assertFalse(failedResult.get())
+                val failedState = model.state.value
+                assertEquals(Operation.NONE, failedState.operation)
+                assertEquals(SingleExportStep.NONE, failedState.exportStep)
+                assertFalse(failedState.exportOptionsVisible)
+                assertEquals(EditSaveState.FAILED, failedState.saveState)
+                assertNotNull(failedState.saveError)
+                assertFalse(failedState.canExport)
+            } finally {
+                releasePersist.countDown()
                 harness.onMain { model.clearForTest() }
             }
         }

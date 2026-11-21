@@ -281,6 +281,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
         hdrCameraProfileImporter: (Uri) -> HDRCameraProfile = { throw UnsupportedOperationException() },
         previewResizeDelayMs: Long = 50L,
         saveNoticeFadeDelayMs: Long = 5_000L,
+        sourceValidator: (ImportedPhoto) -> () -> Unit = { photo -> { check(photo.file.isFile) } },
     ): EditorDependencies {
         val editStore = EditorEditStore(File(app.filesDirectory, "edits"), editStoreFactory)
         val draftStore = EditorDraftStore(File(app.filesDirectory, "editor-draft"))
@@ -326,7 +327,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
             uncroppedGeometrySize = { pair, _ -> pair.nativeWidth to pair.nativeHeight },
             previewResizedDelayMs = previewResizeDelayMs,
             saveNoticeFadeDelayMs = saveNoticeFadeDelayMs,
-            sourceValidator = { photo -> { check(photo.file.isFile) } },
+            sourceValidator = sourceValidator,
             parseSystemPhotoUri = { raw ->
                 val parsed = java.net.URI(raw)
                 TestUri.of(parsed.path ?: raw, scheme = parsed.scheme ?: "file", authority = parsed.authority ?: "")
@@ -374,6 +375,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
         hdrLookImporter: (Uri) -> HDRLookSettings = { throw UnsupportedOperationException() },
         hdrCameraProfileImporter: (Uri) -> HDRCameraProfile = { throw UnsupportedOperationException() },
         previewResizeDelayMs: Long = 50L,
+        sourceValidator: (ImportedPhoto) -> () -> Unit = { photo -> { check(photo.file.isFile) } },
     ): EditorViewModel = onMain {
         EditorViewModel(
             app,
@@ -387,6 +389,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
                 hdrLookImporter = hdrLookImporter,
                 hdrCameraProfileImporter = hdrCameraProfileImporter,
                 previewResizeDelayMs = previewResizeDelayMs,
+                sourceValidator = sourceValidator,
             ),
         )
     }
