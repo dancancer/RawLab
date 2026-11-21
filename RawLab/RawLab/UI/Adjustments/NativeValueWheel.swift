@@ -35,6 +35,7 @@ struct NativeValueWheel: View {
 
     private var rangeLabel: String {
         "\(L10n.text("范围")) \(formatter(scale.range.lowerBound)) – \(formatter(scale.range.upperBound)) \(unit)"
+            .trimmingCharacters(in: .whitespaces)
     }
 
     private var popoverHeight: CGFloat? {
@@ -59,20 +60,29 @@ struct NativeValueWheel: View {
                     HStack(spacing: 24) {
                         ScrollView {
                             valueContext
-                                .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                         }
                         .frame(width: geometry.size.width * 0.44)
                         VStack(spacing: 8) {
                             picker
                             defaultButton
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 8) {
-                        valueContext
+                        ViewThatFits(in: .vertical) {
+                            valueContext
+                            ScrollView {
+                                valueContext
+                            }
+                        }
+                        .layoutPriority(1)
                         picker
                         defaultButton
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -92,30 +102,34 @@ struct NativeValueWheel: View {
                 .accessibilityIdentifier("adjustment.wheel.title")
             Text("\(formatter(draft)) \(unit)".trimmingCharacters(in: .whitespaces))
                 .font(.body).monospacedDigit()
-                .accessibilityLabel("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)")
+                .accessibilityLabel("\(L10n.text("临时选择")) \(formatter(draft)) \(unit)".trimmingCharacters(in: .whitespaces))
                 .accessibilityIdentifier("adjustment.wheel.draft")
             Text(help.isEmpty ? rangeLabel : help).font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("adjustment.wheel.range")
         }
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
     }
 
     private var picker: some View {
-        WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
-            .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 100 : 200,
-                   maxHeight: dynamicTypeSize.isAccessibilitySize ? 264 : 220)
-            .frame(maxHeight: .infinity)
+        let minHeight: CGFloat = dynamicTypeSize.isAccessibilitySize ? 100 : 200
+        let maxHeight: CGFloat = dynamicTypeSize.isAccessibilitySize ? 264 : 220
+        return WholeValuePicker(value: $draft, values: values, title: title, unit: unit, formatter: formatter)
+            .frame(maxWidth: .infinity, minHeight: minHeight, idealHeight: maxHeight, maxHeight: maxHeight)
     }
 
     @ViewBuilder
     private var defaultButton: some View {
         if let defaultValue {
-            Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)") { draft = defaultValue }
-                .font(.caption)
-                .frame(minHeight: 44)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("adjustment.wheel.default")
+            Button("\(L10n.text("默认")) \(formatter(defaultValue)) \(unit)".trimmingCharacters(in: .whitespaces)) {
+                draft = defaultValue
+            }
+            .font(.caption)
+            .frame(minHeight: 44)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+            .accessibilityIdentifier("adjustment.wheel.default")
         }
     }
 }
@@ -186,28 +200,95 @@ private struct WholeValuePicker: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> UIPickerView {
-        let picker = UIPickerView()
+    func makeUIView(context: Context) -> PickerContainerView {
+        let container = PickerContainerView()
+        let picker = container.picker
         picker.dataSource = context.coordinator
         picker.delegate = context.coordinator
         picker.accessibilityIdentifier = "adjustment.wheel"
         picker.accessibilityLabel = title
-        return picker
+        let coordinator = context.coordinator
+        picker.onWidthChange = { [weak picker, weak coordinator] in
+            guard let picker, let coordinator else { return }
+            coordinator.syncSelection(in: picker)
+        }
+        return container
     }
 
-    func updateUIView(_ picker: UIPickerView, context: Context) {
+    func updateUIView(_ container: PickerContainerView, context: Context) {
+        let picker = container.picker
         let changed = context.coordinator.parent.values != values
         context.coordinator.parent = self
         if changed { picker.reloadAllComponents() }
-        let index = values.indices.min { abs(values[$0] - value) < abs(values[$1] - value) } ?? 0
-        if picker.selectedRow(inComponent: 0) != index { picker.selectRow(index, inComponent: 0, animated: false) }
+        context.coordinator.syncSelection(in: picker)
         picker.accessibilityLabel = title
         picker.accessibilityValue = "\(formatter(value)) \(unit)".trimmingCharacters(in: .whitespaces)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: PickerContainerView, context: Context) -> CGSize {
+        let intrinsic = uiView.picker.intrinsicContentSize
+        let fallbackWidth = intrinsic.width > 0 ? intrinsic.width : 320
+        let fallbackHeight = intrinsic.height > 0 ? intrinsic.height : 216
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? fallbackWidth
+        let height = proposal.height.flatMap { $0.isFinite ? $0 : nil } ?? fallbackHeight
+        return CGSize(width: max(0, width), height: max(0, height))
+    }
+
+    final class PickerContainerView: UIView {
+        let picker = SizingPickerView()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            clipsToBounds = true
+            setContentHuggingPriority(.defaultLow, for: .horizontal)
+            setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            setContentHuggingPriority(.defaultLow, for: .vertical)
+            setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+            addSubview(picker)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let targetHeight = max(bounds.height, 162)
+            picker.frame = CGRect(
+                x: 0,
+                y: (bounds.height - targetHeight) / 2,
+                width: bounds.width,
+                height: targetHeight
+            )
+        }
+    }
+
+    final class SizingPickerView: UIPickerView {
+        var onWidthChange: (() -> Void)?
+        private var lastWidth: CGFloat = 0
+
+        override func layoutSubviews() {
+            if bounds.width > 0 && abs(bounds.width - lastWidth) > 0.5 {
+                lastWidth = bounds.width
+                reloadAllComponents()
+                onWidthChange?()
+            }
+            super.layoutSubviews()
+        }
     }
 
     final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
         var parent: WholeValuePicker
         init(_ parent: WholeValuePicker) { self.parent = parent }
+
+        func syncSelection(in pickerView: UIPickerView) {
+            guard !parent.values.isEmpty else { return }
+            let index = parent.values.indices.min {
+                abs(parent.values[$0] - parent.value) < abs(parent.values[$1] - parent.value)
+            } ?? 0
+            if pickerView.selectedRow(inComponent: 0) != index {
+                pickerView.selectRow(index, inComponent: 0, animated: false)
+            }
+        }
 
         func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
         func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int { parent.values.count }

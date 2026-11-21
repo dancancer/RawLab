@@ -588,6 +588,7 @@ local/pre-release integration harnesses:
   `RawLab/tests/hdr-processing.sh`,
   `RawLab/tests/hdr-sdr-preview.sh`,
   `RawLab/tests/import-state.sh`, `RawLab/tests/lens-dng-export.sh`,
+  `RawLab/tests/native-value-wheel-layout.sh`,
   `RawLab/tests/photo-entry.sh`,
   `RawLab/tests/preview-performance.sh`, `RawLab/tests/processor-export.sh`,
   `RawLab/tests/raster-export.sh`, `RawLab/tests/raw-import-history.sh`,

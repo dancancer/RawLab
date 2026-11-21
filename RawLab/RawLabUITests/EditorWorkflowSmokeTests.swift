@@ -70,9 +70,22 @@ final class EditorWorkflowSmokeTests: XCTestCase {
         let value = editor.app.buttons["adjustment.value"]
         XCTAssertTrue(value.waitForExistence(timeout: 5), editor.app.debugDescription)
         value.tap()
+        let cancelWheel = editor.app.buttons["adjustment.wheel.cancel"]
         let applyWheel = editor.app.buttons["adjustment.wheel.apply"]
         XCTAssertTrue(applyWheel.waitForExistence(timeout: 5), editor.app.debugDescription)
-        editor.app.buttons["adjustment.wheel.default"].tap()
+        XCTAssertTrue(cancelWheel.waitForExistence(timeout: 5), editor.app.debugDescription)
+        let title = editor.app.staticTexts["adjustment.wheel.title"]
+        let draft = editor.app.staticTexts["adjustment.wheel.draft"]
+        let wheel = editor.app.descendants(matching: .any)["adjustment.wheel"].firstMatch
+        let defaultButton = editor.app.buttons["adjustment.wheel.default"]
+        if wheel.exists && title.exists && wheel.frame.minY >= title.frame.maxY {
+            let headerMidX = (cancelWheel.frame.minX + applyWheel.frame.maxX) / 2
+            for element in [title, draft, wheel, defaultButton] where element.exists {
+                XCTAssertEqual(element.frame.midX, headerMidX, accuracy: 4.0,
+                               "Expected \(element.identifier) to be horizontally centered")
+            }
+        }
+        defaultButton.tap()
         applyWheel.tap()
         editor.waitForCondition(timeout: 5) { !applyWheel.exists }
         editor.cancelDraft()
