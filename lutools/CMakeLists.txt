@@ -13,6 +13,57 @@ option(BUILD_EXAMPLES "Build examples" OFF)
 include(CTest)
 include(cmake/x3f.cmake)
 include(cmake/rawlab_add_test.cmake)
+if(NOT COMMAND _rawlab_add_test)
+    function(rawlab_add_test)
+        set(_rawlab_fwd "")
+        if(ARGC GREATER 0)
+            math(EXPR _rawlab_last_arg "${ARGC} - 1")
+            foreach(_rawlab_idx RANGE 0 ${_rawlab_last_arg})
+                string(APPEND _rawlab_fwd " \"\${ARGV${_rawlab_idx}}\"")
+            endforeach()
+        endif()
+        cmake_language(EVAL CODE "_rawlab_add_test(${_rawlab_fwd})")
+
+        set(_rawlab_options)
+        set(_rawlab_one_value NAME TARGET SKIP_RETURN_CODE)
+        set(_rawlab_multi_value
+            SOURCES COMMAND ARGS INCLUDES INCLUDES_BEFORE
+            LIBRARIES DEFINES COMPILE_OPTIONS LINK_OPTIONS
+            LABELS ENVIRONMENT
+        )
+        cmake_parse_arguments(PARSE_ARGV 0 _RAWLAB_ARG "${_rawlab_options}" "${_rawlab_one_value}" "${_rawlab_multi_value}")
+
+        set(_rawlab_targets)
+        if(_RAWLAB_ARG_SOURCES)
+            if(_RAWLAB_ARG_TARGET)
+                list(APPEND _rawlab_targets "${_RAWLAB_ARG_TARGET}")
+            elseif(_RAWLAB_ARG_NAME)
+                list(APPEND _rawlab_targets "${_RAWLAB_ARG_NAME}_tests")
+            endif()
+        endif()
+        if(_RAWLAB_ARG_COMMAND)
+            list(GET _RAWLAB_ARG_COMMAND 0 _rawlab_cmd_head)
+            if(TARGET "${_rawlab_cmd_head}")
+                list(APPEND _rawlab_targets "${_rawlab_cmd_head}")
+            endif()
+            foreach(_rawlab_tok IN LISTS _RAWLAB_ARG_COMMAND _RAWLAB_ARG_ARGS)
+                if(_rawlab_tok MATCHES "\\$<TARGET_FILE:([^>]+)>")
+                    if(TARGET "${CMAKE_MATCH_1}")
+                        list(APPEND _rawlab_targets "${CMAKE_MATCH_1}")
+                    endif()
+                endif()
+            endforeach()
+        endif()
+        foreach(_rawlab_tgt IN LISTS _rawlab_targets)
+            if(TARGET "${_rawlab_tgt}")
+                get_target_property(_rawlab_tgt_type "${_rawlab_tgt}" TYPE)
+                if(_rawlab_tgt_type STREQUAL "EXECUTABLE")
+                    set_property(GLOBAL APPEND PROPERTY RAWLAB_REGISTERED_TEST_TARGETS "${_rawlab_tgt}")
+                endif()
+            endif()
+        endforeach()
+    endfunction()
+endif()
 
 # 依赖库查找
 find_package(PkgConfig)
@@ -168,6 +219,7 @@ set(CORE_SOURCES
     src/core/photo_effects.cpp
     src/core/photo_geometry.cpp
     src/core/hdr_rendering.cpp
+    src/core/hdr_pipeline.cpp
     src/core/hdr_detail.cpp
     src/core/hdr_look.cpp
     src/core/photo_color.cpp
@@ -2045,6 +2097,16 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
 endif()
 
 include(cmake/ai-denoise.cmake)
+
+if(BUILD_TESTING)
+    get_property(_rawlab_registered_test_targets GLOBAL PROPERTY RAWLAB_REGISTERED_TEST_TARGETS)
+    if(_rawlab_registered_test_targets)
+        list(REMOVE_DUPLICATES _rawlab_registered_test_targets)
+        add_custom_target(rawlab_test_binaries DEPENDS ${_rawlab_registered_test_targets})
+    else()
+        add_custom_target(rawlab_test_binaries)
+    endif()
+endif()
 
 # 安装规则
 install(TARGETS sony2fuji_core

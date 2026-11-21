@@ -168,9 +168,12 @@ sony2fuji::EditRecipe parseAndResolveRecipe(
     requirePass(sony2fuji::serializeEditRecipe(roundTripped) == normalized,
         caseEntry.at("name").get<std::string>() + " canonical normalization stable");
 
+    const std::filesystem::path baseDir = std::filesystem::absolute(fixtureDir).lexically_normal();
     auto resolve = [&](std::string& value) {
         if (!value.empty()) {
-            value = (fixtureDir / std::filesystem::u8path(value)).lexically_normal().u8string();
+            value = (baseDir / std::filesystem::u8path(value)).lexically_normal().u8string();
+            requirePass(std::filesystem::u8path(value).is_absolute(),
+                caseEntry.at("name").get<std::string>() + " resolved absolute path");
         }
     };
     resolve(recipe.inputPath);
@@ -179,10 +182,60 @@ sony2fuji::EditRecipe parseAndResolveRecipe(
     return recipe;
 }
 
-sony2fuji_status executeRecipeRender(
+sony2fuji_status applyLegacySessionSetters(
+    sony2fuji_session* session,
+    const sony2fuji::EditRecipe& recipe
+) {
+    sony2fuji_status status = sony2fuji_session_set_processing_version(session, recipe.processingVersion);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_x3f_mode(session, recipe.x3fMode);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_raw_exposure_mode(session, recipe.exposureMode);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_hsl(session, &recipe.hsl);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_tone_controls(session, &recipe.toneControls);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_atmosphere(session, &recipe.atmosphere);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_color_grading(session, &recipe.colorGrading);
+    if (status == SONY2FUJI_STATUS_OK) {
+        const sony2fuji_tone_curve_set_config curves{
+            SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION,
+            sizeof(curves),
+            {recipe.toneCurve, recipe.channelCurves[0], recipe.channelCurves[1], recipe.channelCurves[2]}
+        };
+        status = sony2fuji_session_set_tone_curves(session, &curves);
+    }
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_photo_effects(session, &recipe.effects);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_wavelet_denoise(session, &recipe.wavelet);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_chroma_denoise(session, recipe.chromaDenoise);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_raw_noise_reduction(session, recipe.rawNoiseReduction);
+
+    sony2fuji_lens_correction_config_v2 lens{
+        {SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION, sizeof(sony2fuji_lens_correction_config_v2),
+         recipe.lensDistortion, recipe.lensTca, recipe.lensAutoCrop,
+         recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()},
+        recipe.lensVignetting
+    };
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_lens_correction_v2(session, &lens);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_geometry(session, &recipe.geometry);
+    if (status == SONY2FUJI_STATUS_OK)
+        status = sony2fuji_session_set_perspective(session, &recipe.perspective);
+    return status;
+}
+
+sony2fuji_status executeRecipeRenderImpl(
     const sony2fuji::EditRecipe& recipe,
     const std::string& lensDbPath,
     sony2fuji_gpu_mode gpuMode,
+    bool useLegacySetters,
     RenderedImage& out
 ) {
     sony2fuji_session* rawSession = nullptr;
@@ -193,51 +246,16 @@ sony2fuji_status executeRecipeRender(
 
     const sony2fuji_gpu_config gpuConfig{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpuConfig), gpuMode};
     status = sony2fuji_session_set_gpu_config(session.get(), &gpuConfig);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_processing_version(session.get(), recipe.processingVersion);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_x3f_mode(session.get(), recipe.x3fMode);
     if (status == SONY2FUJI_STATUS_OK && !lensDbPath.empty())
         status = sony2fuji_session_set_lens_database(session.get(), lensDbPath.c_str());
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_raw_exposure_mode(session.get(), recipe.exposureMode);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_hsl(session.get(), &recipe.hsl);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_tone_controls(session.get(), &recipe.toneControls);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_atmosphere(session.get(), &recipe.atmosphere);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_color_grading(session.get(), &recipe.colorGrading);
     if (status == SONY2FUJI_STATUS_OK) {
-        const sony2fuji_tone_curve_set_config curves{
-            SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION,
-            sizeof(curves),
-            {recipe.toneCurve, recipe.channelCurves[0], recipe.channelCurves[1], recipe.channelCurves[2]}
-        };
-        status = sony2fuji_session_set_tone_curves(session.get(), &curves);
+        if (useLegacySetters) {
+            status = applyLegacySessionSetters(session.get(), recipe);
+        } else {
+            const std::string canonicalJson = sony2fuji::serializeEditRecipe(recipe);
+            status = sony2fuji_apply_params(session.get(), canonicalJson.c_str());
+        }
     }
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_photo_effects(session.get(), &recipe.effects);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_wavelet_denoise(session.get(), &recipe.wavelet);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_chroma_denoise(session.get(), recipe.chromaDenoise);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_raw_noise_reduction(session.get(), recipe.rawNoiseReduction);
-
-    sony2fuji_lens_correction_config_v2 lens{
-        {SONY2FUJI_LENS_CORRECTION_CONFIG_V2_VERSION, sizeof(sony2fuji_lens_correction_config_v2),
-         recipe.lensDistortion, recipe.lensTca, recipe.lensAutoCrop,
-         recipe.lensProfileId.empty() ? nullptr : recipe.lensProfileId.c_str()},
-        recipe.lensVignetting
-    };
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_lens_correction_v2(session.get(), &lens);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_geometry(session.get(), &recipe.geometry);
-    if (status == SONY2FUJI_STATUS_OK)
-        status = sony2fuji_session_set_perspective(session.get(), &recipe.perspective);
     if (status != SONY2FUJI_STATUS_OK) return status;
 
     auto request = recipe.toRequest();
@@ -281,6 +299,24 @@ sony2fuji_status executeRecipeRender(
             sony2fuji_session_get_lens_report_v2(session.get(), &out.lensReport) == SONY2FUJI_STATUS_OK;
     }
     return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status executeRecipeRender(
+    const sony2fuji::EditRecipe& recipe,
+    const std::string& lensDbPath,
+    sony2fuji_gpu_mode gpuMode,
+    RenderedImage& out
+) {
+    return executeRecipeRenderImpl(recipe, lensDbPath, gpuMode, false, out);
+}
+
+sony2fuji_status executeRecipeRenderLegacySetters(
+    const sony2fuji::EditRecipe& recipe,
+    const std::string& lensDbPath,
+    sony2fuji_gpu_mode gpuMode,
+    RenderedImage& out
+) {
+    return executeRecipeRenderImpl(recipe, lensDbPath, gpuMode, true, out);
 }
 
 void verifyAgainstGolden(
@@ -371,6 +407,16 @@ int runCpuTests(const std::filesystem::path& fixtureDir) {
         const auto m2 = computeMetrics(run2);
         checkPass(m1.fnv1a64 == m2.fnv1a64 && run1.rgb == run2.rgb,
             name + " CPU run-to-run bit-exact reproducibility (" + m1.fnv1a64 + ")");
+
+        // Keep one-for-one parity between production sony2fuji_apply_params and frozen legacy setters
+        // so both the canonical JSON apply path and the W2-2 compatibility wrappers stay guarded.
+        RenderedImage legacyRun;
+        requirePass(executeRecipeRenderLegacySetters(recipe, lensDb, SONY2FUJI_GPU_OFF, legacyRun) == SONY2FUJI_STATUS_OK,
+            name + " CPU legacy setter parity render succeeds");
+        requirePass(legacyRun.backend == SONY2FUJI_BACKEND_CPU,
+            name + " CPU legacy setter parity reports CPU backend");
+        checkPass(legacyRun.width == run1.width && legacyRun.height == run1.height && legacyRun.rgb == run1.rgb,
+            name + " sony2fuji_apply_params matches legacy setter path byte-for-byte (" + m1.fnv1a64 + ")");
 
         if (name == "raw_v4_lens_correction") {
             checkPass(run1.hasLensReport && run1.lensReport.base.state == SONY2FUJI_LENS_MATCHED &&
