@@ -2,7 +2,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using RawLab.Windows;
 using Xunit;
 
@@ -11,17 +10,6 @@ namespace RawLab.Windows.Tests;
 public sealed class EditWorkflowTests
 {
     private static void Check(bool condition, string message) => Assert.True(condition, message);
-
-    private static string ResolveRepoPath(string relativePath)
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
-        {
-            var candidate = Path.Combine(dir.FullName, relativePath);
-            if (File.Exists(candidate)) return candidate;
-        }
-        if (File.Exists(relativePath)) return relativePath;
-        throw new FileNotFoundException("Repository file not found: " + relativePath);
-    }
 
     [Fact]
     [Trait("Category", "Model")]
@@ -909,12 +897,14 @@ public sealed class EditWorkflowTests
         Check(sessionlessError.Message == Loc.Text("参数或输出路径无效。"),
             "Native.CheckWithoutSession surfaces localized error without a session");
 
-        var renderedDngSource = File.ReadAllText(ResolveRepoPath("RawLabWindows/tests/RenderedDngChecks.cs"));
-        Check(!Regex.IsMatch(renderedDngSource, @"\bStatusMessage\(\s*2\s*\)"),
-            "Rendered DNG Force rejection must not filter on the sessionless unsupported message");
-        Check(Regex.IsMatch(renderedDngSource,
-            @"error\.Message\s*==\s*Native\.FormatErrorMessage\(\s*2\s*,\s*null\s*,\s*Native\.UnsupportedReason\.ForceGpu\s*\)\s*\|\|\s*error\.Message\s*==\s*StatusMessage\(\s*4\s*\)"),
-            "Rendered DNG Force rejection accepts the Force GPU message and status 4 fallback");
+        Check(!RenderedDngChecks.IsExpectedForceGpuRejectionMessage(photoUnsupported),
+            "Rendered DNG Force rejection must not accept the sessionless unsupported message");
+        Check(RenderedDngChecks.IsExpectedForceGpuRejectionMessage(forceGpu),
+            "Rendered DNG Force rejection accepts the Force GPU message");
+        Check(RenderedDngChecks.IsExpectedForceGpuRejectionMessage(Native.FormatErrorMessage(4, null)),
+            "Rendered DNG Force rejection accepts status 4 fallback");
+        Check(!RenderedDngChecks.IsExpectedForceGpuRejectionMessage(Native.FormatErrorMessage(1, null)),
+            "Rendered DNG Force rejection rejects unrelated status messages");
     }
 
     private static JsonNode? Processing(Adjustments value) => JsonSerializer.SerializeToNode(value.Capture())!["Processing"];

@@ -4,6 +4,8 @@ namespace RawLab.Windows;
 
 internal sealed class AppPaths
 {
+    internal const string AppDataRootEnvironmentVariable = "RAWLAB_APPDATA_ROOT";
+
     internal static AppPaths Default { get; } = CreateDefault();
 
     internal string LocalApplicationDataRoot { get; }
@@ -44,8 +46,13 @@ internal sealed class AppPaths
     internal static AppPaths CreateIsolated(string baseDirectory) =>
         new(Path.Combine(Path.GetFullPath(baseDirectory), "profile-" + Guid.NewGuid().ToString("N")[..8]));
 
-    private static AppPaths CreateDefault()
+    internal static AppPaths CreateDefault()
     {
+        var overrideRoot = Environment.GetEnvironmentVariable(AppDataRootEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(overrideRoot))
+        {
+            return new AppPaths(Path.GetFullPath(overrideRoot.Trim()));
+        }
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         return new AppPaths(Path.Combine(localAppData, "RawLab"), localAppData);
     }

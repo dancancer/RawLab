@@ -1,7 +1,12 @@
 """Semantic invariant guards for the hosted CI workflows."""
+import os
 from pathlib import Path
 import re
+import shutil
+import stat
+import subprocess
 import sys
+import tempfile
 import unittest
 
 import yaml
@@ -710,6 +715,140 @@ class WorkflowContractTests(unittest.TestCase):
             "_cancelled": False,
             "needs": {"changes": {"result": "success", "outputs": {"draft": "false"}}},
         })))
+
+    def test_windows_ci_drops_legacy_self_hosted_and_batch_selection_builds_tests(self):
+        self.assertNotIn("self-hosted", self.text)
+        self.assertNotIn("RawLabCI", self.text)
+
+        batch_job = self.workflow["jobs"]["windows-batch-selection"]
+        build_steps = [
+            step for step in batch_job["steps"]
+            if "RawLabWindows/native" in step.get("run", "")
+        ]
+        self.assertEqual(len(build_steps), 1)
+        script = build_steps[0]["run"]
+        self.assertNotIn("-DBUILD_TESTING=OFF", script)
+        self.assertIn("-DBUILD_TESTING=ON", script)
+        self.assertIn("check_ctest_inventory.py", script)
+        for target in (
+            "sony2fuji",
+            "windows_display_image_tests",
+            "edit_pixel_golden_tests",
+            "hdr_portable_tests",
+            "d3d11_shader_tests",
+        ):
+            self.assertIn(target, script)
+
+    def test_windows_test_runners_guard_against_zero_matches_and_source_reads(self):
+        models_ps1 = WINDOWS_MODELS.read_text(encoding="utf-8")
+        run_v08 = (ROOT / "RawLabWindows/tests/run-v08.ps1").read_text(encoding="utf-8")
+        runner_checks = (ROOT / "RawLabWindows/tests/RunnerSelectionChecks.ps1").read_text(encoding="utf-8")
+
+        for content in (models_ps1, run_v08):
+            self.assertIn("RAWLAB_APPDATA_ROOT", content)
+            self.assertIn("trx;LogFileName=", content)
+            self.assertIn("Test-TrxExecution", content)
+
+        self.assertIn("zero-tests", runner_checks)
+        self.assertIn("missing-trx", runner_checks)
+
+        match = re.search(r"\$names\s*=\s*@\(([^)]+)\)", run_v08)
+        self.assertIsNotNone(match, "run-v08.ps1 must declare $names")
+        declared_suites = set(re.findall(r"'([^']+)'", match.group(1))) - {"build"}
+
+        dedicated_suites = {"default", "ai-denoise", "benchmark", "updates-sdk-offline"}
+        tests_root = ROOT / "RawLabWindows/tests"
+        discovered_suites = set()
+        for cs_path in sorted(tests_root.rglob("*.cs")):
+            text = cs_path.read_text(encoding="utf-8")
+            discovered_suites.update(re.findall(r'\[Trait\("Suite",\s*"([^"]+)"\)\]', text))
+            if cs_path.name not in {"StaticKeyChecks.cs", "LocalizationTests.cs"}:
+                self.assertNotRegex(
+                    text,
+                    r'File\.ReadAll(?:Text|Lines)\([^\n]*(?:\.cs|\.xaml|RenderEngine\.cs|RenderedDngChecks\.cs)',
+                    f"Source-text test assertion left in {cs_path.relative_to(ROOT)}",
+                )
+
+        self.assertEqual(discovered_suites - dedicated_suites, declared_suites)
+
+        pwsh = os.environ.get("RAWLAB_TEST_PWSH") or shutil.which("pwsh")
+        if pwsh:
+            self._exercise_windows_runners_with_pwsh(pwsh)
+
+    def _exercise_windows_runners_with_pwsh(self, pwsh):
+        with tempfile.TemporaryDirectory(prefix="rawlab-win-runners-") as tmp:
+            sandbox = Path(tmp)
+            (sandbox / "scripts/ci").mkdir(parents=True)
+            (sandbox / "RawLabWindows/tests").mkdir(parents=True)
+            shutil.copy2(WINDOWS_MODELS, sandbox / "scripts/ci/windows-models.ps1")
+            shutil.copy2(ROOT / "RawLabWindows/tests/run-v08.ps1", sandbox / "RawLabWindows/tests/run-v08.ps1")
+            shutil.copy2(ROOT / "RawLabWindows/tests/CheckProcess.ps1", sandbox / "RawLabWindows/tests/CheckProcess.ps1")
+            native = sandbox / "native"
+            (native / "ExifTool").mkdir(parents=True)
+            for rel in ("sony2fuji.dll", "raw.dll", "ExifTool/sentinel"):
+                (native / rel).write_text("stub", encoding="utf-8")
+            (sandbox / "fixture.arw").write_text("raw", encoding="utf-8")
+
+            stub = sandbox / "dotnet-stub.py"
+            stub.write_text(
+                "#!/usr/bin/env python3\n"
+                "import os, pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "mode = os.environ.get('STUB_MODE', 'ok')\n"
+                "if args and args[0] == 'msbuild':\n"
+                "    out = pathlib.Path(os.environ['STUB_TARGET'])\n"
+                "    out.mkdir(parents=True, exist_ok=True)\n"
+                "    print(str(out) + os.sep)\n"
+                "    sys.exit(0)\n"
+                "if args and args[0] == 'test':\n"
+                "    if not os.environ.get('RAWLAB_APPDATA_ROOT', '').strip():\n"
+                "        sys.stderr.write('missing RAWLAB_APPDATA_ROOT\\n')\n"
+                "        sys.exit(9)\n"
+                "    if '--list-tests' in args:\n"
+                "        print('The following Tests are available:')\n"
+                "        if mode != 'zero-list':\n"
+                "            print('    RawLab.Windows.Tests.AppPathsTests.DefaultProfileUsesTestIsolationRootAndRoutesStaticDefaults')\n"
+                "        sys.exit(0)\n"
+                "    trx = next((a.split('trx;LogFileName=', 1)[1] for a in args if a.startswith('trx;LogFileName=')), None)\n"
+                "    if trx and mode != 'missing-trx':\n"
+                "        path = pathlib.Path(trx)\n"
+                "        path.parent.mkdir(parents=True, exist_ok=True)\n"
+                "        count = '0' if mode == 'zero-exec' else '1'\n"
+                "        path.write_text(f'<TestRun><ResultSummary outcome=\"Completed\"><Counters total=\"{count}\" executed=\"{count}\" passed=\"{count}\" failed=\"0\" /></ResultSummary></TestRun>', encoding='utf-8')\n"
+                "sys.exit(0)\n",
+                encoding="utf-8",
+            )
+            stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+
+            base_env = {k: v for k, v in os.environ.items() if k != "RAWLAB_APPDATA_ROOT"}
+            base_env["STUB_TARGET"] = str(sandbox / "target")
+
+            ok_models = subprocess.run(
+                [pwsh, "-NoProfile", "-File", str(sandbox / "scripts/ci/windows-models.ps1"), "-DotNet", str(stub)],
+                env={**base_env, "STUB_MODE": "ok"},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(ok_models.returncode, 0, ok_models.stdout + ok_models.stderr)
+
+            for bad_mode in ("zero-exec", "zero-list", "missing-trx"):
+                bad_models = subprocess.run(
+                    [pwsh, "-NoProfile", "-File", str(sandbox / "scripts/ci/windows-models.ps1"), "-DotNet", str(stub)],
+                    env={**base_env, "STUB_MODE": bad_mode},
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(bad_models.returncode, 0, f"windows-models.ps1 passed on {bad_mode}")
+
+            for bad_mode in ("zero-exec", "missing-trx"):
+                bad_v08 = subprocess.run(
+                    [pwsh, "-NoProfile", "-File", str(sandbox / "RawLabWindows/tests/run-v08.ps1"),
+                     "-RawPath", str(sandbox / "fixture.arw"),
+                     "-NativeArtifacts", str(native),
+                     "-DotNet", str(stub),
+                     "-Only", "about"],
+                    env={**base_env, "STUB_MODE": bad_mode},
+                    capture_output=True, text=True,
+                )
+                self.assertNotEqual(bad_v08.returncode, 0, f"run-v08.ps1 passed on {bad_mode}")
 
 
 if __name__ == "__main__":

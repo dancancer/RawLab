@@ -15,6 +15,8 @@
     <InformationalVersion>0.10.0+build.19</InformationalVersion>
     <RawLabUpdateTrustFile Condition="'$(RawLabUpdateTrustFile)' == ''">$(MSBuildThisFileDirectory)Updates/UpdateTrust.json</RawLabUpdateTrustFile>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+    <RawLabPrepareBundledLuts Condition="'$(RawLabPrepareBundledLuts)' == ''">true</RawLabPrepareBundledLuts>
+    <RawLabBundledLutsOffline Condition="'$(RawLabBundledLutsOffline)' == ''">false</RawLabBundledLutsOffline>
   </PropertyGroup>
   <!-- 阿里云 RUM PC SDK（使用统计）：Release 默认带，规则与开关见 RumSdk.targets -->
   <Import Project="RumSdk.targets" />
@@ -38,4 +40,56 @@
     <Content Include="../RawLabMac/Resources/MasterRecipes/*.cube" Link="MasterRecipes/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../RawLabMac/Resources/MasterRecipeIcons/*.png" Link="MasterRecipeIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="EnsureBundledLuts" BeforeTargets="BeforeResolveReferences;AssignTargetPaths">
+    <ItemGroup>
+      <_InitialFLog2Luts Include="$(MSBuildThisFileDirectory)../lutools/flog-2-new/*.cube"
+                         Exclude="$(MSBuildThisFileDirectory)../lutools/flog-2-new/*FLog2-709*;$(MSBuildThisFileDirectory)../lutools/flog-2-new/*WDR*" />
+      <_InitialBundledLookLuts Include="$(MSBuildThisFileDirectory)../Shared/BundledLooks/*.cube" />
+      <_InitialMasterRecipeLuts Include="$(MSBuildThisFileDirectory)../RawLabMac/Resources/MasterRecipes/*.cube" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_RawLabMissingLuts Condition="@(_InitialFLog2Luts->Count()) == 0 or @(_InitialBundledLookLuts->Count()) == 0 or @(_InitialMasterRecipeLuts->Count()) == 0">true</_RawLabMissingLuts>
+      <_RawLabPrepareScript>$(MSBuildThisFileDirectory)../scripts/assets/prepare.py</_RawLabPrepareScript>
+      <_RawLabPrepareArgs>--group luts</_RawLabPrepareArgs>
+      <_RawLabPrepareArgs Condition="'$(RawLabBundledLutsOffline)' == 'true'">$(_RawLabPrepareArgs) --offline</_RawLabPrepareArgs>
+      <_RawLabPythonCmd Condition="'$(RawLabPython)' != ''">$(RawLabPython)</_RawLabPythonCmd>
+      <_RawLabPythonCmd Condition="'$(_RawLabPythonCmd)' == '' and '$(RAWLAB_LUTPREP_PYTHON)' != ''">$(RAWLAB_LUTPREP_PYTHON)</_RawLabPythonCmd>
+      <_RawLabPythonCmd Condition="'$(_RawLabPythonCmd)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">python</_RawLabPythonCmd>
+      <_RawLabPythonCmd Condition="'$(_RawLabPythonCmd)' == ''">python3</_RawLabPythonCmd>
+      <_RawLabFallbackPythonCmd Condition="'$(RawLabPython)' == '' and '$(RAWLAB_LUTPREP_PYTHON)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">python3</_RawLabFallbackPythonCmd>
+      <_RawLabFallbackPythonCmd Condition="'$(RawLabPython)' == '' and '$(RAWLAB_LUTPREP_PYTHON)' == '' and !$([MSBuild]::IsOSPlatform('Windows'))">python</_RawLabFallbackPythonCmd>
+    </PropertyGroup>
+    <Exec Condition="'$(RawLabPrepareBundledLuts)' == 'true' and '$(_RawLabMissingLuts)' == 'true' and Exists('$(_RawLabPrepareScript)')"
+          Command="&quot;$(_RawLabPythonCmd)&quot; &quot;$(_RawLabPrepareScript)&quot; $(_RawLabPrepareArgs)"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_RawLabLutPrepareExitCode" />
+    </Exec>
+    <Exec Condition="'$(RawLabPrepareBundledLuts)' == 'true' and '$(_RawLabMissingLuts)' == 'true' and Exists('$(_RawLabPrepareScript)') and '$(_RawLabLutPrepareExitCode)' != '0' and '$(_RawLabFallbackPythonCmd)' != ''"
+          Command="&quot;$(_RawLabFallbackPythonCmd)&quot; &quot;$(_RawLabPrepareScript)&quot; $(_RawLabPrepareArgs)"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_RawLabLutPrepareExitCode" />
+    </Exec>
+    <Error Condition="'$(RawLabPrepareBundledLuts)' == 'true' and '$(_RawLabMissingLuts)' == 'true' and '$(_RawLabLutPrepareExitCode)' != '' and '$(_RawLabLutPrepareExitCode)' != '0'"
+           Text="Failed to prepare bundled LUT assets via $(_RawLabPrepareScript) (exit code $(_RawLabLutPrepareExitCode)). Run `python3 scripts/assets/prepare.py --group luts`." />
+    <ItemGroup>
+      <_PreparedFLog2Luts Include="$(MSBuildThisFileDirectory)../lutools/flog-2-new/*.cube"
+                          Exclude="$(MSBuildThisFileDirectory)../lutools/flog-2-new/*FLog2-709*;$(MSBuildThisFileDirectory)../lutools/flog-2-new/*WDR*" />
+      <_PreparedBundledLookLuts Include="$(MSBuildThisFileDirectory)../Shared/BundledLooks/*.cube" />
+      <_PreparedMasterRecipeLuts Include="$(MSBuildThisFileDirectory)../RawLabMac/Resources/MasterRecipes/*.cube" />
+    </ItemGroup>
+    <Error Condition="@(_PreparedFLog2Luts->Count()) == 0 or @(_PreparedBundledLookLuts->Count()) == 0 or @(_PreparedMasterRecipeLuts->Count()) == 0"
+           Text="Bundled LUT assets are missing (flog-2-new=@(_PreparedFLog2Luts->Count()), BundledLooks=@(_PreparedBundledLookLuts->Count()), MasterRecipes=@(_PreparedMasterRecipeLuts->Count())). Run `python3 scripts/assets/prepare.py --group luts`." />
+    <ItemGroup Condition="'$(_RawLabMissingLuts)' == 'true'">
+      <Content Remove="../lutools/flog-2-new/*.cube;../Shared/BundledLooks/*.cube;../RawLabMac/Resources/MasterRecipes/*.cube" />
+      <Content Include="@(_PreparedFLog2Luts)"
+               Link="LUTs/%(_PreparedFLog2Luts.Filename)%(_PreparedFLog2Luts.Extension)"
+               CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="@(_PreparedBundledLookLuts)"
+               Link="LUTs/%(_PreparedBundledLookLuts.Filename)%(_PreparedBundledLookLuts.Extension)"
+               CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="@(_PreparedMasterRecipeLuts)"
+               Link="MasterRecipes/%(_PreparedMasterRecipeLuts.Filename)%(_PreparedMasterRecipeLuts.Extension)"
+               CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

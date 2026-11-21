@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using RawLab.Windows;
@@ -138,13 +139,58 @@ internal static class ProRAWHDRChecks
                 "RenderEngine.ValidateHDRRender rejects unknown ProRAWDecodeVersion");
         }
 
-        if (TryFindProjectRoot() is { } projectRoot)
+        try
         {
-            var renderEngineSource = File.ReadAllText(Path.Combine(projectRoot, "RenderEngine.cs"));
-            check(CountOccurrences(renderEngineSource, "ValidateHDRRender(settings)") >= 4 &&
-                CountOccurrences(renderEngineSource, "ValidateHDRRender(settings, ") >= 3,
-                "RenderEngine gates RenderPreview, RenderCore, RenderHDR, AutoExposureCore and SampleHslCore with ValidateHDRRender");
+            RenderEngine.ValidateHDRRender(settings, false);
+            check(false, "RenderEngine.ValidateHDRRender rejects ProRAW settings for non-ProRAW source");
         }
+        catch (HDRModeException error)
+        {
+            check(error.Failure == HDRModeFailure.UnsupportedSource,
+                "RenderEngine.ValidateHDRRender rejects ProRAW settings for non-ProRAW source");
+        }
+
+        var plainHdr = new Adjustments { HDR = new HDRSettings { Mode = HDRMode.Hdr } };
+        try
+        {
+            RenderEngine.ValidateHDRRender(plainHdr, true);
+            check(false, "RenderEngine.ValidateHDRRender requires ProRAWDecodeVersion when source is ProRAW");
+        }
+        catch (HDRModeException error)
+        {
+            check(error.Failure == HDRModeFailure.InvalidSettings,
+                "RenderEngine.ValidateHDRRender requires ProRAWDecodeVersion when source is ProRAW");
+        }
+
+        RenderEngine.ValidateHDRRender(settings, true);
+        RenderEngine.ValidateHDRRender(sdrDormant, true);
+
+        var uninitializedEngine = (RenderEngine)RuntimeHelpers.GetUninitializedObject(typeof(RenderEngine));
+        static void AssertEntryRejected(Action call, string entryName, Action<bool, string> verify)
+        {
+            try
+            {
+                call();
+                verify(false, $"RenderEngine.{entryName} gates unknown ProRAWDecodeVersion before native execution");
+            }
+            catch (HDRModeException error)
+            {
+                verify(error.Failure == HDRModeFailure.InvalidSettings,
+                    $"RenderEngine.{entryName} gates unknown ProRAWDecodeVersion before native execution");
+            }
+        }
+        AssertEntryRejected(
+            () => uninitializedEngine.RenderPreview("missing.dng", restoredUnknown, null, 800, false, false, false),
+            "RenderPreview", check);
+        AssertEntryRejected(
+            () => uninitializedEngine.Render("missing.dng", restoredUnknown, null, 800),
+            "Render", check);
+        AssertEntryRejected(
+            () => uninitializedEngine.AutoExposure("missing.dng", restoredUnknown),
+            "AutoExposure", check);
+        AssertEntryRejected(
+            () => uninitializedEngine.SampleHsl("missing.dng", restoredUnknown, null, 800, false, new HslTargetRevision(1, 1), 0.5, 0.5),
+            "SampleHsl", check);
 
         var unknownHdrJob = BatchJob.Create("photo.dng", unknown, null, "HDR");
         unknownHdrJob.SourceIsProRAW = true;
@@ -189,20 +235,5 @@ internal static class ProRAWHDRChecks
         {
             check(error.Detail == "hdr.camera_raw", "Generic Bayer RAW HDR transfer remains gated");
         }
-    }
-
-    private static string? TryFindProjectRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
-            if (File.Exists(Path.Combine(directory.FullName, "RawLabWindows.csproj"))) return directory.FullName;
-        return null;
-    }
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        for (var index = 0; (index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0; index += value.Length)
-            count++;
-        return count;
     }
 }

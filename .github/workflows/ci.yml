@@ -332,14 +332,13 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:CI_RUNNER_ENVIRONMENT -notin @('github-hosted', 'self-hosted')) {
+          if ($env:CI_RUNNER_ENVIRONMENT -ne 'github-hosted') {
             throw 'Unknown Windows runner environment.'
           }
-          $dedicated = $env:CI_RUNNER_ENVIRONMENT -eq 'self-hosted'
-          if (!$dedicated -and !$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
-          $ciRoot = if ($dedicated) { 'E:\RawLabCI' } else { "$env:RUNNER_TEMP\rawlab-ci" }
-          $jobs = if ($dedicated) { 16 } else { 4 }
-          $compilerProcesses = if ($dedicated) { 24 } else { 4 }
+          if (!$env:RUNNER_TEMP) { throw 'Hosted Windows requires RUNNER_TEMP.' }
+          $ciRoot = "$env:RUNNER_TEMP\rawlab-ci"
+          $jobs = 4
+          $compilerProcesses = 4
           @(
             "DOTNET_INSTALL_DIR=$ciRoot\dotnet"
             "RAWLAB_LENS_SOURCE_CACHE=$ciRoot\cache\lens-sources"
@@ -646,8 +645,9 @@ jobs:
               if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
             }
             $python = (Get-Command python).Source
-            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=OFF', "-DPython3_EXECUTABLE=$python")
-            Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', '--parallel', '4')
+            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=ON', '-DSONY2FUJI_TEST_PORTABLE_HDR=ON', "-DPython3_EXECUTABLE=$python")
+            Invoke-Checked python @('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows', '--skip-orphan-check')
+            Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', 'windows_display_image_tests', 'edit_pixel_golden_tests', 'hdr_portable_tests', 'd3d11_shader_tests', '--parallel', '4')
             $package = Join-Path $PWD 'build/windows-batch-selection'
             Copy-Item build/windows-native/core/Release/sony2fuji.dll, build/windows-native/Release/raw.dll $package
             $redist = Get-ChildItem "$vs/VC/Redist/MSVC" -Directory | Where-Object Name -Match '^\d+\.' | Sort-Object Name -Descending | Select-Object -First 1
