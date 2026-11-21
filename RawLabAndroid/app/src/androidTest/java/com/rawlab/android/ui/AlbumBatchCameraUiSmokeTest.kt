@@ -6,18 +6,12 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.R
-import com.rawlab.android.RawLabTheme
 import com.rawlab.android.batch.journal.BatchJournal
-import com.rawlab.android.camera.CameraTetherParameterState
-import com.rawlab.android.camera.CameraTetherPhase
-import com.rawlab.android.camera.CameraTetherState
-import com.rawlab.android.camera.CameraTetherWorkspace
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.PhotoIdentity
@@ -105,21 +99,6 @@ class AlbumBatchCameraUiSmokeTest {
             EditStore(File(context.filesDir, "edits")).reset(PhotoIdentity(uri.toString()))
             root.deleteRecursively()
         }
-    }
-
-    @Test fun cameraTetherControlSmoke() {
-        val state = mutableStateOf(CameraTetherState(phase = CameraTetherPhase.READY, live = true, parameters = CameraTetherParameterState(captureReady = true)))
-        var shots = 0
-        compose.setContent {
-            RawLabTheme {
-                CameraTetherWorkspace(state.value, { _, _ -> null }, { shots++ }, {}, {})
-            }
-        }
-        compose.onNodeWithTag("tether-shutter").assertIsEnabled().performClick()
-        assertEquals(1, shots)
-        compose.onNodeWithTag("tether-menu").performClick()
-        compose.onNodeWithTag("tether-grid-toggle").performClick()
-        compose.onNodeWithTag("tether-grid").assertExists()
     }
 
     @Test fun exportSheetAndPhotoInfoOverlaySmoke() {

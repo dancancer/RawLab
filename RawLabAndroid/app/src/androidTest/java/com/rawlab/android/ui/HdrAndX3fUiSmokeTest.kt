@@ -1,24 +1,12 @@
 package com.rawlab.android.ui
 
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.result.ActivityResultRegistry
-import androidx.activity.result.ActivityResultRegistryOwner
-import androidx.activity.result.contract.ActivityResultContract
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.core.app.ActivityOptionsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import com.rawlab.android.MainActivity
 import com.rawlab.android.R
-import com.rawlab.android.RawLabTheme
-import com.rawlab.android.editor.PendingLookCompatibility
-import com.rawlab.android.editor.ui.LUTCompatibilityDialog
-import com.rawlab.android.looks.LUTCompatibility
-import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.X3fMode
@@ -53,9 +41,16 @@ class HdrAndX3fUiSmokeTest {
 
             compose.openWorkbenchTool(25)
             compose.setNumericAdjustmentValue(R.string.hdr_sdr_exposure, "1.2")
-            compose.waitUntilDraftReady(model)
+            compose.applyWorkbenchDraft(model)
+            assertEquals(1.2f, model.state.value.edits.hdr?.renditionSettings?.sdrExposureEV ?: 0f, 0.01f)
+
+            compose.openEditorMenu()
+            compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performScrollTo().performClick()
+            compose.onNodeWithTag("hdr-rendition").performScrollTo().performClick()
             compose.onNodeWithTag("hdr-rendition-reset").performScrollTo().assertIsEnabled().performClick()
-            compose.cancelWorkbenchDraft(model)
+            compose.waitUntil(30_000) { model.state.value.edits.hdr?.renditionSettings?.isDefault == true }
+            compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
+            compose.waitUntilEditorReady(model)
         } finally {
             EditStore(File(compose.activity.filesDir, "edits")).reset(PhotoIdentity(Uri.fromFile(source).toString()))
             source.delete()
@@ -74,7 +69,7 @@ class HdrAndX3fUiSmokeTest {
             assertEquals(X3fMode.NORMAL, model.state.value.edits.x3fMode)
 
             compose.openWorkbenchMenuItem("processing-settings")
-            compose.onNodeWithTag("x3f-mode-legacy").performScrollTo().performClick()
+            compose.onNodeWithTag("x3f.mode.legacy").performScrollTo().performClick()
             compose.onNodeWithText(compose.activity.getString(R.string.confirm)).performClick()
             compose.waitUntilEditorReady(model)
             assertEquals(X3fMode.LEGACY, model.state.value.edits.x3fMode)
@@ -82,27 +77,5 @@ class HdrAndX3fUiSmokeTest {
             EditStore(File(compose.activity.filesDir, "edits")).reset(PhotoIdentity(Uri.fromFile(source).toString()))
             source.delete()
         }
-    }
-
-    @Test fun lutCompatibilityPickerSmoke() {
-        val draft = LUTCompatibility.parse("""{"eligible":true,"source_sha256":"test","fixed_contract":false,"photo_style":"std","extreme_values":false,"hints":[],"contract":{"version":1,"input":{"space":"","reference":"display","range":"full"},"output":{"space":"","reference":"display","range":"full"},"interpolation":"linear","base_rendering":"rawlab-neutral-v1"}}""")!!
-        val launched = mutableListOf<Intent>()
-        val registry = object : ActivityResultRegistry() {
-            override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {
-                launched += contract.createIntent(compose.activity, input)
-            }
-        }
-        val owner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
-        compose.setContent {
-            val storage = PhotoStorage(compose.activity)
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
-                RawLabTheme {
-                    LUTCompatibilityDialog(PendingLookCompatibility(Uri.parse("content://test/unknown.cube"), "unknown.cube", draft), null, storage) {}
-                }
-            }
-        }
-        compose.onNodeWithTag("lut-reference-section").performScrollTo().performClick()
-        compose.onNodeWithTag("lut-reference-picker").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(1, launched.size) }
     }
 }

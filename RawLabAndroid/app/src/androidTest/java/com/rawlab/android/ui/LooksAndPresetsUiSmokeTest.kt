@@ -2,6 +2,8 @@ package com.rawlab.android.ui
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.rawlab.android.MainActivity
@@ -40,12 +42,16 @@ class LooksAndPresetsUiSmokeTest {
             compose.onNodeWithTag("looks.search.open").performScrollTo().performClick()
             compose.onNodeWithTag("looks.search").performScrollTo().performTextReplacement("ACROS")
             compose.onNodeWithTag("looks.search").performImeAction()
-            compose.onNodeWithText("ACROS", substring = true).performScrollTo().performClick()
+            compose.onNode(
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton) and
+                    hasText("ACROS", substring = true),
+            ).performScrollTo().performClick()
             compose.applyWorkbenchDraft(model)
             assertEquals("acros", model.state.value.edits.film)
 
             compose.openWorkbenchTool(15)
-            compose.onNodeWithText("保井崇志").performScrollTo().performClick()
+            compose.onNodeWithTag("master-recipe-choices").performScrollToNode(hasText("保井崇志"))
+            compose.onNodeWithText("保井崇志").performClick()
             compose.applyWorkbenchDraft(model)
             assertEquals("takashi_yasui_zen", model.state.value.edits.recipeID)
         } finally {
@@ -70,9 +76,19 @@ class LooksAndPresetsUiSmokeTest {
             compose.onNodeWithTag("preset-create").performClick()
             compose.onNodeWithTag("preset-name").performTextReplacement("Smoke Preset")
             compose.onNodeWithTag("preset-name").performImeAction()
-            compose.onNodeWithTag("preset-save").performClick()
-            compose.waitUntil(30_000) { !model.state.value.committingAdjustments }
-            assertTrue(model.presetStore.list().any { it.name == "Smoke Preset" })
+            compose.onNodeWithTag("preset-save").performScrollTo().performClick()
+            compose.waitUntil(30_000) { model.presetStore.list().any { it.name == "Smoke Preset" } }
+            val created = model.presetStore.list().first { it.name == "Smoke Preset" }
+            compose.onNodeWithTag("preset-row-${created.id}").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("preset-close").performClick()
+
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = 0f)) }
+            compose.waitUntilEditorReady(model)
+            compose.onNodeWithTag("preset.quick.apply.${created.id}").performScrollTo().performClick()
+            compose.waitUntil(30_000) {
+                kotlin.math.abs(model.state.value.edits.exposure - 0.5f) < 0.001f &&
+                    model.quickPreset.value.preset?.id == created.id
+            }
         } finally {
             model.presetStore.list().filter { it.id !in originalIds }.forEach { model.presetStore.delete(it) }
             EditStore(File(compose.activity.filesDir, "edits")).reset(PhotoIdentity(Uri.fromFile(source).toString()))

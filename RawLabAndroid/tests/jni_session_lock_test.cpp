@@ -1469,23 +1469,6 @@ jobject makeNativeProcessRequest(const std::string& path, jint edge, jlong gener
     setFloatField(tone, "saturation", 1.f);
     setFloatField(tone, "sharpening", 0.f);
 
-    jobject denoise = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
-    setBoolField(denoise, "enabled", JNI_FALSE);
-    setFloatField(denoise, "luma", 0.f);
-    setFloatField(denoise, "chroma", 46.f);
-    setFloatField(denoise, "coarse", 50.f);
-    setIntField(denoise, "displayChroma", 0);
-
-    jobject effects = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
-    setFloatField(effects, "vignetteAmount", 0.f);
-    setFloatField(effects, "vignetteMidpoint", 50.f);
-    setFloatField(effects, "vignetteRoundness", 0.f);
-    setFloatField(effects, "vignetteFeather", 50.f);
-    setFloatField(effects, "vignetteHighlights", 0.f);
-    setFloatField(effects, "grainAmount", 0.f);
-    setFloatField(effects, "grainSize", 25.f);
-    setFloatField(effects, "grainRoughness", 50.f);
-
     jobject req = makeStruct("com/rawlab/android/engine/NativeProcessRequest");
     setObjField(req, "input", input);
     setObjField(req, "output", output);
@@ -1493,9 +1476,6 @@ jobject makeNativeProcessRequest(const std::string& path, jint edge, jlong gener
     setFloatField(req, "lutStrength", 0.f);
     setObjField(req, "whiteBalance", wb);
     setObjField(req, "tone", tone);
-    setObjField(req, "denoise", denoise);
-    setObjField(req, "effects", effects);
-    setObjField(req, "hsl", makeJFloatArray(std::vector<jfloat>(24, 0.f)));
     setIntField(req, "exposureMode", 0);
     setIntField(req, "processingVersion", 3);
     setIntField(req, "x3fMode", 0);
@@ -2221,25 +2201,6 @@ void testStructuredProcessMarshalling() {
     setFloatField(toneObj, "saturation", 1.20f);
     setFloatField(toneObj, "sharpening", 0.85f);
 
-    jobject denoiseObj = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
-    setBoolField(denoiseObj, "enabled", JNI_TRUE);
-    setFloatField(denoiseObj, "luma", 18.f);
-    setFloatField(denoiseObj, "chroma", 64.f);
-    setFloatField(denoiseObj, "coarse", 75.f);
-    setIntField(denoiseObj, "displayChroma", 2);
-
-    jobject effectsObj = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
-    setFloatField(effectsObj, "vignetteAmount", -22.f);
-    setFloatField(effectsObj, "vignetteMidpoint", 40.f);
-    setFloatField(effectsObj, "vignetteRoundness", 15.f);
-    setFloatField(effectsObj, "vignetteFeather", 65.f);
-    setFloatField(effectsObj, "vignetteHighlights", 30.f);
-    setFloatField(effectsObj, "grainAmount", 25.f);
-    setFloatField(effectsObj, "grainSize", 45.f);
-    setFloatField(effectsObj, "grainRoughness", 60.f);
-
-    std::vector<jfloat> hslVec(24);
-    for (int i = 0; i < 24; ++i) hslVec[i] = static_cast<jfloat>(i - 10);
     jintArray backendOut = makeJIntArray({-1});
 
     setObjField(req, "input", inObj);
@@ -2248,9 +2209,6 @@ void testStructuredProcessMarshalling() {
     setFloatField(req, "lutStrength", 0.75f);
     setObjField(req, "whiteBalance", wbObj);
     setObjField(req, "tone", toneObj);
-    setObjField(req, "denoise", denoiseObj);
-    setObjField(req, "effects", effectsObj);
-    setObjField(req, "hsl", makeJFloatArray(hslVec));
     setIntField(req, "exposureMode", SONY2FUJI_EXPOSURE_PREVIEW);
     setIntField(req, "processingVersion", SONY2FUJI_PROCESSING_BASIC_V3);
     setIntField(req, "x3fMode", SONY2FUJI_X3F_NORMAL);
@@ -2398,7 +2356,9 @@ void testStructuredHdrMarshalling() {
     const auto& v1 = v2.base;
     require(v1.struct_size == sizeof(sony2fuji_hdr_request_v8), "HDR struct_size mismatch");
     require(v1.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION, "HDR version mismatch");
-    require(v1.exposure_ev == 1.25f && v1.temperature == 7200.f && v1.contrast == -30.f && v1.long_edge == 1024,
+    require(v1.exposure_ev == 1.25f && v1.temperature == 7200.f && v1.tint == 18.f &&
+            v1.contrast == -30.f && v1.highlights == 40.f && v1.shadows == -20.f &&
+            v1.saturation == 15.f && v1.long_edge == 1024,
         "HDR v1 fields mismatch");
     require(v2.black_point == -15.f && v2.white_point == 25.f && v2.curve_strength == 45.f &&
             v2.curve.mode == SONY2FUJI_CURVE_CUSTOM && v2.curve.count == 3 && v2.curve.points[1].y == 0.65,
@@ -2462,14 +2422,10 @@ void testAbiDelegationRecipeWbAndMpf() {
     jobject toneObj = makeStruct("com/rawlab/android/engine/NativeProcessTone");
     setFloatField(toneObj, "contrast", 1.f);
     setFloatField(toneObj, "saturation", 1.f);
-    jobject denoiseObj = makeStruct("com/rawlab/android/engine/NativeDenoiseConfig");
-    jobject effectsObj = makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig");
     setObjField(req, "input", inObj);
     setObjField(req, "output", outObj);
     setObjField(req, "whiteBalance", wbObj);
     setObjField(req, "tone", toneObj);
-    setObjField(req, "denoise", denoiseObj);
-    setObjField(req, "effects", effectsObj);
     setIntField(req, "exposureMode", SONY2FUJI_EXPOSURE_PREVIEW);
     setIntField(req, "processingVersion", SONY2FUJI_PROCESSING_BASIC_V3);
     setIntField(req, "x3fMode", SONY2FUJI_X3F_NORMAL);

@@ -227,9 +227,6 @@ struct JniCache {
         jfieldID lutStrength = nullptr;
         jfieldID whiteBalance = nullptr;
         jfieldID tone = nullptr;
-        jfieldID denoise = nullptr;
-        jfieldID effects = nullptr;
-        jfieldID hsl = nullptr;
         jfieldID exposureMode = nullptr;
         jfieldID processingVersion = nullptr;
         jfieldID x3fMode = nullptr;
@@ -481,9 +478,6 @@ void initJniCache(JNIEnv* env) {
         c.processRequest.lutStrength = cacheField(env, c.processRequest.clazz, "lutStrength", "F");
         c.processRequest.whiteBalance = cacheField(env, c.processRequest.clazz, "whiteBalance", "Lcom/rawlab/android/engine/NativeProcessWhiteBalance;");
         c.processRequest.tone = cacheField(env, c.processRequest.clazz, "tone", "Lcom/rawlab/android/engine/NativeProcessTone;");
-        c.processRequest.denoise = cacheField(env, c.processRequest.clazz, "denoise", "Lcom/rawlab/android/engine/NativeDenoiseConfig;");
-        c.processRequest.effects = cacheField(env, c.processRequest.clazz, "effects", "Lcom/rawlab/android/engine/NativePhotoEffectsConfig;");
-        c.processRequest.hsl = cacheField(env, c.processRequest.clazz, "hsl", "[F");
         c.processRequest.exposureMode = cacheField(env, c.processRequest.clazz, "exposureMode", "I");
         c.processRequest.processingVersion = cacheField(env, c.processRequest.clazz, "processingVersion", "I");
         c.processRequest.x3fMode = cacheField(env, c.processRequest.clazz, "x3fMode", "I");
@@ -2163,14 +2157,12 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(JNIEnv* env, jobjec
         LocalRef outputObj(env, env->GetObjectField(requestObj, cache.processRequest.output));
         LocalRef wbObj(env, env->GetObjectField(requestObj, cache.processRequest.whiteBalance));
         LocalRef toneObj(env, env->GetObjectField(requestObj, cache.processRequest.tone));
-        LocalRef denoiseObj(env, env->GetObjectField(requestObj, cache.processRequest.denoise));
-        LocalRef effectsObj(env, env->GetObjectField(requestObj, cache.processRequest.effects));
         LocalRef lutRef(env, env->GetObjectField(requestObj, cache.processRequest.lutPath));
         LocalRef backendRef(env, env->GetObjectField(requestObj, cache.processRequest.backendOut));
         LocalRef hslProbeObj(env, env->GetObjectField(requestObj, cache.processRequest.hslProbe));
         LocalRef migrationRef(env, env->GetObjectField(requestObj, cache.processRequest.migrationOut));
         if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read native process request");
-        if (!inputObj || !outputObj || !wbObj || !toneObj || !denoiseObj || !effectsObj)
+        if (!inputObj || !outputObj || !wbObj || !toneObj)
             throw std::invalid_argument("Missing native process request section");
 
         const jfloat lutStrength = env->GetFloatField(requestObj, cache.processRequest.lutStrength);
