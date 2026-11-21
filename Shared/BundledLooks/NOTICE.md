@@ -1,12 +1,12 @@
 # RawLab Bundled Look Attribution
 
-Status on 2026-10-17: 28 adapted third-party LUTs remain UNCONFIRMED for
-redistribution. After the earlier source/development exception, the repository
-owner explicitly authorized their inclusion in the v0.8.0 formal release with
-this notice and risk record retained. That decision is not a license grant from
-the original authors. Color adaptation does not grant copyright rights.
-`REDISTRIBUTION_BLOCKED.md` retains the unresolved release risk; it does not
-block compilation, including Release builds. CI success is not license clearance.
+The project owner confirmed on 2026-11-20 that RawLab has permission to
+redistribute the five adapted camera looks and the 23 adapted Kodak-named
+looks with RawLab releases. Their original authors and sources are credited below.
+
+The `UNCONFIRMED` and `unconfirmed` labels in the generated catalog,
+adaptation report and CUBE comments record the status at the time of the
+October 2026 review.
 
 Camera source: u/Aggressive-Win-6351's public share, with ROGER WANG credited in
 some source headers. Source and author statements:

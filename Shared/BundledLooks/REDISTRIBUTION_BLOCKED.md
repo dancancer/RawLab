@@ -1,33 +1,14 @@
-# Bundled Look Redistribution Remains Unconfirmed
+# Bundled Look Redistribution Permission
 
-On 2026-10-17 the repository owner explicitly authorized the v0.8.0 formal
-release and chose to distribute these 28 derivatives with the existing risk
-record retained. This extends the owner's earlier source/development exception;
-it does not establish permission from the original authors. The filename is a
-historical risk marker, not a compile-time or packaging switch. UNCONFIRMED
-license fields, source attribution and permanent notices remain unchanged.
-
-On 2026-10-16 the repository owner explicitly approved publishing this snapshot
-in the public source repository with the unconfirmed-permission notice retained,
-and approved integration into `development`. This owner exception is not a
-license grant from the original authors and does not authorize an official
-release, installer upload, signing or deployment.
-
-This file remains an unresolved release-risk record, not a compile-time switch.
-Normal builds, including Release configuration, are not blocked by its presence.
-A successful build or CI run is not redistribution clearance. The owner's
-separate release authorization is now recorded above, but the underlying rights
-review remains unresolved. Do not remove this record or label the derivatives
-permission-cleared without per-source evidence and the required notices.
-
-The 28 third-party derivatives have UNCONFIRMED redistribution permission.
-Public download, a creator credit, and permission to use a LUT are not assumed
-to grant redistribution rights. Adapting the table does not remove those rights.
+RawLab has permission to distribute the 28 adapted third-party looks with its
+releases. The project owner confirmed this on 2026-11-20. The filename dates
+from the October 2026 review. The current statement and author credits are in
+the [bundled attribution notice](NOTICE.md).
 
 - Five camera looks originate from u/Aggressive-Win-6351's shared files:
   <https://www.reddit.com/r/Lumix/comments/1tgii1i/reverseengineering_camera_color_pipelines_instead/>
   and <https://drive.google.com/drive/folders/1P6xJW2-x8pFAm6hP8vNdlDe11Pb06DId>.
-  Some files credit ROGER WANG. No redistribution grant was found in that share.
+  Some files credit ROGER WANG.
 - Twenty-three Kodak-named tables match the Film-Luts snapshot
   `af957b631a304e6be94778b96cb3395de3438e9f`:
   <https://github.com/YahiaAngelo/Film-Luts>. Its maintainer disclaims ownership
@@ -49,5 +30,4 @@ rendered sample. Exact prompts/provenance are retained in `Artwork/`.
 Manufacturer/film names identify the intended look only. No manufacturer
 authorship, endorsement, measured film calibration or camera equivalence is
 claimed. See `docs/luts/README.md` in the project source for the full audit and
-the explicit adaptation choices. Remove this marker only after an evidence-based
-per-source license review and update all license fields and notices together.
+the explicit adaptation choices.
