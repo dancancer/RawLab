@@ -97,13 +97,13 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
                     label = { Text(stringResource(R.string.curve_parametric_mode)) },
                     modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("curve-mode-parametric"))
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.curve_luminosity_only), style = MaterialTheme.typography.bodySmall)
-                Switch(settings.applyToLuminosity, { checked ->
-                    onEdit(ToneCurveSettings(root.mode, root.points, root.channels, checked, root.parametric), false)
-                }, enabled = enabled, modifier = Modifier.testTag("curve-luminosity-only"))
-            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(stringResource(R.string.curve_luminosity_only), style = MaterialTheme.typography.bodySmall)
+            Switch(settings.applyToLuminosity, { checked ->
+                onEdit(ToneCurveSettings(root.mode, root.points, root.channels, checked, root.parametric), false)
+            }, enabled = enabled, modifier = Modifier.testTag("curve-luminosity-only"))
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {

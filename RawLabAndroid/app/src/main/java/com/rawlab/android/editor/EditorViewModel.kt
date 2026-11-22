@@ -165,6 +165,7 @@ class EditorViewModel internal constructor(
         { edits, interactive -> draftHolder.changeDraft(edits, interactive) },
         { draftHolder.incrementDraftRevision() }, { draftHolder.renderDraft(it) },
         dependencies.curveSampler,
+        dependencies.curveParametricSampler,
     )
 
     private val hdrHolder: EditorHdrStateHolder = EditorHdrStateHolder(

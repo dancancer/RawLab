@@ -33,6 +33,9 @@ internal class EditorHslEyedropperStateHolder(
     private val sampleCurve: (ToneCurveSettings, ToneCurveChannel) -> List<ToneCurvePoint> = { settings, channel ->
         com.rawlab.android.engine.ToneCurveSampling.samples(settings, channel)
     },
+    private val sampleParametric: (ToneCurveSettings, Double) -> Double = { settings, x ->
+        com.rawlab.android.engine.ToneCurveSampling.sampleParametricValue(settings, x)
+    },
 ) {
     private val mutableTarget = MutableStateFlow(HslTargetState())
     val state = mutableTarget.asStateFlow()
@@ -104,9 +107,16 @@ internal class EditorHslEyedropperStateHolder(
             val sampled = runCatching { sampleCurve(samplingInput, target.curveChannel) }.getOrElse {
                 ToneCurveShape.identity.points
             }
+            val parametricEvaluator: ((Double) -> Double)? =
+                if (target.curveChannel == ToneCurveChannel.RGB && !editing.parametric.isIdentity) {
+                    { px -> sampleParametric(editing, px) }
+                } else {
+                    null
+                }
             curveInteraction.begin(
                 editing, target.curveChannel, revision, sampled,
                 isHdr = current.visibleEdits.isHDREditing,
+                parametricEvaluator = parametricEvaluator,
             )
         } else {
             interaction.begin(current.visibleEdits.editingHsl, target.axis, revision)

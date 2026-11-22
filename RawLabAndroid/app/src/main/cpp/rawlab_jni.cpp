@@ -1021,6 +1021,17 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
     }
     if (curveHasV2 || gradingV2Ref) {
+        if (!channelCurvesRef) {
+            for (auto& ch : result.channels) {
+                ch = {
+                    SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
+                    sizeof(sony2fuji_tone_curve_config),
+                    SONY2FUJI_CURVE_LEGACY,
+                    0,
+                    {},
+                };
+            }
+        }
         v9.curve_apply_to_luminosity = curveApplyToLuminosity ? 1 : 0;
         v9.output_sharpening = 0;
         v9.parametric_curve = marshalToneCurveParametric(env, cache, curveParametricRef.get());
@@ -1443,6 +1454,41 @@ Java_com_rawlab_android_engine_ToneCurveSampling_nativeSamples(
         if (result) env->SetDoubleArrayRegion(result, 0, count, values.data());
         return result;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); return nullptr; }
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_rawlab_android_engine_ToneCurveSampling_nativeSampleParametricValue(
+    JNIEnv* env, jclass, jdoubleArray parametric, jdouble x) {
+    try {
+        if (!parametric || env->GetArrayLength(parametric) != 7) {
+            throw std::invalid_argument("Invalid parametric curve");
+        }
+        jdouble vals[7]{};
+        env->GetDoubleArrayRegion(parametric, 0, 7, vals);
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read parametric curve");
+        const sony2fuji_tone_curve_config identityConfig{
+            SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
+            sizeof(sony2fuji_tone_curve_config),
+            SONY2FUJI_CURVE_CUSTOM,
+            2,
+            {{0.0, 0.0}, {1.0, 1.0}},
+        };
+        sony2fuji_tone_curve_parametric_config paramCfg = defaultParametricConfig();
+        paramCfg.highlights = static_cast<float>(vals[0]);
+        paramCfg.lights = static_cast<float>(vals[1]);
+        paramCfg.darks = static_cast<float>(vals[2]);
+        paramCfg.shadows = static_cast<float>(vals[3]);
+        paramCfg.split_shadow = static_cast<float>(vals[4]);
+        paramCfg.split_midtone = static_cast<float>(vals[5]);
+        paramCfg.split_highlight = static_cast<float>(vals[6]);
+        double input = static_cast<double>(x);
+        double output = input;
+        check(sony2fuji_sample_tone_curve_v2(&identityConfig, &paramCfg, &input, &output, 1));
+        return static_cast<jdouble>(output);
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+        return x;
+    }
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

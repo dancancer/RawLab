@@ -173,8 +173,7 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
-        cancelHSLTarget()
-        cancelCurveTarget(); hslTargetEnabled = false
+        cancelHSLTarget(); hslTargetEnabled = false
         cancelCurveTarget(); curveTargetEnabled = false
         if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
@@ -192,7 +191,6 @@ extension EditorModel {
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
         cancelHSLTarget()
-        cancelCurveTarget()
         cancelCurveTarget()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }

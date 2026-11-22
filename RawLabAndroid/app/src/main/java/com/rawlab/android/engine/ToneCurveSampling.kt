@@ -27,9 +27,15 @@ internal object ToneCurveSampling {
         return values.mapIndexed { index, y -> ToneCurvePoint(index.toDouble() / (count - 1), y) }
     }
 
+    fun sampleParametricValue(settings: ToneCurveSettings, x: Double): Double {
+        if (!x.isFinite() || settings.parametric.isIdentity) return x
+        return nativeSampleParametricValue(settings.parametric.packed(), x)
+    }
+
     private fun ToneCurveParametric.packed(): DoubleArray = doubleArrayOf(
         highlights, lights, darks, shadows, splitShadow, splitMidtone, splitHighlight,
     )
 
     @JvmStatic private external fun nativeSamples(points: DoubleArray, parametric: DoubleArray?, count: Int): DoubleArray
+    @JvmStatic private external fun nativeSampleParametricValue(parametric: DoubleArray, x: Double): Double
 }

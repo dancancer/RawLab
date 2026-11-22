@@ -104,7 +104,7 @@ internal class EditorDraftStateHolder(
         if (current.draft != null) {
             if (edge == requestedPreviewLongEdge) return
             requestedPreviewLongEdge = edge
-            if (current.draft?.group == AdjustmentGroup.HSL) onCancelHslTarget()
+            if (current.draft?.group == AdjustmentGroup.HSL || current.draft?.group == AdjustmentGroup.CURVE) onCancelHslTarget()
             return
         }
         if (edge == requestedPreviewLongEdge && (edge == getPreviewLongEdge() || previewResizeJob != null)) return
@@ -248,7 +248,7 @@ internal class EditorDraftStateHolder(
             } else {
                 failedDraftSave = false
                 draftSaveBaseline = null
-                if (current.draft.group == AdjustmentGroup.HSL) onClearHslTarget(true)
+                if (current.draft.group == AdjustmentGroup.HSL || current.draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
                 runCatching { draftStore.clear(photo.identity) }
                 onIncrementEditRevision()
                 draftRevision += 1
@@ -268,7 +268,7 @@ internal class EditorDraftStateHolder(
         if (mutable.value.committingAdjustments) return
         val current = mutable.value
         val draft = current.draft ?: return
-        if (draft.group == AdjustmentGroup.HSL) onClearHslTarget(true)
+        if (draft.group == AdjustmentGroup.HSL || draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
         current.photo?.let { runCatching { draftStore.clear(it.identity) } }
         val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false

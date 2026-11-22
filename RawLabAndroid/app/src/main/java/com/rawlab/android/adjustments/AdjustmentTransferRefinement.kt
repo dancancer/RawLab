@@ -72,7 +72,13 @@ internal object AdjustmentTransferRefinement {
 
     private fun logicalCurve(desired: ToneCurveSettings, strength: Double): ToneCurveSettings {
         if (desired.isDefault || strength == 0.0 && desired.isIdentity) return desired
-        if (strength == 0.0) unrepresentable(AdjustmentField.CURVE)
+        if (strength == 0.0) unrepresentable(
+            if (desired.master.isIdentity && desired.channels.isIdentity && !desired.parametric.isIdentity) {
+                AdjustmentField.CURVE_PARAMETRIC
+            } else {
+                AdjustmentField.CURVE
+            },
+        )
         val scaledShape = ToneCurveChannel.entries.fold(desired) { result, channel ->
             val shape = desired.shape(channel)
             if (shape.mode == ToneCurveMode.LEGACY) result else result.replacing(channel,

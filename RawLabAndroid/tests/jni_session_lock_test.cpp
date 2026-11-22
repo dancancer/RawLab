@@ -2854,6 +2854,96 @@ void testHdrSessionProgressCallbackAndScopeCleanup() {
     std::cout << "PASS: testHdrSessionProgressCallbackAndScopeCleanup" << std::endl;
 }
 
+void testHdrV9WithoutChannelCurvesInitializesLegacyChannels() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, 0, makeJString("hdr.jpg"), 0, -1, nullptr);
+    gCapturePayloads = true;
+
+    auto makeBaseReq = [&]() {
+        jobject req = makeNativeHdrRenderRequest(1024);
+        setObjField(req, "geometry", makeNativeGeometry(0.f, 0.f, 1.f, 1.f, 0, JNI_FALSE, JNI_FALSE, 0.f, 0.f, 0.f));
+        jobject toneObj = makeStruct("com/rawlab/android/engine/NativeHDRTone");
+        setObjField(toneObj, "curve", makeNativeToneCurve(0, {}));
+        setObjField(req, "tone", toneObj);
+
+        jobject gradingObj = makeStruct("com/rawlab/android/engine/NativeColorGrading");
+        jobject colorObj = makeStruct("com/rawlab/android/engine/NativeHDRColor");
+        setObjField(colorObj, "hsl", makeJFloatArray(std::vector<jfloat>(24, 0.f)));
+        setObjField(colorObj, "grading", gradingObj);
+        setObjField(req, "color", colorObj);
+
+        setObjField(req, "rendition", makeStruct("com/rawlab/android/engine/NativeHDRRendition"));
+        setObjField(req, "effects", makeStruct("com/rawlab/android/engine/NativePhotoEffectsConfig"));
+        setObjField(req, "detail", makeStruct("com/rawlab/android/engine/NativeHDRDetail"));
+        setObjField(req, "look", makeStruct("com/rawlab/android/engine/NativeHDRLook"));
+        return std::pair<jobject, jobject>{req, toneObj};
+    };
+
+    // Case 1: v9 triggered by applyToLuminosity + parametric, with channelCurves == null
+    {
+        auto [req, toneObj] = makeBaseReq();
+        jobject paramObj = makeStruct("com/rawlab/android/engine/NativeToneCurveParametric");
+        setFloatField(paramObj, "shadows", 35.f);
+        setFloatField(paramObj, "splitShadow", 0.25f);
+        setFloatField(paramObj, "splitMidtone", 0.50f);
+        setFloatField(paramObj, "splitHighlight", 0.75f);
+        setBoolField(toneObj, "applyToLuminosity", JNI_TRUE);
+        setObjField(toneObj, "parametric", paramObj);
+
+        const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1, nullptr);
+        auto ex = consumeException();
+        require(outPair > 0 && !ex.active, "v9 HDR render without channelCurves failed: " + ex.message);
+        const auto& v8 = gCapturedHdrRequest.base;
+        const auto& v1 = v8.base.base.base.base.base.base.base;
+        require(v1.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION, "Expected v9 processing version");
+        require(v1.struct_size == sizeof(sony2fuji_hdr_request_v9), "Expected v9 struct_size");
+        for (int i = 0; i < 3; ++i) {
+            require(v8.channels[i].version == SONY2FUJI_TONE_CURVE_CONFIG_VERSION, "Default channel version missing");
+            require(v8.channels[i].struct_size == sizeof(sony2fuji_tone_curve_config), "Default channel struct_size missing");
+            require(v8.channels[i].mode == SONY2FUJI_CURVE_LEGACY, "Default channel mode must be LEGACY");
+            require(v8.channels[i].count == 0, "Default channel count must be 0");
+        }
+        require(gCapturedHdrRequest.curve_apply_to_luminosity == 1, "Expected curve_apply_to_luminosity == 1");
+        require(gCapturedHdrRequest.parametric_curve.shadows == 35.f, "Expected shadows == 35");
+        require(gCapturedHdrRequest.grading_v2.version == SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, "Default grading_v2 version missing");
+        Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, outPair);
+    }
+
+    // Case 2: v9 triggered by gradingV2 only, with channelCurves == null
+    {
+        auto [req, _] = makeBaseReq();
+        jobject gv2Obj = makeStruct("com/rawlab/android/engine/NativeColorGradingV2");
+        setFloatField(gv2Obj, "blending", 50.f);
+        setObjField(req, "gradingV2", gv2Obj);
+        const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1, nullptr);
+        auto ex = consumeException();
+        require(outPair > 0 && !ex.active, "v9 HDR render with gradingV2 only failed: " + ex.message);
+        const auto& v8 = gCapturedHdrRequest.base;
+        for (int i = 0; i < 3; ++i) {
+            require(v8.channels[i].version == SONY2FUJI_TONE_CURVE_CONFIG_VERSION &&
+                    v8.channels[i].struct_size == sizeof(sony2fuji_tone_curve_config) &&
+                    v8.channels[i].mode == SONY2FUJI_CURVE_LEGACY,
+                "v9 gradingV2-only must initialize Legacy channels[0..2]");
+        }
+        Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, outPair);
+    }
+
+    // Verify nativeSampleParametricValue JNI entrypoint
+    {
+        jdoubleArray paramArr = makeJDoubleArray({10.0, -5.0, 4.0, 20.0, 0.25, 0.50, 0.75});
+        const jdouble sampled = Java_com_rawlab_android_engine_ToneCurveSampling_nativeSampleParametricValue(
+            env.ptr(), nullptr, paramArr, 0.3);
+        auto ex = consumeException();
+        require(!ex.active && sampled == 0.3, "nativeSampleParametricValue mock failed: " + ex.message);
+    }
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testHdrV9WithoutChannelCurvesInitializesLegacyChannels" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2879,6 +2969,7 @@ int main() {
         {"testBitmapPreviewMidCopyCancellationUnlocksSymmetrically", testBitmapPreviewMidCopyCancellationUnlocksSymmetrically},
         {"testNativePlaneDirectCopyAndMetadataInspection", testNativePlaneDirectCopyAndMetadataInspection},
         {"testHdrSessionProgressCallbackAndScopeCleanup", testHdrSessionProgressCallbackAndScopeCleanup},
+        {"testHdrV9WithoutChannelCurvesInitializesLegacyChannels", testHdrV9WithoutChannelCurvesInitializesLegacyChannels},
     };
     int failures = 0;
     for (const auto& c : cases) {

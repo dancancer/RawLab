@@ -880,10 +880,6 @@ PhotoParams makeParams(
         std::copy(renderParams.hsl.saturation.begin(), renderParams.hsl.saturation.end(), params.hslSaturation);
         std::copy(renderParams.hsl.lightness.begin(), renderParams.hsl.lightness.end(), params.hslLightness);
     } else {
-        const auto custom = sony2fuji::toneCurveGpuParameters(sony2fuji::ToneCurve{});
-        params.customCurveCount = custom.count;
-        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
-        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
         const auto grading = sony2fuji::colorGradingCoefficients(sony2fuji::ColorGradingOptions{});
         for (size_t zone = 0; zone < 3; ++zone) {
             params.colorGrading[zone * 3] = grading[zone].r;

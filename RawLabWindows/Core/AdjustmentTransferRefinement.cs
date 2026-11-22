@@ -54,7 +54,8 @@ internal static class AdjustmentTransferRefinement
     private static ToneCurveSettings LogicalCurve(ToneCurveSettings desired, double strength)
     {
         if (desired.IsDefault || strength == 0 && desired.IsIdentity) return desired;
-        if (strength == 0) throw Unrepresentable(F.Curve);
+        if (strength == 0) throw Unrepresentable(
+            desired.Master.IsIdentity && desired.Channels.IsIdentity && !desired.Parametric.IsIdentity ? F.CurveParametric : F.Curve);
         var result = desired;
         foreach (var channel in Enum.GetValues<ToneCurveChannel>()) {
             var shape = desired.Shape(channel);
