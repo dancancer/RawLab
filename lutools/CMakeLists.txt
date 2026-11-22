@@ -601,7 +601,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             NAME metal_workspace
             SOURCES tests/metal_workspace_tests.mm
             LIBRARIES sony2fuji_core "-framework Metal" "-framework Foundation"
-            ENVIRONMENT "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
             LABELS gpu metal metal_arm64 ci_macos_arm64
         )
     endif()
@@ -1155,7 +1158,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         rawlab_add_test(
             NAME metal_edit_pixel_golden
             COMMAND edit_pixel_golden_tests --metal
-            ENVIRONMENT "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
             LABELS gpu metal metal_arm64 ci_macos_arm64
         )
     endif()
@@ -1379,7 +1385,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                 NAME abi_layout_fixture
                 COMMAND "${RAWLAB_SHADER_PYTHON}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/ci/test_abi_layout.py"
-                ENVIRONMENT "CXX=${RAWLAB_ABI_CLANGXX};RAWLAB_REQUIRE_ABI_CHECK=1"
+                ENVIRONMENT
+                    "CXX=${RAWLAB_ABI_CLANGXX}"
+                    "RAWLAB_REQUIRE_ABI_CHECK=1"
                 LABELS contracts abi ci_macos_arm64 ci_macos_x86_64
             )
         endif()

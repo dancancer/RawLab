@@ -21,6 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MANIFEST = REPO_ROOT / "Shared" / "assets-manifest.json"
 DOWNLOAD_ATTEMPTS = 4
 DOWNLOAD_TIMEOUT_SECONDS = 120
+# ZIP/DOS timestamps start at 1980-01-01 local time; 1980-01-02 UTC stays valid in every timezone.
+MIN_PORTABLE_MTIME = 315619200  # 1980-01-02T00:00:00Z
 
 
 def sha256_file(path: Path) -> tuple[str, int]:
@@ -166,6 +168,13 @@ def _safe_extract_tar_gz(archive: Path, target_dir: Path) -> None:
             tf.extractall(target_resolved)
 
 
+def _clamp_mtime(path: Path) -> None:
+    """Bump pre-1980 archive timestamps so ZIP/Compress-Archive never reject materialized assets."""
+    st = path.stat()
+    if st.st_mtime < MIN_PORTABLE_MTIME:
+        os.utime(path, (max(st.st_atime, MIN_PORTABLE_MTIME), MIN_PORTABLE_MTIME))
+
+
 def _materialize_file(src: Path, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() or dest.is_symlink():
@@ -210,6 +219,8 @@ def prepare_group(
 ) -> tuple[int, int]:
     files = spec["files"]
     if all(file_matches(repo_root / entry["path"], entry["sha256"], entry["bytes"]) for entry in files):
+        for entry in files:
+            _clamp_mtime(repo_root / entry["path"])
         if not quiet:
             print(f"[assets:{name}] up-to-date ({len(files)} files verified)")
         return len(files), 0
@@ -253,6 +264,7 @@ def prepare_group(
                 if not file_matches(dest_cache, entry["sha256"], entry["bytes"]):
                     dest_cache.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(stage_dir / entry["path"], dest_cache)
+                _clamp_mtime(dest_cache)
         finally:
             shutil.rmtree(stage_dir, ignore_errors=True)
 
@@ -260,9 +272,12 @@ def prepare_group(
     for entry in files:
         dest = repo_root / entry["path"]
         if file_matches(dest, entry["sha256"], entry["bytes"]):
+            _clamp_mtime(dest)
             continue
         cached = extracted_dir / entry["path"]
+        _clamp_mtime(cached)
         _materialize_file(cached, dest)
+        _clamp_mtime(dest)
         materialized += 1
 
     if not quiet:

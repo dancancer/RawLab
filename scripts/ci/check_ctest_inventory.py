@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -141,11 +142,21 @@ def load_ctest_json(build_dir: Path, ctest_bin: str = "ctest", config: str | Non
     return json.loads(output)
 
 
+_PACKED_ENV_RE = re.compile(r";[A-Za-z_][A-Za-z0-9_]*=")
+
+
 def test_labels(entry: dict) -> set[str]:
     for prop in entry.get("properties", []):
         if prop.get("name") == "LABELS":
             return set(prop.get("value") or [])
     return set()
+
+
+def test_environment(entry: dict) -> list[str]:
+    for prop in entry.get("properties", []):
+        if prop.get("name") == "ENVIRONMENT":
+            return list(prop.get("value") or [])
+    return []
 
 
 def test_executable_stem(entry: dict) -> str | None:
@@ -181,6 +192,12 @@ def validate_ctest_inventory(
         if not labels:
             errors.append(f"Unlabeled CTest: {name}")
             continue
+        for env_entry in test_environment(entry):
+            if _PACKED_ENV_RE.search(env_entry):
+                errors.append(
+                    f"CTest {name} has semicolon-packed ENVIRONMENT entry {env_entry!r}; "
+                    "pass each KEY=VALUE as a separate argument"
+                )
         stem = test_executable_stem(entry)
         if stem:
             observed_stems.add(stem)
