@@ -116,4 +116,99 @@ double ToneCurve::evaluate(double value) const {
     return std::clamp(result, s.y0, s.y1);
 }
 
+namespace {
+
+double smoothstepBump(double x, double left, double center, double right) noexcept {
+    if (x <= left || x >= right) return 0.0;
+    const double t = x < center
+        ? (x - left) / (center - left)
+        : (right - x) / (right - center);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+} // namespace
+
+ToneCurveParametric::ToneCurveParametric(const ToneCurveParametricConfig& config) {
+    if (!config.valid()) throw std::invalid_argument("invalid parametric tone curve");
+    splits_ = {
+        static_cast<double>(config.splitShadow),
+        static_cast<double>(config.splitMidtone),
+        static_cast<double>(config.splitHighlight)
+    };
+    if (!config.active()) return;
+
+    active_ = true;
+    const double s0 = splits_[0];
+    const double s1 = splits_[1];
+    const double s2 = splits_[2];
+    const double c0 = 0.5 * s0;
+    const double c1 = 0.5 * (s0 + s1);
+    const double c2 = 0.5 * (s1 + s2);
+    const double c3 = 0.5 * (s2 + 1.0);
+
+    const std::array<double, 4> lefts{0.0, 0.0, s0, s1};
+    const std::array<double, 4> centers{c0, c1, c2, c3};
+    const std::array<double, 4> rights{s1, s2, 1.0, 1.0};
+    constexpr std::array<double, 4> kNominal{0.12, 0.15, 0.15, 0.12};
+    const std::array<double, 4> desired{
+        (static_cast<double>(config.shadows) / 100.0) * kNominal[0],
+        (static_cast<double>(config.darks) / 100.0) * kNominal[1],
+        (static_cast<double>(config.lights) / 100.0) * kNominal[2],
+        (static_cast<double>(config.highlights) / 100.0) * kNominal[3]
+    };
+
+    const std::array<double, 9> knots{0.0, c0, s0, c1, s1, c2, s2, c3, 1.0};
+    double minDeriv = 0.0;
+    for (size_t m = 0; m < 8; ++m) {
+        const double x0 = knots[m];
+        const double x1 = knots[m + 1];
+        const double mid = 0.5 * (x0 + x1);
+        double A = 0.0, B = 0.0, C = 0.0;
+        for (size_t i = 0; i < 4; ++i) {
+            if (desired[i] == 0.0) continue;
+            if (lefts[i] < mid && mid < centers[i]) {
+                const double w = centers[i] - lefts[i];
+                const double k = desired[i] * 6.0 / (w * w * w);
+                A += -k;
+                B += k * (lefts[i] + centers[i]);
+                C += -k * (lefts[i] * centers[i]);
+            } else if (centers[i] < mid && mid < rights[i]) {
+                const double w = rights[i] - centers[i];
+                const double k = -desired[i] * 6.0 / (w * w * w);
+                A += -k;
+                B += k * (centers[i] + rights[i]);
+                C += -k * (centers[i] * rights[i]);
+            }
+        }
+        auto evalQ = [&](double x) { return (A * x + B) * x + C; };
+        minDeriv = std::min(minDeriv, evalQ(x0));
+        minDeriv = std::min(minDeriv, evalQ(x1));
+        if (A > 0.0) {
+            const double xv = -B / (2.0 * A);
+            if (xv > x0 && xv < x1) {
+                minDeriv = std::min(minDeriv, evalQ(xv));
+            }
+        }
+    }
+
+    const double scale = minDeriv < -0.95 ? 0.95 / (-minDeriv) : 1.0;
+    for (size_t i = 0; i < 4; ++i) {
+        amps_[i] = desired[i] * scale;
+    }
+}
+
+double ToneCurveParametric::evaluate(double value) const noexcept {
+    if (!active_) return value;
+    const double x = std::clamp(value, 0.0, 1.0);
+    const double s0 = splits_[0];
+    const double s1 = splits_[1];
+    const double s2 = splits_[2];
+    const double dx =
+        amps_[0] * smoothstepBump(x, 0.0, 0.5 * s0, s1) +
+        amps_[1] * smoothstepBump(x, 0.0, 0.5 * (s0 + s1), s2) +
+        amps_[2] * smoothstepBump(x, s0, 0.5 * (s1 + s2), 1.0) +
+        amps_[3] * smoothstepBump(x, s1, 0.5 * (s2 + 1.0), 1.0);
+    return std::clamp(x + dx, 0.0, 1.0);
+}
+
 } // namespace sony2fuji

@@ -25,7 +25,7 @@ import Foundation
         settings.exposure=1.25; settings.temperature=7200; settings.tint = -12
         settings.contrast=30; settings.highlights=20; settings.shadows=40; settings.saturation=10
         settings.geometry.quarterTurns=1; settings.geometry.flipHorizontal=true
-        let request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:1600).native.base.base.base.base.base.base.base
+        let request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:1600).native.base.base.base.base.base.base.base.base
         require(request.version==1 && request.struct_size==88 && request.hdr_processing_version==1,"HDR ABI header differs")
         require(request.exposure_ev==1.25 && request.temperature==7200 && request.tint == -12,"HDR exposure/WB mapping differs")
         require(request.contrast==30 && request.highlights==20 && request.shadows==40 && request.saturation==10,"HDR logical tone mapping differs")
@@ -65,7 +65,7 @@ import Foundation
         settings.colorSettings.vibrance = 23
         settings.colorSettings.hsl.setExact(.saturation, channel: 7, value: -12.5)
         settings.colorSettings.grading.midtones = .init(hue: 210, saturation: 17)
-        let nativeColor = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base
+        let nativeColor = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base.base
         require(nativeColor.base.base.struct_size == 792 && nativeColor.base.base.hdr_processing_version == 3 &&
                 nativeColor.vibrance == 23 && nativeColor.hsl.saturation.7 == -12.5 &&
                 nativeColor.grading.midtones_hue == 210 && nativeColor.grading.midtones_saturation == 17,
@@ -83,7 +83,7 @@ import Foundation
         settings.renditionSettings.sdrExposureEV = -0.5
         settings.renditionSettings.sdrContrast = 25
         settings.renditionSettings.sdrSaturation = -15
-        let nativeRendition = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base
+        let nativeRendition = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base
         require(nativeRendition.base.base.base.struct_size == 808 &&
                 nativeRendition.base.base.base.hdr_processing_version == 4 &&
                 nativeRendition.base.vibrance == 23 && nativeRendition.peak_limit_ev == 2 &&
@@ -100,7 +100,7 @@ import Foundation
         settings.effectsSettings.vignetteAmount = -50
         settings.effectsSettings.grainAmount = 40
         settings.effectsSettings.grainSize = 30
-        let nativeEffects = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base
+        let nativeEffects = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base
         require(nativeEffects.base.base.base.base.struct_size == 848 &&
                 nativeEffects.base.base.base.base.hdr_processing_version == 5 &&
                 nativeEffects.base.peak_limit_ev == 2 && nativeEffects.effects.vignette_amount == -50 &&
@@ -114,7 +114,7 @@ import Foundation
                 (effectsEdits["effects"] as? [String: Double])?["grain_amount"] == 40, "Swift HDR v11 recipe lost effects")
         settings.detailSettings = .init(sharpening: 1.25, clarity: 0.5, dehaze: -0.4, denoise: 0.75)
         let detailRequest = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL)
-        let detail = detailRequest.native.base.base
+        let detail = detailRequest.native.base.base.base
         let prefix = withHDRRequestPrefix(detailRequest) { $0.pointee }
         require(prefix.struct_size == 864 && prefix.hdr_processing_version == 6 &&
                 detail.sharpening == 1.25 && detail.clarity == 0.5 && detail.dehaze == -0.4 && detail.denoise == 0.75,
@@ -137,6 +137,22 @@ import Foundation
                     "Swift HDR look request lost path or strength")
             let bytes = withUnsafeBytes(of: look.look_sha256) { Data($0) }
             require(bytes == Data(hash.utf8) + Data([0]), "Swift HDR look fingerprint is not NUL-terminated")
+        }
+        var v9Settings = settings
+        v9Settings.toneSettings.curve = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.1), .init(x: 0.5, y: 0.6), .init(x: 1, y: 0.9)],
+            applyToLuminosity: true,
+            parametric: ToneCurveParametric(highlights: -15, lights: 10, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
+        )
+        let v9Request = try makeHDRRequest(settings: v9Settings, intent: SONY2FUJI_INTENT_FINAL)
+        withHDRRequestPrefix(v9Request) { pointer in
+            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == 2696, "HDR v9 ABI header")
+            let full = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
+            require(full.curve_apply_to_luminosity == 1 && full.parametric_curve.shadows == 20 &&
+                    full.parametric_curve.split_shadow == 0.2 && full.grading_v2.version == 2 &&
+                    full.grading_v2.struct_size == 64 && full.grading_v2.midtones_hue == 210,
+                    "HDR v9 tone curve v2 + grading_v2 tail")
         }
         for edge in [0,-1,65536] {
             do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:edge); fatalError("invalid edge accepted") }

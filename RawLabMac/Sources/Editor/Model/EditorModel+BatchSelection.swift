@@ -81,6 +81,7 @@ extension EditorModel {
         }
         ParameterValueField.cancelPendingInputs()
         cancelHSLTarget()
+        cancelCurveTarget()
         if geometryDraft != nil { cancelGeometryDraft() }
         saveWork?.cancel(); scheduler.setInteracting(false); interactionEntry = nil
         _ = editStore?.flushPendingCommits()

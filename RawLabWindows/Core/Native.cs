@@ -145,6 +145,14 @@ internal static partial class Native
         public ToneCurveConfig Red, Green, Blue;
     }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct HDRRequestV9 {
+        public HDRRequestV8 Base;
+        public int CurveApplyToLuminosity;
+        public uint OutputSharpening;
+        public ToneCurveParametricConfig ParametricCurve;
+        public ColorGradingV2Config GradingV2;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct HDRLookInfo
     {
         public uint Version, StructSize, GridSize, Reserved;
@@ -198,6 +206,15 @@ internal static partial class Native
     [StructLayout(LayoutKind.Sequential)]
     internal struct ColorGradingConfig { public uint Version, StructSize; public float ShadowsHue, ShadowsSaturation, MidtonesHue, MidtonesSaturation, HighlightsHue, HighlightsSaturation; }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ColorGradingV2Config {
+        public uint Version, StructSize;
+        public float ShadowsHue, ShadowsSaturation, ShadowsLuminance;
+        public float MidtonesHue, MidtonesSaturation, MidtonesLuminance;
+        public float HighlightsHue, HighlightsSaturation, HighlightsLuminance;
+        public float GlobalHue, GlobalSaturation, GlobalLuminance;
+        public float Blending, Balance;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct AtmosphereConfig { public uint Version, StructSize; public float Clarity, Dehaze; }
     [StructLayout(LayoutKind.Sequential)]
     internal struct ToneControlsConfig { public uint Version, StructSize; public float BlackPoint, WhitePoint, Vibrance; }
@@ -238,6 +255,21 @@ internal static partial class Native
     internal struct ToneCurveSetConfig {
         public uint Version, StructSize;
         public ToneCurveConfig Master, Red, Green, Blue;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneCurveParametricConfig {
+        public uint Version, StructSize;
+        public float Highlights, Lights, Darks, Shadows;
+        public float SplitShadow, SplitMidtone, SplitHighlight;
+        public uint Reserved;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneCurveSetV2Config {
+        public uint Version, StructSize;
+        public int ApplyToLuminosity;
+        public uint Reserved;
+        public ToneCurveConfig Master, Red, Green, Blue;
+        public ToneCurveParametricConfig Parametric;
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct PhotoEffectsConfig
@@ -446,6 +478,13 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_interactive_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_viewport_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve_v2(
+        ref ToneCurveConfig config, ref ToneCurveParametricConfig parametric, [In] double[] x, [Out] double[] y, uint count);
+    [DllImport(Dll, EntryPoint="sony2fuji_sample_tone_curve_v2", CallingConvention=CallingConvention.Cdecl)]
+    internal static extern int SampleToneCurveV2WithoutParametric(
+        ref ToneCurveConfig config, IntPtr parametric, [In] double[] x, [Out] double[] y, uint count);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_curves_v2(
+        Session session, ref ToneCurveSetV2Config config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_effective_raw_white_balance(Session session,out float temperature,out float tint);
@@ -483,15 +522,15 @@ internal static partial class Native
         Session? session, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_proraw(
-        Session session, [MarshalAs(UnmanagedType.LPUTF8Str)] string sourcePath, ref HDRRequestV8 request,
+        Session session, [MarshalAs(UnmanagedType.LPUTF8Str)] string sourcePath, ref HDRRequestV9 request,
         ref HDRExportConfig config, uint keepHdr, [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRStreamResult result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_geometry_size(
         uint nativeWidth, uint nativeHeight, ref HDRRequest request, out uint width, out uint height, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_render(
-        Session session, ref HDRImagePair source, ref HDRRequestV8 request, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
+        Session session, ref HDRImagePair source, ref HDRRequestV9 request, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_create_hsl_probe(
-        Session session, ref HDRImagePair source, ref HDRRequestV8 request, ulong sourceRevision, ulong requestRevision,
+        Session session, ref HDRImagePair source, ref HDRRequestV9 request, ulong sourceRevision, ulong requestRevision,
         out IntPtr probe, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_estimate_auto_exposure(
         ref HDRImagePair source, float temperature, float tint, out float exposure, ref HDRDiagnostic diagnostic);
@@ -500,7 +539,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_sdr(
         ref HDRImagePair image, ref HDRSdrExportConfig config, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_stream(
-        Session session, ref HDRStreamSource source, ref HDRRequestV8 request, ref HDRExportConfig config, uint keepHdr,
+        Session session, ref HDRStreamSource source, ref HDRRequestV9 request, ref HDRExportConfig config, uint keepHdr,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot, [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
         ref HDRStreamResult result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hdr_release_pair(ref HDRImagePair image);

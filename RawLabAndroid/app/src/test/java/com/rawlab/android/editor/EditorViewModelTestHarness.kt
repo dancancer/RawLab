@@ -338,6 +338,14 @@ internal class EditorViewModelTestHarness : AutoCloseable {
                 TestUri.of(parsed.path ?: raw, scheme = parsed.scheme ?: "file", authority = parsed.authority ?: "")
             },
             retainSystemPhoto = { it },
+            curveSampler = { settings, channel ->
+                val shape = settings.shape(channel)
+                if (shape.points.size >= 2) shape.points
+                else listOf(
+                    com.rawlab.android.settings.ToneCurvePoint(0.0, 0.0),
+                    com.rawlab.android.settings.ToneCurvePoint(1.0, 1.0),
+                )
+            },
         )
     }
 

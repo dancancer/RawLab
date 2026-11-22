@@ -534,8 +534,8 @@ public final class BatchJournalStore {
         }
         if isIntegerAbove(settings["masterRecipeSettingsVersion"], limit: 4) { return true }
         if let hdr = settings["hdr"] as? [String: Any] {
-            if isIntegerAbove(hdr["hdr_processing_version"], limit: 8) ||
-               isIntegerAbove(hdr["record_version"], limit: 9) {
+            if isIntegerAbove(hdr["hdr_processing_version"], limit: 9) ||
+               isIntegerAbove(hdr["record_version"], limit: 10) {
                 return true
             }
             if let cameraDev = hdr["camera_development"] as? [String: Any],

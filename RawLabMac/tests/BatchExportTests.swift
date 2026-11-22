@@ -733,6 +733,7 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
             points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
         )
+        maxHDR.toneSettings.curve.applyToLuminosity = true
         let expectedMax: (BatchJournalVersionKey) -> Int = { key in
             switch key {
             case .job: return 3

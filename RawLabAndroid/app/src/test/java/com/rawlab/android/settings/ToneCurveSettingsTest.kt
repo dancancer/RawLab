@@ -40,7 +40,13 @@ class ToneCurveSettingsTest {
         val frozen = ToneCurveSettings(ToneCurveMode.CUSTOM, points)
         points[1] = ToneCurvePoint(.5, .5)
         assertEquals(ToneCurveSettings.identity, frozen)
-        assertEquals(curve, curve.moving(0, .1, .1))
+        assertTrue(curve.isEndpoint(0) && curve.isEndpoint(3) && curve.canMoveY(0) && curve.canMoveY(3))
+        assertFalse(curve.isInterior(0) || curve.isInterior(3))
+        val movedBlack = curve.moving(0, .2, .1)
+        assertEquals(ToneCurvePoint(0.0, .1), movedBlack.points[0])
+        assertEquals(curve.points[1].y, curve.moving(0, .2, .5).points[0].y, 0.0)
+        assertEquals(ToneCurvePoint(1.0, .9), curve.moving(3, .8, .9).points[3])
+        assertEquals(curve, curve.removing(0))
         assertEquals(curve, curve.removing(3))
         val moved = curve.moving(1, 1.0, 1.0)
         assertTrue(moved.points[1].x < moved.points[2].x)
@@ -132,5 +138,21 @@ class ToneCurveSettingsTest {
             source, context,
         )
         assertEquals(v2Curve, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), context).curve)
+    }
+
+    @Test fun curveTargetInteractionAcceptsNearGraySwitchesLegacyAndCancelsCleanly() {
+        val rev = HslTargetRevision(1L, 2L)
+        val interaction = CurveTargetInteraction()
+        val sampled = listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.5, 0.5), ToneCurvePoint(1.0, 1.0))
+        val token = interaction.begin(ToneCurveSettings(), ToneCurveChannel.RGB, rev, sampled)
+        val graySample = HslTargetSample(rev, HslTargetAvailability.NEAR_GRAY, listOf(0.4f, 0.4f, 0.4f), emptyList(), preview = false)
+        val accepted = interaction.accept(graySample, token, rev)
+        assertNotNull(accepted)
+        assertEquals(ToneCurveMode.CUSTOM, accepted!!.mode)
+        assertEquals(3, accepted.points.size)
+        val dragged = interaction.move(20f)
+        assertNotNull(dragged)
+        assertEquals(0.5, dragged!!.points[1].y, 1e-6)
+        assertEquals(ToneCurveSettings(), interaction.cancel())
     }
 }

@@ -4,7 +4,7 @@ import Foundation
 enum HDRRequestError: Error { case invalidSettings }
 
 struct HDRRenderRequest {
-    let native: sony2fuji_hdr_request_v8
+    let native: sony2fuji_hdr_request_v9
     let lookURL: URL?
 }
 
@@ -96,14 +96,26 @@ func makeHDRRequest(settings: HDRSettings, intent: sony2fuji_intent,
         let channels = settings.toneSettings.curve.channels
         channelsRequest.channels = (channels.red.nativeConfig, channels.green.nativeConfig, channels.blue.nativeConfig)
     }
-    return HDRRenderRequest(native: channelsRequest, lookURL: settings.lookSettings.asset(in: lookDirectory))
+    var v9Request = sony2fuji_hdr_request_v9()
+    v9Request.base = channelsRequest
+    if request.hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION {
+        v9Request.base.base.base.base.base.base.base.base.struct_size = UInt32(MemoryLayout<sony2fuji_hdr_request_v9>.size)
+        v9Request.curve_apply_to_luminosity = settings.toneSettings.curve.applyToLuminosity ? 1 : 0
+        v9Request.output_sharpening = 0
+        v9Request.parametric_curve = settings.toneSettings.curve.parametric.nativeConfig
+        v9Request.grading_v2 = settings.colorSettings.grading.nativeV2Config
+    } else {
+        v9Request.parametric_curve = ToneCurveParametric().nativeConfig
+        v9Request.grading_v2 = ColorGradingSettings().nativeV2Config
+    }
+    return HDRRenderRequest(native: v9Request, lookURL: settings.lookSettings.asset(in: lookDirectory))
 }
 
 func withHDRRequestPrefix<T>(_ request: HDRRenderRequest,
                              _ body: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
     var native = request.native
     func call(_ path: UnsafePointer<CChar>?, _ invoke: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
-        native.base.look_path = path
+        native.base.base.look_path = path
         return try withUnsafePointer(to: &native) { full in
             try full.withMemoryRebound(to: sony2fuji_hdr_request_v1.self, capacity: 1, invoke)
         }

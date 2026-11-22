@@ -597,6 +597,104 @@ int main() {
         sony2fuji_session_set_chroma_denoise(target, 0);
     }
     compareForcedCase(session, forced, baseline, "HSL reset restores the existing GPU path");
+
+    // Tone Curve v2 Force GPU parity checks: unpinned endpoints, Luminosity mode (including gamut clamp),
+    // 4-band parametric curve, independent R/G/B channel curves, and exact identity bypass.
+    {
+        std::vector<unsigned char> vividPixels = {
+            0, 0, 0,
+            128, 128, 128,
+            255, 255, 255,
+            230, 38, 38,
+            217, 51, 38,
+            30, 210, 90,
+            40, 80, 240,
+            250, 220, 45
+        };
+        auto v2Req = baseRequest(vividPixels, 8, 1);
+        sony2fuji_tone_curve_set_v2_config v2{};
+        v2.version = SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION;
+        v2.struct_size = sizeof(v2);
+        for (auto& c : v2.curves) {
+            c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            c.struct_size = sizeof(c);
+            c.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        v2.parametric.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+        v2.parametric.struct_size = sizeof(v2.parametric);
+        v2.parametric.split_shadow = 0.25f;
+        v2.parametric.split_midtone = 0.50f;
+        v2.parametric.split_highlight = 0.75f;
+
+        // Unpinned endpoints + parametric + RGB channels
+        v2.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+        v2.curves[0].count = 3;
+        v2.curves[0].points[0] = {0.0, 0.12};
+        v2.curves[0].points[1] = {0.45, 0.72};
+        v2.curves[0].points[2] = {1.0, 0.88};
+        v2.curves[1].mode = SONY2FUJI_CURVE_CUSTOM;
+        v2.curves[1].count = 3;
+        v2.curves[1].points[0] = {0.0, 0.04};
+        v2.curves[1].points[1] = {0.5, 0.60};
+        v2.curves[1].points[2] = {1.0, 0.95};
+        v2.curves[3].mode = SONY2FUJI_CURVE_CUSTOM;
+        v2.curves[3].count = 3;
+        v2.curves[3].points[0] = {0.0, 0.0};
+        v2.curves[3].points[1] = {0.5, 0.42};
+        v2.curves[3].points[2] = {1.0, 1.0};
+        v2.parametric.shadows = 50.0f;
+        v2.parametric.darks = -30.0f;
+        v2.parametric.lights = 40.0f;
+        v2.parametric.highlights = -25.0f;
+        v2.apply_to_luminosity = 0;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_tone_curves_v2(target, &v2) == SONY2FUJI_STATUS_OK, "v2 RGB setter");
+        }
+        compareForcedCase(session, forced, v2Req, "Tone curve v2 unpinned + parametric + R/B channels");
+
+        v2.apply_to_luminosity = 1;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_tone_curves_v2(target, &v2) == SONY2FUJI_STATUS_OK, "v2 Luminosity setter");
+        }
+        compareForcedCase(session, forced, v2Req, "Tone curve v2 Luminosity mode + gamut clamp + R/B channels");
+
+        // Exact zero-value bypass with out-of-range working residuals (<0 and >1)
+        sony2fuji::ImageData residualInput(4, 1);
+        residualInput.pixels = {
+            {-0.2f, 0.5f, 1.3f},
+            {0.0f, 1e8f, -0.05f},
+            {1.5f, -0.3f, 0.8f},
+            {0.2f, 0.4f, 0.6f}
+        };
+        sony2fuji::RenderParams bypassParams;
+        bypassParams.brightness = bypassParams.contrast = bypassParams.saturation = 1.0f;
+        bypassParams.temperature = 6500.0f;
+        bypassParams.intent = sony2fuji::RenderIntent::Final;
+        bypassParams.curveApplyToLuminosity = true;
+        bypassParams.parametricCurve = {0.f, 0.f, 0.f, 0.f, 0.15f, 0.40f, 0.85f};
+        bypassParams.customCurve = sony2fuji::ToneCurve(
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0, 0}, {0.5, 0.5}, {1, 1}}}}, true);
+        sony2fuji::ImageData bypassOut;
+#ifdef SONY2FUJI_ENABLE_D3D11
+        sony2fuji::D3D11PhotoRenderer bypassRenderer;
+        const bool bypassOk = bypassRenderer.render(residualInput, sony2fuji::ColorSpace::sRGB, bypassParams, 4, 1, 0, bypassOut);
+#else
+        const bool bypassOk = sony2fuji::renderPhotoMetal(residualInput, sony2fuji::ColorSpace::sRGB, bypassParams, 4, 1, bypassOut);
+#endif
+        bool bypassExact = bypassOk && bypassOut.pixels.size() == residualInput.pixels.size();
+        for (size_t i = 0; bypassExact && i < residualInput.pixels.size(); ++i) {
+            const double er = sony2fuji::neutralDisplay(residualInput.pixels[i].r);
+            const double eg = sony2fuji::neutralDisplay(residualInput.pixels[i].g);
+            const double eb = sony2fuji::neutralDisplay(residualInput.pixels[i].b);
+            bypassExact &= std::abs(bypassOut.pixels[i].r - er) <= 1e-5 &&
+                           std::abs(bypassOut.pixels[i].g - eg) <= 1e-5 &&
+                           std::abs(bypassOut.pixels[i].b - eb) <= 1e-5;
+        }
+        checkPass(bypassExact, "Tone curve v2 inactive bypass preserves <0 and >1 residuals on GPU");
+
+        sony2fuji_tone_curve_config resetCurve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(resetCurve), SONY2FUJI_CURVE_LEGACY, 0, {}};
+        for (auto* target : {session, forced}) sony2fuji_session_set_tone_curve(target, &resetCurve);
+    }
     std::filesystem::remove(hslLutPath);
     sony2fuji_session_destroy(forced);
 

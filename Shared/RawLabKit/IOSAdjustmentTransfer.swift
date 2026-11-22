@@ -188,7 +188,7 @@ public enum IOSAdjustmentTransfer {
         if let applyToLuminosity = payload[.curveApplyToLuminosity]?.boolean {
             result.curveSettings.applyToLuminosity = applyToLuminosity
         }
-        if let parametric = payload[.curveParametric]?.parametricCurve {
+        if let parametric = refinements[.curveParametric]?.parametricCurve {
             result.curveSettings.parametric = parametric
         }
         for field in Field.refinementObjects {

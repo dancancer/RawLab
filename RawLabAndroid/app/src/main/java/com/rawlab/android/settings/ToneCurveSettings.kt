@@ -39,6 +39,8 @@ class ToneCurveShape(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: Lis
     }
     fun packed() = points.flatMap { listOf(it.x, it.y) }.toDoubleArray()
     fun isInterior(index: Int) = mode == ToneCurveMode.CUSTOM && index > 0 && index + 1 < points.size
+    fun isEndpoint(index: Int) = mode == ToneCurveMode.CUSTOM && points.size >= 2 && (index == 0 || index == points.lastIndex)
+    fun canMoveY(index: Int) = mode == ToneCurveMode.CUSTOM && index in points.indices
     fun inserting(x: Double, y: Double): ToneCurveShape {
         if (mode != ToneCurveMode.CUSTOM || points.size >= 33 || !x.isFinite() || !y.isFinite() ||
             x <= 0 || x >= 1 || points.any { it.x == x }) return this
@@ -48,7 +50,19 @@ class ToneCurveShape(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: Lis
         })
     }
     fun moving(index: Int, x: Double, y: Double): ToneCurveShape {
-        if (!isInterior(index) || !x.isFinite() || !y.isFinite()) return this
+        if (!canMoveY(index) || !x.isFinite() || !y.isFinite()) return this
+        if (index == 0) {
+            val maxY = if (points.size > 1) points[1].y else 1.0
+            return ToneCurveShape(mode, points.toMutableList().also {
+                it[0] = ToneCurvePoint(0.0, y.coerceIn(0.0, maxY))
+            })
+        }
+        if (index == points.lastIndex) {
+            val minY = if (points.size > 1) points[index - 1].y else 0.0
+            return ToneCurveShape(mode, points.toMutableList().also {
+                it[index] = ToneCurvePoint(1.0, y.coerceIn(minY, 1.0))
+            })
+        }
         val low = Math.nextUp(points[index - 1].x); val high = Math.nextDown(points[index + 1].x)
         if (low > high) return this
         return ToneCurveShape(mode, points.toMutableList().also {
@@ -207,6 +221,8 @@ class ToneCurveSettings(
     }
     fun packed() = master.packed()
     fun isInterior(index: Int) = master.isInterior(index)
+    fun isEndpoint(index: Int) = master.isEndpoint(index)
+    fun canMoveY(index: Int) = master.canMoveY(index)
     fun inserting(x: Double, y: Double) = replacing(ToneCurveChannel.RGB, master.inserting(x, y))
     fun moving(index: Int, x: Double, y: Double) = replacing(ToneCurveChannel.RGB, master.moving(index, x, y))
     fun removing(index: Int) = replacing(ToneCurveChannel.RGB, master.removing(index))

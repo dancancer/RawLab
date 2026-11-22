@@ -663,7 +663,7 @@ int32_t gCapturedChromaDenoise = 0;
 int gCapturedProcessingVersion = 0;
 int gCapturedX3fMode = 0;
 int gCapturedExposureMode = 0;
-sony2fuji_hdr_request_v8 gCapturedHdrRequest{};
+sony2fuji_hdr_request_v9 gCapturedHdrRequest{};
 std::string gCapturedHdrLookPath;
 sony2fuji_hdr_request_v1 gCapturedHdrGeometryRequest{};
 sony2fuji_recipe_wb_request gCapturedRecipeWbRequest{};
@@ -1252,6 +1252,11 @@ sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config*,
     std::memcpy(y, x, n * sizeof(double));
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_sample_tone_curve_v2(const sony2fuji_tone_curve_config*,
+    const sony2fuji_tone_curve_parametric_config*, const double* x, double* y, uint32_t n) {
+    std::memcpy(y, x, n * sizeof(double));
+    return SONY2FUJI_STATUS_OK;
+}
 sony2fuji_status sony2fuji_validate_look(const char*, sony2fuji_look_format* f, uint32_t* v) {
     *f = SONY2FUJI_LOOK_CUBE; *v = 1;
     return SONY2FUJI_STATUS_OK;
@@ -1394,8 +1399,8 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* s, const sony2fuji_hdr_
             const size_t copyBytes = std::min<size_t>(req->struct_size, sizeof(gCapturedHdrRequest));
             std::memcpy(&gCapturedHdrRequest, req, copyBytes);
             if (req->hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION &&
-                gCapturedHdrRequest.base.look_path) {
-                gCapturedHdrLookPath = gCapturedHdrRequest.base.look_path;
+                gCapturedHdrRequest.base.base.look_path) {
+                gCapturedHdrLookPath = gCapturedHdrRequest.base.base.look_path;
             } else {
                 gCapturedHdrLookPath.clear();
             }
@@ -2490,7 +2495,7 @@ void testStructuredHdrMarshalling() {
     auto ex = consumeException();
     require(outPair > 0 && !ex.active, "Full v8 HDR render failed: " + ex.message);
 
-    const auto& v8 = gCapturedHdrRequest;
+    const auto& v8 = gCapturedHdrRequest.base;
     const auto& v7 = v8.base;
     const auto& v6 = v7.base;
     const auto& v5 = v6.base;
@@ -2527,6 +2532,30 @@ void testStructuredHdrMarshalling() {
     ex = consumeException();
     require(ex.active && ex.className == "java/lang/IllegalArgumentException",
         "Out-of-order HDR sections must throw IllegalArgumentException");
+
+    jobject paramObj = makeStruct("com/rawlab/android/engine/NativeToneCurveParametric");
+    setFloatField(paramObj, "highlights", 18.f);
+    setFloatField(paramObj, "lights", -12.f);
+    setFloatField(paramObj, "darks", 8.f);
+    setFloatField(paramObj, "shadows", -20.f);
+    setFloatField(paramObj, "splitShadow", 0.22f);
+    setFloatField(paramObj, "splitMidtone", 0.52f);
+    setFloatField(paramObj, "splitHighlight", 0.78f);
+    setBoolField(toneObj, "applyToLuminosity", JNI_TRUE);
+    setObjField(toneObj, "parametric", paramObj);
+    jobject gv2Obj = makeStruct("com/rawlab/android/engine/NativeColorGradingV2");
+    setFloatField(gv2Obj, "shadowsLuminance", -10.f);
+    setFloatField(gv2Obj, "blending", 65.f);
+    setFloatField(gv2Obj, "balance", 15.f);
+    setObjField(req, "gradingV2", gv2Obj);
+    const jlong outPairV9 = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1, nullptr);
+    ex = consumeException();
+    require(outPairV9 > 0 && !ex.active, "v9 HDR render failed: " + ex.message);
+    require(gCapturedHdrRequest.base.base.base.base.base.base.base.base.struct_size == sizeof(sony2fuji_hdr_request_v9), "HDR v9 struct_size mismatch");
+    require(gCapturedHdrRequest.base.base.base.base.base.base.base.base.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION, "HDR v9 version mismatch");
+    require(gCapturedHdrRequest.curve_apply_to_luminosity == 1 && gCapturedHdrRequest.parametric_curve.highlights == 18.f &&
+            gCapturedHdrRequest.grading_v2.version == SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION &&
+            gCapturedHdrRequest.grading_v2.blending == 65.f, "HDR v9 payload mismatch");
 
     Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, outPair);
     Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);

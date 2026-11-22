@@ -58,6 +58,36 @@ internal static class ToneCurveRenderChecks
         }
         BitmapSource Load(string path)=>BitmapFrame.Create(new Uri(path),BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
         check(Bytes(Load(gui)).SequenceEqual(Bytes(Load(agent))),"Native export and Agent FINAL pixels agree");
+        var v2 = new ToneCurveSettings(
+            ToneCurveMode.Custom,
+            [new(0, 0.08), new(0.5, 0.55), new(1, 0.92)],
+            applyToLuminosity: true,
+            parametric: new ToneCurveParametric(-15, 20, -10, 25, 0.2, 0.5, 0.8),
+            channels: new ToneCurveChannels(
+                new ToneCurveShape(ToneCurveMode.Custom, [new(0, 0), new(0.5, 0.6), new(1, 1)]),
+                new(), new()));
+        settings.Curve = v2;
+        var v2Preview = Preview(settings);
+        check(!v2Preview.SequenceEqual(baseline) && !v2Preview.SequenceEqual(changed),
+            "Track A v2 curve (unpinned Y, luminosity, parametric, red channel) reaches native pixels");
+        var v2Gui = Path.Combine(output, "native-v2.png");
+        var v2Agent = Path.Combine(output, "agent-v2.png");
+        engine.Render(input, settings, null, 0, output: v2Gui);
+        var v2Recipe = engine.AgentRecipe(input, settings, null, v2Agent);
+        using (var parsed = JsonDocument.Parse(v2Recipe)) {
+            check(parsed.RootElement.GetProperty("schema_version").GetInt32() == 17,
+                "Agent emits schema_version 17 for v2 tone curve extensions");
+        }
+        var v2RecipeFile = Path.Combine(output, "curve-v2.json");
+        File.WriteAllText(v2RecipeFile, v2Recipe);
+        var v2Start = new ProcessStartInfo(cli){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true};
+        v2Start.ArgumentList.Add("--recipe"); v2Start.ArgumentList.Add(v2RecipeFile);
+        using (var process = Process.Start(v2Start)!) {
+            _ = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(60000)) { process.Kill(true); throw new TimeoutException("Curve v2 CLI timeout"); }
+            check(process.ExitCode == 0, "Curve v2 CLI succeeds: " + stderr.GetAwaiter().GetResult());
+        }
+        check(Bytes(Load(v2Gui)).SequenceEqual(Bytes(Load(v2Agent))), "Native v2 export and Agent schema v17 FINAL pixels agree");
         settings.Curve=new();check(Preview(settings).SequenceEqual(legacy),"Legacy clears the reused custom session");
         check(Preview(neutral).SequenceEqual(baseline),"Reset clears complete curve state");
     }

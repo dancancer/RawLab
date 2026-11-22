@@ -5,6 +5,8 @@ struct ToneCurveCanvas: View {
     @Binding var value: ToneCurveSettings
     @Binding var selected: Int
     let scope: String
+    var channel: ToneCurveChannel = .rgb
+    var showSplitMarkers = false
     var fine = false
     var isCurrent: () -> Bool = { true }
     var canChange: () -> Bool = { true }
@@ -13,8 +15,17 @@ struct ToneCurveCanvas: View {
     var onCancelled: () -> Void = {}
     @Environment(\.isEnabled) private var enabled
 
+    private var strokeColor: Color {
+        switch channel {
+        case .rgb: return .primary
+        case .red: return .red
+        case .green: return .green
+        case .blue: return .blue
+        }
+    }
+
     var body: some View {
-        let samples = value.sampledPoints()
+        let samples = value.sampledPoints(channel: .rgb, includeParametric: channel == .rgb)
         ZStack {
             Canvas { context, size in
                 let rect = CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12)
@@ -26,17 +37,25 @@ struct ToneCurveCanvas: View {
                     grid.move(to: point(.init(x: 0, y: offset))); grid.addLine(to: point(.init(x: 1, y: offset)))
                 }
                 context.stroke(grid, with: .color(.secondary.opacity(0.2)), lineWidth: 1)
+                if showSplitMarkers && channel == .rgb {
+                    var splits = Path()
+                    for s in [value.parametric.splitShadow, value.parametric.splitMidtone, value.parametric.splitHighlight] {
+                        splits.move(to: point(.init(x: s, y: 0)))
+                        splits.addLine(to: point(.init(x: s, y: 1)))
+                    }
+                    context.stroke(splits, with: .color(.secondary.opacity(0.45)), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                }
                 var identity = Path(); identity.move(to: point(.init(x: 0, y: 0))); identity.addLine(to: point(.init(x: 1, y: 1)))
                 context.stroke(identity, with: .color(.secondary.opacity(0.6)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                 if let first = samples.first {
                     var curve = Path(); curve.move(to: point(first))
                     for sample in samples.dropFirst() { curve.addLine(to: point(sample)) }
-                    context.stroke(curve, with: .color(.primary), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                    context.stroke(curve, with: .color(strokeColor), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
                 }
                 for (index, p) in value.points.enumerated() {
                     let center = point(p), radius: CGFloat = selected == index ? 6 : 4
                     let circle = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-                    context.fill(circle, with: .color(index == selected ? .yellow : .primary))
+                    context.fill(circle, with: .color(index == selected ? .yellow : strokeColor))
                     context.stroke(circle, with: .color(.black.opacity(0.8)), lineWidth: 1)
                 }
             }.accessibilityHidden(true)

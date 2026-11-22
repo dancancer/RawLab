@@ -377,6 +377,38 @@ class BatchJournalTest {
         assertTrue(settingsRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
     }
 
+    @Test fun hdrV9ProcessingVersionIsAcceptedWhileV10RefusesQuarantine() {
+        val hdrRoot = temporary.newFolder("hdr-v9-case")
+        val journal = BatchJournal(hdrRoot)
+        val v9Curve = com.rawlab.android.settings.ToneCurveSettings(
+            mode = com.rawlab.android.settings.ToneCurveMode.CUSTOM,
+            points = listOf(com.rawlab.android.settings.ToneCurvePoint(0.0, 0.1), com.rawlab.android.settings.ToneCurvePoint(1.0, 0.9)),
+            applyToLuminosity = true,
+        )
+        val v9Hdr = com.rawlab.android.settings.HDRSettings().withTone(com.rawlab.android.settings.HDRToneSettings(curve = v9Curve))
+        val validJob = job(1).let { base ->
+            base.copy(
+                id = "hdr-v9",
+                source = base.source.copy(settings = EditSettings(hdr = v9Hdr)),
+            )
+        }
+        journal.save(validJob)
+        assertEquals(validJob, journal.load("hdr-v9"))
+
+        val record = File(hdrRoot, "hdr-v9.properties")
+        val properties = Properties().also { record.inputStream().use(it::load) }
+        val settings = properties.getProperty("source.settings")
+        assertTrue(settings.contains("\"hdr_processing_version\":9"))
+        properties.setProperty("source.settings", settings.replace("\"hdr_processing_version\":9", "\"hdr_processing_version\":10"))
+        record.outputStream().use { properties.store(it, null) }
+
+        var thrown = false
+        try { journal.pending() } catch (_: Exception) { thrown = true }
+        assertTrue("HDR processing version 10 must be refused as future without quarantine", thrown)
+        assertTrue(record.exists())
+        assertTrue(hdrRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+    }
+
     @Test fun quarantineRenameFailurePropagatesInsteadOfSilentOverwrite() {
         val journal = BatchJournal(root)
         val id = "locked-corrupt"

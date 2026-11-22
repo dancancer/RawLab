@@ -60,4 +60,19 @@ private:
     bool custom_ = false, active_ = false, gpuSupported_ = true;
 };
 
+class ToneCurveParametric {
+public:
+    ToneCurveParametric() = default;
+    explicit ToneCurveParametric(const ToneCurveParametricConfig& config);
+    bool active() const noexcept { return active_; }
+    const std::array<double, 4>& amplitudes() const noexcept { return amps_; }
+    const std::array<double, 3>& splits() const noexcept { return splits_; }
+    double evaluate(double value) const noexcept;
+
+private:
+    std::array<double, 4> amps_{}; // shadows, darks, lights, highlights
+    std::array<double, 3> splits_{0.25, 0.50, 0.75};
+    bool active_ = false;
+};
+
 } // namespace sony2fuji

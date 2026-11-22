@@ -178,6 +178,10 @@ extension ContentView {
                                 HSLTargetCanvasControls(axis: coordinator.hslTargetAxis) {
                                     cancelHSLTarget(); coordinator.hslTargetEnabled = false
                                 }.padding(8)
+                            } else if !adjustmentsExpanded && curveTargetActive {
+                                CurveTargetCanvasControls(channel: coordinator.curveTargetChannel) {
+                                    cancelCurveTarget(); coordinator.curveTargetEnabled = false
+                                }.padding(8)
                             }
                         }
                 } else {
@@ -310,7 +314,8 @@ extension ContentView {
                           interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !coordinator.showingDocumentImporter,
                           overlayAvoidanceRect: photoComparisonControlBounds,
                           onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
-                          hslTarget: hslTargetActive ? hslTargetInput : nil, hslTargetPoint: coordinator.hslTargetPoint,
+                          hslTarget: hslTargetActive ? hslTargetInput : (curveTargetActive ? curveTargetInput : nil),
+                          hslTargetPoint: hslTargetActive ? coordinator.hslTargetPoint : (curveTargetActive ? coordinator.curveTargetPoint : nil),
                           nativePixelSize: viewModel.viewportNativeSize, previewSourceSize: viewModel.viewportPreviewSourceSize,
                           previewLongEdgeLimit: viewModel.viewportPreviewLimit,
                           detailOverlay: geometrySelected ? nil : viewModel.detailOverlay,

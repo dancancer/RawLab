@@ -87,6 +87,7 @@ public partial class MainWindow
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
+        if(e.Key==Key.Escape && curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}

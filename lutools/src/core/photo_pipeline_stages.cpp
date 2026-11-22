@@ -7,6 +7,7 @@
 #include "core/photo_lut_contract.h"
 #include "core/photo_rendering.h"
 #include "core/processing_cancellation.h"
+#include "gpu/photo_tone_curve_shader.h"
 #include "gpu/photo_tone_shader.h"
 #include "sony2fuji/sony2fuji.h"
 
@@ -20,6 +21,24 @@
 
 namespace sony2fuji {
 namespace {
+
+#define TCV_FN inline
+#define TCV_RGB sony2fuji::RGB
+#define TCV_RGB3(r, g, b) sony2fuji::RGB(static_cast<float>(r), static_cast<float>(g), static_cast<float>(b))
+#define TCV_MAX(a, b) std::max<float>(static_cast<float>(a), static_cast<float>(b))
+#define TCV_MIN(a, b) std::min<float>(static_cast<float>(a), static_cast<float>(b))
+#define TCV_CLAMP01(x) std::max<float>(0.0f, std::min<float>(1.0f, static_cast<float>(x)))
+#define TCV_SRGB_TO_LINEAR(x) sony2fuji::GammaConverter::removeSRGBGamma(static_cast<float>(x))
+#define TCV_LINEAR_TO_SRGB(x) sony2fuji::GammaConverter::applySRGBGamma(static_cast<float>(x))
+RAWLAB_TONE_CURVE_LUMINOSITY_BODY
+#undef TCV_FN
+#undef TCV_RGB
+#undef TCV_RGB3
+#undef TCV_MAX
+#undef TCV_MIN
+#undef TCV_CLAMP01
+#undef TCV_SRGB_TO_LINEAR
+#undef TCV_LINEAR_TO_SRGB
 
 float signedPow(float value, float power) {
     float sign = value >= 0.0f ? 1.0f : -1.0f;
@@ -273,9 +292,12 @@ void applyToneAdjustments(
     bool basicV3
 ) {
     const auto& customCurve = params.customCurve;
+    const ToneCurveParametric parametric(params.parametricCurve);
+    const bool useCurve = params.toneCurve != 0.0f;
+    const bool masterActive = parametric.active() || customCurve.active() || useCurve;
     const bool channelsActive = std::any_of(channels.begin(), channels.end(),
         [](const auto& curve) { return curve.active(); });
-    if (!params.needsToneAdjustments() && !customCurve.active() && !channelsActive) {
+    if (!params.needsToneAdjustments() && !masterActive && !channelsActive) {
         return;
     }
 
@@ -284,9 +306,24 @@ void applyToneAdjustments(
     float saturation = clampFloat(params.saturation, 0.0f, 2.0f);
     float highlights = clampFloat(params.highlights, -1.0f, 1.0f);
     float shadows = clampFloat(params.shadows, -1.0f, 1.0f);
-    bool useCurve = params.toneCurve != 0.0f;
     ToneCurvePoints curve = buildToneCurve(params.toneCurve);
     RGB wb(1, 1, 1);
+
+    auto evalMaster = [&](float v) -> float {
+        if (parametric.active()) {
+            v = static_cast<float>(parametric.evaluate(v));
+        }
+        if (customCurve.active()) {
+            return static_cast<float>(customCurve.evaluate(v));
+        }
+        if (useCurve) {
+            return applyToneCurve(v, curve);
+        }
+        return v;
+    };
+    const float y0Linear = (masterActive && params.curveApplyToLuminosity)
+        ? GammaConverter::removeSRGBGamma(evalMaster(0.0f))
+        : 0.0f;
 
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t index = first; index < last; ++index) {
@@ -295,19 +332,27 @@ void applyToneAdjustments(
             if (highlights != 0.0f || shadows != 0.0f) {
                 pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
             }
-            if (customCurve.active()) {
-                pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
-                pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
-                pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
-            } else if (useCurve) {
-                pixel.r = applyToneCurve(pixel.r, curve);
-                pixel.g = applyToneCurve(pixel.g, curve);
-                pixel.b = applyToneCurve(pixel.b, curve);
+            if (masterActive) {
+                if (params.curveApplyToLuminosity) {
+                    const RGB pL(
+                        GammaConverter::removeSRGBGamma(pixel.r),
+                        GammaConverter::removeSRGBGamma(pixel.g),
+                        GammaConverter::removeSRGBGamma(pixel.b)
+                    );
+                    const float Y = tcLuminosityLinearY(pL);
+                    const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
+                    const float uPrime = evalMaster(u);
+                    pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
+                } else {
+                    pixel.r = evalMaster(pixel.r);
+                    pixel.g = evalMaster(pixel.g);
+                    pixel.b = evalMaster(pixel.b);
+                }
             }
             if (channelsActive) {
-                pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
-                pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
-                pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+                if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
+                if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
+                if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
             }
             if (basicV3 && contrast != 1.0f) {
                 pixel.r = basicContrastV3(pixel.r, contrast - 1);

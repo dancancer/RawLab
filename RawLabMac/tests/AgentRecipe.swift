@@ -67,7 +67,7 @@ extension RenderEngine {
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [
-            "schema_version": Self.isX3fInput(url) ? 7 : 5,
+            "schema_version": state.renderCurveSettings.hasV2Extensions ? 17 : (Self.isX3fInput(url) ? 7 : 5),
             "processing": ["family": state.processing.family, "version": state.processing.version,
                            "quality": state.processing.quality],
             "input": ["path": url.standardizedFileURL.path, "type": raster ? "raster" : "raw"],

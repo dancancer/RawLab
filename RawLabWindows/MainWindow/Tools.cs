@@ -195,7 +195,7 @@ public partial class MainWindow
         if (group == EditorAdjustmentGroup.Looks && settings.IsHDREditing && !wasQuick) { ShowQuickPresets(); return; }
         if (wasQuick) CloseQuickPresets();
         if(expandedGroup==group && !wasQuick || wasQuick && group==EditorAdjustmentGroup.Looks) {
-            SetHslTargetMode(false,hslTargetAxis);CancelParameterInputs();if(!ResolveTransformDraft())return;
+            SetHslTargetMode(false,hslTargetAxis);SetCurveTargetMode(false,curveTargetChannel);CancelParameterInputs();if(!ResolveTransformDraft())return;
             expandedGroup=null;RefreshWorkspaceNavigation();
             return;
         }
@@ -207,6 +207,7 @@ public partial class MainWindow
         tool = EditorAdjustmentRules.NormalizeTool(tool, settings.IsHDREditing);
         if (quickPresetsVisible) CloseQuickPresets();
         if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
+        if(tool!=EditorAdjustmentTool.ToneCurve)SetCurveTargetMode(false,curveTargetChannel);
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
@@ -235,7 +236,7 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
-        CancelHslTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
+        CancelHslTarget();CancelCurveTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
@@ -663,7 +664,10 @@ public partial class MainWindow
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Geometry))
                 GeometryEditor.Refresh(transform.Active ? transform.Geometry : settings.Geometry);
             if (InspectorModificationCache.ShouldRefreshSubEditor(CurrentTool==EditorAdjustmentTool.ToneCurve))
+            {
                 CurveEditor.Refresh(settings.EditingCurve,settings[Parameter.ToneCurve],(file,openRevision,hdrEditing),hdrEditing);
+                RefreshCurveTarget();
+            }
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.ColorGrading))
                 GradingEditor.Refresh(settings.EditingGrading,(file,openRevision,hdrEditing));
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Hsl))

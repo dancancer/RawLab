@@ -74,12 +74,21 @@ struct PhotoParams {
     float blackPoint, whitePoint, vibrance;
     float colorGrading[9];
     uint32_t customCurveCount;
-    float curveRanges[32][4], curveTangents[32][4];
+    float curveRanges[32][4], curveTangents[32][2];
+    uint32_t channelCurveCount[3];
+    float channelCurveRanges[3][32][4], channelCurveTangents[3][32][2];
+    uint32_t curveApplyToLuminosity;
+    uint32_t parametricActive;
+    float parametricAmps[4];
+    float parametricSplits[4];
 };
-static_assert(sizeof(PhotoParams) == 1380, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 3480, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
 static_assert(offsetof(PhotoParams, colorGrading) == 316, "Grading Metal options offset");
 static_assert(offsetof(PhotoParams, customCurveCount) == 352, "Curve Metal options offset");
+static_assert(offsetof(PhotoParams, channelCurveCount) == 1124, "Channel curve Metal options offset");
+static_assert(offsetof(PhotoParams, curveApplyToLuminosity) == 3440, "Luminosity curve Metal options offset");
+static_assert(offsetof(PhotoParams, parametricAmps) == 3448, "Parametric curve Metal options offset");
 
 struct PhotoEffectsParams {
     uint32_t width, height;
@@ -133,7 +142,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::kToneCurveShader + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::toneCurveShader("float3") + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -168,16 +177,34 @@ struct Params {
     float blackPoint, whitePoint, vibrance;
     float colorGrading[9];
     uint customCurveCount;
-    float curveRanges[32][4], curveTangents[32][4];
+    float curveRanges[32][4], curveTangents[32][2];
+    uint channelCurveCount[3];
+    float channelCurveRanges[3][32][4], channelCurveTangents[3][32][2];
+    uint curveApplyToLuminosity;
+    uint parametricActive;
+    float parametricAmps[4];
+    float parametricSplits[4];
 };
 
 inline float customToneCurve(float x, constant Params& p) {
-    if (x <= 0.0f) return 0.0f;
-    if (x >= 1.0f) return 1.0f;
+    if (x <= 0.0f) return p.curveRanges[0][2];
+    if (x >= 1.0f) return p.curveRanges[p.customCurveCount - 1u][3];
     uint i = 0;
-    while (i + 1 < p.customCurveCount && x > p.curveRanges[i][1]) ++i;
+    while (i + 1u < p.customCurveCount && x > p.curveRanges[i][1]) ++i;
     return pchipSegment(x, p.curveRanges[i][0], p.curveRanges[i][1], p.curveRanges[i][2],
         p.curveRanges[i][3], p.curveTangents[i][0], p.curveTangents[i][1]);
+}
+
+inline float channelToneCurve(float x, uint ch, constant Params& p) {
+    uint count = p.channelCurveCount[ch];
+    if (count == 0u) return x;
+    if (x <= 0.0f) return p.channelCurveRanges[ch][0][2];
+    if (x >= 1.0f) return p.channelCurveRanges[ch][count - 1u][3];
+    uint i = 0;
+    while (i + 1u < count && x > p.channelCurveRanges[ch][i][1]) ++i;
+    return pchipSegment(x, p.channelCurveRanges[ch][i][0], p.channelCurveRanges[ch][i][1],
+        p.channelCurveRanges[ch][i][2], p.channelCurveRanges[ch][i][3],
+        p.channelCurveTangents[ch][i][0], p.channelCurveTangents[ch][i][1]);
 }
 
 inline float3 lerp3(float3 a, float3 b, float t) {
@@ -450,6 +477,25 @@ float3 applyGrading(float3 pixel, constant Params& params) {
         float3(params.colorGrading[6],params.colorGrading[7],params.colorGrading[8]));
 }
 
+inline float evalMasterTone(float x, constant Params& params) {
+    if (params.parametricActive != 0u) {
+        x = tcParametric(x, params.parametricAmps[0], params.parametricAmps[1],
+            params.parametricAmps[2], params.parametricAmps[3],
+            params.parametricSplits[0], params.parametricSplits[1], params.parametricSplits[2]);
+    }
+    if (params.customCurveCount != 0u) {
+        return customToneCurve(x, params);
+    }
+    if (params.toneCurve != 0.0f) {
+        float curveStrength = signedPow(params.toneCurve, 1.2f);
+        float p1 = clamp(0.25f - curveStrength * 0.2f, 0.0f, 1.0f);
+        float p2 = clamp(0.5f + curveStrength * 0.05f, 0.0f, 1.0f);
+        float p3 = clamp(0.75f + curveStrength * 0.2f, 0.0f, 1.0f);
+        return applyToneCurve(x, p1, p2, p3);
+    }
+    return x;
+}
+
 kernel void toneAdjustments(
     constant Params& params [[buffer(0)]],
     device const packed_float3* source [[buffer(1)]],
@@ -465,17 +511,22 @@ kernel void toneAdjustments(
         return;
     }
     pixel = hsApplyHighlightsShadows(pixel, params.highlights, params.shadows);
-    if (params.customCurveCount != 0u) {
-        pixel = float3(customToneCurve(pixel.r, params), customToneCurve(pixel.g, params), customToneCurve(pixel.b, params));
-    } else if (params.toneCurve != 0.0f) {
-        float curveStrength = signedPow(params.toneCurve, 1.2f);
-        float p1 = clamp(0.25f - curveStrength * 0.2f, 0.0f, 1.0f);
-        float p2 = clamp(0.5f + curveStrength * 0.05f, 0.0f, 1.0f);
-        float p3 = clamp(0.75f + curveStrength * 0.2f, 0.0f, 1.0f);
-        pixel.r = applyToneCurve(pixel.r, p1, p2, p3);
-        pixel.g = applyToneCurve(pixel.g, p1, p2, p3);
-        pixel.b = applyToneCurve(pixel.b, p1, p2, p3);
+    bool masterActive = params.parametricActive != 0u || params.customCurveCount != 0u || params.toneCurve != 0.0f;
+    if (masterActive) {
+        if (params.curveApplyToLuminosity != 0u) {
+            float3 pL = float3(tcSrgbToLinear(pixel.r), tcSrgbToLinear(pixel.g), tcSrgbToLinear(pixel.b));
+            float Y = tcLuminosityLinearY(pL);
+            float u = tcLinearToSrgb(max(0.0f, Y));
+            float uPrime = evalMasterTone(u, params);
+            float Y0 = tcSrgbToLinear(evalMasterTone(0.0f, params));
+            pixel = tcLuminosityFinish(pL, Y, uPrime, Y0);
+        } else {
+            pixel = float3(evalMasterTone(pixel.r, params), evalMasterTone(pixel.g, params), evalMasterTone(pixel.b, params));
+        }
     }
+    pixel.r = channelToneCurve(pixel.r, 0u, params);
+    pixel.g = channelToneCurve(pixel.g, 1u, params);
+    pixel.b = channelToneCurve(pixel.b, 2u, params);
     float contrast = clamp(params.contrast, 0.0f, 2.0f);
     float saturation = clamp(params.saturation, 0.0f, 2.0f);
     if (contrast != 1.0f || saturation != 1.0f) {
@@ -792,8 +843,29 @@ PhotoParams makeParams(
     if (includeOptionalCurves) {
         const auto custom = sony2fuji::toneCurveGpuParameters(renderParams.customCurve);
         params.customCurveCount = custom.count;
-        std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
-        std::memcpy(params.curveTangents, custom.tangents, sizeof(custom.tangents));
+        if (custom.count) {
+            std::memcpy(params.curveRanges, custom.ranges, sizeof(custom.ranges));
+            for (uint32_t i = 0; i < custom.count; ++i) {
+                params.curveTangents[i][0] = custom.tangents[i][0];
+                params.curveTangents[i][1] = custom.tangents[i][1];
+            }
+        }
+        for (size_t ch = 0; ch < 3; ++ch) {
+            const auto chParams = sony2fuji::toneCurveGpuParameters(renderParams.channelCurves[ch]);
+            params.channelCurveCount[ch] = chParams.count;
+            if (chParams.count) {
+                std::memcpy(params.channelCurveRanges[ch], chParams.ranges, sizeof(chParams.ranges));
+                for (uint32_t i = 0; i < chParams.count; ++i) {
+                    params.channelCurveTangents[ch][i][0] = chParams.tangents[i][0];
+                    params.channelCurveTangents[ch][i][1] = chParams.tangents[i][1];
+                }
+            }
+        }
+        params.curveApplyToLuminosity = renderParams.curveApplyToLuminosity ? 1u : 0u;
+        const auto parametric = sony2fuji::toneCurveParametricGpuParameters(renderParams.parametricCurve);
+        params.parametricActive = parametric.active;
+        std::memcpy(params.parametricAmps, parametric.amps, sizeof(parametric.amps));
+        std::memcpy(params.parametricSplits, parametric.splits, sizeof(parametric.splits));
         params.hslEnabled = renderParams.hsl.active();
         params.blackPoint = renderParams.toneControls.blackPoint;
         params.whitePoint = renderParams.toneControls.whitePoint;

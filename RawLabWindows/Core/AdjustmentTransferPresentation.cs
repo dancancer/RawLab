@@ -13,6 +13,8 @@ internal static class AdjustmentTransferPresentation
         [F.Shadows]="阴影",
         [F.SCurve]="S 曲线",
         [F.Curve]="曲线模式与控制点",
+        [F.CurveApplyToLuminosity]="仅作用于明度",
+        [F.CurveParametric]="参数曲线",
         [F.WhiteBalanceMode]="白平衡模式",
         [F.Temperature]="色温",
         [F.Tint]="色调",

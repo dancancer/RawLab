@@ -356,7 +356,7 @@ internal fun PhotoCanvas(
             }
         }) {
             // 手势接收层只包住照片，保证跨 pane 的两指仍在同一命中链；控件叠层保持优先。
-            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis) {
+            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, hslTarget?.state?.curveMode, hslTarget?.state?.curveChannel) {
                 photoGestures(state, primary, compare && mode == ComparisonMode.WIPE, { hold(false) },
                     target = { target }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
                     targetPointer = { position, anchor ->

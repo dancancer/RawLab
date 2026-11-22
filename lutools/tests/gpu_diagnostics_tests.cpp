@@ -1,6 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "native_gpu_test_support.h"
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -133,7 +134,7 @@ int main() {
                        "atmosphere");
     }
 
-    // 4. Channel curves.
+    // 4. GPU-supported channel curves run on native GPU; precision-limited channel curve falls back with CURVES.
     resetAllSessionControls(session);
     {
         sony2fuji_tone_curve_set_config curves{};
@@ -149,6 +150,21 @@ int main() {
         curves.curves[1].points[0] = {0.0, 0.0};
         curves.curves[1].points[1] = {0.5, 0.6};
         curves.curves[1].points[2] = {1.0, 1.0};
+        assert(sony2fuji_session_set_tone_curves(session, &curves) == SONY2FUJI_STATUS_OK);
+        if (rawlabtest::nativeGpuAvailable()) {
+            setGpuMode(session, SONY2FUJI_GPU_FORCE);
+            sony2fuji_buffer out{};
+            assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
+            sony2fuji_release_buffer(&out);
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+            assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_NONE);
+        }
+
+        curves.curves[1].count = 4;
+        curves.curves[1].points[0] = {0.0, 0.0};
+        curves.curves[1].points[1] = {0.5, 0.1};
+        curves.curves[1].points[2] = {std::nextafter(0.5, 1.0), 0.9};
+        curves.curves[1].points[3] = {1.0, 1.0};
         assert(sony2fuji_session_set_tone_curves(session, &curves) == SONY2FUJI_STATUS_OK);
         expectFallback(session, bufferReq,
                        SONY2FUJI_GPU_FALLBACK_CURVES,

@@ -140,6 +140,8 @@ struct EditorView: View {
                 VStack(spacing: 8) {
                     if !showInspector && model.hslTargetActive {
                         HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
+                    } else if !showInspector && model.curveTargetActive {
+                        CurveTargetCanvasControls(channel: model.curveTargetChannel, onExit: exitCurveTarget).padding(8)
                     }
                     if model.previewOutdated {
                         HStack(spacing: 8) {
@@ -199,6 +201,7 @@ struct EditorView: View {
             if current != nil { workspaceLayout.photoOpened() }
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.curveTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.quickPresetsVisible) { _, visible in
             if visible { workspaceLayout.setMode(.editing); workspaceLayout.showInspector() }
         }
@@ -215,12 +218,14 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
+            model.cancelCurveTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
+            model.cancelCurveTarget()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -732,7 +737,8 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive }
+    private var canHoldBefore: Bool { showsPhotoWorkspace && !anyTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
         let source = model.sourceRevision, axis = model.hslTargetAxis, hdr = model.settings.isHDREditing
@@ -745,13 +751,31 @@ struct EditorView: View {
             exit: exitHSLTarget)
     }
 
+    private var curveTargetInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, channel = model.curveTargetChannel, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.curveTargetChannel == channel && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "curve-\(source)-\(channel.rawValue)-\(hdr)",
+            begin: { if current() { model.beginCurveTarget($0) } },
+            change: { if current() { model.moveCurveTarget($0) } },
+            end: { if current() { model.endCurveTarget() } }, cancel: { if current() { model.cancelCurveTarget() } },
+            key: { if current() { model.keyCurveTarget($0) } }, reject: { if current() { model.rejectCurveTarget() } },
+            exit: exitCurveTarget)
+    }
+
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
-        PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
-                    clipping: showMask && !model.hslTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+        let activeTargetInput: HSLTargetCanvasInput? = {
+            guard model.result?.image === frame.image else { return nil }
+            if model.hslTargetActive { return hslTargetInput }
+            if model.curveTargetActive { return curveTargetInput }
+            return nil
+        }()
+        let activeTargetPoint = model.hslTargetActive ? model.hslTargetPoint : (model.curveTargetActive ? model.curveTargetPoint : nil)
+        return PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
+                    clipping: showMask && !anyTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
                     split: wipe ? $viewing.split : nil,
                     comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
-                    hslTarget: model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil,
-                    hslTargetPoint: model.hslTargetPoint,
+                    hslTarget: activeTargetInput,
+                    hslTargetPoint: activeTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
                     }, sourceHeight: model.result?.nativeHeight,
@@ -775,6 +799,10 @@ struct EditorView: View {
 
     private func exitHSLTarget() {
         model.cancelHSLTarget(); model.hslTargetEnabled = false
+    }
+
+    private func exitCurveTarget() {
+        model.cancelCurveTarget(); model.curveTargetEnabled = false
     }
 
     private func toggleInspector() {

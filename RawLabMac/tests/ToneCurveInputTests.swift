@@ -21,6 +21,14 @@ import AppKit
             guard window.firstResponder === input else { fatalError("Curve nudge must retain keyboard focus after committing pending input") }
         }
         guard commits == 2 && abs(curve.points[1].y - 0.52) < 1e-12 else { fatalError("Consecutive curve nudges must remain independent commits") }
-        print("PASS: curve keyboard preflight retains focus and consecutive history commits")
+        var endpointCurve = ToneCurveSettings.identity
+        input.session.configure(.init(read: { endpointCurve }, selected: 0, scope: "endpoint", fine: false, enabled: true,
+            isCurrent: { true }, prepare: { true }, begin: { true },
+            select: { _ in }, change: { endpointCurve = $0 }, end: { commits += 1 }, cancel: {}))
+        input.keyDown(with: key)
+        guard commits == 3 && endpointCurve.points[0].x == 0 && abs(endpointCurve.points[0].y - 0.01) < 1e-12 else {
+            fatalError("Endpoint vertical nudge must move y while keeping x pinned at 0")
+        }
+        print("PASS: curve keyboard preflight retains focus, endpoint y-nudge, and consecutive history commits")
     }
 }

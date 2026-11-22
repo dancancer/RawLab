@@ -173,7 +173,9 @@ extension EditorModel {
     }
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
-        cancelHSLTarget(); hslTargetEnabled = false
+        cancelHSLTarget()
+        cancelCurveTarget(); hslTargetEnabled = false
+        cancelCurveTarget(); curveTargetEnabled = false
         if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
@@ -190,6 +192,8 @@ extension EditorModel {
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
         cancelHSLTarget()
+        cancelCurveTarget()
+        cancelCurveTarget()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {
@@ -470,6 +474,7 @@ extension EditorModel {
         cancelQuickPreset()
         pendingOpenID=UUID(); importing=false
         cancelHSLTarget()
+        cancelCurveTarget()
         if file == url && result != nil, acceptedOriginalSource == referenceSource(url) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {

@@ -370,14 +370,18 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val hdrMode = state.edits.isHDREditing
     val liveHDRMode by rememberUpdatedState(hdrMode)
     val targetAxis = hslTarget.state.axis
+    val targetCurveChannel = hslTarget.state.curveChannel
     val hslWorkspace = toolOpen && tool == 14 && state.draft?.group == AdjustmentGroup.HSL
-    val liveHslWorkspace by rememberUpdatedState(hslWorkspace)
-    val targetMode = hslTarget.state.enabled && hslWorkspace
+    val curveWorkspace = toolOpen && tool == 6 && state.draft?.group == AdjustmentGroup.CURVE
+    val targetWorkspace = hslWorkspace || curveWorkspace
+    val liveTargetWorkspace by rememberUpdatedState(targetWorkspace)
+    val targetMode = hslTarget.state.enabled && targetWorkspace
     val canvasTarget = if (targetMode) hslTarget.guarded {
-        liveHslWorkspace && liveTarget.state.enabled &&
-            liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis && liveHDRMode == hdrMode
+        liveTargetWorkspace && liveTarget.state.enabled &&
+            liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis &&
+            liveTarget.state.curveChannel == targetCurveChannel && liveHDRMode == hdrMode
     } else null
-    LaunchedEffect(hslWorkspace) { if (!hslWorkspace && liveTarget.state.enabled) liveTarget.enabled(false) }
+    LaunchedEffect(targetWorkspace) { if (!targetWorkspace && liveTarget.state.enabled) liveTarget.enabled(false) }
     LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
     BackHandler(targetMode) { hslTarget.enabled(false) }
     val cancelAdjustment = onCancelAdjustment
@@ -492,7 +496,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("workspace-histogram"),
                         leadingIcon = { if (workspaceHistogram) Icon(Icons.Outlined.Check, null) },
                         onClick = { workspaceHistogram = !workspaceHistogram; toolMenu = false })
-                    if (hslWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
+                    if (targetWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
                         onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
                         leadingIcon = { if (fine) Icon(Icons.Outlined.Check, null) },

@@ -38,16 +38,12 @@ internal static class AbiLayoutChecks
         "sony2fuji_bsh_hsl_channel_stats",
         "sony2fuji_bsh_sample_query",
         "sony2fuji_bsh_sample_result",
-        "sony2fuji_color_grading_v2_config",
         "sony2fuji_curve_point",
-        "sony2fuji_hdr_request_v9",
         "sony2fuji_hdr_roi_result_v1",
         "sony2fuji_hdr_roi_source_bounds_v1",
         "sony2fuji_hdr_roi_v1",
         "sony2fuji_lens_metadata",
         "sony2fuji_lens_profile_v2",
-        "sony2fuji_tone_curve_parametric_config",
-        "sony2fuji_tone_curve_set_v2_config",
         "sony2fuji_viewport_roi",
         "sony2fuji_viewport_roi_result",
         "sony2fuji_wb_probe_query",
@@ -76,7 +72,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_roi_source_bounds",
         "sony2fuji_inspect_sdr_jpeg_mpf",
         "sony2fuji_sample_region_bsh",
-        "sony2fuji_sample_tone_curve_v2",
         "sony2fuji_session_get_raw_decode_count",
         "sony2fuji_session_get_raw_noise_reduction_support",
         "sony2fuji_session_get_viewport_roi_result",
@@ -103,7 +98,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_session_set_tone_controls",
         "sony2fuji_session_set_tone_curve",
         "sony2fuji_session_set_tone_curves",
-        "sony2fuji_session_set_tone_curves_v2",
         "sony2fuji_session_set_viewport_roi",
         "sony2fuji_session_set_wavelet_denoise",
         "sony2fuji_session_set_x3f_mode",
@@ -292,6 +286,27 @@ internal static class AbiLayoutChecks
                 ["highlights_hue"] = nameof(Native.ColorGradingConfig.HighlightsHue),
                 ["highlights_saturation"] = nameof(Native.ColorGradingConfig.HighlightsSaturation),
             }),
+        ["sony2fuji_color_grading_v2_config"] = new(
+            typeof(Native.ColorGradingV2Config),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.ColorGradingV2Config.Version),
+                ["struct_size"] = nameof(Native.ColorGradingV2Config.StructSize),
+                ["shadows_hue"] = nameof(Native.ColorGradingV2Config.ShadowsHue),
+                ["shadows_saturation"] = nameof(Native.ColorGradingV2Config.ShadowsSaturation),
+                ["shadows_luminance"] = nameof(Native.ColorGradingV2Config.ShadowsLuminance),
+                ["midtones_hue"] = nameof(Native.ColorGradingV2Config.MidtonesHue),
+                ["midtones_saturation"] = nameof(Native.ColorGradingV2Config.MidtonesSaturation),
+                ["midtones_luminance"] = nameof(Native.ColorGradingV2Config.MidtonesLuminance),
+                ["highlights_hue"] = nameof(Native.ColorGradingV2Config.HighlightsHue),
+                ["highlights_saturation"] = nameof(Native.ColorGradingV2Config.HighlightsSaturation),
+                ["highlights_luminance"] = nameof(Native.ColorGradingV2Config.HighlightsLuminance),
+                ["global_hue"] = nameof(Native.ColorGradingV2Config.GlobalHue),
+                ["global_saturation"] = nameof(Native.ColorGradingV2Config.GlobalSaturation),
+                ["global_luminance"] = nameof(Native.ColorGradingV2Config.GlobalLuminance),
+                ["blending"] = nameof(Native.ColorGradingV2Config.Blending),
+                ["balance"] = nameof(Native.ColorGradingV2Config.Balance),
+            }),
         ["sony2fuji_tone_curve_config"] = new(
             typeof(Native.ToneCurveConfig),
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -320,6 +335,45 @@ internal static class AbiLayoutChecks
                         nameof(Native.ToneCurveSetConfig.Red),
                         nameof(Native.ToneCurveSetConfig.Green),
                         nameof(Native.ToneCurveSetConfig.Blue),
+                    },
+                    ElementCStruct: "sony2fuji_tone_curve_config"),
+            }),
+        ["sony2fuji_tone_curve_parametric_config"] = new(
+            typeof(Native.ToneCurveParametricConfig),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.ToneCurveParametricConfig.Version),
+                ["struct_size"] = nameof(Native.ToneCurveParametricConfig.StructSize),
+                ["highlights"] = nameof(Native.ToneCurveParametricConfig.Highlights),
+                ["lights"] = nameof(Native.ToneCurveParametricConfig.Lights),
+                ["darks"] = nameof(Native.ToneCurveParametricConfig.Darks),
+                ["shadows"] = nameof(Native.ToneCurveParametricConfig.Shadows),
+                ["split_shadow"] = nameof(Native.ToneCurveParametricConfig.SplitShadow),
+                ["split_midtone"] = nameof(Native.ToneCurveParametricConfig.SplitMidtone),
+                ["split_highlight"] = nameof(Native.ToneCurveParametricConfig.SplitHighlight),
+                ["reserved"] = nameof(Native.ToneCurveParametricConfig.Reserved),
+            }),
+        ["sony2fuji_tone_curve_set_v2_config"] = new(
+            typeof(Native.ToneCurveSetV2Config),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.ToneCurveSetV2Config.Version),
+                ["struct_size"] = nameof(Native.ToneCurveSetV2Config.StructSize),
+                ["apply_to_luminosity"] = nameof(Native.ToneCurveSetV2Config.ApplyToLuminosity),
+                ["reserved"] = nameof(Native.ToneCurveSetV2Config.Reserved),
+                ["curves"] = nameof(Native.ToneCurveSetV2Config.Master),
+                ["parametric"] = nameof(Native.ToneCurveSetV2Config.Parametric),
+            },
+            UnrolledArrays: new[]
+            {
+                new UnrolledArray(
+                    "curves",
+                    new[]
+                    {
+                        nameof(Native.ToneCurveSetV2Config.Master),
+                        nameof(Native.ToneCurveSetV2Config.Red),
+                        nameof(Native.ToneCurveSetV2Config.Green),
+                        nameof(Native.ToneCurveSetV2Config.Blue),
                     },
                     ElementCStruct: "sony2fuji_tone_curve_config"),
             }),
@@ -685,6 +739,16 @@ internal static class AbiLayoutChecks
                         nameof(Native.HDRRequestV8.Blue),
                     },
                     ElementCStruct: "sony2fuji_tone_curve_config"),
+            }),
+        ["sony2fuji_hdr_request_v9"] = new(
+            typeof(Native.HDRRequestV9),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["base"] = nameof(Native.HDRRequestV9.Base),
+                ["curve_apply_to_luminosity"] = nameof(Native.HDRRequestV9.CurveApplyToLuminosity),
+                ["output_sharpening"] = nameof(Native.HDRRequestV9.OutputSharpening),
+                ["parametric_curve"] = nameof(Native.HDRRequestV9.ParametricCurve),
+                ["grading_v2"] = nameof(Native.HDRRequestV9.GradingV2),
             }),
         ["sony2fuji_hdr_look_info_v1"] = new(
             typeof(Native.HDRLookInfo),

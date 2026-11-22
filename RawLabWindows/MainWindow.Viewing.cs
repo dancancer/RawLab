@@ -113,7 +113,7 @@ public partial class MainWindow
     private void BeginHoldingBefore()=>BeginHoldingBeforeCore(false);
     private void BeginHoldingBeforeCore(bool semanticAction)
     {
-        if(hslTargetEnabled || file==null || exporting || closing || !semanticAction && ViewInputBlocked || !view.BeginHold(transform.Active))return;
+        if(hslTargetEnabled || curveTargetEnabled || file==null || exporting || closing || !semanticAction && ViewInputBlocked || !view.BeginHold(transform.Active))return;
         RefreshViewingFrames();RefreshComparisonSelection();
         if(!ReferenceCurrent)Schedule();
     }

@@ -32,7 +32,10 @@ extension ContentView {
             IOSToneCurveControls(settings: Binding(get: { workingSettings.editingCurveSettings }, set: { workingSettings.editingCurveSettings = $0 }),
                 legacy: Binding(get: { AdjustmentKind.toneCurve.value(from: workingSettings) },
                                 set: { AdjustmentKind.toneCurve.setValue($0, in: &workingSettings) }),
-                usesExposureStops: workingSettings.isHDREditing, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                usesExposureStops: workingSettings.isHDREditing, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction,
+                activeChannel: $coordinator.curveTargetChannel, targetEnabled: $coordinator.curveTargetEnabled,
+                targetWaiting: coordinator.curveTargetInteraction.isWaiting, targetNotice: coordinator.curveTargetNotice,
+                onCancelTarget: cancelCurveTarget)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
             IOSColorGradingControls(settings: Binding(get: { workingSettings.editingGradingSettings }, set: { workingSettings.editingGradingSettings = $0 }),

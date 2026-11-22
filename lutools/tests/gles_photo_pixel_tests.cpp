@@ -115,7 +115,10 @@ sony2fuji::RGB cpuEvaluatePixel(
     const sony2fuji::ToneControlsOptions& toneControls,
     const sony2fuji::HslOptions& hsl,
     const sony2fuji::ColorGradingOptions& colorGrading,
-    const sony2fuji::ToneCurve& customCurve) {
+    const sony2fuji::ToneCurve& customCurve,
+    const std::array<sony2fuji::ToneCurve, 3>& channelCurves = {},
+    bool curveApplyToLuminosity = false,
+    const sony2fuji::ToneCurveParametricConfig& parametricCfg = {}) {
     auto matMul = [](const sony2fuji::ColorConverter::Matrix3x3& m, const sony2fuji::RGB& v) {
         return sony2fuji::RGB(
             m[0][0] * v.r + m[0][1] * v.g + m[0][2] * v.b,
@@ -182,17 +185,55 @@ sony2fuji::RGB cpuEvaluatePixel(
         if (lum > 0.f) pixel = {pixel.r * (adj / lum), pixel.g * (adj / lum), pixel.b * (adj / lum)};
         else pixel = {adj, adj, adj};
     }
-    if (customCurve.custom()) {
-        pixel = {
-            static_cast<float>(customCurve.evaluate(pixel.r)),
-            static_cast<float>(customCurve.evaluate(pixel.g)),
-            static_cast<float>(customCurve.evaluate(pixel.b))};
-    } else if (request.tone_curve != 0.f) {
-        pixel = {
-            builtinToneCurve(pixel.r, request.tone_curve),
-            builtinToneCurve(pixel.g, request.tone_curve),
-            builtinToneCurve(pixel.b, request.tone_curve)};
+    const sony2fuji::ToneCurveParametric parametric(parametricCfg);
+    const bool masterActive = parametric.active() || customCurve.active() || request.tone_curve != 0.f;
+    auto evalMaster = [&](float v) -> float {
+        if (parametric.active()) v = static_cast<float>(parametric.evaluate(v));
+        if (customCurve.active()) return static_cast<float>(customCurve.evaluate(v));
+        if (request.tone_curve != 0.f) return builtinToneCurve(v, request.tone_curve);
+        return v;
+    };
+    if (masterActive) {
+        if (curveApplyToLuminosity) {
+            const sony2fuji::RGB pL(
+                sony2fuji::GammaConverter::removeSRGBGamma(pixel.r),
+                sony2fuji::GammaConverter::removeSRGBGamma(pixel.g),
+                sony2fuji::GammaConverter::removeSRGBGamma(pixel.b));
+            const float Y = pL.g + 0.2126f * (pL.r - pL.g) + 0.0722f * (pL.b - pL.g);
+            const float u = sony2fuji::GammaConverter::applySRGBGamma(std::max(0.f, Y));
+            const float uPrime = evalMaster(u);
+            const float Yp = sony2fuji::GammaConverter::removeSRGBGamma(uPrime);
+            const float Y0 = sony2fuji::GammaConverter::removeSRGBGamma(evalMaster(0.f));
+            if (Yp <= 0.f) {
+                pixel = {0.f, 0.f, 0.f};
+            } else if (Yp >= 1.f) {
+                pixel = {1.f, 1.f, 1.f};
+            } else if (Y <= 1e-7f) {
+                pixel = {uPrime, uPrime, uPrime};
+            } else {
+                const float s = std::max(0.f, Yp - Y0) / Y;
+                const sony2fuji::RGB delta((pL.r - Y) * s, (pL.g - Y) * s, (pL.b - Y) * s);
+                float t = 1.f;
+                for (float d : {delta.r, delta.g, delta.b}) {
+                    if (d > 0.f) t = std::min(t, (1.f - Yp) / d);
+                    else if (d < 0.f) t = std::min(t, -Yp / d);
+                }
+                const sony2fuji::RGB outL(
+                    std::clamp(Yp + delta.r * t, 0.f, 1.f),
+                    std::clamp(Yp + delta.g * t, 0.f, 1.f),
+                    std::clamp(Yp + delta.b * t, 0.f, 1.f));
+                pixel = {
+                    sony2fuji::GammaConverter::applySRGBGamma(outL.r),
+                    sony2fuji::GammaConverter::applySRGBGamma(outL.g),
+                    sony2fuji::GammaConverter::applySRGBGamma(outL.b)};
+            }
+        } else {
+            pixel = {evalMaster(pixel.r), evalMaster(pixel.g), evalMaster(pixel.b)};
+        }
     }
+    if (channelCurves[0].active()) pixel.r = static_cast<float>(channelCurves[0].evaluate(pixel.r));
+    if (channelCurves[1].active()) pixel.g = static_cast<float>(channelCurves[1].evaluate(pixel.g));
+    if (channelCurves[2].active()) pixel.b = static_cast<float>(channelCurves[2].evaluate(pixel.b));
     const float contrast = std::clamp(request.contrast, 0.f, 2.f);
     const float saturation = std::clamp(request.saturation, 0.f, 2.f);
     if (contrast != 1.f || saturation != 1.f) {
@@ -244,7 +285,10 @@ sony2fuji::ImageData cpuRenderPhoto(
     const sony2fuji::HslOptions& hsl,
     const sony2fuji::ToneControlsOptions& toneControls,
     const sony2fuji::ColorGradingOptions& colorGrading,
-    const sony2fuji::ToneCurve& customCurve) {
+    const sony2fuji::ToneCurve& customCurve,
+    const std::array<sony2fuji::ToneCurve, 3>& channelCurves = {},
+    bool curveApplyToLuminosity = false,
+    const sony2fuji::ToneCurveParametricConfig& parametricCfg = {}) {
     const auto toSrgb = sony2fuji::ColorConverter::getConversionMatrix(inputSpace, sony2fuji::ColorSpace::sRGB);
     const auto toFGamut = sony2fuji::photoLUTInputMatrix(lut ? lut->inputTransfer() : sony2fuji::LUTTransfer::FLog2);
     const bool previewResizeFirst = request.intent == SONY2FUJI_INTENT_PREVIEW && !effects.active();
@@ -253,7 +297,8 @@ sony2fuji::ImageData cpuRenderPhoto(
     sony2fuji::ImageData evaluated(src.width, src.height);
     for (size_t i = 0; i < src.pixels.size(); ++i) {
         evaluated.pixels[i] = cpuEvaluatePixel(
-            src.pixels[i], toSrgb, toFGamut, request, lut, relativeWB, toneControls, hsl, colorGrading, customCurve);
+            src.pixels[i], toSrgb, toFGamut, request, lut, relativeWB, toneControls, hsl, colorGrading,
+            customCurve, channelCurves, curveApplyToLuminosity, parametricCfg);
     }
     if (effects.active()) {
         sony2fuji::applyPhotoEffects(evaluated, effects);
@@ -292,7 +337,10 @@ sony2fuji::RenderParams toParams(
     const sony2fuji::HslOptions& hsl = {},
     const sony2fuji::ToneControlsOptions& toneControls = {},
     const sony2fuji::ColorGradingOptions& colorGrading = {},
-    const sony2fuji::ToneCurve& customCurve = {}) {
+    const sony2fuji::ToneCurve& customCurve = {},
+    const std::array<sony2fuji::ToneCurve, 3>& channelCurves = {},
+    bool curveApplyToLuminosity = false,
+    const sony2fuji::ToneCurveParametricConfig& parametric = {}) {
     sony2fuji::RenderParams params;
     params.exposureEV = req.exposure_ev;
     params.brightness = req.brightness;
@@ -311,6 +359,9 @@ sony2fuji::RenderParams toParams(
     params.toneControls = toneControls;
     params.colorGrading = colorGrading;
     params.customCurve = customCurve;
+    params.channelCurves = channelCurves;
+    params.curveApplyToLuminosity = curveApplyToLuminosity;
+    params.parametricCurve = parametric;
     params.intent = req.intent == SONY2FUJI_INTENT_PREVIEW
         ? sony2fuji::RenderIntent::Preview
         : sony2fuji::RenderIntent::Final;
@@ -479,6 +530,49 @@ void testShaderBranchesPixelParity() {
         const float branchDelta = (ok1 && ok2) ? maxPixelDiff(withSrgb, withoutLut) : 0.f;
         checkPass(ok1 && ok2 && branchDelta > 0.1f,
               "sRGB LUT produces distinct look vs neutral (delta=" + std::to_string(branchDelta) + ")");
+    }
+
+    // Tone Curve v2 GLES SPIR-V VM parity checks: unpinned endpoints, R/G/B channel curves,
+    // Luminosity mode with gamut clamp, 4-band parametric composite, and inactive bypass.
+    {
+        auto reqV2 = makeBaseRequest(8, 6);
+        const sony2fuji::ToneCurve freeMaster(
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.12}, {0.45, 0.72}, {1.0, 0.88}}}}, true);
+        const std::array<sony2fuji::ToneCurve, 3> channels = {
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.05}, {0.5, 0.62}, {1.0, 0.95}}}}, true),
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.4, 0.36}, {1.0, 1.0}}}}, true),
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.6, 0.55}, {1.0, 0.92}}}}, true)
+        };
+        const sony2fuji::ToneCurveParametricConfig paramCfg{ -30.f, 40.f, -25.f, 50.f, 0.22f, 0.48f, 0.78f };
+
+        for (bool lum : {false, true}) {
+            sony2fuji::ImageData gpuV2;
+            const bool ok = renderer.render(
+                input, sony2fuji::ColorSpace::sRGB,
+                toParams(reqV2, nullptr, {1.f, 1.f, 1.f}, {}, 0, false, {}, {}, {}, freeMaster, channels, lum, paramCfg),
+                8, 6, 0, gpuV2);
+            const auto cpuV2 = cpuRenderPhoto(
+                input, sony2fuji::ColorSpace::sRGB, reqV2, nullptr, {1.f, 1.f, 1.f},
+                8, 6, {}, {}, {}, {}, freeMaster, channels, lum, paramCfg);
+            const float diff = ok ? maxPixelDiff(gpuV2, cpuV2) : std::numeric_limits<float>::infinity();
+            checkPass(ok && diff <= 2e-4f,
+                std::string("Tone Curve v2 GLES parity (lum=") + (lum ? "true" : "false") +
+                ") maxDiff=" + std::to_string(diff));
+        }
+
+        // Verify unpinned endpoints hit exact y0 at black (0,0,0) and y1 at specular (1e8)
+        sony2fuji::ImageData endpointInput(2, 1);
+        endpointInput.pixels = {{0.f, 0.f, 0.f}, {1e8f, 1e8f, 1e8f}};
+        auto epReq = makeBaseRequest(2, 1);
+        sony2fuji::ImageData epOut;
+        const bool epOk = renderer.render(
+            endpointInput, sony2fuji::ColorSpace::sRGB,
+            toParams(epReq, nullptr, {1.f, 1.f, 1.f}, {}, 0, false, {}, {}, {}, freeMaster, {}, false, {}),
+            2, 1, 0, epOut);
+        checkPass(epOk &&
+            std::abs(epOut.pixels[0].r - 0.12f) <= 1e-5f &&
+            std::abs(epOut.pixels[1].r - 0.88f) <= 1e-5f,
+            "GLES unpinned endpoints evaluate exactly to y0=0.12 and y1=0.88");
     }
 }
 

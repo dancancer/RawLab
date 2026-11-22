@@ -154,6 +154,9 @@ internal class EditorDependencies(
         EditorAdjustmentHistory.Companion::sourceValidation,
     val parseSystemPhotoUri: (String) -> Uri = Uri::parse,
     val retainSystemPhoto: ((Uri) -> Uri)? = null,
+    val curveSampler: (com.rawlab.android.settings.ToneCurveSettings, com.rawlab.android.settings.ToneCurveChannel) -> List<com.rawlab.android.settings.ToneCurvePoint> = { settings, channel ->
+        com.rawlab.android.engine.ToneCurveSampling.samples(settings, channel)
+    },
 ) {
     companion object {
         fun production(

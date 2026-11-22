@@ -179,8 +179,15 @@ RenderStatus Pipeline::sampleToneCurveV2(
     }
     try {
         const ToneCurve curve(config, /*allowFreeEndpoints=*/true);
+        const ToneCurveParametric parametricEval = parametric
+            ? ToneCurveParametric(*parametric)
+            : ToneCurveParametric{};
         for (uint32_t i = 0; i < count; ++i) {
-            y[i] = curve.evaluate(x[i]);
+            double v = x[i];
+            if (parametricEval.active()) {
+                v = parametricEval.evaluate(v);
+            }
+            y[i] = curve.evaluate(v);
         }
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
@@ -489,6 +496,8 @@ RenderStatus Pipeline::setToneCurve(const ToneCurveConfig& config) {
         ToneCurve curve(config);
         toneCurve_ = std::move(curve);
         channelCurves_ = {};
+        curveApplyToLuminosity_ = false;
+        parametricCurve_ = {};
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
@@ -1436,12 +1445,16 @@ RenderStatus Pipeline::processImpl(
         return RenderStatus::Unsupported;
     }
     bool viewportPreview = viewportPreview_ && previewToBuffer && !roiActive;
+    const bool channelCurvesUnsupported = std::any_of(channelCurves_.begin(), channelCurves_.end(),
+        [](const auto& curve) { return !curve.gpuSupported(); });
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    const bool curvesGpuUnsupported = !toneCurve_.gpuSupported() || channelCurvesUnsupported;
+    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || curvesGpuUnsupported;
+#else
     const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
         [](const auto& curve) { return curve.active(); });
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive || !toneCurve_.gpuSupported();
-#else
-    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive ||
+    const bool curvesGpuUnsupported = channelCurvesActive || !toneCurve_.gpuSupported();
+    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || curvesGpuUnsupported ||
         toneCurve_.active() || colorGradingActive || toneControlsActive || hslActive ||
         effectsActive || waveletActive || chromaMode != 0;
 #endif
@@ -1452,7 +1465,7 @@ RenderStatus Pipeline::processImpl(
     auto cpuStageFallbackReason = [&]() {
         if (atmosphereActive) return GpuFallbackReason::Atmosphere;
         if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
-        if (channelCurvesActive || !toneCurve_.gpuSupported()) return GpuFallbackReason::Curves;
+        if (curvesGpuUnsupported) return GpuFallbackReason::Curves;
         if (c5Wavelet) return GpuFallbackReason::C5Wavelet;
         return GpuFallbackReason::GpuDisabled;
     };

@@ -8,7 +8,7 @@ namespace sony2fuji {
 inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
-)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + kToneCurveShader + photoLogShader(ShaderDialect::Glsl) + R"glsl(
+)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + toneCurveShader("vec3") + photoLogShader(ShaderDialect::Glsl) + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -34,8 +34,14 @@ uniform vec3 domainMin;
 uniform vec3 domainMax;
 uniform vec4 tone; // contrast, saturation, highlights, shadows
 uniform float curve;
-uniform int customCurveCount;
-uniform vec4 curveRanges[32], curveTangents[32];
+layout(std140, binding = 0) uniform CurveParams {
+    uvec4 curveCounts;
+    uvec4 curveFlags;
+    vec4 parametricAmps;
+    vec4 parametricSplits;
+    vec4 curveRanges[128];
+    vec4 curveTangents[128];
+};
 uniform bool hslActive;
 uniform vec3 toneControls;
 uniform vec3 colorGrading[3];
@@ -77,13 +83,24 @@ float toneCurve(float x) {
     if (x <= 0.75) return mix(points.y, points.z, (x - 0.5) * 4.0);
     return mix(points.z, 1.0, (x - 0.75) * 4.0);
 }
-float customToneCurve(float x) {
-    if (x <= 0.0) return 0.0;
-    if (x >= 1.0) return 1.0;
+float customToneCurve(float x, int count, int base) {
+    if (count == 0) return x;
+    if (x <= 0.0) return curveRanges[base].z;
+    if (x >= 1.0) return curveRanges[base + count - 1].w;
     int i = 0;
-    while (i + 1 < customCurveCount && x > curveRanges[i].y) ++i;
-    vec4 r = curveRanges[i];
-    return pchipSegment(x, r.x, r.y, r.z, r.w, curveTangents[i].x, curveTangents[i].y);
+    while (i + 1 < count && x > curveRanges[base + i].y) ++i;
+    vec4 r = curveRanges[base + i];
+    vec4 t = curveTangents[base + i];
+    return pchipSegment(x, r.x, r.y, r.z, r.w, t.x, t.y);
+}
+float evalMasterTone(float x) {
+    if (curveFlags.y != 0u) {
+        x = tcParametric(x, parametricAmps.x, parametricAmps.y, parametricAmps.z, parametricAmps.w,
+            parametricSplits.x, parametricSplits.y, parametricSplits.z);
+    }
+    if (curveCounts.x != 0u) return customToneCurve(x, int(curveCounts.x), 0);
+    if (curve != 0.0) return toneCurve(x);
+    return x;
 }
 vec3 applyHsl(vec3 pixel) {
     if (!hslActive) return pixel;
@@ -140,8 +157,22 @@ vec3 evaluate(vec3 inputColor) {
     }
     pixel = tcBlackWhite(pixel, toneControls.x, toneControls.y);
     pixel = hsApplyHighlightsShadows(pixel, tone.z, tone.w);
-    if (customCurveCount != 0) pixel = vec3(customToneCurve(pixel.r), customToneCurve(pixel.g), customToneCurve(pixel.b));
-    else if (curve != 0.0) pixel = vec3(toneCurve(pixel.r), toneCurve(pixel.g), toneCurve(pixel.b));
+    bool masterActive = curveFlags.y != 0u || curveCounts.x != 0u || curve != 0.0;
+    if (masterActive) {
+        if (curveFlags.x != 0u) {
+            vec3 pL = vec3(tcSrgbToLinear(pixel.r), tcSrgbToLinear(pixel.g), tcSrgbToLinear(pixel.b));
+            float Y = tcLuminosityLinearY(pL);
+            float u = tcLinearToSrgb(max(0.0, Y));
+            float uPrime = evalMasterTone(u);
+            float Y0 = tcSrgbToLinear(evalMasterTone(0.0));
+            pixel = tcLuminosityFinish(pL, Y, uPrime, Y0);
+        } else {
+            pixel = vec3(evalMasterTone(pixel.r), evalMasterTone(pixel.g), evalMasterTone(pixel.b));
+        }
+    }
+    pixel.r = customToneCurve(pixel.r, int(curveCounts.y), 32);
+    pixel.g = customToneCurve(pixel.g, int(curveCounts.z), 64);
+    pixel.b = customToneCurve(pixel.b, int(curveCounts.w), 96);
     if (tone.x != 1.0 || tone.y != 1.0) {
         pixel = (pixel - 0.5) * tone.x + 0.5;
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
