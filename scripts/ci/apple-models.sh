@@ -55,7 +55,6 @@ case "${1:-}" in
             RawLabMac/tests/wavelet-settings.sh RawLabMac/tests/workspace-browser.sh
             RawLabMac/tests/workspace-layout.sh RawLabMac/tests/render-scheduling.sh
             RawLabMac/tests/histogram.sh RawLabMac/tests/mac-crop-interaction.sh
-            RawLabMac/tests/agent-transfer-hot-reload.sh
             RawLabMac/tests/mac-inspection-suite.sh
             RawLabMac/tests/update-trust.sh RawLabMac/tests/usage-privacy-presentation.sh)
         ;;

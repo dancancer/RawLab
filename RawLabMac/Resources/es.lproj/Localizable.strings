@@ -526,6 +526,7 @@
 "无效的曝光基准" = "Punto de referencia de exposición no válido";
 "无效的曲线参数" = "Valores de curva no válidos";
 "无效的清晰度或去朦胧参数" = "Valores de claridad o borrado de neblina no válidos";
+"无效的白平衡参数" = "Parámetros de balance de blancos no válidos";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
 "无效的透视参数" = "Los parámetros de perspectiva no son válidos";
 "无效的降噪参数" = "Ajustes de reducción de ruido no válidos";

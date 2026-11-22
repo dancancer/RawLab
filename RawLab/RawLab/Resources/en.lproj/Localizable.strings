@@ -531,6 +531,7 @@
 "无效的曝光基准" = "Invalid exposure reference";
 "无效的曲线参数" = "Invalid curve values";
 "无效的清晰度或去朦胧参数" = "Invalid clarity or dehaze values";
+"无效的白平衡参数" = "Invalid white balance parameters";
 "无效的视口预览模式" = "Invalid Viewport Preview Mode";
 "无效的降噪参数" = "Invalid denoise settings";
 "无效的颜色分级参数" = "Invalid color grading values";

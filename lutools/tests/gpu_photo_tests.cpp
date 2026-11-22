@@ -658,6 +658,30 @@ int main() {
         }
         compareForcedCase(session, forced, v2Req, "Tone curve v2 Luminosity mode + gamut clamp + R/B channels");
 
+        // Combined Tone Curve v2 + Color Grading v2 (zone luminance + global + blending + balance) on CPU vs GPU
+        sony2fuji_color_grading_v2_config gv2{};
+        gv2.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+        gv2.struct_size = sizeof(gv2);
+        gv2.shadows_hue = 215.0f; gv2.shadows_saturation = 32.0f; gv2.shadows_luminance = -18.0f;
+        gv2.midtones_hue = 45.0f; gv2.midtones_saturation = 22.0f; gv2.midtones_luminance = 8.0f;
+        gv2.highlights_hue = 320.0f; gv2.highlights_saturation = 28.0f; gv2.highlights_luminance = -12.0f;
+        gv2.global_hue = 160.0f; gv2.global_saturation = 18.0f; gv2.global_luminance = 10.0f;
+        gv2.blending = 74.0f;
+        gv2.balance = -26.0f;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_color_grading_v2(target, &gv2) == SONY2FUJI_STATUS_OK, "grading v2 setter");
+        }
+        compareForcedCase(session, forced, v2Req, "Combined Tone Curve v2 (Luminosity + Parametric + RGB) + Color Grading v2");
+        v2.apply_to_luminosity = 0;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_tone_curves_v2(target, &v2) == SONY2FUJI_STATUS_OK, "v2 RGB combined setter");
+        }
+        compareForcedCase(session, forced, v2Req, "Combined Tone Curve v2 (RGB + Parametric) + Color Grading v2");
+        sony2fuji_color_grading_v2_config resetGv2{SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, sizeof(resetGv2), 0,0,0, 0,0,0, 0,0,0, 0,0,0, 50.0f, 0.0f};
+        for (auto* target : {session, forced}) {
+            sony2fuji_session_set_color_grading_v2(target, &resetGv2);
+        }
+
         // Exact zero-value bypass with out-of-range working residuals (<0 and >1)
         sony2fuji::ImageData residualInput(4, 1);
         residualInput.pixels = {

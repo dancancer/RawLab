@@ -724,7 +724,7 @@ class AdjustmentHistoryInstrumentedTest {
             main { model.addCollectionPhotos(listOf(model.state.value.photo!!.uri)) }
             waitFor { !model.collection.value.busy }
             val review = result<com.rawlab.android.batch.CollectionExportReview?> {
-                model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null, it)
+                model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null, completed = it)
             }!!
             main { model.releaseEditorRasterOperation = { throw IOException("release fixture") } }
             assertFalse(result<Boolean> { model.freezeCollectionExport(review, it) })

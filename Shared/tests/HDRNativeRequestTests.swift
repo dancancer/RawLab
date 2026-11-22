@@ -187,6 +187,29 @@ import Foundation
                     v9.grading_v2.midtones_hue == 210 && v9.grading_v2.midtones_saturation == 17,
                     "HDR v9 grading_v2 forwarding")
         }
+        var combined = v9Settings
+        combined.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.58)
+        combined.toneSettings.curve.channels.blue = .identity.inserting(x: 0.5, y: 0.44)
+        combined.colorSettings.grading = ColorGradingSettings(
+            shadows: .init(hue: 215, saturation: 28, luminance: -14),
+            midtones: .init(hue: 45, saturation: 16, luminance: 8),
+            highlights: .init(hue: 315, saturation: 20, luminance: -10),
+            global: .init(hue: 165, saturation: 14, luminance: 6),
+            blending: 74,
+            balance: -22
+        )
+        let combinedReq = try makeHDRRequest(settings: combined, intent: SONY2FUJI_INTENT_FINAL, outputSharpening: .high)
+        withHDRRequestPrefix(combinedReq) { pointer in
+            let v9 = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
+            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == 2696, "HDR v9 combined header")
+            require(v9.output_sharpening == SONY2FUJI_OUTPUT_SHARPENING_HIGH.rawValue, "HDR v9 combined output_sharpening")
+            require(v9.curve_apply_to_luminosity == 1 && v9.parametric_curve.shadows == 20 &&
+                    v9.base.channels.0.count == 3 && v9.base.channels.2.count == 3,
+                    "HDR v9 combined curve v2 + channels")
+            require(v9.grading_v2.shadows_luminance == -14 && v9.grading_v2.global_hue == 165 &&
+                    v9.grading_v2.blending == 74 && v9.grading_v2.balance == -22,
+                    "HDR v9 combined grading_v2")
+        }
         settings.mode = .sdr
         do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL); fatalError("SDR mode entered HDR") }
         catch HDRRequestError.invalidSettings {}

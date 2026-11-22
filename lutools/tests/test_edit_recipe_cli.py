@@ -243,6 +243,139 @@ class RecipeCLI(unittest.TestCase):
         self.assertTrue(none_out.is_file() and rel_out.is_file())
         self.assertNotEqual(none_out.read_bytes(), rel_out.read_bytes())
 
+    def test_v17_combined_raster_relative_wb_curve_v2_grading_v2_sharpening_icc_analyze_and_transfer(self):
+        def write_gradient_png(path: pathlib.Path, width: int = 32, height: int = 16):
+            def chunk(kind: bytes, data: bytes) -> bytes:
+                return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+            rows = []
+            for y in range(height):
+                row = bytearray([0])
+                for x in range(width):
+                    v = int(round(30 + (195 * x) / (width - 1)))
+                    g = int(round(28 + (190 * (x + y)) / (width + height - 2)))
+                    b = int(round(25 + (185 * y) / (height - 1)))
+                    row.extend((v, g, b, 255))
+                rows.append(bytes(row))
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+            path.write_bytes(
+                b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"".join(rows))) + chunk(b"IEND", b"")
+            )
+
+        write_gradient_png(self.root / "gradient.png")
+        std_out = self.root / "combined_standard.jpg"
+        std_out_repeat = self.root / "combined_standard_repeat.jpg"
+        off_out = self.root / "combined_off.jpg"
+        base_doc = {
+            "schema_version": 17,
+            "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+            "input": {"path": "gradient.png", "type": "raster"},
+            "edits": {
+                "exposure": {"mode": "sensor", "ev": 0.2, "brightness": 1.0},
+                "white_balance": {"mode": "relative", "relative_temperature": 5600, "relative_tint": 14},
+                "look": {"path": None, "strength": 0.0},
+                "geometry": {
+                    "crop": {"x": 0, "y": 0, "width": 1, "height": 1},
+                    "quarter_turns": 0,
+                    "flip_horizontal": False,
+                    "flip_vertical": False,
+                    "straighten_degrees": 0,
+                    "perspective": {"horizontal": 0, "vertical": 0},
+                },
+                "tone": {
+                    "contrast": 1.1,
+                    "saturation": 1.05,
+                    "highlights": -0.1,
+                    "shadows": 0.15,
+                    "black_point": -0.05,
+                    "white_point": 0.05,
+                    "s_curve": 0.0,
+                    "curve": {
+                        "mode": "custom",
+                        "points": [[0.0, 0.04], [0.5, 0.56], [1.0, 0.96]],
+                        "apply_to_luminosity": True,
+                        "parametric": {
+                            "shadows": 18.0, "darks": -8.0, "lights": 12.0, "highlights": -10.0,
+                            "split_shadow": 0.25, "split_midtone": 0.50, "split_highlight": 0.75,
+                        },
+                        "channels": {
+                            "red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.54], [1.0, 1.0]]},
+                            "green": {"mode": "legacy", "points": []},
+                            "blue": {"mode": "custom", "points": [[0.0, 0.02], [0.5, 0.48], [1.0, 0.98]]},
+                        },
+                    },
+                },
+                "color": {"vibrance": 0.15},
+                "color_grading": {
+                    "shadows": {"hue": 220.0, "saturation": 20.0, "luminance": -10.0},
+                    "midtones": {"hue": 40.0, "saturation": 12.0, "luminance": 6.0},
+                    "highlights": {"hue": 310.0, "saturation": 15.0, "luminance": -8.0},
+                    "global": {"hue": 180.0, "saturation": 10.0, "luminance": 5.0},
+                    "blending": 72.0,
+                    "balance": -15.0,
+                },
+                "detail": {"sharpening": 0.25},
+                "hsl": {"hue": [0]*8, "saturation": [0]*8, "lightness": [0]*8},
+                "effects": {
+                    "vignette_amount": 0.0, "vignette_midpoint": 50.0,
+                    "vignette_roundness": 0.0, "vignette_feather": 50.0,
+                    "vignette_highlights": 0.0,
+                    "grain_amount": 0.0, "grain_size": 25.0, "grain_roughness": 50.0,
+                },
+                "denoise": {
+                    "raw_level": 0,
+                    "chroma_mode": 0,
+                    "wavelet": {"enabled": False, "luma": 0.0, "chroma": 0.0, "coarse": 0.0},
+                },
+                "lens_correction": {"distortion": False, "tca": False, "auto_crop": False, "profile_id": None},
+            },
+            "output": {
+                "path": "combined_standard.jpg",
+                "format": "jpeg",
+                "jpeg_quality": 95,
+                "output_sharpening": "standard",
+                "size": {"mode": "native"},
+            },
+        }
+        self.document = base_doc
+        self.write()
+        # Run --print-transfer
+        pt = self.run_cli("--recipe", self.recipe, "--print-transfer", "--json")
+        self.assertEqual(pt.returncode, 0, pt.stderr)
+        pt_json = json.loads(pt.stdout)
+        self.assertEqual(pt_json["command"], "print_transfer")
+        self.assertEqual(pt_json["result"]["values"]["light.curve.apply_to_luminosity"], True)
+        self.assertEqual(pt_json["result"]["values"]["color.grading.blending"], 72.0)
+
+        # Run --analyze + --sample (verify diagnostics without mutating export destination)
+        res1 = self.run_cli("--recipe", self.recipe, "--analyze", "--sample", "0.5,0.5,center", "--json")
+        self.assertEqual(res1.returncode, 0, res1.stderr)
+        env1 = json.loads(res1.stdout)
+        self.assertTrue(env1["ok"])
+        self.assertIn("luma_zones", env1["result"])
+        self.assertEqual(env1["result"]["samples"][0]["label"], "center")
+        self.assertFalse(std_out.exists())
+
+        # Run full JPEG export and verify APP2 ICC_PROFILE + deterministic 8-bit output
+        res_exp = self.run_cli("--recipe", self.recipe, "--json")
+        self.assertEqual(res_exp.returncode, 0, res_exp.stderr)
+        bytes1 = std_out.read_bytes()
+        self.assertIn(b"ICC_PROFILE\x00\x01\x01", bytes1)
+
+        # Verify 8-bit deterministic dithering + output repeatability
+        self.document["output"]["path"] = "combined_standard_repeat.jpg"
+        self.write()
+        res_rep = self.run_cli("--recipe", self.recipe, "--json")
+        self.assertEqual(res_rep.returncode, 0, res_rep.stderr)
+        self.assertEqual(bytes1, std_out_repeat.read_bytes())
+
+        # Verify output_sharpening: "off" produces distinct bytes
+        self.document["output"]["path"] = "combined_off.jpg"
+        self.document["output"]["output_sharpening"] = "off"
+        self.write()
+        res_off = self.run_cli("--recipe", self.recipe, "--json")
+        self.assertEqual(res_off.returncode, 0, res_off.stderr)
+        self.assertNotEqual(bytes1, off_out.read_bytes())
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

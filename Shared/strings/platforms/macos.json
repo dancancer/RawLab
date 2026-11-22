@@ -1275,6 +1275,10 @@
       "formats": [],
       "source": "无效的 HSL 参数"
     },
+    "无效的白平衡参数": {
+      "formats": [],
+      "source": "无效的白平衡参数"
+    },
     "无效的 RAW 降噪档位": {
       "formats": [],
       "source": "无效的 RAW 降噪档位"

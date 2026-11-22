@@ -1687,6 +1687,14 @@
     "ja": "無効なHSLパラメータ",
     "zh-Hans": "无效的 HSL 参数"
   },
+  "无效的白平衡参数": {
+    "de": "Ungültige Weißabgleich-Parameter",
+    "en": "Invalid white balance parameters",
+    "es": "Parámetros de balance de blancos no válidos",
+    "fr": "Paramètres de balance des blancs invalides",
+    "ja": "無効なホワイトバランスパラメータ",
+    "zh-Hans": "无效的白平衡参数"
+  },
   "无效的几何参数": {
     "de": "Ungültige Geometrieparameter",
     "en": "Invalid geometry parameters",

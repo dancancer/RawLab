@@ -593,6 +593,21 @@ void testShaderBranchesPixelParity() {
             std::abs(epOut.pixels[0].r - 0.12f) <= 1e-5f &&
             std::abs(epOut.pixels[1].r - 0.88f) <= 1e-5f,
             "GLES unpinned endpoints evaluate exactly to y0=0.12 and y1=0.88");
+
+        // Combined Tone Curve v2 (unpinned + Luminosity + Parametric + RGB) + Color Grading v2 (zone lum + Global + Blending + Balance)
+        const auto combinedDiff = [&]() {
+            sony2fuji::ImageData gpuCombined;
+            const bool ok = renderer.render(
+                input, sony2fuji::ColorSpace::sRGB,
+                toParams(reqV2, flogLut, wb, {}, 0, false, hsl, tc, cgV2, freeMaster, channels, true, paramCfg),
+                8, 6, 0, gpuCombined);
+            const auto cpuCombined = cpuRenderPhoto(
+                input, sony2fuji::ColorSpace::sRGB, reqV2, flogLut, wb,
+                8, 6, {}, hsl, tc, cgV2, freeMaster, channels, true, paramCfg);
+            return ok ? maxPixelDiff(gpuCombined, cpuCombined) : std::numeric_limits<float>::infinity();
+        }();
+        checkPass(combinedDiff <= 2e-4f,
+            "Combined Tone Curve v2 + Color Grading v2 GLES parity maxDiff=" + std::to_string(combinedDiff));
     }
 }
 

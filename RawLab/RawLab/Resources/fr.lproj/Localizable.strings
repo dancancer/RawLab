@@ -531,6 +531,7 @@
 "无效的曝光基准" = "Référence d'exposition invalide";
 "无效的曲线参数" = "Valeurs de courbe non valides";
 "无效的清晰度或去朦胧参数" = "Valeurs de clarté ou de correction du voile non valides";
+"无效的白平衡参数" = "Paramètres de balance des blancs invalides";
 "无效的视口预览模式" = "Mode d’aperçu de la zone visible non valide";
 "无效的降噪参数" = "Réglages de réduction du bruit invalides";
 "无效的颜色分级参数" = "Valeurs d’étalonnage des couleurs non valides";

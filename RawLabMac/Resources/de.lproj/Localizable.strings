@@ -526,6 +526,7 @@
 "无效的曝光基准" = "Ungültige Belichtungsreferenz";
 "无效的曲线参数" = "Ungültige Kurvenwerte";
 "无效的清晰度或去朦胧参数" = "Ungültige Werte für Klarheit oder Dunstentfernung";
+"无效的白平衡参数" = "Ungültige Weißabgleich-Parameter";
 "无效的视口预览模式" = "Ungültiger Modus für die Ausschnittvorschau";
 "无效的透视参数" = "Ungültige Perspektivwerte";
 "无效的降噪参数" = "Ungültige Rauschreduzierungsparameter";

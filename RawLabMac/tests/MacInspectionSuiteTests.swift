@@ -230,6 +230,41 @@ struct MacInspectionSuiteTests {
             check(drift < 1e-3, "HDR anchor #\(idx + 1) drift < 1e-3 after exposure edit (drift=\(drift))")
         }
 
+        // Combined Cross-Feature Parity: Inspection overlays (sketchLuminance .. neutralGray50) +
+        // pinned anchors never pollute CanonicalEditRecipe JSON or export params even when Curve v2 +
+        // Color Grading v2 + Output Sharpening are all active.
+        var graded = Adjustments()
+        var curve = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.05), .init(x: 0.5, y: 0.6), .init(x: 1, y: 0.95)],
+            applyToLuminosity: true,
+            parametric: ToneCurveParametric(highlights: -10, lights: 12, darks: -8, shadows: 20, splitShadow: 0.25, splitMidtone: 0.50, splitHighlight: 0.75)
+        )
+        curve.channels.red = ToneCurveShape.identity.inserting(x: 0.5, y: 0.56)
+        graded.editingCurveSettings = curve
+        graded.editingGradingSettings = ColorGradingSettings(
+            shadows: .init(hue: 215, saturation: 24, luminance: -12),
+            midtones: .init(hue: 45, saturation: 12, luminance: 6),
+            highlights: .init(hue: 315, saturation: 18, luminance: -8),
+            global: .init(hue: 165, saturation: 15, luminance: 7),
+            blending: 72,
+            balance: -18
+        )
+        let baselineParams = try graded.canonicalParamsJSON(isRaster: false, includeDenoise: true, outputSharpening: .high)
+        let baselineRecipe = try CanonicalEditRecipe.encode(graded.canonicalEditState(isRaster: false, includeDenoise: true, outputSharpening: .high))
+        for overlay in InspectionOverlayMode.allCases {
+            var session = InspectionSessionState()
+            session.monitorEnabled = true
+            _ = session.pinAnchor(atSourcePoint: CGPoint(x: 0.25, y: 0.75))
+            session.selectOverlay(overlay)
+            let paramsWithOverlay = try graded.canonicalParamsJSON(isRaster: false, includeDenoise: true, outputSharpening: .high)
+            let recipeWithOverlay = try CanonicalEditRecipe.encode(graded.canonicalEditState(isRaster: false, includeDenoise: true, outputSharpening: .high))
+            check(paramsWithOverlay == baselineParams && recipeWithOverlay == baselineRecipe,
+                  "Overlay \(overlay.rawValue) + pin + Curve v2 + Grading v2 + OutputSharpening has zero export/recipe pollution")
+            check(!recipeWithOverlay.contains("neutralGray50") && !recipeWithOverlay.contains("sketchLuminance") && !recipeWithOverlay.contains("anchors"),
+                  "Recipe JSON excludes inspection state for \(overlay.rawValue)")
+        }
+
         #if RAWLAB_NATIVE_EDITOR_MODEL
         if CommandLine.arguments.count >= 2 {
             try runNativeHDRReopenExposureRegression(dngURL: URL(fileURLWithPath: CommandLine.arguments[1]))
