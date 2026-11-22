@@ -349,13 +349,16 @@ internal static class HDRChecks
             "HDR v9 preserves the channel-curve prefix and v2 grading/parametric curve tail");
         var hdrV9 = new HDRSettings
         {
-            Color = new HDRColorSettings(0, new(), new ColorGradingSettings
+            Color = new HDRColorSettings
             {
-                Shadows = new(200, 25, -10),
-                Global = new(45, 20, -15),
-                Blending = 80,
-                Balance = 30
-            })
+                Grading = new ColorGradingSettings
+                {
+                    Shadows = new(200, 25, -10),
+                    Global = new(45, 20, -15),
+                    Blending = 80,
+                    Balance = 30
+                }
+            }
         };
         Check(hdrV9.ProcessingVersion == 9, "Grading v2 extensions promote HDR ProcessingVersion to 9");
         var v9Native = hdrV9.NativeRenderRequest(HDRIntent.Preview);
