@@ -170,8 +170,12 @@ extension EditorModel {
                                                      edge: work.edge, output: nil,
                                                      interactive: work.pass == .interactive,
                                                      viewportPreview: work.edge != nil)
+                let origSize: CGSize? = self.originalCache.map {
+                    CGSize(width: CGFloat($0.frame.nativeWidth ?? $0.frame.image.width),
+                           height: CGFloat($0.frame.nativeHeight ?? $0.frame.image.height))
+                }
                 DispatchQueue.main.async {
-                    self.finish(request, neutral: neutral, result: result, failure: nil)
+                    self.finish(request, neutral: neutral, result: result, failure: nil, originalSourceSize: origSize)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -182,7 +186,7 @@ extension EditorModel {
         refreshBusy()
     }
 
-    private func finish(_ request: RenderRequest<RenderWork>, neutral: RenderedImage?, result: RenderedImage?, failure: Error?) {
+    private func finish(_ request: RenderRequest<RenderWork>, neutral: RenderedImage?, result: RenderedImage?, failure: Error?, originalSourceSize: CGSize? = nil) {
         workerActive = false
         if failure == nil {
             acceptedOriginalSource = request.value.source
@@ -218,6 +222,19 @@ extension EditorModel {
                 if !request.value.editingGeometry { pendingGeometryPresentation = nil }
                 self.neutral = neutral
                 self.result = result
+                if let originalSourceSize {
+                    self.sourceNativeSize = originalSourceSize
+                } else if request.value.settings.geometrySettings.isIdentity {
+                    self.sourceNativeSize = CGSize(
+                        width: CGFloat(result.nativeWidth ?? result.image.width),
+                        height: CGFloat(result.nativeHeight ?? result.image.height)
+                    )
+                } else if self.sourceNativeSize == nil, let hdrImage = result.hdr?.image {
+                    self.sourceNativeSize = CGSize(
+                        width: CGFloat(result.nativeWidth ?? hdrImage.width),
+                        height: CGFloat(result.nativeHeight ?? hdrImage.height)
+                    )
+                }
                 if request.value.settings.isHDREditing { self.error = request.value.settings.hdr?.missingResourceMessage }
                 if completion == .publishExact { previewOutdated = false }
                 if request.value.settings.activeAIDenoise && !self.aiState.isRunning {

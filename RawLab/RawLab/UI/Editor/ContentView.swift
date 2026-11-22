@@ -315,7 +315,7 @@ struct ContentView: View {
         .onChange(of: coordinator.photoViewing.holdingBefore) { _, _ in
             testHooks.onHoldingBeforeChange?(self)
         }
-        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore, initial: true) { _, needed in
+        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore || coordinator.inspection.monitorEnabled || !coordinator.inspection.anchors.isEmpty, initial: true) { _, needed in
             viewModel.setDetailNeedsBefore(needed)
         }
     }

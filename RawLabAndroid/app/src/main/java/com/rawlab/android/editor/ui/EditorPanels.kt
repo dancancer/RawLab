@@ -38,6 +38,7 @@ import com.rawlab.android.editor.canvas.PhotoCanvasState
 import com.rawlab.android.editor.canvas.photoViewMargin
 import com.rawlab.android.editor.canvas.rememberPhotoHDRPreview
 import com.rawlab.android.editor.geometry.GeometryCropCanvas
+import com.rawlab.android.editor.inspection.InspectionSessionState
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.settings.EditSettings
 
@@ -54,7 +55,10 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onModeChange: (ComparisonMode) -> Unit = {}, onCompareClose: () -> Unit = {}, onRetry: () -> Unit = {}, hslTarget: HslTargetActions? = null, showTargetStatus: Boolean = false, onCamera: () -> Unit = {},
     workspaceControls: Boolean = false, histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
     onCancelExport: () -> Unit = {},
-    onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {}) {
+    onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {},
+    inspection: InspectionSessionState = InspectionSessionState(),
+    onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
+    onInspectionAnchorSelect: (Long) -> Unit = {}) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -76,6 +80,9 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 detail = state.detail.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY },
                 detailTiles = state.detailTiles.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY }.orEmpty(),
                 onDetailRequest = if (state.draft?.group == AdjustmentGroup.GEOMETRY) ({}) else onDetailRequest,
+                inspection = if (state.draft?.group == AdjustmentGroup.GEOMETRY) InspectionSessionState() else inspection,
+                onInspectionMove = onInspectionMove,
+                onInspectionAnchorSelect = onInspectionAnchorSelect,
                 onCanvasTap = { if (state.draft?.group != AdjustmentGroup.GEOMETRY) onCanvasTap() }, onHoldBefore = { onHoldBefore(it && state.draft?.group != AdjustmentGroup.GEOMETRY) },
                 onModeChange = onModeChange, onCompareClose = onCompareClose, viewingEnabled = state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled,
                 bottomOverlayInset = comparisonInset, bottomOverlay = {

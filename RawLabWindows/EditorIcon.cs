@@ -76,6 +76,8 @@ public sealed class EditorIcon : FrameworkElement
         ,["Denoise"]=Geometry.Parse("M20.8,10.1 A9,9 0 0 1 20.8,13.9 M19.6,16.9 A9,9 0 0 1 16.9,19.6 M13.9,20.8 A9,9 0 0 1 10.1,20.8 M7.1,19.6 A9,9 0 0 1 4.4,16.9 M3.2,13.9 A9,9 0 0 1 3.2,10.1 M4.4,7.1 A9,9 0 0 1 7.1,4.4 M10.1,3.2 A9,9 0 0 1 13.9,3.2 M16.9,4.4 A9,9 0 0 1 19.6,7.1 M12,12 H12.01")
         ,["Grain"]=Geometry.Parse("M4,4 H7 M10.5,4 H13.5 M17,4 H20 V7 M20,10.5 V13.5 M20,17 V20 H17 M13.5,20 H10.5 M7,20 H4 V17 M4,13.5 V10.5 M4,7 V4 M9,9 H9.01 M15,9 H15.01 M12,12 H12.01 M9,15 H9.01 M15,15 H15.01")
         ,["Vignette"]=Geometry.Parse("M3,4 H21 V20 H3 Z M12,7.5 A5,4.5 0 1 1 11.99,7.5 M3,8 L7,4 M17,4 L21,8 M21,16 L17,20 M7,20 L3,16")
+        ,["Inspection"]=Geometry.Parse("M12,2 V6 M12,18 V22 M2,12 H6 M18,12 H22 M12,6 A6,6 0 1 1 11.99,6 M12,10 A2,2 0 1 1 11.99,10")
+        ,["Gray50"]=Geometry.Parse("M4,4 H20 V20 H4 Z M12,4 V20")
     };
     protected override void OnRender(DrawingContext dc)
     {

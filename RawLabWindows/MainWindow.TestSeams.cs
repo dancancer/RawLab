@@ -98,6 +98,9 @@ public partial class MainWindow
     internal bool EmbeddedSchedulerBusy => embeddedScheduler.Busy;
     internal HashSet<LibraryEntry> VisibleThumbnails => visibleThumbnails;
     internal bool HasPendingAllReset => pendingAllReset != null;
+    internal InspectionSessionState InspectionState => inspection;
+    internal void SetInspectionOverlayForTests(InspectionOverlayMode mode) { inspection.SelectOverlay(mode); RefreshViewingFrames(); }
+    internal void PinInspectionAnchorForTests(double outX, double outY) => PinInspectionAnchor(outX, outY);
 
     internal void SetPendingAllResetForTests(string? targetFile, long targetOpenRevision, EditorAdjustmentTool tool, EditorAdjustmentGroup? group) =>
         pendingAllReset = targetFile == null ? null : new PendingAllReset(targetFile, targetOpenRevision, tool, group);

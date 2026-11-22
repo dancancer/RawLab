@@ -87,6 +87,7 @@ public partial class MainWindow
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
+        if(e.Key==Key.Escape && inspection.HandleEscape()){RefreshViewingFrames();e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
@@ -95,12 +96,13 @@ public partial class MainWindow
         if(e.Key==Key.C && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){CopyAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if(e.Key==Key.V && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){PasteAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if(!ShowsPhotoWorkspace && !(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control))return;
-        if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
+        if((viewingKey is Key.I or Key.Oem5 or Key.G) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
         if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);
         else if(viewingKey==Key.I)InfoClicked(sender,e);
+        else if(viewingKey==Key.G){ToggleGray50Clicked(sender,e);e.Handled=true;}
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
     private void ExportHdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.HdrJpeg);

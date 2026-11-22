@@ -24,13 +24,13 @@ public partial class MainWindow
         ResultCanvas.HslTargetCancelled+=CancelHslTarget;
         ResultCanvas.HslTargetKey+=KeyHslTarget;
         ResultCanvas.HslTargetRejected+=()=>{CancelHslTarget();hslTargetNotice=HslTargetAvailability.Outside;RefreshHslTarget();};
-        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,InfoEntryButton,HslTargetBanner}.All(element=>
+        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,InfoEntryButton,HslTargetBanner,InspectionHud}.All(element=>
             !element.IsVisible || !new Rect(element.TranslatePoint(new Point(),ResultCanvas),element.RenderSize).Contains(point));
     }
     private void SetHslTargetMode(bool enabled,int axis)
     {
         CancelHslTarget();hslTargetEnabled=enabled;hslTargetAxis=axis;
-        if(enabled)EndHoldingBefore();
+        if(enabled){EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
         RefreshHslTarget();
     }
     private void RefreshHslTarget()

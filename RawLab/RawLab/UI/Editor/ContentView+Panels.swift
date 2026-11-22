@@ -130,6 +130,37 @@ extension ContentView {
                 Menu(L10n.text("缩放与显示")) {
                     Toggle(L10n.text("照片四周留白"), isOn: $coordinator.photoViewing.photoMargin)
                 }.disabled(!viewModel.hasImage)
+                Divider()
+                Toggle(L10n.text("取样监视"), isOn: $coordinator.inspection.monitorEnabled)
+                    .disabled(!viewModel.hasImage || geometrySelected)
+                    .accessibilityIdentifier("inspection.monitor")
+                Button(L10n.text("添加锚点")) { _ = pinInspectionAnchor() }
+                    .disabled(!viewModel.hasImage || geometrySelected || !coordinator.inspection.canPinMore)
+                    .accessibilityIdentifier("inspection.pinAnchor")
+                Button(L10n.text("清除锚点")) { coordinator.inspection.clearAnchors() }
+                    .disabled(coordinator.inspection.anchors.isEmpty)
+                    .accessibilityIdentifier("inspection.clearAnchors.menu")
+                Button {
+                    coordinator.inspection.toggleNeutralGray50()
+                } label: {
+                    Label(L10n.text("50% 中性灰"), systemImage: coordinator.inspection.overlay == .neutralGray50 ? "checkmark.square.fill" : "square.lefthalf.filled")
+                }
+                    .disabled(!viewModel.hasImage || geometrySelected)
+                    .accessibilityIdentifier("inspection.gray50")
+                Menu(L10n.text("观察层")) {
+                    ForEach(InspectionOverlayMode.allCases) { mode in
+                        Button {
+                            coordinator.inspection.selectOverlay(mode)
+                        } label: {
+                            if coordinator.inspection.overlay == mode {
+                                Label(L10n.text(mode.titleKey), systemImage: "checkmark")
+                            } else {
+                                Text(L10n.text(mode.titleKey))
+                            }
+                        }
+                    }
+                }.disabled(!viewModel.hasImage || geometrySelected)
+                    .accessibilityIdentifier("inspection.overlay.menu")
                 Button { coordinator.presentProcessingContext() } label: {
                     Label(L10n.text("照片处理设置"), systemImage: "slider.horizontal.3")
                 }.disabled(!viewModel.hasImage)
@@ -218,7 +249,8 @@ extension ContentView {
                     FloatingHistogram(histogram: currentHistogram, showingBefore: showingBefore,
                                       availableSize: geometry.size, expanded: $coordinator.histogramExpanded,
                                       hdr:(showingBefore ? viewModel.hdrReference : viewModel.hdrPresentation)?.statistics,
-                                      headroom:hdrDisplay.headroom)
+                                      headroom:hdrDisplay.headroom,
+                                      luminanceCursor: inspectionLuminanceCursor)
                         .frame(maxWidth: min(180, geometry.size.width * 0.48), alignment: .trailing)
                         .padding(12)
                         .padding(.top, 44)
@@ -251,17 +283,20 @@ extension ContentView {
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if viewModel.previewFailed {
-                    Button { viewModel.retryPreview(settings: draftPreviewSettings) } label: {
-                        Label(L10n.text("预览未更新") + " · " + L10n.text("重试"), systemImage: "arrow.clockwise")
-                            .font(.caption).padding(8).frame(minHeight: 44)
+                VStack(alignment: .leading, spacing: 8) {
+                    iosInspectionHUD
+                    if viewModel.previewFailed {
+                        Button { viewModel.retryPreview(settings: draftPreviewSettings) } label: {
+                            Label(L10n.text("预览未更新") + " · " + L10n.text("重试"), systemImage: "arrow.clockwise")
+                                .font(.caption).padding(8).frame(minHeight: 44)
+                        }
+                        .background(.regularMaterial)
+                        .accessibilityIdentifier("editor.preview.retry")
+                    } else if case .failed = viewModel.editSaveState {
+                        editSaveStatus.padding(8).background(.regularMaterial)
                     }
-                    .background(.regularMaterial)
-                    .padding(12)
-                    .accessibilityIdentifier("editor.preview.retry")
-                } else if case .failed = viewModel.editSaveState {
-                    editSaveStatus.padding(8).background(.regularMaterial).padding(12)
                 }
+                .padding(12)
             }
             .overlay(alignment: .topTrailing) {
                 if photoViewing.previewOnly {
@@ -317,7 +352,16 @@ extension ContentView {
                           detailTiles: geometrySelected ? [] : viewModel.detailTiles,
                           detailBacking: geometrySelected ? nil : viewModel.detailBacking,
                           onDetailRequest: geometrySelected ? nil : { viewModel.updateDetailRequest($0) },
-                          hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay)
+                          hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay,
+                          inspectionOverlay: geometrySelected ? .none : coordinator.inspection.overlay,
+                          inspectionProbeEnabled: !geometrySelected && !hslTargetActive && coordinator.inspection.monitorEnabled,
+                          inspectionPoint: coordinator.inspection.liveOutputPoint,
+                          inspectionAnchors: inspectionMarkerPoints,
+                          onInspectionPointChange: { pt in
+                              if coordinator.inspection.liveOutputPoint != pt {
+                                  coordinator.inspection.liveOutputPoint = pt
+                              }
+                          })
                 .allowsHitTesting(!geometrySelected)
         }
     }

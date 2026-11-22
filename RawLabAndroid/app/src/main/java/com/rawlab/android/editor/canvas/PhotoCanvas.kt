@@ -56,6 +56,10 @@ import kotlin.math.max
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.rawlab.android.R
+import com.rawlab.android.editor.inspection.InspectionBitmap
+import com.rawlab.android.editor.inspection.InspectionGeometryMapper
+import com.rawlab.android.editor.inspection.InspectionOverlayMode
+import com.rawlab.android.editor.inspection.InspectionSessionState
 import com.rawlab.android.editor.render.PreviewDetailOverlay
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.HDRBitmapAdapter
@@ -121,18 +125,20 @@ private fun DetailOverlayTiles(
     image: PhotoImageRect,
     hdrParameters: com.rawlab.android.engine.HDRDisplayParameters,
     fp16Enabled: Boolean,
+    overlayMode: InspectionOverlayMode = InspectionOverlayMode.NONE,
 ) {
     if (tiles.isEmpty() || image.width <= 0f || image.height <= 0f) return
     val resolved = ArrayList<Pair<PreviewDetailOverlay, androidx.compose.ui.graphics.ImageBitmap>>(tiles.size)
     for (tile in tiles) {
         key(tile.tileKey ?: tile.normalizedRect) {
-            val bitmap = if (useNeutral) {
-                HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled) ?: tile.neutral
+            val rawBitmap = if (useNeutral) {
+                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled)) ?: tile.neutral
             } else {
-                HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled) ?: tile.result
+                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled)) ?: tile.result
             }
-            if (bitmap != null) {
-                resolved += tile to remember(bitmap) { bitmap.asImageBitmap() }
+            if (rawBitmap != null) {
+                val displayBitmap = InspectionBitmap.rememberBitmap(rawBitmap, overlayMode)
+                resolved += tile to remember(displayBitmap) { displayBitmap.asImageBitmap() }
             }
         }
     }
@@ -177,6 +183,9 @@ internal fun PhotoCanvas(
     detail: PreviewDetailOverlay? = null,
     detailTiles: List<PreviewDetailOverlay> = emptyList(),
     onDetailRequest: (ViewportRoiRequest?) -> Unit = {},
+    inspection: InspectionSessionState = InspectionSessionState(),
+    onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
+    onInspectionAnchorSelect: (Long) -> Unit = {},
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -190,12 +199,16 @@ internal fun PhotoCanvas(
     val hold by rememberUpdatedState(onHoldBefore)
     val target by rememberUpdatedState(hslTarget)
     val latestOnDetailRequest by rememberUpdatedState(onDetailRequest)
+    val latestInspection by rememberUpdatedState(inspection)
+    val latestOnInspectionMove by rememberUpdatedState(onInspectionMove)
     val focusRequester = remember { FocusRequester() }
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
     val labelBounds = remember { mutableStateMapOf<String, Rect>() }
     var targetTouch by remember { mutableStateOf<Offset?>(null) }
     var targetAnchor by remember { mutableStateOf<Offset?>(null) }
     var targetImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var inspectionTouch by remember { mutableStateOf<Offset?>(null) }
+    var inspectionAnchorPt by remember { mutableStateOf<Offset?>(null) }
     val hdrParameters = hdrPreview.parameters
     DisposableEffect(Unit) { onDispose { hold(false); target?.cancel() } }
     BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) photoViewMargin else 0.dp).clipToBounds()) {
@@ -262,14 +275,16 @@ internal fun PhotoCanvas(
                     translationX = zoom.x; translationY = zoom.y
                 }
                 val wipe = compare && mode == ComparisonMode.WIPE
-                val hdrBitmap = if (neutralOnly || before)
+                val overlayActive = inspection.overlay.isActive
+                val hdrBitmap = if (overlayActive) null else if (neutralOnly || before)
                     HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                 else hdrPreview.bitmap
-                val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
+                val rawShownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
+                val shownBitmap = InspectionBitmap.rememberBitmap(rawShownBitmap, inspection.overlay)
                 val activeTiles = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
-                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
-                        if (hslTarget == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
+                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null, inspection.monitorEnabled) {
+                        if (hslTarget == null && !inspection.monitorEnabled) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
                             onLongPress = { if (!compare && viewingEnabled) hold(true) },
                             onPress = { try { tryAwaitRelease() } finally { hold(false) } }, onTap = { if (viewingEnabled || !showOverlays) tap() })
                     }) {
@@ -277,16 +292,17 @@ internal fun PhotoCanvas(
                         transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
                             if (hdrParameters.falseColor && hdrBitmap != null) stateDescription = falseColorLabel
                         }, contentScale = ContentScale.Fit)
-                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
+                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
                             val x = image.splitX(state.split)
                             clipRect(image.left, image.top, x, image.bottom) { this@drawWithContent.drawContent() }
                             drawLine(Color.White, Offset(x, image.top), Offset(x, image.bottom), 1.dp.toPx())
                         }) {
-                            val neutralBitmap = HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
-                            Image((neutralBitmap ?: pair.neutral).asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
-                            DetailOverlayTiles(activeTiles, useNeutral = true, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled)
+                            val neutralBase = if (overlayActive) null else HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
+                            val neutralShown = InspectionBitmap.rememberBitmap(neutralBase ?: pair.neutral, inspection.overlay)
+                            Image(neutralShown.asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
+                            DetailOverlayTiles(activeTiles, useNeutral = true, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
                         }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
                             .size(with(androidx.compose.ui.platform.LocalDensity.current) { image.width.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { image.height.toDp() })
@@ -356,13 +372,25 @@ internal fun PhotoCanvas(
             }
         }) {
             // 手势接收层只包住照片，保证跨 pane 的两指仍在同一命中链；控件叠层保持优先。
-            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis) {
+            val inspectionHit: (Offset) -> Offset? = { point ->
+                val local = point - resultOrigin
+                hslTargetCoordinates(primary, state.view.project(primary), local.x, local.y, null, 0f)
+                    ?.let { Offset(it.first.coerceIn(0f, 1f), it.second.coerceIn(0f, 1f)) }
+            }
+            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, inspection.monitorEnabled) {
                 photoGestures(state, primary, compare && mode == ComparisonMode.WIPE, { hold(false) },
                     target = { target }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
                     targetPointer = { position, anchor ->
                         targetTouch = position
                         if (anchor != null) { targetAnchor = anchor; targetImage = touchImage }
                         if (position == null) targetImage = null
+                    },
+                    inspectionProbe = { target == null && latestInspection.monitorEnabled },
+                    inspectionHit = inspectionHit,
+                    inspectionMove = { x, y -> latestOnInspectionMove(x, y) },
+                    inspectionPointer = { pos, anchor ->
+                        inspectionTouch = pos
+                        inspectionAnchorPt = anchor
                     }) { point ->
                     Offset(if (sideBySide && horizontal && point.x > primary.width) primary.width + gapPx else 0f,
                         if (sideBySide && !horizontal && point.y > primary.height) primary.height + gapPx else 0f)
@@ -437,9 +465,99 @@ internal fun PhotoCanvas(
                     }
                 }
             }
+            if (hslTarget == null && inspection.overlay != InspectionOverlayMode.NEUTRAL_GRAY_50 &&
+                (inspection.monitorEnabled || inspection.anchors.isNotEmpty())
+            ) {
+                val projected = state.view.project(primary)
+                val photoWidth = primary.imageWidth * projected.scale
+                val photoHeight = primary.imageHeight * projected.scale
+                val photoLeft = resultOrigin.x + (primary.width - photoWidth) / 2f + projected.x
+                val photoTop = resultOrigin.y + (primary.height - photoHeight) / 2f + projected.y
+                val srcSize = InspectionGeometryMapper.inferSourceSize(pair.nativeWidth, pair.nativeHeight, pair.renderedGeometry)
+
+                if (inspection.monitorEnabled) {
+                    val cx = inspection.liveOutputX ?: 0.5f
+                    val cy = inspection.liveOutputY ?: 0.5f
+                    Canvas(Modifier.fillMaxSize().testTag("inspection-crosshair")) {
+                        val pt = Offset(photoLeft + cx * photoWidth, photoTop + cy * photoHeight)
+                        drawCircle(Color.Black, 10.dp.toPx(), pt, style = Stroke(3.5.dp.toPx()))
+                        drawCircle(Color.Yellow, 10.dp.toPx(), pt, style = Stroke(1.8.dp.toPx()))
+                    }
+                    val finger = inspectionTouch
+                    val anchor = inspectionAnchorPt
+                    val loupeImg = if (before) pair.neutral else pair.result
+                    if (finger != null && anchor != null) {
+                        val radius = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
+                        val centerX = finger.x.coerceIn(radius, maxOf(radius, canvasWidth - radius))
+                        val centerY = (if (finger.y > radius * 2.5f) finger.y - radius * 1.65f else finger.y + radius * 1.65f)
+                            .coerceIn(radius, maxOf(radius, canvasHeight - radius))
+                        Canvas(Modifier.offset { IntOffset((centerX - radius).roundToInt(), (centerY - radius).roundToInt()) }
+                            .size(88.dp).clip(CircleShape).background(Color.Black).border(2.dp, Color.Yellow, CircleShape)
+                            .testTag("inspection-crosshair-loupe")) {
+                            drawImage(loupeImg.asImageBitmap(), srcSize = IntSize(loupeImg.width, loupeImg.height),
+                                dstOffset = IntOffset((size.width / 2 - anchor.x * photoWidth * 3).roundToInt(), (size.height / 2 - anchor.y * photoHeight * 3).roundToInt()),
+                                dstSize = IntSize((photoWidth * 3).roundToInt().coerceAtLeast(1), (photoHeight * 3).roundToInt().coerceAtLeast(1)))
+                            drawCircle(Color.Black, 6.dp.toPx(), style = Stroke(4.dp.toPx()))
+                            drawCircle(Color.Yellow, 6.dp.toPx(), style = Stroke(2.dp.toPx()))
+                        }
+                    }
+                }
+
+                inspection.anchors.forEachIndexed { idx, anchor ->
+                    val outPt = InspectionGeometryMapper.sourceNormToOutputNorm(
+                        anchor.sourceX, anchor.sourceY, srcSize.first, srcSize.second, pair.renderedGeometry
+                    )
+                    if (outPt != null) {
+                        val selected = inspection.selectedAnchorId == anchor.id
+                        val px = (photoLeft + outPt.first * photoWidth).roundToInt()
+                        val py = (photoTop + outPt.second * photoHeight).roundToInt()
+                        val pinRadiusPx = with(androidx.compose.ui.platform.LocalDensity.current) { 10.dp.roundToPx() }
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .offset { IntOffset(px - pinRadiusPx, py - pinRadiusPx) }
+                                .size(20.dp)
+                                .background(if (selected) Color.Yellow else Color.Black.copy(alpha = 0.78f), CircleShape)
+                                .border(1.5.dp, if (selected) Color.Black else Color.White, CircleShape)
+                        ) {
+                            Text(
+                                "${idx + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) Color.Black else Color.White
+                            )
+                        }
+                    }
+                }
+            }
+            val liveLumCursor: Float? = if (hslTarget == null && (inspection.monitorEnabled || inspection.selectedAnchorId != null)) {
+                val activeTilesForSample = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else emptyList()
+                val activeDetailForSample = if (activeTilesForSample.isEmpty()) detail else null
+                val cursorPt: Pair<Float, Float>? = if (inspection.liveOutputX != null && inspection.liveOutputY != null) {
+                    inspection.liveOutputX to inspection.liveOutputY
+                } else if (inspection.selectedAnchorId != null) {
+                    val sel = inspection.anchors.firstOrNull { it.id == inspection.selectedAnchorId }
+                    sel?.let {
+                        val srcSize = InspectionGeometryMapper.inferSourceSize(pair.nativeWidth, pair.nativeHeight, pair.renderedGeometry)
+                        InspectionGeometryMapper.sourceNormToOutputNorm(it.sourceX, it.sourceY, srcSize.first, srcSize.second, pair.renderedGeometry)
+                    }
+                } else if (inspection.monitorEnabled) {
+                    0.5f to 0.5f
+                } else null
+                cursorPt?.let { (nx, ny) ->
+                    InspectionBitmap.samplePreview(
+                        base = if (before) pair.neutral else pair.result,
+                        detailTiles = activeTilesForSample,
+                        detailOverlay = activeDetailForSample,
+                        useNeutral = before,
+                        normX = nx,
+                        normY = ny
+                    )?.luminance?.toFloat()
+                }
+            } else null
             RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && pair.hdr == null,
                 Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
-                showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange)
+                showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange,
+                luminanceCursor = liveLumCursor)
         }
     }
 }
@@ -504,7 +622,10 @@ private fun InfoLine(title: String, value: String?) {
 
 private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, area: PhotoViewport, wipe: Boolean,
     cancelHold: () -> Unit, target: () -> HslTargetActions? = { null }, targetHit: (Offset) -> Offset? = { null },
-    targetPointer: (Offset?, Offset?) -> Unit = { _, _ -> }, targetFocus: () -> Unit = {}, paneOrigin: (Offset) -> Offset) {
+    targetPointer: (Offset?, Offset?) -> Unit = { _, _ -> }, targetFocus: () -> Unit = {},
+    inspectionProbe: () -> Boolean = { false }, inspectionHit: (Offset) -> Offset? = { null },
+    inspectionMove: (Float, Float) -> Unit = { _, _ -> }, inspectionPointer: (Offset?, Offset?) -> Unit = { _, _ -> },
+    paneOrigin: (Offset) -> Offset) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val origin = paneOrigin(down.position)
@@ -518,12 +639,21 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
         var targeting = target()
         if (wipeHit) { targeting?.cancel(); targeting = null }
         var targetStarted = false; var targetEnded = false
+        var inspectionStarted = false
         if (targeting != null) {
             val point = targetHit(down.position)
             if (point != null) {
                 targetStarted = true; targeting.begin(point.x, point.y); targetPointer(down.position, point)
                 targetFocus(); down.consume()
             } else targeting.reject()
+        } else if (!wipeHit && inspectionProbe()) {
+            val point = inspectionHit(down.position)
+            if (point != null) {
+                inspectionStarted = true
+                inspectionMove(point.x, point.y)
+                inspectionPointer(down.position, point)
+                down.consume()
+            }
         }
         val targetScale = .5f / 1.dp.toPx()
         var transformed = false
@@ -535,6 +665,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                 event.changes.filter { it.pressed }.forEach { origins.getOrPut(it.id) { paneOrigin(it.position) } }
                 if (fingers >= 2) {
                     if (targetStarted) { targeting?.cancel(); targetStarted = false; targetPointer(null, null) }
+                    if (inspectionStarted) { inspectionStarted = false; inspectionPointer(null, null) }
                     cancelHold(); transformed = true
                     val zoom = state.view.project(area)
                     val pointers = event.changes.filter { it.pressed && it.previousPressed }
@@ -553,6 +684,13 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                     if (targeting != null) {
                         if (targetStarted) { targeting.move((down.position.y-change.position.y)*targetScale); targetPointer(change.position, null) }
                         change.consume()
+                    } else if (inspectionStarted) {
+                        val pt = inspectionHit(change.position)
+                        if (pt != null) {
+                            inspectionMove(pt.x, pt.y)
+                            inspectionPointer(change.position, pt)
+                        }
+                        change.consume()
                     } else if (dragging) {
                         cancelHold()
                         if (wipeHit) state.split = (initialSplit + (change.position.x - down.position.x) / image.width).coerceIn(0f, 1f)
@@ -567,7 +705,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
             } while (event.changes.any { it.pressed })
         } finally {
             if (targetStarted && !targetEnded) targeting?.cancel()
-            targetPointer(null, null); cancelHold()
+            targetPointer(null, null); inspectionPointer(null, null); cancelHold()
         }
     }
 }

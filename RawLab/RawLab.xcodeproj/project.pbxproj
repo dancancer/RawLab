@@ -148,6 +148,7 @@
 		AB1200000000000000000003 /* eterna.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000013 /* eterna.png */; };
 		AB1200000000000000000004 /* eterna-bb.png in Resources */ = {isa = PBXBuildFile; fileRef = AB1200000000000000000014 /* eterna-bb.png */; };
 		0B1A0382CA7A4764A8AD3A12 /* UI/ContentView+Panels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADA789EA8FD48A0A2CFE618 /* UI/ContentView+Panels.swift */; };
+		C012C0000000000000000001 /* UI/ContentView+Inspection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C012C0000000000000000011 /* UI/ContentView+Inspection.swift */; };
 		26F51EBF7B154D2F744F8B60 /* Resources/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D71C4D9C452E6C484F74EDAB /* Resources/Assets.xcassets */; };
 		2A9B3E15E0704167ABE93960 /* Core/ViewModel/RawEditorViewModel+IO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4383A5710944379318C704 /* Core/ViewModel/RawEditorViewModel+IO.swift */; };
 		2C5BFAB858B74B81AFAC16D0 /* Core/Models/PhotoImportTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C86E9A92BE4E3A8BF782CB /* Core/Models/PhotoImportTypes.swift */; };
@@ -418,6 +419,13 @@
 		};
 		7ADA789EA8FD48A0A2CFE618 = {
 			path = "RawLab/UI/Editor/ContentView+Panels.swift";
+			isa = PBXFileReference;
+			includeInIndex = 1;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = SOURCE_ROOT;
+		};
+		C012C0000000000000000011 = {
+			path = "RawLab/UI/Editor/ContentView+Inspection.swift";
 			isa = PBXFileReference;
 			includeInIndex = 1;
 			lastKnownFileType = sourcecode.swift;
@@ -936,6 +944,7 @@
 				6CE93B9AEFEC48F9B6535407,
 				D00100000000000000000016,
 				7ADA789EA8FD48A0A2CFE618,
+				C012C0000000000000000011,
 			);
 			name = Editor;
 			sourceTree = "<group>";
@@ -1449,6 +1458,7 @@
 				4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */,
 				54CCF4B9CD4492224FC36730,
 				0B1A0382CA7A4764A8AD3A12,
+				C012C0000000000000000001,
 				568E6B659A004F7792056543,
 				C9A1B2C3D4E5F60718293A4B,
 				AB2300000000000000000001 /* EditorResetTransaction.swift in Sources */,

@@ -172,6 +172,8 @@ final class EditorModel: ObservableObject {
     @Published var hslTargetInteraction = HSLTargetInteraction()
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
+    @Published var inspection = InspectionSessionState()
+    var sourceNativeSize: CGSize?
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
     var hslAcceptedRequest: RenderRequest<RenderWork>?
@@ -183,6 +185,8 @@ final class EditorModel: ObservableObject {
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+        inspection.resetForNewSource()
+        sourceNativeSize = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
     } }
