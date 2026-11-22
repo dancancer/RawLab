@@ -123,6 +123,7 @@ RenderStatus Pipeline::loadRawImage(
     // sliders should not trigger another demosaic just because dragging began.
     const std::string exactKey = key + ":exact";
     const bool halfSize = interactive && (rawCache_.pixels.empty() || rawKey_ != exactKey);
+    previewExposureKey += halfSize ? ":half" : ":full";
     key += halfSize ? ":interactive" : ":exact";
     if (rawKey_ != key || rawCache_.pixels.empty()) {
         // 失效的整图缓存必须在下一次解码之前释放，WB/照片切换不能叠加两张 RAW。
@@ -149,7 +150,7 @@ RenderStatus Pipeline::loadRawImage(
             anchorOptions.useAutoWhiteBalance = false;
             anchorOptions.useCustomWhiteBalance = false;
             anchorOptions.useTemperatureWhiteBalance = false;
-            anchorOptions.halfSize = true;
+            anchorOptions.halfSize = halfSize;
             anchorOptions.rawNoiseReduction = 0;
             anchorOptions.outputLinear = true;
             anchorOptions.outputAdobe = true;

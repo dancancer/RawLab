@@ -451,7 +451,7 @@ public:
         float green = 0.0f;
         const float unusedMul[4]{};
         const ErrorCode runResult = runDcrawProcess(options, /*cameraWB=*/true, /*autoWB=*/false, /*customWB=*/false,
-            unusedMul, /*halfSize=*/bayerSource_ && options.rawNoiseReduction == 0, /*rawNoiseReduction=*/0,
+            unusedMul, /*halfSize=*/options.halfSize && bayerSource_ && options.rawNoiseReduction == 0, /*rawNoiseReduction=*/0,
             nullptr, nullptr, width, height, channels, green);
         if (runResult != ErrorCode::Success) return runResult;
 
