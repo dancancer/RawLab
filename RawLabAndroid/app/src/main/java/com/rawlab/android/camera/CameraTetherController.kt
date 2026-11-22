@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
@@ -88,7 +90,11 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     @Volatile private var active: Active? = null
 
-    private class Active(val transport: CameraTetherTransport, val openLiveConnection: (URL) -> HttpURLConnection) {
+    private interface LiveStreamHandle : Closeable {
+        val inputStream: InputStream
+    }
+
+    private class Active(val transport: CameraTetherTransport, val openLiveStream: (URL) -> LiveStreamHandle) {
         val permit = CameraTransferPermit()
         val shutter = Channel<Unit>(1)
         val parameterRequests = Channel<ParameterRequest>(Channel.UNLIMITED)
@@ -96,7 +102,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         val shutterPending = AtomicBoolean(false)
         @Volatile var stopped = false
         @Volatile var liveGeneration = 0
-        @Volatile var connection: HttpURLConnection? = null
+        @Volatile var liveHandle: LiveStreamHandle? = null
         @Volatile var liveFailure = false
         var liveJob: Job? = null
         var run: CameraTetherRun? = null
@@ -122,17 +128,45 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     fun start(network: Network, address: InetAddress, clientId: UUID, model: SonyCameraModel, cameraId: String,
         destination: CameraImportDestination, resume: Boolean, cardSavingConfirmed: Boolean) =
-        start(network.socketFactory, address, clientId, model, cameraId, destination, resume, cardSavingConfirmed) {
-            network.openConnection(it) as HttpURLConnection
-        }
+        start(network.socketFactory, address, clientId, model, cameraId, destination, resume, cardSavingConfirmed,
+            openLiveConnection = { network.openConnection(it) as HttpURLConnection })
 
     internal fun start(socketFactory: SocketFactory, address: InetAddress, clientId: UUID, model: SonyCameraModel, cameraId: String,
         destination: CameraImportDestination, resume: Boolean, cardSavingConfirmed: Boolean,
-        openLiveConnection: (URL) -> HttpURLConnection = { throw IOException("Live view network unavailable") }) {
+        openLiveConnection: (URL) -> HttpURLConnection = { throw IOException("Live view network unavailable") },
+        initialRemote: SonyTetherSession? = null,
+        openLiveStream: ((URL) -> CameraLiveStream)? = null) {
         check(work?.isActive != true && active == null)
         val paused = mutable.value
         val previous = paused.run.takeIf { resume }
-        val current = Active(CameraTetherTransport(socketFactory, address, clientId, model, cardSavingConfirmed), openLiveConnection)
+        val liveOpener: (URL) -> LiveStreamHandle = if (openLiveStream != null) {
+            { url ->
+                val stream = openLiveStream(url)
+                object : LiveStreamHandle {
+                    override val inputStream: InputStream get() = stream.inputStream
+                    override fun close() = stream.close()
+                }
+            }
+        } else {
+            { url ->
+                val connection = openLiveConnection(url)
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                object : LiveStreamHandle {
+                    override val inputStream: InputStream
+                        get() {
+                            if (connection.responseCode != 200) throw CameraTetherLiveException()
+                            return connection.inputStream
+                        }
+                    override fun close() = connection.disconnect()
+                }
+            }
+        }
+        val current = Active(
+            CameraTetherTransport(socketFactory, address, clientId, model, cardSavingConfirmed, initialRemote = initialRemote),
+            liveOpener,
+        )
         active = current
         mutable.update { it.copy(phase = CameraTetherPhase.PREPARING, failure = null, live = false, frame = null, frameTime = 0,
             focusFrames = emptyList(), focusBusy = false, focusFailure = null, tapFocusLocked = false,
@@ -285,7 +319,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         current.stopped = true
         current.permit.cancel()
         current.liveGeneration++
-        current.connection?.disconnect()
+        current.liveHandle?.close()
         current.transport.stop()
         work?.cancel()
         mutable.update { it.copy(live = false, phase = CameraTetherPhase.PAUSED, focusFrames = emptyList(), focusBusy = false, tapFocusLocked = false) }
@@ -502,16 +536,13 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
         current.liveFailure = false
         mutable.update { it.copy(live = false) }
         current.liveJob = childScope.launch(Dispatchers.IO) {
-            var connection: HttpURLConnection? = null
+            var handle: LiveStreamHandle? = null
             try {
-                connection = current.openLiveConnection(url)
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 5_000; connection.readTimeout = 5_000
-                current.connection = connection
+                handle = current.openLiveStream(url)
+                current.liveHandle = handle
                 if (current.stopped || token != current.liveGeneration) return@launch
-                if (connection.responseCode != 200) throw CameraTetherLiveException()
                 var shown = 0L
-                connection.inputStream.use { input ->
+                handle.inputStream.use { input ->
                     while (isActive && !current.stopped && token == current.liveGeneration) {
                         val liveFrame = SonyTetherSession.readFrameWithMetadata(input)
                         val now = clock()
@@ -532,7 +563,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                     current.liveFailure = true
                     mutable.update { it.copy(live = false) }
                 }
-            } finally { connection?.disconnect(); if (current.connection === connection) current.connection = null }
+            } finally { handle?.close(); if (current.liveHandle === handle) current.liveHandle = null }
         }
         val deadline = clock() + 8_000
         while (!mutable.value.live) {
@@ -544,7 +575,7 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
 
     private suspend fun stopLive(current: Active) {
         current.liveGeneration++
-        current.connection?.disconnect()
+        current.liveHandle?.close()
         current.liveJob?.cancelAndJoin(); current.liveJob = null
         mutable.update { it.copy(live = false, focusFrames = emptyList()) }
     }

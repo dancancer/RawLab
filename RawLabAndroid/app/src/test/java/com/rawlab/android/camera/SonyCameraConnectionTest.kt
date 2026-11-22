@@ -78,6 +78,8 @@ class SonyCameraConnectionTest {
         var requestedSsid: String? = null
         var requestedPassword: String? = null
         var requestedBssid: String? = null
+        var requestedSecurity: SonyCameraConnection.WifiSecurity? = null
+        val requestedSecurities = mutableListOf<SonyCameraConnection.WifiSecurity>()
         var activeWifiCallbacks: SonyCameraConnection.WifiNetworkCallbacks? = null
         var networkHandleClosed = false
         var manualWifiCallbacks: SonyCameraConnection.LegacyWifiCallbacks? = null
@@ -90,10 +92,20 @@ class SonyCameraConnectionTest {
             password: String,
             bssid: String?,
             callbacks: SonyCameraConnection.WifiNetworkCallbacks,
+        ): SonyCameraConnection.Handle = requestWifiNetwork(ssid, password, bssid, SonyCameraConnection.WifiSecurity.WPA2, callbacks)
+
+        override fun requestWifiNetwork(
+            ssid: String,
+            password: String,
+            bssid: String?,
+            security: SonyCameraConnection.WifiSecurity,
+            callbacks: SonyCameraConnection.WifiNetworkCallbacks,
         ): SonyCameraConnection.Handle {
             requestedSsid = ssid
             requestedPassword = password
             requestedBssid = bssid
+            requestedSecurity = security
+            requestedSecurities += security
             activeWifiCallbacks = callbacks
             networkHandleClosed = false
             return object : SonyCameraConnection.Handle {
@@ -700,5 +712,275 @@ class SonyCameraConnectionTest {
         platform.advanceBy(1L)
         assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
         assertTrue(platform.manualWifiHandleClosed)
+    }
+
+    @Test
+    fun selectsWpa3SecurityAndRetriesSaeOnUnavailable() {
+        assertFalse(advertisesWpa3Sae("[WPA2-PSK-CCMP][ESS]"))
+        assertFalse(advertisesWpa3Sae("[RSAE-PSK][ESS]"))
+        assertTrue(advertisesWpa3Sae("[RSN-SAE-CCMP][ESS]"))
+        assertTrue(advertisesWpa3Sae("[WPA2-PSK+SAE-CCMP][ESS]"))
+        assertEquals(SonyCameraConnection.WifiSecurity.WPA2, selectWifiSecurity("[WPA2-PSK-CCMP][ESS]"))
+        assertEquals(SonyCameraConnection.WifiSecurity.WPA3, selectWifiSecurity("[RSN-SAE-CCMP][ESS]"))
+        assertEquals(SonyCameraConnection.WifiSecurity.WPA2, selectWifiSecurity("[WPA2-PSK+SAE-CCMP][ESS]"))
+
+        // 1. Pure WPA3-SAE chooses WPA3 immediately.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val (conn, _) = createConnection(platform, listener)
+            val gatt = FakeGatt()
+            advanceToWifiStarting(conn, platform, gatt)
+            platform.scanResultsList = listOf(
+                SonyCameraConnection.WifiApResult(
+                    ssid = "DIRECT-x123:ILCE-7CM2",
+                    bssid = "12:34:56:78:9a:bc",
+                    timestampMicros = platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[RSN-SAE-CCMP][ESS]",
+                ),
+            )
+            deliverCredentials(platform, gatt)
+            assertEquals(listOf(SonyCameraConnection.WifiSecurity.WPA3), platform.requestedSecurities)
+            assertTrue(listener.failures.isEmpty())
+        }
+
+        // 2. WPA2/WPA3 transition tries WPA2 first, then retries once with WPA3 onUnavailable().
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val (conn, _) = createConnection(platform, listener)
+            val gatt = FakeGatt()
+            advanceToWifiStarting(conn, platform, gatt)
+            platform.scanResultsList = listOf(
+                SonyCameraConnection.WifiApResult(
+                    ssid = "DIRECT-x123:ILCE-7CM2",
+                    bssid = "12:34:56:78:9a:bc",
+                    timestampMicros = platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK+SAE-CCMP][ESS]",
+                ),
+            )
+            deliverCredentials(platform, gatt)
+            assertEquals(listOf(SonyCameraConnection.WifiSecurity.WPA2), platform.requestedSecurities)
+            platform.activeWifiCallbacks!!.onUnavailable()
+            platform.drain()
+            assertEquals(
+                listOf(SonyCameraConnection.WifiSecurity.WPA2, SonyCameraConnection.WifiSecurity.WPA3),
+                platform.requestedSecurities,
+            )
+            assertTrue(listener.failures.isEmpty())
+
+            // Second onUnavailable fails with Failure.WIFI (no infinite retry).
+            platform.activeWifiCallbacks!!.onUnavailable()
+            platform.drain()
+            assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+        }
+
+        // 3. WPA2-only fails immediately onUnavailable without WPA3 retry.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val (conn, _) = createConnection(platform, listener)
+            val gatt = FakeGatt()
+            advanceToWifiStarting(conn, platform, gatt)
+            platform.scanResultsList = listOf(
+                SonyCameraConnection.WifiApResult(
+                    ssid = "DIRECT-x123:ILCE-7CM2",
+                    bssid = "12:34:56:78:9a:bc",
+                    timestampMicros = platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
+            )
+            deliverCredentials(platform, gatt)
+            platform.activeWifiCallbacks!!.onUnavailable()
+            platform.drain()
+            assertEquals(listOf(SonyCameraConnection.WifiSecurity.WPA2), platform.requestedSecurities)
+            assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+        }
+
+        // 4. SSID-only fallback still picks up cached SAE capabilities while keeping bssid = null.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val (conn, _) = createConnection(platform, listener, wifiScanFallbackMs = 4_000L)
+            val gatt = FakeGatt()
+            advanceToWifiStarting(conn, platform, gatt)
+            platform.scanResultsList = listOf(
+                SonyCameraConnection.WifiApResult(
+                    ssid = "DIRECT-x123:ILCE-7CM2",
+                    bssid = "12:34:56:78:9a:bc",
+                    timestampMicros = 0L, // stale BSSID must not be used
+                    capabilities = "[RSN-SAE-CCMP][ESS]",
+                ),
+            )
+            deliverCredentials(platform, gatt)
+            platform.advanceBy(4_000L)
+            assertNull(platform.requestedBssid)
+            assertEquals(SonyCameraConnection.WifiSecurity.WPA3, platform.requestedSecurity)
+        }
+    }
+
+    @Test
+    fun resolveCameraIpv4GatewayAppliesAllFallbacksSafely() {
+        fun ipv4(s: String): Inet4Address = InetAddress.getByName(s) as Inet4Address
+        val phoneIp = Ipv4LinkCandidate(ipv4("192.168.122.15"), 24)
+
+        // 1. Default route wins first.
+        assertEquals(
+            ipv4("192.168.122.1"),
+            resolveCameraIpv4Gateway(
+                routes = listOf(Ipv4RouteCandidate(isDefaultRoute = true, hasGateway = true, gateway = ipv4("192.168.122.1"), destinationPrefixLength = 0)),
+                dhcpServerAddress = ipv4("192.168.122.2"),
+                linkAddresses = listOf(phoneIp),
+                dnsServers = listOf(ipv4("192.168.122.3")),
+            ),
+        )
+
+        // 2. No default route -> DHCP server wins.
+        assertEquals(
+            ipv4("192.168.122.1"),
+            resolveCameraIpv4Gateway(
+                routes = listOf(Ipv4RouteCandidate(isDefaultRoute = false, hasGateway = true, gateway = ipv4("192.168.122.9"), destinationPrefixLength = 0)),
+                dhcpServerAddress = ipv4("192.168.122.1"),
+                linkAddresses = listOf(phoneIp),
+                dnsServers = listOf(ipv4("192.168.122.3")),
+            ),
+        )
+
+        // 3. No default route or DHCP -> non-default private route gateway wins.
+        assertEquals(
+            ipv4("192.168.122.1"),
+            resolveCameraIpv4Gateway(
+                routes = listOf(
+                    Ipv4RouteCandidate(isDefaultRoute = false, hasGateway = false, gateway = ipv4("0.0.0.0"), destinationPrefixLength = 24),
+                    Ipv4RouteCandidate(isDefaultRoute = false, hasGateway = true, gateway = ipv4("192.168.122.1"), destinationPrefixLength = 0),
+                ),
+                dhcpServerAddress = null,
+                linkAddresses = listOf(phoneIp),
+                dnsServers = emptyList(),
+            ),
+        )
+
+        // 4. Same-subnet private DNS wins over public DNS or own IP.
+        assertEquals(
+            ipv4("192.168.122.1"),
+            resolveCameraIpv4Gateway(
+                routes = emptyList(),
+                dhcpServerAddress = null,
+                linkAddresses = listOf(phoneIp),
+                dnsServers = listOf(ipv4("8.8.8.8"), phoneIp.address, ipv4("192.168.122.1")),
+            ),
+        )
+
+        // 5. No route, no DHCP, only public DNS -> infers .1 of RFC1918 /24 subnet.
+        assertEquals(
+            ipv4("192.168.122.1"),
+            resolveCameraIpv4Gateway(
+                routes = emptyList(),
+                dhcpServerAddress = null,
+                linkAddresses = listOf(phoneIp),
+                dnsServers = listOf(ipv4("8.8.8.8")),
+            ),
+        )
+
+        // Does not infer .1 when phone itself holds .1.
+        assertNull(
+            resolveCameraIpv4Gateway(
+                routes = emptyList(),
+                dhcpServerAddress = null,
+                linkAddresses = listOf(Ipv4LinkCandidate(ipv4("192.168.122.1"), 24)),
+                dnsServers = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun manualWifiSelectorPrefersDualWlanCameraApAndHandlesRedactedBssid() {
+        fun ipv4(s: String): Inet4Address = InetAddress.getByName(s) as Inet4Address
+
+        // Scenario A: Home Wi-Fi (validated) arrives first; Dual-WLAN camera AP arrives at +150ms -> camera AP wins.
+        val dualSelector = ManualWifiSelector(dualWlanSettleDelayMs = 400L, bssidGraceDelayMs = 2_000L)
+        dualSelector.update(
+            ManualWifiObservation(
+                networkKey = "net-home",
+                ssid = "Home5G",
+                bssid = "00:11:22:33:44:55",
+                gateway = ipv4("192.168.1.1"),
+                validated = true,
+            ),
+            nowMs = 0L,
+        )
+        assertNull(dualSelector.pollSelected(nowMs = 0L))
+        assertEquals(400L, dualSelector.nextEvaluationDelayMs(nowMs = 0L))
+
+        dualSelector.update(
+            ManualWifiObservation(
+                networkKey = "net-cam",
+                ssid = "\"DIRECT-a7m5:ILCE-7M5\"",
+                bssid = "aa:bb:cc:dd:ee:ff",
+                gateway = ipv4("192.168.122.1"),
+                validated = false,
+            ),
+            nowMs = 150L,
+        )
+        assertEquals(0L, dualSelector.nextEvaluationDelayMs(nowMs = 150L))
+        val picked = dualSelector.pollSelected(nowMs = 150L)!!
+        assertEquals("net-cam", picked.first.networkKey)
+        assertEquals("sony-wifi:aa:bb:cc:dd:ee:ff", picked.second)
+
+        // Scenario B: BSSID redacted to 02:00:00:00:00:00 -> waits grace then falls back to sony-wifi-ssid:<ssid>.
+        val redactedSelector = ManualWifiSelector(dualWlanSettleDelayMs = 400L, bssidGraceDelayMs = 2_000L)
+        redactedSelector.update(
+            ManualWifiObservation(
+                networkKey = "net-cam",
+                ssid = "\"DIRECT-a7m5:ILCE-7M5\"",
+                bssid = "02:00:00:00:00:00",
+                gateway = ipv4("192.168.122.1"),
+                validated = false,
+            ),
+            nowMs = 1_000L,
+        )
+        assertNull(redactedSelector.pollSelected(nowMs = 2_500L))
+        assertEquals(500L, redactedSelector.nextEvaluationDelayMs(nowMs = 2_500L))
+        val fallbackPicked = redactedSelector.pollSelected(nowMs = 3_000L)!!
+        assertEquals("sony-wifi-ssid:DIRECT-a7m5:ILCE-7M5", fallbackPicked.second)
+
+        // Scenario C: Redacted both SSID & BSSID -> falls back to sony-wifi-route:<gateway>.
+        val routeOnlySelector = ManualWifiSelector(dualWlanSettleDelayMs = 400L, bssidGraceDelayMs = 2_000L)
+        routeOnlySelector.update(
+            ManualWifiObservation(
+                networkKey = "net-anon",
+                ssid = "<unknown ssid>",
+                bssid = "02:00:00:00:00:00",
+                gateway = ipv4("192.168.122.1"),
+                validated = false,
+            ),
+            nowMs = 0L,
+        )
+        assertEquals("sony-wifi-route:192.168.122.1", routeOnlySelector.pollSelected(nowMs = 2_000L)!!.second)
+
+        // Scenario D: Real BSSID arrives before grace ends -> upgrades immediately.
+        val upgradeSelector = ManualWifiSelector(dualWlanSettleDelayMs = 400L, bssidGraceDelayMs = 2_000L)
+        upgradeSelector.update(
+            ManualWifiObservation(
+                networkKey = "net-cam",
+                ssid = "DIRECT-a7m5:ILCE-7M5",
+                bssid = "02:00:00:00:00:00",
+                gateway = ipv4("192.168.122.1"),
+                validated = false,
+            ),
+            nowMs = 0L,
+        )
+        assertNull(upgradeSelector.pollSelected(nowMs = 100L))
+        upgradeSelector.update(
+            ManualWifiObservation(
+                networkKey = "net-cam",
+                ssid = "DIRECT-a7m5:ILCE-7M5",
+                bssid = "aa:bb:cc:dd:ee:ff",
+                gateway = ipv4("192.168.122.1"),
+                validated = false,
+            ),
+            nowMs = 250L,
+        )
+        assertEquals("sony-wifi:aa:bb:cc:dd:ee:ff", upgradeSelector.pollSelected(nowMs = 250L)!!.second)
     }
 }

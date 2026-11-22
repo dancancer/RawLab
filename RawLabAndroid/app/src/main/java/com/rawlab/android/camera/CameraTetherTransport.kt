@@ -23,8 +23,14 @@ internal data class CameraTetherFocusResult(val readback: CameraTetherParameterR
 internal data class CameraTetherParameterWrite(val confirmed: Boolean, val readback: CameraTetherParameterReadback)
 
 /** 一个调度器独占此对象；只有停止操作可从其他线程调用。 */
-internal class CameraTetherTransport(private val factory: SocketFactory, private val address: InetAddress,
-    private val clientId: UUID, val model: SonyCameraModel, private val cardSavingConfirmed: Boolean) {
+internal class CameraTetherTransport(
+    private val factory: SocketFactory,
+    private val address: InetAddress,
+    private val clientId: UUID,
+    val model: SonyCameraModel,
+    private val cardSavingConfirmed: Boolean,
+    initialRemote: SonyTetherSession? = null,
+) {
     var usesLegacyContents = false
         private set
     private var hardwareIdentity: CameraHardwareIdentity? = null
@@ -34,6 +40,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     private var remoteInitialized = false
     private var legacyInspectedHandles: Set<Int>? = null
     private var legacyPhotoHandles: Set<Int>? = null
+    private var pendingInitialRemote: SonyTetherSession? = initialRemote
     @Volatile private var stopped = false
     @Volatile private var remote: SonyTetherSession? = null
     @Volatile private var media: SonyLegacyImportSession? = null
@@ -180,6 +187,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
 
     fun stop() {
         stopped = true
+        pendingInitialRemote?.requestStop()
         remote?.requestStop()
         media?.close()
     }
@@ -189,6 +197,7 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
     }
     fun close() {
         stopped = true
+        pendingInitialRemote?.close(); pendingInitialRemote = null
         remote?.close(); remote = null
         media?.close(); media = null
         remoteAssets.clear()
@@ -201,7 +210,8 @@ internal class CameraTetherTransport(private val factory: SocketFactory, private
             media?.finish(); media = null
             remoteAssets.clear()
             remoteCursor = 0L; remoteHadEntries = false; remoteInitialized = false
-            val opened = SonyTetherSession(factory, address, clientId, ::trace)
+            val opened = pendingInitialRemote?.also { pendingInitialRemote = null }
+                ?: SonyTetherSession(factory, address, clientId, ::trace)
             remote = opened
             checkRunning()
             hardwareIdentity = CameraHardwareIdentity.read(opened.connectRemote())

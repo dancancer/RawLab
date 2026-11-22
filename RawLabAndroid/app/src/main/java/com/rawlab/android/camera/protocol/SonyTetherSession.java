@@ -103,9 +103,10 @@ public final class SonyTetherSession implements Closeable {
             if (bytes.length > 0) {
                 Reader info = new Reader(bytes); int version = info.u16();
                 Set<Integer> properties = info.u16Array(); controls.addAll(info.u16Array());
-                if ((version != 0x12c && version != 0xc8) || info.remaining() != 0)
+                boolean supported = (version == 0xc8 && info.remaining() == 0) || version >= 0x12c;
+                if (!supported)
                     throw new IOException("Unsupported Sony remote protocol descriptor version="+version);
-                propertyEnumTables=version==0x12c?2:1;
+                propertyEnumTables=version>=0x12c?2:1;
                 reporter.report("remote_extended protocol=" + version + " properties=" + properties.size() + " controls=" + controls);
                 if (!properties.isEmpty() || !controls.isEmpty()) break;
             }

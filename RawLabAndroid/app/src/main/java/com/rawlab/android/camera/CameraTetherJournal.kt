@@ -110,8 +110,12 @@ internal class CameraTetherJournal(private val directory: File) {
 
     private fun CameraPhoto.objectSlotKey(): String? {
         val identity = resumeIdentity ?: return null
-        val parts = identity.split(':', limit = 4)
-        return if (parts.size >= 3 && (parts[0] == "mobile" || parts[0] == "legacy")) "${parts[0]}:${parts[1]}:${parts[2]}" else null
+        val parts = identity.split(':', limit = 5)
+        if (parts.size < 3) return null
+        if (parts[0] == "mobile" && parts.size >= 4 && parts[1].startsWith("s") && parts[1].drop(1).toIntOrNull() != null) {
+            return "${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}"
+        }
+        return if (parts[0] == "mobile" || parts[0] == "legacy") "${parts[0]}:${parts[1]}:${parts[2]}" else null
     }
 
     private fun checkedListing(observed: List<CameraPhoto>): Map<String, CameraPhoto> {

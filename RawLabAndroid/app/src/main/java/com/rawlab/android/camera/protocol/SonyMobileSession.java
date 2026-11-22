@@ -30,7 +30,7 @@ public final class SonyMobileSession implements CameraMediaSession {
     private static final int MAX_SCAN_PAGES = 1000;
     private static final int THUMBNAIL_LIMIT = 2 << 20;
     private static final int LARGE_PREVIEW_LIMIT = 8 << 20;
-    private static final Set<Integer> ALLOWED = new HashSet<>(Arrays.asList(0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008, 0x1009, 0x923b, 0x923c, 0x923d, 0x923e));
+    private static final Set<Integer> ALLOWED = new HashSet<>(Arrays.asList(0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008, 0x1009, 0x9201, 0x9202, 0x923b, 0x923c, 0x923d, 0x923e));
 
     public SonyMobileSession(SocketFactory factory, InetAddress address, UUID guid, Reporter reporter) throws IOException {
         report = reporter;
@@ -78,9 +78,23 @@ public final class SonyMobileSession implements CameraMediaSession {
 
     public void openSession() throws IOException { operation(0x1002, new int[]{1}, false, 0); }
 
+    public void openSession(Device device, boolean initializeRemote) throws IOException {
+        openSession();
+        if (initializeRemote && device != null && device.operations.contains(0x9201) && device.operations.contains(0x9202)) {
+            initializeRemoteContents();
+        }
+    }
+
+    public void initializeRemoteContents() throws IOException {
+        operation(0x9201, new int[]{1, 0, 0}, false, 65536);
+        operation(0x9201, new int[]{2, 0, 0}, false, 65536);
+        operation(0x9202, new int[]{0x12c, 1}, true, 65536);
+        operation(0x9201, new int[]{3, 0, 0}, false, 65536);
+    }
+
     public byte[] preview(Asset asset, boolean large) throws IOException {
         if (asset == null || asset.owner != this) throw new IOException("Preview asset outside this session");
-        return operation(0x923e, new int[]{asset.content, (1 << 24) | asset.file, large ? 2 : 1}, true,
+        return operation(0x923e, new int[]{asset.content, (asset.slot << 24) | asset.file, large ? 2 : 1}, true,
                 large ? LARGE_PREVIEW_LIMIT : THUMBNAIL_LIMIT);
     }
 
@@ -88,25 +102,42 @@ public final class SonyMobileSession implements CameraMediaSession {
         if (!device.operations.contains(0x923c)) throw new IOException("Mobile contents operation 0x923C not advertised");
         ArrayList<Asset> result = new ArrayList<>();
         HashSet<String> seen = new HashSet<>();
+        boolean exceeded = listSlot(1, result, seen);
+        if (device.operations.contains(0x923b) && hasSlotPhotos(2)) {
+            if (listSlot(2, result, seen)) exceeded = true;
+        }
+        if (exceeded) {
+            trimRecentAssets(result);
+            throw new CameraMediaSession.PhotoLimitExceededException("Photo list exceeds limit", result);
+        }
+        return result;
+    }
+
+    private boolean hasSlotPhotos(int slot) throws IOException {
+        try {
+            byte[] info = operation(0x923b, new int[]{slot}, true, 1024);
+            if (info.length < 4) return false;
+            long count = ByteBuffer.wrap(info, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt() & 0xFFFFFFFFL;
+            return count > 0;
+        } catch (ResponseException ignored) {
+            return false;
+        }
+    }
+
+    private boolean listSlot(int slot, ArrayList<Asset> result, HashSet<String> seen) throws IOException {
         long after = 0;
         boolean exceeded = false;
         for (int page = 0; page < MAX_SCAN_PAGES; page++) {
-            byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, 1, 0}, true, LIMIT);
-            Page parsed = parseContents(data, this);
+            byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, slot, 0}, true, LIMIT);
+            Page parsed = parseContents(data, this, slot);
             for (Asset asset : parsed.assets) {
-                if (seen.add(asset.content + ":" + asset.file)) result.add(asset);
+                if (seen.add(slot + ":" + asset.content + ":" + asset.file)) result.add(asset);
                 if (result.size() > CameraMediaSession.MAX_LISTED_PHOTOS) {
                     exceeded = true;
                     if (result.size() >= CameraMediaSession.MAX_LISTED_PHOTOS * 2) trimRecentAssets(result);
                 }
             }
-            if (parsed.count < 100) {
-                if (exceeded) {
-                    trimRecentAssets(result);
-                    throw new CameraMediaSession.PhotoLimitExceededException("Photo list exceeds limit", result);
-                }
-                return result;
-            }
+            if (parsed.count < 100) return exceeded;
             if (parsed.cursor <= after) throw new IOException("Photo list cursor did not advance");
             after = parsed.cursor;
         }
@@ -127,8 +158,8 @@ public final class SonyMobileSession implements CameraMediaSession {
         if (!device.operations.contains(0x923c)) throw new IOException("Mobile contents operation 0x923C not advertised");
         long after = target.created > 0 ? target.created - 1 : 0;
         for (int page = 0; page < MAX_SCAN_PAGES; page++) {
-            byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, 1, 0}, true, LIMIT);
-            Page parsed = parseContents(data, this);
+            byte[] data = operation(0x923c, new int[]{(int)after, (int)(after >>> 32), 100, target.slot, 0}, true, LIMIT);
+            Page parsed = parseContents(data, this, target.slot);
             for (Asset candidate : parsed.assets) if (target.same(candidate)) return true;
             if (parsed.count < 100 || parsed.cursor > target.created) return false;
             if (parsed.cursor <= after) throw new IOException("Photo list cursor did not advance");
@@ -141,7 +172,7 @@ public final class SonyMobileSession implements CameraMediaSession {
         if (asset == null || asset.owner != this || !device.operations.contains(0x923d)
             || length <= 0 || length > (64 << 10) || offset < 0 || offset > asset.size - length)
             throw new CameraMediaSession.PhotoTransferException("Invalid camera sample range");
-        byte[] bytes = operation(0x923d, new int[]{asset.content, (1 << 24) | asset.file,
+        byte[] bytes = operation(0x923d, new int[]{asset.content, (asset.slot << 24) | asset.file,
             (int)offset, (int)(offset >>> 32), length}, true, length);
         if (bytes.length != length) throw new CameraMediaSession.PhotoTransferException("Camera sample length mismatch");
         if (offset == 0) validateHeader(asset.name, bytes);
@@ -165,7 +196,7 @@ public final class SonyMobileSession implements CameraMediaSession {
         long offset = 0;
         while (offset < asset.size) {
             int size = (int)Math.min(3 << 20, asset.size - offset);
-            byte[] bytes = operation(0x923d, new int[]{asset.content, (1 << 24) | asset.file, (int)offset, (int)(offset >>> 32), size}, true, size);
+            byte[] bytes = operation(0x923d, new int[]{asset.content, (asset.slot << 24) | asset.file, (int)offset, (int)(offset >>> 32), size}, true, size);
             if (bytes.length != size) throw new CameraMediaSession.PhotoTransferException("Original photo chunk length mismatch");
             if (offset == 0) validateHeader(asset.name, bytes);
             destination.write(bytes); digest.update(bytes); offset += bytes.length;
@@ -188,6 +219,10 @@ public final class SonyMobileSession implements CameraMediaSession {
     }
 
     static Page parseContents(byte[] data, Object owner) throws IOException {
+        return parseContents(data, owner, 1);
+    }
+
+    static Page parseContents(byte[] data, Object owner, int slot) throws IOException {
         Reader r = new Reader(data); r.skip(144); long count = r.u32();
         if (count > 100) throw new IOException("Contents page too large");
         ArrayList<Asset> assets = new ArrayList<>(); long cursor = 0;
@@ -211,29 +246,39 @@ public final class SonyMobileSession implements CameraMediaSession {
                 boolean audio = r.i32() != 0; if (audio) r.skip(16);
                 String lower = name.toLowerCase(Locale.ROOT);
                 if (!video && !audio && size > 0 && (lower.endsWith(".arw") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")))
-                    assets.add(new Asset(owner, content, (int)file, name, size, created));
+                    assets.add(new Asset(owner, slot, content, (int)file, name, size, created));
             }
         }
         return new Page((int)count, cursor, assets);
     }
 
     public static final class Asset {
-        final Object owner; final int content, file; public final String name; public final long size, created;
+        final Object owner; public final int slot; final int content, file; public final String name; public final long size, created;
         public final String storageToken;
         public final long captureTimestamp;
         private final String legacyObjectKey;
         public Asset(Object owner, int content, int file, String name, long size, long created) {
-            this(owner, content, file, name, size, created, "mobile", created, null);
+            this(owner, 1, content, file, name, size, created);
+        }
+        Asset(Object owner, int slot, int content, int file, String name, long size, long created) {
+            this(owner, slot, content, file, name, size, created, slot == 1 ? "mobile" : "mobile-slot" + slot, created, null);
         }
         Asset(Object owner, int content, int file, String name, long size, long created,
               String storageToken, long captureTimestamp, String legacyObjectKey) {
-            this.owner = owner; this.content = content; this.file = file; this.name = name; this.size = size; this.created = created;
+            this(owner, 1, content, file, name, size, created, storageToken, captureTimestamp, legacyObjectKey);
+        }
+        Asset(Object owner, int slot, int content, int file, String name, long size, long created,
+              String storageToken, long captureTimestamp, String legacyObjectKey) {
+            this.owner = owner; this.slot = slot; this.content = content; this.file = file; this.name = name; this.size = size; this.created = created;
             this.storageToken = storageToken; this.captureTimestamp = captureTimestamp;
             this.legacyObjectKey = legacyObjectKey;
         }
-        public String key() { return content + ":" + file + ":" + name + ":" + size + ":" + created; }
+        public String key() {
+            String base = content + ":" + file + ":" + name + ":" + size + ":" + created;
+            return slot == 1 ? base : "s" + slot + ":" + base;
+        }
         public String resumeIdentity() { return legacyObjectKey == null ? "mobile:" + key() : "legacy:" + legacyObjectKey; }
-        boolean same(Asset other) { return content == other.content && file == other.file && name.equals(other.name) && size == other.size && created == other.created; }
+        boolean same(Asset other) { return slot == other.slot && content == other.content && file == other.file && name.equals(other.name) && size == other.size && created == other.created; }
     }
     static final class Page {
         final int count; final long cursor; final List<Asset> assets;

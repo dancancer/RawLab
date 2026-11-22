@@ -16,6 +16,7 @@ import com.rawlab.android.photo.MediaPhotoLibrary
 import com.rawlab.android.camera.protocol.SonyMobileSession
 import com.rawlab.android.camera.protocol.CameraMediaSession
 import com.rawlab.android.camera.protocol.SonyLegacyImportSession
+import com.rawlab.android.camera.protocol.SonyTetherSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -29,12 +30,25 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.UUID
 import javax.net.SocketFactory
 
 internal enum class CameraImportFailure {
     PHOTO_LIMIT_EXCEEDED,
 }
+
+internal data class CameraAccessAuthPrompt(
+    val cameraId: String,
+    val fingerprint: String,
+    val keyType: String,
+    val initialUser: String = "",
+    val hasSavedCredentials: Boolean = false,
+    val fingerprintChanged: Boolean = false,
+    val submitting: Boolean = false,
+    val errorMessage: Int? = null,
+)
 
 internal data class CameraImportState(
     val stage: SonyCameraConnection.Stage? = null,
@@ -67,6 +81,7 @@ internal data class CameraImportState(
     val legacyCameraTime: Boolean = false,
     val closing: Boolean = false,
     val cardSavingConfirmed: Boolean = false,
+    val accessAuth: CameraAccessAuthPrompt? = null,
     // 读不出的导入记录（隔离日志的 id）：界面可查看详情或确认放弃。
     val unreadableLogs: List<String> = emptyList(),
 ) {
@@ -165,12 +180,14 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private val tetherRunsDirectory = File(application.filesDir, "camera-tether-runs")
     private val store = CameraImportStore(importsDirectory,
         File(application.cacheDir, "camera-media-partials"), MediaPhotoLibrary(application), CameraCaptureDateReader::read)
+    private val authStore = CameraAccessAuthStore(application)
     private val connection = SonyCameraConnection(application, this)
     private val sessionLock = Mutex()
     private val storeLock = Mutex()
     private val tetherJournal = CameraTetherJournal(tetherRunsDirectory)
     val tether = CameraTetherController(viewModelScope, store, tetherJournal, storeLock, ::updateJob)
     @Volatile private var session: CameraMediaSession? = null
+    @Volatile private var sshTunnel: SonySshTunnel? = null
     private var device: SonyMobileSession.Device? = null
     @Volatile private var assets: Map<String, SonyMobileSession.Asset> = emptyMap()
     private var cameraId = ""
@@ -180,9 +197,17 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private var importPreparation: Job? = null
     private var connectionWork: Job? = null
     private var closingWork: Job? = null
+    private var pendingConnected: PendingConnection? = null
+    private var pendingAuthTarget: PendingConnection? = null
     private var resumeTether = false
     private var foreground = false
     private var opening: String? = null
+
+    private data class PendingConnection(
+        val network: Network,
+        val address: InetAddress,
+        val cameraId: String,
+    )
     private val previews = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
@@ -385,61 +410,342 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     override fun onStage(stage: SonyCameraConnection.Stage) { mutable.update { it.copy(stage = stage, failure = null, message = null) } }
     override fun onConnected(network: Network, address: InetAddress, cameraId: String) {
         debugCameraLog("onConnected mode=${mutable.value.mode} closing=${mutable.value.closing} foreground=$foreground")
-        if (mutable.value.closing || !foreground) return
-        if (mutable.value.mode == CameraMode.TETHER) {
-            this.cameraId = cameraId
-            mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId) }
-            tether.start(network, address, clientId, mutable.value.model, cameraId, mutable.value.destination, resumeTether, mutable.value.cardSavingConfirmed)
+        if (mutable.value.closing) return
+        if (!foreground) {
+            pendingConnected = PendingConnection(network, address, cameraId)
             return
         }
-        connectImport(network.socketFactory, address, cameraId)
+        pendingConnected = null
+        startConnectedSession(network, address, cameraId)
     }
 
-    fun connectImport(factory: SocketFactory, address: InetAddress, cameraId: String) {
+    private fun startConnectedSession(network: Network, address: InetAddress, cameraId: String) {
+        if (mutable.value.closing || !foreground) return
+        val current = generation
+        val targetMode = mutable.value.mode
+        mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK, accessAuth = null, message = null) }
+        connectionWork = viewModelScope.launch {
+            var pendingDirectTether: SonyTetherSession? = null
+            val resolution = withContext(Dispatchers.IO) {
+                resolveCameraAccessAuth(
+                    cameraId = cameraId,
+                    loadSaved = authStore::load,
+                    probeSsh = { probeSshHostKey(address, rawSocketFactory = network.socketFactory) },
+                    connectSsh = { user, pass, fingerprint ->
+                        SonySshTunnel.connect(
+                            address = address,
+                            username = user,
+                            password = pass,
+                            expectedFingerprint = fingerprint,
+                            rawSocketFactory = network.socketFactory,
+                        )
+                    },
+                    tryDirect = {
+                        if (targetMode == CameraMode.IMPORT) {
+                            openCameraImportSession(
+                                createMobile = { SonyMobileSession(network.socketFactory, address, clientId) { debugCameraLog("mobile: $it") } },
+                                createLegacy = { SonyLegacyImportSession(network.socketFactory, address, clientId) { debugCameraLog("legacy: $it") } },
+                                initializeRemote = false,
+                            ) { opened ->
+                                withContext(Dispatchers.Main.immediate) {
+                                    if (current != generation || !foreground) throw IOException("Stale camera connection")
+                                    session = opened
+                                }
+                            }
+                        } else {
+                            val remote = SonyTetherSession(network.socketFactory, address, clientId) { debugCameraLog("remote: $it") }
+                            try {
+                                remote.inspectDevice()
+                            } catch (error: Throwable) {
+                                remote.close()
+                                throw error
+                            }
+                            pendingDirectTether = remote
+                            null
+                        }
+                    },
+                )
+            }
+
+            if (current != generation || !foreground || mutable.value.closing) {
+                (resolution as? CameraAuthResolution.Direct)?.importSession?.session?.close()
+                (resolution as? CameraAuthResolution.SshConnected)?.tunnel?.close()
+                pendingDirectTether?.close()
+                return@launch
+            }
+
+            when (resolution) {
+                is CameraAuthResolution.Direct -> {
+                    if (targetMode == CameraMode.IMPORT) {
+                        val connected = resolution.importSession
+                            ?: return@launch onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                        finishImportConnect(connected, cameraId)
+                    } else {
+                        val initialRemote = pendingDirectTether
+                        pendingDirectTether = null
+                        this@CameraImportViewModel.cameraId = cameraId
+                        mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId, accessAuth = null) }
+                        tether.start(
+                            socketFactory = network.socketFactory,
+                            address = address,
+                            clientId = clientId,
+                            model = mutable.value.model,
+                            cameraId = cameraId,
+                            destination = mutable.value.destination,
+                            resume = resumeTether,
+                            cardSavingConfirmed = mutable.value.cardSavingConfirmed,
+                            openLiveConnection = { url -> network.openConnection(url) as java.net.HttpURLConnection },
+                            initialRemote = initialRemote,
+                        )
+                    }
+                }
+                is CameraAuthResolution.SshConnected -> {
+                    val tunnel = resolution.tunnel
+                    sshTunnel?.close()
+                    sshTunnel = tunnel
+                    if (targetMode == CameraMode.IMPORT) {
+                        openImportAndPublish(
+                            current = current,
+                            factory = tunnel.socketFactory(),
+                            address = address,
+                            cameraId = cameraId,
+                            initializeRemote = true,
+                        )
+                    } else {
+                        this@CameraImportViewModel.cameraId = cameraId
+                        mutable.update { it.copy(stage = null, connected = true, cameraId = cameraId, accessAuth = null) }
+                        tether.start(
+                            socketFactory = tunnel.socketFactory(),
+                            address = address,
+                            clientId = clientId,
+                            model = mutable.value.model,
+                            cameraId = cameraId,
+                            destination = mutable.value.destination,
+                            resume = resumeTether,
+                            cardSavingConfirmed = mutable.value.cardSavingConfirmed,
+                            openLiveStream = { url -> tunnel.openLiveViewStream(url) },
+                        )
+                    }
+                }
+                is CameraAuthResolution.PromptAuth -> {
+                    pendingAuthTarget = PendingConnection(network, address, cameraId)
+                    mutable.update { it.copy(stage = null, accessAuth = resolution.prompt, message = null) }
+                }
+                is CameraAuthResolution.Failed -> {
+                    pendingDirectTether?.close()
+                    onFailure(resolution.failure)
+                }
+            }
+        }
+    }
+
+    fun submitAccessAuth(user: String, password: String) {
+        val snapshot = mutable.value
+        val prompt = snapshot.accessAuth ?: return
+        val target = pendingAuthTarget ?: return
+        if (snapshot.closing || !foreground || prompt.submitting) return
+        val trimmedUser = user.trim()
+        if (trimmedUser.isEmpty() || password.isEmpty()) {
+            mutable.update {
+                it.copy(accessAuth = prompt.copy(submitting = false, errorMessage = R.string.camera_auth_failed))
+            }
+            return
+        }
+        val current = generation
+        val targetMode = snapshot.mode
+        mutable.update {
+            it.copy(stage = null, message = null, accessAuth = prompt.copy(submitting = true, errorMessage = null))
+        }
+        connectionWork = viewModelScope.launch {
+            val connectResult = withContext(Dispatchers.IO) {
+                runCatching {
+                    SonySshTunnel.connect(
+                        address = target.address,
+                        username = trimmedUser,
+                        password = password,
+                        expectedFingerprint = prompt.fingerprint,
+                        rawSocketFactory = target.network.socketFactory,
+                    )
+                }
+            }
+            if (current != generation || !foreground || mutable.value.closing) {
+                connectResult.getOrNull()?.close()
+                return@launch
+            }
+            connectResult.onSuccess { tunnel ->
+                withContext(Dispatchers.IO) {
+                    authStore.save(
+                        target.cameraId,
+                        CameraAccessAuthRecord(
+                            user = trimmedUser,
+                            password = password,
+                            fingerprint = tunnel.hostProbe.fingerprint,
+                        ),
+                    )
+                }
+                if (current != generation || !foreground || mutable.value.closing) {
+                    tunnel.close()
+                    return@launch
+                }
+                sshTunnel?.close()
+                sshTunnel = tunnel
+                pendingAuthTarget = null
+                mutable.update { it.copy(accessAuth = null) }
+                if (targetMode == CameraMode.IMPORT) {
+                    mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK) }
+                    openImportAndPublish(
+                        current = current,
+                        factory = tunnel.socketFactory(),
+                        address = target.address,
+                        cameraId = target.cameraId,
+                        initializeRemote = true,
+                    )
+                } else {
+                    this@CameraImportViewModel.cameraId = target.cameraId
+                    mutable.update { it.copy(stage = null, connected = true, cameraId = target.cameraId, accessAuth = null) }
+                    tether.start(
+                        socketFactory = tunnel.socketFactory(),
+                        address = target.address,
+                        clientId = clientId,
+                        model = mutable.value.model,
+                        cameraId = target.cameraId,
+                        destination = mutable.value.destination,
+                        resume = resumeTether,
+                        cardSavingConfirmed = mutable.value.cardSavingConfirmed,
+                        openLiveStream = { url -> tunnel.openLiveViewStream(url) },
+                    )
+                }
+            }.onFailure { error ->
+                when (error) {
+                    is SshFingerprintMismatchException -> {
+                        mutable.update { state ->
+                            val activePrompt = state.accessAuth ?: prompt
+                            state.copy(
+                                accessAuth = activePrompt.copy(
+                                    fingerprint = error.actualFingerprint.ifBlank { activePrompt.fingerprint },
+                                    keyType = error.keyType.takeIf { it != "unknown" } ?: activePrompt.keyType,
+                                    fingerprintChanged = true,
+                                    submitting = false,
+                                    errorMessage = R.string.camera_auth_fingerprint_changed,
+                                ),
+                            )
+                        }
+                    }
+                    is SshAuthenticationException -> {
+                        mutable.update { state ->
+                            val activePrompt = state.accessAuth ?: prompt
+                            state.copy(
+                                accessAuth = activePrompt.copy(
+                                    initialUser = trimmedUser,
+                                    submitting = false,
+                                    errorMessage = R.string.camera_auth_failed,
+                                ),
+                            )
+                        }
+                    }
+                    else -> onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                }
+            }
+        }
+    }
+
+    fun forgetAccessAuth() {
+        val activePrompt = mutable.value.accessAuth ?: return
+        if (activePrompt.submitting) return
+        val targetId = pendingAuthTarget?.cameraId ?: activePrompt.cameraId
+        mutable.update { state ->
+            state.copy(
+                accessAuth = state.accessAuth?.copy(
+                    initialUser = "",
+                    hasSavedCredentials = false,
+                    errorMessage = null,
+                ),
+            )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            authStore.delete(targetId)
+        }
+    }
+
+    fun cancelAccessAuth() {
+        if (mutable.value.accessAuth?.submitting == true) return
+        disconnect()
+        mutable.update { it.copy(accessAuth = null, message = null) }
+    }
+
+    fun connectImport(
+        factory: SocketFactory,
+        address: InetAddress,
+        cameraId: String,
+        initializeRemote: Boolean = false,
+    ) {
         if (mutable.value.closing || !foreground) return
         debugCameraLog("connectImport start")
         val current = generation
         mutable.update { it.copy(stage = SonyCameraConnection.Stage.NETWORK) }
         connectionWork = viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    openCameraImportSession(
-                        createMobile = { SonyMobileSession(factory, address, clientId) { debugCameraLog("mobile: $it") } },
-                        createLegacy = { SonyLegacyImportSession(factory, address, clientId) { debugCameraLog("legacy: $it") } },
-                    ) { opened ->
-                        withContext(Dispatchers.Main.immediate) {
-                            if (current != generation || !foreground) throw IOException("Stale camera connection")
-                            session = opened
-                        }
+            openImportAndPublish(current, factory, address, cameraId, initializeRemote)
+        }
+    }
+
+    private suspend fun openImportAndPublish(
+        current: Int,
+        factory: SocketFactory,
+        address: InetAddress,
+        cameraId: String,
+        initializeRemote: Boolean,
+    ) {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                openCameraImportSession(
+                    createMobile = { SonyMobileSession(factory, address, clientId) { debugCameraLog("mobile: $it") } },
+                    createLegacy = { SonyLegacyImportSession(factory, address, clientId) { debugCameraLog("legacy: $it") } },
+                    initializeRemote = initializeRemote,
+                ) { opened ->
+                    withContext(Dispatchers.Main.immediate) {
+                        if (current != generation || !foreground) throw IOException("Stale camera connection")
+                        session = opened
                     }
                 }
             }
-            if (current != generation || !foreground) { result.getOrNull()?.session?.close(); return@launch }
-            result.onSuccess { connected ->
-                debugCameraLog("connectImport success assets=${connected.listing.assets.size} model=${connected.device.model} fw=${connected.device.firmware}")
-                device = connected.device
-                this@CameraImportViewModel.cameraId = cameraId
-                assets = connected.listing.assets.associateBy { it.key() }
-                val owner = UUID.randomUUID().toString()
-                val settings = readIncrementalSettings(cameraId)
-                mutable.update {
-                    it.withConnectedListing(
-                        cameraId = cameraId,
-                        opened = connected.session,
-                        info = connected.device,
-                        listing = connected.listing,
-                        owner = owner,
-                        mode = settings.mode,
-                        format = settings.format,
-                        jpeg = settings.jpeg,
-                    )
-                }
-            }.onFailure { error ->
-                val redactedMessage = error.message?.replace(Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b"""), "<ip>")
-                debugCameraLog("connectImport failed ${error.javaClass.simpleName} at ${error.stackTrace.firstOrNull()} msg=$redactedMessage")
-                onFailure(if (error is CameraMediaSession.UnsupportedCameraException)
-                    SonyCameraConnection.Failure.UNSUPPORTED else SonyCameraConnection.Failure.DISCONNECTED)
-            }
+        }
+        if (current != generation || !foreground || mutable.value.closing) {
+            result.getOrNull()?.session?.close()
+            return
+        }
+        result.onSuccess { connected ->
+            finishImportConnect(connected, cameraId)
+        }.onFailure { error ->
+            val redactedMessage = error.message?.replace(Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b"""), "<ip>")
+            debugCameraLog("connectImport failed ${error.javaClass.simpleName} at ${error.stackTrace.firstOrNull()} msg=$redactedMessage")
+            onFailure(
+                if (error is CameraMediaSession.UnsupportedCameraException) {
+                    SonyCameraConnection.Failure.UNSUPPORTED
+                } else {
+                    SonyCameraConnection.Failure.DISCONNECTED
+                },
+            )
+        }
+    }
+
+    private fun finishImportConnect(connected: ConnectedCameraImport, cameraId: String) {
+        debugCameraLog("connectImport success assets=${connected.listing.assets.size} model=${connected.device.model} fw=${connected.device.firmware}")
+        device = connected.device
+        this@CameraImportViewModel.cameraId = cameraId
+        assets = connected.listing.assets.associateBy { it.key() }
+        val owner = UUID.randomUUID().toString()
+        val settings = readIncrementalSettings(cameraId)
+        mutable.update {
+            it.copy(accessAuth = null).withConnectedListing(
+                cameraId = cameraId,
+                opened = connected.session,
+                info = connected.device,
+                listing = connected.listing,
+                owner = owner,
+                mode = settings.mode,
+                format = settings.format,
+                jpeg = settings.jpeg,
+            )
         }
     }
 
@@ -458,35 +764,53 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     fun disconnect() {
         generation++
+        pendingConnected = null
+        pendingAuthTarget = null
         permit?.cancel()
         tether.stop()
         session?.close(); session = null
         device = null; assets = emptyMap()
         previews.evictAll()
+        val oldTunnel = sshTunnel
+        sshTunnel = null
         val prior = closingWork
         val oldTransfer = transfer
         val oldPreparation = importPreparation
         val oldConnection = connectionWork
-        mutable.update { it.copy(stage = null, connected = false, closing = true, hardwareIdentity = null, failure = null) }
+        mutable.update { it.copy(stage = null, connected = false, closing = true, hardwareIdentity = null, failure = null, accessAuth = null) }
         closingWork = viewModelScope.launch {
             prior?.join()
             oldTransfer?.join()
             oldPreparation?.join()
             oldConnection?.join()
             tether.join()
+            withContext(Dispatchers.IO) { runCatching { oldTunnel?.close() } }
             connection.close()
             mutable.update { it.copy(closing = false) }
         }
     }
     fun onForeground() {
         foreground = true
-        debugCameraLog("onForeground stage=${mutable.value.stage}")
+        debugCameraLog("onForeground stage=${mutable.value.stage} hasPending=${pendingConnected != null}")
+        val deferred = pendingConnected
+        val snapshot = mutable.value
+        if (deferred != null && !snapshot.closing && !snapshot.connected && snapshot.accessAuth == null) {
+            pendingConnected = null
+            startConnectedSession(deferred.network, deferred.address, deferred.cameraId)
+        }
     }
     fun onBackground() {
         debugCameraLog("onBackground stage=${mutable.value.stage} connected=${mutable.value.connected}")
         foreground = false
-        if (mutable.value.transferring || importPreparation?.isActive == true || connectionWork?.isActive == true || tether.state.value.active ||
-            mutable.value.stage != null && mutable.value.stage != SonyCameraConnection.Stage.MANUAL_WIFI) stop()
+        if (shouldStopCameraOnBackground(
+                state = mutable.value,
+                hasActiveImportPreparation = importPreparation?.isActive == true,
+                hasActiveConnectionWork = connectionWork?.isActive == true,
+                tetherActive = tether.state.value.active,
+            )
+        ) {
+            stop()
+        }
     }
     fun stop() { disconnect(); mutable.update { it.copy(message = R.string.camera_paused) } }
 
@@ -734,10 +1058,133 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         }
     }
     override fun onCleared() {
-        generation++; permit?.cancel(); tether.stop(); session?.close()
+        generation++; pendingConnected = null; pendingAuthTarget = null
+        permit?.cancel(); tether.stop(); session?.close()
+        val lingeringTunnel = sshTunnel
+        sshTunnel = null
         // 给已按下的快门释放留出与协议层一致的有界窗口。
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ connection.close() }, 2_100)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            runCatching { lingeringTunnel?.close() }
+            connection.close()
+        }, 2_100)
         super.onCleared()
+    }
+}
+
+internal fun shouldStopCameraOnBackground(
+    state: CameraImportState,
+    hasActiveImportPreparation: Boolean,
+    hasActiveConnectionWork: Boolean,
+    tetherActive: Boolean,
+): Boolean {
+    if (state.transferring || hasActiveImportPreparation || hasActiveConnectionWork || tetherActive) {
+        return true
+    }
+    state.accessAuth?.let { prompt ->
+        return prompt.submitting
+    }
+    return when (state.stage) {
+        null,
+        SonyCameraConnection.Stage.MANUAL_WIFI,
+        SonyCameraConnection.Stage.PAIRING,
+        SonyCameraConnection.Stage.WIFI_CONFIRMATION -> false
+        SonyCameraConnection.Stage.SCANNING,
+        SonyCameraConnection.Stage.BLUETOOTH,
+        SonyCameraConnection.Stage.WIFI_STARTING,
+        SonyCameraConnection.Stage.NETWORK -> true
+    }
+}
+
+internal sealed interface CameraAuthResolution {
+    data class Direct(val importSession: ConnectedCameraImport? = null) : CameraAuthResolution
+    data class SshConnected(val tunnel: SonySshTunnel) : CameraAuthResolution
+    data class PromptAuth(val prompt: CameraAccessAuthPrompt) : CameraAuthResolution
+    data class Failed(val failure: SonyCameraConnection.Failure) : CameraAuthResolution
+}
+
+internal suspend fun resolveCameraAccessAuth(
+    cameraId: String,
+    loadSaved: (String) -> CameraAccessAuthRecord?,
+    probeSsh: () -> SshHostProbe,
+    connectSsh: (user: String, password: String, expectedFingerprint: String) -> SonySshTunnel,
+    tryDirect: suspend () -> ConnectedCameraImport?,
+): CameraAuthResolution {
+    val saved = cameraId.takeIf { it.isNotBlank() }?.let(loadSaved)
+    if (saved != null) {
+        val probe = runCatching { probeSsh() }.getOrNull()
+        if (probe != null) {
+            val savedFingerprint = normalizeSha256Fingerprint(saved.fingerprint)
+            if (savedFingerprint == null || !MessageDigest.isEqual(
+                    savedFingerprint.toByteArray(StandardCharsets.UTF_8),
+                    probe.fingerprint.toByteArray(StandardCharsets.UTF_8),
+                )
+            ) {
+                return CameraAuthResolution.PromptAuth(
+                    CameraAccessAuthPrompt(
+                        cameraId = cameraId,
+                        fingerprint = probe.fingerprint,
+                        keyType = probe.keyType,
+                        initialUser = saved.user,
+                        hasSavedCredentials = true,
+                        fingerprintChanged = true,
+                        errorMessage = R.string.camera_auth_fingerprint_changed,
+                    ),
+                )
+            }
+            return try {
+                CameraAuthResolution.SshConnected(
+                    connectSsh(saved.user, saved.password, probe.fingerprint),
+                )
+            } catch (_: SshFingerprintMismatchException) {
+                CameraAuthResolution.PromptAuth(
+                    CameraAccessAuthPrompt(
+                        cameraId = cameraId,
+                        fingerprint = probe.fingerprint,
+                        keyType = probe.keyType,
+                        initialUser = saved.user,
+                        hasSavedCredentials = true,
+                        fingerprintChanged = true,
+                        errorMessage = R.string.camera_auth_fingerprint_changed,
+                    ),
+                )
+            } catch (_: SshAuthenticationException) {
+                CameraAuthResolution.PromptAuth(
+                    CameraAccessAuthPrompt(
+                        cameraId = cameraId,
+                        fingerprint = probe.fingerprint,
+                        keyType = probe.keyType,
+                        initialUser = saved.user,
+                        hasSavedCredentials = true,
+                        errorMessage = R.string.camera_auth_failed,
+                    ),
+                )
+            } catch (_: Throwable) {
+                CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
+            }
+        }
+    }
+
+    return try {
+        CameraAuthResolution.Direct(tryDirect())
+    } catch (_: CameraMediaSession.UnsupportedCameraException) {
+        CameraAuthResolution.Failed(SonyCameraConnection.Failure.UNSUPPORTED)
+    } catch (_: IOException) {
+        val probe = runCatching { probeSsh() }.getOrNull()
+        if (probe != null) {
+            CameraAuthResolution.PromptAuth(
+                CameraAccessAuthPrompt(
+                    cameraId = cameraId,
+                    fingerprint = probe.fingerprint,
+                    keyType = probe.keyType,
+                    initialUser = saved?.user.orEmpty(),
+                    hasSavedCredentials = saved != null,
+                ),
+            )
+        } else {
+            CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
+        }
+    } catch (_: Throwable) {
+        CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
     }
 }
 
