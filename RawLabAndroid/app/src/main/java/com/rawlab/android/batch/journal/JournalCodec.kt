@@ -9,6 +9,7 @@ import com.rawlab.android.batch.BatchSettingsMode
 import com.rawlab.android.batch.BatchFrozenSettings
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.SettingsCodec
@@ -38,6 +39,7 @@ internal object JournalCodec {
         setProperty("output.format", job.outputFormat.name.lowercase())
         setProperty("output.png", (job.outputFormat == ExportFormat.PNG).toString())
         setProperty("output.longEdge", job.outputLongEdge?.toString().orEmpty())
+        setProperty("output.sharpening", job.effectiveOutputSharpening.wireValue)
         setProperty("output.destination", job.destination.orEmpty())
         setProperty("row.count", job.rows.size.toString())
         job.rows.forEachIndexed { index, row ->
@@ -58,6 +60,7 @@ internal object JournalCodec {
                 setProperty(prefix + "frozen.lookSHA256", frozen.lookSHA256.orEmpty())
                 setProperty(prefix + "frozen.format", frozen.outputFormat.name.lowercase())
                 setProperty(prefix + "frozen.longEdge", frozen.longEdge?.toString().orEmpty())
+                setProperty(prefix + "frozen.outputSharpening", frozen.effectiveOutputSharpening.wireValue)
             }
             putAll(rowState(row, prefix))
         }
@@ -102,7 +105,8 @@ internal object JournalCodec {
             else if (properties.getProperty("output.png", "false").toBoolean()) ExportFormat.PNG else ExportFormat.JPEG
         val base = BatchJob(source, targets, id = id, outputFormat = format,
             outputLongEdge = properties.getProperty("output.longEdge").orEmpty().toIntOrNull()?.takeIf { ExportSize.isValid(it) },
-            destination = properties.getProperty("output.destination").orEmpty().ifBlank { null }, settingsMode = mode)
+            destination = properties.getProperty("output.destination").orEmpty().ifBlank { null }, settingsMode = mode,
+            outputSharpening = OutputSharpening.fromWireValue(properties.getProperty("output.sharpening")))
         if (mode == BatchSettingsMode.PER_TARGET_FROZEN && base.rows.size != count) throw IOException("Duplicate frozen target")
         return base.withRows(base.rows.mapIndexed { index, row -> readRow(properties, row, "row.$index.") },
             properties.getProperty("global.error").orEmpty().ifBlank { null }).also { it.validate() }
@@ -114,7 +118,8 @@ internal object JournalCodec {
             ordinal = field("ordinal").toInt(), settings = SettingsCodec.decode(field("settings")),
             inputSHA256 = field("inputSHA256"), lookFile = field("look").ifBlank { null }?.let(::File),
             lookSHA256 = field("lookSHA256").ifBlank { null }, outputFormat = ExportFormat.fromPersisted(field("format")),
-            longEdge = field("longEdge").takeIf { it.isNotEmpty() }?.toInt()).also { it.validate() }
+            longEdge = field("longEdge").takeIf { it.isNotEmpty() }?.toInt(),
+            outputSharpening = OutputSharpening.fromWireValue(properties.getProperty(prefix + "outputSharpening"))).also { it.validate() }
     }
 
     private fun String?.toInputKind(): PhotoInputKind = runCatching {

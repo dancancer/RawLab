@@ -34,6 +34,7 @@ import com.rawlab.android.batch.publish.BatchOutputPublisher
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoFiles
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
@@ -72,13 +73,21 @@ data class BatchExportState(
     fun canStart(retry: Boolean) = phase !in setOf(BatchPhase.PREPARING, BatchPhase.RUNNING) &&
         job.rows.isNotEmpty() && (!retry || failedCount > 0)
 
-    fun configuredFor(format: ExportFormat, destination: Uri?, longEdge: Int?): BatchExportState {
+    fun configuredFor(
+        format: ExportFormat,
+        destination: Uri?,
+        longEdge: Int?,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF,
+    ): BatchExportState {
+        val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
         require(job.settingsMode != BatchSettingsMode.PER_TARGET_FROZEN ||
-            (format == job.outputFormat && longEdge == job.outputLongEdge && destination?.toString() == job.destination)) {
+            (format == job.outputFormat && longEdge == job.outputLongEdge &&
+                effectiveSharpening == job.effectiveOutputSharpening && destination?.toString() == job.destination)) {
             "Frozen export settings cannot be changed"
         }
         return copy(
         job = job.copy(outputFormat = format, destination = destination?.toString(), outputLongEdge = longEdge,
+            outputSharpening = effectiveSharpening,
             rows = job.rows.map { if (it.status == BatchRowStatus.SUCCESS) it else it.copy(outputName = it.outputName.substringBeforeLast('.') + format.suffix) }),
         phase = BatchPhase.PREPARING, outputFormat = format, destination = destination, error = null, stopping = false)
     }
@@ -201,7 +210,8 @@ class BatchExportModel(
                 val all = current.job.rows.map { it.target } + accepted
                 current.copy(job = BatchJob(current.job.source, all,
                     id = current.job.id, outputFormat = current.job.outputFormat,
-                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination),
+                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination,
+                    outputSharpening = current.job.outputSharpening),
                     phase = BatchPhase.SELECTING, stopping = false, error = error)
             }
         }
@@ -213,19 +223,33 @@ class BatchExportModel(
                 val targets = current.job.rows.filterNot { it.id == id }.map { it.target }
                 current.copy(job = BatchJob(current.job.source, targets,
                     id = current.job.id, outputFormat = current.job.outputFormat,
-                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination))
+                    outputLongEdge = current.job.outputLongEdge, destination = current.job.destination,
+                    outputSharpening = current.job.outputSharpening))
             }
         }
     }
 
-    fun start(format: ExportFormat, destination: Uri?, longEdge: Int? = null) {
-        startInternal(format, destination, longEdge, retry = false)
+    fun start(
+        format: ExportFormat,
+        destination: Uri?,
+        longEdge: Int? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF,
+    ) {
+        startInternal(format, destination, longEdge, outputSharpening, retry = false)
     }
 
-    private fun startInternal(format: ExportFormat, destination: Uri?, longEdge: Int?, retry: Boolean) {
+    private fun startInternal(
+        format: ExportFormat,
+        destination: Uri?,
+        longEdge: Int?,
+        outputSharpening: OutputSharpening,
+        retry: Boolean,
+    ) {
+        val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
         val validationError = when {
             mutable.value.job.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN &&
                 (format != mutable.value.job.outputFormat || longEdge != mutable.value.job.outputLongEdge ||
+                    effectiveSharpening != mutable.value.job.effectiveOutputSharpening ||
                     destination?.toString() != mutable.value.job.destination) -> "Frozen export settings cannot be changed"
             !ExportSize.isValid(longEdge) -> AppStrings.text(R.string.message_enter_a_pixel_count_between_1_and)
             destination == null && !format.allowsGallery -> AppStrings.text(R.string.dng_file_only)
@@ -236,7 +260,7 @@ class BatchExportModel(
             return
         }
         val previous = mutable.getAndUpdate {
-            if (it.canStart(retry)) it.configuredFor(format, destination, longEdge) else it
+            if (it.canStart(retry)) it.configuredFor(format, destination, longEdge, effectiveSharpening) else it
         }
         if (!previous.canStart(retry)) return
         val successBefore = previous.successCount
@@ -302,12 +326,14 @@ class BatchExportModel(
 
     fun continueUnfinished() {
         val current = mutable.value
-        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge, retry = false)
+        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge,
+            current.job.effectiveOutputSharpening, retry = false)
     }
 
     fun retryFailed() {
         val current = mutable.value
-        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge, retry = true)
+        startInternal(current.outputFormat, current.destination, current.job.outputLongEdge,
+            current.job.effectiveOutputSharpening, retry = true)
     }
 
     fun cancel(forBackground: Boolean = false) {
@@ -393,7 +419,7 @@ class BatchExportModel(
             // 效果查看先限长再降噪，最终导出仍保留完整质量。
             processorFactory(gpuMode, storage.lensDatabase()).use {
                 val prepared=if(snapshot.settingsMode==BatchSettingsMode.UNIFORM_FROZEN && snapshot.source.settings.isHDREditing)
-                    hdrPreparation(snapshot.source).prepare(target,0,snapshot.outputFormat,snapshot.outputLongEdge) else target.frozen
+                    hdrPreparation(snapshot.source).prepare(target,0,snapshot.outputFormat,snapshot.outputLongEdge,snapshot.effectiveOutputSharpening) else target.frozen
                 val settings = prepared?.settings ?: snapshot.settingsFor(target, x3fModeResolver())
                 if (settings.isHDREditing) {
                     if (gpuMode == NativeProcessor.FORCE) throw com.rawlab.android.engine.HDRProcessingException(2,13,6)

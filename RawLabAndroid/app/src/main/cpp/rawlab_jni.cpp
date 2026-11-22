@@ -330,6 +330,7 @@ struct JniCache {
         jfieldID detail = nullptr;
         jfieldID look = nullptr;
         jfieldID channelCurves = nullptr;
+        jfieldID outputSharpening = nullptr;
     } hdrRenderRequest;
 
     struct {
@@ -567,6 +568,7 @@ void initJniCache(JNIEnv* env) {
         c.hdrRenderRequest.detail = cacheField(env, c.hdrRenderRequest.clazz, "detail", "Lcom/rawlab/android/engine/NativeHDRDetail;");
         c.hdrRenderRequest.look = cacheField(env, c.hdrRenderRequest.clazz, "look", "Lcom/rawlab/android/engine/NativeHDRLook;");
         c.hdrRenderRequest.channelCurves = cacheField(env, c.hdrRenderRequest.clazz, "channelCurves", "Lcom/rawlab/android/engine/NativeHDRChannelCurves;");
+        c.hdrRenderRequest.outputSharpening = cacheField(env, c.hdrRenderRequest.clazz, "outputSharpening", "I");
 
         c.hdrProgressListener.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/HDRProgressListener");
         c.hdrProgressListener.onProgress = cacheMethod(env, c.hdrProgressListener.clazz, "onProgress", "(I)V");
@@ -738,19 +740,20 @@ void marshalGeometryFields(JNIEnv* env, const JniCache& cache, jobject geometryO
 }
 
 struct MarshalledHdrRequest {
-    sony2fuji_hdr_request_v8 value{};
+    sony2fuji_hdr_request_v9 value{};
     std::string lookPath;
     MarshalledHdrRequest() = default;
     MarshalledHdrRequest(const MarshalledHdrRequest&) = delete;
     MarshalledHdrRequest& operator=(const MarshalledHdrRequest&) = delete;
-    sony2fuji_hdr_request_v1& base() { return value.base.base.base.base.base.base.base; }
+    sony2fuji_hdr_request_v1& base() { return value.base.base.base.base.base.base.base.base; }
 };
 
 void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrRequest& out) {
     if (!requestObj) throw std::invalid_argument("Missing HDR render request");
     const auto& cache = jniCache(env);
     auto& result = out.value;
-    auto& look = result.base;
+    auto& channelCurves = result.base;
+    auto& look = channelCurves.base;
     auto& detail = look.base;
     auto& effectsRequest = detail.base;
     auto& rendition = effectsRequest.base;
@@ -882,11 +885,71 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
         LocalRef greenRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.green));
         LocalRef blueRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.blue));
         if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR channel curves");
-        result.channels[0] = marshalToneCurve(env, cache, redRef.get());
-        result.channels[1] = marshalToneCurve(env, cache, greenRef.get());
-        result.channels[2] = marshalToneCurve(env, cache, blueRef.get());
-        request.struct_size = sizeof(result);
+        channelCurves.channels[0] = marshalToneCurve(env, cache, redRef.get());
+        channelCurves.channels[1] = marshalToneCurve(env, cache, greenRef.get());
+        channelCurves.channels[2] = marshalToneCurve(env, cache, blueRef.get());
+        request.struct_size = sizeof(channelCurves);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    }
+    const jint outputSharpening = env->GetIntField(requestObj, cache.hdrRenderRequest.outputSharpening);
+    if (env->ExceptionCheck() || outputSharpening < 0 || outputSharpening > SONY2FUJI_OUTPUT_SHARPENING_HIGH) {
+        throw std::invalid_argument("Invalid HDR output sharpening");
+    }
+    if (outputSharpening != 0) {
+        if (!toneRef) {
+            tone.curve.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            tone.curve.struct_size = sizeof(tone.curve);
+            tone.curve.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        if (!colorRef) {
+            color.hsl.version = SONY2FUJI_HSL_CONFIG_VERSION;
+            color.hsl.struct_size = sizeof(color.hsl);
+            color.grading.version = SONY2FUJI_COLOR_GRADING_CONFIG_VERSION;
+            color.grading.struct_size = sizeof(color.grading);
+        }
+        if (!effectsRef) {
+            effectsRequest.effects = {
+                SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
+                sizeof(sony2fuji_photo_effects_config),
+                0.0f, 50.0f, 0.0f, 50.0f, 0.0f, 0.0f, 25.0f, 50.0f,
+            };
+        }
+        if (!channelCurvesRef) {
+            for (auto& ch : channelCurves.channels) {
+                ch.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+                ch.struct_size = sizeof(ch);
+                ch.mode = SONY2FUJI_CURVE_LEGACY;
+            }
+        }
+        result.curve_apply_to_luminosity = 0;
+        result.output_sharpening = static_cast<uint32_t>(outputSharpening);
+        result.parametric_curve = {
+            SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION,
+            sizeof(result.parametric_curve),
+            0.0f, 0.0f, 0.0f, 0.0f,
+            0.25f, 0.50f, 0.75f,
+            0u,
+        };
+        result.grading_v2 = {
+            SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION,
+            sizeof(result.grading_v2),
+            color.grading.shadows_hue,
+            color.grading.shadows_saturation,
+            0.0f,
+            color.grading.midtones_hue,
+            color.grading.midtones_saturation,
+            0.0f,
+            color.grading.highlights_hue,
+            color.grading.highlights_saturation,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            50.0f,
+            0.0f,
+        };
+        request.struct_size = sizeof(result);
+        request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
     }
 }
 

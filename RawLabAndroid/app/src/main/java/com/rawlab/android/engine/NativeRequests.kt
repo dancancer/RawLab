@@ -2,6 +2,7 @@ package com.rawlab.android.engine
 
 import android.graphics.Bitmap
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.raster.DecodedRaster
 import com.rawlab.android.settings.ColorGradingSettings
@@ -233,6 +234,7 @@ internal data class NativeHDRRenderRequest(
     val detail: NativeHDRDetail? = null,
     val look: NativeHDRLook? = null,
     val channelCurves: NativeHDRChannelCurves? = null,
+    val outputSharpening: Int = 0,
 )
 
 private fun IntArray?.contentEqualsOrNull(other: IntArray?): Boolean = when {
@@ -395,6 +397,7 @@ internal fun HDRLookSettings.toNativeLook(lookDirectory: File?): NativeHDRLook =
 internal fun HDRSettings.toNativeRequest(
     longEdge: Int = 0,
     lookDirectory: File? = null,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ): NativeHDRRenderRequest {
     val curve = tone?.curve
     return NativeHDRRenderRequest(
@@ -420,5 +423,6 @@ internal fun HDRSettings.toNativeRequest(
                 blue = curve.channels.blue.toNativeCurve(),
             )
         } else null,
+        outputSharpening = outputSharpening.nativeValue,
     )
 }

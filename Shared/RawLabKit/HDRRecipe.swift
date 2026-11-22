@@ -5,7 +5,8 @@ public enum HDRRecipe {
     public enum Failure: Error { case invalidSettings }
 
     public static func document(settings: HDRSettings, input: URL, output: URL,
-                         baseColor: BaseColor, longEdge: Int? = nil) throws -> Data {
+                         baseColor: BaseColor, longEdge: Int? = nil,
+                         outputSharpening: OutputSharpening = .off) throws -> Data {
         guard settings.isValid, settings.mode == .hdr, input.isFileURL, output.isFileURL,
               !input.path.utf8.contains(0), !output.path.utf8.contains(0),
               longEdge.map({ (1...65535).contains($0) }) ?? true else { throw Failure.invalidSettings }
@@ -13,7 +14,7 @@ public enum HDRRecipe {
         let size: [String:Any]=longEdge.map { ["mode":"limit_long_edge","long_edge":$0] } ?? ["mode":"native"]
         var tone: [String: Any] = ["contrast": 1 + settings.contrast / 100, "saturation": 1 + settings.saturation / 100,
             "highlights": -settings.highlights / 100, "shadows": settings.shadows / 100]
-        let version = settings.processingVersion
+        let version = max(settings.processingVersion, outputSharpening != .off ? 9 : 1)
         if version >= 2 {
             let current = settings.toneSettings
             tone["black_point"] = current.blackPoint / 100
@@ -69,13 +70,22 @@ public enum HDRRecipe {
         if let asset = settings.lookSettings.asset(), let fingerprint = settings.lookSettings.sha256 {
             edits["look"] = ["path": asset.path, "sha256": fingerprint, "strength": settings.lookSettings.strength]
         }
+        var outputPayload: [String: Any] = [
+            "path": output.standardizedFileURL.path,
+            "format": "hdr_jpeg",
+            "base_color": baseColor.rawValue,
+            "jpeg_quality": 95,
+            "size": size
+        ]
+        if outputSharpening != .off {
+            outputPayload["output_sharpening"] = outputSharpening.rawValue
+        }
         let document: [String:Any]=[
             "schema_version": version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6,
             "processing":["family":"rawlab_hdr","version":version,"quality":"standard"],
             "input":["path":input.standardizedFileURL.path,"type":"hdr_raster"],
             "edits":edits,
-            "output":["path":output.standardizedFileURL.path,"format":"hdr_jpeg","base_color":baseColor.rawValue,
-                      "jpeg_quality":95,"size":size]
+            "output": outputPayload
         ]
         return try JSONSerialization.data(withJSONObject:document,options:[.prettyPrinted,.sortedKeys])
     }

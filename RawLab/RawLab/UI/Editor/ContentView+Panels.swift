@@ -76,12 +76,21 @@ extension ContentView {
                         Button(L10n.text("保存 SDR JPEG")) {
                             requestSingleExport(.jpeg)
                         }.disabled(editorBusy || viewModel.previewRendering || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
+                        Button(BatchOutputFormat.png.title) {
+                            requestSingleExport(.png)
+                        }
+                        .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         if HDRImage.heifExportAvailable {
                             Button(BatchOutputFormat.hdrHEIF.title) {
                                 requestSingleExport(.hdrHEIF)
                             }
                             .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                         }
+                    } else {
+                        Button(BatchOutputFormat.png.title) {
+                            requestSingleExport(.png)
+                        }
+                        .disabled(!viewModel.hasImage || editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || !viewModel.isLookAvailable(for: settings))
                     }
                     Button(L10n.text("导出渲染型 DNG…")) {
                         requestSingleExport(.renderedDNG)

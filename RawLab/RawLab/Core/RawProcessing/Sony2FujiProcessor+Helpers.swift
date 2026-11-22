@@ -103,10 +103,10 @@ extension Sony2FujiProcessor {
     }
 
     func applySessionParams(_ session: OpaquePointer, settings: RawSettings,
-                            isRaster: Bool = false) throws {
+                            isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws {
         let recipeJSON: String
         do {
-            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster)
+            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster, outputSharpening: outputSharpening)
         } catch let error as CanonicalEditRecipeError {
             throw ProcessorError.processFailed(validationMessage(for: error))
         }
@@ -115,8 +115,8 @@ extension Sony2FujiProcessor {
     }
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
-                          viewportPreview: Bool = false) throws {
-        try applySessionParams(session, settings: settings, isRaster: false)
+                          viewportPreview: Bool = false, outputSharpening: OutputSharpening = .off) throws {
+        try applySessionParams(session, settings: settings, isRaster: false, outputSharpening: outputSharpening)
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
@@ -220,6 +220,11 @@ extension Sony2FujiProcessor {
     func configureDNGFile(_ request: inout sony2fuji_request) {
         request.output_target = SONY2FUJI_TARGET_FILE
         request.output_format = SONY2FUJI_OUTPUT_DNG
+    }
+
+    func configurePNGFile(_ request: inout sony2fuji_request) {
+        request.output_target = SONY2FUJI_TARGET_FILE
+        request.output_format = SONY2FUJI_OUTPUT_PNG
     }
 
     func applySize(

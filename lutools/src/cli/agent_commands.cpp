@@ -115,7 +115,12 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
     if (result.status==SONY2FUJI_STATUS_OK && settings.inputType=="raw" && !lensDatabase.empty())
         result.status=sony2fuji_session_set_lens_database(session.get(),lensDatabase.c_str());
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
-    const auto request=recipe.toHDRRenderRequest();
+    const bool useV9 = recipe.schemaVersion >= 16;
+    const auto requestV8 = useV9 ? sony2fuji_hdr_request_v8{} : recipe.toHDRRenderRequest();
+    const auto requestV9 = useV9 ? recipe.toHDRRenderRequestV9() : sony2fuji_hdr_request_v9{};
+    const auto* requestV1 = useV9
+        ? &requestV9.base.base.base.base.base.base.base.base
+        : &requestV8.base.base.base.base.base.base.base;
     if (settings.inputType=="proraw" && settings.hdrOutput && !preview) {
         auto info=hdrInitial<sony2fuji_hdr_source_info_v1>();
         result.status=sony2fuji_hdr_probe_proraw(recipe.inputPath.c_str(),&info,&result.diagnostic);
@@ -127,7 +132,7 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
         auto streamed=hdrInitial<sony2fuji_hdr_stream_result_v1>();
         const auto temporary=std::filesystem::temp_directory_path().u8string();
         result.status=sony2fuji_hdr_export_proraw(session.get(),recipe.inputPath.c_str(),
-            &request.base.base.base.base.base.base.base,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
+            requestV1,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
         result.sourceHeadroom=streamed.source_headroom; result.editedHeadroom=streamed.edited_headroom;
         return result;
     }
@@ -148,7 +153,7 @@ HDRCommandResult renderHDR(const EditRecipe& recipe,bool preview,const std::stri
         result.status=sony2fuji_hdr_decode_proraw(session.get(),recipe.inputPath.c_str(),&options,temporary.c_str(),&source.value,&result.diagnostic);
     } else result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
     if (result.status==SONY2FUJI_STATUS_OK)
-        result.status=sony2fuji_hdr_render(session.get(),&source.value,&request.base.base.base.base.base.base.base,&edited.value,&result.diagnostic);
+        result.status=sony2fuji_hdr_render(session.get(),&source.value,requestV1,&edited.value,&result.diagnostic);
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
     // 与客户端一致：相机 RAW 和 ProRAW 渲染型 DNG 不读原片元数据；

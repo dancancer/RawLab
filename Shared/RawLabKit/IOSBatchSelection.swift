@@ -78,13 +78,16 @@ public struct IOSCollectionExportReview {
     public let rows: [Row]
     public let format: BatchOutputFormat
     public let longEdge: Int?
+    public let outputSharpening: OutputSharpening
     public var ready: Bool { !rows.isEmpty && rows.allSatisfy { $0.error == nil && $0.record != nil && $0.settings != nil } }
 
-    public init(selection: [String], rows: [Row], format: BatchOutputFormat, longEdge: Int?) {
+    public init(selection: [String], rows: [Row], format: BatchOutputFormat, longEdge: Int?,
+                outputSharpening: OutputSharpening = .off) {
         self.selection = selection
         self.rows = rows
         self.format = format
         self.longEdge = longEdge
+        self.outputSharpening = outputSharpening
     }
 }
 
@@ -125,11 +128,13 @@ public final class IOSBatchSelection: ObservableObject {
     }
 
     public func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                              outputSharpening: OutputSharpening = .off,
                               x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool, validateActive: (String) throws -> Void,
                               resolveLook: (RawSettings) throws -> (URL?, String?),
                               validateCameraProfile: (HDRCameraProfile) throws -> Void = { _ in },
                               editGeneration: (String) -> UInt64 = { _ in 0 }) -> IOSCollectionExportReview {
         exportInput.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+            outputSharpening: outputSharpening,
             x3fDefaultMode: x3fDefaultMode, probeHDR: probeHDR, validateActive: validateActive,
             resolveLook: resolveLook, validateCameraProfile: validateCameraProfile, editGeneration: editGeneration)
     }
@@ -158,6 +163,7 @@ public struct IOSCollectionExportInput {
     }
 
     public func prepareExport(store: EditPersistence, skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                              outputSharpening: OutputSharpening = .off,
                               x3fDefaultMode: (URL) throws -> X3fMode, probeHDR: (URL) throws -> Bool,
                               validateActive: (String) throws -> Void,
                               resolveLook: (RawSettings) throws -> (URL?, String?),
@@ -208,7 +214,8 @@ public struct IOSCollectionExportInput {
                     lookName: nil, error: error, editGeneration: editGeneration(id))
             }
         }
-        return .init(selection: selected, rows: rows, format: format, longEdge: longEdge)
+        return .init(selection: selected, rows: rows, format: format, longEdge: longEdge,
+                     outputSharpening: format == .renderedDNG ? .off : outputSharpening)
     }
 
     public func freeze(_ review: IOSCollectionExportReview, store: EditPersistence, journal: BatchJournalStore,
@@ -249,15 +256,21 @@ public struct IOSCollectionExportInput {
                 }
                 var target = BatchTarget(identity: photo.identity, sourceURL: input, displayName: photo.displayName,
                     sourceKind: photo.isRaw ? .raw : .raster)
+                let effectiveSharpening: OutputSharpening? = review.format == .renderedDNG || review.outputSharpening == .off
+                    ? nil : review.outputSharpening
                 target.frozen = .init(ordinal: ordinal, settings: row.settings!, inputSHA256: row.photo.inputSHA256!,
-                    lookURL: look, lookSHA256: row.lookSHA256, lookName: row.lookName, outputFormat: review.format, longEdge: review.longEdge)
+                    lookURL: look, lookSHA256: row.lookSHA256, lookName: row.lookName, outputFormat: review.format,
+                    longEdge: review.longEdge, outputSharpening: effectiveSharpening)
                 try target.frozen!.verifyFiles(input: input)
                 targets.append(target)
             }
             let first = targets[0]
             let source = BatchSourceSnapshot(identity: first.identity, sourceFile: .externallyManaged(first.sourceURL),
                 displayName: first.displayName, sourceKind: first.sourceKind, settings: first.frozen!.settings)
-            var job = BatchExportJob(id: jobID, source: source, targets: targets, outputFormat: review.format, longEdge: review.longEdge)
+            let effectiveSharpening: OutputSharpening? = review.format == .renderedDNG || review.outputSharpening == .off
+                ? nil : review.outputSharpening
+            var job = BatchExportJob(id: jobID, source: source, targets: targets, outputFormat: review.format,
+                longEdge: review.longEdge, outputSharpening: effectiveSharpening)
             job.version = 2; job.settingsMode = .perTargetFrozen
             try validateReview()
             try journal.save(job)

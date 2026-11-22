@@ -76,5 +76,12 @@ internal static class CanonicalEditRecipeChecks
         };
         Check(JsonNode.Parse(CanonicalEditRecipe.Encode(unpinnedMaster, isRaster: false))!["schema_version"]!.GetValue<int>() == 17,
             "Unpinned curve endpoints promote canonical recipe to schema_version 17");
+
+        var sharpenedJson = CanonicalEditRecipe.Encode(new Adjustments(), isRaster: false, outputSharpening: OutputSharpening.Standard);
+        var sharpenedRoot = JsonNode.Parse(sharpenedJson)!.AsObject();
+        Check(sharpenedRoot["schema_version"]!.GetValue<int>() >= 16,
+            "Non-off output_sharpening promotes canonical recipe to at least schema_version 16");
+        Check(sharpenedRoot["edits"]!["output_sharpening"]!.GetValue<string>() == "standard",
+            "Canonical recipe serializes edits.output_sharpening wire token");
     }
 }

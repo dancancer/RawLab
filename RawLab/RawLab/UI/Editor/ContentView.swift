@@ -420,13 +420,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $coordinator.showingExportSize) {
             ExportSizeSheet(longEdge: $coordinator.exportLongEdge,
+                            outputSharpening: $coordinator.exportOutputSharpening,
+                            showOutputSharpening: coordinator.singleExportFormat != .renderedDNG,
                             title: coordinator.singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
-                                coordinator.singleExportFormat == .hdrHEIF ? coordinator.singleExportFormat.title : "保存当前照片") {
+                                coordinator.singleExportFormat == .hdrHEIF ? coordinator.singleExportFormat.title :
+                                coordinator.singleExportFormat == .png ? BatchOutputFormat.png.title : "保存当前照片") {
                 coordinator.showingExportSize = false
                 if coordinator.singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: coordinator.exportLongEdge)
                 } else {
-                    exportPhoto(longEdge: coordinator.exportLongEdge, format: coordinator.singleExportFormat)
+                    exportPhoto(longEdge: coordinator.exportLongEdge,
+                                format: coordinator.singleExportFormat,
+                                outputSharpening: coordinator.exportOutputSharpening)
                 }
             }
         }

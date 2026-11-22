@@ -9,6 +9,7 @@ import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.discardOwnedInput
 import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,7 +110,12 @@ internal class EditorExportStateHolder(
         onUpdatePreviewSize(requestedPreviewLongEdge())
     }
 
-    fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) {
+    fun export(
+        destination: Uri?,
+        format: ExportFormat,
+        longEdge: Int? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF,
+    ) {
         when (val submission = prepareExportSubmission(
             mutable.value,
             destination,
@@ -118,6 +124,7 @@ internal class EditorExportStateHolder(
             gpuMode(),
             exportDestinationCleanup,
             isDisposed(),
+            outputSharpening,
         )) {
             is ExportSubmission.Rejected -> {
                 val next = if (submission.errorKey != null) {

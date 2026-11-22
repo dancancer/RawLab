@@ -4,6 +4,7 @@ import com.rawlab.android.adjustments.*
 import com.rawlab.android.batch.journal.BatchJournal
 import com.rawlab.android.engine.requireAsset
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.settings.*
@@ -28,7 +29,8 @@ internal class BatchHDRPreparation(
             sourceSupportsCameraHDR = info.isCameraRaw, sourceIsProRAW = info.isProRAW)
     }
 
-    private fun candidate(target: BatchTarget, ordinal: Int, format: ExportFormat, longEdge: Int?): Candidate {
+    private fun candidate(target: BatchTarget, ordinal: Int, format: ExportFormat, longEdge: Int?,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF): Candidate {
         val hash=BatchFrozenSettings.checksum(target.sourceFile)
         val raw = target.inputKind == PhotoInputKind.RAW
         val info = probeSource(target.sourceFile, raw)
@@ -45,20 +47,23 @@ internal class BatchHDRPreparation(
         val look=if(settings.isHDREditing) null else resolveLook(settings)
         if((settings.film!="neutral" || settings.recipeID!=null) && !settings.isHDREditing && look==null)
             throw AdjustmentTransferException(AdjustmentFailure.MISSING_LOOK)
+        val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
         val frozen=BatchFrozenSettings(ordinal=ordinal,settings=settings,inputSHA256=hash,lookFile=look,
-            lookSHA256=look?.let(BatchFrozenSettings::checksum),outputFormat=format,longEdge=longEdge)
+            lookSHA256=look?.let(BatchFrozenSettings::checksum),outputFormat=format,longEdge=longEdge,
+            outputSharpening=effectiveSharpening)
         frozen.validate();frozen.verifyFiles(target.sourceFile)
         return Candidate(frozen)
     }
 
-    fun prepare(target: BatchTarget,ordinal: Int,format: ExportFormat,longEdge: Int?) =
-        candidate(target,ordinal,format,longEdge).frozen
+    fun prepare(target: BatchTarget,ordinal: Int,format: ExportFormat,longEdge: Int?,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF) =
+        candidate(target,ordinal,format,longEdge,outputSharpening).frozen
 
     fun freeze(job: BatchJob,directory: File,cancelled: () -> Boolean): BatchJob {
         if(job.settingsMode!=BatchSettingsMode.UNIFORM_FROZEN || !job.source.settings.isHDREditing)return job
         val candidates=job.rows.mapIndexed { index,row ->
             if(cancelled())throw CancellationException()
-            candidate(row.target,index,job.outputFormat,job.outputLongEdge)
+            candidate(row.target,index,job.outputFormat,job.outputLongEdge,job.effectiveOutputSharpening)
         }
         fun validate() {
             candidates.forEachIndexed { index,value ->

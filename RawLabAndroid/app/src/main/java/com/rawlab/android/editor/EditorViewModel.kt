@@ -785,7 +785,12 @@ class EditorViewModel internal constructor(
     fun beginExportDestinationPick() = exportHolder.beginExportDestinationPick()
     fun returnToExportOptions() = exportHolder.returnToExportOptions()
     fun cancelExport() = exportHolder.cancelExport()
-    fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) = exportHolder.export(destination, format, longEdge)
+    fun export(
+        destination: Uri?,
+        format: ExportFormat,
+        longEdge: Int? = null,
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+    ) = exportHolder.export(destination, format, longEdge, outputSharpening)
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 
     fun addCollectionPhotos(uris: List<Uri>) = collectionHolder.addPhotos(uris)
@@ -802,12 +807,14 @@ class EditorViewModel internal constructor(
     fun captureCollectionSynchronization(scope: AdjustmentScope, completed: (CollectionSynchronization?) -> Unit) =
         collectionHolder.captureSynchronization(scope, completed)
     fun prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        completed: (CollectionExportReview?) -> Unit) = collectionHolder.prepareExport(skipping, format, longEdge, destination, completed)
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        completed: (CollectionExportReview?) -> Unit) = collectionHolder.prepareExport(skipping, format, longEdge, destination, completed, outputSharpening)
     fun freezeCollectionExport(review: CollectionExportReview, completed: (Boolean) -> Unit) =
         collectionHolder.freezeExport(review, completed)
     fun cancelCollectionExport() = collectionHolder.cancelExport()
     fun startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        completed: (Boolean) -> Unit = {}) = collectionHolder.startExport(skipping, format, longEdge, destination, completed)
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        completed: (Boolean) -> Unit = {}) = collectionHolder.startExport(skipping, format, longEdge, destination, outputSharpening, completed)
 
     fun beginBatch() = batchHolder.beginBatch()
     fun resumeBatch(job: BatchJob) = batchHolder.resumeBatch(job)

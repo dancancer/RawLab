@@ -422,5 +422,27 @@ struct ProcessorExportTests {
               rawEXIF[kCGImagePropertyExifPixelYDimension] as? Int == strongRaw.buffer.height,
               "iOS RAW export is upright and reports rendered dimensions")
         try rawJPEG.write(to: output.appendingPathComponent("ios-raw-exif.jpg"))
+        check(rawJPEG.range(of: Data("ICC_PROFILE\0".utf8)) != nil,
+              "iOS RAW JPEG export embeds APP2 ICC_PROFILE")
+
+        let pngUnsharpened = output.appendingPathComponent("ios-raw-off.png")
+        let pngSharpened = output.appendingPathComponent("ios-raw-high.png")
+        try processor.exportPNG(url: raw, settings: rawDNGSettings, lutURL: lut, outputURL: pngUnsharpened,
+                                exportLongEdge: 128, outputSharpening: .off)
+        try processor.exportPNG(url: raw, settings: rawDNGSettings, lutURL: lut, outputURL: pngSharpened,
+                                exportLongEdge: 128, outputSharpening: .high)
+        if let srcOff = CGImageSourceCreateWithURL(pngUnsharpened as CFURL, nil),
+           let imgOff = CGImageSourceCreateImageAtIndex(srcOff, 0, nil),
+           let srcHigh = CGImageSourceCreateWithURL(pngSharpened as CFURL, nil),
+           let imgHigh = CGImageSourceCreateImageAtIndex(srcHigh, 0, nil),
+           let pxOff = imgOff.dataProvider?.data as Data?,
+           let pxHigh = imgHigh.dataProvider?.data as Data? {
+            check(imgOff.bitsPerComponent == 16 && imgHigh.bitsPerComponent == 16,
+                  "iOS RAW PNG export produces 16-bit PNG images")
+            check(pxOff != pxHigh,
+                  "iOS RAW PNG export applies post-resize output sharpening")
+        } else {
+            check(false, "iOS RAW PNG export produces readable PNG images")
+        }
     }
 }

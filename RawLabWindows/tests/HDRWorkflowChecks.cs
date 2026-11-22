@@ -860,12 +860,21 @@ internal static class HDRWorkflowChecks
                 "HDR geometry publishes the actual output dimensions to the viewport");
             foreach(var format in new[]{ExportFormat.HdrJpeg,ExportFormat.Jpeg,ExportFormat.Png,ExportFormat.RenderedDng}) {
                 var output=Path.Combine(root,"export-"+format+"."+format.Suffix());
-                engine.Render(source,neutral,null,128,output:output,longEdge:128,formatOverride:format);
+                engine.Render(source,neutral,null,128,output:output,longEdge:128,formatOverride:format,
+                    outputSharpening:format == ExportFormat.RenderedDng ? OutputSharpening.Off : OutputSharpening.Standard);
                 check(new FileInfo(output).Length>100,"Final output exists: "+format);
                 if(format==ExportFormat.HdrJpeg)check(HDRNative.Probe(output,out var info)==HDRProbeState.Supported && Math.Max(info!.Width,info.Height)==Math.Min(128,Math.Max(geometry.NativeWidth,geometry.NativeHeight)),
                     "Final resized HDR JPEG retains its gain map and output dimensions");
                 if(format==ExportFormat.Png)check(File.ReadAllBytes(output)[24]==16,"Explicit SDR PNG retains 16-bit channel depth");
             }
+            var v9Req = neutral.HDR!.NativeRenderRequest(HDRIntent.Export,128,outputSharpening:OutputSharpening.High);
+            check(v9Req.OutputSharpening == 3 &&
+                  v9Req.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() &&
+                  v9Req.GradingV2.Blending == 50f &&
+                  Math.Abs(v9Req.ParametricCurve.SplitShadow - 0.25f) < 1e-6f &&
+                  Math.Abs(v9Req.ParametricCurve.SplitMidtone - 0.50f) < 1e-6f &&
+                  Math.Abs(v9Req.ParametricCurve.SplitHighlight - 0.75f) < 1e-6f,
+                "HDRRequestV9 populates output_sharpening, v9 struct_size, grading_v2.blending=50, and parametric splits");
             var created=File.GetCreationTimeUtc(source);var modified=File.GetLastWriteTimeUtc(source);
             var originalBytes=File.ReadAllBytes(source);var invalidBytes=originalBytes.ToArray();invalidBytes[0]^=0xff;
             try {

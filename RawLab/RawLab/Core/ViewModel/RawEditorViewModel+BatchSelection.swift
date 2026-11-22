@@ -38,6 +38,7 @@ extension RawEditorViewModel {
     }
 
     func prepareCollectionExport(skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                                  outputSharpening: OutputSharpening = .off,
                                   completion: @escaping (Result<IOSCollectionExportReview, Error>) -> Void) {
         guard let store = editPersistence else { completion(.failure(EditPersistenceError.corruptStore)); return }
         let collection = batchSelection.exportInput
@@ -46,6 +47,7 @@ extension RawEditorViewModel {
         let session = adjustmentSession
         adjustmentQueue.async {
             let review = collection.prepareExport(store: store, skipping: skipping, format: format, longEdge: longEdge,
+                outputSharpening: outputSharpening,
                 x3fDefaultMode: { try Sony2FujiProcessor().x3fDefaultMode(for: $0) },
                 probeHDR: { try HDRSourceInfo.probe($0) != nil },
                 validateActive: active, resolveLook: { settings in
@@ -79,6 +81,7 @@ extension RawEditorViewModel {
     }
 
     func startCollectionExport(skipping: Set<String>, format: BatchOutputFormat, longEdge: Int?,
+                               outputSharpening: OutputSharpening = .off,
                                completed: @escaping (BatchExportJob, BatchJournalStore, Bool) -> Void) {
         guard !collectionExportPreparing, !collectionExportFreezing else { return }
         cancelCollectionExportPreparation()
@@ -90,7 +93,7 @@ extension RawEditorViewModel {
                 self.settingsSaveRevision == revision && self.batchSelection.selection.targets() == selection
         }
         collectionExportPreparing = true
-        prepareCollectionExport(skipping: skipping, format: format, longEdge: longEdge) { [weak self] result in
+        prepareCollectionExport(skipping: skipping, format: format, longEdge: longEdge, outputSharpening: outputSharpening) { [weak self] result in
             guard let self, self.collectionExportGeneration == generation else { return }
             guard isCurrent() else {
                 self.collectionExportPreparing = false

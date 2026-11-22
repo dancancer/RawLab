@@ -1,4 +1,5 @@
 #include "core/hdr_rendering.h"
+#include "core/hdr_detail.h"
 #include "core/hdr_look.h"
 #include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
@@ -310,6 +311,22 @@ void finishDetail(ImageData& image, const HDRRenderOptions& options, bool hdr) {
     image = std::move(output);
 }
 
+void finishOutputSharpening(ImageData& image, const HDRRenderOptions& options, bool hdr) {
+    if (options.outputSharpening == OutputSharpening::Off || image.width <= 1 || image.height <= 1 || image.pixels.empty())
+        return;
+    const double peak = hdr && options.rendition.peakLimitEV > 0 ? std::exp2(double(options.rendition.peakLimitEV)) : 0;
+    ImageData output(image.width, image.height);
+    for (int first = 0; first < image.height; first += hdrDetailBandHeight) {
+        const int end = std::min(first + hdrDetailBandHeight, image.height);
+        const int top = std::max(0, first - 1);
+        const int bottom = std::min(image.height, end + 1);
+        renderHDROutputSharpeningBand(options.outputSharpening, image.width, image.height, peak,
+            image.pixels.data() + size_t(top) * image.width, top, bottom - top,
+            output.pixels.data() + size_t(first) * image.width, first, end - first);
+    }
+    image = std::move(output);
+}
+
 void validateRenderInput(const HDRImagePair& source, const HDRRenderOptions& o) {
     validateImage(source.hdr); validateImage(source.sdr);
     validateHDRRenderOptions(o);
@@ -330,6 +347,7 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     // 省掉循环后对双平面的独立全图扫描；任一尾段活跃则回退原逐像素扫描，语义逐位不变。
     const uint32_t canvasEdge = uint32_t(std::max(result.hdr.width, result.hdr.height));
     const bool inertLater = !o.geometry.active() && !o.hasDetail() && !o.hasPhotoEffects() &&
+        o.outputSharpening == OutputSharpening::Off &&
         (o.longEdge == 0 || o.longEdge >= canvasEdge);
     float hdrContentMax = 0, sdrContentMax = 0;
     reportHdrProgress(50, 1000);
@@ -344,6 +362,8 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     reportHdrProgress(850, 1000);
     finishEffects(result.hdr, o, true);
     finishEffects(result.sdr, o, false);
+    finishOutputSharpening(result.hdr, o, true);
+    finishOutputSharpening(result.sdr, o, false);
     reportHdrProgress(950, 1000);
     result.renderQuality = o.intent;
     result.isProxy = result.isProxy || o.intent == HDRQuality::Preview;

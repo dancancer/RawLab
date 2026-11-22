@@ -74,6 +74,26 @@ static class BatchSelectionChecks
             var job=exporter.Freeze(selection,review,_=>null);
             Rejected(()=>exporter.Freeze(selection,review,_=>null),"Pending task is preserved until explicitly discarded");
             Check(job.Mode==BatchJob.PerTargetFrozen && job.Items[1].Frozen!.Settings.Restore()[Parameter.Contrast]==30,"Each item keeps its own micro-edit");
+            journal.Discard(job);
+
+            var sharpReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null,OutputSharpening.Standard);
+            Check(sharpReview.OutputSharpening==OutputSharpening.Standard,"Collection export review keeps OutputSharpening for PNG");
+            var sharpJob=exporter.Freeze(selection,sharpReview,_=>null);
+            Check(sharpJob.OutputSharpening==OutputSharpening.Standard &&
+                  sharpJob.Items.All(item=>item.Frozen!.OutputSharpening==OutputSharpening.Standard),
+                "Frozen collection export propagates OutputSharpening to job and per-target frozen items");
+            journal.Discard(sharpJob);
+
+            var dngReview=exporter.Prepare(selection,[],ExportFormat.RenderedDng,null,output,_=>null,OutputSharpening.High);
+            Check(dngReview.OutputSharpening==OutputSharpening.Off,"RenderedDng forces collection export OutputSharpening to Off");
+            var dngJob=exporter.Freeze(selection,dngReview,_=>null);
+            Check(dngJob.EffectiveOutputSharpening==OutputSharpening.Off &&
+                  dngJob.Items.All(item=>item.Frozen!.OutputSharpening==OutputSharpening.Off),
+                "Frozen collection RenderedDng forces Off sharpening");
+            journal.Discard(dngJob);
+
+            review=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
+            job=exporter.Freeze(selection,review,_=>null);
             // 线程锚点：冻结核心（前后双遍全集重验 + look 副本拷贝）整体离开调用线程（异步路径经 Task.Run 调度同一核心）。
             // 撤掉修复（Freeze 在调用线程内联完成重验与拷贝）时派发用例的 IsThreadPoolThread 记为 false，断言必红；内联用例防止探针恒真假绿。
             var dispatchedStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();

@@ -915,7 +915,7 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
             const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
             uint64_t sourceSize = 0;
             if (impl && impl->data) sourceSize = impl->data.length;
-            else {
+            else if (config.metadataSourcePath) {
                 NSNumber* sourceBytes = [[[NSFileManager defaultManager]
                     attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadataSourcePath] error:nil] objectForKey:NSFileSize];
                 if (!sourceBytes)
@@ -1209,9 +1209,16 @@ void exportSDR(const HDRImagePair& image,const HDRSdrExportConfig& config,const 
             CGImageDestinationAddImage(dest,pixels,(__bridge CFDictionaryRef)values);
             const bool success=CGImageDestinationFinalize(dest); CGImageRelease(pixels); CFRelease(dest);
             require(success, kHdrReasonOutputIo, "Cannot encode SDR rendition");
+            NSData* outputData = data;
+            if (config.outputFormat == kHdrSdrOutputJpeg) {
+                std::vector<uint8_t> jpeg(static_cast<const uint8_t*>(data.bytes),
+                                          static_cast<const uint8_t*>(data.bytes) + data.length);
+                jpeg = withSRGBProfile(jpeg);
+                outputData = [NSData dataWithBytes:jpeg.data() length:jpeg.size()];
+            }
             reportHdrProgress(900, 1000);
             checkProcessingCancellation();
-            atomicWrite(data,path);
+            atomicWrite(outputData,path);
             reportHdrProgress(1000, 1000);
             return;
         }

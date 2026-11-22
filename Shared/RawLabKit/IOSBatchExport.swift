@@ -18,10 +18,16 @@ public struct BatchFrozenSettings: Codable, Equatable {
     public let lookName: String?
     public let outputFormat: BatchOutputFormat
     public let longEdge: Int?
+    public let outputSharpening: OutputSharpening?
+
+    public var effectiveOutputSharpening: OutputSharpening {
+        outputFormat == .renderedDNG ? .off : (outputSharpening ?? .off)
+    }
 
     public init(version: Int = 1, settingsVersion: Int = 1, ordinal: Int, settings: RawSettings,
                 inputSHA256: String, lookURL: URL? = nil, lookSHA256: String? = nil,
-                lookName: String? = nil, outputFormat: BatchOutputFormat, longEdge: Int? = nil) {
+                lookName: String? = nil, outputFormat: BatchOutputFormat, longEdge: Int? = nil,
+                outputSharpening: OutputSharpening? = nil) {
         self.version = version
         self.settingsVersion = settingsVersion
         self.ordinal = ordinal
@@ -32,6 +38,7 @@ public struct BatchFrozenSettings: Codable, Equatable {
         self.lookName = lookName
         self.outputFormat = outputFormat
         self.longEdge = longEdge
+        self.outputSharpening = outputSharpening
     }
 
     public func validate() throws {
@@ -242,15 +249,21 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
     public var status: BatchJobStatus
     public var outputFormat: BatchOutputFormat
     public var longEdge: Int?
+    public var outputSharpening: OutputSharpening?
     public var createdAt: Date
     public var updatedAt: Date
     public var globalError: String?
+
+    public var effectiveOutputSharpening: OutputSharpening {
+        outputFormat == .renderedDNG ? .off : (outputSharpening ?? .off)
+    }
 
     public init(id: UUID = UUID(),
                 source: BatchSourceSnapshot,
                 targets: [BatchTarget],
                 outputFormat: BatchOutputFormat = .jpeg,
                 longEdge: Int? = nil,
+                outputSharpening: OutputSharpening? = nil,
                 status: BatchJobStatus = .draft,
                 createdAt: Date = Date()) {
         self.id = id
@@ -259,6 +272,7 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
         self.status = status
         self.outputFormat = outputFormat
         self.longEdge = ExportSize.normalized(longEdge)
+        self.outputSharpening = outputSharpening
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.globalError = nil
@@ -266,6 +280,7 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case version, id, source, targets, status, outputFormat, longEdge, createdAt, updatedAt, globalError
+        case outputSharpening = "output_sharpening"
         case settingsMode = "settings_mode"
     }
 
@@ -279,6 +294,7 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
         status = try values.decode(BatchJobStatus.self, forKey: .status)
         outputFormat = try values.decodeIfPresent(BatchOutputFormat.self, forKey: .outputFormat) ?? .jpeg
         longEdge = try values.decodeIfPresent(Int.self, forKey: .longEdge)
+        outputSharpening = try values.decodeIfPresent(OutputSharpening.self, forKey: .outputSharpening)
         createdAt = try values.decode(Date.self, forKey: .createdAt)
         updatedAt = try values.decode(Date.self, forKey: .updatedAt)
         globalError = try values.decodeIfPresent(String.self, forKey: .globalError)
@@ -296,7 +312,8 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
         }
         for (index, target) in targets.enumerated() {
             guard let frozen = target.frozen, frozen.ordinal == index,
-                  frozen.outputFormat == outputFormat, frozen.longEdge == longEdge else { throw CocoaError(.fileReadCorruptFile) }
+                  frozen.outputFormat == outputFormat, frozen.longEdge == longEdge,
+                  frozen.effectiveOutputSharpening == effectiveOutputSharpening else { throw CocoaError(.fileReadCorruptFile) }
             try frozen.validate()
         }
     }

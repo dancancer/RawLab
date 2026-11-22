@@ -231,16 +231,17 @@ public sealed record HDRSettings
         };
     }
 
-    internal Native.HDRRequestV8 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null)
+    internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var tone = ToneSettings;
         var color = ColorSettings;
         var rendition = RenditionSettings;
+        var effectiveVersion = Math.Max(ProcessingVersion, outputSharpening != OutputSharpening.Off ? 9 : ProcessingVersion);
         var effects = new Native.HDRRequestV5 {
             Base = new() {
                 Base = new() {
                     Base = new() {
-                        Base = NativeRequest(intent, longEdge),
+                        Base = NativeRequest(intent, longEdge, effectiveVersion),
                         BlackPoint = (float)tone.BlackPoint, WhitePoint = (float)tone.WhitePoint, CurveStrength = (float)tone.CurveStrength,
                         Curve = tone.Curve.NativeConfig()
                     },
@@ -260,12 +261,48 @@ public sealed record HDRSettings
                 Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
             LookPath = look.AssetPath(lookDirectory), LookStrength = (float)look.Strength, LookSha256 = fingerprint
         };
-        return new() { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
+        var v8 = new Native.HDRRequestV8 { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
             Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };
+        var gradingV3 = effects.Base.Base.Grading;
+        return new() {
+            Base = v8,
+            CurveApplyToLuminosity = tone.Curve.ApplyToLuminosity ? 1 : 0,
+            OutputSharpening = (uint)outputSharpening,
+            ParametricCurve = new() {
+                Version = 1,
+                StructSize = (uint)Marshal.SizeOf<Native.ToneCurveParametricConfig>(),
+                Highlights = (float)tone.Curve.Parametric.Highlights,
+                Lights = (float)tone.Curve.Parametric.Lights,
+                Darks = (float)tone.Curve.Parametric.Darks,
+                Shadows = (float)tone.Curve.Parametric.Shadows,
+                SplitShadow = (float)tone.Curve.Parametric.SplitShadow,
+                SplitMidtone = (float)tone.Curve.Parametric.SplitMidtone,
+                SplitHighlight = (float)tone.Curve.Parametric.SplitHighlight,
+                Reserved = 0
+            },
+            GradingV2 = new() {
+                Version = 2,
+                StructSize = (uint)Marshal.SizeOf<Native.ColorGradingV2Config>(),
+                ShadowsHue = gradingV3.ShadowsHue,
+                ShadowsSaturation = gradingV3.ShadowsSaturation,
+                ShadowsLuminance = (float)color.Grading.Shadows.Luminance,
+                MidtonesHue = gradingV3.MidtonesHue,
+                MidtonesSaturation = gradingV3.MidtonesSaturation,
+                MidtonesLuminance = (float)color.Grading.Midtones.Luminance,
+                HighlightsHue = gradingV3.HighlightsHue,
+                HighlightsSaturation = gradingV3.HighlightsSaturation,
+                HighlightsLuminance = (float)color.Grading.Highlights.Luminance,
+                GlobalHue = color.Grading.Global.NativeHue,
+                GlobalSaturation = (float)color.Grading.Global.Saturation,
+                GlobalLuminance = (float)color.Grading.Global.Luminance,
+                Blending = (float)color.Grading.Blending,
+                Balance = (float)color.Grading.Balance
+            }
+        };
     }
 
-    private Native.HDRRequest NativeRequest(HDRIntent intent, uint longEdge) => new() {
-        Version = 1, StructSize = (uint)(ProcessingVersion switch {
+    private Native.HDRRequest NativeRequest(HDRIntent intent, uint longEdge, int effectiveVersion) => new() {
+        Version = 1, StructSize = (uint)(effectiveVersion switch {
             1 => Marshal.SizeOf<Native.HDRRequest>(),
             2 => Marshal.SizeOf<Native.HDRRequestV2>(),
             3 => Marshal.SizeOf<Native.HDRRequestV3>(),
@@ -273,9 +310,10 @@ public sealed record HDRSettings
             5 => Marshal.SizeOf<Native.HDRRequestV5>(),
             6 => Marshal.SizeOf<Native.HDRRequestV6>(),
             7 => Marshal.SizeOf<Native.HDRRequestV7>(),
-            _ => Marshal.SizeOf<Native.HDRRequestV8>()
+            8 => Marshal.SizeOf<Native.HDRRequestV8>(),
+            _ => Marshal.SizeOf<Native.HDRRequestV9>()
         }),
-        HDRProcessingVersion = (uint)ProcessingVersion, Intent = (uint)intent,
+        HDRProcessingVersion = (uint)effectiveVersion, Intent = (uint)intent,
         ExposureEv = (float)Exposure, Temperature = (float)Temperature, Tint = (float)Tint,
         // The HDR renderer consumes the shared percentage contract directly.
         Contrast = (float)Contrast, Highlights = (float)Highlights, Shadows = (float)Shadows,

@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.ColorGradingSettings
 import com.rawlab.android.settings.ColorGradingWheel
@@ -107,5 +108,9 @@ class HDRNativeRequestTest {
         assertEquals(-30f, request.saturation, 0f)
         assertEquals(geometry.toNativeGeometry(), request.geometry)
         assertEquals(512, request.longEdge)
+        assertEquals(0, request.outputSharpening)
+
+        val sharpened = HDRSettings().toNativeRequest(outputSharpening = OutputSharpening.STANDARD)
+        assertEquals(OutputSharpening.STANDARD.nativeValue, sharpened.outputSharpening)
     }
 }

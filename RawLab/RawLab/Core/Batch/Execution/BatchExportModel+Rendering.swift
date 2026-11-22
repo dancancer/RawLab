@@ -8,7 +8,7 @@ extension BatchOutputFormat {
     var hdrPhotoFormat: Sony2FujiProcessor.HDRPhotoFormat? {
         switch self {
         case .jpeg: return .sdrJPEG
-        case .png: return nil
+        case .png: return .sdrPNG
         case .hdrJPEG: return .hdrJPEG
         case .hdrHEIF: return .hdrHEIF
         case .renderedDNG: return nil
@@ -31,7 +31,7 @@ final class IOSHDRBatchPreparation {
         self.source=source; store=editor.editPersistence
         looks=editor.lutMap.mapValues(\.sourceURL)
     }
-    func prepare(_ target: BatchTarget,ordinal: Int,format: BatchOutputFormat,longEdge: Int?) throws -> BatchFrozenSettings {
+    func prepare(_ target: BatchTarget,ordinal: Int,format: BatchOutputFormat,longEdge: Int?,outputSharpening: OutputSharpening = .off) throws -> BatchFrozenSettings {
         guard let store else { throw EditPersistenceError.corruptStore }
         let record=try store.readState(for:target.identity)
         let info=try HDRSourceInfo.probe(target.sourceURL)
@@ -63,12 +63,14 @@ final class IOSHDRBatchPreparation {
         let hash=try PhotoIdentity.cachedFallback(for:target.sourceURL).contentIdentifier!
         return BatchFrozenSettings(ordinal:ordinal,settings:settings,inputSHA256:hash,lookURL:look,
             lookSHA256:try look.flatMap { try PhotoIdentity.cachedFallback(for:$0).contentIdentifier },
-            lookName:settings.isHDREditing ? "HDR" : settings.masterRecipe?.name,outputFormat:format,longEdge:longEdge)
+            lookName:settings.isHDREditing ? "HDR" : settings.masterRecipe?.name,outputFormat:format,longEdge:longEdge,
+            outputSharpening:format == .renderedDNG || outputSharpening == .off ? nil : outputSharpening)
     }
 }
 
 extension BatchExportModel {
-    func render(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?, format: BatchOutputFormat = .jpeg) throws -> Data {
+    func render(target: BatchTarget, settings: RawSettings, look: URL?, longEdge: Int?,
+                format: BatchOutputFormat = .jpeg, outputSharpening: OutputSharpening = .off) throws -> Data {
         guard let hdrFormat = format.hdrPhotoFormat else { throw CocoaError(.fileWriteUnsupportedScheme) }
         return try autoreleasepool {
             let processor = Sony2FujiProcessor()
@@ -76,6 +78,7 @@ extension BatchExportModel {
                 let output=FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).\(format.suffix)")
                 defer { try? FileManager.default.removeItem(at:output) }
                 try processor.exportHDR(url: target.sourceURL, settings: hdr, output: output, longEdge: longEdge,
+                    outputSharpening: outputSharpening,
                     processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
                     cancelled: { self.isCancellationRequested })
                 return try Data(contentsOf:output)
@@ -83,15 +86,33 @@ extension BatchExportModel {
             guard !format.requiresHDR else { throw BatchExportError.target(format.hdrRequiredMessage) }
             let result: Sony2FujiProcessor.ProcessResult
             if target.sourceKind == .raw {
+                if format == .png {
+                    let output = FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).png")
+                    defer { try? FileManager.default.removeItem(at: output) }
+                    try processor.exportPNG(url: target.sourceURL, settings: settings, lutURL: look,
+                                            outputURL: output, exportLongEdge: longEdge,
+                                            outputSharpening: outputSharpening)
+                    return try Data(contentsOf: output)
+                }
                 let raw = try processor.processRaw(url: target.sourceURL, settings: settings,
                                                     previewLongEdge: nil, lutURL: look,
-                                                    exportLongEdge: longEdge)
+                                                    exportLongEdge: longEdge,
+                                                    outputSharpening: outputSharpening)
                 result = raw
             } else {
                 let raster = try processor.loadRasterBuffer(url: target.sourceURL)
+                if format == .png {
+                    let output = FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-batch-\(UUID().uuidString).png")
+                    defer { try? FileManager.default.removeItem(at: output) }
+                    try processor.exportPNG(buffer: raster.buffer, settings: settings, lutURL: look,
+                                            sourceURL: target.sourceURL, outputURL: output,
+                                            exportLongEdge: longEdge, outputSharpening: outputSharpening)
+                    return try Data(contentsOf: output)
+                }
                 let buffer = try processor.processBuffer(buffer: raster.buffer, settings: settings,
                                                          previewLongEdge: nil, lutURL: look,
-                                                         exportLongEdge: longEdge)
+                                                         exportLongEdge: longEdge,
+                                                         outputSharpening: outputSharpening)
                 result = Sony2FujiProcessor.ProcessResult(buffer: buffer, orientation: .up,
                                                           rawWhiteBalance: nil)
             }

@@ -321,14 +321,14 @@ internal sealed partial class RenderEngine : IDisposable
         mask.Freeze();
         return mask;
     }
-    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false, ExportFormat? formatOverride = null)
+    public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false, ExportFormat? formatOverride = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         BeginAIOperation(output==null ? "preview" : "export",path);
-        try{return RenderCore(path,settings,lut,edge,interactive,output,statistics,clipping,longEdge,viewportPreview,formatOverride);}
+        try{return RenderCore(path,settings,lut,edge,interactive,output,statistics,clipping,longEdge,viewportPreview,formatOverride,outputSharpening);}
         catch(Exception error) when(settings.ActiveAIDenoise && error is not OperationCanceledException && error is not AINotReadyException)
         {CaptureAIFailure(error);throw;}
     }
-    private RenderedImage? RenderCore(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,bool statistics,bool clipping,int? longEdge,bool viewportPreview,ExportFormat? formatOverride)
+    private RenderedImage? RenderCore(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,bool statistics,bool clipping,int? longEdge,bool viewportPreview,ExportFormat? formatOverride,OutputSharpening outputSharpening)
     {
         if (output != null && formatOverride == ExportFormat.HdrJpeg &&
             (settings.HDR is not { Mode: HDRMode.Hdr } ||
@@ -345,17 +345,18 @@ internal sealed partial class RenderEngine : IDisposable
         if (PhotoInput.IsHDRContainer(path))
         {
             var probe = PhotoInput.ProbeHDR(path, out var info);
-            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!,statistics,clipping);
+            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride,info!,statistics,clipping,outputSharpening);
             if (settings.IsHDREditing) throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
         else if (settings.IsHDREditing && PhotoInput.IsRaw(path))
         {
             var probe = PhotoInput.ProbeCameraRaw(path, out var info, settings.Processing.Version);
-            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride, info!, statistics, clipping);
+            if (probe == HDRProbeState.Supported) return RenderHDR(path, settings, lut, edge, output, longEdge, formatOverride, info!, statistics, clipping,outputSharpening);
             throw new HDRModeException(HDRModeFailure.UnsupportedSource);
         }
-        (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview);
-        var format=output==null ? (ExportFormat?)null : ExportFormatExtensions.FromPath(output);
+        var format=output==null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
+        var effectiveSharpening = output == null || format == ExportFormat.RenderedDng ? OutputSharpening.Off : outputSharpening;
+        (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview,outputSharpening:effectiveSharpening);
         Native.Buffer buffer = default, mask = default;
         try
         {
@@ -403,12 +404,13 @@ internal sealed partial class RenderEngine : IDisposable
 
     private static int HDRPreviewEdge(int edge) => Math.Clamp(edge <= 0 ? 2000 : edge, 1, 2000);
     private RenderedImage? RenderHDR(string path, Adjustments settings, string? lut, int edge, string? output,
-        int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping)
+        int? longEdge, ExportFormat? formatOverride,HDRSourceInfo info,bool statistics,bool clipping,OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         ValidateHDRRender(settings, info.IsProRAW);
         var final = output != null;
         var format = output == null ? (ExportFormat?)null : formatOverride ?? (Path.GetExtension(output).Equals(".dng", StringComparison.OrdinalIgnoreCase)
             ? ExportFormat.RenderedDng : ExportFormat.HdrJpeg);
+        var effectiveSharpening = final && format != ExportFormat.RenderedDng ? outputSharpening : OutputSharpening.Off;
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (camera is { IsDefault:false } && (!info.IsCameraRaw || info.IsProRAW))
             throw new HDRModeException(HDRModeFailure.UnsupportedSource);
@@ -417,7 +419,7 @@ internal sealed partial class RenderEngine : IDisposable
             using var stream = File.OpenRead(path);
             var digest = SHA256.HashData(stream);
             HDRNative.ExportProRAW(session, path, settings.HDR!, output!, digest, format!.Value == ExportFormat.HdrJpeg,
-                checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)), temporaryRoot: appPaths.HdrCacheDirectory);
+                checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)), temporaryRoot: appPaths.HdrCacheDirectory, outputSharpening: effectiveSharpening);
             return null;
         }
         var edgeValue = (uint)HDRPreviewEdge(edge);
@@ -428,7 +430,7 @@ internal sealed partial class RenderEngine : IDisposable
             return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping);
 
         using var rendered = HDRNative.Render(session, source.Owner, settings.HDR!, final ? HDRIntent.Final : HDRIntent.Preview,
-            final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue, appPaths.HdrLooksDirectory);
+            final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue, appPaths.HdrLooksDirectory, effectiveSharpening);
         if (output != null)
         {
             var metadataSource = info.IsCameraRaw ? null : path;
@@ -492,12 +494,12 @@ internal sealed partial class RenderEngine : IDisposable
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
 
-    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview,Native.Buffer? inputOverride = null)
+    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview,Native.Buffer? inputOverride = null,OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var prepared = PrepareRecipe(path, settings);
         settings = prepared.Settings;
         if (inputOverride == null) EnsureInput(path);
-        ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path));
+        ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path), outputSharpening: outputSharpening);
         ConfigureAI(settings.AIDenoiseEnabled);
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
         Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
@@ -564,12 +566,12 @@ internal sealed partial class RenderEngine : IDisposable
         mask=default;
         return Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero);
     }
-    private void ApplyParams(string path, Adjustments settings, bool includeDenoise, bool validateAiX3f, bool? isRaster = null)
+    private void ApplyParams(string path, Adjustments settings, bool includeDenoise, bool validateAiX3f, bool? isRaster = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         if (validateAiX3f && settings.AIDenoiseEnabled && Native.sony2fuji_is_normal_x3f(path, settings.X3fMode) != 0)
             throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         var raster = isRaster ?? PhotoInput.IsRaster(path);
-        var recipeJson = CanonicalEditRecipe.Encode(settings, raster, includeDenoise);
+        var recipeJson = CanonicalEditRecipe.Encode(settings, raster, includeDenoise, outputSharpening);
         Native.Check(Native.sony2fuji_apply_params(session, recipeJson), session);
     }
     private void ApplyProcessingOnly(ProcessingIdentity value) =>

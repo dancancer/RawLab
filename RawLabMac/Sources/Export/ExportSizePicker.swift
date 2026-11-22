@@ -4,9 +4,35 @@ import SwiftUI
 struct ExportSizeAccessory: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    var showOutputSharpening = true
     var body: some View {
         let _ = localizationLocale
-        ExportSizePicker(longEdge: $model.exportLongEdge)
+        VStack(alignment: .leading, spacing: 10) {
+            ExportSizePicker(longEdge: $model.exportLongEdge)
+            if showOutputSharpening {
+                OutputSharpeningPicker(outputSharpening: $model.exportOutputSharpening)
+            }
+        }
+    }
+}
+
+struct OutputSharpeningPicker: View {
+    @Environment(\.locale) private var localizationLocale
+    @Binding var outputSharpening: OutputSharpening
+    var body: some View {
+        let _ = localizationLocale
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.text("输出锐化")).font(.subheadline)
+            Picker(L10n.text("输出锐化"), selection: $outputSharpening) {
+                ForEach(OutputSharpening.allCases, id: \.self) { level in
+                    Text(level.title).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .id(localizationLocale.identifier)
+            .accessibilityIdentifier("export.outputSharpening")
+        }
     }
 }
 

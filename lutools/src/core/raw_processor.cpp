@@ -3,6 +3,7 @@
 #include "sony2fuji/dcp_compiler.h"
 #include "preview_exposure.h"
 #include "photo_rendering.h"
+#include "quantize_dither.h"
 #include "white_balance.h"
 #include "file_path.h"
 #include "output_file_mode.h"
@@ -28,6 +29,12 @@
 #include <spng.h>
 #include <jpeglib.h>
 #include <jerror.h>
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#else
+#include <lcms2.h>
+#endif
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -1131,6 +1138,40 @@ private:
     bool published_ = false;
 };
 
+const std::vector<uint8_t>& srgbIccProfileBytes() {
+    static const std::vector<uint8_t> cached = []() -> std::vector<uint8_t> {
+#if defined(__APPLE__)
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        if (!space) return {};
+        CFDataRef data = CGColorSpaceCopyICCData(space);
+        CGColorSpaceRelease(space);
+        if (!data) return {};
+        const CFIndex len = CFDataGetLength(data);
+        const UInt8* ptr = CFDataGetBytePtr(data);
+        std::vector<uint8_t> bytes;
+        if (ptr && len > 0) {
+            bytes.assign(ptr, ptr + len);
+        }
+        CFRelease(data);
+        return bytes;
+#else
+        cmsHPROFILE profile = cmsCreate_sRGBProfile();
+        if (!profile) return {};
+        cmsUInt32Number size = 0;
+        std::vector<uint8_t> bytes;
+        if (cmsSaveProfileToMem(profile, nullptr, &size) && size > 0) {
+            bytes.resize(size);
+            if (!cmsSaveProfileToMem(profile, bytes.data(), &size)) {
+                bytes.clear();
+            }
+        }
+        cmsCloseProfile(profile);
+        return bytes;
+#endif
+    }();
+    return cached;
+}
+
 // libjpeg-turbo 扫描线编码器：写入 EncodedStagingFile 的暂存 FILE（stdio 目标管理器），
 // 取消信号在扫描线边界即时中止（ProcessingCancelled 沿栈展开，析构删 .tmp），
 // ERREXIT 经 setjmp 分类为 IO/内存/处理错误；流式写出，无整帧偏移量索引。
@@ -1153,6 +1194,8 @@ struct TurboJpegEncoder {
 
     // 返回 false 表示 libjpeg 报错：按 outOfMemory 或 FILE 错误位分类。
     bool encode(int width, int height, const uint8_t* data, int quality) {
+        const auto& icc = srgbIccProfileBytes();
+        if (icc.empty()) return false;
         codec.err = jpeg_std_error(&manager);
         manager.error_exit = &TurboJpegEncoder::fail;
         if (setjmp(jump) != 0) return false;
@@ -1176,6 +1219,7 @@ struct TurboJpegEncoder {
             codec.comp_info[component].v_samp_factor = 1;
         }
         jpeg_start_compress(&codec, TRUE);
+        jpeg_write_icc_profile(&codec, icc.data(), static_cast<unsigned int>(icc.size()));
         // 行首指针用 size_t 步长：>2GiB 输入缓冲（约 715.8MP 上限 × 3B）无 int 溢出。
         const size_t rowBytes = static_cast<size_t>(width) * 3u;
         while (codec.next_scanline < static_cast<JDIMENSION>(height)) {
@@ -1233,11 +1277,16 @@ ErrorCode ImageEncoder::saveJPEG(
             static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
         std::vector<uint8_t> data(pixelCount * 3);
 
-        parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
-            for (size_t index = first; index < last; ++index) {
-                data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
-                data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
-                data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
+        parallelRowRanges(image.height, image.width, [&](int firstRow, int lastRow) {
+            for (int y = firstRow; y < lastRow; ++y) {
+                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(image.width);
+                for (int x = 0; x < image.width; ++x) {
+                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const auto& pixel = image.pixels[index];
+                    data[index * 3 + 0] = quantizeFloatToUint8Dithered(pixel.r, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    data[index * 3 + 1] = quantizeFloatToUint8Dithered(pixel.g, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    data[index * 3 + 2] = quantizeFloatToUint8Dithered(pixel.b, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                }
             }
         });
 

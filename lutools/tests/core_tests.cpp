@@ -4,6 +4,7 @@
 #include "sony2fuji/gpu/lut_gpu.h"
 #include "core/preview_exposure.h"
 #include "core/pipeline.h"
+#include "core/quantize_dither.h"
 #include "core/photo_rendering.h"
 #include "core/photo_lut.h"
 #include "core/render_params.h"
@@ -586,9 +587,9 @@ void testJpegEncoderTurboParity(const std::filesystem::path& parentDir) {
             const float b = checker ? 0.9f : 0.15f;
             const size_t pixel = static_cast<size_t>(y) * width + x;
             image.pixels[pixel] = RGB(r, g, b);
-            reference[pixel * 3 + 0] = static_cast<unsigned char>(std::lround(r * 255.0f));
-            reference[pixel * 3 + 1] = static_cast<unsigned char>(std::lround(g * 255.0f));
-            reference[pixel * 3 + 2] = static_cast<unsigned char>(std::lround(b * 255.0f));
+            reference[pixel * 3 + 0] = quantizeFloatToUint8Dithered(r, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+            reference[pixel * 3 + 1] = quantizeFloatToUint8Dithered(g, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+            reference[pixel * 3 + 2] = quantizeFloatToUint8Dithered(b, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
         }
     }
 

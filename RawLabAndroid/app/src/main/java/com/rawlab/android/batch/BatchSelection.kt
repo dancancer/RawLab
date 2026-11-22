@@ -5,6 +5,7 @@ import com.rawlab.android.adjustments.AdjustmentFailure
 import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.photo.WorkingCopy
 import com.rawlab.android.settings.*
 import java.io.File
@@ -57,7 +58,8 @@ data class BatchSelectionState(
 }
 
 data class CollectionExportReview(val selectionIDs: List<String>, val rows: List<Row>,
-    val format: ExportFormat, val longEdge: Int?, val destination: String?) {
+    val format: ExportFormat, val longEdge: Int?, val destination: String?,
+    val outputSharpening: OutputSharpening = OutputSharpening.OFF) {
     data class Row(val target: BatchTarget, val record: PhotoEditState? = null,
         val settings: EditSettings? = null, val inputSHA256: String? = null,
         val look: File? = null, val lookSHA256: String? = null, val error: String? = null,
@@ -74,8 +76,14 @@ class BatchSelectionExport(private val directory: File,
     private val editGeneration: (PhotoIdentity) -> Long = { 0L },
 ) {
     fun prepare(selection: BatchSelectionState, skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-        destination: String?, validateActive: (String) -> Unit): CollectionExportReview {
+        destination: String?, validateActive: (String) -> Unit): CollectionExportReview =
+        prepare(selection, skipping, format, longEdge, destination, OutputSharpening.OFF, validateActive)
+
+    fun prepare(selection: BatchSelectionState, skipping: Set<String>, format: ExportFormat, longEdge: Int?,
+        destination: String?, outputSharpening: OutputSharpening,
+        validateActive: (String) -> Unit): CollectionExportReview {
         require(ExportSize.isValid(longEdge)) { "Invalid output size" }
+        val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
         val rows = selection.selectedPhotos.filterNot { it.id in skipping }.map { photo ->
             try {
                 validateActive(photo.id); validateSource(photo)
@@ -93,7 +101,7 @@ class BatchSelectionExport(private val directory: File,
                     editGeneration = generation)
             } catch (error: Exception) { CollectionExportReview.Row(photo, error = error.message ?: error.javaClass.simpleName) }
         }
-        return CollectionExportReview(selection.selectedPhotos.map { it.id }, rows, format, longEdge, destination)
+        return CollectionExportReview(selection.selectedPhotos.map { it.id }, rows, format, longEdge, destination, effectiveSharpening)
     }
 
     fun freeze(selection: BatchSelectionState, review: CollectionExportReview, validateActive: (String) -> Unit): BatchJob {
@@ -135,17 +143,21 @@ class BatchSelectionExport(private val directory: File,
                         }
                     }
                 }
+                val effectiveSharpening = if (review.format == ExportFormat.DNG) OutputSharpening.OFF else review.outputSharpening
                 val frozen = BatchFrozenSettings(ordinal = index, settings = row.settings!!,
                     inputSHA256 = row.inputSHA256, lookFile = look, lookSHA256 = row.lookSHA256,
-                    outputFormat = review.format, longEdge = review.longEdge)
+                    outputFormat = review.format, longEdge = review.longEdge,
+                    outputSharpening = effectiveSharpening)
                 row.target.copy(sourceFile = input, frozen = frozen)
             }
             validateMetadata()
             val first = targets.first()
             val source = BatchSourceSnapshot(first.identity, first.sourceFile, first.frozen!!.settings,
                 first.displayName, inputKind = first.inputKind)
+            val effectiveSharpening = if (review.format == ExportFormat.DNG) OutputSharpening.OFF else review.outputSharpening
             val job = BatchJob(source, targets, id = id, outputFormat = review.format, outputLongEdge = review.longEdge,
-                destination = review.destination, settingsMode = BatchSettingsMode.PER_TARGET_FROZEN)
+                destination = review.destination, settingsMode = BatchSettingsMode.PER_TARGET_FROZEN,
+                outputSharpening = effectiveSharpening)
             job.validate(); journal.save(job)
             return job
         } catch (error: Throwable) { journal.discard(id); throw error }

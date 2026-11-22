@@ -3,6 +3,7 @@
 #include "sony2fuji/sony2fuji.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_pipeline_stages.h"
+#include "core/quantize_dither.h"
 
 #include <algorithm>
 #include <atomic>
@@ -259,9 +260,9 @@ RenderStatus Pipeline::writeOutputBuffer(
             for (int x = 0; x < image.width; ++x) {
                 const RGB& pixel = image.at(x, y);
                 size_t offset = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * channels;
-                dst[offset] = static_cast<uint8_t>(clampFloat(pixel.r, 0.0f, 1.0f) * 255.0f + 0.5f);
-                dst[offset + 1] = static_cast<uint8_t>(clampFloat(pixel.g, 0.0f, 1.0f) * 255.0f + 0.5f);
-                dst[offset + 2] = static_cast<uint8_t>(clampFloat(pixel.b, 0.0f, 1.0f) * 255.0f + 0.5f);
+                dst[offset] = quantizeFloatToUint8Dithered(pixel.r, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                dst[offset + 1] = quantizeFloatToUint8Dithered(pixel.g, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                dst[offset + 2] = quantizeFloatToUint8Dithered(pixel.b, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
                 if (channels == 4) {
                     dst[offset + 3] = 255;
                 }
@@ -300,6 +301,9 @@ RenderStatus Pipeline::finishOutput(
     if (migrationFrame) {
         *migrationFrame = captureMigrationFrame(image, migrationFrame->retainNativePixels, migrationFrame->validationReference);
         return RenderStatus::Ok;
+    }
+    if (params.outputFormat != RenderOutputFormat::DNG) {
+        applyOutputSharpening(image, params.outputSharpening);
     }
     const auto written = params.outputTarget == RenderOutputTarget::File
         ? writeOutputFile(params, image)

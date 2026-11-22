@@ -99,6 +99,113 @@ class RecipeCLI(unittest.TestCase):
         self.assertEqual(recipe.returncode, 0, recipe.stderr)
         self.assertEqual((self.root / "edited.jpg").read_bytes(), (self.root / "legacy.jpg").read_bytes())
 
+    def test_v17_output_sharpening_normalization(self):
+        self.document["schema_version"] = 17
+        self.document["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        self.document["edits"].update({
+            "white_balance": {"mode": "camera"},
+            "look": {"path": None, "strength": 0.0},
+            "geometry": {
+                "crop": {"x": 0, "y": 0, "width": 1, "height": 1},
+                "quarter_turns": 0,
+                "flip_horizontal": False,
+                "flip_vertical": False,
+                "straighten_degrees": 0,
+                "perspective": {"horizontal": 0, "vertical": 0},
+            },
+            "tone": {
+                "contrast": 1.0,
+                "saturation": 1.0,
+                "highlights": 0.0,
+                "shadows": 0.0,
+                "s_curve": 0.0,
+                "curve": {"mode": "legacy", "points": []},
+            },
+            "detail": {"sharpening": 0.0},
+            "hsl": {"hue": [0]*8, "saturation": [0]*8, "lightness": [0]*8},
+            "effects": {
+                "vignette_amount": 0.0, "vignette_midpoint": 50.0,
+                "vignette_roundness": 0.0, "vignette_feather": 50.0,
+                "vignette_highlights": 0.0,
+                "grain_amount": 0.0, "grain_size": 25.0, "grain_roughness": 50.0,
+            },
+            "denoise": {
+                "raw_level": 0,
+                "chroma_mode": 0,
+                "wavelet": {"enabled": False, "luma": 0.0, "chroma": 0.0, "coarse": 0.0},
+            },
+            "lens_correction": {"distortion": False, "tca": False, "auto_crop": False, "profile_id": None},
+        })
+        self.document["output"]["output_sharpening"] = "standard"
+        self.write()
+        printed = self.run_cli("--recipe", self.recipe, "--print-recipe")
+        self.assertEqual(printed.returncode, 0, printed.stderr)
+        doc = json.loads(printed.stdout)
+        self.assertEqual(doc["schema_version"], 17)
+        self.assertEqual(doc["output"]["output_sharpening"], "standard")
+
+    def test_v17_output_sharpening_and_jpeg_icc_profile(self):
+        if RAW is None:
+            self.skipTest("real RAW fixture not provided")
+        shutil.copyfile(RAW, self.root / "photo.DNG")
+        self.document["schema_version"] = 17
+        self.document["input"]["path"] = "photo.DNG"
+        self.document["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        self.document["edits"].update({
+            "white_balance": {"mode": "camera"},
+            "look": {"path": None, "strength": 0.0},
+            "geometry": {
+                "crop": {"x": 0, "y": 0, "width": 1, "height": 1},
+                "quarter_turns": 0,
+                "flip_horizontal": False,
+                "flip_vertical": False,
+                "straighten_degrees": 0,
+                "perspective": {"horizontal": 0, "vertical": 0},
+            },
+            "tone": {
+                "contrast": 1.0,
+                "saturation": 1.0,
+                "highlights": 0.0,
+                "shadows": 0.0,
+                "s_curve": 0.0,
+                "curve": {"mode": "legacy", "points": []},
+            },
+            "detail": {"sharpening": 0.0},
+            "hsl": {"hue": [0]*8, "saturation": [0]*8, "lightness": [0]*8},
+            "effects": {
+                "vignette_amount": 0.0, "vignette_midpoint": 50.0,
+                "vignette_roundness": 0.0, "vignette_feather": 50.0,
+                "vignette_highlights": 0.0,
+                "grain_amount": 0.0, "grain_size": 25.0, "grain_roughness": 50.0,
+            },
+            "denoise": {
+                "raw_level": 0,
+                "chroma_mode": 0,
+                "wavelet": {"enabled": False, "luma": 0.0, "chroma": 0.0, "coarse": 0.0},
+            },
+            "lens_correction": {"distortion": False, "tca": False, "auto_crop": False, "profile_id": None},
+        })
+        self.document["output"].update({
+            "path": "out_off.jpg",
+            "format": "jpeg",
+            "jpeg_quality": 95,
+            "size": {"mode": "limit_long_edge", "long_edge": 256},
+        })
+        self.write()
+        off_res = self.run_cli("--recipe", self.recipe)
+        self.assertEqual(off_res.returncode, 0, off_res.stderr)
+        off_bytes = (self.root / "out_off.jpg").read_bytes()
+        self.assertIn(b"ICC_PROFILE\x00\x01\x01", off_bytes)
+
+        self.document["output"]["path"] = "out_high.jpg"
+        self.document["output"]["output_sharpening"] = "high"
+        self.write()
+        high_res = self.run_cli("--recipe", self.recipe)
+        self.assertEqual(high_res.returncode, 0, high_res.stderr)
+        high_bytes = (self.root / "out_high.jpg").read_bytes()
+        self.assertIn(b"ICC_PROFILE\x00\x01\x01", high_bytes)
+        self.assertNotEqual(off_bytes, high_bytes)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

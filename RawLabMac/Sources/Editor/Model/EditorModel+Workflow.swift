@@ -867,8 +867,9 @@ extension EditorModel {
         let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +
             lookName + "." + format.suffix
-        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self).padding(12).frame(width: 360))
-        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+        let showSharpening = format != .renderedDNG
+        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self, showOutputSharpening: showSharpening).padding(12).frame(width: 360))
+        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: showSharpening ? 168 : 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
         export(to: output,format:format)
@@ -878,13 +879,16 @@ extension EditorModel {
         guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
+        let resolvedFormat = format ?? ExportFormat.forOutput(output)
+        let sharpening: OutputSharpening = resolvedFormat == .renderedDNG ? .off : exportOutputSharpening
         let generation = aiGeneration
         queue.async { [weak self] in
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false, exportLongEdge: longEdge,exportFormat:format)
+                                             interactive: false, exportLongEdge: longEdge, exportFormat: format,
+                                             outputSharpening: sharpening)
                 DispatchQueue.main.async {
                     self.exporting = false; self.statusState = .exported(output.lastPathComponent)
                     self.onUsage(.exportCompleted)

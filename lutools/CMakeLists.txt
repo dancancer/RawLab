@@ -2105,6 +2105,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME export_color_delivery
+        SOURCES tests/export_color_delivery_tests.cpp
+        INCLUDES src
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(
             NAME lens_database_cache

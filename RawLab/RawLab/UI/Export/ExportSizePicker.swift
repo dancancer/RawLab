@@ -76,10 +76,26 @@ struct ExportSizePicker: View {
 struct ExportSizeSheet: View {
     @Environment(\.locale) private var localizationLocale
     @Binding var longEdge: Int?
+    @Binding var outputSharpening: OutputSharpening
+    var showOutputSharpening: Bool
     var title = "保存当前照片"
     let onExport: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var sizeIsValid = true
+
+    init(
+        longEdge: Binding<Int?>,
+        outputSharpening: Binding<OutputSharpening> = .constant(.off),
+        showOutputSharpening: Bool = false,
+        title: String = "保存当前照片",
+        onExport: @escaping () -> Void
+    ) {
+        _longEdge = longEdge
+        _outputSharpening = outputSharpening
+        self.showOutputSharpening = showOutputSharpening
+        self.title = title
+        self.onExport = onExport
+    }
 
     private var canExport: Bool {
         sizeIsValid
@@ -96,6 +112,16 @@ struct ExportSizeSheet: View {
                     Text(L10n.text(title)).font(.headline).foregroundStyle(.primary)
                         .textCase(nil).fixedSize(horizontal: false, vertical: true)
                 }
+                if showOutputSharpening {
+                    Section {
+                        Picker(L10n.text("输出锐化"), selection: $outputSharpening) {
+                            ForEach(OutputSharpening.allCases, id: \.self) { level in
+                                Text(level.title).tag(level)
+                            }
+                        }
+                        .accessibilityIdentifier("editor.export.sharpening")
+                    }
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -109,7 +135,7 @@ struct ExportSizeSheet: View {
                 }
             }
         }
-        .presentationDetents([.height(290)])
+        .presentationDetents([.height(showOutputSharpening ? 360 : 290)])
         .preferredColorScheme(.dark)
         .tint(.yellow)
     }

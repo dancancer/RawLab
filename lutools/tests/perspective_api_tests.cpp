@@ -134,9 +134,10 @@ void resized(const Pixels& actual, const Pixels& native, const std::string& name
             const auto sample = [&](uint32_t px, uint32_t py) { return native.bytes[(size_t(py) * native.width + px) * 3 + channel]; };
             const float top = sample(x0, y0) * (1 - (sx - x0)) + sample(x1, y0) * (sx - x0);
             const float bottom = sample(x0, y1) * (1 - (sx - x0)) + sample(x1, y1) * (sx - x0);
-            // The native RGB8 reference adds one quantization step; float resizing differs by at most one code.
+            // Native RGB8 and resized output each apply +-0.5 LSB TPDF dithering (< 1 DN each),
+            // so their quantized difference can reach up to ~2 codes.
             require(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + channel] -
-                (top * (1 - (sy - y0)) + bottom * (sy - y0))) <= 1.01f, name + " bilinear sample");
+                (top * (1 - (sy - y0)) + bottom * (sy - y0))) <= 2.01f, name + " bilinear sample");
         }
     }
 }

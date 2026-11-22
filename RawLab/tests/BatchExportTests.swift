@@ -68,8 +68,25 @@ struct BatchExportTests {
         check(ExportSize.presets == [2048, 3000, 4096], "standard export sizes are available")
         checkSettingsSummary()
         check(BatchOutputFormat.hdrJPEG.publishesToPhotos && BatchOutputFormat.jpeg.publishesToPhotos
+              && BatchOutputFormat.png.publishesToPhotos
               && !BatchOutputFormat.renderedDNG.publishesToPhotos,
-              "HDR and SDR JPEG publication offer Photos confirmation; rendered DNG uses file reconciliation")
+              "HDR, SDR JPEG, and 16-bit PNG publication offer Photos confirmation; rendered DNG uses file reconciliation")
+        var sharpenedJob = BatchExportJob(
+            source: BatchSourceSnapshot(
+                identity: PhotoIdentity(resourceIdentifier: "sharpen-src"),
+                sourceFile: .externallyManaged(URL(fileURLWithPath: "/tmp/sharpen.ARW")),
+                displayName: "sharpen.ARW",
+                settings: .default
+            ),
+            targets: [BatchTarget(identity: PhotoIdentity(resourceIdentifier: "sharpen-dst"), sourceURL: URL(fileURLWithPath: "/tmp/sharpen.ARW"), displayName: "sharpen.ARW")],
+            outputFormat: .png,
+            outputSharpening: .standard
+        )
+        check(sharpenedJob.effectiveOutputSharpening == .standard && sharpenedJob.targets[0].outputName.hasSuffix(".png"),
+              "iOS batch export supports 16-bit PNG targets and output sharpening")
+        sharpenedJob.outputFormat = .renderedDNG
+        check(sharpenedJob.effectiveOutputSharpening == .off,
+              "iOS batch rendered DNG ignores/forces off output sharpening")
         check(ExportSize.isValid(1) && ExportSize.isValid(65500) && !ExportSize.isValid(0) && !ExportSize.isValid(65501),
               "custom export size enforces the 1-65500 range")
         let root = FileManager.default.temporaryDirectory
