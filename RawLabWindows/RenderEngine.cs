@@ -427,7 +427,7 @@ internal sealed partial class RenderEngine : IDisposable
         if (!settings.IsHDREditing && formatOverride == ExportFormat.HdrJpeg)
             throw new InvalidOperationException(Loc.Text("HDR JPEG 需要启用 HDR 编辑。"));
         if (!settings.IsHDREditing)
-            return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping);
+            return RenderHDRAsSDR(path, settings, lut, edge, output, longEdge, formatOverride, source.Owner,statistics,clipping,effectiveSharpening);
 
         using var rendered = HDRNative.Render(session, source.Owner, settings.HDR!, final ? HDRIntent.Final : HDRIntent.Preview,
             final ? checked((uint)Math.Clamp(longEdge ?? 0, 0, 65535)) : edgeValue, appPaths.HdrLooksDirectory, effectiveSharpening);
@@ -458,17 +458,18 @@ internal sealed partial class RenderEngine : IDisposable
     }
 
     private RenderedImage? RenderHDRAsSDR(string path, Adjustments settings, string? lut, int edge, string? output,
-        int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping)
+        int? longEdge, ExportFormat? formatOverride, HDRPairOwner source,bool statistics,bool clipping,OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var pair = HDRDisplay.CopySDROnly(source.Pair);
         using var input = new HDRSdrInput(pair.SDR);
-        var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer);
+        var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
+        var effectiveSharpening = (output == null || format == ExportFormat.RenderedDng) ? OutputSharpening.Off : outputSharpening;
+        var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer, outputSharpening: effectiveSharpening);
         var request = prepared.Item2;
         Native.Buffer buffer = default, mask = default;
         try
         {
             var status = Native.sony2fuji_process(session, ref request, out buffer);
-            var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
             if (output != null && (status == 6 || status == 3 && format != ExportFormat.RenderedDng))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
             Native.Check(status, session);

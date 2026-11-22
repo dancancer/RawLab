@@ -828,6 +828,52 @@ private func checkFutureJournalRefusesQuarantine(_ root: URL) throws {
     do { _ = try journal.load(id: id) } catch { deepRejected = true }
     BatchExportTests.check(deepRejected && FileManager.default.fileExists(atPath: record.path),
                            "load refuses to quarantine a journal with a future processing version")
+
+    // v9/v10 HDR settings (hasV2Extensions) are supported: a corrupted v9/v10 journal must quarantine,
+    // while v10+ hdr_processing_version or v11+ record_version must fail-closed without quarantine.
+    var v9HDR = HDRSettings()
+    v9HDR.colorSettings.grading.blending = 75
+    BatchExportTests.check(v9HDR.processingVersion == 9 && v9HDR.recordVersion == 10,
+                           "iOS v2 HDR settings report processingVersion 9 and recordVersion 10")
+    let v9Store = try BatchJournalStore(directory: root.appendingPathComponent("v9-hdr-journal", isDirectory: true))
+    var v9Settings = RawSettings.default
+    v9Settings.hdr = v9HDR
+    let v9ID = UUID()
+    let v9Input = try BatchInputStore.copy(sourceURL, identity: identity, jobID: v9ID, root: v9Store.directory)
+    let v9Source = BatchSourceSnapshot(identity: identity, sourceFile: .externallyManaged(v9Input),
+                                       displayName: "future-source.ARW", settings: v9Settings)
+    var v9Job = BatchExportJob(id: v9ID, source: v9Source,
+                               targets: [BatchTarget(identity: identity, sourceURL: v9Input, displayName: "future-source.ARW")],
+                               outputFormat: .jpeg, longEdge: 3000)
+    v9Job.status = .failed
+    try v9Store.save(v9Job)
+    let v9Loaded = try v9Store.load(id: v9ID)
+    BatchExportTests.check(v9Loaded?.source.settings.hdr == v9HDR,
+                           "valid v9/v10 HDR job round-trips through iOS BatchJournalStore")
+    let v9Record = v9Store.directory.appendingPathComponent("\(v9ID.uuidString).json")
+    var v9Corrupt = try JSONSerialization.jsonObject(with: Data(contentsOf: v9Record)) as! [String: Any]
+    v9Corrupt["status"] = "invalid_corrupt_status"
+    try JSONSerialization.data(withJSONObject: v9Corrupt).write(to: v9Record)
+    let v9Quarantined = try v9Store.load(id: v9ID)
+    BatchExportTests.check(v9Quarantined == nil && v9Store.lastQuarantinedURL != nil &&
+                           !FileManager.default.fileExists(atPath: v9Record.path),
+                           "corrupted v9/v10 HDR job is quarantined on iOS rather than misclassified as future journal")
+
+    for (hdrProc, hdrRec, label) in [(10, 10, "hdr_processing_version=10"), (9, 11, "record_version=11")] {
+        try rewritten { object in
+            var sourceObject = object["source"] as? [String: Any] ?? [:]
+            var settings = sourceObject["settings"] as? [String: Any] ?? [:]
+            settings["hdr"] = ["hdr_processing_version": hdrProc, "record_version": hdrRec]
+            sourceObject["settings"] = settings
+            object["source"] = sourceObject
+        }.write(to: record)
+        var hdrRejected = false
+        let beforeQuarantine = journal.lastQuarantinedURL
+        do { _ = try journal.load(id: id) } catch { hdrRejected = true }
+        BatchExportTests.check(hdrRejected && journal.lastQuarantinedURL == beforeQuarantine &&
+                               FileManager.default.fileExists(atPath: record.path),
+                               "iOS load refuses to quarantine a future HDR journal (\(label))")
+    }
 }
 
 private func checkUniformBatchX3fTargetMode(_ root: URL) throws {

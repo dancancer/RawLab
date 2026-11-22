@@ -294,9 +294,10 @@ private struct BatchCollectionExportView: View {
         message = nil
         model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, directory: directory,
                                     adaptiveJPEG: adaptiveJPEG,
-                                    outputSharpening: (!adaptiveJPEG && format == .renderedDNG) ? .off : outputSharpening) { _ in
+                                    outputSharpening: (!adaptiveJPEG && format == .renderedDNG) ? .off : outputSharpening,
+                                    completed: { _ in
             dismiss(); openWindow(id: "batch-export")
-        }
+        })
     }
     private func chooseDirectory() {
         let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true

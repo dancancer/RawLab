@@ -867,7 +867,16 @@ internal static class HDRWorkflowChecks
                     "Final resized HDR JPEG retains its gain map and output dimensions");
                 if(format==ExportFormat.Png)check(File.ReadAllBytes(output)[24]==16,"Explicit SDR PNG retains 16-bit channel depth");
             }
-            var v9Req = neutral.HDR!.NativeRenderRequest(HDRIntent.Export,128,outputSharpening:OutputSharpening.High);
+            var sdrOff = Path.Combine(root,"export-hdr-as-sdr-off.png");
+            var sdrHigh = Path.Combine(root,"export-hdr-as-sdr-high.png");
+            var sdrDng = Path.Combine(root,"export-hdr-as-sdr.dng");
+            engine.Render(source,sdr,null,128,output:sdrOff,longEdge:128,formatOverride:ExportFormat.Png,outputSharpening:OutputSharpening.Off);
+            engine.Render(source,sdr,null,128,output:sdrHigh,longEdge:128,formatOverride:ExportFormat.Png,outputSharpening:OutputSharpening.High);
+            engine.Render(source,sdr,null,128,output:sdrDng,longEdge:128,formatOverride:ExportFormat.RenderedDng,outputSharpening:OutputSharpening.High);
+            check(new FileInfo(sdrOff).Length>100 && new FileInfo(sdrHigh).Length>100 && new FileInfo(sdrDng).Length>100 &&
+                  !File.ReadAllBytes(sdrOff).SequenceEqual(File.ReadAllBytes(sdrHigh)),
+                "HDR-as-SDR export applies OutputSharpening for PNG and completes for RenderedDng");
+            var v9Req = neutral.HDR!.NativeRenderRequest(HDRIntent.Final,128,outputSharpening:OutputSharpening.High);
             check(v9Req.OutputSharpening == 3 &&
                   v9Req.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() &&
                   v9Req.GradingV2.Blending == 50f &&

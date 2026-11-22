@@ -492,7 +492,9 @@ JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_
 void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t height,
     const HDRExportConfig& config, bool hdr, const char* path, const StreamSourcePin& pin, bool baseMetadataApplied) {
     checkProcessingCancellation();
-    differentFile(config.metadataSourcePath, path);
+    if (config.metadataSourcePath && *config.metadataSourcePath) {
+        differentFile(config.metadataSourcePath, path);
+    }
     const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
     const uint8_t* expected = !hasDigest(config.sourceSha256) && hasDigest(pin.digest) ? pin.digest : config.sourceSha256;
     if (!(hdr && baseMetadataApplied)) {
@@ -514,10 +516,12 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
         const auto publishStamp = resourceFileStamp(impl->path);
         if (!publishStamp || !(*publishStamp == impl->stamp))
             fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
-    } else {
+    } else if (config.metadataSourcePath && *config.metadataSourcePath) {
         verifyDigest(config.metadataSourcePath, expected);
     }
-    differentFile(config.metadataSourcePath, path);
+    if (config.metadataSourcePath && *config.metadataSourcePath) {
+        differentFile(config.metadataSourcePath, path);
+    }
     checkProcessingCancellation();
     output.publish(path);
 }

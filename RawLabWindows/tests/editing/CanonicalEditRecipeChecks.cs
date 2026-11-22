@@ -81,7 +81,7 @@ internal static class CanonicalEditRecipeChecks
         var sharpenedRoot = JsonNode.Parse(sharpenedJson)!.AsObject();
         Check(sharpenedRoot["schema_version"]!.GetValue<int>() >= 16,
             "Non-off output_sharpening promotes canonical recipe to at least schema_version 16");
-        Check(sharpenedRoot["edits"]!["output_sharpening"]!.GetValue<string>() == "standard",
-            "Canonical recipe serializes edits.output_sharpening wire token");
+        Check(sharpenedRoot["output"]!["output_sharpening"]!.GetValue<string>() == "standard",
+            "Canonical recipe serializes output.output_sharpening wire token");
     }
 }
