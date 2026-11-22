@@ -10,6 +10,8 @@ internal static class MasterRecipeRefinementChecks
         var recipe = JsonSerializer.Deserialize<MasterRecipe>(
             File.ReadAllText(Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/master-recipe-v4.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Check(MasterRecipe.All.Count == 14 && MasterRecipe.All.All(r => r.SettingsVersion == 4 && r.Grading != null && r.Grading.IsValid),
+            "All 14 bundled v4 master recipes deserialize with valid color grading");
         var state = new Adjustments { ToneControls = new(-20, 30, -25), Atmosphere = new(-40, 20) };
         state.Set(Parameter.ToneCurve, 35); state.Set(Parameter.Temperature, 8000); state.Set(Parameter.Sharpening, 75);
         state.ApplyMasterRecipe(recipe);

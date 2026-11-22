@@ -42,7 +42,7 @@ if($args[0] -eq 'test'){
 }
 exit 0
 '@)
-$names=@('build','editing','looks','denoise-model','localization','updates','comparison','about','default-isolation','localization-admission','profile-isolation','localization-ui','unhandled-ui','entry-selection','ai-panel','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection','recipe-white-balance','atmosphere-render','tone-render','grading-render','curve-render','hsl-target-render','first-preview','hdr-look-import')
+$names=@('build','editing','looks','denoise-model','localization','updates','comparison','about','default-isolation','localization-admission','profile-isolation','localization-ui','unhandled-ui','entry-selection','ai-panel','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection','recipe-white-balance','atmosphere-render','tone-render','grading-render','curve-render','hsl-target-render','inspection-suite','first-preview','hdr-look-import')
 $saved=@{};foreach($key in @('RAWLAB_RUNNER_CALLS','RAWLAB_RUNNER_TARGET','RAWLAB_RUNNER_FAIL','RAWLAB_APPDATA_ROOT')){$saved[$key]=[Environment]::GetEnvironmentVariable($key)}
 $checks=0;$index=0
 function Check([bool]$Success,[string]$Name){if(!$Success){throw $Name};$script:checks++;Write-Output "PASS $Name"}

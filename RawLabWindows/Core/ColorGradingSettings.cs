@@ -95,6 +95,7 @@ public sealed class ColorGradingSettingsJsonConverter : JsonConverter<ColorGradi
         using var doc = JsonDocument.ParseValue(ref reader);
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) throw new JsonException("Invalid grading settings");
+        var comparer = options.PropertyNameCaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         string Name(string pascal) => options.PropertyNamingPolicy?.ConvertName(pascal) ?? pascal;
         var shadowsKey = Name("Shadows");
         var midtonesKey = Name("Midtones");
@@ -102,28 +103,28 @@ public sealed class ColorGradingSettingsJsonConverter : JsonConverter<ColorGradi
         var globalKey = Name("Global");
         var blendingKey = Name("Blending");
         var balanceKey = Name("Balance");
-        var required = new HashSet<string>(StringComparer.Ordinal) { shadowsKey, midtonesKey, highlightsKey };
-        var allowed = new HashSet<string>(StringComparer.Ordinal) { shadowsKey, midtonesKey, highlightsKey, globalKey, blendingKey, balanceKey };
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var required = new HashSet<string>(comparer) { shadowsKey, midtonesKey, highlightsKey };
+        var allowed = new HashSet<string>(comparer) { shadowsKey, midtonesKey, highlightsKey, globalKey, blendingKey, balanceKey };
+        var fields = new Dictionary<string, JsonElement>(comparer);
         foreach (var prop in root.EnumerateObject())
         {
-            if (!allowed.Contains(prop.Name) || !seen.Add(prop.Name))
+            if (!allowed.Contains(prop.Name) || !fields.TryAdd(prop.Name, prop.Value))
                 throw new JsonException("Invalid grading field: " + prop.Name);
         }
-        if (!required.IsSubsetOf(seen)) throw new JsonException("Missing required grading zone");
-        ColorGradingWheel ReadWheel(string key) => root.GetProperty(key).Deserialize<ColorGradingWheel>(options)
+        if (!required.All(fields.ContainsKey)) throw new JsonException("Missing required grading zone");
+        ColorGradingWheel ReadWheel(JsonElement el) => el.Deserialize<ColorGradingWheel>(options)
             ?? throw new JsonException("Null grading wheel");
         double ReadNumber(JsonElement el, string key) =>
             el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var v)
                 ? v
                 : throw new JsonException("Invalid grading number: " + key);
         var result = new ColorGradingSettings {
-            Shadows = ReadWheel(shadowsKey),
-            Midtones = ReadWheel(midtonesKey),
-            Highlights = ReadWheel(highlightsKey),
-            Global = root.TryGetProperty(globalKey, out var gEl) ? gEl.Deserialize<ColorGradingWheel>(options) ?? throw new JsonException("Null global wheel") : new(),
-            Blending = root.TryGetProperty(blendingKey, out var blEl) ? ReadNumber(blEl, blendingKey) : 50.0,
-            Balance = root.TryGetProperty(balanceKey, out var baEl) ? ReadNumber(baEl, balanceKey) : 0.0
+            Shadows = ReadWheel(fields[shadowsKey]),
+            Midtones = ReadWheel(fields[midtonesKey]),
+            Highlights = ReadWheel(fields[highlightsKey]),
+            Global = fields.TryGetValue(globalKey, out var gEl) ? ReadWheel(gEl) : new(),
+            Blending = fields.TryGetValue(blendingKey, out var blEl) ? ReadNumber(blEl, blendingKey) : 50.0,
+            Balance = fields.TryGetValue(balanceKey, out var baEl) ? ReadNumber(baEl, balanceKey) : 0.0
         };
         if (!result.IsValid) throw new JsonException("Invalid grading values");
         return result;
