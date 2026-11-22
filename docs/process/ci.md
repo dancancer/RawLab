@@ -144,7 +144,7 @@ protocols, resource validity, and build/test failure propagation.
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
 | macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
 | Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
-| Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, app and instrumentation APK builds, both native ABIs and alignment/cache checks |
+| Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, debug/instrumentation + unsigned minified release APK builds, both native ABIs, DEX JNI class verification and alignment/cache checks |
 | iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
 | CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
@@ -285,10 +285,16 @@ gate's honest skip pair otherwise.
 
 - Default builds retain Adobe DNG SDK, Lensfun, chroma and wavelet denoise. No
   optional product feature is disabled to obtain a green check.
-- Release-style builds (macOS `build.sh`, Windows `build.ps1`) download the
-  pinned vendor RUM SDK from its versioned public URL and fail on a SHA-256
-  mismatch; the Android and iOS jobs build Debug, which carries no SDK. No job
-  launches a packaged app, uses secrets or sends RUM traffic.
+- Release-style builds (macOS `build.sh`, Windows `build.ps1`, Android
+  `:app:assembleRelease`) download the pinned vendor RUM SDK from its versioned
+  public URL and fail on a SHA-256 mismatch; the iOS job and Android Debug
+  APK carry no SDK. Android `build`/`native`/`full` builds the unsigned
+  R8-minified release APK alongside Debug/instrumentation APKs and checks
+  Release DEX JNI classes (`RawLabAndroid/tests/check-rum-jni-classes.py`) and
+  16 KB alignment (`zipalign` + `check-native.sh`). No job signs packages,
+  launches a packaged app, executes emulator/device smoke, uses secrets or sends
+  RUM traffic; running `RawLabAndroid/scripts/smoke-release-apk.sh` on the
+  actual signed release APK remains a mandatory pre-publish gate.
 - macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
   from the CI CTest invocation. Other tests may exercise an available GPU
   opportunistically; this is not a guaranteed physical GPU gate.
@@ -368,8 +374,13 @@ All Android groups run on GitHub-hosted `ubuntu-24.04` with Temurin JDK 17,
 Python 3.12, and Gradle capped at `--max-workers=2`. Build jobs install the
 pinned Android SDK/NDK/CMake components (`platforms;android-35`,
 `build-tools;35.0.0`, `ndk;27.2.12479018`, `cmake;3.22.1`) via `sdkmanager`,
-build both arm64 and x86_64 ABIs, run `lintDebug`, and compile the app and
-instrumentation APKs without running connected-device or GLES tests.
+build both arm64 and x86_64 ABIs, fetch the SHA-256-pinned public RUM AAR,
+run `lintDebug`, compile the Debug, instrumentation, and unsigned R8-minified
+Release APKs, and verify Release DEX JNI class preservation
+(`check-rum-jni-classes.py`) plus 16 KB alignment without signing or running
+connected-device, emulator cold-start smoke, or GLES tests. Pre-release acceptance
+still requires running `RawLabAndroid/scripts/smoke-release-apk.sh` against the
+actual signed release APK.
 
 ## Windows Runner Scheduling
 

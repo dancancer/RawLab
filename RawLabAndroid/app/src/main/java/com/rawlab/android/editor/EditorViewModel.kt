@@ -20,6 +20,7 @@ import com.rawlab.android.editor.canvas.ViewportRoiRequest
 import com.rawlab.android.editor.canvas.detailTileSpecs
 import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.PreviewDetailOverlay
+import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.render.Work
@@ -47,6 +48,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
+
+private const val DETAIL_TILE_MAX_BYTES = 64L * 1024L * 1024L
+private const val DETAIL_TILE_MAX_COUNT = 24
 
 class EditorViewModel internal constructor(
     application: Application,
@@ -110,9 +114,11 @@ class EditorViewModel internal constructor(
             dependencies.mainDelivery {
                 val isDetail = detailRevisions.remove(revision)
                 if (isDetail) {
-                    inFlightDetailTileKey = null
-                    if (!disposed && revision == currentRevision && result.isSuccess) {
-                        previewCoordinator.accept(result)
+                    if (revision == currentRevision) {
+                        inFlightDetailTileKey = null
+                        if (!disposed && result.isSuccess) {
+                            previewCoordinator.accept(result)
+                        }
                     }
                     return@mainDelivery
                 }
@@ -391,9 +397,70 @@ class EditorViewModel internal constructor(
         return queue.invalidate().also { progressivePreviewFloor = it }
     }
 
+    private data class DetailTilePlan(
+        val visible: List<DetailTileSpec>,
+        val desired: List<DetailTileSpec>,
+    )
+
     private fun detailTileBytes(overlay: PreviewDetailOverlay): Long {
         val single = overlay.pixelWidth.toLong().coerceAtLeast(1L) * overlay.pixelHeight.toLong().coerceAtLeast(1L) * 4L
         return if (overlay.neutral != null && overlay.neutral !== overlay.result) single * 2L else single
+    }
+
+    private fun estimatedDetailTileBytes(spec: DetailTileSpec, includeNeutral: Boolean): Long {
+        val edge = spec.maxOutputLongEdge.toLong().coerceAtLeast(1L)
+        val single = edge * edge * 4L
+        return if (includeNeutral) single * 2L else single
+    }
+
+    private fun touchDetailTiles(orderedSpecs: List<DetailTileSpec>) {
+        // 逆序访问以保证中心可见瓦片留在 access-order LinkedHashMap 尾部（最后被淘汰）。
+        for (spec in orderedSpecs.asReversed()) {
+            detailTileCache[spec.key]
+        }
+    }
+
+    private fun planDetailTiles(request: ViewportRoiRequest, preview: PreviewPair): DetailTilePlan {
+        val visible = detailTileSpecs(
+            request.visibleRect,
+            preview.nativeWidth,
+            preview.nativeHeight,
+            request.zoomScale,
+            request.baseScale,
+            overscanRing = 0,
+        )
+        if (visible.isEmpty()) return DetailTilePlan(emptyList(), emptyList())
+        if (dependencies.detailOverscanRing <= 0) return DetailTilePlan(visible, visible)
+        val all = detailTileSpecs(
+            request.visibleRect,
+            preview.nativeWidth,
+            preview.nativeHeight,
+            request.zoomScale,
+            request.baseScale,
+            overscanRing = dependencies.detailOverscanRing,
+        )
+        val visibleKeys = visible.mapTo(HashSet(visible.size)) { it.key }
+        fun plannedTileBytes(spec: DetailTileSpec): Long {
+            val estimated = estimatedDetailTileBytes(spec, detailNeedsBefore)
+            val cached = detailTileCache[spec.key]?.let(::detailTileBytes) ?: 0L
+            return maxOf(estimated, cached)
+        }
+        val desired = ArrayList<DetailTileSpec>(all.size)
+        var plannedBytes = 0L
+        for (spec in visible) {
+            desired += spec
+            plannedBytes += plannedTileBytes(spec)
+        }
+        for (spec in all) {
+            if (spec.key in visibleKeys) continue
+            val tileBytes = plannedTileBytes(spec)
+            if (desired.size + 1 > DETAIL_TILE_MAX_COUNT || plannedBytes + tileBytes > DETAIL_TILE_MAX_BYTES) {
+                break
+            }
+            desired += spec
+            plannedBytes += tileBytes
+        }
+        return DetailTilePlan(visible, desired)
     }
 
     private fun syncDetailCacheRevision() {
@@ -433,7 +500,7 @@ class EditorViewModel internal constructor(
         return detailNeedsBefore && cached.neutral == null
     }
 
-    private fun storeDetailTile(overlay: PreviewDetailOverlay, keepKeys: Set<DetailTileKey>) {
+    private fun storeDetailTile(overlay: PreviewDetailOverlay, plan: DetailTilePlan) {
         syncDetailCacheRevision()
         val key = overlay.tileKey ?: return
         detailTileCache.remove(key)?.let { old ->
@@ -442,11 +509,12 @@ class EditorViewModel internal constructor(
         detailTileCache[key] = overlay
         detailTileCacheBytes += detailTileBytes(overlay)
 
-        val maxBytes = 48L * 1024L * 1024L
-        val maxCount = 16
-        while (detailTileCacheBytes > maxBytes || detailTileCache.size > maxCount) {
-            val victimKey = detailTileCache.keys.firstOrNull { it !in keepKeys }
-                ?: detailTileCache.keys.firstOrNull()
+        touchDetailTiles(plan.desired)
+        val visibleKeys = plan.visible.mapTo(HashSet(plan.visible.size)) { it.key }
+        val desiredKeys = plan.desired.mapTo(HashSet(plan.desired.size)) { it.key }
+        while (detailTileCacheBytes > DETAIL_TILE_MAX_BYTES || detailTileCache.size > DETAIL_TILE_MAX_COUNT) {
+            val victimKey = detailTileCache.keys.firstOrNull { it !in desiredKeys }
+                ?: detailTileCache.keys.firstOrNull { it !in visibleKeys }
                 ?: break
             val removed = detailTileCache.remove(victimKey) ?: break
             detailTileCacheBytes = (detailTileCacheBytes - detailTileBytes(removed)).coerceAtLeast(0L)
@@ -467,34 +535,20 @@ class EditorViewModel internal constructor(
         if (req.sourceRevision != sourceRevision || req.editRevision != editRevision) return
         if (overlay.tileKey != null) {
             val activeRequest = lastDetailRequest
-            val keepKeys = activeRequest?.let { r ->
-                mutable.value.preview?.let { p ->
-                    detailTileSpecs(
-                        r.visibleRect,
-                        p.nativeWidth,
-                        p.nativeHeight,
-                        r.zoomScale,
-                        r.baseScale,
-                        overscanRing = dependencies.detailOverscanRing,
-                    ).mapTo(HashSet()) { it.key }
-                }
-            } ?: emptySet()
-            storeDetailTile(overlay, keepKeys)
+            val preview = mutable.value.preview
+            val plan = if (activeRequest != null && preview != null) {
+                planDetailTiles(activeRequest, preview)
+            } else {
+                DetailTilePlan(emptyList(), emptyList())
+            }
+            storeDetailTile(overlay, plan)
             if (activeRequest != null) {
                 val sorted = sortedCachedDetailTiles()
                 if (!detailTilesMatch(mutable.value.detailTiles, sorted) || mutable.value.detail !== overlay) {
                     mutable.value = mutable.value.copy(detailTiles = sorted, detail = overlay)
                 }
-                val preview = mutable.value.preview
                 val remaining = if (preview != null && preview.hdr == null) {
-                    detailTileSpecs(
-                        activeRequest.visibleRect,
-                        preview.nativeWidth,
-                        preview.nativeHeight,
-                        activeRequest.zoomScale,
-                        activeRequest.baseScale,
-                        overscanRing = dependencies.detailOverscanRing,
-                    ).firstOrNull { tileNeedsRender(it.key) }
+                    plan.desired.firstOrNull { tileNeedsRender(it.key) }
                 } else null
                 if (remaining != null) {
                     scheduleDetailWork(activeRequest, remaining, delayMs = 0L)
@@ -537,16 +591,9 @@ class EditorViewModel internal constructor(
         val preview = current.preview
         if (preview != null && preview.hdr == null) {
             syncDetailCacheRevision()
-            val specs = detailTileSpecs(
-                request.visibleRect,
-                preview.nativeWidth,
-                preview.nativeHeight,
-                request.zoomScale,
-                request.baseScale,
-                overscanRing = dependencies.detailOverscanRing,
-            )
-            if (specs.isNotEmpty()) {
-                val firstMissing = specs.firstOrNull { tileNeedsRender(it.key) } ?: return
+            val plan = planDetailTiles(request, preview)
+            if (plan.desired.isNotEmpty()) {
+                val firstMissing = plan.desired.firstOrNull { tileNeedsRender(it.key) } ?: return
                 scheduleDetailWork(request, firstMissing, dependencies.detailDebounceDelayMs)
                 return
             }
@@ -635,21 +682,14 @@ class EditorViewModel internal constructor(
                 scheduledDetailTileKey = null
                 return
             }
-            val specs = detailTileSpecs(
-                request.visibleRect,
-                preview.nativeWidth,
-                preview.nativeHeight,
-                request.zoomScale,
-                request.baseScale,
-                overscanRing = dependencies.detailOverscanRing,
-            )
-            if (specs.isNotEmpty()) {
-                specs.forEach { detailTileCache[it.key] }
+            val plan = planDetailTiles(request, preview)
+            if (plan.desired.isNotEmpty()) {
+                touchDetailTiles(plan.desired)
                 val cached = sortedCachedDetailTiles()
                 if (cached.isNotEmpty() && !detailTilesMatch(current.detailTiles, cached)) {
                     mutable.value = current.copy(detailTiles = cached, detail = cached.last())
                 }
-                val missing = specs.filter { tileNeedsRender(it.key) }
+                val missing = plan.desired.filter { tileNeedsRender(it.key) }
                 if (missing.isEmpty()) {
                     detailDebounceJob?.cancel()
                     detailDebounceJob = null

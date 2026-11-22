@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.os.Bundle
 import java.nio.ByteBuffer
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.DenoisePreset
@@ -443,6 +444,41 @@ class NativeProcessorTest {
                 val second = processor.preview(input, null, EditSettings(exposure = 0.5f), 320, false, reusableBitmap = reusable)
                 assertSame(reusable, second.bitmap())
                 assertFalse(first.pixels.contentEquals(second.pixels))
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun previewRoiDoesNotLeakIntoSubsequentFullPreview() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val root = File(instrumentation.targetContext.cacheDir, "roi-leak-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val input = File(root, "pattern.png")
+        val bitmap = android.graphics.Bitmap.createBitmap(300, 200, android.graphics.Bitmap.Config.ARGB_8888)
+        for (y in 0 until 200) for (x in 0 until 300) {
+            bitmap.setPixel(x, y, android.graphics.Color.rgb(20 + (x % 200), 30 + (y % 180), 80 + ((x + y) % 150)))
+        }
+        input.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        try {
+            NativeProcessor(NativeProcessor.CPU).use { processor ->
+                val baseline = processor.preview(input, null, EditSettings(), 300, false, PhotoInputKind.RASTER)
+                assertEquals(300, baseline.width)
+                assertEquals(200, baseline.height)
+
+                val roi = processor.previewRoi(
+                    input, null, EditSettings(),
+                    0.25f, 0.25f, 0.50f, 0.625f, 128, PhotoInputKind.RASTER,
+                )
+                assertEquals(75, roi.frame.width)
+                assertEquals(75, roi.frame.height)
+                assertEquals(300, roi.bounds.fullWidth)
+                assertEquals(200, roi.bounds.fullHeight)
+
+                val afterRoi = processor.preview(input, null, EditSettings(), 300, false, PhotoInputKind.RASTER)
+                assertEquals(300, afterRoi.width)
+                assertEquals(200, afterRoi.height)
+                assertEquals(300, afterRoi.geometryWidth)
+                assertEquals(200, afterRoi.geometryHeight)
+                assertArrayEquals(baseline.pixels, afterRoi.pixels)
             }
         } finally { root.deleteRecursively() }
     }

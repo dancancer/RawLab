@@ -166,11 +166,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.11.0 APK / Download Android v0.11.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Android-0.11.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt)
+[下载 Android v0.11.2 APK / Download Android v0.11.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.2/RawLab-Android-0.11.2.apk) · [修复说明 / Hotfix notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.2/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.11.0`、`versionCode=20`，沿用正式发布签名，支持同签名旧正式版覆盖升级。本版新增 Sony Wi-Fi 相机导图与一键增量导入、无线联机实拍（含点按对焦与对焦区域控制）、Processing v3、紧凑工具工作区、RGB 分通道色调曲线、1:1 原生视口分块缩放与可取消 HDR 导出进度，以及已编辑筛选、效果缩略图和存储清理，见[发布说明](../docs/releases/v0.11/v0.11.0.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.11.2`、`versionCode=22`，沿用 0.11.0 正式签名，可直接覆盖升级。此修复版解决双指放大时 ROI 瓦片比例失真、缓存逐出闪烁与原生视口 ROI 残留问题；0.11.0 的 Android 功能保持不变，详见[修复说明](../docs/releases/v0.11/v0.11.2.md)和[完整功能说明](../docs/releases/v0.11/v0.11.0.md)。本次热修复仅重新发布 Android 与 macOS 安装包；Windows 和 iOS 包保持 0.11.0 不重发，`windows-stable.json` 继续保留。
 
-The release APK uses version 0.11.0/code 20 and the existing release identity. It adds Sony Wi-Fi camera import with one-tap incremental transfer, wireless tethering (with tap-to-focus and focus area controls), Processing v3, compact tool workspaces, RGB channel tone curves, 1:1 native viewport ROI zoom, cancellable HDR export progress, edited filters/thumbnails and storage cleanup. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.11/v0.11.0.md) and package provenance for actual build, emulator and physical-device coverage.
+The release APK uses version 0.11.2/code 22 and the existing release identity. It fixes the pinch-to-zoom viewport ROI tile distortion, cache eviction flicker, and sticky native ROI bug while preserving the 0.11.0 feature set and usage-statistics defaults. See the [hotfix notes](../docs/releases/v0.11/v0.11.2.md) and package provenance for actual build, emulator and physical-device coverage. This hotfix republishes Android and macOS packages; Windows and iOS packages remain at 0.11.0 with `windows-stable.json` carried forward.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
@@ -199,14 +199,32 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 bash scripts/build-release.sh
 ```
 
-产物为 `app/build/outputs/apk/release/RawLab-Android-release.apk`，包含签名验证和 16 KB 对齐检查。
+产物为 `app/build/outputs/apk/release/RawLab-Android-release.apk`，脚本会自动校验
+R8 压缩后 Release DEX 中所有 RawLab 与 RUM JNI 类完整性、APK 签名及 16 KB 对齐。
+**发布前必跑门禁**：在模拟器上对实际已签名 Release APK 执行 2 次干净冷启动冒烟校验
+（脚本严格拒绝非 `emulator-*` 设备以防误删真机安装和数据；缺少真机不免除此步骤）：
+
+```sh
+bash scripts/smoke-release-apk.sh app/build/outputs/apk/release/RawLab-Android-release.apk --avd <avd-name>
+```
+
 Release 与 debug 包使用相同应用 ID、不同签名，不能相互覆盖安装；先保存编辑并导出结果，
 再自行卸载旧 debug 包、安装 Release。卸载会删除应用私有数据，不会删除相册原图。
 
-The script verifies the APK signature and 16 KB alignment. Release and debug builds
-share an application ID but have different signing keys, so they cannot update each
-other. Save/export your work before manually uninstalling a debug build; uninstalling
-removes app-private data, not the original album photos.
+`build-release.sh` verifies R8 DEX JNI class preservation (RawLab and RUM), APK
+signature validity, and 16 KB native alignment. Before publishing any release APK,
+run the emulator cold-start smoke script (emulator-only by design so it cannot
+uninstall user installs on a physical phone; missing physical hardware never
+exempts this smoke gate):
+
+```sh
+bash scripts/smoke-release-apk.sh app/build/outputs/apk/release/RawLab-Android-release.apk --avd <avd-name>
+```
+
+Release and debug builds share an application ID but have different signing keys,
+so they cannot update each other. Save/export your work before manually
+uninstalling a debug build; uninstalling removes app-private data, not the
+original album photos.
 
 ## 验证 / Verification
 

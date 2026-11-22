@@ -12,6 +12,11 @@
 -keep class com.rawlab.android.raster.NativeMpf { *; }
 -keep class com.rawlab.android.raster.NativePng16 { *; }
 
+# Aliyun RUM's native libraries resolve types in these packages by JNI class name.
+-keep class com.alibabacloud.rum.capture.anr.** { *; }
+-keep class com.alibabacloud.rum.config.** { *; }
+-keep class com.alibabacloud.rum.producer.** { *; }
+
 # Keep all 22 classes, constructors, static callbacks, and fields looked up by initJniCache in rawlab_jni.cpp.
 -keep class com.rawlab.android.engine.NativeFrame {
     <init>(int, int, android.graphics.Bitmap, float, float, int, int[]);

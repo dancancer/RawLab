@@ -2,6 +2,7 @@ package com.rawlab.android.editor.canvas
 
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 enum class ComparisonMode { SIDE_BY_SIDE, WIPE }
 
@@ -29,12 +30,44 @@ data class PhotoImageRect(val left: Float, val top: Float, val right: Float, val
     fun splitAt(x: Float) = if (width > 0f) ((x - left) / width).coerceIn(0f, 1f) else .5f
 }
 
-fun photoImageRect(viewport: PhotoViewport, zoom: PhotoZoom): PhotoImageRect {
+fun photoFullImageRect(viewport: PhotoViewport, zoom: PhotoZoom): PhotoImageRect {
     val width = viewport.imageWidth * zoom.scale
     val height = viewport.imageHeight * zoom.scale
-    val x = (viewport.width - width) / 2f + zoom.x
-    val y = (viewport.height - height) / 2f + zoom.y
-    return PhotoImageRect(max(0f, x), max(0f, y), min(viewport.width, x + width), min(viewport.height, y + height))
+    val left = (viewport.width - width) / 2f + zoom.x
+    val top = (viewport.height - height) / 2f + zoom.y
+    return PhotoImageRect(left, top, left + width, top + height)
+}
+
+fun photoImageRect(viewport: PhotoViewport, zoom: PhotoZoom): PhotoImageRect {
+    val full = photoFullImageRect(viewport, zoom)
+    return PhotoImageRect(max(0f, full.left), max(0f, full.top), min(viewport.width, full.right), min(viewport.height, full.bottom))
+}
+
+internal data class DetailTileDstRect(val left: Int, val top: Int, val right: Int, val bottom: Int) {
+    val width: Int get() = right - left
+    val height: Int get() = bottom - top
+}
+
+internal fun detailTileDstRect(
+    fullImage: PhotoImageRect,
+    normalizedRect: NormalizedRect,
+    viewportWidth: Float,
+    viewportHeight: Float,
+): DetailTileDstRect? {
+    if (!fullImage.left.isFinite() || !fullImage.top.isFinite() ||
+        !fullImage.right.isFinite() || !fullImage.bottom.isFinite() ||
+        fullImage.width <= 0f || fullImage.height <= 0f ||
+        viewportWidth <= 0f || viewportHeight <= 0f
+    ) {
+        return null
+    }
+    val left = (fullImage.left + normalizedRect.x0 * fullImage.width).roundToInt()
+    val top = (fullImage.top + normalizedRect.y0 * fullImage.height).roundToInt()
+    val right = (fullImage.left + normalizedRect.x1 * fullImage.width).roundToInt()
+    val bottom = (fullImage.top + normalizedRect.y1 * fullImage.height).roundToInt()
+    if (right <= left || bottom <= top) return null
+    if (right <= 0 || bottom <= 0 || left >= viewportWidth || top >= viewportHeight) return null
+    return DetailTileDstRect(left, top, right, bottom)
 }
 
 fun hslTargetCoordinates(viewport: PhotoViewport, zoom: PhotoZoom, x: Float, y: Float,

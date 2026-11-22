@@ -181,11 +181,17 @@ class NativeCacheTests(unittest.TestCase):
                  "RawLabAndroid/app/.cxx/Debug/hash/x86_64/dng-sdk/librawlab_dng_sdk.a",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/configure_fingerprint.bin",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/metadata_generation_command.txt",
-                 "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/.ninja_deps"],
+                 "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/.ninja_deps",
+                 "RawLabAndroid/app/.cxx/RelWithDebInfo/hash/arm64-v8a/_deps/rawlab_opencv-build/modules/core/a.o",
+                 "RawLabAndroid/app/.cxx/RelWithDebInfo/hash/x86_64/dng-sdk/librawlab_dng_sdk.a",
+                 "RawLabAndroid/app/.cxx/RelWithDebInfo/hash/arm64-v8a/configure_fingerprint.bin"],
                 ["RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/core/CMakeFiles/sony2fuji_core.dir/a.o",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/lib/libsony2fuji_core.a",
                  "RawLabAndroid/app/.cxx/Debug/hash/arm64-v8a/CMakeFiles/rawlab-jni.dir/a.o",
-                 "RawLabAndroid/app/build/intermediates/cxx/Debug/hash/obj/arm64-v8a/librawlab-jni.so"]),
+                 "RawLabAndroid/app/build/intermediates/cxx/Debug/hash/obj/arm64-v8a/librawlab-jni.so",
+                 "RawLabAndroid/app/.cxx/RelWithDebInfo/hash/arm64-v8a/lib/libsony2fuji_core.a",
+                 "RawLabAndroid/app/.cxx/RelWithDebInfo/hash/arm64-v8a/CMakeFiles/rawlab-jni.dir/a.o",
+                 "RawLabAndroid/app/build/intermediates/cxx/RelWithDebInfo/hash/obj/arm64-v8a/librawlab-jni.so"]),
         }
         for platform, (included, excluded) in cases.items():
             with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:

@@ -124,12 +124,12 @@ class PhotoCanvasState {
 private fun DetailOverlayTiles(
     tiles: List<PreviewDetailOverlay>,
     useNeutral: Boolean,
-    image: PhotoImageRect,
+    fullImage: PhotoImageRect,
     hdrParameters: com.rawlab.android.engine.HDRDisplayParameters,
     fp16Enabled: Boolean,
     overlayMode: InspectionOverlayMode = InspectionOverlayMode.NONE,
 ) {
-    if (tiles.isEmpty() || image.width <= 0f || image.height <= 0f) return
+    if (tiles.isEmpty() || fullImage.width <= 0f || fullImage.height <= 0f) return
     val resolved = ArrayList<Pair<PreviewDetailOverlay, androidx.compose.ui.graphics.ImageBitmap>>(tiles.size)
     for (tile in tiles) {
         key(tile.tileKey ?: tile.normalizedRect) {
@@ -147,24 +147,13 @@ private fun DetailOverlayTiles(
     if (resolved.isEmpty()) return
     Canvas(Modifier.fillMaxSize()) {
         for ((tile, imageBitmap) in resolved) {
-            val r = tile.normalizedRect
-            val dstLeft = (image.left + r.x0 * image.width).roundToInt()
-            val dstTop = (image.top + r.y0 * image.height).roundToInt()
-            val dstRight = (image.left + r.x1 * image.width).roundToInt()
-            val dstBottom = (image.top + r.y1 * image.height).roundToInt()
-            val dstWidth = dstRight - dstLeft
-            val dstHeight = dstBottom - dstTop
-            if (dstWidth > 0 && dstHeight > 0 &&
-                dstRight > 0 && dstBottom > 0 &&
-                dstLeft < size.width && dstTop < size.height
-            ) {
-                drawImage(
-                    image = imageBitmap,
-                    dstOffset = IntOffset(dstLeft, dstTop),
-                    dstSize = IntSize(dstWidth, dstHeight),
-                    filterQuality = FilterQuality.Medium,
-                )
-            }
+            val dst = detailTileDstRect(fullImage, tile.normalizedRect, size.width, size.height) ?: continue
+            drawImage(
+                image = imageBitmap,
+                dstOffset = IntOffset(dst.left, dst.top),
+                dstSize = IntSize(dst.width, dst.height),
+                filterQuality = FilterQuality.Medium,
+            )
         }
     }
 }
@@ -273,6 +262,7 @@ internal fun PhotoCanvas(
             BoxWithConstraints(modifier.clipToBounds()) {
                 val area = PhotoViewport(nativeWidth, nativeHeight, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
                 val zoom = state.view.project(area)
+                val fullImage = photoFullImageRect(area, zoom)
                 val image = photoImageRect(area, zoom)
                 val transform = Modifier.fillMaxSize().graphicsLayer {
                     scaleX = zoom.scale / area.fitScale; scaleY = zoom.scale / area.fitScale
@@ -296,7 +286,7 @@ internal fun PhotoCanvas(
                         transform.testTag(if (neutralOnly || before) "comparison-before" else "comparison-after").semantics {
                             if (hdrParameters.falseColor && hdrBitmap != null) stateDescription = falseColorLabel
                         }, contentScale = ContentScale.Fit)
-                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
+                    DetailOverlayTiles(activeTiles, useNeutral = neutralOnly || before, fullImage = fullImage, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
                     if (wipe) {
                         Box(Modifier.fillMaxSize().drawWithContent {
                             val x = image.splitX(state.split)
@@ -306,7 +296,7 @@ internal fun PhotoCanvas(
                             val neutralBase = if (overlayActive) null else HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                             val neutralShown = InspectionBitmap.rememberBitmap(neutralBase ?: pair.neutral, inspection.overlay)
                             Image(neutralShown.asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
-                            DetailOverlayTiles(activeTiles, useNeutral = true, image = image, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
+                            DetailOverlayTiles(activeTiles, useNeutral = true, fullImage = fullImage, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)
                         }
                         Box(Modifier.offset { IntOffset(image.left.roundToInt(), image.top.roundToInt()) }
                             .size(with(androidx.compose.ui.platform.LocalDensity.current) { image.width.toDp() }, with(androidx.compose.ui.platform.LocalDensity.current) { image.height.toDp() })

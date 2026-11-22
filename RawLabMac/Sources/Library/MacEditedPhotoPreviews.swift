@@ -208,7 +208,13 @@ private struct MacAcceptedPhotoPreview {
     private var accepted: (record: MacPhotoEditRecord, task: Task<MacAcceptedPhotoPreview?, Never>)?
     private var activeKeys: [String: (key: PhotoThumbnailCacheKey, identity: OriginalFileIdentity, isEdited: Bool, generation: UInt64)] = [:]
     private var trackedEditStates: [String: PhotoThumbnails.TrackedEditState] = [:]
-    private var watches: [URL: (source: DispatchSourceFileSystemObject?, readers: Int)] = [:]
+    private struct FileWatch {
+        var source: DispatchSourceFileSystemObject?
+        var readers: Int
+        var fingerprint: FileStatFingerprint?
+    }
+    private var watches: [URL: FileWatch] = [:]
+    private var watchedPhotos: [URL: Int] = [:]
     private var resourceWatches: [URL: Set<URL>] = [:]
     private var persistenceCancellables: Set<AnyCancellable> = []
     private(set) var imageDecodeCount = 0
@@ -591,48 +597,166 @@ private struct MacAcceptedPhotoPreview {
         return (stats.renders, stats.diskReads, imageDecodeCount)
     }
 
+    private func invalidateWatchedPhoto(_ photoURL: URL) {
+        let path = PhotoThumbnailCacheKey.canonicalPath(for: photoURL)
+        activeKeys.removeValue(forKey: path)
+        if accepted?.record.identity.path == path { accepted = nil }
+        _ = markLocalEditedInvalidated(atPath: path)
+        thumbnails.invalidate(atPath: path)
+    }
+
+    private func updateOrRebindWatch(_ url: URL, currentFingerprint: FileStatFingerprint?, previous: FileWatch) {
+        if currentFingerprint == nil || currentFingerprint?.inode != previous.fingerprint?.inode || previous.source == nil {
+            rebindWatch(url)
+        } else {
+            watches[url]?.fingerprint = currentFingerprint
+        }
+    }
+
     private func watchedFileDidChange(_ url: URL) {
-        if resourceWatches[url] != nil {
-            let path = PhotoThumbnailCacheKey.canonicalPath(for: url)
-            if (try? OriginalFileIdentity(url)) != activeKeys[path]?.identity {
-                activeKeys.removeValue(forKey: path)
-                if accepted?.record.identity.path == path { accepted = nil }
-                _ = markLocalEditedInvalidated(atPath: path)
-                thumbnails.invalidate(atPath: path)
+        guard let existing = watches[url] else { return }
+        let path = PhotoThumbnailCacheKey.canonicalPath(for: url)
+        let currentFingerprint = FileStatFingerprint(resolvedPath: path)
+        // 忽略仅更新 atime 等未改变文件/目录实质状态的事件（防止读取缩略图触发自刷新死循环）。
+        guard currentFingerprint != existing.fingerprint else { return }
+        updateOrRebindWatch(url, currentFingerprint: currentFingerprint, previous: existing)
+
+        let isWatchedPhoto = watchedPhotos[url] != nil || resourceWatches[url] != nil
+        if isWatchedPhoto {
+            invalidateWatchedPhoto(url)
+        }
+        var affectedPhotos = isWatchedPhoto
+        let isDirectoryEvent = (currentFingerprint ?? existing.fingerprint).map { !$0.isRegularFile } ?? false
+        if isDirectoryEvent {
+            var watchedChildren = Set<URL>()
+            for photoURL in resourceWatches.keys where photoURL.deletingLastPathComponent() == url {
+                watchedChildren.insert(photoURL)
+            }
+            for photoURL in watchedPhotos.keys where photoURL.deletingLastPathComponent() == url {
+                watchedChildren.insert(photoURL)
+            }
+            for resources in resourceWatches.values {
+                for resource in resources where resource != url && resource.deletingLastPathComponent() == url {
+                    watchedChildren.insert(resource)
+                }
+            }
+            var changedChildren = Set<URL>()
+            var deletedChildren = Set<URL>()
+            for child in watchedChildren {
+                guard let childWatch = watches[child] else { continue }
+                let childFP = FileStatFingerprint(resolvedPath: PhotoThumbnailCacheKey.canonicalPath(for: child))
+                if childWatch.fingerprint != childFP {
+                    updateOrRebindWatch(child, currentFingerprint: childFP, previous: childWatch)
+                    changedChildren.insert(child)
+                    if childFP == nil { deletedChildren.insert(child) }
+                }
+            }
+            for (photoURL, resources) in resourceWatches where photoURL != url && resources.contains(url) {
+                if changedChildren.contains(photoURL) {
+                    invalidateWatchedPhoto(photoURL)
+                    affectedPhotos = true
+                }
+                let childResources = resources.filter { $0 != url && $0.deletingLastPathComponent() == url }
+                if !childResources.isEmpty {
+                    for resource in childResources where changedChildren.contains(resource) {
+                        if deletedChildren.contains(resource) {
+                            _ = invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: photoURL))
+                        }
+                        affectedPhotos = true
+                    }
+                } else if url != photoURL.deletingLastPathComponent() {
+                    affectedPhotos = true
+                }
+            }
+            for photoURL in watchedPhotos.keys where resourceWatches[photoURL] == nil && changedChildren.contains(photoURL) {
+                invalidateWatchedPhoto(photoURL)
+                affectedPhotos = true
+            }
+        } else {
+            for (photoURL, resources) in resourceWatches where photoURL != url && resources.contains(url) {
+                guard url != photoURL.deletingLastPathComponent() else { continue }
+                if currentFingerprint == nil {
+                    _ = invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: photoURL))
+                }
+                affectedPhotos = true
             }
         }
-        for (photoURL, resources) in resourceWatches where photoURL != url && resources.contains(url) {
-            guard url != photoURL.deletingLastPathComponent() else { continue }
-            if (try? OriginalFileIdentity(url)) == nil {
-                _ = invalidateEdited(atPath: PhotoThumbnailCacheKey.canonicalPath(for: photoURL))
-            }
+        if affectedPhotos {
+            refresh()
         }
-        refresh()
+    }
+
+    private func openWatch(for url: URL, readers: Int) {
+        let descriptor = open(url.path, O_EVTONLY)
+        guard descriptor >= 0 else {
+            let fingerprint = FileStatFingerprint(resolvedPath: PhotoThumbnailCacheKey.canonicalPath(for: url))
+            watches[url] = FileWatch(source: nil, readers: readers, fingerprint: fingerprint)
+            return
+        }
+        let fingerprint = FileStatFingerprint.fileDescriptor(descriptor)
+        // 不监听 .attrib：读取文件更新 atime 会触发 NOTE_ATTRIB，导致缩略图解码自取消死循环。
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
+            eventMask: [.write, .delete, .rename, .extend], queue: .main)
+        source.setEventHandler { [weak self] in Task { @MainActor in self?.watchedFileDidChange(url) } }
+        source.setCancelHandler { close(descriptor) }
+        watches[url] = FileWatch(source: source, readers: readers, fingerprint: fingerprint)
+        source.resume()
+    }
+
+    private func retainWatch(_ url: URL) {
+        if var watch = watches[url] {
+            watch.readers += 1
+            watches[url] = watch
+            return
+        }
+        openWatch(for: url, readers: 1)
+    }
+
+    private func releaseWatch(_ url: URL) {
+        guard var watch = watches[url] else { return }
+        if watch.readers > 1 {
+            watch.readers -= 1
+            watches[url] = watch
+            return
+        }
+        watch.source?.cancel()
+        watches.removeValue(forKey: url)
+    }
+
+    private func rebindWatch(_ url: URL) {
+        guard let previous = watches.removeValue(forKey: url) else { return }
+        previous.source?.cancel()
+        guard previous.readers > 0 else { return }
+        openWatch(for: url, readers: previous.readers)
     }
 
     func watch(_ url: URL) {
-        if let watch = watches[url] { watches[url] = (watch.source, watch.readers + 1); return }
-        let descriptor = open(url.path, O_EVTONLY)
-        guard descriptor >= 0 else { watches[url] = (nil, 1); return }
-        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor,
-            eventMask: [.write, .delete, .rename, .attrib, .extend], queue: .main)
-        source.setEventHandler { [weak self] in Task { @MainActor in self?.watchedFileDidChange(url) } }
-        source.setCancelHandler { close(descriptor) }
-        watches[url] = (source, 1)
-        source.resume()
+        watchedPhotos[url, default: 0] += 1
+        retainWatch(url)
     }
     func unwatch(_ url: URL) {
-        if let watch = watches[url] {
-            if watch.readers > 1 { watches[url] = (watch.source, watch.readers - 1); return }
-            watch.source?.cancel(); watches.removeValue(forKey: url)
+        if let count = watchedPhotos[url] {
+            if count > 1 {
+                watchedPhotos[url] = count - 1
+            } else {
+                watchedPhotos.removeValue(forKey: url)
+                let resources = resourceWatches.removeValue(forKey: url) ?? []
+                for resource in resources { releaseWatch(resource) }
+            }
+            releaseWatch(url)
+        } else {
+            releaseWatch(url)
+            if watches[url] == nil {
+                let resources = resourceWatches.removeValue(forKey: url) ?? []
+                for resource in resources { releaseWatch(resource) }
+            }
         }
-        let resources = resourceWatches.removeValue(forKey: url) ?? []
-        for resource in resources { unwatch(resource) }
     }
     func refreshWatch(_ url: URL) {
-        let readers = watches[url]?.readers ?? 0
-        watches.removeValue(forKey: url)?.source?.cancel()
-        for _ in 0..<readers { watch(url) }
+        guard let existing = watches[url] else { return }
+        let current = FileStatFingerprint(resolvedPath: PhotoThumbnailCacheKey.canonicalPath(for: url))
+        guard existing.source == nil || existing.fingerprint != current else { return }
+        rebindWatch(url)
     }
     deinit { for watch in watches.values { watch.source?.cancel() } }
     func record(for url: URL) async throws -> MacPhotoEditRecord {
@@ -693,8 +817,8 @@ private struct MacAcceptedPhotoPreview {
         }
         var next = Set(candidates + candidates.map { $0.deletingLastPathComponent() } + [url.deletingLastPathComponent()])
         if resources.isEmpty, edited { next.formUnion(previous) }
-        for removed in previous.subtracting(next) { unwatch(removed) }
-        for added in next.subtracting(previous) { watch(added) }
+        for removed in previous.subtracting(next) { releaseWatch(removed) }
+        for added in next.subtracting(previous) { retainWatch(added) }
         for retained in next.intersection(previous) { refreshWatch(retained) }
         resourceWatches[url] = next
         return record
@@ -846,7 +970,7 @@ private actor MacPhotoPreviewWorker {
         self.aiProgressSink = aiProgressSink
     }
     func stats() -> (renders: Int, diskReads: Int) { (renderCount, diskReadCount) }
-    func record(for url: URL) throws -> MacPhotoEditRecord {
+    nonisolated func record(for url: URL) async throws -> MacPhotoEditRecord {
         try Task.checkCancellation()
         return try MacEditPersistence(directory: editDirectory).readState(for: url)
     }

@@ -2724,18 +2724,38 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void*) {
 namespace {
 struct ViewportRoiScope {
     sony2fuji_session* session;
+    bool clearOnExit;
+
+    static sony2fuji_viewport_roi disabledRoi() noexcept {
+        sony2fuji_viewport_roi off{};
+        off.struct_size = sizeof(off);
+        off.enabled = 0u;
+        return off;
+    }
+
     explicit ViewportRoiScope(sony2fuji_session* s, const sony2fuji_viewport_roi* roi)
-        : session(roi ? s : nullptr) {
-        if (session && roi) {
+        : session(s), clearOnExit(roi != nullptr) {
+        if (!session) return;
+        if (roi) {
             sony2fuji_viewport_roi clamped = *roi;
+            clamped.struct_size = sizeof(clamped);
             clamped.max_output_long_edge = std::clamp<uint32_t>(clamped.max_output_long_edge, 1u, 2048u);
             const auto status = sony2fuji_session_set_viewport_roi(session, &clamped);
             if (status != SONY2FUJI_STATUS_OK) throw NativeStatusError(status);
+        } else {
+            const auto off = disabledRoi();
+            const auto status = sony2fuji_session_set_viewport_roi(session, &off);
+            if (status != SONY2FUJI_STATUS_OK) throw NativeStatusError(status);
         }
     }
+
     ~ViewportRoiScope() {
-        if (session) (void)sony2fuji_session_set_viewport_roi(session, nullptr);
+        if (session && clearOnExit) {
+            const auto off = disabledRoi();
+            (void)sony2fuji_session_set_viewport_roi(session, &off);
+        }
     }
+
     ViewportRoiScope(const ViewportRoiScope&) = delete;
     ViewportRoiScope& operator=(const ViewportRoiScope&) = delete;
 };
