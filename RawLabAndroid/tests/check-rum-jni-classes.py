@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that R8 keeps the Aliyun RUM classes loaded by libproducer.so."""
+"""Verify that R8 keeps Aliyun RUM Java classes referenced by native libraries."""
 
 from __future__ import annotations
 
@@ -17,9 +17,20 @@ REQUIRED_CLASSES = (
     "com.alibabacloud.rum.config.ConfigManager",
     "com.alibabacloud.rum.config.ConfigServerHttpTool",
     "com.alibabacloud.rum.config.LogHttpResponse",
+    "com.alibabacloud.rum.producer.LogProducerClient",
+    "com.alibabacloud.rum.producer.LogProducerConfig",
     "com.alibabacloud.rum.producer.LogHttpResponse",
     "com.alibabacloud.rum.producer.LogProducerHttpTool",
 )
+
+
+def defined_classes(dex_output: str) -> set[str]:
+    classes = set()
+    for line in dex_output.splitlines():
+        columns = line.split()
+        if len(columns) >= 6 and columns[0] == "C" and columns[1] == "d":
+            classes.add(columns[-1])
+    return classes
 
 
 def main() -> int:
@@ -47,7 +58,8 @@ def main() -> int:
         print(result.stderr.strip() or "apkanalyzer failed", file=sys.stderr)
         return result.returncode
 
-    missing = [name for name in REQUIRED_CLASSES if name not in result.stdout]
+    present = defined_classes(result.stdout)
+    missing = [name for name in REQUIRED_CLASSES if name not in present]
     if missing:
         print("Release APK is missing RUM JNI classes: " + ", ".join(missing), file=sys.stderr)
         return 1
