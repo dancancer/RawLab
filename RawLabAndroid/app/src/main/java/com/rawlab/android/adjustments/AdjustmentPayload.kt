@@ -208,8 +208,17 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 AdjustmentProtocolValueType.OBJECT -> false
             }
         }
-        internal fun curve(value: AdjustmentValue): ToneCurveSettings = ToneCurveSettings.decode(jsonValue(value) as JSONObject)
-        internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(curve.json())
+        internal fun curve(value: AdjustmentValue): ToneCurveSettings {
+            val obj = jsonValue(value) as JSONObject
+            val keys = obj.keys().asSequence().toSet()
+            require(keys.containsAll(setOf("mode", "points")) && keys.all { it in setOf("mode", "points", "channels") })
+            return ToneCurveSettings.decode(obj)
+        }
+        internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(
+            curve.master.json().also {
+                if (curve.hasChannelCurves) it.put("channels", curve.channels.json())
+            }
+        )
         internal fun parametricCurve(value: AdjustmentValue): ToneCurveParametric = ToneCurveParametric.decode(jsonValue(value) as JSONObject)
         internal fun parametricCurveValue(parametric: ToneCurveParametric): AdjustmentValue = decodeValue(parametric.json())
     }

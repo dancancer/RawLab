@@ -26,6 +26,9 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
     public static let identity = Self(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 1)])
     public var isDefault: Bool { mode == .legacy && points.isEmpty }
     public var isIdentity: Bool { mode == .legacy || points.allSatisfy { $0.x == $0.y } }
+    public var hasUnpinnedEndpoints: Bool {
+        mode == .custom && ((points.first?.y ?? 0) != 0 || (points.last?.y ?? 1) != 1)
+    }
     public var isValid: Bool {
         let sub = AdjustmentFieldSpec.SubFields.LightCurve.self
         if mode == .legacy { return points.count == sub.legacyPointsCount }
@@ -106,6 +109,9 @@ public struct ToneCurveChannels: Equatable, Hashable, Codable {
     public var isDefault: Bool { red.isDefault && green.isDefault && blue.isDefault }
     public var isIdentity: Bool { red.isIdentity && green.isIdentity && blue.isIdentity }
     public var isValid: Bool { red.isValid && green.isValid && blue.isValid }
+    public var hasUnpinnedEndpoints: Bool {
+        red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
+    }
     public var progress: Double { max(red.progress, green.progress, blue.progress) }
     public func scaled(by strength: Double) -> Self {
         Self(red: red.scaled(by: strength), green: green.scaled(by: strength), blue: blue.scaled(by: strength))
@@ -226,7 +232,9 @@ public struct ToneCurveSettings: Equatable, Hashable, Codable {
     public var isValid: Bool { master.isValid && channels.isValid && parametric.isValid }
     public var progress: Double { max(master.progress, channels.progress, parametric.progress) }
     public var hasChannelCurves: Bool { !channels.isDefault }
-    public var hasV2Extensions: Bool { applyToLuminosity || !parametric.isDefault }
+    public var hasV2Extensions: Bool {
+        applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
+    }
     public var labeledPoints: [(channel: ToneCurveChannel, point: ToneCurvePoint)] {
         ToneCurveChannel.allCases.flatMap { channel in shape(channel).points.map { (channel, $0) } }
     }

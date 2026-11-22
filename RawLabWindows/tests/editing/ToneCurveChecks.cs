@@ -58,6 +58,16 @@ internal static class ToneCurveChecks
             applyToLuminosity: true, parametric: new ToneCurveParametric(-10, 15, -5, 20, 0.2, 0.5, 0.8));
         Check(JsonSerializer.Deserialize<ToneCurveSettings>(JsonSerializer.Serialize(unpinned)) == unpinned,
             "Unpinned Y and parametric curve round-trip");
+        Check(!curve.HasV2Extensions &&
+            new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.2), new(1, 0.8)]).HasV2Extensions &&
+            new ToneCurveSettings(channels: new ToneCurveChannels(
+                new ToneCurveShape(ToneCurveMode.Custom, [new(0, 0.1), new(1, 1)]),
+                new(), new())).HasV2Extensions,
+            "HasV2Extensions tracks unpinned endpoints on master and channel curves");
+        try {
+            AdjustmentPayload.Parse("""{"payload_version":1,"scope_version":1,"source":{"identifier":"a","is_raw":true,"processing_version":3},"values":{"light.curve":{"mode":"custom","points":[[0,0],[1,1]],"apply_to_luminosity":true}}}""");
+            throw new Exception("Nested apply_to_luminosity accepted inside light.curve");
+        } catch (AdjustmentTransferException) { }
         var context = new AdjustmentTransferContext("curve", false);
         var original = new OriginalIdentity("curve.jpg", 1, 2, 3);
         SavedEdit Edit(Adjustments value) => new(original, value.Capture(), null);

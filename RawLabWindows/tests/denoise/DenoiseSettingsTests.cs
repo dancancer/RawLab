@@ -60,9 +60,10 @@ public sealed class DenoiseSettingsTests
         settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("denoise.arw", 1, 2, 3), settings.Capture(), null)).Candidate!.Settings.Restore();
         Check(settings.Denoise == new DenoiseSettings(), "Reset all disables denoising");
         Check(settings.Effects == new PhotoEffectsSettings() && settings.DisplayChromaDenoise == 0, "Reset all restores effects and display chroma defaults");
-        settings.Denoise = DenoiseSettings.Clean; settings.ResetGroup("细节");
+        settings.Denoise = DenoiseSettings.Clean; settings.AIDenoiseStrength = 42.0; settings.ResetGroup("细节");
         Check(!settings.Denoise.Enabled, "Detail group reset disables denoising");
         Check(settings.DisplayChromaDenoise == 0, "Detail group reset disables display chroma denoise");
+        Check(settings.AIDenoiseStrength == 100.0, "Detail group reset restores AI denoise strength");
         foreach (var invalid in new[] { -1d, 101d, double.NaN, double.PositiveInfinity })
             Assert.Throws<ArgumentOutOfRangeException>(() => (new DenoiseSettings(true, invalid, 46, 50)).NativeConfig());
         foreach (var invalid in new[] { -101d, 101d, double.NaN, double.PositiveInfinity })

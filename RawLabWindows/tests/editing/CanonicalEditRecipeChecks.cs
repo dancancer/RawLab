@@ -69,5 +69,12 @@ internal static class CanonicalEditRecipeChecks
         var procOnly = JsonNode.Parse(CanonicalEditRecipe.ProcessingOnlyJson(3))!.AsObject();
         Check(procOnly["schema_version"]!.GetValue<int>() == 5, "Processing-only helper uses schema_version 5");
         Check(procOnly["processing"]!["version"]!.GetValue<int>() == 3, "Processing-only helper preserves version");
+
+        var unpinnedMaster = new Adjustments
+        {
+            Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.2), new(1, 0.8)])
+        };
+        Check(JsonNode.Parse(CanonicalEditRecipe.Encode(unpinnedMaster, isRaster: false))!["schema_version"]!.GetValue<int>() == 17,
+            "Unpinned curve endpoints promote canonical recipe to schema_version 17");
     }
 }

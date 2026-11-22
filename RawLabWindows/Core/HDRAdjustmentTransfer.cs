@@ -117,7 +117,7 @@ internal static class HDRAdjustmentTransfer
         if (Number(payload[F.SCurve]) is { } strength && strength != tone.CurveStrength / 100)
             tone = tone with { CurveStrength = strength * 100 };
         if (payload[F.Curve] is { } curve) {
-            var parsed = ToneCurveSettings.Parse(curve);
+            var parsed = ToneCurveSettings.Parse(curve, allowV2Fields: false);
             tone = tone with { Curve = new(parsed.Mode, parsed.Points, parsed.Channels, tone.Curve.ApplyToLuminosity, tone.Curve.Parametric) };
         }
         if (Boolean(payload[F.CurveApplyToLuminosity]) is { } applyLum)
@@ -208,7 +208,7 @@ internal static class HDRAdjustmentTransfer
             [F.PerspectiveHorizontal] = Value(settings.Geometry.PerspectiveHorizontal),
             [F.PerspectiveVertical] = Value(settings.Geometry.PerspectiveVertical),
             [F.BlackPoint] = Value(tone.BlackPoint), [F.WhitePoint] = Value(tone.WhitePoint),
-            [F.SCurve] = Value(tone.CurveStrength / 100), [F.Curve] = JsonSerializer.SerializeToElement(tone.Curve),
+            [F.SCurve] = Value(tone.CurveStrength / 100), [F.Curve] = AdjustmentTransferValues.CurveElement(tone.Curve),
             [F.CurveApplyToLuminosity] = Value(tone.Curve.ApplyToLuminosity),
             [F.CurveParametric] = AdjustmentTransferValues.ParametricElement(tone.Curve.Parametric),
             [F.GradingGlobal] = AdjustmentTransferValues.WheelElement(color.Grading.Global),

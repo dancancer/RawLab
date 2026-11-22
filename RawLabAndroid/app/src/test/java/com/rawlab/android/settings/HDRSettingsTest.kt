@@ -69,6 +69,7 @@ class HDRSettingsTest {
         val sdr = EditSettings(blackPoint = -8f, whitePoint = 9f, toneCurve = .12f, curve = ToneCurveSettings.identity)
         val baseline = sdr.withHDRMode(true, false, cameraRaw = true)
         assertEquals(1, baseline.withEditingBlackPoint(0f).hdr!!.processingVersion)
+        assertFalse(HDRToneSettings(curve = ToneCurveSettings(parametric = ToneCurveParametric(highlights = 10.0))).isIdentity)
         val curve = ToneCurveSettings.identity.inserting(.5, .625)
         val edited = baseline.withEditingBlackPoint(-25f).withEditingWhitePoint(50f)
             .withEditingCurveStrength(.3f).withEditingCurve(curve)

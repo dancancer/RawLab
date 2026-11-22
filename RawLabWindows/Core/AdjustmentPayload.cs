@@ -388,7 +388,7 @@ public sealed class AdjustmentPayload
         if (field == AdjustmentField.HdrLook) return HDRLookValue(value) != null;
         if (field == AdjustmentField.HdrCameraDevelopment) return HDRCameraValue(value) != null;
         if (field == AdjustmentField.Curve) {
-            try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
+            try { _ = ToneCurveSettings.Parse(value, allowV2Fields: false); return true; } catch (JsonException) { return false; }
         }
         if (field == AdjustmentField.CurveParametric) {
             try { _ = ToneCurveParametric.Parse(value); return true; } catch (JsonException) { return false; }

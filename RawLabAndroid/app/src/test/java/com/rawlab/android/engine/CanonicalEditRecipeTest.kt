@@ -113,7 +113,8 @@ class CanonicalEditRecipeTest {
         )
         val root = JSONObject(settings.toCanonicalRecipeJson(outputSharpening = OutputSharpening.STANDARD))
         assertEquals(17, root.getInt("schema_version"))
-        assertEquals("standard", root.getJSONObject("output").getString("sharpening"))
+        assertFalse(root.getJSONObject("output").has("sharpening"))
+        assertEquals("standard", root.getJSONObject("output").getString("output_sharpening"))
         val curve = root.getJSONObject("edits").getJSONObject("tone").getJSONObject("curve")
         assertTrue(curve.getBoolean("apply_to_luminosity"))
         assertEquals(-12.0, curve.getJSONObject("parametric").getDouble("highlights"), 1e-6)
@@ -121,5 +122,35 @@ class CanonicalEditRecipeTest {
         assertEquals(-10.0, grading.getJSONObject("shadows").getDouble("luminance"), 1e-6)
         assertEquals(65.0, grading.getDouble("blending"), 1e-6)
         assertEquals(-20.0, grading.getDouble("balance"), 1e-6)
+    }
+
+    @Test
+    fun unpinnedCurveEndpointsPromoteSchemaVersionTo17WhilePinnedStaysLegacy() {
+        val pinned = EditSettings(
+            curve = ToneCurveSettings(
+                mode = ToneCurveMode.CUSTOM,
+                points = listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.5, 0.6), ToneCurvePoint(1.0, 1.0)),
+            ),
+        )
+        assertEquals(7, JSONObject(pinned.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+        assertEquals(5, JSONObject(pinned.toCanonicalRecipeJson(isRaster = true)).getInt("schema_version"))
+
+        val unpinnedMaster = EditSettings(
+            curve = ToneCurveSettings(
+                mode = ToneCurveMode.CUSTOM,
+                points = listOf(ToneCurvePoint(0.0, 0.2), ToneCurvePoint(1.0, 0.8)),
+            ),
+        )
+        assertEquals(17, JSONObject(unpinnedMaster.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+        assertEquals(17, JSONObject(unpinnedMaster.toCanonicalRecipeJson(isRaster = true)).getInt("schema_version"))
+
+        val unpinnedChannel = EditSettings(
+            curve = ToneCurveSettings(
+                channels = ToneCurveChannels(
+                    red = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.1), ToneCurvePoint(1.0, 1.0))),
+                ),
+            ),
+        )
+        assertEquals(17, JSONObject(unpinnedChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
     }
 }

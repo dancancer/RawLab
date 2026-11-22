@@ -478,7 +478,7 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
         return new() {
             Vibrance = value.GetProperty("vibrance").GetDouble(),
             Hsl = new(channels.ToArray()),
-            Grading = grading.Deserialize<ColorGradingSettings>(CamelCaseOptions)!
+            Grading = grading.Deserialize<ColorGradingSettings>(CamelCaseOptions) ?? throw new JsonException("Null HDR grading")
         };
     }
 

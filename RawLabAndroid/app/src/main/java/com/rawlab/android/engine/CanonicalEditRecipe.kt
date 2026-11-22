@@ -166,7 +166,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
         .put("format", "png")
         .put("size", JSONObject().put("mode", "native"))
     if (outputSharpening != OutputSharpening.OFF) {
-        outputObj.put("sharpening", outputSharpening.wireValue)
+        outputObj.put("output_sharpening", outputSharpening.wireValue)
     }
 
     val root = JSONObject()

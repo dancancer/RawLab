@@ -98,4 +98,42 @@ final class CanonicalEditRecipeTests: XCTestCase {
         let lens = try XCTUnwrap(edits["lens_correction"] as? [String: Any])
         XCTAssertNil(lens["profile_id"])
     }
+
+    func testUnpinnedCurveEndpointsEmitSchemaVersion17WhilePinnedStaysLegacy() throws {
+        var pinned = RawSettings.default
+        pinned.toneCurveConfig = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0), .init(x: 0.5, y: 0.6), .init(x: 1, y: 1)]
+        )
+        let pinnedRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(pinned.canonicalParamsJSON(isRaster: false).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(pinnedRoot["schema_version"] as? Int, 7)
+
+        let pinnedRasterRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(pinned.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(pinnedRasterRoot["schema_version"] as? Int, 5)
+
+        var unpinnedMaster = RawSettings.default
+        unpinnedMaster.toneCurveConfig = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.2), .init(x: 1, y: 0.8)]
+        )
+        let unpinnedRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(unpinnedMaster.canonicalParamsJSON(isRaster: false).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(unpinnedRoot["schema_version"] as? Int, 17)
+
+        var unpinnedChannel = RawSettings.default
+        unpinnedChannel.toneCurveConfig = ToneCurveSettings(
+            channels: ToneCurveChannels(
+                red: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0.1), .init(x: 1, y: 1)])
+            )
+        )
+        let channelRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(unpinnedChannel.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
+    }
 }

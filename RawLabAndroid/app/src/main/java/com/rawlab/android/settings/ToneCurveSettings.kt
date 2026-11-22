@@ -24,6 +24,7 @@ class ToneCurveShape(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: Lis
     }
     val isDefault get() = mode == ToneCurveMode.LEGACY
     val isIdentity get() = isDefault || points.all { it.x == it.y }
+    val hasUnpinnedEndpoints get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 && (points.first().y != 0.0 || points.last().y != 1.0)
     val progress get() = points.maxOfOrNull { kotlin.math.abs(it.y - it.x) } ?: 0.0
     fun scaled(strength: Float): ToneCurveShape = scaled(strength.toDouble())
     fun scaled(strength: Double): ToneCurveShape {
@@ -85,6 +86,7 @@ data class ToneCurveChannels(
 ) {
     val isDefault get() = red.isDefault && green.isDefault && blue.isDefault
     val isIdentity get() = red.isIdentity && green.isIdentity && blue.isIdentity
+    val hasUnpinnedEndpoints get() = red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
     val progress get() = maxOf(red.progress, green.progress, blue.progress)
     fun scaled(strength: Double) = ToneCurveChannels(red.scaled(strength), green.scaled(strength), blue.scaled(strength))
     fun json() = JSONObject().put("red", red.json()).put("green", green.json()).put("blue", blue.json())
@@ -155,22 +157,20 @@ data class ToneCurveParametric(
 
         fun decode(json: JSONObject): ToneCurveParametric {
             val keys = json.keys().asSequence().toSet()
-            require(keys.all { it in allowedKeys }) { "Unknown parametric curve field" }
-            fun numberOr(key: String, default: Double): Double {
-                if (!json.has(key)) return default
+            require(keys == allowedKeys) { "Invalid parametric curve fields" }
+            fun number(key: String): Double {
                 val value = json.get(key)
                 require(value is Number)
                 return value.toDouble().canonicalZero()
             }
-            val sub = AdjustmentFieldSpec.SubFields.LightCurveParametric
             return ToneCurveParametric(
-                highlights = numberOr("highlights", sub.bandDefault),
-                lights = numberOr("lights", sub.bandDefault),
-                darks = numberOr("darks", sub.bandDefault),
-                shadows = numberOr("shadows", sub.bandDefault),
-                splitShadow = numberOr("split_shadow", sub.splitShadowDefault),
-                splitMidtone = numberOr("split_midtone", sub.splitMidtoneDefault),
-                splitHighlight = numberOr("split_highlight", sub.splitHighlightDefault),
+                highlights = number("highlights"),
+                lights = number("lights"),
+                darks = number("darks"),
+                shadows = number("shadows"),
+                splitShadow = number("split_shadow"),
+                splitMidtone = number("split_midtone"),
+                splitHighlight = number("split_highlight"),
             )
         }
     }
@@ -188,7 +188,7 @@ class ToneCurveSettings(
     val isDefault get() = master.isDefault && channels.isDefault && !applyToLuminosity && parametric.isDefault
     val isIdentity get() = master.isIdentity && channels.isIdentity && parametric.isIdentity
     val hasChannelCurves get() = !channels.isDefault
-    val hasV2Extensions get() = applyToLuminosity || !parametric.isDefault
+    val hasV2Extensions get() = applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
     val progress get() = maxOf(master.progress, channels.progress, parametric.progress)
     fun shape(channel: ToneCurveChannel) = when (channel) {
         ToneCurveChannel.RGB -> master; ToneCurveChannel.RED -> channels.red

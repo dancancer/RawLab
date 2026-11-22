@@ -109,6 +109,14 @@ class ToneCurveSettingsTest {
         assertThrows(IllegalArgumentException::class.java) {
             ToneCurveParametric(splitShadow = 0.45, splitMidtone = 0.46)
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveParametric.decode(JSONObject("""{"highlights":10.0}"""))
+        }
+        assertFalse(ToneCurveSettings.identity.inserting(0.5, 0.6).hasV2Extensions)
+        assertTrue(ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.2), ToneCurvePoint(1.0, 1.0))).hasV2Extensions)
+        assertTrue(ToneCurveSettings(channels = ToneCurveChannels(
+            red = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(1.0, 0.9))),
+        )).hasV2Extensions)
         val param = ToneCurveParametric(highlights = -18.0, lights = 12.0, darks = -8.0, shadows = 24.0,
             splitShadow = 0.2, splitMidtone = 0.52, splitHighlight = 0.8)
         val v2Curve = ToneCurveSettings(ToneCurveMode.CUSTOM, unpinned.points, applyToLuminosity = true, parametric = param)

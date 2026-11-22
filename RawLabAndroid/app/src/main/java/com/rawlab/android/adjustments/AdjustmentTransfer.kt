@@ -271,12 +271,16 @@ object AdjustmentTransfer {
         number(AdjustmentField.PERSPECTIVE_HORIZONTAL)?.let { geometry = geometry.copy(perspectiveHorizontal = it.toFloat()) }
         number(AdjustmentField.PERSPECTIVE_VERTICAL)?.let { geometry = geometry.copy(perspectiveVertical = it.toFloat()) }
         val tone = hdr.toneSettings
-        var nextCurve = payload[AdjustmentField.CURVE]?.let { AdjustmentPayload.curve(it) } ?: tone.curve
-        val nextApplyToLuminosity = payload[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY]?.boolean ?: nextCurve.applyToLuminosity
-        val nextParametric = payload[AdjustmentField.CURVE_PARAMETRIC]?.let { AdjustmentPayload.parametricCurve(it) } ?: nextCurve.parametric
-        if (nextApplyToLuminosity != nextCurve.applyToLuminosity || nextParametric != nextCurve.parametric) {
-            nextCurve = ToneCurveSettings(nextCurve.mode, nextCurve.points, nextCurve.channels, nextApplyToLuminosity, nextParametric)
-        }
+        val parsedCurve = payload[AdjustmentField.CURVE]?.let { AdjustmentPayload.curve(it) }
+        val nextApplyToLuminosity = payload[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY]?.boolean ?: tone.curve.applyToLuminosity
+        val nextParametric = payload[AdjustmentField.CURVE_PARAMETRIC]?.let { AdjustmentPayload.parametricCurve(it) } ?: tone.curve.parametric
+        val nextCurve = ToneCurveSettings(
+            parsedCurve?.mode ?: tone.curve.mode,
+            parsedCurve?.points ?: tone.curve.points,
+            parsedCurve?.channels ?: tone.curve.channels,
+            nextApplyToLuminosity,
+            nextParametric,
+        )
         val nextTone = tone.copy(blackPoint = number(AdjustmentField.BLACK_POINT)?.toFloat() ?: tone.blackPoint,
             whitePoint = number(AdjustmentField.WHITE_POINT)?.toFloat() ?: tone.whitePoint,
             curveStrength = number(AdjustmentField.S_CURVE)?.let { (it * 100).toFloat() } ?: tone.curveStrength,

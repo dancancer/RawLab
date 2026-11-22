@@ -72,6 +72,12 @@ final class ToneCurveModelTests: XCTestCase {
             parametric: ToneCurveParametric(highlights: -10, lights: 15, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
         )
         XCTAssertTrue(unpinned.isValid)
+        XCTAssertTrue(unpinned.hasV2Extensions)
+        XCTAssertFalse(curve.hasV2Extensions)
+        XCTAssertTrue(ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0.2), .init(x: 1, y: 1)]).hasV2Extensions)
+        XCTAssertTrue(ToneCurveSettings(channels: ToneCurveChannels(
+            red: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 0.9)])
+        )).hasV2Extensions)
         let encodedUnpinned = try JSONEncoder().encode(unpinned)
         XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: encodedUnpinned), unpinned)
         XCTAssertFalse(ToneCurveParametric(splitShadow: 0.4, splitMidtone: 0.41, splitHighlight: 0.75).isValid)

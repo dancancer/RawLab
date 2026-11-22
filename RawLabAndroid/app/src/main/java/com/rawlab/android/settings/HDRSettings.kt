@@ -28,7 +28,8 @@ data class HDRToneSettings(
     init { require(listOf(blackPoint, whitePoint, curveStrength).all { it in -100f..100f }) }
     val isDefault get() = blackPoint == 0f && whitePoint == 0f && curveStrength == 0f && curve.isDefault
     val isIdentity get() = blackPoint == 0f && whitePoint == 0f &&
-        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) && curve.channels.isIdentity
+        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) &&
+        curve.channels.isIdentity && curve.parametric.isIdentity
 }
 
 data class HDRColorSettings(

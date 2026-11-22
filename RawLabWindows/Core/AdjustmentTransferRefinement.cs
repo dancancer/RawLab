@@ -11,7 +11,7 @@ internal static class AdjustmentTransferRefinement
         var targetScale = target.Restore().RefinementScale;
         var originalCurve = original.Curve ?? new();
         var updatedCurveBase = target.Curve ?? new();
-        var selectedCurve = payload[F.Curve] is {} json ? ToneCurveSettings.Parse(json) : null;
+        var selectedCurve = payload[F.Curve] is {} json ? ToneCurveSettings.Parse(json, allowV2Fields: false) : null;
         var expectedCurve = selectedCurve?.Scaled(sourceScale) ?? originalCurve.Scaled(previousScale);
         var curve = fullRecipe && selectedCurve != null ? selectedCurve : LogicalCurve(expectedCurve, originalCurve, targetScale);
         if (!Equivalent(curve.Scaled(targetScale), expectedCurve)) throw Unrepresentable(F.Curve);

@@ -14,24 +14,24 @@ internal object AdjustmentTransferRefinement {
             baseDesiredCurve.mode,
             baseDesiredCurve.points,
             baseDesiredCurve.channels,
-            selectedApply ?: baseDesiredCurve.applyToLuminosity,
-            selectedParametric?.scaled(sourceScale) ?: baseDesiredCurve.parametric,
+            selectedApply ?: original.renderCurve.applyToLuminosity,
+            selectedParametric?.scaled(sourceScale) ?: original.renderCurve.parametric,
         )
         var curve = if (fullRecipe && selectedCurve != null) {
             ToneCurveSettings(
                 selectedCurve.mode,
                 selectedCurve.points,
                 selectedCurve.channels,
-                selectedApply ?: selectedCurve.applyToLuminosity,
-                selectedParametric ?: selectedCurve.parametric,
+                selectedApply ?: original.curve.applyToLuminosity,
+                selectedParametric ?: original.curve.parametric,
             )
         } else {
             ToneCurveSettings(
                 original.curve.mode,
                 original.curve.points,
                 original.curve.channels,
-                selectedApply ?: (selectedCurve?.applyToLuminosity ?: original.curve.applyToLuminosity),
-                selectedParametric ?: (selectedCurve?.parametric ?: original.curve.parametric),
+                selectedApply ?: original.curve.applyToLuminosity,
+                selectedParametric ?: original.curve.parametric,
             )
         }
         if (!equivalent(curve.scaled(target.refinementScale), desiredCurve))

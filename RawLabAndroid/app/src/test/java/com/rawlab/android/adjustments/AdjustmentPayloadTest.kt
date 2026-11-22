@@ -54,6 +54,28 @@ class AdjustmentPayloadTest {
         assertFalse(AdjustmentField.COMMON.any { it.group == "geometry" })
         assertTrue(AdjustmentField.entries.filter { it.hslLocation != null }.size == 24)
     }
+
+    @Test fun lightCurveTransferRejectsNestedV2FieldsAndKeepsThemSeparate() {
+        val base = """{"payload_version":1,"scope_version":1,"source":{"identifier":"a","is_raw":true,"processing_version":3},"values":{"light.curve":"""
+        val withLuminosity = """$base{"mode":"custom","points":[[0,0],[1,1]],"apply_to_luminosity":true}}}"""
+        val withParametric = """$base{"mode":"custom","points":[[0,0],[1,1]],"parametric":{"highlights":10,"lights":0,"darks":0,"shadows":0,"split_shadow":0.25,"split_midtone":0.5,"split_highlight":0.75}}}}"""
+        assertThrows(AdjustmentTransferException::class.java) { AdjustmentPayload.decode(withLuminosity) }
+        assertThrows(AdjustmentTransferException::class.java) { AdjustmentPayload.decode(withParametric) }
+
+        val settings = com.rawlab.android.settings.EditSettings(
+            curve = com.rawlab.android.settings.ToneCurveSettings(
+                mode = com.rawlab.android.settings.ToneCurveMode.CUSTOM,
+                points = listOf(com.rawlab.android.settings.ToneCurvePoint(0.0, 0.1), com.rawlab.android.settings.ToneCurvePoint(1.0, 0.9)),
+                applyToLuminosity = true,
+                parametric = com.rawlab.android.settings.ToneCurveParametric(highlights = 12.0),
+            ),
+        )
+        val captured = AdjustmentTransfer.capture(AdjustmentScope.Modified, settings, AdjustmentTransferContext("a", true))
+        val curveObj = captured[AdjustmentField.CURVE]?.objectValue!!
+        assertEquals(setOf("mode", "points"), curveObj.keys)
+        assertEquals(AdjustmentValue.Boolean(true), captured[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY])
+        assertEquals(12.0, captured[AdjustmentField.CURVE_PARAMETRIC]?.objectValue?.get("highlights")?.number!!, 0.0)
+    }
 }
 
 internal fun resolveSharedPath(relativePath: String): File {

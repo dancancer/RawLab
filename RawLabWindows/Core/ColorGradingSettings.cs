@@ -99,13 +99,17 @@ public sealed class ColorGradingSettingsJsonConverter : JsonConverter<ColorGradi
         if (!required.IsSubsetOf(seen)) throw new JsonException("Missing required grading zone");
         ColorGradingWheel ReadWheel(string key) => root.GetProperty(key).Deserialize<ColorGradingWheel>(options)
             ?? throw new JsonException("Null grading wheel");
+        double ReadNumber(JsonElement el, string key) =>
+            el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var v)
+                ? v
+                : throw new JsonException("Invalid grading number: " + key);
         var result = new ColorGradingSettings {
             Shadows = ReadWheel(shadowsKey),
             Midtones = ReadWheel(midtonesKey),
             Highlights = ReadWheel(highlightsKey),
             Global = root.TryGetProperty(globalKey, out var gEl) ? gEl.Deserialize<ColorGradingWheel>(options) ?? throw new JsonException("Null global wheel") : new(),
-            Blending = root.TryGetProperty(blendingKey, out var blEl) ? blEl.GetDouble() : 50.0,
-            Balance = root.TryGetProperty(balanceKey, out var baEl) ? baEl.GetDouble() : 0.0
+            Blending = root.TryGetProperty(blendingKey, out var blEl) ? ReadNumber(blEl, blendingKey) : 50.0,
+            Balance = root.TryGetProperty(balanceKey, out var baEl) ? ReadNumber(baEl, balanceKey) : 0.0
         };
         if (!result.IsValid) throw new JsonException("Invalid grading values");
         return result;

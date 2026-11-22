@@ -50,7 +50,7 @@ internal static class AdjustmentTransferValues
         var s=edit.Settings; var result=new Dictionary<F,JsonElement>();
         void Put<T>(F field,T value) => result[field]=Value(value);
         var curve = s.Curve ?? new ToneCurveSettings();
-        Put(F.Curve, curve);
+        result[F.Curve] = CurveElement(curve);
         Put(F.CurveApplyToLuminosity, curve.ApplyToLuminosity);
         result[F.CurveParametric] = ParametricElement(curve.Parametric);
         foreach(var field in NumericFields.Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null))) Put(field,Logical(s,field));
@@ -162,6 +162,9 @@ internal static class AdjustmentTransferValues
         }
         _=s.Restore(); return s;
     }
+
+    internal static JsonElement CurveElement(ToneCurveSettings curve) =>
+        JsonSerializer.SerializeToElement(new ToneCurveSettings(curve.Mode, curve.Points, curve.Channels));
 
     internal static JsonElement ParametricElement(ToneCurveParametric p) => Value(new {
         highlights = p.Highlights, lights = p.Lights, darks = p.Darks, shadows = p.Shadows,

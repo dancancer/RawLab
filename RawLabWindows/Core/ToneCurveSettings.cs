@@ -20,6 +20,7 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
     public static ToneCurveShape Identity { get; } = new(ToneCurveMode.Custom, [new(0, 0), new(1, 1)]);
     public bool IsDefault => Mode == ToneCurveMode.Legacy;
     public bool IsIdentity => IsDefault || Points.All(p => p.X == p.Y);
+    internal bool HasUnpinnedEndpoints => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (Points[0].Y != 0 || Points[^1].Y != 1);
     public double Progress => Points.Count == 0 ? 0 : Points.Max(p => Math.Abs(p.Y - p.X));
     public ToneCurveShape Scaled(double strength)
     {
@@ -112,6 +113,7 @@ public sealed record ToneCurveChannels(ToneCurveShape Red, ToneCurveShape Green,
     public ToneCurveChannels() : this(new(), new(), new()) { }
     public bool IsDefault => Red.IsDefault && Green.IsDefault && Blue.IsDefault;
     public bool IsIdentity => Red.IsIdentity && Green.IsIdentity && Blue.IsIdentity;
+    internal bool HasUnpinnedEndpoints => Red.HasUnpinnedEndpoints || Green.HasUnpinnedEndpoints || Blue.HasUnpinnedEndpoints;
     public ToneCurveChannels Scaled(double strength) => new(Red.Scaled(strength), Green.Scaled(strength), Blue.Scaled(strength));
 }
 
@@ -201,7 +203,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     public bool IsDefault => Master.IsDefault && Channels.IsDefault && !ApplyToLuminosity && Parametric.IsDefault;
     public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity && Parametric.IsIdentity;
     public bool HasChannelCurves => !Channels.IsDefault;
-    public bool HasV2Extensions => ApplyToLuminosity || !Parametric.IsDefault;
+    public bool HasV2Extensions => ApplyToLuminosity || !Parametric.IsDefault || Master.HasUnpinnedEndpoints || Channels.HasUnpinnedEndpoints;
     public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress, Parametric.Progress }.Max();
     public ToneCurveShape Shape(ToneCurveChannel channel) => channel switch {
         ToneCurveChannel.Rgb => Master, ToneCurveChannel.Red => Channels.Red, ToneCurveChannel.Green => Channels.Green, _ => Channels.Blue };
@@ -228,7 +230,14 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     internal Native.ToneCurveSetConfig NativeSetConfig() => new() {
         Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveSetConfig>(), Master = Master.NativeConfig(),
         Red = Channels.Red.NativeConfig(), Green = Channels.Green.NativeConfig(), Blue = Channels.Blue.NativeConfig() };
-    internal static ToneCurveSettings Parse(JsonElement json) {
+    internal static ToneCurveSettings Parse(JsonElement json, bool allowV2Fields = true) {
+        if (json.ValueKind != JsonValueKind.Object) throw new JsonException("Invalid curve fields");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var prop in json.EnumerateObject()) {
+            if (!seen.Add(prop.Name)) throw new JsonException("Duplicate curve field: " + prop.Name);
+            if (!allowV2Fields && prop.Name is "apply_to_luminosity" or "parametric")
+                throw new JsonException("Invalid curve field: " + prop.Name);
+        }
         var master = ToneCurveShape.Parse(json, true);
         var channels = new ToneCurveChannels();
         if (json.TryGetProperty("channels", out var fields)) {

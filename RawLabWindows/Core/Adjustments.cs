@@ -399,7 +399,7 @@ public sealed class Adjustments
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
         if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
         if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
-        if (group == "细节") { ActiveAIDenoise = false; Denoise = new(); DisplayChromaDenoise = 0; }
+        if (group == "细节") { ActiveAIDenoise = false; AIDenoiseStrength = 100.0; Denoise = new(); DisplayChromaDenoise = 0; }
         if (group == "效果") { Effects = new(); Atmosphere = new(); }
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
