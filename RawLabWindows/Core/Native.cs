@@ -252,6 +252,30 @@ internal static partial class Native
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
     }
     [StructLayout(LayoutKind.Sequential)]
+    internal struct ToneCurveParametricConfig {
+        public uint Version, StructSize;
+        public float Highlights, Lights, Darks, Shadows;
+        public float SplitShadow, SplitMidtone, SplitHighlight;
+        public uint Reserved;
+    }
+    internal enum WbProbeAvailability { Available = 0, Overexposed = 1, Outside = 2, Unavailable = 3 }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WbProbeQuery {
+        public uint Version, StructSize;
+        public float NormX, NormY;
+        public uint WindowSize, Reserved;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WbProbeResult {
+        public uint Version, StructSize;
+        public int Availability;
+        public uint ValidPixelCount, RejectedOverexposedCount;
+        public float Temperature, Tint;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)] public float[] SampledRgb;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)] public float[] WbMul;
+        public uint Reserved;
+    }
+    [StructLayout(LayoutKind.Sequential)]
     internal struct ToneCurveSetConfig {
         public uint Version, StructSize;
         public ToneCurveConfig Master, Red, Green, Blue;
@@ -489,6 +513,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_effective_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_resolve_recipe_wb(Session session,ref RecipeWbRequest request,out RecipeWbResult result);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_sample_wb_probe(Session session, ref Request request, ref WbProbeQuery query, ref WbProbeResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_process(Session session,ref Request request,out Buffer buffer);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_migrate_processing(Session session,ref Request request,ref ProcessingMigrationResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_release_buffer(ref Buffer buffer);
@@ -562,6 +587,7 @@ internal static partial class Native
         Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string deviceID);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_diagnostics(Session session);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_denoise(Session session,ref AIConfig config);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_denoise_blend(Session session, float strength);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_prepare_ai(Session session,ref Request request,AIProgress progress,IntPtr context);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_error(Session session);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_backend(Session session);

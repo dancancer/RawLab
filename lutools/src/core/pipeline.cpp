@@ -6,6 +6,7 @@
 #include "sony2fuji/dcp_look.h"
 #include "core/chroma_denoise.h"
 #include "core/display_lens_correction.h"
+#include "core/hdr_rendering.h"
 #include "core/image_header_probe.h"
 #include "core/lut_compatibility.h"
 #include "core/parallel_pixels.h"
@@ -847,7 +848,7 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
     unsupportedReason_ = UnsupportedReason::None;
     gpuFallbackReason_ = GpuFallbackReason::None;
     gpuErrorDetail_.clear();
-    if (params.wbMode < RenderWhiteBalanceMode::Camera || params.wbMode > RenderWhiteBalanceMode::Temperature) {
+    if (params.wbMode < RenderWhiteBalanceMode::Camera || params.wbMode > RenderWhiteBalanceMode::Relative) {
         return RenderStatus::InvalidArgument;
     }
     if (params.inputType == RenderInputType::Buffer &&
@@ -863,6 +864,15 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
     local.intent = RenderIntent::Final;
     const auto valid = validateRenderParams(local, true);
     if (valid != RenderStatus::Ok) return valid;
+    if (local.inputType == RenderInputType::DisplayBuffer &&
+        local.wbMode == RenderWhiteBalanceMode::Camera &&
+        local.temperature == 6500.0f &&
+        local.tint == 0.0f &&
+        rasterRelativeWbActive_) {
+        local.wbMode = RenderWhiteBalanceMode::Relative;
+        local.temperature = rasterRelativeTemp_;
+        local.tint = rasterRelativeTint_;
+    }
 
     try {
         beginAiOperation("auto_exposure");
@@ -877,7 +887,9 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
         if (status != RenderStatus::Ok) return status;
         if (space == ColorSpace::SonyNative) return RenderStatus::Unsupported;
         RGB wb(1, 1, 1);
-        if (local.wbMode != RenderWhiteBalanceMode::Temperature || (raw && rawDisplayReferred_)) {
+        if (local.wbMode == RenderWhiteBalanceMode::Relative) {
+            wb = hdrRelativeWhiteBalance(local.temperature, local.tint);
+        } else if (local.wbMode != RenderWhiteBalanceMode::Temperature || (raw && rawDisplayReferred_)) {
             const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
             const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
             wb = RGB(
@@ -1039,11 +1051,13 @@ static void computeEffectiveWbAndExposure(
     RGB& wb,
     float& exposure
 ) {
-    const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
-    const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
     exposure = std::pow(2.0f, local.exposureEV) * local.brightness;
     wb = RGB(1.0f, 1.0f, 1.0f);
-    if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
+    if (local.wbMode == RenderWhiteBalanceMode::Relative) {
+        wb = hdrRelativeWhiteBalance(local.temperature, local.tint);
+    } else if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
+        const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
+        const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
         wb = RGB(
             reference.r / std::max(selected.r, 1e-4f),
             reference.g / std::max(selected.g, 1e-4f),
@@ -1057,6 +1071,203 @@ static void computeEffectiveWbAndExposure(
         local.wbMode == RenderWhiteBalanceMode::Custom) {
         wb.r *= local.wbMul[0] / local.wbMul[1];
         wb.b *= local.wbMul[2] / local.wbMul[1];
+    }
+}
+
+RenderStatus Pipeline::sampleWbProbe(
+    const RenderParams& params,
+    const WbProbeQuery& query,
+    WbProbeResult& outResult
+) {
+    outResult = {};
+    if (query.windowSize != 0 && query.windowSize != 1 && query.windowSize != 3 && query.windowSize != 5) {
+        return RenderStatus::InvalidArgument;
+    }
+    RenderParams local = params;
+    local.outputTarget = RenderOutputTarget::Buffer;
+    local.outputPath.clear();
+    local.intent = RenderIntent::Preview;
+    const RenderStatus valid = validateRenderParams(local, true);
+    if (valid != RenderStatus::Ok) {
+        return valid;
+    }
+    if (!std::isfinite(query.normX) || !std::isfinite(query.normY) ||
+        query.normX < 0.0f || query.normX > 1.0f ||
+        query.normY < 0.0f || query.normY > 1.0f) {
+        outResult.availability = WbProbeAvailability::Outside;
+        return RenderStatus::Ok;
+    }
+    if (local.inputType == RenderInputType::Buffer) {
+        outResult.availability = WbProbeAvailability::Unavailable;
+        return RenderStatus::Ok;
+    }
+    try {
+        const int windowSize = query.windowSize == 0 ? 3 : static_cast<int>(query.windowSize);
+        const int half = windowSize / 2;
+
+        if (local.inputType == RenderInputType::Raw) {
+            if (isNormalX3f(local.inputPath.c_str(), x3fMode_)) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const RenderStatus loadStatus = loadRawForWbProbe(local);
+            if (loadStatus != RenderStatus::Ok) {
+                return loadStatus;
+            }
+            if (!hasCachedRawWb_ || !cachedRawWb_.available() || rawCache_.pixels.empty()) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const auto outSize = geometryOutputSize(rawCache_.width, rawCache_.height, geometry_);
+            const int outW = outSize.first;
+            const int outH = outSize.second;
+            if (outW <= 0 || outH <= 0) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const auto sampler = makeGeometrySampler(rawCache_.width, rawCache_.height, geometry_);
+            const auto reader = [&](int sx, int sy) { return rawCache_.at(sx, sy); };
+            const int cx = static_cast<int>(std::lround(double(query.normX) * (outW - 1)));
+            const int cy = static_cast<int>(std::lround(double(query.normY) * (outH - 1)));
+            const auto adobeToSrgb = ColorConverter::getConversionMatrix(ColorSpace::AdobeRGB, ColorSpace::sRGB);
+            const float invBaseline = 1.0f / std::exp2(cachedBaselineEv_);
+
+            double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+            for (int dy = -half; dy <= half; ++dy) {
+                const int py = cy + dy;
+                if (py < 0 || py >= outH) continue;
+                for (int dx = -half; dx <= half; ++dx) {
+                    const int px = cx + dx;
+                    if (px < 0 || px >= outW) continue;
+                    const RGB adobe = sampler(px, py, reader);
+                    RGB srgb = ColorConverter::applyMatrix(adobe, adobeToSrgb);
+                    srgb.r *= invBaseline;
+                    srgb.g *= invBaseline;
+                    srgb.b *= invBaseline;
+                    if (!std::isfinite(srgb.r) || !std::isfinite(srgb.g) || !std::isfinite(srgb.b) ||
+                        std::max({srgb.r, srgb.g, srgb.b}) >= 0.98f) {
+                        ++outResult.rejectedOverexposedCount;
+                        continue;
+                    }
+                    sumR += srgb.r;
+                    sumG += srgb.g;
+                    sumB += srgb.b;
+                    ++outResult.validPixelCount;
+                }
+            }
+            if (outResult.validPixelCount == 0) {
+                outResult.availability = WbProbeAvailability::Overexposed;
+                return RenderStatus::Ok;
+            }
+            const double count = static_cast<double>(outResult.validPixelCount);
+            const RGB mean(static_cast<float>(sumR / count), static_cast<float>(sumG / count), static_cast<float>(sumB / count));
+            outResult.sampledRgb = {mean.r, mean.g, mean.b};
+
+            ColorConverter::Matrix3x3 invRgbCam{};
+            try {
+                invRgbCam = ColorConverter::invertMatrix(cachedRgbCam_);
+            } catch (...) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const RGB camWb = ColorConverter::applyMatrix(mean, invRgbCam);
+            const double camRaw[3] = {
+                std::max(1e-6, static_cast<double>(camWb.r) / cachedWbUsed_[0]),
+                std::max(1e-6, static_cast<double>(camWb.g) / cachedWbUsed_[1]),
+                std::max(1e-6, static_cast<double>(camWb.b) / cachedWbUsed_[2])
+            };
+            const std::array<double, 3> neutral = {
+                camRaw[0] / camRaw[1],
+                1.0,
+                camRaw[2] / camRaw[1]
+            };
+            TemperatureTint solved{};
+            if (!cachedRawWb_.solveTemperatureTint(neutral, solved)) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            outResult.temperature = static_cast<float>(std::clamp(solved.temperature, 2000.0, 50000.0));
+            outResult.tint = static_cast<float>(std::clamp(solved.tint, -150.0, 150.0));
+            outResult.wbMul = {
+                static_cast<float>(camRaw[1] / camRaw[0]),
+                1.0f,
+                static_cast<float>(camRaw[1] / camRaw[2])
+            };
+            outResult.availability = WbProbeAvailability::Available;
+            return RenderStatus::Ok;
+        }
+
+        // DisplayBuffer (SDR raster)
+        ImageData image;
+        ColorSpace space = ColorSpace::sRGB;
+        bool isLinear = false;
+        RenderStatus status = loadBufferImage(local, image, &space, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        status = ensureLinear(image, space, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        if (hasDisplayLensMetadata_) {
+            ensureLensDatabase();
+            (void)applyDisplayLensCorrection(image, lensDatabase_,
+                displayLensMetadata_, lensCorrection_, displayLensOrientation_);
+        }
+        const auto outSize = geometryOutputSize(image.width, image.height, geometry_);
+        const int outW = outSize.first;
+        const int outH = outSize.second;
+        if (outW <= 0 || outH <= 0) {
+            outResult.availability = WbProbeAvailability::Unavailable;
+            return RenderStatus::Ok;
+        }
+        const auto sampler = makeGeometrySampler(image.width, image.height, geometry_);
+        const auto reader = [&](int sx, int sy) { return image.at(sx, sy); };
+        const int cx = static_cast<int>(std::lround(double(query.normX) * (outW - 1)));
+        const int cy = static_cast<int>(std::lround(double(query.normY) * (outH - 1)));
+
+        double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+        for (int dy = -half; dy <= half; ++dy) {
+            const int py = cy + dy;
+            if (py < 0 || py >= outH) continue;
+            for (int dx = -half; dx <= half; ++dx) {
+                const int px = cx + dx;
+                if (px < 0 || px >= outW) continue;
+                const RGB srgb = sampler(px, py, reader);
+                if (!std::isfinite(srgb.r) || !std::isfinite(srgb.g) || !std::isfinite(srgb.b) ||
+                    std::max({srgb.r, srgb.g, srgb.b}) >= 0.98f) {
+                    ++outResult.rejectedOverexposedCount;
+                    continue;
+                }
+                sumR += srgb.r;
+                sumG += srgb.g;
+                sumB += srgb.b;
+                ++outResult.validPixelCount;
+            }
+        }
+        if (outResult.validPixelCount == 0) {
+            outResult.availability = WbProbeAvailability::Overexposed;
+            return RenderStatus::Ok;
+        }
+        const double count = static_cast<double>(outResult.validPixelCount);
+        const RGB mean(static_cast<float>(sumR / count), static_cast<float>(sumG / count), static_cast<float>(sumB / count));
+        outResult.sampledRgb = {mean.r, mean.g, mean.b};
+
+        constexpr double eps = 1e-5;
+        const double r = std::max<double>(mean.r, eps);
+        const double g = std::max<double>(mean.g, eps);
+        const double b = std::max<double>(mean.b, eps);
+        const double m = std::clamp(std::log2(b / r), -2.25, 0.87);
+        const double temp = std::clamp(6500.0 / (1.0 - m), 2000.0, 50000.0);
+        const double tint = std::clamp(600.0 * std::log2(g / std::sqrt(r * b)), -150.0, 150.0);
+        const RGB gain = hdrRelativeWhiteBalance(static_cast<float>(temp), static_cast<float>(tint));
+        outResult.temperature = static_cast<float>(temp);
+        outResult.tint = static_cast<float>(tint);
+        outResult.wbMul = {gain.r / gain.g, 1.0f, gain.b / gain.g};
+        outResult.availability = WbProbeAvailability::Available;
+        return RenderStatus::Ok;
+    } catch (const ProcessingCancelled&) {
+        return RenderStatus::Cancelled;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
     }
 }
 

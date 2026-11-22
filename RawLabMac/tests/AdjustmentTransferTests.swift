@@ -216,6 +216,20 @@ struct AdjustmentTransferTests {
             check(reset.settings.gradingSettings.midtones.isDefault && reset.settings.gradingSettings.shadows == source.gradingSettings.shadows
                 && reset.settings.gradingSettings.highlights == source.gradingSettings.highlights, "Zone reset preserves sibling precision")
         } else { fatalError("Expected grading zone reset") }
+        var globalResetSource = source.gradingSettings
+        globalResetSource.global = ColorGradingWheel(hue: 45, saturation: 28, luminance: -18)
+        globalResetSource.blending = 72
+        globalResetSource.balance = 24
+        var globalAdjustments = Adjustments()
+        globalAdjustments.gradingSettings = globalResetSource
+        let globalSnapshot = state(globalAdjustments)
+        if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: .gradingGlobal, snapshot: globalSnapshot, context: context) {
+            check(reset.settings.gradingSettings.global.isDefault &&
+                  reset.settings.gradingSettings.shadows == globalResetSource.shadows &&
+                  reset.settings.gradingSettings.blending == 72 &&
+                  reset.settings.gradingSettings.balance == 24,
+                  "Mac gradingGlobal reset clears only global wheel and retains S/M/H, blending, and balance")
+        } else { fatalError("Expected Mac gradingGlobal reset") }
         for scope in [EditorResetScope.allGrading, .group(.color), .tool(.colorGrading)] {
             if case .candidate(let reset) = MacEditorAdjustmentRules.prepareReset(scope: scope, snapshot: snapshot, context: context) {
                 check(reset.settings.gradingSettings.isDefault, "Tool and color-group resets clear every grading value")

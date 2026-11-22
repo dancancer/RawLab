@@ -251,7 +251,12 @@ final class EditorCoordinator: ObservableObject {
     @Published var curveTargetPoint: CGPoint?
     @Published var curveTargetNotice: HSLTargetAvailability?
     @Published var curveTargetHistoryActive = false
+    enum WBProbeNotice: Equatable { case overexposed, outside, stale, unavailable, failed }
+    @Published var wbEyedropperEnabled = false
+    @Published var wbProbeSampling = false
+    @Published var wbProbeNotice: WBProbeNotice?
     @Published var gradingZone: ColorGradingZone = .shadows
+    @Published var gradingGlobalSelected = false
     @Published var preparedReset: PreparedEditorReset?
     @Published var preparedResetScope: EditorAdjustmentScope?
     @Published var resetConfirmationPresented = false
@@ -416,6 +421,14 @@ final class EditorCoordinator: ObservableObject {
         curveTargetEnabled && selectedAdjustment == .toneCurve && isEditorDraftActive &&
             currentEditorTool == .adjustment(.toneCurve) && !editorBusy &&
             adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
+    }
+
+    var wbProbeActive: Bool {
+        wbEyedropperEnabled && (selectedAdjustment == .temperature || selectedAdjustment == .tint) &&
+            isEditorDraftActive &&
+            (currentEditorTool == .adjustment(.temperature) || currentEditorTool == .adjustment(.tint)) &&
+            !editorBusy && adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented &&
+            !settings.isHDREditing
     }
 
     var canStartFileExport: Bool {
@@ -810,6 +823,7 @@ final class EditorCoordinator: ObservableObject {
         cancelHSLTarget()
         cancelCurveTarget()
         gradingZone = .shadows
+        gradingGlobalSelected = false
         photoViewing.sourceChanged()
         photoViewport = PhotoViewport()
         inspection.resetForNewSource()

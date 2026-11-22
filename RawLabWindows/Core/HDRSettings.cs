@@ -231,7 +231,8 @@ public sealed record HDRSettings
         };
     }
 
-    internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null, OutputSharpening outputSharpening = OutputSharpening.Off)
+    internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null,
+        OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var tone = ToneSettings;
         var color = ColorSettings;
@@ -261,8 +262,12 @@ public sealed record HDRSettings
                 Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
             LookPath = look.AssetPath(lookDirectory), LookStrength = (float)look.Strength, LookSha256 = fingerprint
         };
-        var v8 = new Native.HDRRequestV8 { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
-            Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };
+        var v8 = new Native.HDRRequestV8 {
+            Base = lookRequest,
+            Red = tone.Curve.Channels.Red.NativeConfig(),
+            Green = tone.Curve.Channels.Green.NativeConfig(),
+            Blue = tone.Curve.Channels.Blue.NativeConfig()
+        };
         return new() {
             Base = v8,
             CurveApplyToLuminosity = tone.Curve.ApplyToLuminosity ? 1 : 0,

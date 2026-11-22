@@ -343,6 +343,30 @@ internal static class HDRChecks
               System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV7>(nameof(Native.HDRRequestV7.LookPath)).ToInt32() == 864 &&
               System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRLookInfo>() == 108,
             "HDR v7 preserves the detail prefix and look probe layout");
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() == 2696 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.ParametricCurve)).ToInt32() == 2592 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.GradingV2)).ToInt32() == 2632,
+            "HDR v9 preserves the channel-curve prefix and v2 grading/parametric curve tail");
+        var hdrV9 = new HDRSettings
+        {
+            Color = new HDRColorSettings(0, new(), new ColorGradingSettings
+            {
+                Shadows = new(200, 25, -10),
+                Global = new(45, 20, -15),
+                Blending = 80,
+                Balance = 30
+            })
+        };
+        Check(hdrV9.ProcessingVersion == 9, "Grading v2 extensions promote HDR ProcessingVersion to 9");
+        var v9Native = hdrV9.NativeRenderRequest(HDRIntent.Preview);
+        Check(v9Native.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == 2696 &&
+              v9Native.ParametricCurve.Version == 1 && v9Native.ParametricCurve.StructSize == 40 &&
+              v9Native.ParametricCurve.SplitShadow == 0.25f &&
+              v9Native.GradingV2.Version == 2 && v9Native.GradingV2.StructSize == 64 &&
+              v9Native.GradingV2.ShadowsLuminance == -10f &&
+              v9Native.GradingV2.GlobalHue == 45f && v9Native.GradingV2.GlobalLuminance == -15f &&
+              v9Native.GradingV2.Blending == 80f && v9Native.GradingV2.Balance == 30f,
+            "HDR v9 native request marshals parametric defaults and Color Grading v2 fields");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRCameraDevelopment>() == 40,
             "Camera development has a stable ABI");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRSourceInfo>() == 76 &&

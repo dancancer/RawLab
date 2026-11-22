@@ -151,4 +151,56 @@ extension ContentView {
         }
         beginCurveTarget(point, keyDelta: delta)
     }
+
+    var wbProbeActive: Bool { coordinator.wbProbeActive }
+
+    var wbProbeInput: HSLTargetCanvasInput {
+        let source = viewModel.sourceRevision, draftID = workspaceDraftID, hdr = workingSettings.isHDREditing
+        func current() -> Bool {
+            viewModel.sourceRevision == source && workspaceDraftID == draftID && workingSettings.isHDREditing == hdr
+        }
+        return HSLTargetCanvasInput(scope: "wb-\(source)-\(draftID)-\(hdr)",
+            begin: { if current() { beginWBProbe($0) } }, change: { _ in },
+            end: {}, cancel: { if current() { cancelWBProbe() } },
+            key: { _ in }, reject: { if current() { coordinator.wbProbeNotice = .outside } })
+    }
+
+    func beginWBProbe(_ point: CGPoint) {
+        guard wbProbeActive else { coordinator.wbProbeNotice = .stale; return }
+        let before = workingSettings, source = viewModel.sourceRevision, draftID = workspaceDraftID
+        let isRaster = viewModel.sourceKind == .raster
+        coordinator.wbProbeSampling = true
+        coordinator.wbProbeNotice = nil
+        viewModel.sampleWBProbe(point: point, settings: before) { outcome in
+            coordinator.wbProbeSampling = false
+            guard viewModel.sourceRevision == source, workspaceDraftID == draftID,
+                  workingSettings == before, wbProbeActive else {
+                coordinator.wbProbeNotice = .stale
+                return
+            }
+            switch outcome.availability {
+            case SONY2FUJI_WB_PROBE_AVAILABLE:
+                coordinator.wbProbeNotice = nil
+                setSliderEditing(true)
+                var updated = before
+                if !isRaster { updated.whiteBalanceMode = .custom }
+                else { updated.whiteBalanceMode = .camera }
+                updated.temperature = outcome.temperature
+                updated.tint = outcome.tint
+                applySettingsChange(updated)
+                setSliderEditing(false)
+            case SONY2FUJI_WB_PROBE_OVEREXPOSED:
+                coordinator.wbProbeNotice = .overexposed
+            case SONY2FUJI_WB_PROBE_OUTSIDE:
+                coordinator.wbProbeNotice = .outside
+            default:
+                coordinator.wbProbeNotice = .unavailable
+            }
+        }
+    }
+
+    func cancelWBProbe() {
+        coordinator.wbProbeSampling = false
+        coordinator.wbProbeNotice = nil
+    }
 }

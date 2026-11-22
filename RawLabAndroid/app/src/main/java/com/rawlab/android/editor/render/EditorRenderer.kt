@@ -99,6 +99,16 @@ internal class EditorRenderer(
             y: Float,
             cancellationGeneration: Long = -1L,
         ): HslTargetSample
+        fun sampleWhiteBalance(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            inputKind: PhotoInputKind,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long = -1L,
+        ): NativeProcessor.WbProbeSample = error("unused")
         fun export(
             input: File,
             lut: File?,
@@ -344,6 +354,16 @@ internal class EditorRenderer(
             y: Float,
             cancellationGeneration: Long,
         ): HslTargetSample = native.sampleHsl(input, lut, settings, edge, interactive, inputKind, revision, x, y, cancellationGeneration)
+        override fun sampleWhiteBalance(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            inputKind: PhotoInputKind,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long,
+        ): NativeProcessor.WbProbeSample = native.sampleWhiteBalance(input, lut, settings, edge, inputKind, x, y, cancellationGeneration = cancellationGeneration)
         override fun export(
             input: File,
             lut: File?,
@@ -653,7 +673,7 @@ internal class EditorRenderer(
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
         runGuardedExportWork(work, destinationDeleter) {
-            if (work !is Work.Preview && work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.Import &&
+            if (work !is Work.Preview && work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe && work !is Work.Import &&
                 work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
                 return@runGuardedExportWork perform(work)
             cancellation.check()
@@ -724,6 +744,16 @@ internal class EditorRenderer(
             }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
             WorkResult.HslProbe(work, sample)
         }
+        is Work.WbProbe -> {
+            val preview = work.preview
+            val sample = runCatching {
+                engine().sampleWhiteBalance(preview.photo.file, storage.lookPath(preview.edits), preview.edits,
+                    preview.edge, preview.photo.inputKind, work.x, work.y, generation)
+            }.getOrElse {
+                NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.UNAVAILABLE, 6500f, 0f, 0, 0)
+            }
+            WorkResult.WbProbe(work, sample)
+        }
         is Work.CameraHDRPreflight -> performCameraHDRPreflight(work, generation)
         is Work.Export -> {
             if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work, generation)
@@ -760,9 +790,12 @@ internal class EditorRenderer(
         val lut = if (hdr) null else storage.lookPath(work.edits)
         val source = FileStamp.read(work.photo.file)
         val lutStamp = lut?.let { FileStamp.read(it) }
-        // 拍摄白平衡的显示值会随首帧回填；配方的相对色调仍是渲染输入。
-        val edits = if (work.edits.customWb) work.edits else work.edits.copy(temperature = 6500f,
-            tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
+        // 拍摄白平衡的显示值会随首帧回填；配方的相对色调与普通照片的相对白平衡仍是渲染输入。
+        val edits = when {
+            work.edits.customWb -> work.edits
+            work.photo.inputKind == PhotoInputKind.RASTER && work.edits.recipeID == null -> work.edits
+            else -> work.edits.copy(temperature = 6500f, tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
+        }
         val scope = if (work.interactive || work.draft || !work.includeNeutral || source == null || (lut != null && lutStamp == null)) null
             else PreviewScope(work.photo, source, lutStamp, edits, work.gpuMode)
         if (previewScope != scope) {

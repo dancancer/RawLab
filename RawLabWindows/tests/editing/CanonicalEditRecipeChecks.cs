@@ -83,5 +83,32 @@ internal static class CanonicalEditRecipeChecks
             "Non-off output_sharpening promotes canonical recipe to at least schema_version 16");
         Check(sharpenedRoot["output"]!["output_sharpening"]!.GetValue<string>() == "standard",
             "Canonical recipe serializes output.output_sharpening wire token");
+
+        var rasterRelativeWb = new Adjustments();
+        rasterRelativeWb.SetRelativeWhiteBalance(5200, 18);
+        var rasterRelativeJson = JsonNode.Parse(CanonicalEditRecipe.Encode(rasterRelativeWb, isRaster: true))!.AsObject();
+        Check(rasterRelativeJson["schema_version"]!.GetValue<int>() == 17,
+            "SDR raster relative WB promotes canonical recipe to schema_version 17");
+        Check(rasterRelativeJson["edits"]!["white_balance"]!["mode"]!.GetValue<string>() == "relative" &&
+              rasterRelativeJson["edits"]!["white_balance"]!["relative_temperature"]!.GetValue<double>() == 5200 &&
+              rasterRelativeJson["edits"]!["white_balance"]!["relative_tint"]!.GetValue<double>() == 18,
+            "SDR raster relative WB encodes mode=relative with relative_temperature and relative_tint");
+
+        var gradingV2 = new Adjustments
+        {
+            ColorGrading = new ColorGradingSettings
+            {
+                Shadows = new(180, 25, -12),
+                Global = new(60, 15, 8),
+                Blending = 75,
+                Balance = -20
+            }
+        };
+        var gradingV2Json = JsonNode.Parse(CanonicalEditRecipe.Encode(gradingV2, isRaster: true))!.AsObject();
+        Check(gradingV2Json["schema_version"]!.GetValue<int>() == 17 &&
+              gradingV2Json["edits"]!["color_grading"]!["global"]!["luminance"]!.GetValue<double>() == 8 &&
+              gradingV2Json["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 75 &&
+              gradingV2Json["edits"]!["color_grading"]!["balance"]!.GetValue<double>() == -20,
+            "CanonicalEditRecipe encodes Color Grading v2 global, luminance, blending, and balance under schema_version 17");
     }
 }

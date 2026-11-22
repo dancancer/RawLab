@@ -45,10 +45,18 @@ internal data class NativeToneCurve(
 internal data class NativeColorGrading(
     val shadowsHue: Float = 0f,
     val shadowsSaturation: Float = 0f,
+    val shadowsLuminance: Float = 0f,
     val midtonesHue: Float = 0f,
     val midtonesSaturation: Float = 0f,
+    val midtonesLuminance: Float = 0f,
     val highlightsHue: Float = 0f,
     val highlightsSaturation: Float = 0f,
+    val highlightsLuminance: Float = 0f,
+    val globalHue: Float = 0f,
+    val globalSaturation: Float = 0f,
+    val globalLuminance: Float = 0f,
+    val blending: Float = 50f,
+    val balance: Float = 0f,
 )
 
 internal data class NativeToneCurveParametric(
@@ -301,10 +309,18 @@ internal fun ToneCurveShape.toNativeCurve(): NativeToneCurve = NativeToneCurve(
 internal fun ColorGradingSettings.toNativeColorGrading(): NativeColorGrading = NativeColorGrading(
     shadowsHue = shadows.hue,
     shadowsSaturation = shadows.saturation,
+    shadowsLuminance = shadows.luminance,
     midtonesHue = midtones.hue,
     midtonesSaturation = midtones.saturation,
+    midtonesLuminance = midtones.luminance,
     highlightsHue = highlights.hue,
     highlightsSaturation = highlights.saturation,
+    highlightsLuminance = highlights.luminance,
+    globalHue = global.hue,
+    globalSaturation = global.saturation,
+    globalLuminance = global.luminance,
+    blending = blending,
+    balance = balance,
 )
 
 internal fun ToneCurveParametric.toNativeParametric(): NativeToneCurveParametric = NativeToneCurveParametric(

@@ -43,6 +43,19 @@ int main() {
             ColorConverter::getConversionMatrix(ColorSpace::sRGB, ColorSpace::AdobeRGB));
         require(std::abs(adobe.pixels[2].r-image.pixels[2].r-2*expected.r) < 1e-7f &&
                 std::abs(adobe.pixels[2].g-image.pixels[2].g-2*expected.g) < 1e-7f, "working-space conversion or exposure repeated");
+        auto zeroBlend = image;
+        applySceneRGBCorrection(zeroBlend, delta, ColorSpace::AdobeRGB, 2.f, 0.0f);
+        for (size_t i = 0; i < image.pixels.size(); ++i)
+            require(zeroBlend.pixels[i].r == image.pixels[i].r && zeroBlend.pixels[i].g == image.pixels[i].g &&
+                    zeroBlend.pixels[i].b == image.pixels[i].b, "blend=0 must leave pixels untouched");
+        auto halfBlend = image;
+        applySceneRGBCorrection(halfBlend, delta, ColorSpace::AdobeRGB, 2.f, 0.5f);
+        require(std::abs((halfBlend.pixels[2].r - image.pixels[2].r) - 0.5f * (adobe.pixels[2].r - image.pixels[2].r)) < 1e-6f,
+                "blend=0.5 must scale SceneRGB correction by half");
+        bool invalidBlendRejected = false;
+        try { applySceneRGBCorrection(zeroBlend, delta, ColorSpace::sRGB, 1.f, 1.5f); }
+        catch (const std::invalid_argument&) { invalidBlendRejected = true; }
+        require(invalidBlendRejected, "out-of-range SceneRGB blend accepted");
         bool rejected = false;
         try { sceneRGBCorrection(image, 1, [](Tensor tile) { tile.values[0] = std::numeric_limits<float>::quiet_NaN(); return tile; }, {}, {24,4}); }
         catch (const ModelContractError&) { rejected = true; }

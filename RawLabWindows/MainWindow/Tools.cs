@@ -195,7 +195,7 @@ public partial class MainWindow
         if (group == EditorAdjustmentGroup.Looks && settings.IsHDREditing && !wasQuick) { ShowQuickPresets(); return; }
         if (wasQuick) CloseQuickPresets();
         if(expandedGroup==group && !wasQuick || wasQuick && group==EditorAdjustmentGroup.Looks) {
-            SetHslTargetMode(false,hslTargetAxis);SetCurveTargetMode(false,curveTargetChannel);CancelParameterInputs();if(!ResolveTransformDraft())return;
+            SetHslTargetMode(false,hslTargetAxis);SetCurveTargetMode(false,curveTargetChannel);CancelWbProbe();CancelParameterInputs();if(!ResolveTransformDraft())return;
             expandedGroup=null;RefreshWorkspaceNavigation();
             return;
         }
@@ -208,6 +208,7 @@ public partial class MainWindow
         if (quickPresetsVisible) CloseQuickPresets();
         if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
         if(tool!=EditorAdjustmentTool.ToneCurve)SetCurveTargetMode(false,curveTargetChannel);
+        if(tool!=EditorAdjustmentTool.WhiteBalance)CancelWbProbe();
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
@@ -236,7 +237,7 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
-        CancelHslTarget();CancelCurveTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
+        CancelHslTarget();CancelCurveTarget();CancelWbProbe();GradingEditor.CancelInputs();CurveEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }
@@ -587,8 +588,8 @@ public partial class MainWindow
                 HslEditor.IsEnabled=file!=null && !exporting;
                 HslCategory.Tag=toolMode==EditorToolMode.Hsl ? "selected" : null;
                 WhiteBalanceSurface.Visibility=toolMode==EditorToolMode.WhiteBalance ? Visibility.Visible : Visibility.Collapsed;
-                WhiteBalanceEditor.IsEnabled=file!=null && (!raster || hdrEditing) && !exporting;
-                WhiteBalanceCategory.IsEnabled=file!=null && (!raster || hdrEditing) && !exporting;
+                WhiteBalanceEditor.IsEnabled=file!=null && !exporting;
+                WhiteBalanceCategory.IsEnabled=file!=null && !exporting;
                 WhiteBalanceCategory.Tag=toolMode==EditorToolMode.WhiteBalance ? "selected" : null;
                 AutoExposureButton.Visibility=selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && selectedParameter==Parameter.Exposure ? Visibility.Visible : Visibility.Collapsed;
                 AutoExposureButton.IsEnabled=CanAutoExpose;
@@ -676,7 +677,7 @@ public partial class MainWindow
                 RefreshHslTarget();
             }
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.WhiteBalance))
-                WhiteBalanceEditor.Refresh(settings,WhiteBalanceEditor.IsEnabled && (hdrEditing || settings.AsShot!=null));
+                RefreshWbProbe();
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Denoise))
             {
                 DenoiseEditor.Refresh(settings.Denoise,hdrEditing ? settings.HDR!.DetailSettings.Denoise : null);

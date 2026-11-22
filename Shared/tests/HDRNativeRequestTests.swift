@@ -154,6 +154,23 @@ import Foundation
                     full.grading_v2.struct_size == 64 && full.grading_v2.midtones_hue == 210,
                     "HDR v9 tone curve v2 + grading_v2 tail")
         }
+        var v9GradingSettings = HDRSettings()
+        v9GradingSettings.colorSettings.grading.shadows.luminance = -25
+        v9GradingSettings.colorSettings.grading.global = .init(hue: 210, saturation: 35, luminance: 15)
+        v9GradingSettings.colorSettings.grading.blending = 72
+        v9GradingSettings.colorSettings.grading.balance = -18
+        let v9GradingRequest = try makeHDRRequest(settings: v9GradingSettings, intent: SONY2FUJI_INTENT_FINAL)
+        withHDRRequestPrefix(v9GradingRequest) { pointer in
+            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == UInt32(MemoryLayout<sony2fuji_hdr_request_v9>.size),
+                    "Swift HDR v9 request lost v9 header")
+            let full = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
+            require(full.parametric_curve.version == 1 && full.parametric_curve.split_shadow == 0.25 &&
+                    full.grading_v2.version == 2 && full.grading_v2.shadows_luminance == -25 &&
+                    full.grading_v2.global_hue == 210 && full.grading_v2.global_saturation == 35 &&
+                    full.grading_v2.global_luminance == 15 && full.grading_v2.blending == 72 &&
+                    full.grading_v2.balance == -18,
+                    "Swift HDR v9 grading_v2 or default parametric_curve mismatch")
+        }
         for edge in [0,-1,65536] {
             do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:edge); fatalError("invalid edge accepted") }
             catch HDRRequestError.invalidSettings {}

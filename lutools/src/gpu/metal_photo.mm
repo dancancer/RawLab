@@ -72,7 +72,10 @@ struct PhotoParams {
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint32_t srcRowOffset, dstRowOffset, srcRows, dstRows;
     float blackPoint, whitePoint, vibrance;
-    float colorGrading[9];
+    float colorGrading[12];
+    float colorGradingLuminance[4];
+    float colorGradingBlending;
+    float colorGradingBalance;
     uint32_t customCurveCount;
     float curveRanges[32][4], curveTangents[32][2];
     uint32_t channelCurveCount[3];
@@ -82,13 +85,13 @@ struct PhotoParams {
     float parametricAmps[4];
     float parametricSplits[4];
 };
-static_assert(sizeof(PhotoParams) == 3480, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 3516, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
 static_assert(offsetof(PhotoParams, colorGrading) == 316, "Grading Metal options offset");
-static_assert(offsetof(PhotoParams, customCurveCount) == 352, "Curve Metal options offset");
-static_assert(offsetof(PhotoParams, channelCurveCount) == 1124, "Channel curve Metal options offset");
-static_assert(offsetof(PhotoParams, curveApplyToLuminosity) == 3440, "Luminosity curve Metal options offset");
-static_assert(offsetof(PhotoParams, parametricAmps) == 3448, "Parametric curve Metal options offset");
+static_assert(offsetof(PhotoParams, customCurveCount) == 388, "Curve Metal options offset");
+static_assert(offsetof(PhotoParams, channelCurveCount) == 1160, "Channel curve Metal options offset");
+static_assert(offsetof(PhotoParams, curveApplyToLuminosity) == 3476, "Luminosity curve Metal options offset");
+static_assert(offsetof(PhotoParams, parametricAmps) == 3484, "Parametric curve Metal options offset");
 
 struct PhotoEffectsParams {
     uint32_t width, height;
@@ -175,7 +178,10 @@ struct Params {
     float hslHue[8], hslSaturation[8], hslLightness[8];
     uint srcRowOffset, dstRowOffset, srcRows, dstRows;
     float blackPoint, whitePoint, vibrance;
-    float colorGrading[9];
+    float colorGrading[12];
+    float colorGradingLuminance[4];
+    float colorGradingBlending;
+    float colorGradingBalance;
     uint customCurveCount;
     float curveRanges[32][4], curveTangents[32][2];
     uint channelCurveCount[3];
@@ -472,9 +478,12 @@ inline float3 applyHsl(float3 pixel, constant Params& params) {
 }
 
 float3 applyGrading(float3 pixel, constant Params& params) {
-    return cgApply(pixel,float3(params.colorGrading[0],params.colorGrading[1],params.colorGrading[2]),
-        float3(params.colorGrading[3],params.colorGrading[4],params.colorGrading[5]),
-        float3(params.colorGrading[6],params.colorGrading[7],params.colorGrading[8]));
+    return cgApply(pixel,
+        float3(params.colorGrading[0], params.colorGrading[1], params.colorGrading[2]), params.colorGradingLuminance[0],
+        float3(params.colorGrading[3], params.colorGrading[4], params.colorGrading[5]), params.colorGradingLuminance[1],
+        float3(params.colorGrading[6], params.colorGrading[7], params.colorGrading[8]), params.colorGradingLuminance[2],
+        float3(params.colorGrading[9], params.colorGrading[10], params.colorGrading[11]), params.colorGradingLuminance[3],
+        params.colorGradingBlending, params.colorGradingBalance);
 }
 
 inline float evalMasterTone(float x, constant Params& params) {
@@ -870,22 +879,28 @@ PhotoParams makeParams(
         params.blackPoint = renderParams.toneControls.blackPoint;
         params.whitePoint = renderParams.toneControls.whitePoint;
         params.vibrance = renderParams.toneControls.vibrance;
-        const auto grading = sony2fuji::colorGradingCoefficients(renderParams.colorGrading);
-        for (size_t zone = 0; zone < 3; ++zone) {
-            params.colorGrading[zone * 3] = grading[zone].r;
-            params.colorGrading[zone * 3 + 1] = grading[zone].g;
-            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        const auto grading = sony2fuji::colorGradingParameters(renderParams.colorGrading);
+        for (size_t zone = 0; zone < 4; ++zone) {
+            params.colorGrading[zone * 3] = grading.coefficients[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading.coefficients[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading.coefficients[zone].b;
+            params.colorGradingLuminance[zone] = grading.luminance[zone];
         }
+        params.colorGradingBlending = grading.blending;
+        params.colorGradingBalance = grading.balance;
         std::copy(renderParams.hsl.hue.begin(), renderParams.hsl.hue.end(), params.hslHue);
         std::copy(renderParams.hsl.saturation.begin(), renderParams.hsl.saturation.end(), params.hslSaturation);
         std::copy(renderParams.hsl.lightness.begin(), renderParams.hsl.lightness.end(), params.hslLightness);
     } else {
-        const auto grading = sony2fuji::colorGradingCoefficients(sony2fuji::ColorGradingOptions{});
-        for (size_t zone = 0; zone < 3; ++zone) {
-            params.colorGrading[zone * 3] = grading[zone].r;
-            params.colorGrading[zone * 3 + 1] = grading[zone].g;
-            params.colorGrading[zone * 3 + 2] = grading[zone].b;
+        const auto grading = sony2fuji::colorGradingParameters(sony2fuji::ColorGradingOptions{});
+        for (size_t zone = 0; zone < 4; ++zone) {
+            params.colorGrading[zone * 3] = grading.coefficients[zone].r;
+            params.colorGrading[zone * 3 + 1] = grading.coefficients[zone].g;
+            params.colorGrading[zone * 3 + 2] = grading.coefficients[zone].b;
+            params.colorGradingLuminance[zone] = grading.luminance[zone];
         }
+        params.colorGradingBlending = grading.blending;
+        params.colorGradingBalance = grading.balance;
     }
     params.noiseReduction = renderParams.noiseReduction;
     params.sharpening = renderParams.sharpening;

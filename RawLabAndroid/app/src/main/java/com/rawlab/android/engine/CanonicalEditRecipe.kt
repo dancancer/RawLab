@@ -110,12 +110,27 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("coarse", denoise.coarse.toDouble()))
     }
 
+    val rasterRelativeWb = isRaster && recipeID == null && (temperature != 6500f || tint != 0f)
+    if (rasterRelativeWb) {
+        require(temperature.isFinite() && temperature in 2000f..50000f && tint.isFinite() && tint in -150f..150f) {
+            "Invalid raster relative white balance"
+        }
+    }
+    val wbObj = when {
+        rasterRelativeWb -> JSONObject()
+            .put("mode", "relative")
+            .put("relative_temperature", temperature.toDouble())
+            .put("relative_tint", tint.toDouble())
+        isRaster -> JSONObject().put("mode", "none")
+        else -> JSONObject().put("mode", "camera")
+    }
+
     val edits = JSONObject()
         .put("exposure", JSONObject()
             .put("mode", exposureString)
             .put("ev", 0.0)
             .put("brightness", 1.0))
-        .put("white_balance", JSONObject().put("mode", if (isRaster) "none" else "camera"))
+        .put("white_balance", wbObj)
         .put("look", JSONObject().put("path", JSONObject.NULL).put("strength", 1.0))
         .put("geometry", JSONObject()
             .put("crop", JSONObject()
@@ -160,7 +175,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
         .put("denoise", denoiseObj)
         .put("lens_correction", lensObj)
 
-    val activeV012 = renderCurve.hasV2Extensions || grading.hasV2Extensions || outputSharpening != OutputSharpening.OFF
+    val activeV012 = renderCurve.hasV2Extensions || grading.hasV2Extensions || rasterRelativeWb || outputSharpening != OutputSharpening.OFF
     val outputObj = JSONObject()
         .put("path", "session.png")
         .put("format", "png")

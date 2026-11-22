@@ -22,15 +22,19 @@ bool gradingGpuBoundary(Render render) {
             RGB(.2f,.5f,.9f),RGB(.2f,.4f,.2f),RGB(.6f,.3f,.18f),RGB(.2f,.200001f,.2f),RGB(.8f,.7f,.5f)})
         input.pixels.push_back(p);
     input.width=static_cast<int>(input.pixels.size());input.height=1;
-    ColorGradingOptions all,pending,shadows,middle,tiny;
+    ColorGradingOptions all,pending,shadows,middle,tiny,v2Full;
     all.wheels={ColorGradingWheel{220,100},ColorGradingWheel{110,100},ColorGradingWheel{35,100}};
     pending.wheels={ColorGradingWheel{223,0},ColorGradingWheel{111,0},ColorGradingWheel{35,0}};
     shadows.wheels[0]={240,100};middle.wheels[1]={359.999f,100};tiny.wheels[0]={240,.0001f};
+    v2Full.wheels={ColorGradingWheel{215,65,-35},ColorGradingWheel{125,40,20},ColorGradingWheel{40,55,45}};
+    v2Full.global=ColorGradingWheel{310,30,-15};
+    v2Full.blending=75;
+    v2Full.balance=-30;
     RenderParams params; params.brightness=params.saturation=1; params.temperature=6500; params.intent=RenderIntent::Final;
     float maximum=0;
     for (float contrast : {1.f,1.8f}) {
         params.contrast=contrast;
-        for (const auto& options : {ColorGradingOptions{},pending,all,shadows,middle,tiny}) {
+        for (const auto& options : {ColorGradingOptions{},pending,all,shadows,middle,tiny,v2Full}) {
             ImageData actual;
             if (!render(input,params,options,actual) || actual.pixels.size()!=input.pixels.size())return false;
             for (size_t i=0;i<actual.pixels.size();++i) {

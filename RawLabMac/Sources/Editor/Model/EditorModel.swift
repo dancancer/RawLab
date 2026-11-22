@@ -167,16 +167,32 @@ final class EditorModel: ObservableObject {
     }
     var previewLongEdge = 2000
     var renderPreviewLongEdge = 2000
-    @Published var hslTargetEnabled = false
+    @Published var hslTargetEnabled = false { didSet {
+        if hslTargetEnabled { inspection.pinModeEnabled = false }
+    } }
     @Published var hslTargetAxis: HSLAxis = .hue
     @Published var hslTargetInteraction = HSLTargetInteraction()
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
-    @Published var inspection = InspectionSessionState()
+    @Published var inspection = InspectionSessionState() { didSet {
+        if !oldValue.pinModeEnabled && inspection.pinModeEnabled {
+            cancelHSLTarget(); hslTargetEnabled = false
+            cancelCurveTarget(); curveTargetEnabled = false
+            cancelWBProbe(); wbEyedropperEnabled = false
+        }
+    } }
     var sourceNativeSize: CGSize?
+    enum WBProbeNotice: Equatable { case overexposed, outside, stale, unavailable, failed }
+    @Published var wbEyedropperEnabled = false { didSet {
+        if wbEyedropperEnabled { inspection.pinModeEnabled = false }
+    } }
+    @Published var wbProbeSampling = false
+    @Published var wbProbeNotice: WBProbeNotice?
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
-    @Published var curveTargetEnabled = false
+    @Published var curveTargetEnabled = false { didSet {
+        if curveTargetEnabled { inspection.pinModeEnabled = false }
+    } }
     @Published var curveTargetChannel: ToneCurveChannel = .rgb
     @Published var curveTargetInteraction = CurveTargetInteraction()
     @Published var curveTargetPoint: CGPoint?
@@ -196,6 +212,7 @@ final class EditorModel: ObservableObject {
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         inspection.resetForNewSource()
         sourceNativeSize = nil
+        wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
     } }

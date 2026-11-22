@@ -68,5 +68,17 @@ public sealed class DenoiseSettingsTests
             Assert.Throws<ArgumentOutOfRangeException>(() => (new DenoiseSettings(true, invalid, 46, 50)).NativeConfig());
         foreach (var invalid in new[] { -101d, 101d, double.NaN, double.PositiveInfinity })
             Assert.Throws<ArgumentOutOfRangeException>(() => (new PhotoEffectsSettings(invalid, 50, 0, 50, 0, 0, 25, 50)).NativeConfig());
+
+        settings.AIDenoiseStrength = 250.0;
+        Check(settings.AIDenoiseStrength == 100.0, "DualDn blend clamps above 100");
+        settings.AIDenoiseStrength = -10.0;
+        Check(settings.AIDenoiseStrength == 0.0, "DualDn blend clamps below 0");
+        settings.AIDenoiseStrength = 42.5;
+        var blendSnap = settings.Capture();
+        Check(blendSnap.AIDenoiseBlend == 42.5 && blendSnap.Restore().AIDenoiseStrength == 42.5,
+            "DualDn non-default blend round-trips through snapshot capture/restore");
+        var denoiseReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Denoise),
+            new(new OriginalIdentity("denoise.arw", 1, 2, 3), blendSnap, null)).Candidate!.Settings.Restore();
+        Check(denoiseReset.AIDenoiseStrength == 100.0, "Denoise tool reset restores DualDn blend to 100");
     }
 }

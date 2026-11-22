@@ -454,6 +454,14 @@ void testShaderBranchesPixelParity() {
     cg.wheels[1] = {140.f, 22.f};
     cg.wheels[2] = {260.f, 28.f};
 
+    sony2fuji::ColorGradingOptions cgV2;
+    cgV2.wheels[0] = {25.f, 30.f, -35.f};
+    cgV2.wheels[1] = {140.f, 22.f, 20.f};
+    cgV2.wheels[2] = {260.f, 28.f, 45.f};
+    cgV2.global = {310.f, 30.f, -15.f};
+    cgV2.blending = 75.f;
+    cgV2.balance = -30.f;
+
     sony2fuji::ToneCurveConfig curveCfg{};
     curveCfg.mode = sony2fuji::ToneCurveMode::Custom;
     curveCfg.count = 4;
@@ -478,20 +486,23 @@ void testShaderBranchesPixelParity() {
         bool useCustomCurve;
         bool useToneControls;
         bool useHsl;
-        bool useColorGrading;
+        int colorGradingMode; // 0=none, 1=v1, 2=v2
     };
 
     const std::vector<CaseSpec> cases = {
-        {"neutral + AdobeRGB gamut + exposure", sony2fuji::ColorSpace::AdobeRGB, nullptr, -0.35f, 1.1f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, false},
-        {"FLog->Display LUT + limited domain + partial strength", sony2fuji::ColorSpace::sRGB, flogLut, 0.25f, 1.0f, 0.72f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, false},
-        {"FLog2->FLog log-output decode", sony2fuji::ColorSpace::sRGB, flog2ToFlogLut, 0.f, 1.0f, 1.0f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, false},
-        {"FLog2->FLog2 log-output decode", sony2fuji::ColorSpace::sRGB, flog2ToFlog2Lut, 0.1f, 0.95f, 0.85f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, false},
-        {"SRGB->Display LUT branch (P2-10 / C29)", sony2fuji::ColorSpace::AdobeRGB, srgbLut, 0.15f, 1.05f, 0.80f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, false},
+        {"neutral + AdobeRGB gamut + exposure", sony2fuji::ColorSpace::AdobeRGB, nullptr, -0.35f, 1.1f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, 0},
+        {"FLog->Display LUT + limited domain + partial strength", sony2fuji::ColorSpace::sRGB, flogLut, 0.25f, 1.0f, 0.72f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, 0},
+        {"FLog2->FLog log-output decode", sony2fuji::ColorSpace::sRGB, flog2ToFlogLut, 0.f, 1.0f, 1.0f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, 0},
+        {"FLog2->FLog2 log-output decode", sony2fuji::ColorSpace::sRGB, flog2ToFlog2Lut, 0.1f, 0.95f, 0.85f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, 0},
+        {"SRGB->Display LUT branch (P2-10 / C29)", sony2fuji::ColorSpace::AdobeRGB, srgbLut, 0.15f, 1.05f, 0.80f, 0.f, 0.f, 1.f, 1.f, 0.f, false, false, false, 0},
         {"Highlights/Shadows + Contrast/Saturation + Builtin Curve + Black/White/Vibrance + HSL + ColorGrading",
-         sony2fuji::ColorSpace::sRGB, flogLut, 0.0f, 1.0f, 0.65f, -0.45f, 0.55f, 1.22f, 1.28f, 0.45f, false, true, true, true},
-        {"Custom PCHIP ToneCurve + FLog2 LUT", sony2fuji::ColorSpace::sRGB, flog2ToFlogLut, 0.f, 1.f, 0.9f, 0.2f, -0.2f, 1.f, 1.f, 0.f, true, true, false, true},
+         sony2fuji::ColorSpace::sRGB, flogLut, 0.0f, 1.0f, 0.65f, -0.45f, 0.55f, 1.22f, 1.28f, 0.45f, false, true, true, 1},
+        {"ColorGrading v2 (luminance + global + blending + balance)",
+         sony2fuji::ColorSpace::sRGB, flogLut, 0.0f, 1.0f, 0.65f, -0.45f, 0.55f, 1.22f, 1.28f, 0.45f, false, true, true, 2},
+        {"Custom PCHIP ToneCurve + FLog2 LUT", sony2fuji::ColorSpace::sRGB, flog2ToFlogLut, 0.f, 1.f, 0.9f, 0.2f, -0.2f, 1.f, 1.f, 0.f, true, true, false, 1},
     };
 
+    sony2fuji::ImageData gradingV1Out, gradingV2Out;
     for (const auto& c : cases) {
         auto req = makeBaseRequest(8, 6);
         req.exposure_ev = c.exposureEv;
@@ -505,7 +516,9 @@ void testShaderBranchesPixelParity() {
 
         const auto tcUse = c.useToneControls ? tc : sony2fuji::ToneControlsOptions{};
         const auto hslUse = c.useHsl ? hsl : sony2fuji::HslOptions{};
-        const auto cgUse = c.useColorGrading ? cg : sony2fuji::ColorGradingOptions{};
+        const auto cgUse = c.colorGradingMode == 2
+            ? cgV2
+            : (c.colorGradingMode == 1 ? cg : sony2fuji::ColorGradingOptions{});
         const auto curveUse = c.useCustomCurve ? customCurve : sony2fuji::ToneCurve{};
 
         sony2fuji::ImageData gpuOut;
@@ -516,7 +529,14 @@ void testShaderBranchesPixelParity() {
         const float diff = ok ? maxPixelDiff(gpuOut, cpuOut) : std::numeric_limits<float>::infinity();
         checkPass(ok && diff <= 2e-4f,
               "Pixel parity [" + c.name + "] maxDiff=" + std::to_string(diff));
+        if (c.name == "Highlights/Shadows + Contrast/Saturation + Builtin Curve + Black/White/Vibrance + HSL + ColorGrading") {
+            gradingV1Out = std::move(gpuOut);
+        } else if (c.colorGradingMode == 2) {
+            gradingV2Out = std::move(gpuOut);
+        }
     }
+    checkPass(maxPixelDiff(gradingV2Out, gradingV1Out) > 0.05f,
+              "ColorGrading v2 uniforms produce distinct GLES output vs v1");
 
     // Verify SRGB branch genuinely differs from neutral (no-op LUT bypass would fail).
     {

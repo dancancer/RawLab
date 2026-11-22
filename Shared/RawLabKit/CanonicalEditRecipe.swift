@@ -11,6 +11,7 @@ public enum CanonicalEditRecipeError: Error, Equatable {
     case invalidWaveletDenoise
     case invalidChromaDenoise
     case invalidRawNoiseReduction
+    case invalidWhiteBalance
 }
 
 public enum CanonicalEditRecipe {
@@ -19,6 +20,8 @@ public enum CanonicalEditRecipe {
         public var x3fMode: X3fMode
         public var exposureMode: String
         public var isRaster: Bool
+        public var relativeTemperature: Double
+        public var relativeTint: Double
         public var toneControls: ToneControlsSettings
         public var atmosphere: AtmosphereSettings
         public var toneCurve: ToneCurveSettings
@@ -37,6 +40,8 @@ public enum CanonicalEditRecipe {
             x3fMode: X3fMode = .normal,
             exposureMode: String = "preview",
             isRaster: Bool = false,
+            relativeTemperature: Double = 6500,
+            relativeTint: Double = 0,
             toneControls: ToneControlsSettings = .init(),
             atmosphere: AtmosphereSettings = .init(),
             toneCurve: ToneCurveSettings = .init(),
@@ -54,6 +59,8 @@ public enum CanonicalEditRecipe {
             self.x3fMode = x3fMode
             self.exposureMode = exposureMode
             self.isRaster = isRaster
+            self.relativeTemperature = relativeTemperature
+            self.relativeTint = relativeTint
             self.toneControls = toneControls
             self.atmosphere = atmosphere
             self.toneCurve = toneCurve
@@ -122,7 +129,15 @@ public enum CanonicalEditRecipe {
             green: CurveShapePayload(state.toneCurve.channels.green),
             blue: CurveShapePayload(state.toneCurve.channels.blue)
         )
-        let hasV12Features = state.toneCurve.hasV2Extensions || state.colorGrading.hasV2Extensions || state.outputSharpening != .off
+        let rasterRelativeActive = state.isRaster && (state.relativeTemperature != 6500 || state.relativeTint != 0)
+        if rasterRelativeActive {
+            guard state.relativeTemperature.isFinite, (2000...50000).contains(state.relativeTemperature),
+                  state.relativeTint.isFinite, (-150...150).contains(state.relativeTint) else {
+                throw CanonicalEditRecipeError.invalidWhiteBalance
+            }
+        }
+        let hasV12Features = state.toneCurve.hasV2Extensions || state.colorGrading.hasV2Extensions ||
+            state.outputSharpening != .off || rasterRelativeActive
 
         let payload = Payload(
             schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
@@ -131,7 +146,9 @@ public enum CanonicalEditRecipe {
             input: .init(path: state.isRaster ? "session.png" : "session.raw", type: state.isRaster ? "raster" : "raw"),
             edits: .init(
                 exposure: .init(mode: effectiveExposureMode, ev: 0, brightness: 1),
-                whiteBalance: .init(mode: state.isRaster ? "none" : "camera"),
+                whiteBalance: rasterRelativeActive
+                    ? .init(mode: "relative", relativeTemperature: state.relativeTemperature, relativeTint: state.relativeTint)
+                    : .init(mode: state.isRaster ? "none" : "camera"),
                 look: .init(path: nil, strength: 1),
                 geometry: .init(
                     crop: .init(
@@ -298,6 +315,20 @@ public enum CanonicalEditRecipe {
 
     private struct WhiteBalancePayload: Encodable {
         let mode: String
+        let relativeTemperature: Double?
+        let relativeTint: Double?
+
+        init(mode: String, relativeTemperature: Double? = nil, relativeTint: Double? = nil) {
+            self.mode = mode
+            self.relativeTemperature = relativeTemperature
+            self.relativeTint = relativeTint
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case mode
+            case relativeTemperature = "relative_temperature"
+            case relativeTint = "relative_tint"
+        }
     }
 
     private struct LookPayload: Encodable {
@@ -523,6 +554,8 @@ public extension RawSettings {
             x3fMode: x3fMode,
             exposureMode: isRaster ? "sensor" : exposureString,
             isRaster: isRaster,
+            relativeTemperature: isRaster && masterRecipeID == nil ? temperature : 6500,
+            relativeTint: isRaster && masterRecipeID == nil ? tint : 0,
             toneControls: toneSettings,
             atmosphere: atmosphereSettings,
             toneCurve: curveSettings,
@@ -564,6 +597,8 @@ public extension Adjustments {
             x3fMode: x3fMode,
             exposureMode: isRaster ? "sensor" : exposureString,
             isRaster: isRaster,
+            relativeTemperature: isRaster && masterRecipe == nil ? temperature : 6500,
+            relativeTint: isRaster && masterRecipe == nil ? tint : 0,
             toneControls: renderToneSettings,
             atmosphere: renderAtmosphereSettings,
             toneCurve: renderCurveSettings,

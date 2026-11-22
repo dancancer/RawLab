@@ -59,6 +59,7 @@ internal class EditorPreviewCoordinator(
     private val onDetailAccepted: (WorkResult.DetailPreview) -> Unit = { value ->
         mutable.value = mutable.value.copy(detail = value.overlay)
     },
+    private val wbHolder: EditorWbEyedropperStateHolder? = null,
 ) {
     private var saveNotice: Job? = null
 
@@ -74,6 +75,7 @@ internal class EditorPreviewCoordinator(
                 is WorkResult.UnusableEditImportFailure -> importRecoveryHolder.handleUnusableFailure(value)
                 is WorkResult.MissingLook -> importRecoveryHolder.handleMissingLook(value)
                 is WorkResult.HslProbe -> hslHolder.accept(value)
+                is WorkResult.WbProbe -> wbHolder?.accept(value)
                 is WorkResult.CameraHDRPreflight -> hdrHolder.onCameraHDRPreflight(value)
                 is WorkResult.Preview -> acceptPreview(value)
                 is WorkResult.DetailPreview -> acceptDetailPreview(value)
@@ -118,6 +120,7 @@ internal class EditorPreviewCoordinator(
             mutable.value = EditorStateReducer.renderFinished(current)
                 .copy(draft = refitted, preview = value.pair, exact = !request.interactive, error = null)
             hslHolder.recordAcceptedPreview(request, refitted.project(current.edits), currentSourceRevision(), currentRenderRevision())
+            wbHolder?.recordAcceptedPreview(request, refitted.project(current.edits), currentSourceRevision(), currentRenderRevision())
             if (!request.interactive && refitted.group != AdjustmentGroup.GEOMETRY) onExactPreviewAccepted()
             return
         }
@@ -162,6 +165,7 @@ internal class EditorPreviewCoordinator(
             processingMigration = processingMigration,
         )
         hslHolder.recordAcceptedPreview(request, settings, currentSourceRevision(), currentRenderRevision())
+        wbHolder?.recordAcceptedPreview(request, settings, currentSourceRevision(), currentRenderRevision())
         if (!request.interactive) scope.launch {
             runCatching { previewCache.accept(request.photo, request.edits, value.pair.result) }
         }
@@ -189,6 +193,7 @@ internal class EditorPreviewCoordinator(
     fun edit(requested: EditSettings, interactive: Boolean = false, clearProcessingMigration: Boolean = false) {
         val edits = requested.canonicalZeros().synchronizeHDR()
         hslHolder.cancel()
+        wbHolder?.cancel()
         val current = mutable.value
         if (!current.controlsEnabled) {
             Log.w(PREVIEW_TAG, "edit-dropped method=edit reason=controlsDisabled op=${current.operation}")

@@ -82,7 +82,8 @@ public sealed record ColorGradingSettings
             MidtonesHue = Midtones.NativeHue, MidtonesSaturation = (float)Midtones.Saturation, MidtonesLuminance = (float)Midtones.Luminance,
             HighlightsHue = Highlights.NativeHue, HighlightsSaturation = (float)Highlights.Saturation, HighlightsLuminance = (float)Highlights.Luminance,
             GlobalHue = Global.NativeHue, GlobalSaturation = (float)Global.Saturation, GlobalLuminance = (float)Global.Luminance,
-            Blending = (float)Blending, Balance = (float)Balance
+            Blending = (float)Blending,
+            Balance = (float)Balance
         };
     }
 }

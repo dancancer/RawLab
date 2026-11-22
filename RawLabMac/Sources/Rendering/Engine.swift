@@ -278,6 +278,7 @@ final class RenderEngine {
         case .invalidWaveletDenoise: return L10n.text("无效或不可用的降噪参数")
         case .invalidChromaDenoise: return L10n.text("无效或不可用的色度降噪模式")
         case .invalidRawNoiseReduction: return L10n.text("无效的 RAW 降噪档位")
+        case .invalidWhiteBalance: return L10n.text("无效的白平衡参数")
         }
     }
 
@@ -323,7 +324,7 @@ final class RenderEngine {
             settings.hdr?.cameraDevelopmentSettings.fbddLevel == 0 && settings.hdr?.cameraDevelopmentSettings.cameraProfile == nil
     }
 
-    private func configureAI(enabled: Bool) throws {
+    private func configureAI(enabled: Bool, strength: Double = 100) throws {
         if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
             throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
         }
@@ -339,6 +340,9 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+        let clampedBlend = Float(min(100, max(0, strength)) / 100.0)
+        let blendStatus = sony2fuji_session_set_ai_denoise_blend(session, enabled ? clampedBlend : 1.0)
+        guard blendStatus == SONY2FUJI_STATUS_OK else { throw aiError(blendStatus) }
     }
 
     private func aiError(_ status: sony2fuji_status) -> RenderError {
@@ -433,7 +437,7 @@ final class RenderEngine {
         let resolved = try resolvedRenderSettings(url, settings: settings)
         let settings = resolved.settings
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: false)
-        try configureAI(enabled: settings.aiDenoiseEnabled)
+        try configureAI(enabled: settings.aiDenoiseEnabled, strength: settings.aiDenoiseStrength)
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
         request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
@@ -527,7 +531,7 @@ final class RenderEngine {
             ? outputSharpening : .off
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: true,
                         outputSharpening: effectiveSharpening)
-        try configureAI(enabled: settings.aiDenoiseEnabled)
+        try configureAI(enabled: settings.aiDenoiseEnabled, strength: settings.aiDenoiseStrength)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
@@ -611,6 +615,47 @@ final class RenderEngine {
         }
         guard let sample else { throw RenderError.failed(L10n.text("无法创建处理会话")) }
         return sample
+    }
+
+    struct WBProbeSample {
+        let availability: sony2fuji_wb_probe_availability
+        let temperature: Double
+        let tint: Double
+        let validPixelCount: Int
+    }
+
+    func sampleWBProbe(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
+                       point: CGPoint) throws -> WBProbeSample {
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
+            interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
+        var request = prepared
+        var query = sony2fuji_wb_probe_query()
+        query.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+        query.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_query>.size)
+        query.norm_x = Float(point.x)
+        query.norm_y = Float(point.y)
+        query.window_size = 3
+        query.reserved = 0
+        var result = sony2fuji_wb_probe_result()
+        result.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+        result.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_result>.size)
+        let status = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                guard let session else { return SONY2FUJI_STATUS_INVALID_ARGUMENT }
+                return sony2fuji_session_sample_wb_probe(session, &input, &query, &result)
+            }
+        }
+        if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw RenderError.processing(status, input: url, look: lut, output: nil, session: session)
+        }
+        return WBProbeSample(
+            availability: result.availability,
+            temperature: Double(result.temperature),
+            tint: Double(result.tint),
+            validPixelCount: Int(result.valid_pixel_count)
+        )
     }
 
     func migrateProcessing(_ url: URL, settings: Adjustments, lut: URL?,

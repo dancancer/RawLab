@@ -70,9 +70,13 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         val mode = this[AdjustmentField.WHITE_BALANCE_MODE]?.text
         val temperature = this[AdjustmentField.TEMPERATURE]
         val tint = this[AdjustmentField.TINT]
-        if (mode != null) valid(if (source.isRaw) mode in setOf("camera", "temperature") else mode == "none", "white_balance.mode")
+        if (mode != null) valid(if (source.isRaw) mode in setOf("camera", "temperature") else mode in setOf("none", "relative"), "white_balance.mode")
         if (!source.isRaw) {
-            valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
+            if (mode == "relative") {
+                valid(temperature != AdjustmentValue.Null && tint != AdjustmentValue.Null, "white_balance values conflict with mode")
+            } else {
+                valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
+            }
             valid(this[AdjustmentField.EXPOSURE_MODE].let { it == null || it == AdjustmentValue.Text("sensor") } &&
                 this[AdjustmentField.RAW_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) } &&
                 (source.isHDR || this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) }), "raster request")

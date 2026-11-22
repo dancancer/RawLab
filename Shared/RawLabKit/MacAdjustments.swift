@@ -450,12 +450,14 @@ public struct Adjustments: Equatable, Codable {
         self[keyPath: parameter.spec.keyPath] = value
         if parameter.isWhiteBalance {
             if masterRecipe != nil {
-                if parameter == .temperature {
-                    whiteBalanceMode = temperature == asShotWhiteBalance?.temperature ? .asShot : .custom
+                if parameter == .temperature, let camera = asShotWhiteBalance {
+                    whiteBalanceMode = temperature == camera.temperature ? .asShot : .custom
                 }
                 return
             }
-            whiteBalanceMode = temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint ? .asShot : .custom
+            if let camera = asShotWhiteBalance {
+                whiteBalanceMode = temperature == camera.temperature && tint == camera.tint ? .asShot : .custom
+            }
         }
     }
 
@@ -489,10 +491,12 @@ public struct Adjustments: Equatable, Codable {
         if isHDREditing { return self }
         var state = self
         state.exposureMode = .sensor
-        state.whiteBalanceMode = .asShot
-        state.resolveWhiteBalance(nil)
-        state.temperature = 6500
-        state.tint = 0
+        if state.whiteBalanceMode != .asShot || state.asShotWhiteBalance != nil || state.masterRecipe != nil {
+            state.whiteBalanceMode = .asShot
+            state.resolveWhiteBalance(nil)
+            state.temperature = 6500
+            state.tint = 0
+        }
         state.rawNoiseReduction = 0
         state.aiDenoiseEnabled = false
         state.lensCorrection = nil
@@ -548,7 +552,9 @@ public struct Adjustments: Equatable, Codable {
                 rendered.toneCurve, rendered.sharpening] +
             (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init) +
             [tone.blackPoint, tone.whitePoint, tone.vibrance, atmosphere.clarity, atmosphere.dehaze].map(Float.init) +
-            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation)] } +
+            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation), Float(grading[$0].luminance)] } +
+            [Float(grading.global.hue), Float(grading.global.saturation), Float(grading.global.luminance), Float(grading.blending), Float(grading.balance)] +
+            (context.isRaw ? [] : [Float(effective.temperature), Float(effective.tint)]) +
             ToneCurveChannel.allCases.flatMap { channel -> [Float] in
                 let shape = curve.shape(channel)
                 return [shape.mode == .custom ? 1 : 0] + shape.points.flatMap { [Float($0.x), Float($0.y)] }

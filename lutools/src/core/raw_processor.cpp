@@ -109,6 +109,8 @@ public:
     BayerOverrideScope(LibRaw& raw, const RAWBayerSource& source, const RAWBayerOverride* replacement)
         : raw_(raw) {
         if (!replacement) return;
+        const float blend = std::clamp(replacement->blend, 0.0f, 1.0f);
+        if (blend <= 0.0f) return;
         original_ = raw.imgdata.rawdata.raw_image;
         pitch_ = raw.imgdata.sizes.raw_pitch / sizeof(uint16_t);
         left_ = raw.imgdata.sizes.left_margin; top_ = raw.imgdata.sizes.top_margin;
@@ -121,7 +123,15 @@ public:
             const float range = source.white - black;
             auto& pixel = original_[(size_t(y) + top_) * pitch_ + left_ + x];
             float value = std::clamp(replacement->normalizedMosaic[size_t(y) * width_ + x], 0.f, 1.f);
-            if (replacement->protectSensorHighlights) {
+            if (blend < 1.0f) {
+                const float signal = (pixel - black) / range;
+                if (replacement->protectSensorHighlights) {
+                    if (signal >= .9f) continue;
+                    const float t = std::clamp((signal - .6f) / .3f, 0.f, 1.f);
+                    value += t * t * (3.f - 2.f * t) * (signal - value);
+                }
+                value = signal + blend * (value - signal);
+            } else if (replacement->protectSensorHighlights) {
                 // 在白平衡和 LibRaw 高光混合前渐退，保留接近饱和的原始传感器值。
                 const float signal = (pixel - black) / range;
                 if (signal >= .9f) continue;
@@ -352,6 +362,7 @@ public:
         params.exp_correc = 0;
         const auto* replacement = options.bayerOverride;
         if (replacement && (!bayerMetadataReady_ || options.halfSize || options.rawNoiseReduction != 0 || autoWB ||
+            !std::isfinite(replacement->blend) || replacement->blend < 0.0f || replacement->blend > 1.0f ||
             replacement->width != bayerMetadata_.width || replacement->height != bayerMetadata_.height ||
             replacement->normalizedMosaic.size() != size_t(bayerMetadata_.width) * bayerMetadata_.height ||
             (!replacement->cameraCorrection.empty() && replacement->cameraCorrection.size() != replacement->normalizedMosaic.size()) ||
@@ -405,6 +416,15 @@ public:
         // LibRaw balances camera channels before demosaic, normalized by max WB
         // (highlight=2). Undo that common attenuation in float, not in uint16.
         const float scale=1.0f/(65535.0f*green);
+        lastCalibrationValid_ = (channels == 3) && whiteBalance_ && whiteBalance_->available();
+        if (lastCalibrationValid_) {
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 3; ++c) {
+                    lastRgbCam_[r][c] = data.color.rgb_cam[r][c];
+                }
+                lastWbUsed_[r] = data.color.pre_mul[r] / green;
+            }
+        }
 
         float profileMatrix[3][4]{};
         const float (*cameraMatrix)[4] = data.color.rgb_cam;
@@ -416,6 +436,7 @@ public:
         LensCorrectionTransform correction(options.lensDatabase, lensMetadata(*rawProcessor_, sdkStage3_),
             options.lensCorrection, width, height, channels);
         lensReport_ = correction.report();
+        const float bayerBlend = replacement ? std::clamp(replacement->blend, 0.0f, 1.0f) : 0.0f;
         auto sampledRGB=[&](int row,int col,const float* coordinates) {
             const auto& raw=data.image[static_cast<size_t>(row)*width+col];
             float rgb[3]={};
@@ -434,11 +455,12 @@ public:
             }
             for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
                 rgb[dst]+=cameraMatrix[dst][c]*camera[c]*scale;
-            if (replacement && !replacement->cameraCorrection.empty()) {
+            if (replacement && !replacement->cameraCorrection.empty() && bayerBlend > 0.0f) {
                 const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
                 for (int c = 0; c < 3; ++c) {
-                    const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
+                    float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
                         coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
+                    if (bayerBlend < 1.0f) delta *= bayerBlend;
                     if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
                 }
             }
@@ -596,6 +618,43 @@ public:
         return true;
     }
 
+    bool getLastRgbCam(float matrix[3][3]) const {
+        if (!lastCalibrationValid_) return false;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                matrix[row][col] = lastRgbCam_[row][col];
+            }
+        }
+        return true;
+    }
+
+    bool getLastWbUsed(float multipliers[3]) const {
+        if (!lastCalibrationValid_) return false;
+        for (int c = 0; c < 3; ++c) {
+            if (!std::isfinite(lastWbUsed_[c]) || lastWbUsed_[c] <= 0.0f) return false;
+            multipliers[c] = lastWbUsed_[c];
+        }
+        return true;
+    }
+
+    bool getWhiteBalanceCalibration(
+        double first[3][3],
+        double second[3][3],
+        double& firstTemperature,
+        double& secondTemperature
+    ) const {
+        if (!whiteBalance_ || !whiteBalance_->available()) return false;
+        std::array<std::array<double, 3>, 3> f{}, s{};
+        whiteBalance_->calibrationData(f, s, firstTemperature, secondTemperature);
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                first[r][c] = f[r][c];
+                second[r][c] = s[r][c];
+            }
+        }
+        return true;
+    }
+
 private:
     void invalidateState() {
         cameraHDRInspected_ = false;
@@ -614,6 +673,9 @@ private:
         cameraModel_.clear();
         whiteBalance_.reset();
         cameraColorMatrixValid_ = false;
+        lastCalibrationValid_ = false;
+        lastRgbCam_ = {};
+        lastWbUsed_ = {1.0f, 1.0f, 1.0f};
         bayerSource_ = false;
         previewExposureEV_ = 0;
         baselineExposureEV_ = 0;
@@ -775,6 +837,9 @@ private:
     std::unique_ptr<CameraWhiteBalance> whiteBalance_;
     std::array<std::array<float,3>,3> cameraColorMatrix_{};
     bool cameraColorMatrixValid_ = false;
+    std::array<std::array<float,3>,3> lastRgbCam_{};
+    std::array<float,3> lastWbUsed_{1.0f, 1.0f, 1.0f};
+    bool lastCalibrationValid_ = false;
     bool bayerSource_ = false;
     bool sourceReady_ = false;
     bool cameraHDRInspected_ = false;
@@ -958,6 +1023,23 @@ LensCorrectionReport RAWProcessor::getLensCorrectionReport() const { return pImp
 
 bool RAWProcessor::getCameraColorMatrix(float matrix[3][3]) const {
     return pImpl_->getCameraColorMatrix(matrix);
+}
+
+bool RAWProcessor::getLastRgbCam(float matrix[3][3]) const {
+    return pImpl_->getLastRgbCam(matrix);
+}
+
+bool RAWProcessor::getLastWbUsed(float multipliers[3]) const {
+    return pImpl_->getLastWbUsed(multipliers);
+}
+
+bool RAWProcessor::getWhiteBalanceCalibration(
+    double first[3][3],
+    double second[3][3],
+    double& firstTemperature,
+    double& secondTemperature
+) const {
+    return pImpl_->getWhiteBalanceCalibration(first, second, firstTemperature, secondTemperature);
 }
 
 // ============================================================================

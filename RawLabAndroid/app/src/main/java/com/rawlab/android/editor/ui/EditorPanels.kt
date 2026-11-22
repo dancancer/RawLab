@@ -3,6 +3,8 @@ package com.rawlab.android.editor.ui
 import com.rawlab.android.ui.AppIcons
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.WbProbeActions
+import com.rawlab.android.editor.controls.WbProbeCanvasControls
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -58,7 +60,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onDetailRequest: (com.rawlab.android.editor.canvas.ViewportRoiRequest?) -> Unit = {},
     inspection: InspectionSessionState = InspectionSessionState(),
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
-    onInspectionAnchorSelect: (Long) -> Unit = {}) {
+    onInspectionAnchorSelect: (Long) -> Unit = {},
+    wbProbe: WbProbeActions? = null) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
     } else 12.dp
@@ -74,7 +77,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
-                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null, hslTarget = hslTarget,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null && wbProbe == null, hslTarget = hslTarget, wbProbe = wbProbe,
                 showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
                 histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview,
                 detail = state.detail.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY },
@@ -88,6 +91,7 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 bottomOverlayInset = comparisonInset, bottomOverlay = {
                     Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))
+                        if (showTargetStatus && wbProbe != null) WbProbeCanvasControls(wbProbe, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })

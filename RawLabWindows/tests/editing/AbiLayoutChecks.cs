@@ -46,8 +46,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_lens_profile_v2",
         "sony2fuji_viewport_roi",
         "sony2fuji_viewport_roi_result",
-        "sony2fuji_wb_probe_query",
-        "sony2fuji_wb_probe_result",
     };
 
     // Shared C ABI functions declared in sony2fuji_c.h / sony2fuji_hdr.h that Windows intentionally does not bind.
@@ -78,8 +76,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_session_inspect_lens_metadata",
         "sony2fuji_session_inspect_lens_metadata_v2",
         "sony2fuji_session_inspect_lens_v2",
-        "sony2fuji_session_sample_wb_probe",
-        "sony2fuji_session_set_ai_denoise_blend",
         "sony2fuji_session_set_atmosphere",
         "sony2fuji_session_set_chroma_denoise",
         "sony2fuji_session_set_color_grading",
@@ -306,6 +302,32 @@ internal static class AbiLayoutChecks
                 ["global_luminance"] = nameof(Native.ColorGradingV2Config.GlobalLuminance),
                 ["blending"] = nameof(Native.ColorGradingV2Config.Blending),
                 ["balance"] = nameof(Native.ColorGradingV2Config.Balance),
+            }),
+        ["sony2fuji_wb_probe_query"] = new(
+            typeof(Native.WbProbeQuery),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.WbProbeQuery.Version),
+                ["struct_size"] = nameof(Native.WbProbeQuery.StructSize),
+                ["norm_x"] = nameof(Native.WbProbeQuery.NormX),
+                ["norm_y"] = nameof(Native.WbProbeQuery.NormY),
+                ["window_size"] = nameof(Native.WbProbeQuery.WindowSize),
+                ["reserved"] = nameof(Native.WbProbeQuery.Reserved),
+            }),
+        ["sony2fuji_wb_probe_result"] = new(
+            typeof(Native.WbProbeResult),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.WbProbeResult.Version),
+                ["struct_size"] = nameof(Native.WbProbeResult.StructSize),
+                ["availability"] = nameof(Native.WbProbeResult.Availability),
+                ["valid_pixel_count"] = nameof(Native.WbProbeResult.ValidPixelCount),
+                ["rejected_overexposed_count"] = nameof(Native.WbProbeResult.RejectedOverexposedCount),
+                ["temperature"] = nameof(Native.WbProbeResult.Temperature),
+                ["tint"] = nameof(Native.WbProbeResult.Tint),
+                ["sampled_rgb"] = nameof(Native.WbProbeResult.SampledRgb),
+                ["wb_mul"] = nameof(Native.WbProbeResult.WbMul),
+                ["reserved"] = nameof(Native.WbProbeResult.Reserved),
             }),
         ["sony2fuji_tone_curve_config"] = new(
             typeof(Native.ToneCurveConfig),
@@ -1324,6 +1346,8 @@ internal static class AbiLayoutChecks
 
         Check(cSizes.ContainsKey("sony2fuji_hdr_request_v8"),
             "ABI layout fixture must cover sony2fuji_hdr_request_v8");
+        Check(cSizes.ContainsKey("sony2fuji_hdr_request_v9"),
+            "ABI layout fixture must cover sony2fuji_hdr_request_v9");
 
         foreach (var mappedCStruct in Mappings.Keys)
         {

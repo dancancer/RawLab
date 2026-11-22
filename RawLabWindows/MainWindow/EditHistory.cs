@@ -109,7 +109,7 @@ public partial class MainWindow
     }
     private bool PrepareAdjustmentCommand()
     {
-        CancelHslTarget(); CancelCurveTarget();
+        CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
         if(file==null || exporting || closing || aiJob.State.IsRunning)return false;
         foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
             if(row.Commit())continue;
@@ -120,7 +120,7 @@ public partial class MainWindow
     }
     private async Task<bool> PrepareAdjustmentCommandAsync()
     {
-        CancelHslTarget(); CancelCurveTarget();
+        CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
         if(file==null || exporting || closing || aiJob.State.IsRunning)return false;
         foreach(var row in ParameterRows(AdjustmentPanel).Where(row=>row.IsVisible && row.IsEnabled)) {
             if(row.Commit())continue;

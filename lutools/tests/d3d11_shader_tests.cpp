@@ -19,7 +19,7 @@ int main() {
     if (FAILED(D3DReflect(code->GetBufferPointer(), code->GetBufferSize(), IID_PPV_ARGS(&reflection)))) return 1;
     auto* buffer = reflection->GetConstantBufferByName("Params");
     D3D11_SHADER_BUFFER_DESC description{};
-    if (FAILED(buffer->GetDesc(&description)) || description.Size != 4560) return 1;
+    if (FAILED(buffer->GetDesc(&description)) || description.Size != 4592) return 1;
     const char* names[] = {"hslHue", "hslSaturation", "hslLightness"};
     for (unsigned index = 0; index < 3; ++index) {
         D3D11_SHADER_VARIABLE_DESC variable{};
@@ -46,9 +46,14 @@ int main() {
         parametricAmps.StartOffset != 4512 || parametricAmps.Size != 16) return 1;
     if (FAILED(buffer->GetVariableByName("parametricSplits")->GetDesc(&parametricSplits)) ||
         parametricSplits.StartOffset != 4528 || parametricSplits.Size != 16) return 1;
+    D3D11_SHADER_VARIABLE_DESC gradingGlobal{}, gradingMix{};
+    if (FAILED(buffer->GetVariableByName("colorGradingGlobal")->GetDesc(&gradingGlobal)) ||
+        gradingGlobal.StartOffset != 4544 || gradingGlobal.Size != 16) return 1;
+    if (FAILED(buffer->GetVariableByName("colorGradingMix")->GetDesc(&gradingMix)) ||
+        gradingMix.StartOffset != 4560 || gradingMix.Size != 16) return 1;
     D3D11_SHADER_VARIABLE_DESC band{};
-    if (FAILED(buffer->GetVariableByName("band")->GetDesc(&band)) || band.StartOffset != 4544 || band.Size != 16) return 1;
-    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 4560-byte host layout\n";
+    if (FAILED(buffer->GetVariableByName("band")->GetDesc(&band)) || band.StartOffset != 4576 || band.Size != 16) return 1;
+    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 4592-byte host layout\n";
     std::cout << "Shader compilation/reflection does not establish hardware GPU execution\n";
     return 0;
 }

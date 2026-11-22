@@ -303,7 +303,24 @@ int main() {
     wbRes.version = SONY2FUJI_WB_PROBE_VERSION;
     wbRes.struct_size = sizeof(wbRes);
     REQUIRE(sony2fuji_session_sample_wb_probe(session, &dispReq, &wbQ, &wbRes) == SONY2FUJI_STATUS_OK);
-    REQUIRE(wbRes.availability == SONY2FUJI_WB_PROBE_UNAVAILABLE);
+    REQUIRE(wbRes.availability == SONY2FUJI_WB_PROBE_AVAILABLE);
+    REQUIRE(wbRes.valid_pixel_count == 9);
+    REQUIRE(wbRes.rejected_overexposed_count == 0);
+
+    sony2fuji_wb_probe_query wbOutside{SONY2FUJI_WB_PROBE_VERSION, sizeof(wbOutside), -0.1f, 0.5f, 3, 0};
+    sony2fuji_wb_probe_result wbOutRes{};
+    wbOutRes.version = SONY2FUJI_WB_PROBE_VERSION;
+    wbOutRes.struct_size = sizeof(wbOutRes);
+    REQUIRE(sony2fuji_session_sample_wb_probe(session, &dispReq, &wbOutside, &wbOutRes) == SONY2FUJI_STATUS_OK);
+    REQUIRE(wbOutRes.availability == SONY2FUJI_WB_PROBE_OUTSIDE);
+
+    sony2fuji_request bufReq = dispReq;
+    bufReq.input_type = SONY2FUJI_INPUT_BUFFER;
+    sony2fuji_wb_probe_result wbBufRes{};
+    wbBufRes.version = SONY2FUJI_WB_PROBE_VERSION;
+    wbBufRes.struct_size = sizeof(wbBufRes);
+    REQUIRE(sony2fuji_session_sample_wb_probe(session, &bufReq, &wbQ, &wbBufRes) == SONY2FUJI_STATUS_OK);
+    REQUIRE(wbBufRes.availability == SONY2FUJI_WB_PROBE_UNAVAILABLE);
 
     sony2fuji_session_destroy(session);
     std::cout << "apply_params_api_tests passed\n";

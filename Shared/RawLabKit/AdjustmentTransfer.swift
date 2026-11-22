@@ -550,11 +550,17 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
 
     private func validateWhiteBalance() throws {
         let mode = self[.whiteBalanceMode]?.string
-        if let mode, source.isRaw ? mode == "none" : mode != "none" {
+        if let mode, source.isRaw ? (mode == "none" || mode == "relative") : (mode != "none" && mode != "relative") {
             throw AdjustmentTransferError.invalidPayload("white_balance.mode")
         }
-        if !source.isRaw && (self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil) {
-            throw AdjustmentTransferError.invalidPayload("raster.white_balance")
+        if !source.isRaw {
+            if mode == "relative" {
+                if self[.temperature] == .null || self[.tint] == .null {
+                    throw AdjustmentTransferError.invalidPayload("white_balance values conflict with mode")
+                }
+            } else if self[.temperature]?.number != nil || source.recipe == nil && self[.tint]?.number != nil {
+                throw AdjustmentTransferError.invalidPayload("raster.white_balance")
+            }
         }
         if source.recipe != nil && self[.tint] == .null {
             throw AdjustmentTransferError.invalidPayload("recipe.white_balance.tint")

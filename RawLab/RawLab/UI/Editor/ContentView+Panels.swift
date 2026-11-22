@@ -358,7 +358,7 @@ extension ContentView {
                           interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !coordinator.showingDocumentImporter,
                           overlayAvoidanceRect: photoComparisonControlBounds,
                           onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
-                          hslTarget: hslTargetActive ? hslTargetInput : (curveTargetActive ? curveTargetInput : nil),
+                          hslTarget: wbProbeActive ? wbProbeInput : (hslTargetActive ? hslTargetInput : (curveTargetActive ? curveTargetInput : nil)),
                           hslTargetPoint: hslTargetActive ? coordinator.hslTargetPoint : (curveTargetActive ? coordinator.curveTargetPoint : nil),
                           nativePixelSize: viewModel.viewportNativeSize, previewSourceSize: viewModel.viewportPreviewSourceSize,
                           previewLongEdgeLimit: viewModel.viewportPreviewLimit,
@@ -368,7 +368,7 @@ extension ContentView {
                           onDetailRequest: geometrySelected ? nil : { viewModel.updateDetailRequest($0) },
                           hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay,
                           inspectionOverlay: geometrySelected ? .none : coordinator.inspection.overlay,
-                          inspectionProbeEnabled: !geometrySelected && !hslTargetActive && coordinator.inspection.monitorEnabled,
+                          inspectionProbeEnabled: !geometrySelected && !hslTargetActive && !curveTargetActive && !wbProbeActive && coordinator.inspection.monitorEnabled,
                           inspectionPoint: coordinator.inspection.liveOutputPoint,
                           inspectionAnchors: inspectionMarkerPoints,
                           onInspectionPointChange: { pt in
@@ -559,17 +559,18 @@ extension ContentView {
         let tool = currentEditorTool
         let channel = hslChannel
         let grading = coordinator.gradingZone
+        let gradingGlobal = coordinator.gradingGlobalSelected
         let perspective = coordinator.geometryPerspective, rotation = coordinator.geometryRotation
         let hdr = settings.isHDREditing
-        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective).\(rotation).\(hdr)", isCurrent: {
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(gradingGlobal).\(perspective).\(rotation).\(hdr)", isCurrent: {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
             if viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation) {
                 cancelSliderInteraction()
             }

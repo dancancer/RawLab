@@ -153,4 +153,19 @@ class CanonicalEditRecipeTest {
         )
         assertEquals(17, JSONObject(unpinnedChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
     }
+
+    @Test
+    fun rasterRelativeWhiteBalanceSerializesToCanonicalV17Json() {
+        val neutral = EditSettings(customWb = false, temperature = 6500f, tint = 0f)
+        val neutralRoot = JSONObject(neutral.toCanonicalRecipeJson(isRaster = true))
+        assertEquals("none", neutralRoot.getJSONObject("edits").getJSONObject("white_balance").getString("mode"))
+
+        val relative = EditSettings(customWb = false, temperature = 5800f, tint = 14f)
+        val relativeRoot = JSONObject(relative.toCanonicalRecipeJson(isRaster = true))
+        assertEquals(17, relativeRoot.getInt("schema_version"))
+        val wb = relativeRoot.getJSONObject("edits").getJSONObject("white_balance")
+        assertEquals("relative", wb.getString("mode"))
+        assertEquals(5800.0, wb.getDouble("relative_temperature"), 1e-6)
+        assertEquals(14.0, wb.getDouble("relative_tint"), 1e-6)
+    }
 }

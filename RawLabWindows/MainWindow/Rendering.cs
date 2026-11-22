@@ -33,7 +33,7 @@ public partial class MainWindow
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ClearTransferNoticesOnSourceChange();
             ClearExternalReloadOnSourceChange();
-            ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
+            ResetAITask();CancelProcessingMigration();CancelWbProbe();CancelCurveTarget();CancelHslTarget();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
@@ -140,7 +140,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
-        CancelHslTarget();CancelCurveTarget();
+        CancelHslTarget();CancelCurveTarget();CancelWbProbe();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}
@@ -192,7 +192,7 @@ public partial class MainWindow
     private async void Pump()
     {
         var ticket=scheduler.Start(); if(ticket==null)return;
-        RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null;Exception? failure=null;
+        RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null; RenderEngine.WbProbeSample? wbSample=null; Exception? failure=null;
         string? thumbnailResources=null;var thumbnailAIBackend=RequestedAIBackend;var thumbnailAIDevice=aiPreference.DeviceID;
         OriginalIdentity? beforeRenderSource = null, afterRenderSource = null;
         var workerLookAvailable = true;
@@ -213,6 +213,11 @@ public partial class MainWindow
                 if(w.Probe is {} probe) {
                     engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
+                    return ((RenderedImage?)null,(RenderedImage?)null);
+                }
+                if(w.WbProbe is {} wbProbe) {
+                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    wbSample=engine.SampleWhiteBalance(w.File,w.Settings,w.Lut,w.Edge,wbProbe.Point.X,wbProbe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
                 beforeRenderSource = ViewSourceState.TryReadIdentity(w.File);
@@ -243,6 +248,12 @@ public partial class MainWindow
             var sample=hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed);
             if(curveTarget.Matches(probeWork.Token)) AcceptCurveTarget(work,sample,current);
             else AcceptHslTarget(work,sample,current);
+            if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
+                HandleAIFailure(failure);
+            UpdateBusy();Pump();QueuePendingReset();return;
+        }
+        if(work.WbProbe is not null) {
+            AcceptWbProbe(work,wbSample,current);
             if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
                 HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;

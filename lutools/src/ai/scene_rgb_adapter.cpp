@@ -76,19 +76,23 @@ Tensor sceneRGBCorrection(const ImageData& source, float gain, const PredictTile
     return output;
 }
 
-void applySceneRGBCorrection(ImageData& image, const Tensor& correction, ColorSpace space, float gain) {
+void applySceneRGBCorrection(ImageData& image, const Tensor& correction, ColorSpace space, float gain, float blend) {
     validateImage(image,gain); validateTensor(correction);
+    if (!std::isfinite(blend) || blend < 0.0f || blend > 1.0f)
+        throw std::invalid_argument("invalid scene RGB blend");
     if (image.width != correction.width || image.height != correction.height || correction.channels != 3)
         throw std::invalid_argument("scene RGB cache does not match the decoded canvas");
+    if (blend <= 0.0f) return;
+    const float effectiveGain = (blend >= 1.0f) ? gain : (gain * blend);
     const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB,space);
     const size_t plane = image.pixels.size();
     parallelPixelRanges(plane, [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) {
             const auto delta = ColorConverter::applyMatrix(
                 RGB(correction.values[i], correction.values[plane + i], correction.values[2 * plane + i]), matrix);
-            image.pixels[i].r += gain * delta.r;
-            image.pixels[i].g += gain * delta.g;
-            image.pixels[i].b += gain * delta.b;
+            image.pixels[i].r += effectiveGain * delta.r;
+            image.pixels[i].g += effectiveGain * delta.g;
+            image.pixels[i].b += effectiveGain * delta.b;
         }
     });
 }

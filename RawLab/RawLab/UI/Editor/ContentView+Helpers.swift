@@ -262,7 +262,6 @@ extension ContentView {
 
     var displayedTemperature: Double {
         if workingSettings.isHDREditing { return workingSettings.hdr!.temperature }
-        guard viewModel.sourceKind != .raster else { return RawSettings.default.temperature }
         if viewModel.sourceKind == .raw,
            workingSettings.whiteBalanceMode == .camera,
            let whiteBalance = viewModel.rawWhiteBalance {
@@ -273,7 +272,6 @@ extension ContentView {
 
     var displayedTint: Double {
         if workingSettings.isHDREditing { return workingSettings.hdr!.tint }
-        guard viewModel.sourceKind != .raster else { return 0 }
         if workingSettings.masterRecipeID != nil { return workingSettings.tint }
         if viewModel.sourceKind == .raw,
            workingSettings.whiteBalanceMode == .camera,

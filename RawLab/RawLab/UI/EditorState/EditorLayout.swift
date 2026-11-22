@@ -208,6 +208,7 @@ extension ContentView {
             currentTool: currentEditorTool,
             hslChannel: hslChannel,
             gradingZone: coordinator.gradingZone,
+            gradingGlobalSelected: coordinator.gradingGlobalSelected,
             isAvailable: available,
             isModified: resetModified
         )

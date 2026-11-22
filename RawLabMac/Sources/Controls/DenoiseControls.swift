@@ -153,6 +153,17 @@ struct MacAIDenoiseControls: View {
                     Text(L10n.text("支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"))
                 }
             }
+            if !model.settings.isHDREditing && (model.settings.activeAIDenoise || model.aiManuallyRequested) {
+                ParameterRow(title: L10n.text("AI 降噪强度"), value: Binding(
+                    get: { model.settings.aiDenoiseStrength },
+                    set: {
+                        guard $0.isFinite, (0...100).contains($0) else { return }
+                        model.settings.aiDenoiseStrength = $0
+                    }
+                ), range: 0...100, defaultValue: 100, unit: "%", identifier: "denoise.ai.strength",
+                onEditingChanged: model.setInteracting, compact: true)
+                    .disabled(model.result == nil)
+            }
             if !model.settings.isHDREditing && model.settings.aiDenoiseEnabled {
                 Text(L10n.text(model.aiState == .ready ? "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" :
                     "普通降噪参数已保留，关闭 AI 降噪即可恢复。"))

@@ -690,16 +690,32 @@ sony2fuji_status sony2fuji_session_sample_wb_probe(
     std::memset(out_result, 0, sizeof(*out_result));
     out_result->version = preservedVersion;
     out_result->struct_size = preservedSize;
-    const bool outside = !std::isfinite(query->norm_x) || !std::isfinite(query->norm_y) ||
-                         query->norm_x < 0.0f || query->norm_x > 1.0f ||
-                         query->norm_y < 0.0f || query->norm_y > 1.0f;
-    out_result->availability = outside ? SONY2FUJI_WB_PROBE_OUTSIDE : SONY2FUJI_WB_PROBE_UNAVAILABLE;
+    out_result->availability = SONY2FUJI_WB_PROBE_UNAVAILABLE;
     out_result->temperature = 6500.0f;
     out_result->tint = 0.0f;
     out_result->wb_mul[0] = 1.0f;
     out_result->wb_mul[1] = 1.0f;
     out_result->wb_mul[2] = 1.0f;
-    return SONY2FUJI_STATUS_OK;
+    try {
+        const sony2fuji::WbProbeQuery coreQuery{query->norm_x, query->norm_y, query->window_size};
+        sony2fuji::WbProbeResult coreResult;
+        const auto status = lease.raw()->pipeline.sampleWbProbe(params, coreQuery, coreResult);
+        if (status != sony2fuji::RenderStatus::Ok) {
+            return toFfiStatus(status);
+        }
+        out_result->availability = static_cast<sony2fuji_wb_probe_availability>(coreResult.availability);
+        out_result->valid_pixel_count = coreResult.validPixelCount;
+        out_result->rejected_overexposed_count = coreResult.rejectedOverexposedCount;
+        out_result->temperature = coreResult.temperature;
+        out_result->tint = coreResult.tint;
+        std::copy(coreResult.sampledRgb.begin(), coreResult.sampledRgb.end(), out_result->sampled_rgb);
+        std::copy(coreResult.wbMul.begin(), coreResult.wbMul.end(), out_result->wb_mul);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_session_set_ai_denoise_blend(sony2fuji_session* handle, float strength) {

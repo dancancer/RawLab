@@ -7,5 +7,5 @@ namespace sony2fuji::ai {
 inline constexpr const char* sceneRGBProtocol = "rawlab-restormer-scene-v1";
 Tensor sceneRGBCorrection(const ImageData& source, float gain, const PredictTile& predict,
                           const Progress& progress = {}, TileGeometry geometry = {640, 64});
-void applySceneRGBCorrection(ImageData& image, const Tensor& correction, ColorSpace space, float gain);
+void applySceneRGBCorrection(ImageData& image, const Tensor& correction, ColorSpace space, float gain, float blend = 1.0f);
 } // namespace sony2fuji::ai

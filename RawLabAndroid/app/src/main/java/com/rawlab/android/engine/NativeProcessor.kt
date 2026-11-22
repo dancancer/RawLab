@@ -257,6 +257,59 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
         )
     }
 
+    internal enum class WbProbeAvailability { AVAILABLE, OVEREXPOSED, OUTSIDE, UNAVAILABLE }
+
+    internal data class WbProbeSample(
+        val availability: WbProbeAvailability,
+        val temperature: Float,
+        val tint: Float,
+        val validPixelCount: Int,
+        val rejectedOverexposedCount: Int,
+    )
+
+    @Synchronized
+    internal fun sampleWhiteBalance(
+        input: File,
+        lut: File?,
+        settings: EditSettings,
+        edge: Int,
+        inputKind: PhotoInputKind,
+        x: Float,
+        y: Float,
+        windowSize: Int = 3,
+        cancellationGeneration: Long = -1L,
+    ): WbProbeSample {
+        check(handle != 0L) { "Processor is closed" }
+        if (!x.isFinite() || !y.isFinite() || x !in 0f..1f || y !in 0f..1f) {
+            return WbProbeSample(WbProbeAvailability.OUTSIDE, 6500f, 0f, 0, 0)
+        }
+        val effective = settings.effectiveFor(inputKind)
+        val pixels = rasterInput(input, inputKind, edge)
+        configureDisplayLens(effective.lens)
+        nativeApplyParams(handle, effective.toCanonicalRecipeJson(
+            isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
+            includeDenoise = true,
+        ))
+        val out = FloatArray(5)
+        nativeSampleWbProbe(
+            handle,
+            effective.toNativeProcessRequest(
+                inputPath = input.path,
+                pixels = pixels,
+                lutPath = lut?.path,
+                edge = edge,
+                interactive = false,
+                cancellationGeneration = cancellationGeneration,
+            ),
+            x,
+            y,
+            windowSize,
+            out,
+        )
+        val availability = WbProbeAvailability.entries.getOrNull(out[0].toInt()) ?: WbProbeAvailability.UNAVAILABLE
+        return WbProbeSample(availability, out[3], out[4], out[1].toInt(), out[2].toInt())
+    }
+
     @Synchronized
     fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float,
@@ -563,6 +616,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeProcess(handle: Long, request: NativeProcessRequest): NativeFrame?
     private external fun nativeProcessRoi(handle: Long, request: NativeProcessRequest,
         x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, roiBoundsOut: IntArray): NativeFrame?
+    private external fun nativeSampleWbProbe(handle: Long, request: NativeProcessRequest,
+        x: Float, y: Float, windowSize: Int, out: FloatArray)
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean

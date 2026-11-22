@@ -401,6 +401,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
             )
         }
         is Work.HslProbe -> WorkResult.HslProbe(work, com.rawlab.android.settings.HslTargetSample.unavailable(work.revision, com.rawlab.android.settings.HslTargetAvailability.FAILED))
+        is Work.WbProbe -> WorkResult.WbProbe(work, com.rawlab.android.engine.NativeProcessor.WbProbeSample(com.rawlab.android.engine.NativeProcessor.WbProbeAvailability.UNAVAILABLE, 6500f, 0f, 0, 0))
         is Work.CameraHDRPreflight -> WorkResult.CameraHDRPreflight(work)
         is Work.Export -> WorkResult.Export
         is Work.AutoExposure -> WorkResult.AutoExposure(work, work.edits.exposure + 0.5f)

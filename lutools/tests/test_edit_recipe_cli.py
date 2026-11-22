@@ -4,10 +4,12 @@ import json
 import os
 import pathlib
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 
 class RecipeCLI(unittest.TestCase):
@@ -205,6 +207,41 @@ class RecipeCLI(unittest.TestCase):
         high_bytes = (self.root / "out_high.jpg").read_bytes()
         self.assertIn(b"ICC_PROFILE\x00\x01\x01", high_bytes)
         self.assertNotEqual(off_bytes, high_bytes)
+
+    def test_v17_raster_relative_wb_cli_renders_shifted_pixels(self):
+        def write_png(path: pathlib.Path, width: int = 8, height: int = 8):
+            def chunk(kind: bytes, data: bytes) -> bytes:
+                return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+            raw_rows = b"".join(b"\x00" + bytes([150, 140, 130, 255]) * width for _ in range(height))
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+            path.write_bytes(
+                b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw_rows)) + chunk(b"IEND", b"")
+            )
+
+        write_png(self.root / "input.png")
+        none_out = self.root / "out_none.png"
+        rel_out = self.root / "out_rel.png"
+        base_doc = {
+            "schema_version": 17,
+            "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+            "input": {"path": "input.png", "type": "raster"},
+            "edits": {"exposure": {"mode": "sensor", "ev": 0.0, "brightness": 1.0}, "white_balance": {"mode": "none"}},
+            "output": {"path": "out_none.png", "format": "png", "size": {"mode": "native"}},
+        }
+        self.document = base_doc
+        self.write()
+        none_res = self.run_cli("--recipe", self.recipe)
+        self.assertEqual(none_res.returncode, 0, none_res.stderr)
+
+        rel_doc = json.loads(json.dumps(base_doc))
+        rel_doc["edits"]["white_balance"] = {"mode": "relative", "relative_temperature": 5400, "relative_tint": 12}
+        rel_doc["output"]["path"] = "out_rel.png"
+        self.document = rel_doc
+        self.write()
+        rel_res = self.run_cli("--recipe", self.recipe)
+        self.assertEqual(rel_res.returncode, 0, rel_res.stderr)
+        self.assertTrue(none_out.is_file() and rel_out.is_file())
+        self.assertNotEqual(none_out.read_bytes(), rel_out.read_bytes())
 
 
 if __name__ == "__main__":

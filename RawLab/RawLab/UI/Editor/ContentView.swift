@@ -344,6 +344,8 @@ struct ContentView: View {
             coordinator.hslTargetEnabled = false
             coordinator.cancelCurveTarget()
             coordinator.curveTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
@@ -352,16 +354,20 @@ struct ContentView: View {
             coordinator.hslTargetEnabled = false
             coordinator.cancelCurveTarget()
             coordinator.curveTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: coordinator.gradingGlobalSelected) { _, _ in cancelSliderInteraction() }
         .onChange(of: coordinator.hslChannel) { _, _ in
             coordinator.cancelHSLTarget()
             cancelSliderInteraction()
         }
         .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.curveTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.wbEyedropperEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()

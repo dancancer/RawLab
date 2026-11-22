@@ -124,6 +124,18 @@ CameraWhiteBalance::Matrix CameraWhiteBalance::matrix(double temperature) const 
     return result;
 }
 
+CameraWhiteBalance::CameraWhiteBalance(
+    const Matrix& first,
+    const Matrix& second,
+    double firstTemperature,
+    double secondTemperature
+)
+    : first_(first),
+      second_(second),
+      firstTemperature_(firstTemperature),
+      secondTemperature_(secondTemperature),
+      valid_(validMatrix(first_)) {}
+
 CameraWhiteBalance::CameraWhiteBalance(const libraw_data_t& raw) {
     if (raw.idata.colors!=3) return;
     for (int r=0;r<3;++r) for (int c=0;c<3;++c) first_[r][c]=raw.color.cam_xyz[r][c];
@@ -144,20 +156,37 @@ CameraWhiteBalance::CameraWhiteBalance(const libraw_data_t& raw) {
         if (!std::isfinite(gain) || gain<=0) return;
         neutral[c]=1/gain;
     }
+    if (!solveTemperatureTintUnchecked(neutral, asShot_)) return;
+    valid_=std::isfinite(asShot_.temperature) && std::isfinite(asShot_.tint) &&
+        asShot_.temperature>=2000 && asShot_.temperature<=50000 && std::abs(asShot_.tint)<=150;
+}
+
+bool CameraWhiteBalance::solveTemperatureTintUnchecked(const std::array<double,3>& neutral, TemperatureTint& out) const {
+    if (!std::isfinite(neutral[0]) || !std::isfinite(neutral[1]) || !std::isfinite(neutral[2]) ||
+        neutral[0]<=0 || neutral[1]<=0 || neutral[2]<=0) {
+        return false;
+    }
+    TemperatureTint solved{6500, 0};
     for (int iteration=0;iteration<30;++iteration) {
         Matrix cameraToXYZ{};
-        if (!inverse(matrix(asShot_.temperature),cameraToXYZ)) return;
+        if (!inverse(matrix(solved.temperature),cameraToXYZ)) return false;
         std::array<double,3> xyz{};
         for (int r=0;r<3;++r) for (int c=0;c<3;++c) xyz[r]+=cameraToXYZ[r][c]*neutral[c];
         const double sum=xyz[0]+xyz[1]+xyz[2];
-        if (sum<=0 || xyz[0]<=0 || xyz[1]<=0 || xyz[2]<=0) return;
+        if (sum<=0 || xyz[0]<=0 || xyz[1]<=0 || xyz[2]<=0) return false;
         const auto next=whitePointTemperature({xyz[0]/sum,xyz[1]/sum});
-        const double change=std::abs(asShot_.temperature-next.temperature);
-        asShot_=next;
+        const double change=std::abs(solved.temperature-next.temperature);
+        solved=next;
         if (change<0.01) break;
     }
-    valid_=std::isfinite(asShot_.temperature) && std::isfinite(asShot_.tint) &&
-        asShot_.temperature>=2000 && asShot_.temperature<=50000 && std::abs(asShot_.tint)<=150;
+    if (!std::isfinite(solved.temperature) || !std::isfinite(solved.tint)) return false;
+    out=solved;
+    return true;
+}
+
+bool CameraWhiteBalance::solveTemperatureTint(const std::array<double,3>& neutral, TemperatureTint& out) const {
+    if (!valid_) return false;
+    return solveTemperatureTintUnchecked(neutral, out);
 }
 
 bool CameraWhiteBalance::multipliers(double temperature, double tint, float output[4], const Matrix* profileMatrix) const {

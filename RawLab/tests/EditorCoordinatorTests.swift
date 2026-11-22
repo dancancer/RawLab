@@ -165,6 +165,7 @@ private final class MockCoordinatorBackend: EditorCoordinatorBackend {
             case .hslChannel where draft.tool == .adjustment(.hsl),
                  .allHSL where draft.tool == .adjustment(.hsl): break
             case .gradingZone where draft.tool == .adjustment(.colorGrading),
+                 .gradingGlobal where draft.tool == .adjustment(.colorGrading),
                  .allGrading where draft.tool == .adjustment(.colorGrading): break
             case .group(.geometry) where draft.tool == .geometry || draft.tool == .lens: break
             default: return .blocked(.draftConflict)
@@ -389,11 +390,13 @@ struct EditorCoordinatorTests {
 
         // New source clears collapsed tool, recipe picker, sheets, and viewport
         coordinator.selectEditorTool(.recipe)
+        coordinator.gradingGlobalSelected = true
         coordinator.draftExitPresented = true
         coordinator.resetForNewSource()
         check(!coordinator.choosingMasterRecipe && !coordinator.toolWorkspaceOpen && !coordinator.draftExitPresented &&
+              !coordinator.gradingGlobalSelected &&
               coordinator.collapsedEditorTool == nil && coordinator.pendingToolSelection == nil,
-              "resetForNewSource clears active workspace, recipe picker, and pending modal state")
+              "resetForNewSource clears active workspace, gradingGlobalSelected, recipe picker, and pending modal state")
     }
 
     static func testResetConfirmationAndFailureRollback() {

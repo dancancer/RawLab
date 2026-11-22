@@ -44,7 +44,8 @@ layout(std140, binding = 0) uniform CurveParams {
 };
 uniform bool hslActive;
 uniform vec3 toneControls;
-uniform vec3 colorGrading[3];
+uniform vec4 colorGrading[4];
+uniform vec4 colorGradingMix;
 uniform vec4 hslHue[2];
 uniform vec4 hslSaturation[2];
 uniform vec4 hslLightness[2];
@@ -178,7 +179,12 @@ vec3 evaluate(vec3 inputColor) {
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
-    return cgApply(applyHsl(tcVibrance(pixel, toneControls.z)),colorGrading[0],colorGrading[1],colorGrading[2]);
+    return cgApply(applyHsl(tcVibrance(pixel, toneControls.z)),
+        colorGrading[0].xyz, colorGrading[0].w,
+        colorGrading[1].xyz, colorGrading[1].w,
+        colorGrading[2].xyz, colorGrading[2].w,
+        colorGrading[3].xyz, colorGrading[3].w,
+        colorGradingMix.x, colorGradingMix.y);
 }
 void main() {
     uint i = gl_GlobalInvocationID.x;

@@ -227,6 +227,7 @@ struct EditorView: View {
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.curveTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.wbEyedropperEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.quickPresetsVisible) { _, visible in
             if visible { workspaceLayout.setMode(.editing); workspaceLayout.showInspector() }
         }
@@ -244,6 +245,7 @@ struct EditorView: View {
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             model.cancelCurveTarget()
+            model.cancelWBProbe()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -251,6 +253,7 @@ struct EditorView: View {
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
             model.cancelCurveTarget()
+            model.cancelWBProbe()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -272,7 +275,7 @@ struct EditorView: View {
             else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
         .onExitCommand {
-            exitHSLTarget(); model.cancelAdjustmentInteraction()
+            exitHSLTarget(); exitCurveTarget(); exitWBProbe(); model.cancelAdjustmentInteraction()
         }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { infoMode = infoMode.next },
@@ -757,7 +760,7 @@ struct EditorView: View {
         Menu {
             let tool = model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing).tool
             if tool == .colorGrading {
-                resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
+                resetButton(model.adjustmentNavigation.currentGradingResetScope, title: L10n.text("重置当前分区"))
                 resetButton(.allGrading, title: L10n.text("重置颜色分级"))
             } else if tool == .hsl {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
@@ -818,7 +821,7 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive }
+    private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive || model.wbProbeActive }
     private var canHoldBefore: Bool { showsPhotoWorkspace && !anyTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
@@ -843,9 +846,21 @@ struct EditorView: View {
             exit: exitCurveTarget)
     }
 
+    private var wbProbeInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "wb-\(source)-\(hdr)",
+            begin: { if current() { model.sampleWBProbe(at: $0) } },
+            change: { _ in },
+            end: {}, cancel: { if current() { model.cancelWBProbe() } },
+            key: { _ in }, reject: { if current() { model.rejectWBProbe() } },
+            exit: exitWBProbe)
+    }
+
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
         let activeTargetInput: HSLTargetCanvasInput? = {
             guard model.result?.image === frame.image else { return nil }
+            if model.wbProbeActive { return wbProbeInput }
             if model.hslTargetActive { return hslTargetInput }
             if model.curveTargetActive { return curveTargetInput }
             return nil
@@ -889,6 +904,10 @@ struct EditorView: View {
 
     private func exitCurveTarget() {
         model.cancelCurveTarget(); model.curveTargetEnabled = false
+    }
+
+    private func exitWBProbe() {
+        model.cancelWBProbe(); model.wbEyedropperEnabled = false
     }
 
     private func toggleInspector() {

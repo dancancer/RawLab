@@ -373,9 +373,15 @@ public sealed class AdjustmentPayload
         foreach (var (field,value) in Values) if (!Enum.IsDefined(field) || !Valid(field,value)) throw Invalid(field.ToString());
         if (this[AdjustmentField.Look] is {} look && Text(look.GetProperty("kind"))=="recipe" && Text(look.GetProperty("id"))!=Source.Recipe?.ID) throw Invalid("recipe.look");
         var mode = Text(this[AdjustmentField.WhiteBalanceMode]);
-        if (mode!=null && (Source.IsRaw ? mode=="none" : mode!="none")) throw Invalid("white_balance.mode");
+        if (mode!=null && (Source.IsRaw ? mode is "none" or "relative" : mode is not ("none" or "relative"))) throw Invalid("white_balance.mode");
         var temperature=this[AdjustmentField.Temperature]; var tint=this[AdjustmentField.Tint];
-        if (!Source.IsRaw && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null)) throw Invalid("raster.white_balance");
+        if (!Source.IsRaw) {
+            if (mode == "relative") {
+                if (Null(temperature) || Null(tint)) throw Invalid("white_balance values conflict with mode");
+            } else if (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) {
+                throw Invalid("raster.white_balance");
+            }
+        }
         if (Source.Recipe!=null && Null(tint)) throw Invalid("recipe.white_balance.tint");
         if (mode=="camera" && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) ||
             mode=="temperature" && (Null(temperature) || Null(tint))) throw Invalid("white_balance values conflict with mode");

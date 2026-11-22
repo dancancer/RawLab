@@ -259,6 +259,12 @@ public partial class MainWindow
     {
         inspection.MonitorEnabled = true;
         inspection.PinModeEnabled = !inspection.PinModeEnabled;
+        if (inspection.PinModeEnabled)
+        {
+            CancelWbProbe();
+            SetCurveTargetMode(false, curveTargetChannel);
+            SetHslTargetMode(false, hslTargetAxis);
+        }
         RefreshInspection();
     }
 

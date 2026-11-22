@@ -51,6 +51,27 @@ int main(int argc, char** argv) {
             changed |= a.r != original.pixels[i].r || a.g != original.pixels[i].g || a.b != original.pixels[i].b;
         }
         require(changed, "RGB correction was not applied");
+        // Verify RAWBayerOverride::blend interpolation: 0%=untouched, 50%=midpoint, 100%=identical to full override
+        options.exposure = 0;
+        replacement.blend = 0.0f;
+        ImageData zeroBlend, halfBlend;
+        require(processor.process(options, zeroBlend) == ErrorCode::Success && identical(original, zeroBlend),
+                "RAWBayerOverride blend=0 must leave pixels bit-identical to AI OFF");
+        replacement.blend = 0.5f;
+        require(processor.process(options, halfBlend) == ErrorCode::Success, "RAWBayerOverride blend=0.5");
+        bool sawIntermediate = false;
+        for (size_t i = 0; i < halfBlend.pixels.size(); ++i) {
+            const float r0 = original.pixels[i].r, r1 = corrected.pixels[i].r, rm = halfBlend.pixels[i].r;
+            if (std::abs(r1 - r0) > 1e-4f) {
+                sawIntermediate = true;
+                require(rm >= std::min(r0, r1) - 1e-5f && rm <= std::max(r0, r1) + 1e-5f,
+                        "RAWBayerOverride blend=0.5 must lie strictly between 0% and 100%");
+            }
+        }
+        require(sawIntermediate, "RAWBayerOverride blend=0.5 had measurable difference");
+        replacement.blend = -0.1f;
+        require(processor.process(options, after) == ErrorCode::InvalidFormat, "negative blend rejected");
+        replacement.blend = 1.0f;
         options.exposure = 0; options.bayerOverride = nullptr;
         require(processor.process(options, after) == ErrorCode::Success && identical(original, after), "override changed source state");
         RAWBayerSource reread;

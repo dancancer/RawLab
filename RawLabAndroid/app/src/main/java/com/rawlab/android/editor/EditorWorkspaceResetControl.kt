@@ -17,7 +17,7 @@ data class EditorWorkspaceResetMenuItem(
             is EditorResetScope.Tool -> "tool"
             is EditorResetScope.Group -> "group"
             is EditorResetScope.HslChannel -> "channel"
-            is EditorResetScope.GradingZone -> "grading-zone"
+            is EditorResetScope.GradingZone, EditorResetScope.GradingGlobal -> "grading-zone"
             EditorResetScope.AllGrading -> "grading"
             EditorResetScope.AllHsl -> "hsl"
             EditorResetScope.All -> "all"
@@ -38,6 +38,7 @@ data class EditorWorkspaceResetPresentation(
             channel: Int = 0,
             gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
             pendingAll: Boolean = false,
+            globalSelected: Boolean = false,
         ): EditorWorkspaceResetPresentation? {
             if (state.photo == null || quickPresetsVisible) return null
             val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
@@ -69,7 +70,7 @@ data class EditorWorkspaceResetPresentation(
                         EditorResetScope.All,
                     )
                     21 -> listOf(
-                        EditorResetScope.GradingZone(gradingZone),
+                        if (globalSelected) EditorResetScope.GradingGlobal else EditorResetScope.GradingZone(gradingZone),
                         EditorResetScope.AllGrading,
                         EditorResetScope.All,
                     )

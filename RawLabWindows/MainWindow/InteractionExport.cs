@@ -90,6 +90,7 @@ public partial class MainWindow
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
         if(e.Key==Key.Escape && inspection.HandleEscape()){RefreshViewingFrames();e.Handled=true;return;}
         if(e.Key==Key.Escape && curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
+        if(e.Key==Key.Escape && wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}

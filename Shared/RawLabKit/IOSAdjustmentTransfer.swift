@@ -309,9 +309,10 @@ public enum IOSAdjustmentTransfer {
         result[Field.look.rawValue] = .object(look)
         result[Field.exposureMode.rawValue] = .string(!context.isRaw ? "sensor" : settings.exposureMode == .scene ? "scene" : settings.exposureMode == .preview ? "preview" : "sensor")
         let camera = !context.isRaw || settings.whiteBalanceMode == .camera
-        result[Field.whiteBalanceMode.rawValue] = .string(!context.isRaw ? "none" : camera ? "camera" : "temperature")
-        result[Field.temperature.rawValue] = camera ? .null : .number(settings.temperature)
-        result[Field.tint.rawValue] = settings.masterRecipeID != nil ? .number(settings.tint) : camera ? .null : .number(settings.tint)
+        let rasterRelative = !context.isRaw && settings.masterRecipeID == nil && (settings.temperature != 6500 || settings.tint != 0)
+        result[Field.whiteBalanceMode.rawValue] = .string(!context.isRaw ? (rasterRelative ? "relative" : "none") : camera ? "camera" : "temperature")
+        result[Field.temperature.rawValue] = rasterRelative ? .number(settings.temperature) : camera ? .null : .number(settings.temperature)
+        result[Field.tint.rawValue] = settings.masterRecipeID != nil ? .number(settings.tint) : rasterRelative ? .number(settings.tint) : camera ? .null : .number(settings.tint)
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hsl.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
@@ -464,6 +465,18 @@ public enum IOSAdjustmentTransfer {
             && selected.allSatisfy({ payload[$0] == previousValues[$0.rawValue] }) { return }
         if selected == Field.whiteBalanceFields {
             let mode = payload[.whiteBalanceMode]!.string!
+            if !context.isRaw && !payload.source.isRaw {
+                if mode == "relative", let temp = payload[.temperature]?.number, let tint = payload[.tint]?.number {
+                    result.whiteBalanceMode = .camera
+                    result.temperature = temp
+                    result.tint = tint
+                } else {
+                    result.whiteBalanceMode = .camera
+                    result.temperature = 6500
+                    result.tint = 0
+                }
+                return
+            }
             let balance: [String: Value] = ["mode": .string(mode == "none" && payload.source.recipe != nil ? "camera" : mode),
                 "temperature": payload[.temperature]!, "tint": .number(payload[.tint]?.number ?? 0),
                 "tint_mode": .string(payload.source.recipe != nil || mode == "camera" ? "camera_offset" : "absolute")]
@@ -477,7 +490,22 @@ public enum IOSAdjustmentTransfer {
             } else if context.isRaw { try applyResolvedWB(desired, to: &result, context: context) }
             return
         }
-        guard context.isRaw else { return }
+        if !context.isRaw {
+            guard !payload.source.isRaw else { return }
+            let selectedMode = payload[.whiteBalanceMode]?.string
+            if selectedMode == "none" {
+                if payload[.temperature]?.number != nil || payload[.tint]?.number != nil {
+                    throw AdjustmentTransferError.incompatible("select white balance mode with temperature/tint")
+                }
+                result.whiteBalanceMode = .camera
+                result.temperature = 6500
+                result.tint = 0
+                return
+            }
+            if let temp = payload[.temperature]?.number { result.whiteBalanceMode = .camera; result.temperature = temp }
+            if let tint = payload[.tint]?.number { result.whiteBalanceMode = .camera; result.tint = tint }
+            return
+        }
         let selectedMode = payload[.whiteBalanceMode]?.string
         let cameraMode = selectedMode.map { $0 != "temperature" } ?? (target.whiteBalanceMode == .camera)
         let temperature = payload[.temperature], tint = payload[.tint]

@@ -62,10 +62,17 @@ internal static class AdjustmentTransferValues
         else { kind="managed";id=edit.Look; }
         Put(F.Look,new {kind,id});
         Put(F.ExposureMode,context.IsRaw ? new[]{"scene","preview","sensor"}[s.ExposureMode] : "sensor");
-        var camera=!context.IsRaw || s.CameraWhiteBalance;
-        Put(F.WhiteBalanceMode,!context.IsRaw ? "none" : camera ? "camera" : "temperature");
-        Put(F.Temperature,camera ? (double?)null : s.Values[(int)Parameter.Temperature]);
-        Put(F.Tint,s.MasterRecipeID!=null || !camera ? s.Values[(int)Parameter.Tint] : (double?)null);
+        if (!context.IsRaw) {
+            var rasterRelative = s.MasterRecipeID == null && (s.Values[(int)Parameter.Temperature] != 6500 || s.Values[(int)Parameter.Tint] != 0);
+            Put(F.WhiteBalanceMode, rasterRelative ? "relative" : "none");
+            Put(F.Temperature, rasterRelative ? s.Values[(int)Parameter.Temperature] : (double?)null);
+            Put(F.Tint, rasterRelative || s.MasterRecipeID != null ? s.Values[(int)Parameter.Tint] : (double?)null);
+        } else {
+            var camera = s.CameraWhiteBalance;
+            Put(F.WhiteBalanceMode, camera ? "camera" : "temperature");
+            Put(F.Temperature, camera ? (double?)null : s.Values[(int)Parameter.Temperature]);
+            Put(F.Tint, s.MasterRecipeID != null || !camera ? s.Values[(int)Parameter.Tint] : (double?)null);
+        }
         var grading = s.ColorGrading ?? new();
         foreach (var field in AdjustmentFields.All) if (field.GradingZone() is {} zone) {
             result[field] = WheelElement(grading[zone]);

@@ -11,6 +11,7 @@ struct ProcessorExportTests {
         try checkAtmosphere()
         try checkToneControls()
         try checkColorGrading()
+        try checkRasterRelativeWB()
         try checkToneCurve()
         try checkHSLTarget()
         try checkNativeBufferOwnership()
