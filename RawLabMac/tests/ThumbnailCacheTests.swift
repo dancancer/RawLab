@@ -1,6 +1,8 @@
 import RawLabKit
 import AppKit
+import Combine
 import CryptoKit
+import Darwin
 import Foundation
 import ImageIO
 
@@ -127,6 +129,9 @@ struct ThumbnailCacheTests {
         try await verifyFolderRefreshInvalidation(in: root)
         try await verifyLUTResourceDigestCacheAndInvalidation(in: root)
         try await verifyCommitEditPersistenceReadBudget(in: root)
+        try await verifyWatchReadDoesNotDropDecodeOrLivelock(in: root)
+        try await verifyRecordNotBlockedBySlowEditedRender(in: root)
+        try await verifyThumbnailDecodeTaskCancellation(in: root)
 
         print("PASS: thumbnail cache hit without re-decode, edited/unedited key isolation, byte-cost eviction, and edit/reset/refresh invalidation")
     }
@@ -1473,5 +1478,250 @@ struct ThumbnailCacheTests {
         check(freshAfterStale != nil && staleThumbnails.decodeCount == 2 &&
               freshAfterStaleRed.map { abs($0 - 0.9) < 0.05 } == true,
               "M-N9: request after invalidateStaleEntries decodes new file bytes (red=\(String(describing: freshAfterStaleRed)))")
+    }
+
+    @MainActor
+    private static func srgbRedComponent(_ image: NSImage) -> CGFloat? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return NSBitmapImageRep(cgImage: cg).colorAt(x: 0, y: 0)?.usingColorSpace(.sRGB)?.redComponent
+    }
+
+    @MainActor
+    private static func verifyWatchReadDoesNotDropDecodeOrLivelock(in root: URL) async throws {
+        let dir = root.appendingPathComponent("watch-atime-\(UUID().uuidString)", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let photo = dir.appendingPathComponent("sample.png")
+        try writePNG(to: photo, width: 120, height: 80, red: 0.2)
+
+        let thumbnails = PhotoThumbnails { url, maxPixelSize in
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageIfAbsent: false,
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                kCGImageSourceShouldCache: false
+            ]
+            // Simulate macOS updating st_atimespec when reading the file during thumbnail decode.
+            var times = [
+                timespec(tv_sec: 0, tv_nsec: Int(UTIME_NOW)),
+                timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT))
+            ]
+            _ = utimensat(AT_FDCWD, url.path, &times, 0)
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                return nil
+            }
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        let previews = MacEditedPhotoPreviews(editDirectory: editsDir, cacheDirectory: diskCacheDir, thumbnails: thumbnails)
+
+        previews.watch(photo)
+        defer { previews.unwatch(photo) }
+
+        var tile = WorkspacePhotoTileState()
+        var activeTask: Task<Void, Never>?
+        var restartCount = 0
+        func startRefreshTask() {
+            activeTask?.cancel()
+            activeTask = Task { @MainActor in
+                await WorkspacePhotoTileState.refresh(url: photo, previews: previews, get: { tile }, set: { tile = $0 })
+            }
+        }
+        startRefreshTask()
+        let revSub = previews.$revision.dropFirst().sink { _ in
+            restartCount += 1
+            if restartCount < 20 {
+                startRefreshTask()
+            }
+        }
+        defer {
+            revSub.cancel()
+            activeTask?.cancel()
+        }
+
+        let settleDeadline = Date().addingTimeInterval(2.0)
+        while (tile.thumbnail == nil || Date() < settleDeadline.addingTimeInterval(-1.7)) && Date() < settleDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        check(tile.thumbnail != nil, "Watched photo displays decoded thumbnail even when reading updates atime")
+        check(previews.revision == 0 && restartCount == 0,
+              "Reading watched photo does not trigger spurious refresh (rev=\(previews.revision), restarts=\(restartCount))")
+        check(thumbnails.decodeCount == 1,
+              "Watched photo decodes exactly once without self-cancellation (decodeCount=\(thumbnails.decodeCount))")
+
+        // Writing an unrelated sibling file in the same directory must not trigger a refresh.
+        let unrelated = dir.appendingPathComponent("unrelated.tmp")
+        try Data("noise".utf8).write(to: unrelated)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        check(previews.revision == 0,
+              "Unrelated directory write does not trigger preview refresh (rev=\(previews.revision))")
+
+        // Replacing the watched photo atomically must invalidate and render the updated bytes.
+        let revBeforeReplace = previews.revision
+        try writePNG(to: photo, width: 120, height: 80, red: 0.9)
+        let replaceDeadline = Date().addingTimeInterval(2.0)
+        while previews.revision == revBeforeReplace && Date() < replaceDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        check(previews.revision > revBeforeReplace, "Atomic replacement of watched photo triggers refresh")
+        await tile.refresh(url: photo, previews: previews)
+        let updatedRed = tile.thumbnail.flatMap(srgbRedComponent)
+        check(updatedRed.map { abs($0 - 0.9) < 0.05 } == true,
+              "Replaced watched photo refreshes thumbnail to new bytes (red=\(String(describing: updatedRed)))")
+    }
+
+    @MainActor
+    private static func verifyRecordNotBlockedBySlowEditedRender(in root: URL) async throws {
+        let dir = root.appendingPathComponent("worker-hol-\(UUID().uuidString)", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let diskCacheDir = dir.appendingPathComponent("disk-cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let editedPhoto = dir.appendingPathComponent("edited.png")
+        let uneditedPhoto = dir.appendingPathComponent("unedited.png")
+        try writePNG(to: editedPhoto, width: 120, height: 80, red: 0.3)
+        try writePNG(to: uneditedPhoto, width: 120, height: 80, red: 0.7)
+
+        let store = try MacEditPersistence(directory: editsDir)
+        var settings = Adjustments(); settings.exposureMode = .sensor; settings.exposure = 1.0
+        try store.save(editedPhoto, state: MacPhotoEditState(settings: settings, filmID: ""))
+
+        final class RenderGate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var entered = false
+            let release = DispatchSemaphore(value: 0)
+            func markEnteredAndWait() {
+                lock.lock(); entered = true; lock.unlock()
+                _ = release.wait(timeout: .now() + 5)
+            }
+            var hasEntered: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return entered
+            }
+        }
+
+        let gate = RenderGate()
+        let previews = MacEditedPhotoPreviews(
+            editDirectory: editsDir,
+            cacheDirectory: diskCacheDir,
+            thumbnails: PhotoThumbnails(),
+            renderThumbnail: { url, _, _ in
+                gate.markEnteredAndWait()
+                let ctx = CGContext(data: nil, width: 64, height: 42, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                ctx.setFillColor(red: 0.8, green: 0.4, blue: 0.2, alpha: 1)
+                ctx.fill(CGRect(x: 0, y: 0, width: 64, height: 42))
+                return ctx.makeImage()
+            }
+        )
+
+        let editedRecord = try await previews.record(for: editedPhoto)
+        let renderTask = Task { try await previews.image(for: editedRecord) }
+        defer { gate.release.signal() }
+        let enterDeadline = Date().addingTimeInterval(2.0)
+        while !gate.hasEntered && Date() < enterDeadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(gate.hasEntered, "Edited render entered MacPhotoPreviewWorker")
+
+        var uneditedTile = WorkspacePhotoTileState()
+        let completedUnedited = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { @MainActor in
+                await uneditedTile.refresh(url: uneditedPhoto, previews: previews)
+                return uneditedTile.thumbnail != nil
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                return false
+            }
+            let first = await group.next() ?? false
+            group.cancelAll()
+            return first
+        }
+        check(completedUnedited && uneditedTile.thumbnail != nil,
+              "Unedited tile record+thumbnail completes without waiting behind blocked edited render")
+
+        gate.release.signal()
+        _ = try await renderTask.value
+    }
+
+    @MainActor
+    private static func verifyThumbnailDecodeTaskCancellation(in root: URL) async throws {
+        let dir = root.appendingPathComponent("cancel-queue-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photos = try (0..<4).map { idx -> URL in
+            let url = dir.appendingPathComponent("p\(idx).png")
+            try writePNG(to: url, width: 120, height: 80, red: CGFloat(idx + 1) * 0.2)
+            return url
+        }
+
+        final class QueueGate: @unchecked Sendable {
+            private let lock = NSLock()
+            var entered: [String] = []
+            let releaseSlot0 = DispatchSemaphore(value: 0)
+            let releaseSlot1 = DispatchSemaphore(value: 0)
+
+            func decode(_ url: URL) -> NSImage? {
+                let name = url.lastPathComponent
+                lock.lock()
+                entered.append(name)
+                lock.unlock()
+                if name == "p0.png" { _ = releaseSlot0.wait(timeout: .now() + 5) }
+                else if name == "p1.png" { _ = releaseSlot1.wait(timeout: .now() + 5) }
+                return NSImage(contentsOf: url)
+            }
+
+            func recordedNames() -> [String] {
+                lock.lock(); defer { lock.unlock() }
+                return entered
+            }
+        }
+
+        let gate = QueueGate()
+        let thumbnails = PhotoThumbnails(decodeThumbnail: { url, _ in gate.decode(url) })
+        defer {
+            gate.releaseSlot0.signal()
+            gate.releaseSlot1.signal()
+        }
+
+        let t0 = Task { await thumbnails.image(for: photos[0]) }
+        let t1 = Task { await thumbnails.image(for: photos[1]) }
+        let slotsDeadline = Date().addingTimeInterval(2.0)
+        while gate.recordedNames().count < 2 && Date() < slotsDeadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(gate.recordedNames().count == 2, "First two thumbnail decodes saturate OperationQueue")
+
+        let t2 = Task { await thumbnails.image(for: photos[2]) }
+        let t3 = Task { await thumbnails.image(for: photos[3]) }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        t2.cancel()
+
+        let cancelledResult: NSImage? = await withTaskGroup(of: (Bool, NSImage?).self) { group in
+            group.addTask { (true, await t2.value) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                return (false, nil)
+            }
+            let first = await group.next() ?? (false, nil)
+            group.cancelAll()
+            check(first.0, "Cancelled queued thumbnail request resumes promptly before blocking slots finish")
+            return first.1
+        }
+        check(cancelledResult == nil, "Cancelled queued thumbnail request returns nil")
+
+        gate.releaseSlot0.signal()
+        gate.releaseSlot1.signal()
+        _ = await t0.value
+        _ = await t1.value
+        let img3 = await t3.value
+        check(img3 != nil, "Non-cancelled queued thumbnail decodes normally")
+        check(!gate.recordedNames().contains("p2.png") && thumbnails.decodeCount == 3,
+              "Cancelled queued thumbnail never enters decodeThumbnail (entered=\(gate.recordedNames()), decodeCount=\(thumbnails.decodeCount))")
     }
 }

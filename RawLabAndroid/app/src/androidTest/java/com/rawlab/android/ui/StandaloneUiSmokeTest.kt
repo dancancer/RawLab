@@ -7,11 +7,18 @@ import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.down
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -28,12 +35,21 @@ import com.rawlab.android.camera.CameraTetherState
 import com.rawlab.android.camera.CameraTetherWorkspace
 import com.rawlab.android.camera.protocol.SonyTetherSession
 import com.rawlab.android.editor.PendingLookCompatibility
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.PhotoCanvas
+import com.rawlab.android.editor.canvas.PhotoCanvasState
+import com.rawlab.android.editor.canvas.PhotoViewport
+import com.rawlab.android.editor.canvas.PhotoZoom
+import com.rawlab.android.editor.render.PreviewDetailOverlay
+import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.looks.LUTCompatibility
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.testing.ForegroundTestRule
 import com.rawlab.android.testing.LanguageTestRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -143,6 +159,87 @@ class StandaloneUiSmokeTest {
             compose.runOnIdle {
                 frame.recycle()
                 frame2.recycle()
+            }
+        }
+    }
+
+    @Test fun photoCanvasZoomedDetailTileMatchesUnclippedAspectRatioAndPosition() {
+        val baseBitmap = Bitmap.createBitmap(1600, 1067, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.BLUE)
+        }
+        val tileBitmap = Bitmap.createBitmap(1024, 1024, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.GREEN)
+        }
+        val pair = PreviewPair(
+            neutral = baseBitmap,
+            result = baseBitmap,
+            temperature = 5500f,
+            tint = 0f,
+            comparisonWidth = 1600f,
+            comparisonHeight = 1067f,
+            originalAspect = 6000f / 4000f,
+            nativeWidth = 6000,
+            nativeHeight = 4000,
+        )
+        val tile = PreviewDetailOverlay(
+            neutral = null,
+            result = tileBitmap,
+            hdrNeutral = null,
+            hdrResult = null,
+            normalizedRect = NormalizedRect(2048f / 6000f, 1024f / 4000f, 3072f / 6000f, 2048f / 4000f),
+            pixelWidth = 1024,
+            pixelHeight = 1024,
+            fullNativeWidth = 6000,
+            fullNativeHeight = 4000,
+            sourceRevision = 1L,
+            editRevision = 1L,
+            tileKey = DetailTileKey(0, 2, 1),
+        )
+        var captured: Bitmap? = null
+        try {
+            compose.setContent {
+                val canvasState = remember {
+                    PhotoCanvasState().apply {
+                        resize(PhotoViewport(6000f, 4000f, 300f, 500f))
+                        zoom = PhotoZoom(1f)
+                    }
+                }
+                RawLabTheme {
+                    val density = LocalDensity.current
+                    Box(Modifier.size(with(density) { 300.toDp() }, with(density) { 500.toDp() })) {
+                        PhotoCanvas(
+                            pair = pair,
+                            compare = false,
+                            filename = "test.raw",
+                            state = canvasState,
+                            showOverlays = false,
+                            detail = tile,
+                            detailTiles = listOf(tile),
+                        )
+                    }
+                }
+            }
+            compose.waitForIdle()
+            captured = compose.onNodeWithTag("photo-canvas").captureToImage().asAndroidBitmap()
+            val inside = captured.getPixel(100, 100)
+            assertTrue(
+                "Expected green tile at (100, 100) but got 0x${Integer.toHexString(inside)}",
+                android.graphics.Color.green(inside) > 200 &&
+                    android.graphics.Color.blue(inside) < 50 &&
+                    android.graphics.Color.red(inside) < 50,
+            )
+            val outside = captured.getPixel(260, 400)
+            assertTrue(
+                "Expected blue base preview outside tile at (260, 400) but got 0x${Integer.toHexString(outside)}",
+                android.graphics.Color.blue(outside) > 200 &&
+                    android.graphics.Color.green(outside) < 50 &&
+                    android.graphics.Color.red(outside) < 50,
+            )
+        } finally {
+            captured?.recycle()
+            compose.runOnIdle {
+                baseBitmap.recycle()
+                tileBitmap.recycle()
             }
         }
     }

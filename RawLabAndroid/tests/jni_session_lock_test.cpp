@@ -603,6 +603,7 @@ struct MockSessionState {
     int activeCalls = 0;
     int maxConcurrentCalls = 0;
     int totalProcessCalls = 0;
+    bool viewportRoiEnabled = false;
     bool destroyed = false;
 };
 
@@ -676,6 +677,7 @@ sony2fuji_status gMockProcessStatus = SONY2FUJI_STATUS_OK;
 sony2fuji_unsupported_reason gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_NONE;
 float gMockEffectiveWbTemp = 5500.0f;
 float gMockEffectiveWbTint = 0.0f;
+bool gLastProcessSawViewportRoi = false;
 
 void unblockAllWaitersForCleanup() {
     std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -780,6 +782,7 @@ void resetMocks() {
     gMockUnsupportedReason = SONY2FUJI_UNSUPPORTED_NONE;
     gMockEffectiveWbTemp = 5500.0f;
     gMockEffectiveWbTint = 0.0f;
+    gLastProcessSawViewportRoi = false;
 }
 
 class SessionCallScope {
@@ -1029,8 +1032,14 @@ sony2fuji_status sony2fuji_session_set_viewport_preview(sony2fuji_session* s, in
     }
     return SONY2FUJI_STATUS_OK;
 }
-sony2fuji_status sony2fuji_session_set_viewport_roi(sony2fuji_session* s, const sony2fuji_viewport_roi*) {
+sony2fuji_status sony2fuji_session_set_viewport_roi(sony2fuji_session* s, const sony2fuji_viewport_roi* roi) {
     SessionCallScope scope(s);
+    if (!roi || roi->struct_size < sizeof(sony2fuji_viewport_roi) ||
+        (roi->enabled != 0 && roi->enabled != 1)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    std::lock_guard<std::mutex> lock(gCoreMutex);
+    gMockSessions.at(s)->viewportRoiEnabled = (roi->enabled != 0);
     return SONY2FUJI_STATUS_OK;
 }
 sony2fuji_status sony2fuji_session_get_viewport_roi_result(const sony2fuji_session* s,
@@ -1116,6 +1125,7 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* s, const sony2fuji_request
             gCapturedOutputPath = req->output_path ? req->output_path : "";
         }
         gMockSessions.at(s)->totalProcessCalls++;
+        gLastProcessSawViewportRoi = gMockSessions.at(s)->viewportRoiEnabled;
         gActiveProcesses++;
         if (gActiveProcesses > gMaxConcurrentProcesses) gMaxConcurrentProcesses = gActiveProcesses;
         gEnteredProcessSessions.insert(s);
@@ -2825,6 +2835,33 @@ void testHdrSessionProgressCallbackAndScopeCleanup() {
     std::cout << "PASS: testHdrSessionProgressCallbackAndScopeCleanup" << std::endl;
 }
 
+void testNativeProcessRoiClearsViewportRoiForSubsequentProcess() {
+    resetMocks();
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    require(s > 0 && !consumeException().active, "Failed to create session for ROI scope test");
+
+    jobject roiReq = makeNativeProcessRequest("photo.arw", 512, -1);
+    jintArray roiBoundsOut = makeJIntArray(std::vector<jint>(6, 0));
+    jobject roiFrame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcessRoi(
+        env.ptr(), nullptr, s, roiReq, 0.25f, 0.25f, 0.50f, 0.50f, 1024, roiBoundsOut);
+    auto ex = consumeException();
+    require(roiFrame != nullptr && !ex.active, "nativeProcessRoi must succeed: " + ex.message);
+    require(gLastProcessSawViewportRoi, "nativeProcessRoi must enable viewport ROI for its process call");
+    require(asFake(roiBoundsOut)->ints == std::vector<jint>({0, 0, 2, 2, 2, 2}),
+        "nativeProcessRoi must write ROI bounds");
+
+    jobject fullReq = makeNativeProcessRequest("photo.arw", 512, -1);
+    jobject fullFrame = Java_com_rawlab_android_engine_NativeProcessor_nativeProcess(
+        env.ptr(), nullptr, s, fullReq);
+    ex = consumeException();
+    require(fullFrame != nullptr && !ex.active, "Subsequent nativeProcess must succeed: " + ex.message);
+    require(!gLastProcessSawViewportRoi, "ViewportRoiScope must clear viewport ROI before subsequent nativeProcess");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testNativeProcessRoiClearsViewportRoiForSubsequentProcess" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2850,6 +2887,7 @@ int main() {
         {"testBitmapPreviewMidCopyCancellationUnlocksSymmetrically", testBitmapPreviewMidCopyCancellationUnlocksSymmetrically},
         {"testNativePlaneDirectCopyAndMetadataInspection", testNativePlaneDirectCopyAndMetadataInspection},
         {"testHdrSessionProgressCallbackAndScopeCleanup", testHdrSessionProgressCallbackAndScopeCleanup},
+        {"testNativeProcessRoiClearsViewportRoiForSubsequentProcess", testNativeProcessRoiClearsViewportRoiForSubsequentProcess},
     };
     int failures = 0;
     for (const auto& c : cases) {
