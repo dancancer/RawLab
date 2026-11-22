@@ -31,6 +31,7 @@ public enum MacEditorAdjustmentRules {
             return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
         case .allGrading: return !settings.gradingSettings.isDefault
         case .gradingZone(let zone): return !settings.gradingSettings[zone].isDefault
+        case .gradingGlobal: return !settings.gradingSettings.global.isDefault
         case .hslAll: return !settings.hslSettings.isIdentity
         case .hslColor(let channel):
             guard (0..<8).contains(channel), settings.hslSettings.isValid else { return true }
@@ -128,6 +129,7 @@ public enum MacEditorAdjustmentRules {
             case .group(.hdrRendition): break
             case .allGrading: result.settings.colorGrading = nil
             case .gradingZone(let zone): result.settings.gradingSettings[zone] = ColorGradingWheel()
+            case .gradingGlobal: result.settings.gradingSettings.global = ColorGradingWheel()
             case .hslAll: result.settings.hsl = nil
             case .hslColor(let channel):
                 var hsl = result.settings.hslSettings
@@ -162,6 +164,8 @@ public enum MacEditorAdjustmentRules {
             result.editingGradingSettings = ColorGradingSettings()
         case .gradingZone(let zone):
             result.editingGradingSettings[zone] = ColorGradingWheel()
+        case .gradingGlobal:
+            result.editingGradingSettings.global = ColorGradingWheel()
         case .tool(.hsl), .hslAll:
             result.editingHSLSettings = HSLSettings()
         case .hslColor(let channel):

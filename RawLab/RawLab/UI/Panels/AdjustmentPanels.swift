@@ -36,7 +36,8 @@ extension ContentView {
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .colorGrading {
             IOSColorGradingControls(settings: Binding(get: { workingSettings.editingGradingSettings }, set: { workingSettings.editingGradingSettings = $0 }),
-                zone: $coordinator.gradingZone, onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
+                zone: $coordinator.gradingZone, globalSelected: $coordinator.gradingGlobalSelected,
+                onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .hsl {
             VStack(spacing: 8) {
@@ -202,8 +203,9 @@ extension ContentView {
 
     var whiteBalancePanel: some View {
         let isRaster = viewModel.sourceKind == .raster && !workingSettings.isHDREditing
+        let rasterRecipeLocked = isRaster && workingSettings.masterRecipeID != nil
         let canUseEyedropper = !workingSettings.isHDREditing &&
-            (isRaster || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance != nil))
+            ((isRaster && !rasterRecipeLocked) || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance != nil))
         return VStack(alignment: .leading, spacing: 12) {
             if workingSettings.isHDREditing || isRaster {
                 Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
@@ -248,14 +250,15 @@ extension ContentView {
                               unit: "K", formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
                               reciprocal: true, identifier: "whiteBalance.temperature",
                               onEditingChanged: setSliderEditing)
-                .disabled(viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil)
+                .disabled((viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) || rasterRecipeLocked)
             AdjustmentControl(title: L10n.text(workingSettings.masterRecipeID == nil ? "色调" : "色调偏移"), value: whiteBalanceTintBinding,
                               range: RawSettings.tintRange, step: 1,
                               defaultValue: whiteBalanceTintDefault,
                               formatter: { String(format: $0 == 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
                               identifier: "whiteBalance.tint", onEditingChanged: setSliderEditing)
                 .disabled((viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
-                          (viewModel.sourceKind == .raw && workingSettings.whiteBalanceMode == .camera && workingSettings.masterRecipeID == nil))
+                          (viewModel.sourceKind == .raw && workingSettings.whiteBalanceMode == .camera && workingSettings.masterRecipeID == nil) ||
+                          rasterRecipeLocked)
 
             if let note = whiteBalanceNote {
                 Text(note)

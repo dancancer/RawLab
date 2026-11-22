@@ -220,7 +220,9 @@ struct AdjustmentDock: View {
             let source = model.sourceRevision
             let hdr = model.settings.isHDREditing
             MacColorGradingControls(settings: Binding(get: { model.settings.editingGradingSettings }, set: { model.settings.editingGradingSettings = $0 }),
-                zone: $model.adjustmentNavigation.selectedGradingZone, source: "\(source).\(hdr)",
+                zone: $model.adjustmentNavigation.selectedGradingZone,
+                globalSelected: $model.adjustmentNavigation.gradingGlobalSelected,
+                source: "\(source).\(hdr)",
                 isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
                     model.adjustmentNavigation.tool == .colorGrading && model.adjustmentNavigation.expandedGroup != nil },
                 onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction, compact: true)
@@ -292,6 +294,7 @@ struct AdjustmentDock: View {
         let isRaster = model.file.map(RenderEngine.isRasterInput) == true
         let isRaw = !isRaster && !model.settings.isHDREditing
         let isCalibratedRaw = !isRaw || model.settings.asShotWhiteBalance != nil
+        let rasterRecipeLocked = isRaster && !model.settings.isHDREditing && model.settings.masterRecipeID != nil
         return VStack(spacing: 4) {
             if model.settings.isHDREditing || isRaster {
                 Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
@@ -330,7 +333,7 @@ struct AdjustmentDock: View {
                 Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }.disabled(!isCalibratedRaw)
+        }.disabled(!isCalibratedRaw || rasterRecipeLocked)
     }
 
     private var wbProbeNoticeText: String? {
@@ -345,7 +348,7 @@ struct AdjustmentDock: View {
     }
 
     @ViewBuilder private var gradingResets: some View {
-        gradingReset(.gradingZone(navigation.selectedGradingZone), "重置当前分区")
+        gradingReset(navigation.currentGradingResetScope, "重置当前分区")
         gradingReset(.allGrading, "重置颜色分级")
     }
 

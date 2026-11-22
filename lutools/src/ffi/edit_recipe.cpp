@@ -1114,8 +1114,12 @@ sony2fuji_request EditRecipe::toRequest() const {
     request.shadows = params.shadows;
     request.tone_curve = params.toneCurve;
     request.sharpening = params.sharpening;
-    request.temperature = params.temperature;
-    request.tint = params.tint;
+    request.temperature = params.wbMode == RenderWhiteBalanceMode::Relative
+        ? 6500.0f
+        : params.temperature;
+    request.tint = params.wbMode == RenderWhiteBalanceMode::Relative
+        ? 0.0f
+        : params.tint;
     request.size_mode = static_cast<sony2fuji_size_mode>(params.sizeMode);
     request.long_edge = params.longEdge;
     request.intent = static_cast<sony2fuji_intent>(params.intent);

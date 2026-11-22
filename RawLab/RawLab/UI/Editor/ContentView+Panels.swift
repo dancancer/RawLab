@@ -502,17 +502,18 @@ extension ContentView {
         let tool = currentEditorTool
         let channel = hslChannel
         let grading = coordinator.gradingZone
+        let gradingGlobal = coordinator.gradingGlobalSelected
         let perspective = coordinator.geometryPerspective, rotation = coordinator.geometryRotation
         let hdr = settings.isHDREditing
-        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(perspective).\(rotation).\(hdr)", isCurrent: {
+        return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(gradingGlobal).\(perspective).\(rotation).\(hdr)", isCurrent: {
             viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation)
         }, canChange: { !viewModel.adjustmentInteractionRejected }, onInteractionCancelled: {
             if viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
-                (tool != .adjustment(.colorGrading) || coordinator.gradingZone == grading) &&
+                (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation) {
                 cancelSliderInteraction()
             }

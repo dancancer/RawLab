@@ -97,6 +97,7 @@ struct ViewportPreviewTests {
             var settings = Adjustments()
             settings.atmosphere = AtmosphereSettings(clarity: clarity, dehaze: 60)
             settings.exposureMode = .scene
+            settings.whiteBalanceMode = .custom
             settings.set(.temperature, to: 8000)
             let exact = try engine.render(raw, settings: settings, lut: nil, edge: 768)!
             let settled = try engine.render(raw, settings: settings, lut: nil, edge: 768, viewportPreview: true)!
@@ -131,6 +132,7 @@ struct ViewportPreviewTests {
         _ = try engine.render(raw, settings: settings, lut: lut, edge: 1280, viewportPreview: true)
         settings.setDenoiseParameter(.chroma, to: 72)
         settings.setDenoiseParameter(.coarse, to: 100)
+        settings.whiteBalanceMode = .custom
         settings.set(.temperature, to: 8000)
         settings.exposure = -0.25
         _ = try engine.render(raw, settings: settings, lut: lut, edge: 832,
@@ -168,6 +170,7 @@ struct ViewportPreviewTests {
             let reference = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
             var settings = Adjustments()
             settings.exposureMode = exposureMode
+            settings.whiteBalanceMode = .custom
             settings.set(.temperature, to: 8000)
             settings.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 65, chroma: 72, coarse: 100)
             let proxy = try cpu.render(raw, settings: settings, lut: lut, edge: 1200,

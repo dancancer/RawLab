@@ -623,5 +623,22 @@ extension EditMemoryTests {
             var invalidSettings = settings; invalidSettings[keyPath: key] = invalid
             check(blocked(invalidSettings, .all), "full reset rejects out-of-range input before discarding it")
         }
+        var gradingV2 = RawSettings.default
+        gradingV2.gradingSettings.shadows = ColorGradingWheel(hue: 220, saturation: 35, luminance: -25)
+        gradingV2.gradingSettings.global = ColorGradingWheel(hue: 45, saturation: 30, luminance: 15)
+        gradingV2.gradingSettings.blending = 72
+        gradingV2.gradingSettings.balance = -20
+        check(EditorAdjustmentRules.isModified(.gradingGlobal, snapshot: state(gradingV2), context: raster),
+              "gradingGlobal reports modified when global wheel is non-default")
+        guard case .candidate(let globalReset, let confirmGlobal) = EditorAdjustmentRules.prepareReset(.gradingGlobal, snapshot: state(gradingV2), context: raster) else {
+            fatalError("gradingGlobal reset must produce candidate")
+        }
+        check(!confirmGlobal && globalReset.settings.gradingSettings.global.isDefault &&
+              globalReset.settings.gradingSettings.shadows == gradingV2.gradingSettings.shadows &&
+              globalReset.settings.gradingSettings.blending == 72 &&
+              globalReset.settings.gradingSettings.balance == -20,
+              "gradingGlobal reset clears only global wheel without altering zones, blending, or balance")
+        check(!EditorAdjustmentRules.isModified(.gradingGlobal, snapshot: globalReset, context: raster),
+              "gradingGlobal reports unmodified after reset")
     }
 }

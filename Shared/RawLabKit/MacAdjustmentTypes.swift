@@ -231,15 +231,22 @@ public struct EditorAdjustmentNavigation: Equatable {
     public var tool: EditorAdjustmentTool
     public var selectedHSLChannel: Int
     public var selectedGradingZone: ColorGradingZone
+    public var gradingGlobalSelected: Bool
 
     public init(expandedGroup: EditorAdjustmentGroup? = .looks,
                 tool: EditorAdjustmentTool = .film,
                 selectedHSLChannel: Int = 0,
-                selectedGradingZone: ColorGradingZone = .shadows) {
+                selectedGradingZone: ColorGradingZone = .shadows,
+                gradingGlobalSelected: Bool = false) {
         self.expandedGroup = expandedGroup
         self.tool = tool
         self.selectedHSLChannel = selectedHSLChannel
         self.selectedGradingZone = selectedGradingZone
+        self.gradingGlobalSelected = gradingGlobalSelected
+    }
+
+    public var currentGradingResetScope: EditorResetScope {
+        gradingGlobalSelected ? .gradingGlobal : .gradingZone(selectedGradingZone)
     }
 
     public mutating func selectGroup(_ group: EditorAdjustmentGroup) {
@@ -268,7 +275,7 @@ public enum EditorResetScope: Equatable {
     case group(EditorAdjustmentGroup)
     case hslColor(Int)
     case hslAll
-    case gradingZone(ColorGradingZone), allGrading
+    case gradingZone(ColorGradingZone), gradingGlobal, allGrading
     case all
     public var usesGeometryDraft: Bool {
         switch self {

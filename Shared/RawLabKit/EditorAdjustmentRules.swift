@@ -50,7 +50,7 @@ public enum EditorAdjustmentScope: Equatable {
     case group(EditorAdjustmentGroup)
     case hslChannel(Int)
     case allHSL
-    case gradingZone(ColorGradingZone), allGrading
+    case gradingZone(ColorGradingZone), gradingGlobal, allGrading
     case all
 }
 
@@ -245,7 +245,7 @@ public enum EditorAdjustmentRules {
     private static func requiresConfirmation(_ scope: EditorAdjustmentScope, hasMaterializedFields: Bool = false) -> Bool {
         switch scope {
         case .group, .allHSL, .allGrading, .all: return true
-        case .hslChannel, .gradingZone: return false
+        case .hslChannel, .gradingZone, .gradingGlobal: return false
         case .tool(.adjustment(.hsl)), .tool(.adjustment(.colorGrading)): return true
         case .tool: return hasMaterializedFields
         }
@@ -322,6 +322,7 @@ public enum EditorAdjustmentRules {
             }
         case .allGrading: result.colorGrading = nil
         case .gradingZone(let zone): result.gradingSettings[zone] = ColorGradingWheel()
+        case .gradingGlobal: result.gradingSettings.global = ColorGradingWheel()
         case .allHSL: result.hsl = HSLSettings()
         case .hslChannel(let channel):
             if (0..<8).contains(channel) { result.hsl.reset(channel: channel) }
@@ -368,6 +369,8 @@ public enum EditorAdjustmentRules {
             result.editingGradingSettings = ColorGradingSettings()
         case .gradingZone(let zone):
             result.editingGradingSettings[zone] = ColorGradingWheel()
+        case .gradingGlobal:
+            result.editingGradingSettings.global = ColorGradingWheel()
         case .tool(.adjustment(.hsl)), .allHSL:
             result.editingHSLSettings = HSLSettings()
         case .hslChannel(let channel):

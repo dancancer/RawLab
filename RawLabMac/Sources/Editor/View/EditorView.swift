@@ -671,7 +671,7 @@ struct EditorView: View {
         Menu {
             let tool = model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing).tool
             if tool == .colorGrading {
-                resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
+                resetButton(model.adjustmentNavigation.currentGradingResetScope, title: L10n.text("重置当前分区"))
                 resetButton(.allGrading, title: L10n.text("重置颜色分级"))
             } else if tool == .hsl {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),

@@ -456,5 +456,59 @@ final class RulesAndTransferTests: XCTestCase {
             XCTAssertEqual(detached.settings.gradingSettings.blending, 75)
             XCTAssertEqual(detached.settings.gradingSettings.balance, -30)
         }
+
+        // Color Grading v2 Global tab reset (.gradingGlobal) on Mac & iOS (SDR + HDR)
+        var macGrading = Adjustments()
+        macGrading.gradingSettings.shadows = ColorGradingWheel(hue: 210, saturation: 40, luminance: -20)
+        macGrading.gradingSettings.global = ColorGradingWheel(hue: 35, saturation: 25, luminance: 10)
+        macGrading.gradingSettings.blending = 75
+        macGrading.gradingSettings.balance = -30
+        let macGradingSnap = MacPhotoEditState(settings: macGrading, filmID: "")
+        XCTAssertTrue(MacEditorAdjustmentRules.isModified(scope: .gradingGlobal, snapshot: macGradingSnap, context: rasterCtx))
+        guard case .candidate(let macGlobalReset) = MacEditorAdjustmentRules.prepareReset(scope: .gradingGlobal, snapshot: macGradingSnap, context: rasterCtx) else {
+            return XCTFail("Expected Mac .gradingGlobal reset candidate")
+        }
+        XCTAssertTrue(macGlobalReset.settings.gradingSettings.global.isDefault)
+        XCTAssertEqual(macGlobalReset.settings.gradingSettings.shadows, macGrading.gradingSettings.shadows)
+        XCTAssertEqual(macGlobalReset.settings.gradingSettings.blending, 75)
+        XCTAssertEqual(macGlobalReset.settings.gradingSettings.balance, -30)
+        XCTAssertFalse(MacEditorAdjustmentRules.isModified(scope: .gradingGlobal, snapshot: macGlobalReset, context: rasterCtx))
+
+        var iosGrading = RawSettings.default
+        iosGrading.gradingSettings = macGrading.gradingSettings
+        let iosGradingSnap = PhotoEditState(settings: iosGrading)
+        XCTAssertTrue(EditorAdjustmentRules.isModified(.gradingGlobal, snapshot: iosGradingSnap, context: iosCtx))
+        guard case .candidate(let iosGlobalReset, let requiresConfirm) = EditorAdjustmentRules.prepareReset(.gradingGlobal, snapshot: iosGradingSnap, context: iosCtx) else {
+            return XCTFail("Expected iOS .gradingGlobal reset candidate")
+        }
+        XCTAssertFalse(requiresConfirm)
+        XCTAssertTrue(iosGlobalReset.settings.gradingSettings.global.isDefault)
+        XCTAssertEqual(iosGlobalReset.settings.gradingSettings.shadows, iosGrading.gradingSettings.shadows)
+        XCTAssertEqual(iosGlobalReset.settings.gradingSettings.blending, 75)
+        XCTAssertEqual(iosGlobalReset.settings.gradingSettings.balance, -30)
+
+        var hdrGrading = RawSettings.default
+        hdrGrading.hdr = HDRSettings()
+        hdrGrading.editingGradingSettings = macGrading.gradingSettings
+        let hdrSnap = PhotoEditState(settings: hdrGrading)
+        XCTAssertTrue(EditorAdjustmentRules.isModified(.gradingGlobal, snapshot: hdrSnap, context: iosCtx))
+        guard case .candidate(let hdrReset, _) = EditorAdjustmentRules.prepareReset(.gradingGlobal, snapshot: hdrSnap, context: iosCtx) else {
+            return XCTFail("Expected HDR .gradingGlobal reset candidate")
+        }
+        XCTAssertTrue(hdrReset.settings.editingGradingSettings.global.isDefault)
+        XCTAssertEqual(hdrReset.settings.editingGradingSettings.shadows, macGrading.gradingSettings.shadows)
+
+        var macNav = EditorAdjustmentNavigation(tool: .colorGrading, selectedGradingZone: .shadows, gradingGlobalSelected: true)
+        XCTAssertEqual(macNav.currentGradingResetScope, .gradingGlobal)
+        macNav.gradingGlobalSelected = false
+        XCTAssertEqual(macNav.currentGradingResetScope, .gradingZone(.shadows))
+
+        // Mac Adjustments.set(.temperature/.tint) on raster keeps .asShot mode so resolvedForRaster retains relative WB
+        var macRasterWb = Adjustments()
+        macRasterWb.set(.temperature, to: 5200)
+        macRasterWb.set(.tint, to: 14)
+        XCTAssertEqual(macRasterWb.whiteBalanceMode, .asShot)
+        XCTAssertEqual(macRasterWb.resolvedForRaster.temperature, 5200)
+        XCTAssertEqual(macRasterWb.resolvedForRaster.tint, 14)
     }
 }

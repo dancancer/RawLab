@@ -4,13 +4,13 @@ import SwiftUI
 struct MacColorGradingControls: View {
     @Binding var settings: ColorGradingSettings
     @Binding var zone: ColorGradingZone
+    @Binding var globalSelected: Bool
     let source: String
     let isCurrent: () -> Bool
     let onEditingChanged: (Bool) -> Void
     let onCancelled: () -> Void
     var compact = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var globalSelected = false
 
     private enum GradingTab: String, CaseIterable, Identifiable {
         case shadows, midtones, highlights, global

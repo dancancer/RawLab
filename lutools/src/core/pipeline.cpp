@@ -1143,9 +1143,9 @@ RenderStatus Pipeline::sampleWbProbe(
                 std::max(1e-6, static_cast<double>(camWb.b) / cachedWbUsed_[2])
             };
             const std::array<double, 3> neutral = {
-                camRaw[1] / camRaw[0],
+                camRaw[0] / camRaw[1],
                 1.0,
-                camRaw[1] / camRaw[2]
+                camRaw[2] / camRaw[1]
             };
             TemperatureTint solved{};
             if (!cachedRawWb_.solveTemperatureTint(neutral, solved)) {
@@ -1155,9 +1155,9 @@ RenderStatus Pipeline::sampleWbProbe(
             outResult.temperature = static_cast<float>(std::clamp(solved.temperature, 2000.0, 50000.0));
             outResult.tint = static_cast<float>(std::clamp(solved.tint, -150.0, 150.0));
             outResult.wbMul = {
-                static_cast<float>(neutral[0]),
+                static_cast<float>(camRaw[1] / camRaw[0]),
                 1.0f,
-                static_cast<float>(neutral[2])
+                static_cast<float>(camRaw[1] / camRaw[2])
             };
             outResult.availability = WbProbeAvailability::Available;
             return RenderStatus::Ok;

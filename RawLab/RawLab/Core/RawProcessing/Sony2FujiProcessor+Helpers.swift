@@ -205,14 +205,15 @@ extension Sony2FujiProcessor {
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        // RAW white balance uses camera gains when wb_mode == CAMERA; SDR display
-        // input preserves relative WB (6500/0 when recipe or non-camera mode).
-        let neutralRelativeWB = (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW) ||
-            (displayInput && (settings.masterRecipeID != nil || settings.whiteBalanceMode != .camera))
-        request.temperature = neutralRelativeWB
+        // Camera WB keeps baseline 6500/0 on the base request for both RAW
+        // (camera gains) and SDR display input (relative WB comes from
+        // applySessionParams / rasterRelativeWbActive_).
+        let neutralCameraWB = request.wb_mode == SONY2FUJI_WB_CAMERA &&
+            (inputType == SONY2FUJI_INPUT_RAW || displayInput)
+        request.temperature = neutralCameraWB
             ? 6500
             : Float(settings.temperature)
-        request.tint = neutralRelativeWB
+        request.tint = neutralCameraWB
             ? 0
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)

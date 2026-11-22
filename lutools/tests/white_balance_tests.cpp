@@ -140,6 +140,14 @@ int main(int argc,char** argv) {
         applyRasterRelativeWb(res.temperature, res.tint);
         const auto neutralized = renderRaster(rReq);
         checkPass(neutralized != noneOut, "Relative WB changes SDR raster output");
+        {
+            const int px = static_cast<int>(std::lround(0.25 * (W - 1)));
+            const int py = static_cast<int>(std::lround(0.5 * (H - 1)));
+            const size_t idx = (size_t(py) * W + size_t(px)) * 3;
+            const int drg = std::abs(int(neutralized[idx]) - int(neutralized[idx + 1]));
+            const int dgb = std::abs(int(neutralized[idx + 1]) - int(neutralized[idx + 2]));
+            checkPass(drg <= 2 && dgb <= 2, "Applying raster WB probe neutralizes warm patch");
+        }
         // Verify auto exposure accepts Relative WB on raster
         float autoEv = 0;
         checkPass(sony2fuji_session_estimate_auto_exposure(rasterSession, &rReq, &autoEv) == SONY2FUJI_STATUS_OK,
@@ -267,18 +275,67 @@ int main(int argc,char** argv) {
     sony2fuji_session_get_raw_exposure(session,&customBaseline,&metadata);
     checkPass(std::abs(baseline-customBaseline)<1e-5,"White balance leaves preview-matched exposure anchored to as-shot");
 
-    // Calibrated RAW WB eyedropper: sample at (0.5, 0.5), apply solved (temperature, tint), and verify idempotence
+    // Calibrated RAW WB eyedropper: sample at (0.5, 0.5), apply solved (temperature, tint), verify neutralization and idempotence
     {
+        sony2fuji_session_set_raw_exposure_mode(session, SONY2FUJI_EXPOSURE_SCENE);
+        request.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+        request.long_edge = 512;
+        request.preview_long_edge = 512;
+        auto renderCenterPixel = [&]() {
+            sony2fuji_buffer centerBuf{};
+            const auto st = sony2fuji_process(session, &request, &centerBuf);
+            checkPass(st == SONY2FUJI_STATUS_OK && centerBuf.width > 0 && centerBuf.height > 0,
+                      "Render for RAW WB probe neutralization check");
+            std::array<int, 3> rgb{};
+            if (st == SONY2FUJI_STATUS_OK && centerBuf.width > 0 && centerBuf.height > 0) {
+                const int cx = static_cast<int>(std::lround(0.5 * (centerBuf.width - 1)));
+                const int cy = static_cast<int>(std::lround(0.5 * (centerBuf.height - 1)));
+                const auto* bytes = static_cast<const unsigned char*>(centerBuf.data);
+                int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    const int py = cy + dy;
+                    if (py < 0 || py >= static_cast<int>(centerBuf.height)) continue;
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int px = cx + dx;
+                        if (px < 0 || px >= static_cast<int>(centerBuf.width)) continue;
+                        const size_t offset = size_t(py) * centerBuf.stride_bytes + size_t(px) * 3;
+                        sumR += int(bytes[offset]);
+                        sumG += int(bytes[offset + 1]);
+                        sumB += int(bytes[offset + 2]);
+                        ++count;
+                    }
+                }
+                if (count > 0) rgb = {sumR / count, sumG / count, sumB / count};
+            }
+            sony2fuji_release_buffer(&centerBuf);
+            return rgb;
+        };
+
         request.wb_mode = SONY2FUJI_WB_CAMERA; request.temperature = 6500; request.tint = 0;
+        const auto preCenter = renderCenterPixel();
+
         sony2fuji_wb_probe_query rq{SONY2FUJI_WB_PROBE_VERSION, sizeof(rq), 0.5f, 0.5f, 3, 0};
         sony2fuji_wb_probe_result rres{};
         rres.version = SONY2FUJI_WB_PROBE_VERSION; rres.struct_size = sizeof(rres);
         checkPass(sony2fuji_session_sample_wb_probe(session, &request, &rq, &rres) == SONY2FUJI_STATUS_OK,
                   "Calibrated RAW WB probe succeeds");
         if (rres.availability == SONY2FUJI_WB_PROBE_AVAILABLE) {
+            const int preSpread = std::max(std::abs(preCenter[0] - preCenter[1]),
+                                           std::abs(preCenter[1] - preCenter[2]));
+            if (preSpread <= 8) {
+                checkPass(std::abs(rres.temperature - temperature) < 500.0f &&
+                          std::abs(rres.tint - tint) < 15.0f,
+                          "Already-neutral RAW center solves near As-Shot instead of clamping");
+            }
             request.wb_mode = SONY2FUJI_WB_TEMPERATURE;
             request.temperature = rres.temperature;
             request.tint = rres.tint;
+            const auto postCenter = renderCenterPixel();
+            if (rres.temperature > 2001.0f && rres.temperature < 49999.0f && std::abs(rres.tint) < 149.0f) {
+                const int postSpread = std::max(std::abs(postCenter[0] - postCenter[1]),
+                                                std::abs(postCenter[1] - postCenter[2]));
+                checkPass(postSpread <= 6, "Applying RAW WB probe renders probed center patch neutral");
+            }
             sony2fuji_wb_probe_result rres2{};
             rres2.version = SONY2FUJI_WB_PROBE_VERSION; rres2.struct_size = sizeof(rres2);
             checkPass(sony2fuji_session_sample_wb_probe(session, &request, &rq, &rres2) == SONY2FUJI_STATUS_OK &&

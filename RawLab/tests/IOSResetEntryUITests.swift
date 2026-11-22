@@ -51,6 +51,7 @@ final class RawEditorViewModel {
     @Published var currentTool: EditorToolSelection = .adjustment(.exposure)
     @Published var hslChannel = 0
     @Published var gradingZone: ColorGradingZone = .shadows
+    @Published var gradingGlobalSelected = false
     @Published var isAvailable = true
     @Published var settings = RawSettings.default
     @Published var draft: EditorToolDraft?
@@ -71,6 +72,7 @@ final class RawEditorViewModel {
             currentTool: currentTool,
             hslChannel: hslChannel,
             gradingZone: gradingZone,
+            gradingGlobalSelected: gradingGlobalSelected,
             isAvailable: isAvailable,
             isModified: { EditorAdjustmentRules.isModified($0, snapshot: snapshot, context: self.context) }
         )
@@ -525,6 +527,41 @@ private struct ResetControlHostView: View {
             throw Failure.assertion("Color Grading full reset failed")
         }
         print("PASS: All-Grading reset clears remaining modified zones in draft")
+
+        var globalEdited = neutral
+        globalEdited.gradingSettings.shadows = ColorGradingWheel(hue: 35, saturation: 40)
+        globalEdited.gradingSettings.global = ColorGradingWheel(hue: 210, saturation: 25, luminance: 12)
+        globalEdited.gradingSettings.blending = 75
+        globalEdited.gradingSettings.balance = -20
+        var globalDraft = EditorToolDraft(tool: .adjustment(.colorGrading), original: neutral)
+        globalDraft.update(globalEdited)
+        hostModel.gradingZone = .highlights
+        hostModel.gradingGlobalSelected = true
+        hostModel.draft = globalDraft
+        try await settle(host)
+
+        let globalMenu = try requirePresentation(hostModel.presentation, "Missing Level 2 Global Color Grading reset menu")
+        let globalItems = try menuItems(of: globalMenu)
+        try check(globalItems.count == 2 &&
+                  globalItems[0].id == "editor.draft.reset.gradingZone" &&
+                  globalItems[0].scope == .gradingGlobal && globalItems[0].isEnabled &&
+                  globalItems[1].id == "editor.draft.reset.allGrading" && globalItems[1].isEnabled,
+                  "Selecting Global tab routes Reset Current Zone to .gradingGlobal")
+
+        let globalSnap = EditorDraftSnapshot(geometry: nil, lens: nil, tool: .adjustment(.colorGrading), workspace: globalDraft)
+        guard case .prepared(let preparedGlobal) = viewModel.prepareReset(.gradingGlobal, settings: neutral,
+                                                                          revision: gradingRev, draft: globalSnap),
+              !preparedGlobal.requiresConfirmation, preparedGlobal.updatesDraft,
+              let afterGlobal = viewModel.commitReset(preparedGlobal, settings: neutral,
+                                                      revision: gradingRev, draft: globalSnap) else {
+            throw Failure.assertion("Color Grading global-tab reset failed")
+        }
+        try check(afterGlobal.settings.gradingSettings.global.isDefault &&
+                  !afterGlobal.settings.gradingSettings.shadows.isDefault &&
+                  afterGlobal.settings.gradingSettings.blending == 75 &&
+                  afterGlobal.settings.gradingSettings.balance == -20,
+                  "Color Grading global-tab reset clears only global wheel while preserving shadows, blending, and balance")
+        hostModel.gradingGlobalSelected = false
 
         if !axTrusted {
             // 闸的 FAIL 与 SKIP 在末尾同位二选一，且必须发生在 30 条模型断言全部真跑

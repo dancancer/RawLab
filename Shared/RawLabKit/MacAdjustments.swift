@@ -450,12 +450,14 @@ public struct Adjustments: Equatable, Codable {
         self[keyPath: parameter.spec.keyPath] = value
         if parameter.isWhiteBalance {
             if masterRecipe != nil {
-                if parameter == .temperature {
-                    whiteBalanceMode = temperature == asShotWhiteBalance?.temperature ? .asShot : .custom
+                if parameter == .temperature, let camera = asShotWhiteBalance {
+                    whiteBalanceMode = temperature == camera.temperature ? .asShot : .custom
                 }
                 return
             }
-            whiteBalanceMode = temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint ? .asShot : .custom
+            if let camera = asShotWhiteBalance {
+                whiteBalanceMode = temperature == camera.temperature && tint == camera.tint ? .asShot : .custom
+            }
         }
     }
 

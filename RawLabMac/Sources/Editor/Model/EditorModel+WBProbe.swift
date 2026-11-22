@@ -4,7 +4,7 @@ import AppKit
 extension EditorModel {
     var canUseWBProbe: Bool {
         guard !settings.isHDREditing, let file else { return false }
-        if RenderEngine.isRasterInput(file) { return true }
+        if RenderEngine.isRasterInput(file) { return settings.masterRecipeID == nil }
         if RenderEngine.isX3fInput(file) && settings.x3fMode == .normal { return false }
         return settings.asShotWhiteBalance != nil
     }

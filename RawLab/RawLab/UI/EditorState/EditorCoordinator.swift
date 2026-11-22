@@ -249,6 +249,7 @@ final class EditorCoordinator: ObservableObject {
     @Published var wbProbeSampling = false
     @Published var wbProbeNotice: WBProbeNotice?
     @Published var gradingZone: ColorGradingZone = .shadows
+    @Published var gradingGlobalSelected = false
     @Published var preparedReset: PreparedEditorReset?
     @Published var preparedResetScope: EditorAdjustmentScope?
     @Published var resetConfirmationPresented = false
@@ -803,6 +804,7 @@ final class EditorCoordinator: ObservableObject {
         lensSelected = false
         cancelHSLTarget()
         gradingZone = .shadows
+        gradingGlobalSelected = false
         photoViewing.sourceChanged()
         photoViewport = PhotoViewport()
         pendingFileImport = false

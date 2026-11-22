@@ -38,6 +38,28 @@ int main() {
     document["edits"].erase("white_balance");
     if (!sony2fuji::parseEditRecipe(document.dump(), recipe, error) ||
         sony2fuji::serializeEditRecipe(recipe).find("none") == std::string::npos) ++failures;
+    Json v17Relative = {
+        {"schema_version", 17},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"input", {{"path", "photo.png"}, {"type", "raster"}}},
+        {"edits", {{"exposure", {{"mode", "sensor"}}},
+                   {"white_balance", {{"mode", "relative"}, {"relative_temperature", 5400}, {"relative_tint", 12}}}}},
+        {"output", {{"path", "edited.png"}, {"format", "png"}}}
+    };
+    sony2fuji::EditRecipe relativeRecipe;
+    if (!sony2fuji::parseEditRecipe(v17Relative.dump(), relativeRecipe, error)) {
+        std::cerr << "FAIL v17 raster relative recipe: " << error << '\n';
+        ++failures;
+    } else {
+        const auto req = relativeRecipe.toRequest();
+        if (req.input_type != SONY2FUJI_INPUT_DISPLAY_BUFFER ||
+            req.wb_mode != SONY2FUJI_WB_CAMERA ||
+            req.temperature != 6500.0f ||
+            req.tint != 0.0f) {
+            std::cerr << "FAIL v17 raster relative toRequest must normalize base request to CAMERA 6500/0\n";
+            ++failures;
+        }
+    }
     if (!failures) std::cout << "PASS raster protocol round trip, explicit defaults and RAW-only rejection\n";
     return failures ? 1 : 0;
 }

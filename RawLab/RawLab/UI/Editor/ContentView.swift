@@ -356,6 +356,7 @@ struct ContentView: View {
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: coordinator.gradingGlobalSelected) { _, _ in cancelSliderInteraction() }
         .onChange(of: coordinator.hslChannel) { _, _ in
             coordinator.cancelHSLTarget()
             cancelSliderInteraction()
