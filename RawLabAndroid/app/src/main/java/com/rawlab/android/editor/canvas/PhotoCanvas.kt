@@ -5,6 +5,7 @@ import com.rawlab.android.ui.AppIcons
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -517,8 +518,11 @@ internal fun PhotoCanvas(
                             modifier = Modifier
                                 .offset { IntOffset(px - pinRadiusPx, py - pinRadiusPx) }
                                 .size(20.dp)
+                                .clip(CircleShape)
                                 .background(if (selected) Color.Yellow else Color.Black.copy(alpha = 0.78f), CircleShape)
                                 .border(1.5.dp, if (selected) Color.Black else Color.White, CircleShape)
+                                .clickable { onInspectionAnchorSelect(anchor.id) }
+                                .testTag("inspection-anchor-pin-${idx + 1}")
                         ) {
                             Text(
                                 "${idx + 1}",

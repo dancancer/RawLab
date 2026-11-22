@@ -213,7 +213,20 @@ internal fun InspectionOverlayDropdownItems(
         DropdownMenuItem(
             text = { Text(stringResource(inspectionOverlayLabelRes(mode))) },
             leadingIcon = { if (selected == mode) Icon(Icons.Outlined.Check, null) },
+            modifier = Modifier.testTag("inspection-overlay-item-${mode.name.lowercase()}"),
             onClick = { onSelect(mode) }
         )
+    }
+}
+
+@Composable
+internal fun InspectionOverlayDropdownMenu(
+    expanded: Boolean,
+    selected: InspectionOverlayMode,
+    onDismissRequest: () -> Unit,
+    onSelect: (InspectionOverlayMode) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest) {
+        InspectionOverlayDropdownItems(selected = selected, onSelect = onSelect)
     }
 }

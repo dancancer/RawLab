@@ -102,6 +102,20 @@ final class InspectionSuiteTests: XCTestCase {
         let cropped = GeometrySettings(cropX: 0.25, cropY: 0.25, cropWidth: 0.5, cropHeight: 0.5)
         XCTAssertNil(GeometryCoordinateMapper.sourceNormToOutputNorm(CGPoint(x: 0.1, y: 0.1), sourceSize: sourceSize, geometry: cropped))
         XCTAssertNotNil(GeometryCoordinateMapper.sourceNormToOutputNorm(CGPoint(x: 0.5, y: 0.5), sourceSize: sourceSize, geometry: cropped))
+
+        // inferSourceSize recovers source dimensions across crop, straighten, perspective, and rotation
+        let complex = GeometrySettings(
+            cropX: 0.1, cropY: 0.2, cropWidth: 0.6, cropHeight: 0.5,
+            quarterTurns: 1, straightenDegrees: 10.0,
+            perspectiveHorizontal: 0.4, perspectiveVertical: -0.3
+        )
+        let canvas = GeometryCoordinateMapper.canvasFor(width: Int(sourceSize.width), height: Int(sourceSize.height), options: complex)
+        let inferred = GeometryCoordinateMapper.inferSourceSize(
+            outputSize: CGSize(width: canvas.outputWidth, height: canvas.outputHeight),
+            geometry: complex
+        )
+        XCTAssertEqual(inferred.width, sourceSize.width, accuracy: sourceSize.width * 0.01)
+        XCTAssertEqual(inferred.height, sourceSize.height, accuracy: sourceSize.height * 0.01)
     }
 
     func testInspectionSessionStateMax4AnchorsAndTransientGrayToggle() {
@@ -167,13 +181,25 @@ final class InspectionSuiteTests: XCTestCase {
         let gray50 = InspectionOverlayRenderer.applyOverlayPixel(r: 20, g: 200, b: 250, mode: .neutralGray50)
         XCTAssertEqual(gray50.0, 128); XCTAssertEqual(gray50.1, 128); XCTAssertEqual(gray50.2, 128)
 
-        // End-to-end CGImage render + .none identity
+        // End-to-end CGImage render + .none identity + 24-entry cache retention
         let img = try makeRGBA8CGImage(width: 8, height: 8) { x, _ in (UInt8(x * 32), 120, 90) }
         XCTAssertTrue(InspectionOverlayRenderer.shared.render(img, mode: .none) === img)
         for mode in InspectionOverlayMode.allCases where mode != .none {
             let out = try XCTUnwrap(InspectionOverlayRenderer.shared.render(img, mode: mode))
             XCTAssertEqual(out.width, 8)
             XCTAssertEqual(out.height, 8)
+        }
+
+        let renderer = InspectionOverlayRenderer()
+        var sources: [CGImage] = []
+        var rendered: [CGImage] = []
+        for i in 0..<24 {
+            let tile = try makeRGBA8CGImage(width: 4, height: 4) { _, _ in (UInt8(i * 10), 100, 120) }
+            sources.append(tile)
+            rendered.append(try XCTUnwrap(renderer.render(tile, mode: .sketchLuminance)))
+        }
+        for (src, first) in zip(sources, rendered) {
+            XCTAssertTrue(renderer.render(src, mode: .sketchLuminance) === first)
         }
     }
 

@@ -211,4 +211,104 @@ public sealed class InspectionSuiteTests
             Assert.Equal(baselineJpeg, EncodeJpeg(source));
         }
     }
+
+    [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "inspection-suite")]
+    public void OverlayCacheRetainsReferenceAndResultConcurrentlyWithoutPingPong()
+    {
+        static BitmapSource MakeBitmap(byte r, byte g, byte b)
+        {
+            const int w = 8, h = 8, stride = w * 4;
+            var pixels = new byte[stride * h];
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                pixels[i] = b;
+                pixels[i + 1] = g;
+                pixels[i + 2] = r;
+                pixels[i + 3] = 255;
+            }
+            var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, pixels, stride);
+            bmp.Freeze();
+            return bmp;
+        }
+
+        var reference = MakeBitmap(120, 120, 120);
+        var result = MakeBitmap(210, 140, 90);
+        var cache = new InspectionOverlayCache(maxEntries: 4);
+        var pending = new Queue<Action>();
+        var renderScheduled = 0;
+        var refreshRequests = 0;
+
+        BitmapSource Resolve(BitmapSource source, InspectionOverlayMode mode)
+        {
+            if (cache.TryGet(source, mode, out var cached))
+                return cached;
+            if (cache.TryBeginRender(source, mode))
+            {
+                renderScheduled++;
+                pending.Enqueue(() =>
+                {
+                    var rendered = InspectionOverlayRenderer.CreateOverlayBitmap(source, mode);
+                    cache.CompleteRender(source, mode, rendered);
+                    refreshRequests++;
+                });
+            }
+            return source;
+        }
+
+        const InspectionOverlayMode activeMode = InspectionOverlayMode.SketchLuminance;
+
+        // Pass 1: RefreshViewingFrames requests reference (NeutralCanvas), result (ResultCanvas), and reference (Comparison)
+        Assert.Same(reference, Resolve(reference, activeMode));
+        Assert.Same(result, Resolve(result, activeMode));
+        Assert.Same(reference, Resolve(reference, activeMode));
+        Assert.Equal(2, renderScheduled);
+        Assert.Equal(2, cache.InFlightCount);
+
+        // Complete reference render -> triggers Pass 2 refresh; result is still in-flight (not re-scheduled)
+        pending.Dequeue().Invoke();
+        Assert.Equal(1, refreshRequests);
+        var refPass2 = Resolve(reference, activeMode);
+        Assert.NotSame(reference, refPass2);
+        Assert.Same(result, Resolve(result, activeMode));
+        Assert.Same(refPass2, Resolve(reference, activeMode));
+        Assert.Equal(2, renderScheduled);
+
+        // Complete result render -> triggers Pass 3 refresh; both remain cached concurrently
+        pending.Dequeue().Invoke();
+        Assert.Equal(2, refreshRequests);
+        var refPass3 = Resolve(reference, activeMode);
+        var resPass3 = Resolve(result, activeMode);
+        var cmpPass3 = Resolve(reference, activeMode);
+        Assert.Same(refPass2, refPass3);
+        Assert.Same(refPass2, cmpPass3);
+        Assert.NotSame(result, resPass3);
+        Assert.Equal(2, renderScheduled);
+        Assert.Equal(2, cache.Count);
+        Assert.Equal(0, cache.InFlightCount);
+        Assert.Empty(pending);
+
+        // Additional distinct bitmaps respect bounded LRU capacity (4 entries)
+        var extra1 = MakeBitmap(50, 90, 140);
+        var extra2 = MakeBitmap(180, 60, 40);
+        var extra3 = MakeBitmap(90, 200, 110);
+        Assert.True(cache.TryBeginRender(extra1, activeMode));
+        cache.CompleteRender(extra1, activeMode, InspectionOverlayRenderer.CreateOverlayBitmap(extra1, activeMode));
+        Assert.True(cache.TryBeginRender(extra2, activeMode));
+        cache.CompleteRender(extra2, activeMode, InspectionOverlayRenderer.CreateOverlayBitmap(extra2, activeMode));
+        Assert.Equal(4, cache.Count);
+        Assert.True(cache.TryGet(result, activeMode, out _));
+
+        // 5th entry evicts the least-recently-used entry (reference), keeping capacity bounded at 4
+        Assert.True(cache.TryBeginRender(extra3, activeMode));
+        cache.CompleteRender(extra3, activeMode, InspectionOverlayRenderer.CreateOverlayBitmap(extra3, activeMode));
+        Assert.Equal(4, cache.Count);
+        Assert.False(cache.TryGet(reference, activeMode, out _));
+        Assert.True(cache.TryGet(result, activeMode, out _));
+
+        cache.Clear();
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(0, cache.InFlightCount);
+    }
 }

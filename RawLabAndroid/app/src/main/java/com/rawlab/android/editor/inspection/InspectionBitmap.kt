@@ -107,7 +107,7 @@ internal object InspectionBitmap {
                 val w = source.width
                 val h = source.height
                 if (w <= 0 || h <= 0 || source.isRecycled) return@withContext null
-                val argbSrc = if (source.config == Bitmap.Config.ARGB_8888) source else source.copy(Bitmap.Config.ARGB_8888, false)
+                val argbSrc = if (source.config == Bitmap.Config.ARGB_8888) source else source.copy(Bitmap.Config.ARGB_8888, false) ?: return@withContext null
                 val srcRow = IntArray(w)
                 val dstPixels = IntArray(w * h)
                 for (y in 0 until h) {

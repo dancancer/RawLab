@@ -281,6 +281,25 @@ public enum GeometryCoordinateMapper {
         )
     }
 
+    public static func inferSourceSize(outputSize: CGSize, geometry: GeometrySettings) -> CGSize {
+        let safeW = max(1.0, Double(outputSize.width.rounded()))
+        let safeH = max(1.0, Double(outputSize.height.rounded()))
+        if geometry.isIdentity {
+            return CGSize(width: safeW, height: safeH)
+        }
+        let radians = geometry.straightenDegrees * Double.pi / 180.0
+        let cosine = cos(radians)
+        let absSine = abs(sin(radians))
+        let perspScale = 1.0 / (1.0 + 0.25 * abs(geometry.perspectiveHorizontal) + 0.25 * abs(geometry.perspectiveVertical))
+        let cw = safeW / max(0.0001, geometry.cropWidth)
+        let ch = safeH / max(0.0001, geometry.cropHeight)
+        let straightenScale = min(cw / (cw * cosine + ch * absSine), ch / (cw * absSine + ch * cosine))
+        let rw = max(1.0, (cw / max(1e-4, perspScale * straightenScale)).rounded())
+        let rh = max(1.0, (ch / max(1e-4, perspScale * straightenScale)).rounded())
+        let turns = ((geometry.quarterTurns % 4) + 4) % 4
+        return (turns % 2 != 0) ? CGSize(width: rh, height: rw) : CGSize(width: rw, height: rh)
+    }
+
     public static func outputNormToSourceNorm(
         _ outPoint: CGPoint,
         sourceSize: CGSize,
@@ -591,7 +610,7 @@ public final class InspectionOverlayRenderer: @unchecked Sendable {
     private var cache: [CacheKey: CacheEntry] = [:]
     private var lru: [CacheKey] = []
 
-    public init(maxEntries: Int = 3) {
+    public init(maxEntries: Int = 24) {
         self.maxEntries = max(1, maxEntries)
     }
 

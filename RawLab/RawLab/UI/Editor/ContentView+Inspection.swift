@@ -6,14 +6,13 @@ extension ContentView {
     var effectiveInspectionSourceSize: CGSize? {
         if let src = viewModel.sourceNativeSize { return src }
         if let native = viewModel.nativeImageSize {
-            if settings.geometrySettings.isIdentity { return native }
-            let g = settings.geometrySettings
-            let estW = native.width / max(0.01, g.cropWidth)
-            let estH = native.height / max(0.01, g.cropHeight)
-            return g.quarterTurns % 2 != 0 ? CGSize(width: estH, height: estW) : CGSize(width: estW, height: estH)
+            return GeometryCoordinateMapper.inferSourceSize(outputSize: native, geometry: settings.geometrySettings)
         }
         guard let image = viewModel.previewImage?.cgImage ?? viewModel.hdrPresentation?.sdrImage else { return nil }
-        return CGSize(width: image.width, height: image.height)
+        return GeometryCoordinateMapper.inferSourceSize(
+            outputSize: CGSize(width: image.width, height: image.height),
+            geometry: settings.geometrySettings
+        )
     }
 
     var inspectionAfterCGImage: CGImage? {

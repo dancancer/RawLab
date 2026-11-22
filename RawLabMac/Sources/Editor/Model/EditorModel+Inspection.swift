@@ -14,10 +14,11 @@ extension EditorModel {
     var effectiveInspectionSourceSize: CGSize? {
         if let sourceNativeSize { return sourceNativeSize }
         guard let image = inspectionAfterImage else { return nil }
-        return CGSize(
+        let outputSize = CGSize(
             width: CGFloat(result?.nativeWidth ?? image.width),
             height: CGFloat(result?.nativeHeight ?? image.height)
         )
+        return GeometryCoordinateMapper.inferSourceSize(outputSize: outputSize, geometry: settings.geometrySettings)
     }
 
     func updateInspectionHover(_ outputPoint: CGPoint?) {

@@ -338,7 +338,7 @@ final class PhotoCanvasView: UIView {
         self.hslTargetPoint = hslTargetPoint
         targetRecognizer.isEnabled = self.hslTarget != nil
         self.inspectionOverlay = activeOverlay
-        self.inspectionProbeEnabled = inspectionProbeEnabled && interactionEnabled && !isDraft && self.hslTarget == nil
+        self.inspectionProbeEnabled = inspectionProbeEnabled && interactionEnabled && !isDraft && self.hslTarget == nil && activeOverlay != .neutralGray50
         self.inspectionPoint = inspectionPoint
         self.inspectionAnchors = inspectionAnchors
         inspectionRecognizer.isEnabled = self.inspectionProbeEnabled
@@ -600,12 +600,13 @@ final class PhotoCanvasView: UIView {
         }
     }
     private func inspectionCoordinate(_ point: CGPoint) -> CGPoint? {
-        guard inspectionProbeEnabled, interactionEnabled, !isDraft, !state.holdingBefore else { return nil }
+        guard inspectionProbeEnabled, inspectionOverlay != .neutralGray50, interactionEnabled, !isDraft, !state.holdingBefore else { return nil }
         let imagePoint = result.imageView.convert(point, from: self)
         let rect = result.imageView.bounds
         guard rect.width > 0, rect.height > 0 else { return nil }
         if !inspectionDragging {
             guard result.visiblePhotoRect(in: self).contains(point), !overlayAvoidanceRect.contains(point),
+                  divider.isHidden || !divider.frame.contains(point),
                   rect.contains(imagePoint) else { return nil }
         }
         return CGPoint(
@@ -614,6 +615,11 @@ final class PhotoCanvasView: UIView {
         )
     }
     @objc private func inspectionDragged(_ recognizer: PhotoHSLTargetRecognizer) {
+        if !inspectionProbeEnabled || inspectionOverlay == .neutralGray50 {
+            inspectionDragging = false
+            sampleLoupe.isHidden = true
+            return
+        }
         switch recognizer.state {
         case .began:
             guard let pt = inspectionCoordinate(recognizer.point) else { return }

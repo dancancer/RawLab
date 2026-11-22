@@ -1,8 +1,115 @@
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace RawLab.Windows;
+
+internal sealed class InspectionOverlayCache
+{
+    private readonly struct CacheKey : IEquatable<CacheKey>
+    {
+        public BitmapSource Source { get; }
+        public InspectionOverlayMode Mode { get; }
+
+        public CacheKey(BitmapSource source, InspectionOverlayMode mode)
+        {
+            Source = source;
+            Mode = mode;
+        }
+
+        public bool Equals(CacheKey other) => ReferenceEquals(Source, other.Source) && Mode == other.Mode;
+
+        public override bool Equals(object? obj) => obj is CacheKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(RuntimeHelpers.GetHashCode(Source), (int)Mode);
+    }
+
+    private readonly object gate = new();
+    private readonly int maxEntries;
+    private readonly Dictionary<CacheKey, BitmapSource> entries = new();
+    private readonly List<CacheKey> lru = new();
+    private readonly HashSet<CacheKey> inFlight = new();
+
+    public InspectionOverlayCache(int maxEntries = 4)
+    {
+        this.maxEntries = Math.Max(1, maxEntries);
+    }
+
+    public int Count
+    {
+        get { lock (gate) return entries.Count; }
+    }
+
+    public int InFlightCount
+    {
+        get { lock (gate) return inFlight.Count; }
+    }
+
+    public void Clear()
+    {
+        lock (gate)
+        {
+            entries.Clear();
+            lru.Clear();
+            inFlight.Clear();
+        }
+    }
+
+    public bool TryGet(BitmapSource source, InspectionOverlayMode mode, out BitmapSource transformed)
+    {
+        var key = new CacheKey(source, mode);
+        lock (gate)
+        {
+            if (entries.TryGetValue(key, out var hit))
+            {
+                lru.Remove(key);
+                lru.Add(key);
+                transformed = hit;
+                return true;
+            }
+        }
+        transformed = null!;
+        return false;
+    }
+
+    public bool TryBeginRender(BitmapSource source, InspectionOverlayMode mode)
+    {
+        var key = new CacheKey(source, mode);
+        lock (gate)
+        {
+            if (entries.ContainsKey(key)) return false;
+            return inFlight.Add(key);
+        }
+    }
+
+    public void CompleteRender(BitmapSource source, InspectionOverlayMode mode, BitmapSource transformed)
+    {
+        var key = new CacheKey(source, mode);
+        lock (gate)
+        {
+            inFlight.Remove(key);
+            entries[key] = transformed;
+            lru.Remove(key);
+            lru.Add(key);
+            while (lru.Count > maxEntries)
+            {
+                var oldest = lru[0];
+                lru.RemoveAt(0);
+                entries.Remove(oldest);
+            }
+        }
+    }
+
+    public void CancelRender(BitmapSource source, InspectionOverlayMode mode)
+    {
+        var key = new CacheKey(source, mode);
+        lock (gate)
+        {
+            inFlight.Remove(key);
+        }
+    }
+}
 
 internal static class InspectionOverlayRenderer
 {

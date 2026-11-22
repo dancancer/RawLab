@@ -140,6 +140,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
     var inspection by remember { mutableStateOf(InspectionSessionState()) }
     var overlaySubmenuOpen by remember { mutableStateOf(false) }
+    var workspaceOverlaySubmenuOpen by remember { mutableStateOf(false) }
     val compare = view.comparisonEnabled && state.draft?.group != AdjustmentGroup.GEOMETRY
     var zoomMenu by remember { mutableStateOf(false) }
     var resetMenu by remember { mutableStateOf(false) }
@@ -400,11 +401,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     val holdBefore: (Boolean) -> Unit = { held -> view = if (held) view.beginHold(state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled) else view.cancelHold() }
+    LaunchedEffect(toolOpen) {
+        overlaySubmenuOpen = false
+        workspaceOverlaySubmenuOpen = false
+        toolMenu = false
+        menu = false
+    }
     LaunchedEffect(sourceKey) {
         if (viewSource != sourceKey) {
             view = view.forNewPhoto(); viewSource = sourceKey
             inspection = inspection.resetForNewSource()
             overlaySubmenuOpen = false
+            workspaceOverlaySubmenuOpen = false
+            toolMenu = false
+            menu = false
         }
     }
     LaunchedEffect(state.draft != null) {
@@ -504,10 +514,15 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
                         enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
                         onClick = { inspection = inspection.copy(monitorEnabled = !inspection.monitorEnabled); toolMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_gray_50)) },
+                        modifier = Modifier.testTag("inspection-gray50-menu"),
+                        leadingIcon = { if (inspection.overlay == InspectionOverlayMode.NEUTRAL_GRAY_50) Icon(Icons.Outlined.Check, null) },
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { inspection = inspection.toggleNeutralGray50(); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.overlay_section)) },
                         modifier = Modifier.testTag("inspection-overlay-menu"),
                         enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
-                        onClick = { toolMenu = false; overlaySubmenuOpen = true })
+                        onClick = { toolMenu = false; workspaceOverlaySubmenuOpen = true })
                     if (hslWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
                         onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
@@ -515,6 +530,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("adjustment-fine").semantics { selected = fine }, onClick = { fine = !fine; toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_preview_enter)) },
                         onClick = { toolMenu = false; togglePure() })
+                }
+                InspectionOverlayDropdownMenu(
+                    expanded = workspaceOverlaySubmenuOpen,
+                    selected = inspection.overlay,
+                    onDismissRequest = { workspaceOverlaySubmenuOpen = false },
+                ) { mode ->
+                    inspection = inspection.selectOverlay(mode)
+                    workspaceOverlaySubmenuOpen = false
                 }
             }
         }
@@ -612,11 +635,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_margin)) }, onClick = { view = view.copy(margins = !view.margins) },
                         trailingIcon = { Switch(view.margins, { view = view.copy(margins = it) }) })
                 }
-                DropdownMenu(overlaySubmenuOpen, { overlaySubmenuOpen = false }) {
-                    InspectionOverlayDropdownItems(selected = inspection.overlay) { mode ->
-                        inspection = inspection.selectOverlay(mode)
-                        overlaySubmenuOpen = false
-                    }
+                InspectionOverlayDropdownMenu(
+                    expanded = overlaySubmenuOpen,
+                    selected = inspection.overlay,
+                    onDismissRequest = { overlaySubmenuOpen = false },
+                ) { mode ->
+                    inspection = inspection.selectOverlay(mode)
+                    overlaySubmenuOpen = false
                 }
             }
         }, expandedHeight = 48.dp)

@@ -34,7 +34,7 @@ public partial class MainWindow
             ClearTransferNoticesOnSourceChange();
             ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
-            inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache=null;
+            inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
             file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;

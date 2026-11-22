@@ -9,8 +9,7 @@ public partial class MainWindow
 {
     private readonly InspectionSessionState inspection = new();
     private (int Width, int Height)? sourceNativeSize;
-    private (BitmapSource Source, InspectionOverlayMode Mode, BitmapSource Transformed)? inspectionOverlayCache;
-    private bool inspectionOverlayPending;
+    private readonly InspectionOverlayCache inspectionOverlayCache = new(maxEntries: 4);
 
     private void InitializeInspection()
     {
@@ -24,6 +23,7 @@ public partial class MainWindow
         ResultCanvas.InspectionHoverChanged += pt => UpdateInspectionHover(pt);
         NeutralCanvas.InspectionHoverChanged += pt => UpdateInspectionHover(pt);
         ResultCanvas.InspectionPinRequested += pt => PinInspectionAnchor(pt.X, pt.Y);
+        NeutralCanvas.InspectionPinRequested += pt => PinInspectionAnchor(pt.X, pt.Y);
         RefreshInspection();
     }
 
@@ -87,28 +87,29 @@ public partial class MainWindow
 
     private BitmapSource? EnsureInspectionOverlayBitmap(BitmapSource? baseBitmap)
     {
-        if (baseBitmap == null || inspection.Overlay == InspectionOverlayMode.None)
+        if (baseBitmap == null || inspection.Overlay == InspectionOverlayMode.None || (transform.Active && transform.Tool == TransformTool.Geometry))
             return baseBitmap;
-        if (inspection.Overlay == InspectionOverlayMode.NeutralGray50)
+        var mode = inspection.Overlay;
+        if (mode == InspectionOverlayMode.NeutralGray50)
             return InspectionOverlayRenderer.CreateOverlayBitmap(baseBitmap, InspectionOverlayMode.NeutralGray50);
 
-        if (inspectionOverlayCache is { } cached &&
-            ReferenceEquals(cached.Source, baseBitmap) &&
-            cached.Mode == inspection.Overlay)
-            return cached.Transformed;
+        if (inspectionOverlayCache.TryGet(baseBitmap, mode, out var cached))
+            return cached;
 
-        if (!inspectionOverlayPending)
+        if (inspectionOverlayCache.TryBeginRender(baseBitmap, mode))
         {
-            inspectionOverlayPending = true;
-            var mode = inspection.Overlay;
+            var capturedRevision = openRevision;
             _ = Task.Run(() => InspectionOverlayRenderer.CreateOverlayBitmap(baseBitmap, mode))
                 .ContinueWith(task => Dispatcher.BeginInvoke(() =>
                 {
-                    inspectionOverlayPending = false;
-                    if (!closing && task.IsCompletedSuccessfully)
+                    if (!closing && openRevision == capturedRevision && task.IsCompletedSuccessfully)
                     {
-                        inspectionOverlayCache = (baseBitmap, mode, task.Result);
+                        inspectionOverlayCache.CompleteRender(baseBitmap, mode, task.Result);
                         RefreshViewingFrames();
+                    }
+                    else
+                    {
+                        inspectionOverlayCache.CancelRender(baseBitmap, mode);
                     }
                 }), TaskScheduler.Default);
         }
@@ -149,7 +150,9 @@ public partial class MainWindow
         var geometryEditing = transform.Active && transform.Tool == TransformTool.Geometry;
 
         ResultCanvas.InspectionMonitorEnabled = inspection.MonitorEnabled && hasResult && !geometryEditing;
+        NeutralCanvas.InspectionMonitorEnabled = inspection.MonitorEnabled && hasResult && !geometryEditing;
         ResultCanvas.InspectionPinMode = inspection.PinModeEnabled && hasResult && !geometryEditing;
+        NeutralCanvas.InspectionPinMode = inspection.PinModeEnabled && hasResult && !geometryEditing;
         ResultCanvas.InspectionOverlayActive = inspection.Overlay.IsActive() && hasResult && !geometryEditing;
         NeutralCanvas.InspectionOverlayActive = inspection.Overlay.IsActive() && hasResult && !geometryEditing;
 
@@ -162,6 +165,9 @@ public partial class MainWindow
         }
         ResultCanvas.SetInspectionMarkers(markers);
 
+        InspectionMonitorMenu.IsEnabled = hasResult && !geometryEditing;
+        InspectionOverlayMenu.IsEnabled = hasResult && !geometryEditing;
+        ToolbarInspectionMonitor.IsEnabled = hasResult && !geometryEditing;
         InspectionMonitorMenu.IsChecked = inspection.MonitorEnabled;
         ToolbarInspectionMonitor.IsChecked = inspection.MonitorEnabled;
         ToolbarInspectionPin.IsEnabled = hasResult && !geometryEditing && inspection.CanPinMore;
@@ -273,6 +279,7 @@ public partial class MainWindow
 
     private void InspectionOverlayItemClicked(object sender, RoutedEventArgs e)
     {
+        if (result == null || (transform.Active && transform.Tool == TransformTool.Geometry)) return;
         if (sender is MenuItem { Tag: string tag } && Enum.TryParse<InspectionOverlayMode>(tag, out var mode))
         {
             inspection.SelectOverlay(mode);
@@ -289,6 +296,7 @@ public partial class MainWindow
 
     private void InspectionOverlayClearClicked(object sender, RoutedEventArgs e)
     {
+        if (transform.Active && transform.Tool == TransformTool.Geometry) return;
         inspection.SelectOverlay(InspectionOverlayMode.None);
         RefreshViewingFrames();
     }
