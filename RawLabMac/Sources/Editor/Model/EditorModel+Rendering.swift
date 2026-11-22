@@ -229,11 +229,6 @@ extension EditorModel {
                         width: CGFloat(result.nativeWidth ?? result.image.width),
                         height: CGFloat(result.nativeHeight ?? result.image.height)
                     )
-                } else if self.sourceNativeSize == nil, let hdrImage = result.hdr?.image {
-                    self.sourceNativeSize = CGSize(
-                        width: CGFloat(result.nativeWidth ?? hdrImage.width),
-                        height: CGFloat(result.nativeHeight ?? hdrImage.height)
-                    )
                 }
                 if request.value.settings.isHDREditing { self.error = request.value.settings.hdr?.missingResourceMessage }
                 if completion == .publishExact { previewOutdated = false }

@@ -142,9 +142,190 @@ struct MacInspectionSuiteTests {
         }
 
         // 5. MacViewingState & HistogramPresentation integration check
+        #if !RAWLAB_NATIVE_EDITOR_MODEL
         let viewing = MacViewingState()
         check(!viewing.enabled, "MacViewingState defaults clean")
+        #endif
         let hist = HistogramPresentation(bins: [[0, 10, 50], [0, 20, 40], [0, 5, 10]])
         check(hist.peak == 50, "HistogramPresentation computes shared peak")
+
+        // 6. HDR Reopen + Asymmetric Geometry + Exposure Edit Coordinate Invariance (Model)
+        let asymmetricGeom = GeometrySettings(
+            cropX: 0.1,
+            cropY: 0.05,
+            cropWidth: 0.25,
+            cropHeight: 0.85,
+            quarterTurns: 1,
+            flipHorizontal: false,
+            straightenDegrees: 18.0,
+            perspectiveHorizontal: 0.45,
+            perspectiveVertical: -0.35
+        )
+        var hdrEdit = Adjustments()
+        hdrEdit.hdr = HDRSettings()
+        hdrEdit.setGeometrySettings(asymmetricGeom)
+        let savedHDRState = MacPhotoEditState(settings: hdrEdit, filmID: "")
+        let reopenedHDRState = try JSONDecoder().decode(MacPhotoEditState.self, from: try encoder.encode(savedHDRState))
+        var reopenedAdjustments = reopenedHDRState.settings
+        check(reopenedAdjustments.isHDREditing && reopenedAdjustments.geometrySettings == asymmetricGeom,
+              "Reopened HDR state preserves asymmetric geometry")
+
+        let spec = GeometryCoordinateMapper.canvasFor(width: 3072, height: 3072, options: asymmetricGeom)
+        let postCropOutputSize = CGSize(width: spec.outputWidth, height: spec.outputHeight)
+        let inferredSourceSize = GeometryCoordinateMapper.inferSourceSize(
+            outputSize: postCropOutputSize,
+            geometry: reopenedAdjustments.geometrySettings
+        )
+        let probeOutputs = [
+            CGPoint(x: 0.2, y: 0.2),
+            CGPoint(x: 0.5, y: 0.5),
+            CGPoint(x: 0.8, y: 0.8),
+            CGPoint(x: 0.3, y: 0.7),
+        ]
+        var hdrSession = InspectionSessionState()
+        for pt in probeOutputs {
+            guard let src = GeometryCoordinateMapper.outputNormToSourceNorm(
+                pt,
+                sourceSize: inferredSourceSize,
+                geometry: reopenedAdjustments.geometrySettings
+            ) else {
+                fatalError("FAIL: Could not pin anchor at \(pt) using inferred HDR source size")
+            }
+            check(hdrSession.pinAnchor(atSourcePoint: src) != nil, "Pinned HDR anchor at \(pt)")
+        }
+        let preExposurePts = hdrSession.anchors.compactMap {
+            GeometryCoordinateMapper.sourceNormToOutputNorm(
+                $0.sourcePoint,
+                sourceSize: inferredSourceSize,
+                geometry: reopenedAdjustments.geometrySettings
+            )
+        }
+        check(preExposurePts.count == 4, "All 4 HDR anchors visible before exposure edit")
+
+        // Negative control: overwriting sourceNativeSize with post-crop outputSize drops/corrupts anchors
+        let corruptedPts = hdrSession.anchors.compactMap {
+            GeometryCoordinateMapper.sourceNormToOutputNorm(
+                $0.sourcePoint,
+                sourceSize: postCropOutputSize,
+                geometry: reopenedAdjustments.geometrySettings
+            )
+        }
+        check(corruptedPts.count < 4, "Post-crop outputSize misused as sourceNativeSize drops anchors")
+
+        reopenedAdjustments.set(.exposure, to: 0.5)
+        let afterExposureInferred = GeometryCoordinateMapper.inferSourceSize(
+            outputSize: postCropOutputSize,
+            geometry: reopenedAdjustments.geometrySettings
+        )
+        let postExposurePts = hdrSession.anchors.compactMap {
+            GeometryCoordinateMapper.sourceNormToOutputNorm(
+                $0.sourcePoint,
+                sourceSize: afterExposureInferred,
+                geometry: reopenedAdjustments.geometrySettings
+            )
+        }
+        check(postExposurePts.count == 4, "All 4 HDR anchors stay visible after exposure edit")
+        for (idx, (pre, post)) in zip(preExposurePts, postExposurePts).enumerated() {
+            let drift = hypot(post.x - pre.x, post.y - pre.y)
+            check(drift < 1e-3, "HDR anchor #\(idx + 1) drift < 1e-3 after exposure edit (drift=\(drift))")
+        }
+
+        #if RAWLAB_NATIVE_EDITOR_MODEL
+        if CommandLine.arguments.count >= 2 {
+            try runNativeHDRReopenExposureRegression(dngURL: URL(fileURLWithPath: CommandLine.arguments[1]))
+        }
+        #endif
     }
+
+    #if RAWLAB_NATIVE_EDITOR_MODEL
+    static func waitUntil(_ label: String, timeout: TimeInterval = 60, condition: () -> Bool) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        fatalError("FAIL: Timed out waiting for \(label)")
+    }
+
+    static func runNativeHDRReopenExposureRegression(dngURL: URL) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-mac-inspection-hdr-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let lookDir = root.appendingPathComponent("looks")
+        let editDir = root.appendingPathComponent("edits")
+        let batchDir = root.appendingPathComponent("batch")
+        let workDNG = root.appendingPathComponent(dngURL.lastPathComponent)
+        try FileManager.default.copyItem(at: dngURL, to: workDNG)
+
+        let asymmetricGeom = GeometrySettings(
+            cropX: 0.1,
+            cropY: 0.05,
+            cropWidth: 0.25,
+            cropHeight: 0.85,
+            quarterTurns: 1,
+            flipHorizontal: false,
+            straightenDegrees: 18.0,
+            perspectiveHorizontal: 0.45,
+            perspectiveVertical: -0.35
+        )
+
+        // 1. Open in EditorModel, enable HDR + asymmetric geometry, and save edits.
+        do {
+            let editor = EditorModel(lookDirectory: lookDir, editDirectory: editDir, batchDirectory: batchDir)
+            editor.films = []
+            editor.updatePreviewLongEdge(1024)
+            editor.open(workDNG)
+            try waitUntil("initial DNG open") { !editor.busy && editor.result != nil }
+
+            editor.setHDREditing(true)
+            try waitUntil("HDR mode activation") { !editor.importing && !editor.busy && editor.settings.isHDREditing && editor.result != nil }
+
+            var edited = editor.settings
+            edited.setGeometrySettings(asymmetricGeom)
+            editor.settings = edited
+            try waitUntil("HDR asymmetric geometry render") {
+                !editor.busy && editor.result != nil && editor.settings.geometrySettings == asymmetricGeom
+            }
+            check(editor.saveEdits(), "Saved HDR asymmetric geometry edits")
+        }
+
+        // 2. Reopen in a fresh EditorModel, pin 4 anchors, adjust exposure 0 -> 0.5, and verify anchor stability.
+        let reopened = EditorModel(lookDirectory: lookDir, editDirectory: editDir, batchDirectory: batchDir)
+        reopened.films = []
+        reopened.updatePreviewLongEdge(1024)
+        reopened.open(workDNG)
+        try waitUntil("HDR reopen render") { !reopened.busy && reopened.result != nil && reopened.settings.isHDREditing }
+
+        check(reopened.sourceNativeSize == nil, "Reopened HDR with non-identity geometry does not set sourceNativeSize to post-crop output")
+
+        let pinOutputs = [
+            CGPoint(x: 0.2, y: 0.2),
+            CGPoint(x: 0.5, y: 0.5),
+            CGPoint(x: 0.8, y: 0.8),
+            CGPoint(x: 0.3, y: 0.7),
+        ]
+        for pt in pinOutputs {
+            check(reopened.pinInspectionAnchor(atOutputPoint: pt) != nil, "Pinned native HDR anchor at \(pt)")
+        }
+        let preMarkers = reopened.inspectionMarkerPoints()
+        check(preMarkers.count == 4, "All 4 markers visible before HDR exposure edit (got \(preMarkers.count))")
+
+        let priorImage = reopened.result?.image
+        reopened.settings.set(.exposure, to: 0.5)
+        try waitUntil("HDR exposure edit render") {
+            !reopened.busy && reopened.error == nil && reopened.result != nil &&
+            reopened.settings.hdr?.exposure == 0.5 && reopened.result?.image !== priorImage
+        }
+
+        check(reopened.sourceNativeSize == nil, "HDR exposure edit does not overwrite sourceNativeSize with post-crop dimensions (got \(String(describing: reopened.sourceNativeSize)))")
+        let postMarkers = reopened.inspectionMarkerPoints()
+        check(postMarkers.count == 4, "All 4 markers remain visible after HDR exposure edit (got \(postMarkers.count))")
+
+        for (pre, post) in zip(preMarkers, postMarkers) {
+            let shift = hypot(post.point.x - pre.point.x, post.point.y - pre.point.y)
+            check(shift < 1e-3, "Native HDR marker #\(pre.index) shift < 1e-3 after exposure edit (shift=\(shift))")
+        }
+    }
+    #endif
 }
