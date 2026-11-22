@@ -353,7 +353,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> editParameter(edits.copy(contrast = value / 100), dragging) }, { editParameter(edits.copy(contrast = 0f), false) })
             6 -> ToneCurveControls(edits.editingCurve, edits.editingCurveStrength, parameterEnabled,
                 { value, dragging -> editParameter(edits.withEditingCurve(value), dragging) },
-                { value, dragging -> editParameter(edits.withEditingCurveStrength(value), dragging) }, edits.isHDREditing)
+                { value, dragging -> editParameter(edits.withEditingCurveStrength(value), dragging) },
+                edits.isHDREditing, hslTarget = hslTarget)
             7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", parameterEnabled,
                 { value, dragging -> editParameter(edits.copy(saturation = value / 100), dragging) }, { editParameter(edits.copy(saturation = 0f), false) })
             8 -> {

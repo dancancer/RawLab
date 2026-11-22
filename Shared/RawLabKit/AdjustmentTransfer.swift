@@ -320,7 +320,7 @@ public enum AdjustmentTransferRefinement {
     public typealias Field = AdjustmentTransferField
 
     public static func values(curve: ToneCurveSettings, grading: ColorGradingSettings) -> [Field: Value] {
-        var result: [Field: Value] = [.curve: curve.transferValue]
+        var result: [Field: Value] = [.curve: curve.transferValue, .curveParametric: curve.parametric.transferValue]
         for field in Field.refinementObjects {
             if let zone = field.gradingZone { result[field] = grading[zone].transferValue }
         }
@@ -330,12 +330,15 @@ public enum AdjustmentTransferRefinement {
     public static func applying(_ payload: AdjustmentTransferPayload, original: [Field: Value],
                                 previousScale: Double, targetScale: Double, fullRecipe: Bool) throws -> [Field: Value] {
         var result = original
-        for field in Field.refinementObjects {
+        let fields = Array(Field.refinementObjects) + [.curveParametric]
+        for field in fields {
+            let fallback = original[field] ?? (field == .curveParametric ? ToneCurveParametric().transferValue : nil)
+            guard let originalValue = fallback else { continue }
             let expected = try payload[field].map {
                 try scaled($0, field: field, by: payload.source.recipe?.refinementScale ?? 1)
-            } ?? scaled(original[field]!, field: field, by: previousScale)
+            } ?? scaled(originalValue, field: field, by: previousScale)
             // 完整复制优先保留原逻辑值；移动端强度经过 Float 投影时仅反解必要的差值。
-            let preferred = fullRecipe ? payload[field] ?? original[field]! : original[field]!
+            let preferred = fullRecipe ? payload[field] ?? originalValue : originalValue
             let value = try logical(expected, field: field, strength: targetScale, preserving: preferred)
             guard equivalent(try scaled(value, field: field, by: targetScale), expected, field: field) else {
                 throw AdjustmentTransferError.unrepresentable(field.rawValue)
@@ -347,6 +350,7 @@ public enum AdjustmentTransferRefinement {
 
     public static func scaled(_ value: Value, field: Field, by strength: Double) throws -> Value {
         if field == .curve, let curve = value.curve { return curve.scaled(by: strength).transferValue }
+        if field == .curveParametric, let parametric = value.parametricCurve { return parametric.scaled(by: strength).transferValue }
         guard field.gradingZone != nil, let wheel = value.gradingWheel else {
             throw AdjustmentTransferError.invalidPayload(field.rawValue)
         }
@@ -372,6 +376,20 @@ public enum AdjustmentTransferRefinement {
                     }))
                 }
             }
+            guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            result = inverse.transferValue
+        } else if field == .curveParametric, let p = effective.parametricCurve {
+            if p.isIdentity { return effective }
+            guard strength != 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            let inverse = ToneCurveParametric(
+                highlights: p.highlights / strength,
+                lights: p.lights / strength,
+                darks: p.darks / strength,
+                shadows: p.shadows / strength,
+                splitShadow: p.splitShadow,
+                splitMidtone: p.splitMidtone,
+                splitHighlight: p.splitHighlight
+            )
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
         } else if field.gradingZone != nil, let wheel = effective.gradingWheel {
@@ -400,6 +418,15 @@ public enum AdjustmentTransferRefinement {
                     $0.x == $1.x && abs($0.y - $1.y) <= 1e-12
                 }
             }
+        }
+        if field == .curveParametric, let first = a.parametricCurve, let second = b.parametricCurve {
+            return first.splitShadow == second.splitShadow &&
+                first.splitMidtone == second.splitMidtone &&
+                first.splitHighlight == second.splitHighlight &&
+                abs(first.highlights - second.highlights) <= 1e-12 &&
+                abs(first.lights - second.lights) <= 1e-12 &&
+                abs(first.darks - second.darks) <= 1e-12 &&
+                abs(first.shadows - second.shadows) <= 1e-12
         }
         guard let first = a.gradingWheel, let second = b.gradingWheel else { return false }
         return first.hue == second.hue && Float(first.saturation) == Float(second.saturation) && Float(first.luminance) == Float(second.luminance)

@@ -39,6 +39,8 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
         Points.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1) &&
         Points.Zip(Points.Skip(1)).All(pair => pair.First.X < pair.Second.X && pair.First.Y <= pair.Second.Y);
     public bool IsInterior(int index) => Mode == ToneCurveMode.Custom && index > 0 && index + 1 < Points.Count;
+    public bool IsEndpoint(int index) => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (index == 0 || index == Points.Count - 1);
+    public bool CanMoveY(int index) => Mode == ToneCurveMode.Custom && index >= 0 && index < Points.Count;
     public ToneCurveShape Inserting(double x, double y)
     {
         if (Mode != ToneCurveMode.Custom || Points.Count >= 33 || !double.IsFinite(x) || !double.IsFinite(y) ||
@@ -49,10 +51,21 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
     }
     public ToneCurveShape Moving(int index, double x, double y)
     {
-        if (!IsInterior(index) || !double.IsFinite(x) || !double.IsFinite(y)) return this;
+        if (!CanMoveY(index) || !double.IsFinite(x) || !double.IsFinite(y)) return this;
+        var result = Points.ToArray();
+        if (index == 0) {
+            var maxY = Points.Count > 1 ? Points[1].Y : 1.0;
+            result[0] = new(0.0, Math.Clamp(y, 0.0, maxY));
+            return new(Mode, result);
+        }
+        if (index == Points.Count - 1) {
+            var minY = Points.Count > 1 ? Points[index - 1].Y : 0.0;
+            result[index] = new(1.0, Math.Clamp(y, minY, 1.0));
+            return new(Mode, result);
+        }
         var low = Math.BitIncrement(Points[index - 1].X); var high = Math.BitDecrement(Points[index + 1].X);
         if (low > high) return this;
-        var result = Points.ToArray(); result[index] = new(Math.Clamp(x, low, high), Math.Clamp(y, Points[index - 1].Y, Points[index + 1].Y));
+        result[index] = new(Math.Clamp(x, low, high), Math.Clamp(y, Points[index - 1].Y, Points[index + 1].Y));
         return new(Mode, result);
     }
     public ToneCurveShape Removing(int index)
@@ -167,6 +180,18 @@ public sealed record ToneCurveParametric(
         if (!result.IsValid) throw new JsonException("Invalid parametric curve values");
         return result;
     }
+    internal Native.ToneCurveParametricConfig NativeConfig() => new() {
+        Version = 1,
+        StructSize = (uint)Marshal.SizeOf<Native.ToneCurveParametricConfig>(),
+        Highlights = (float)Highlights,
+        Lights = (float)Lights,
+        Darks = (float)Darks,
+        Shadows = (float)Shadows,
+        SplitShadow = (float)SplitShadow,
+        SplitMidtone = (float)SplitMidtone,
+        SplitHighlight = (float)SplitHighlight,
+        Reserved = 0
+    };
     internal void WriteObject(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();
@@ -217,6 +242,8 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
         return new(master.Mode, master.Points, Channels.Scaled(strength), ApplyToLuminosity, Parametric.Scaled(strength));
     }
     public bool IsInterior(int index) => Master.IsInterior(index);
+    public bool IsEndpoint(int index) => Master.IsEndpoint(index);
+    public bool CanMoveY(int index) => Master.CanMoveY(index);
     public ToneCurveSettings Inserting(double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Inserting(x, y));
     public ToneCurveSettings Moving(int index, double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Moving(index, x, y));
     public ToneCurveSettings Removing(int index) => Replacing(ToneCurveChannel.Rgb, Master.Removing(index));
@@ -230,6 +257,11 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     internal Native.ToneCurveSetConfig NativeSetConfig() => new() {
         Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveSetConfig>(), Master = Master.NativeConfig(),
         Red = Channels.Red.NativeConfig(), Green = Channels.Green.NativeConfig(), Blue = Channels.Blue.NativeConfig() };
+    internal Native.ToneCurveSetV2Config NativeSetV2Config() => new() {
+        Version = 2, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveSetV2Config>(),
+        ApplyToLuminosity = ApplyToLuminosity ? 1 : 0, Reserved = 0,
+        Master = Master.NativeConfig(), Red = Channels.Red.NativeConfig(), Green = Channels.Green.NativeConfig(), Blue = Channels.Blue.NativeConfig(),
+        Parametric = Parametric.NativeConfig() };
     internal static ToneCurveSettings Parse(JsonElement json, bool allowV2Fields = true) {
         if (json.ValueKind != JsonValueKind.Object) throw new JsonException("Invalid curve fields");
         var seen = new HashSet<string>(StringComparer.Ordinal);

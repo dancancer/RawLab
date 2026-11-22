@@ -19,4 +19,25 @@ extension ColorGradingSettings {
         config.highlights_saturation = Float(highlights.saturation)
         return config
     }
+
+    var nativeV2Config: sony2fuji_color_grading_v2_config {
+        var config = sony2fuji_color_grading_v2_config()
+        config.version = UInt32(SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_color_grading_v2_config>.size)
+        config.shadows_hue = shadows.nativeHue
+        config.shadows_saturation = Float(shadows.saturation)
+        config.shadows_luminance = Float(shadows.luminance)
+        config.midtones_hue = midtones.nativeHue
+        config.midtones_saturation = Float(midtones.saturation)
+        config.midtones_luminance = Float(midtones.luminance)
+        config.highlights_hue = highlights.nativeHue
+        config.highlights_saturation = Float(highlights.saturation)
+        config.highlights_luminance = Float(highlights.luminance)
+        config.global_hue = global.nativeHue
+        config.global_saturation = Float(global.saturation)
+        config.global_luminance = Float(global.luminance)
+        config.blending = Float(blending)
+        config.balance = Float(balance)
+        return config
+    }
 }

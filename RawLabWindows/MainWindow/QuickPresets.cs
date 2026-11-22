@@ -25,7 +25,7 @@ public partial class MainWindow
     internal void ShowQuickPresets()
     {
         if (file == null || closing || exporting) return;
-        PreserveQuickPresetInputs(); CancelHslTarget();
+        PreserveQuickPresetInputs(); CancelHslTarget(); CancelCurveTarget();
         quickPresetsVisible = true; expandedGroup = EditorAdjustmentGroup.Looks;
         suspendedTransform = null;
         workspaceLayout.SetMode(WorkspaceMode.Editing);

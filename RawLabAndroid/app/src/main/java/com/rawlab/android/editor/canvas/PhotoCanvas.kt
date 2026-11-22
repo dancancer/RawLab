@@ -378,7 +378,7 @@ internal fun PhotoCanvas(
                 hslTargetCoordinates(primary, state.view.project(primary), local.x, local.y, null, 0f)
                     ?.let { Offset(it.first.coerceIn(0f, 1f), it.second.coerceIn(0f, 1f)) }
             }
-            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, inspection.monitorEnabled) {
+            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, hslTarget?.state?.curveMode, hslTarget?.state?.curveChannel, inspection.monitorEnabled) {
                 photoGestures(state, primary, compare && mode == ComparisonMode.WIPE, { hold(false) },
                     target = { target }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
                     targetPointer = { position, anchor ->

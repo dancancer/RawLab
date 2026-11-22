@@ -140,7 +140,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
-        CancelHslTarget();
+        CancelHslTarget();CancelCurveTarget();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}
@@ -240,7 +240,9 @@ public partial class MainWindow
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         if(work.Probe is {} probeWork) {
-            AcceptHslTarget(work,hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed),current);
+            var sample=hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed);
+            if(curveTarget.Matches(probeWork.Token)) AcceptCurveTarget(work,sample,current);
+            else AcceptHslTarget(work,sample,current);
             if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
                 HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;

@@ -136,6 +136,195 @@ int main(int argc, char** argv) {
         gpu.mode=SONY2FUJI_GPU_FORCE;sony2fuji_session_set_gpu_config(s,&gpu);
         require(sony2fuji_process(s,&scene,&buffer)==SONY2FUJI_STATUS_UNSUPPORTED,"precision-limited Force is honest");
         gpu.mode=SONY2FUJI_GPU_OFF;sony2fuji_session_set_gpu_config(s,&gpu);
+
+        // v2: unpinned matte-fade endpoints, Luminosity mode, Parametric + sample_tone_curve_v2, GPU channel curves, setToneCurve reset isolation
+        require(sony2fuji_session_set_tone_curve(s, &reset) == SONY2FUJI_STATUS_OK, "reset before v2 checks");
+        {
+            const std::vector<uint8_t> v2Pixels{
+                0, 0, 0,
+                128, 128, 128,
+                255, 255, 255,
+                217, 51, 38,
+                230, 38, 38
+            };
+            auto v2Req = requestFor(v2Pixels);
+            const auto v2Baseline = render(s, v2Req);
+            require(v2Baseline == v2Pixels, "v2 baseline matches input bytes");
+
+            auto makeLegacyCurve = []() {
+                sony2fuji_tone_curve_config c{};
+                c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+                c.struct_size = sizeof(c);
+                c.mode = SONY2FUJI_CURVE_LEGACY;
+                return c;
+            };
+            auto makeV2Set = [&]() {
+                sony2fuji_tone_curve_set_v2_config set{};
+                set.version = SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION;
+                set.struct_size = sizeof(set);
+                for (auto& c : set.curves) c = makeLegacyCurve();
+                set.parametric.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+                set.parametric.struct_size = sizeof(set.parametric);
+                set.parametric.split_shadow = 0.25f;
+                set.parametric.split_midtone = 0.50f;
+                set.parametric.split_highlight = 0.75f;
+                return set;
+            };
+
+            // 1) Unpinned matte-fade endpoints on CPU display buffer + Force GPU scene buffer
+            auto matteSet = makeV2Set();
+            matteSet.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+            matteSet.curves[0].count = 3;
+            matteSet.curves[0].points[0] = {0.0, 0.12};
+            matteSet.curves[0].points[1] = {0.5, 0.52};
+            matteSet.curves[0].points[2] = {1.0, 0.88};
+            require(sony2fuji_session_set_tone_curves_v2(s, &matteSet) == SONY2FUJI_STATUS_OK, "v2 matte-fade setter");
+            const auto matteOut = render(s, v2Req);
+            require(matteOut[0] == 31 && matteOut[1] == 31 && matteOut[2] == 31, "matte-fade (0,0,0) -> 31 DN");
+            require(matteOut[6] == 224 && matteOut[7] == 224 && matteOut[8] == 224, "matte-fade (255,255,255) -> 224 DN");
+
+            if (available) {
+                auto sceneMatte = v2Req;
+                sceneMatte.input_type = SONY2FUJI_INPUT_BUFFER;
+                gpu.mode = SONY2FUJI_GPU_OFF;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+                const auto cpuMatte = render(s, sceneMatte);
+                gpu.mode = SONY2FUJI_GPU_FORCE;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+                const auto gpuMatte = render(s, sceneMatte);
+                require(sony2fuji_session_get_last_backend(s) == rawlabtest::nativeBackend, "v2 matte-fade runs on Force GPU");
+                require(gpuMatte[0] == 31 && gpuMatte[1] == 31 && gpuMatte[2] == 31, "GPU matte-fade black -> 31 DN");
+                for (size_t i = 0; i < cpuMatte.size(); ++i) {
+                    require(std::abs(int(gpuMatte[i]) - int(cpuMatte[i])) <= 2, "GPU matte-fade matches CPU <= 2 DN");
+                }
+                gpu.mode = SONY2FUJI_GPU_OFF;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+            }
+
+            // 2) Luminosity mode: identity bypass, hue/saturation preservation, gamut protection
+            auto lumIdentity = makeV2Set();
+            lumIdentity.apply_to_luminosity = 1;
+            lumIdentity.parametric.split_shadow = 0.15f;
+            lumIdentity.parametric.split_midtone = 0.40f;
+            lumIdentity.parametric.split_highlight = 0.85f;
+            require(sony2fuji_session_set_tone_curves_v2(s, &lumIdentity) == SONY2FUJI_STATUS_OK, "luminosity identity setter");
+            require(render(s, v2Req) == v2Baseline, "luminosity + non-default zero-band splits bypass exactly");
+
+            auto sCurveSet = makeV2Set();
+            sCurveSet.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+            sCurveSet.curves[0].count = 4;
+            sCurveSet.curves[0].points[0] = {0.0, 0.0};
+            sCurveSet.curves[0].points[1] = {0.25, 0.10};
+            sCurveSet.curves[0].points[2] = {0.75, 0.90};
+            sCurveSet.curves[0].points[3] = {1.0, 1.0};
+            require(sony2fuji_session_set_tone_curves_v2(s, &sCurveSet) == SONY2FUJI_STATUS_OK, "RGB S-curve setter");
+            const auto rgbS = render(s, v2Req);
+            sCurveSet.apply_to_luminosity = 1;
+            require(sony2fuji_session_set_tone_curves_v2(s, &sCurveSet) == SONY2FUJI_STATUS_OK, "Lum S-curve setter");
+            const auto lumS = render(s, v2Req);
+            // Neutral gray (128, 128, 128) at pixel index 1 (bytes 3..5) matches RGB mode
+            require(std::abs(int(lumS[3]) - int(rgbS[3])) <= 1, "Luminosity gray matches RGB mode");
+            // Vivid red-orange (217, 51, 38) at pixel index 3 (bytes 9..11) differs from RGB mode
+            const int maxVividDiff = std::max({
+                std::abs(int(lumS[9]) - int(rgbS[9])),
+                std::abs(int(lumS[10]) - int(rgbS[10])),
+                std::abs(int(lumS[11]) - int(rgbS[11]))
+            });
+            require(maxVividDiff > 10, "Luminosity vivid color differs materially from RGB mode");
+            auto srgbToLin = [](double v) {
+                return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+            };
+            const double inRatio = (srgbToLin(217.0 / 255.0) - srgbToLin(38.0 / 255.0)) > 0
+                ? (srgbToLin(51.0 / 255.0) - srgbToLin(38.0 / 255.0)) /
+                  (srgbToLin(217.0 / 255.0) - srgbToLin(38.0 / 255.0))
+                : 0.0;
+            const double outRL = srgbToLin(lumS[9] / 255.0);
+            const double outGL = srgbToLin(lumS[10] / 255.0);
+            const double outBL = srgbToLin(lumS[11] / 255.0);
+            const double outRatio = (outGL - outBL) / (outRL - outBL);
+            require(std::abs(outRatio - inRatio) < 0.02, "Luminosity preserves linear RGB hue ratio");
+
+            // Gamut protection on (230, 38, 38) at pixel index 4 (bytes 12..14)
+            auto liftSet = makeV2Set();
+            liftSet.apply_to_luminosity = 1;
+            liftSet.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+            liftSet.curves[0].count = 3;
+            liftSet.curves[0].points[0] = {0.0, 0.0};
+            liftSet.curves[0].points[1] = {0.45, 0.72};
+            liftSet.curves[0].points[2] = {1.0, 1.0};
+            require(sony2fuji_session_set_tone_curves_v2(s, &liftSet) == SONY2FUJI_STATUS_OK, "Lum lift setter");
+            const auto lumLift = render(s, v2Req);
+            require(lumLift[12] == 255 && std::abs(int(lumLift[13]) - int(lumLift[14])) <= 1 && lumLift[13] >= 145,
+                "Luminosity gamut clamp desaturates smoothly at constant luminance/hue");
+
+            // 3) Parametric + unpinned point composite and sony2fuji_sample_tone_curve_v2 parity
+            auto compSet = makeV2Set();
+            compSet.curves[0] = matteSet.curves[0];
+            compSet.parametric.shadows = 45.0f;
+            compSet.parametric.darks = -25.0f;
+            compSet.parametric.lights = 30.0f;
+            compSet.parametric.highlights = -35.0f;
+            compSet.parametric.split_shadow = 0.22f;
+            compSet.parametric.split_midtone = 0.48f;
+            compSet.parametric.split_highlight = 0.78f;
+            require(sony2fuji_session_set_tone_curves_v2(s, &compSet) == SONY2FUJI_STATUS_OK, "composite v2 setter");
+            const auto compOut = render(s, v2Req);
+            double xs[5]{0.0, 128.0 / 255.0, 1.0, 217.0 / 255.0, 38.0 / 255.0};
+            double ys[5]{};
+            require(sony2fuji_sample_tone_curve_v2(&compSet.curves[0], &compSet.parametric, xs, ys, 5) == SONY2FUJI_STATUS_OK,
+                "sample_tone_curve_v2 composite");
+            require(std::abs(ys[0] - 0.12) < 1e-12 && std::abs(ys[2] - 0.88) < 1e-12,
+                "composite preserves unpinned y0/y1 exactly");
+            require(std::abs(int(compOut[0]) - int(std::lround(ys[0] * 255.0))) <= 1 &&
+                    std::abs(int(compOut[3]) - int(std::lround(ys[1] * 255.0))) <= 1 &&
+                    std::abs(int(compOut[6]) - int(std::lround(ys[2] * 255.0))) <= 1,
+                "sample_tone_curve_v2 matches rendered composite output");
+
+            // Parametric-only sampling (legacy point curve + active parametric)
+            auto paramOnlyCurve = makeLegacyCurve();
+            double pYs[5]{};
+            require(sony2fuji_sample_tone_curve_v2(&paramOnlyCurve, &compSet.parametric, xs, pYs, 5) == SONY2FUJI_STATUS_OK,
+                "sample_tone_curve_v2 parametric-only");
+            require(pYs[0] == 0.0 && pYs[2] == 1.0 && pYs[1] != xs[1],
+                "parametric-only sample keeps 0/1 endpoints and shapes midtones");
+
+            // 4) Independent R/G/B + Luminosity + Parametric on Force GPU (SCENE BUFFER)
+            if (available) {
+                auto fullV2 = compSet;
+                fullV2.apply_to_luminosity = 1;
+                fullV2.curves[1].mode = SONY2FUJI_CURVE_CUSTOM;
+                fullV2.curves[1].count = 3;
+                fullV2.curves[1].points[0] = {0.0, 0.05};
+                fullV2.curves[1].points[1] = {0.5, 0.62};
+                fullV2.curves[1].points[2] = {1.0, 0.96};
+                fullV2.curves[2].mode = SONY2FUJI_CURVE_CUSTOM;
+                fullV2.curves[2].count = 3;
+                fullV2.curves[2].points[0] = {0.0, 0.0};
+                fullV2.curves[2].points[1] = {0.4, 0.35};
+                fullV2.curves[2].points[2] = {1.0, 1.0};
+                require(sony2fuji_session_set_tone_curves_v2(s, &fullV2) == SONY2FUJI_STATUS_OK, "full v2 GPU setter");
+                auto sceneFull = v2Req;
+                sceneFull.input_type = SONY2FUJI_INPUT_BUFFER;
+                gpu.mode = SONY2FUJI_GPU_OFF;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+                const auto cpuFull = render(s, sceneFull);
+                gpu.mode = SONY2FUJI_GPU_FORCE;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+                const auto gpuFull = render(s, sceneFull);
+                require(sony2fuji_session_get_last_backend(s) == rawlabtest::nativeBackend,
+                    "full v2 (RGB channels + Luminosity + Parametric) runs on Force GPU");
+                for (size_t i = 0; i < cpuFull.size(); ++i) {
+                    require(std::abs(int(gpuFull[i]) - int(cpuFull[i])) <= 2,
+                        "full v2 Force GPU matches CPU within 2 DN");
+                }
+                gpu.mode = SONY2FUJI_GPU_OFF;
+                sony2fuji_session_set_gpu_config(s, &gpu);
+            }
+
+            // 5) Pipeline::setToneCurve resets curveApplyToLuminosity_ and parametricCurve_
+            require(sony2fuji_session_set_tone_curve(s, &reset) == SONY2FUJI_STATUS_OK, "legacy setToneCurve reset");
+            require(render(s, v2Req) == v2Baseline, "legacy setToneCurve clears v2 luminosity and parametric state");
+        }
         if (argc>1) {
             const char* argRaw=*argv[1] ? argv[1] : nullptr;
             const char* envRaw=std::getenv("RAWLAB_TEST_RAW");

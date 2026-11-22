@@ -20,7 +20,7 @@ for name in MacNeutralReference Engine RenderError Adjustments+Native BatchSelec
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCurveNative ColorGradingNative DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView; do
+for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCurveNative ToneCurveSampling ColorGradingNative DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(

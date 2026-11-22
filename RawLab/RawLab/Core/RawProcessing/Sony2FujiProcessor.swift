@@ -708,8 +708,8 @@ struct Sony2FujiProcessor {
             : settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
         guard resolved.geometrySettings.isIdentity,
               resolved.atmosphereSettings.isIdentity,
-              resolved.curveSettings.channels.isIdentity,
-              (resolved.curveSettings.mode != .custom || resolved.curveSettings.master.isIdentity),
+              resolved.curveSettings.isIdentity,
+              (!resolved.curveSettings.applyToLuminosity || resolved.toneCurve == 0),
               !(resolved.processing.core == SONY2FUJI_PROCESSING_BASIC_V3 &&
                 (resolved.highlights != 0 || resolved.shadows != 0 || resolved.contrast != 1 || !resolved.toneSettings.isIdentity)),
               !isNormalX3f(url, settings: resolved) else {

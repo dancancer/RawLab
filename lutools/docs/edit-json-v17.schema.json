@@ -420,7 +420,7 @@
                         "mode": "legacy",
                         "points": []
                       },
-                      "description": "Custom PCHIP requires fixed (0,0)/(1,1), strictly increasing x and nondecreasing y; these relational rules are validated by the core."
+                      "description": "Custom PCHIP requires x0 == 0, x_{n-1} == 1, y0/y1 in [0,1], strictly increasing x and nondecreasing y; these relational rules are validated by the core."
                     },
                     "green": {
                       "type": "object",
@@ -488,7 +488,7 @@
                         "mode": "legacy",
                         "points": []
                       },
-                      "description": "Custom PCHIP requires fixed (0,0)/(1,1), strictly increasing x and nondecreasing y; these relational rules are validated by the core."
+                      "description": "Custom PCHIP requires x0 == 0, x_{n-1} == 1, y0/y1 in [0,1], strictly increasing x and nondecreasing y; these relational rules are validated by the core."
                     },
                     "blue": {
                       "type": "object",
@@ -556,7 +556,7 @@
                         "mode": "legacy",
                         "points": []
                       },
-                      "description": "Custom PCHIP requires fixed (0,0)/(1,1), strictly increasing x and nondecreasing y; these relational rules are validated by the core."
+                      "description": "Custom PCHIP requires x0 == 0, x_{n-1} == 1, y0/y1 in [0,1], strictly increasing x and nondecreasing y; these relational rules are validated by the core."
                     }
                   }
                 },
@@ -642,7 +642,7 @@
                 "mode": "legacy",
                 "points": []
               },
-              "description": "Custom PCHIP requires fixed (0,0)/(1,1), strictly increasing x and nondecreasing y; these relational rules are validated by the core."
+              "description": "Custom PCHIP requires x0 == 0, x_{n-1} == 1, y0/y1 in [0,1], strictly increasing x and nondecreasing y; these relational rules are validated by the core."
             }
           },
           "allOf": [

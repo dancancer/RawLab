@@ -60,6 +60,8 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         return result
     }
     public func isInterior(_ index: Int) -> Bool { mode == .custom && index > 0 && index + 1 < points.count }
+    public func isEndpoint(_ index: Int) -> Bool { mode == .custom && points.count >= 2 && (index == 0 || index == points.count - 1) }
+    public func canMoveY(_ index: Int) -> Bool { mode == .custom && points.indices.contains(index) }
     public func inserting(x: Double, y: Double) -> Self {
         guard mode == .custom, isValid, points.count < 33, x.isFinite, y.isFinite, x > 0, x < 1,
               !points.contains(where: { $0.x == x }), let next = points.firstIndex(where: { $0.x > x }) else { return self }
@@ -68,7 +70,19 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         return result
     }
     public func moving(index: Int, x: Double, y: Double) -> Self {
-        guard isValid, isInterior(index), x.isFinite, y.isFinite else { return self }
+        guard isValid, canMoveY(index), x.isFinite, y.isFinite else { return self }
+        if index == 0 {
+            let maxY = points.count > 1 ? points[1].y : 1.0
+            var result = self
+            result.points[0] = .init(x: 0.0, y: min(maxY, max(0.0, y)))
+            return result
+        }
+        if index == points.count - 1 {
+            let minY = points.count > 1 ? points[index - 1].y : 0.0
+            var result = self
+            result.points[index] = .init(x: 1.0, y: min(1.0, max(minY, y)))
+            return result
+        }
         let previous = points[index - 1], next = points[index + 1]
         let low = previous.x.nextUp, high = next.x.nextDown
         guard low <= high else { return self }
@@ -264,6 +278,8 @@ public struct ToneCurveSettings: Equatable, Hashable, Codable {
         return result
     }
     public func isInterior(_ index: Int) -> Bool { master.isInterior(index) }
+    public func isEndpoint(_ index: Int) -> Bool { master.isEndpoint(index) }
+    public func canMoveY(_ index: Int) -> Bool { master.canMoveY(index) }
     public func inserting(x: Double, y: Double) -> Self { replacing(.rgb, with: master.inserting(x: x, y: y)) }
     public func moving(index: Int, x: Double, y: Double) -> Self { replacing(.rgb, with: master.moving(index: index, x: x, y: y)) }
     public func removing(index: Int) -> Self { replacing(.rgb, with: master.removing(index: index)) }

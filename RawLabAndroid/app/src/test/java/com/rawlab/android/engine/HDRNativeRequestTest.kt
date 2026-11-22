@@ -14,11 +14,14 @@ import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.ToneCurveChannel
 import com.rawlab.android.settings.ToneCurveMode
+import com.rawlab.android.settings.ToneCurveParametric
+import com.rawlab.android.settings.ToneCurvePoint
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.ToneCurveShape
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -112,5 +115,24 @@ class HDRNativeRequestTest {
 
         val sharpened = HDRSettings().toNativeRequest(outputSharpening = OutputSharpening.STANDARD)
         assertEquals(OutputSharpening.STANDARD.nativeValue, sharpened.outputSharpening)
+    }
+
+    @Test fun nativeRequestPopulatesV9ToneCurveAndColorGradingV2() {
+        val v2Curve = ToneCurveSettings(
+            mode = ToneCurveMode.CUSTOM,
+            points = listOf(ToneCurvePoint(0.0, 0.1), ToneCurvePoint(1.0, 0.9)),
+            applyToLuminosity = true,
+            parametric = ToneCurveParametric(highlights = 20.0, shadows = -15.0),
+        )
+        val settings = HDRSettings()
+            .withTone(HDRToneSettings(curve = v2Curve))
+            .withColor(HDRColorSettings(grading = ColorGradingSettings(blending = 70f, balance = -15f)))
+        val request = settings.toNativeRequest()
+        val tone = requireNotNull(request.tone)
+        assertTrue(tone.applyToLuminosity)
+        assertEquals(NativeToneCurveParametric(highlights = 20f, shadows = -15f), tone.parametric)
+        val gradingV2 = requireNotNull(request.gradingV2)
+        assertEquals(70f, gradingV2.blending, 0f)
+        assertEquals(-15f, gradingV2.balance, 0f)
     }
 }

@@ -263,41 +263,12 @@ public sealed record HDRSettings
         };
         var v8 = new Native.HDRRequestV8 { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
             Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };
-        var gradingV3 = effects.Base.Base.Grading;
         return new() {
             Base = v8,
             CurveApplyToLuminosity = tone.Curve.ApplyToLuminosity ? 1 : 0,
             OutputSharpening = (uint)outputSharpening,
-            ParametricCurve = new() {
-                Version = 1,
-                StructSize = (uint)Marshal.SizeOf<Native.ToneCurveParametricConfig>(),
-                Highlights = (float)tone.Curve.Parametric.Highlights,
-                Lights = (float)tone.Curve.Parametric.Lights,
-                Darks = (float)tone.Curve.Parametric.Darks,
-                Shadows = (float)tone.Curve.Parametric.Shadows,
-                SplitShadow = (float)tone.Curve.Parametric.SplitShadow,
-                SplitMidtone = (float)tone.Curve.Parametric.SplitMidtone,
-                SplitHighlight = (float)tone.Curve.Parametric.SplitHighlight,
-                Reserved = 0
-            },
-            GradingV2 = new() {
-                Version = 2,
-                StructSize = (uint)Marshal.SizeOf<Native.ColorGradingV2Config>(),
-                ShadowsHue = gradingV3.ShadowsHue,
-                ShadowsSaturation = gradingV3.ShadowsSaturation,
-                ShadowsLuminance = (float)color.Grading.Shadows.Luminance,
-                MidtonesHue = gradingV3.MidtonesHue,
-                MidtonesSaturation = gradingV3.MidtonesSaturation,
-                MidtonesLuminance = (float)color.Grading.Midtones.Luminance,
-                HighlightsHue = gradingV3.HighlightsHue,
-                HighlightsSaturation = gradingV3.HighlightsSaturation,
-                HighlightsLuminance = (float)color.Grading.Highlights.Luminance,
-                GlobalHue = color.Grading.Global.NativeHue,
-                GlobalSaturation = (float)color.Grading.Global.Saturation,
-                GlobalLuminance = (float)color.Grading.Global.Luminance,
-                Blending = (float)color.Grading.Blending,
-                Balance = (float)color.Grading.Balance
-            }
+            ParametricCurve = tone.Curve.Parametric.NativeConfig(),
+            GradingV2 = color.Grading.NativeV2Config()
         };
     }
 

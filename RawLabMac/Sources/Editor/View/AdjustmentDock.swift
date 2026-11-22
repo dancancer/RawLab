@@ -153,6 +153,7 @@ struct AdjustmentDock: View {
             } else if open {
                 if tool == .colorGrading || tool == .toneCurve { model.cancelAdjustmentInteraction() }
                 if tool == .hsl { model.cancelHSLTarget(); model.hslTargetEnabled = false }
+                if tool == .toneCurve { model.cancelCurveTarget(); model.curveTargetEnabled = false }
                 ParameterValueField.cancelPendingInputs()
                 collapsedTool = tool
             } else {
@@ -214,7 +215,10 @@ struct AdjustmentDock: View {
                 usesExposureStops: hdr, source: "\(source).\(hdr)",
                 isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
                     model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
-                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
+                onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction,
+                activeChannel: $model.curveTargetChannel, targetEnabled: $model.curveTargetEnabled,
+                targetSample: model.curveTargetInteraction.selection, targetWaiting: model.curveTargetInteraction.isWaiting,
+                targetNotice: model.curveTargetNotice, onCancelTarget: model.cancelCurveTarget)
         } else if tool == .colorGrading {
             let source = model.sourceRevision
             let hdr = model.settings.isHDREditing

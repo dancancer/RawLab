@@ -28,6 +28,7 @@ extension EditorModel {
     func showQuickPresets() {
         guard file != nil, !exporting, !importing, !lookLibraryBusy else { return }
         cancelHSLTarget()
+        cancelCurveTarget()
         if [.colorGrading, .toneCurve].contains(adjustmentNavigation.tool) { cancelAdjustmentInteraction() }
         adjustmentNavigation.selectTool(.film)
         quickPresetsVisible = true

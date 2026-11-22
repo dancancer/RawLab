@@ -38,13 +38,23 @@ struct alignas(16) Parameters {
     float hslHue[2][4], hslSaturation[2][4], hslLightness[2][4];
     float toneControls[4];
     float colorGrading[3][4];
-    float curveRanges[32][4], curveTangents[32][4];
+    float curveRanges[128][4], curveTangents[128][4];
+    uint32_t curveCounts[4];
+    uint32_t curveFlags[4];
+    float parametricAmps[4];
+    float parametricSplits[4];
     uint32_t band[4]; // source row, destination row, output rows, reserved
 };
-static_assert(sizeof(Parameters) == 1424);
+static_assert(sizeof(Parameters) == 4560);
 static_assert(offsetof(Parameters, hslHue) == 224);
 static_assert(offsetof(Parameters, colorGrading) == 336);
 static_assert(offsetof(Parameters, curveRanges) == 384);
+static_assert(offsetof(Parameters, curveTangents) == 2432);
+static_assert(offsetof(Parameters, curveCounts) == 4480);
+static_assert(offsetof(Parameters, curveFlags) == 4496);
+static_assert(offsetof(Parameters, parametricAmps) == 4512);
+static_assert(offsetof(Parameters, parametricSplits) == 4528);
+static_assert(offsetof(Parameters, band) == 4544);
 static_assert(sizeof(RGB) == 12);
 struct Buffer {
     ComPtr<ID3D11Buffer> data;
@@ -276,8 +286,25 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         p.detail[0]=params.toneCurve;p.detail[1]=params.noiseReduction;p.detail[2]=params.sharpening;
         const auto custom = toneCurveGpuParameters(params.customCurve);
         p.detail[3] = static_cast<float>(custom.count);
-        std::memcpy(p.curveRanges, custom.ranges, sizeof(custom.ranges));
-        std::memcpy(p.curveTangents, custom.tangents, sizeof(custom.tangents));
+        p.curveCounts[0] = custom.count;
+        if (custom.count) {
+            std::memcpy(&p.curveRanges[0], custom.ranges, sizeof(custom.ranges));
+            std::memcpy(&p.curveTangents[0], custom.tangents, sizeof(custom.tangents));
+        }
+        for (size_t ch = 0; ch < 3; ++ch) {
+            const auto chParams = toneCurveGpuParameters(params.channelCurves[ch]);
+            p.curveCounts[ch + 1] = chParams.count;
+            if (chParams.count) {
+                const size_t base = (ch + 1) * 32;
+                std::memcpy(&p.curveRanges[base], chParams.ranges, sizeof(chParams.ranges));
+                std::memcpy(&p.curveTangents[base], chParams.tangents, sizeof(chParams.tangents));
+            }
+        }
+        p.curveFlags[0] = params.curveApplyToLuminosity ? 1u : 0u;
+        const auto parametric = toneCurveParametricGpuParameters(params.parametricCurve);
+        p.curveFlags[1] = parametric.active;
+        std::memcpy(p.parametricAmps, parametric.amps, sizeof(parametric.amps));
+        std::memcpy(p.parametricSplits, parametric.splits, sizeof(parametric.splits));
         p.control[1]=params.hsl.active();
         p.toneControls[0]=params.toneControls.blackPoint; p.toneControls[1]=params.toneControls.whitePoint;
         p.toneControls[2]=params.toneControls.vibrance;

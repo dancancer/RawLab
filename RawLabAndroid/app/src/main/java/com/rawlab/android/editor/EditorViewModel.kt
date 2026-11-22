@@ -164,6 +164,8 @@ class EditorViewModel internal constructor(
         mutable, { sourceRevision }, { currentRevision }, { work -> currentRevision = submitRender(work) },
         { edits, interactive -> draftHolder.changeDraft(edits, interactive) },
         { draftHolder.incrementDraftRevision() }, { draftHolder.renderDraft(it) },
+        dependencies.curveSampler,
+        dependencies.curveParametricSampler,
     )
 
     private val hdrHolder: EditorHdrStateHolder = EditorHdrStateHolder(
@@ -689,6 +691,7 @@ class EditorViewModel internal constructor(
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)
     fun setHslTargetEnabled(enabled: Boolean) = hslHolder.setEnabled(enabled)
     fun setHslTargetAxis(axis: Int) = hslHolder.setAxis(axis)
+    fun setCurveTargetChannel(channel: com.rawlab.android.settings.ToneCurveChannel) = hslHolder.setCurveChannel(channel)
     fun beginHslTarget(x: Float, y: Float, keyDelta: Float? = null) = hslHolder.begin(x, y, keyDelta)
     fun moveHslTarget(delta: Float) = hslHolder.move(delta)
     fun endHslTarget() = hslHolder.end()

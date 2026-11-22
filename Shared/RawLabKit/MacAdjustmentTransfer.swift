@@ -206,7 +206,7 @@ public enum MacAdjustmentTransfer {
         if let applyToLuminosity = payload[.curveApplyToLuminosity]?.boolean {
             result.settings.curveSettings.applyToLuminosity = applyToLuminosity
         }
-        if let parametric = payload[.curveParametric]?.parametricCurve {
+        if let parametric = refinements[.curveParametric]?.parametricCurve {
             result.settings.curveSettings.parametric = parametric
         }
         for field in Field.refinementObjects {

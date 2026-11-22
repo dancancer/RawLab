@@ -103,46 +103,18 @@ func makeHDRRequest(settings: HDRSettings, intent: sony2fuji_intent,
     v9Request.base = channelsRequest
     if request.hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION {
         v9Request.base.base.base.base.base.base.base.base.struct_size = UInt32(MemoryLayout<sony2fuji_hdr_request_v9>.size)
-        let tone = settings.toneSettings
-        let param = tone.curve.parametric
-        v9Request.curve_apply_to_luminosity = tone.curve.applyToLuminosity ? 1 : 0
+        v9Request.curve_apply_to_luminosity = settings.toneSettings.curve.applyToLuminosity ? 1 : 0
         switch outputSharpening {
         case .off: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_OFF.rawValue)
         case .low: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_LOW.rawValue)
         case .standard: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_STANDARD.rawValue)
         case .high: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_HIGH.rawValue)
         }
-        v9Request.parametric_curve = sony2fuji_tone_curve_parametric_config(
-            version: UInt32(SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION),
-            struct_size: UInt32(MemoryLayout<sony2fuji_tone_curve_parametric_config>.size),
-            highlights: Float(param.highlights),
-            lights: Float(param.lights),
-            darks: Float(param.darks),
-            shadows: Float(param.shadows),
-            split_shadow: Float(param.splitShadow),
-            split_midtone: Float(param.splitMidtone),
-            split_highlight: Float(param.splitHighlight),
-            reserved: 0
-        )
-        let grading = settings.colorSettings.grading
-        v9Request.grading_v2 = sony2fuji_color_grading_v2_config(
-            version: UInt32(SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION),
-            struct_size: UInt32(MemoryLayout<sony2fuji_color_grading_v2_config>.size),
-            shadows_hue: Float(grading.shadows.hue),
-            shadows_saturation: Float(grading.shadows.saturation),
-            shadows_luminance: Float(grading.shadows.luminance),
-            midtones_hue: Float(grading.midtones.hue),
-            midtones_saturation: Float(grading.midtones.saturation),
-            midtones_luminance: Float(grading.midtones.luminance),
-            highlights_hue: Float(grading.highlights.hue),
-            highlights_saturation: Float(grading.highlights.saturation),
-            highlights_luminance: Float(grading.highlights.luminance),
-            global_hue: Float(grading.global.hue),
-            global_saturation: Float(grading.global.saturation),
-            global_luminance: Float(grading.global.luminance),
-            blending: Float(grading.blending),
-            balance: Float(grading.balance)
-        )
+        v9Request.parametric_curve = settings.toneSettings.curve.parametric.nativeConfig
+        v9Request.grading_v2 = settings.colorSettings.grading.nativeV2Config
+    } else {
+        v9Request.parametric_curve = ToneCurveParametric().nativeConfig
+        v9Request.grading_v2 = ColorGradingSettings().nativeV2Config
     }
     return HDRRenderRequest(native: v9Request, lookURL: settings.lookSettings.asset(in: lookDirectory))
 }

@@ -324,7 +324,7 @@ struct ContentView: View {
         content
         .onChange(of: coordinator.adjustmentsExpanded) { _, expanded in
             if !expanded { closeQuickPresets() }
-            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled { setSliderEditing(false) }
+            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled && !coordinator.curveTargetEnabled { setSliderEditing(false) }
             if expanded, let tool = coordinator.collapsedEditorTool { activateEditorTool(tool) }
         }
         .onChange(of: coordinator.geometrySelected) { _, active in
@@ -342,12 +342,16 @@ struct ContentView: View {
         .onChange(of: coordinator.selectedAdjustment) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.cancelCurveTarget()
+            coordinator.curveTargetEnabled = false
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.selectedHDRRenditionTool) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.cancelCurveTarget()
+            coordinator.curveTargetEnabled = false
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
@@ -357,6 +361,7 @@ struct ContentView: View {
             cancelSliderInteraction()
         }
         .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.curveTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()

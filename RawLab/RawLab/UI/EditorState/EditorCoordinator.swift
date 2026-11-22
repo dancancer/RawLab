@@ -245,6 +245,12 @@ final class EditorCoordinator: ObservableObject {
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
     @Published var hslTargetHistoryActive = false
+    @Published var curveTargetEnabled = false
+    @Published var curveTargetChannel: ToneCurveChannel = .rgb
+    @Published var curveTargetInteraction = CurveTargetInteraction()
+    @Published var curveTargetPoint: CGPoint?
+    @Published var curveTargetNotice: HSLTargetAvailability?
+    @Published var curveTargetHistoryActive = false
     @Published var gradingZone: ColorGradingZone = .shadows
     @Published var preparedReset: PreparedEditorReset?
     @Published var preparedResetScope: EditorAdjustmentScope?
@@ -406,6 +412,12 @@ final class EditorCoordinator: ObservableObject {
             adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
     }
 
+    var curveTargetActive: Bool {
+        curveTargetEnabled && selectedAdjustment == .toneCurve && isEditorDraftActive &&
+            currentEditorTool == .adjustment(.toneCurve) && !editorBusy &&
+            adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
+    }
+
     var canStartFileExport: Bool {
         !isSaving && !showingExportSize && fileExportRequest == nil
     }
@@ -509,6 +521,7 @@ final class EditorCoordinator: ObservableObject {
     func activateEditorTool(_ selection: EditorToolSelection, resettingFine: Bool = true, leavingWorkspace: Bool = false) {
         backend?.closeQuickPresets()
         cancelHSLTarget()
+        cancelCurveTarget()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
         collapsedEditorTool = nil
@@ -563,6 +576,7 @@ final class EditorCoordinator: ObservableObject {
 
     func finishEditorTool() {
         cancelHSLTarget()
+        cancelCurveTarget()
         clearRecoverableDraft()
         workspaceDraftID = UUID()
         workspaceDraft = nil
@@ -613,6 +627,7 @@ final class EditorCoordinator: ObservableObject {
     func closeEditorDraftCleanly() -> Bool {
         cancelSliderInteraction()
         cancelHSLTarget()
+        cancelCurveTarget()
         if isEditorDraftChanged && !commitEditorDraft() { return false }
         if isEditorDraftActive || toolWorkspaceOpen { finishEditorTool() }
         backend?.hasAdjustmentDraft = false
@@ -621,6 +636,7 @@ final class EditorCoordinator: ObservableObject {
 
     func discardEditorDraft() {
         cancelHSLTarget()
+        cancelCurveTarget()
         clearRecoverableDraft()
         workspaceDraftID = UUID()
         workspaceDraft = nil
@@ -731,7 +747,7 @@ final class EditorCoordinator: ObservableObject {
 
     func requestToolWorkspaceExit() {
         guard toolWorkspaceOpen, !editorBusy else { return }
-        if !hslTargetEnabled { cancelSliderInteraction() }
+        if !hslTargetEnabled && !curveTargetEnabled { cancelSliderInteraction() }
         if isEditorDraftChanged {
             pendingToolSelection = nil
             pendingAdjustmentExpansion = nil
@@ -755,7 +771,7 @@ final class EditorCoordinator: ObservableObject {
     }
 
     func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
-        if !expanded && !hslTargetEnabled { cancelSliderInteraction() }
+        if !expanded && !hslTargetEnabled && !curveTargetEnabled { cancelSliderInteraction() }
         if expanded {
             if let tool = collapsedEditorTool { activateEditorTool(tool) }
         } else if closingWorkspace || isEditorDraftActive || geometrySelected || lensSelected {
@@ -792,6 +808,7 @@ final class EditorCoordinator: ObservableObject {
         geometrySelected = false
         lensSelected = false
         cancelHSLTarget()
+        cancelCurveTarget()
         gradingZone = .shadows
         photoViewing.sourceChanged()
         photoViewport = PhotoViewport()
@@ -963,6 +980,10 @@ final class EditorCoordinator: ObservableObject {
         hslTargetHistoryActive = false
         hslTargetPoint = nil
         hslTargetNotice = nil
+        curveTargetInteraction.cancel()
+        curveTargetHistoryActive = false
+        curveTargetPoint = nil
+        curveTargetNotice = nil
         if let original = backend?.cancelAdjustmentInteraction() {
             settings = original
             backend?.updateCoordinatorPreview(settings: original, includeHistogram: true, quality: .final)
@@ -980,6 +1001,19 @@ final class EditorCoordinator: ObservableObject {
         hslTargetNotice = nil
         if hslTargetHistoryActive {
             hslTargetHistoryActive = false
+            cancelSliderInteraction()
+        }
+    }
+
+    func cancelCurveTarget() {
+        guard curveTargetPoint != nil || curveTargetNotice != nil || curveTargetInteraction.isWaiting ||
+              curveTargetInteraction.isDragging || curveTargetInteraction.selection != nil ||
+              curveTargetHistoryActive else { return }
+        curveTargetInteraction.cancel()
+        curveTargetPoint = nil
+        curveTargetNotice = nil
+        if curveTargetHistoryActive {
+            curveTargetHistoryActive = false
             cancelSliderInteraction()
         }
     }
@@ -1049,6 +1083,7 @@ final class EditorCoordinator: ObservableObject {
         guard !editorBusy, backend?.hasImage == true else { return }
         if backend?.quickPresetStateIsPreparing == true { return }
         cancelHSLTarget()
+        cancelCurveTarget()
         cancelSliderInteraction()
         pendingAdjustmentAction = action
         if isEditorDraftChanged {

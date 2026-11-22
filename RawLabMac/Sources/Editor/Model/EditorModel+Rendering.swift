@@ -288,6 +288,7 @@ extension EditorModel {
     func refreshBusy() {
         busy = workerActive || scheduler.isBusy || viewportResizeWork != nil
         resumeHSLTargetKeys()
+        resumeCurveTargetKeys()
     }
 }
 

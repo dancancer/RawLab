@@ -72,6 +72,19 @@ public sealed record ColorGradingSettings
             MidtonesHue = Midtones.NativeHue, MidtonesSaturation = (float)Midtones.Saturation,
             HighlightsHue = Highlights.NativeHue, HighlightsSaturation = (float)Highlights.Saturation };
     }
+    internal Native.ColorGradingV2Config NativeV2Config()
+    {
+        if (!IsValid) throw new ArgumentOutOfRangeException(nameof(ColorGradingSettings), Loc.Text("无效的颜色分级参数"));
+        return new() {
+            Version = 2,
+            StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.ColorGradingV2Config>(),
+            ShadowsHue = Shadows.NativeHue, ShadowsSaturation = (float)Shadows.Saturation, ShadowsLuminance = (float)Shadows.Luminance,
+            MidtonesHue = Midtones.NativeHue, MidtonesSaturation = (float)Midtones.Saturation, MidtonesLuminance = (float)Midtones.Luminance,
+            HighlightsHue = Highlights.NativeHue, HighlightsSaturation = (float)Highlights.Saturation, HighlightsLuminance = (float)Highlights.Luminance,
+            GlobalHue = Global.NativeHue, GlobalSaturation = (float)Global.Saturation, GlobalLuminance = (float)Global.Luminance,
+            Blending = (float)Blending, Balance = (float)Balance
+        };
+    }
 }
 
 public sealed class ColorGradingSettingsJsonConverter : JsonConverter<ColorGradingSettings>

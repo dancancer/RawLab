@@ -156,7 +156,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();CancelHslTarget();CancelCurveTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};

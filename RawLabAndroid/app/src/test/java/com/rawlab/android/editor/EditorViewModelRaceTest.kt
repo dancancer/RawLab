@@ -365,6 +365,51 @@ class EditorViewModelRaceTest {
         }
     }
 
+    @Test fun curveTargetEyedropperAdjustsCurveUndoablyAndCancelsOnDemand() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uriA) = harness.createTempPhoto("curve_a.raw")
+            val model = harness.createViewModel(
+                renderHandler = { work, _ ->
+                    if (work is Work.HslProbe) {
+                        WorkResult.HslProbe(
+                            work,
+                            HslTargetSample(
+                                work.revision,
+                                HslTargetAvailability.NEAR_GRAY,
+                                listOf(0.4f, 0.4f, 0.4f),
+                                emptyList(),
+                                preview = true,
+                            ),
+                        )
+                    } else harness.defaultRender(work)
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uriA) }
+                harness.awaitState(model) { it.canExport }
+                harness.onMain {
+                    model.beginDraft(AdjustmentGroup.CURVE)
+                    model.setHslTargetEnabled(true)
+                }
+                harness.awaitState(model) { it.draftReady }
+                assertTrue(model.hslTarget.value.curveMode)
+                harness.onMain {
+                    model.beginHslTarget(0.5f, 0.5f)
+                    model.moveHslTarget(40f)
+                    model.endHslTarget()
+                }
+                harness.awaitState(model) { it.visibleEdits.curve.mode == com.rawlab.android.settings.ToneCurveMode.CUSTOM }
+                assertEquals(3, model.state.value.visibleEdits.curve.points.size)
+                assertEquals(0.6, model.state.value.visibleEdits.curve.points[1].y, 1e-6)
+                assertTrue(model.state.value.draft!!.canUndo)
+                harness.onMain { model.undoDraft() }
+                assertEquals(com.rawlab.android.settings.ToneCurveMode.LEGACY, model.state.value.visibleEdits.curve.mode)
+            } finally {
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
     @Test fun exportStateHolderSupportsQ12LateCompletionAndRejectsInvalidSizeWithCleanup() {
         EditorViewModelTestHarness().use { harness ->
             val (_, uri) = harness.createTempPhoto("export.raw")

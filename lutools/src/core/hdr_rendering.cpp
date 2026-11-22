@@ -118,14 +118,18 @@ ToneCurve hdrCurve(const HDRToneOptions& tone, bool allowFreeEndpoints) {
     return ToneCurve(config);
 }
 
-RGB editToneV2(RGB pixel, const HDRToneOptions& tone, const ToneCurve& curve) {
+RGB editToneV2(RGB pixel, const HDRToneOptions& tone, const ToneCurve& curve, const ToneCurveParametric& parametric) {
     const float y = luminance(pixel);
     if (y <= 0) return pixel;
     const float stops = std::log2(y);
     float target = stops + (tone.blackPoint * (1 - smooth(stops, -7, -3)) +
         tone.whitePoint * smooth(stops, -1, 3)) / 50;
-    if (curve.active() && target > -8 && target < 8)
-        target = float(curve.evaluate((double(target) + 8) / 16) * 16 - 8);
+    if ((curve.active() || parametric.active()) && target > -8 && target < 8) {
+        double u = (double(target) + 8) / 16;
+        if (parametric.active()) u = parametric.evaluate(u);
+        if (curve.active()) u = curve.evaluate(u);
+        target = float(u * 16 - 8);
+    }
     if (target == stops) return pixel;
     const float gain = std::exp2(target - stops);
     return {pixel.r * gain, pixel.g * gain, pixel.b * gain};
@@ -206,11 +210,13 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
     const bool allowFreeEndpoints = o.processingVersion >= kHdrProcessingV2GradingCurveVersion;
     const auto curve = useToneV2 ? hdrCurve(o.tone, allowFreeEndpoints) : ToneCurve();
+    const auto parametric = allowFreeEndpoints ? ToneCurveParametric(o.tone.parametric) : ToneCurveParametric();
     std::array<ToneCurve, 3> channels;
     if (o.processingVersion >= kHdrProcessingChannelCurvesVersion)
         for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i], allowFreeEndpoints);
     const bool channelsActive = std::any_of(channels.begin(), channels.end(), [](const auto& value) { return value.active(); });
-    const bool advancedToneActive = useToneV2 && (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active());
+    const bool advancedToneActive = useToneV2 &&
+        (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active() || parametric.active());
     const bool useColor = o.processingVersion >= kHdrProcessingColorVersion;
     const bool vibranceActive = useColor && o.color.vibrance != 0;
     const bool hslActive = useColor && o.color.hsl.active();
@@ -239,7 +245,7 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
             auto& p = image.pixels[i];
             if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
             if (toneActive) p = hdr ? toneHDR(p, o) : toneSDR(p, o);
-            if (advancedToneActive) p = editToneV2(p, o.tone, curve);
+            if (advancedToneActive) p = editToneV2(p, o.tone, curve, parametric);
             if (channelsActive) p = {editChannelCurve(p.r, channels[0]), editChannelCurve(p.g, channels[1]), editChannelCurve(p.b, channels[2])};
             if (vibranceActive) p = hdrVibrance(p, o.color.vibrance);
             if (hslActive) p = hdrHsl(p, o.color.hsl);

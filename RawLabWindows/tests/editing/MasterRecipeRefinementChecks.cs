@@ -96,6 +96,19 @@ internal static class MasterRecipeRefinementChecks
         Check(changed.RenderToneControls == target.RenderToneControls && changed.RenderAtmosphere == target.RenderAtmosphere &&
             changed.RenderGrading == target.RenderGrading && changed.RenderCurve == target.RenderCurve,
             "Strength-only transfer preserves unselected effective refinements");
+        var paramSource = new Adjustments {
+            Curve = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: new(shadows: 40))
+        };
+        var zeroTarget = new Adjustments(); zeroTarget.ApplyMasterRecipe(recipe); zeroTarget.ResolveWhiteBalance((5200, 10));
+        zeroTarget.Set(Parameter.Strength, 0);
+        var paramPayload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Curve, F.CurveParametric]), Edit(paramSource), context);
+        try {
+            _ = AdjustmentTransfer.Prepare(paramPayload, Edit(zeroTarget), context);
+            throw new Exception("Zero-strength parametric refinement accepted");
+        } catch (AdjustmentTransferException ex) {
+            Check(ex.Failure == AdjustmentFailure.Unrepresentable && ex.Field == F.CurveParametric.ID(),
+                "Zero-strength parametric refinement must report light.curve.parametric");
+        }
         Console.WriteLine("PASS: v4 complete, partial and strength-only transfers");
     }
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }

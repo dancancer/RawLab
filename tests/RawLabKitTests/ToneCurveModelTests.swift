@@ -20,7 +20,18 @@ final class ToneCurveModelTests: XCTestCase {
         XCTAssertLessThan(moved.points[1].x, moved.points[2].x)
         XCTAssertEqual(moved.points[1].y, moved.points[2].y)
 
-        XCTAssertEqual(curve.moving(index: 0, x: 0.1, y: 0.2), curve)
+        XCTAssertTrue(curve.isEndpoint(0))
+        XCTAssertTrue(curve.isEndpoint(3))
+        XCTAssertFalse(curve.isInterior(0))
+        XCTAssertTrue(curve.canMoveY(0))
+        XCTAssertTrue(curve.canMoveY(3))
+
+        let liftBlack = curve.moving(index: 0, x: 0.1, y: 0.08)
+        XCTAssertEqual(liftBlack.points[0], ToneCurvePoint(x: 0.0, y: 0.08))
+        XCTAssertEqual(curve.moving(index: 0, x: 0.1, y: 0.5).points[0], ToneCurvePoint(x: 0.0, y: curve.points[1].y))
+        let dropWhite = curve.moving(index: 3, x: 0.9, y: 0.92)
+        XCTAssertEqual(dropWhite.points[3], ToneCurvePoint(x: 1.0, y: 0.92))
+        XCTAssertEqual(curve.moving(index: 3, x: 0.9, y: 0.2).points[3], ToneCurvePoint(x: 1.0, y: curve.points[2].y))
         XCTAssertEqual(curve.removing(index: 3), curve)
         XCTAssertEqual(curve.removing(index: 1).points.count, 3)
         XCTAssertEqual(curve.inserting(x: 0.25, y: 0.5), curve)
@@ -81,5 +92,20 @@ final class ToneCurveModelTests: XCTestCase {
         let encodedUnpinned = try JSONEncoder().encode(unpinned)
         XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: encodedUnpinned), unpinned)
         XCTAssertFalse(ToneCurveParametric(splitShadow: 0.4, splitMidtone: 0.41, splitHighlight: 0.75).isValid)
+
+        let unpinnedZero = unpinned.scaled(by: 0)
+        XCTAssertTrue(unpinnedZero.isIdentity)
+        let unpinnedHalf = unpinned.scaled(by: 0.5)
+        XCTAssertEqual(unpinnedHalf.points[0].y, 0.0625, accuracy: 1e-12)
+        XCTAssertEqual(unpinnedHalf.points[2].y, 0.9375, accuracy: 1e-12)
+        XCTAssertEqual(unpinnedHalf.parametric.shadows, 10, accuracy: 1e-12)
+        let unpinnedDouble = unpinned.scaled(by: 2.0)
+        XCTAssertEqual(unpinnedDouble.points[0].y, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(unpinnedDouble.points[2].y, 0.75, accuracy: 1e-12)
+        XCTAssertEqual(unpinnedDouble.parametric.shadows, 40, accuracy: 1e-12)
+
+        let scaledParam = try AdjustmentTransferRefinement.scaled(unpinned.parametric.transferValue, field: .curveParametric, by: 0.5)
+        let invertedParam = try AdjustmentTransferRefinement.logical(scaledParam, field: .curveParametric, strength: 0.5, preserving: ToneCurveParametric().transferValue)
+        XCTAssertTrue(AdjustmentTransferRefinement.equivalent(invertedParam, unpinned.parametric.transferValue, field: .curveParametric))
     }
 }

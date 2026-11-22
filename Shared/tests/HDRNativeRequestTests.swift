@@ -138,6 +138,22 @@ import Foundation
             let bytes = withUnsafeBytes(of: look.look_sha256) { Data($0) }
             require(bytes == Data(hash.utf8) + Data([0]), "Swift HDR look fingerprint is not NUL-terminated")
         }
+        var v9Settings = settings
+        v9Settings.toneSettings.curve = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.1), .init(x: 0.5, y: 0.6), .init(x: 1, y: 0.9)],
+            applyToLuminosity: true,
+            parametric: ToneCurveParametric(highlights: -15, lights: 10, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
+        )
+        let v9Request = try makeHDRRequest(settings: v9Settings, intent: SONY2FUJI_INTENT_FINAL)
+        withHDRRequestPrefix(v9Request) { pointer in
+            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == 2696, "HDR v9 ABI header")
+            let full = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
+            require(full.curve_apply_to_luminosity == 1 && full.parametric_curve.shadows == 20 &&
+                    full.parametric_curve.split_shadow == 0.2 && full.grading_v2.version == 2 &&
+                    full.grading_v2.struct_size == 64 && full.grading_v2.midtones_hue == 210,
+                    "HDR v9 tone curve v2 + grading_v2 tail")
+        }
         for edge in [0,-1,65536] {
             do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:edge); fatalError("invalid edge accepted") }
             catch HDRRequestError.invalidSettings {}

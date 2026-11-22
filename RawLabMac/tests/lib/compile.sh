@@ -115,6 +115,7 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/Shared/AtmosphereNative.swift"
         "$ROOT/Shared/ColorGradingNative.swift"
         "$ROOT/Shared/ToneCurveNative.swift"
+        "$ROOT/Shared/ToneCurveSampling.swift"
         "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift"
         "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift"
         "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift"
@@ -163,6 +164,7 @@ rawlab_mac_render_engine_sources() {
         "$ROOT/Shared/AtmosphereNative.swift"
         "$ROOT/Shared/ColorGradingNative.swift"
         "$ROOT/Shared/ToneCurveNative.swift"
+        "$ROOT/Shared/ToneCurveSampling.swift"
     )
     RAWLAB_MAC_BRIDGING_HEADER="$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h"
     _rawlab_mac_assign_array "$out_var" "${_sources[@]}"

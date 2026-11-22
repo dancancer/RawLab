@@ -176,6 +176,13 @@ final class EditorModel: ObservableObject {
     var sourceNativeSize: CGSize?
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
+    @Published var curveTargetEnabled = false
+    @Published var curveTargetChannel: ToneCurveChannel = .rgb
+    @Published var curveTargetInteraction = CurveTargetInteraction()
+    @Published var curveTargetPoint: CGPoint?
+    @Published var curveTargetNotice: HSLTargetAvailability?
+    var curveTargetHistoryActive = false
+    var curvePendingKeyDelta: Double = 0
     var hslAcceptedRequest: RenderRequest<RenderWork>?
     var hslAcceptedSettings: Adjustments?
     var hslSourceRevision: UInt64 = 1
