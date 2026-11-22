@@ -1389,6 +1389,108 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(res.ok, f"Expected failure for adjustment {idx}: {adj}")
             self.assertEqual(res.error.code, "invalid_argument")
 
+    async def test_sync_photo_edit_white_balance_raster_and_raw_contracts(self):
+        # Model-level state builder checks run on all OSes
+        raster_rel = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "relative", "temperature": 5400, "tint": 12},
+            is_raster=True,
+        )
+        self.assertEqual(raster_rel["settings"]["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raster_rel["settings"]["temperature"], 5400.0)
+        self.assertEqual(raster_rel["settings"]["tint"], 12.0)
+
+        for mode in ("camera", "none"):
+            raster_neutral = gui_sync._build_mac_photo_edit_state(
+                adjustments={"white_balance_mode": mode},
+                is_raster=True,
+            )
+            self.assertEqual(raster_neutral["settings"]["whiteBalanceMode"], "拍摄时设置")
+            self.assertEqual(raster_neutral["settings"]["temperature"], 6500.0)
+            self.assertEqual(raster_neutral["settings"]["tint"], 0.0)
+
+        raw_temp = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "temperature", "temperature": 5400, "tint": 12},
+            is_raster=False,
+        )
+        self.assertEqual(raw_temp["settings"]["whiteBalanceMode"], "自定义")
+        self.assertEqual(raw_temp["settings"]["temperature"], 5400.0)
+        self.assertEqual(raw_temp["settings"]["tint"], 12.0)
+
+        raw_recipe_cam = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "camera", "tint": -8},
+            is_raster=False,
+            master_recipe_id="hamada_daylight_v2",
+        )
+        self.assertEqual(raw_recipe_cam["settings"]["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raw_recipe_cam["settings"]["temperature"], 6500.0)
+        self.assertEqual(raw_recipe_cam["settings"]["tint"], -8.0)
+
+        for bad_adj, is_raster_flag in (
+            ({"white_balance_mode": "temperature", "temperature": 5400, "tint": 12}, True),
+            ({"white_balance_mode": "camera", "temperature": 5400}, True),
+            ({"white_balance_mode": "none", "tint": 12}, True),
+            ({"temperature": 5400}, True),
+            ({"white_balance_mode": "relative", "temperature": 5400, "tint": 12}, False),
+            ({"white_balance_mode": "none"}, False),
+            ({"white_balance_mode": "camera", "temperature": 5400}, False),
+            ({"white_balance_mode": "camera", "tint": 12}, False),
+            ({"white_balance_mode": None}, True),
+        ):
+            with self.assertRaises(AdapterError):
+                gui_sync._build_mac_photo_edit_state(adjustments=bad_adj, is_raster=is_raster_flag)
+
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+
+        raster_path = self.recipe_dir / "raster.jpg"
+        raster_path.write_bytes(b"raster fixture")
+        data_dir = self.root / "appdata-wb"
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        ok_raster = await adapter.sync_photo_edit(
+            photo_path=str(raster_path),
+            adjustments={"white_balance_mode": "relative", "temperature": 5400, "tint": 12},
+        )
+        self.assertTrue(ok_raster.ok, str(ok_raster.error))
+
+        bad_raster = await adapter.sync_photo_edit(
+            photo_path=str(raster_path),
+            adjustments={"white_balance_mode": "temperature", "temperature": 5400, "tint": 12},
+        )
+        self.assertFalse(bad_raster.ok)
+        self.assertEqual(bad_raster.error.code, "invalid_argument")
+
+        ok_raw = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"white_balance_mode": "temperature", "temperature": 5200, "tint": -6},
+        )
+        self.assertTrue(ok_raw.ok, str(ok_raw.error))
+
+        bad_raw = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"white_balance_mode": "relative", "temperature": 5200, "tint": -6},
+        )
+        self.assertFalse(bad_raw.ok)
+        self.assertEqual(bad_raw.error.code, "invalid_argument")
+
+        edits_doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+        raster_settings = edits_doc["records"][ok_raster.result["photo_path"]]["state"]["settings"]
+        self.assertEqual(raster_settings["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raster_settings["temperature"], 5400.0)
+        self.assertEqual(raster_settings["tint"], 12.0)
+
+        raw_settings = edits_doc["records"][ok_raw.result["photo_path"]]["state"]["settings"]
+        self.assertEqual(raw_settings["whiteBalanceMode"], "自定义")
+        self.assertEqual(raw_settings["temperature"], 5200.0)
+        self.assertEqual(raw_settings["tint"], -6.0)
+
 
 if __name__ == "__main__":
     unittest.main()

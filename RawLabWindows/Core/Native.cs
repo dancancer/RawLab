@@ -251,13 +251,6 @@ internal static partial class Native
         public uint Version, StructSize; public int Mode; public uint Count;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst=66)] public double[] Points;
     }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct ToneCurveParametricConfig {
-        public uint Version, StructSize;
-        public float Highlights, Lights, Darks, Shadows;
-        public float SplitShadow, SplitMidtone, SplitHighlight;
-        public uint Reserved;
-    }
     internal enum WbProbeAvailability { Available = 0, Overexposed = 1, Outside = 2, Unavailable = 3 }
     [StructLayout(LayoutKind.Sequential)]
     internal struct WbProbeQuery {

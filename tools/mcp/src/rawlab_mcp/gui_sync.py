@@ -1149,9 +1149,48 @@ def _build_mac_photo_edit_state(
     if exp_mode_in not in exp_mode_map:
         raise AdapterError("exposure_mode must be preview, scene, or sensor")
 
-    wb_mode_in = adjustments.get("white_balance_mode", "camera")
-    if wb_mode_in not in ("camera", "temperature"):
-        raise AdapterError("white_balance_mode must be camera or temperature")
+    if "white_balance_mode" in adjustments:
+        wb_mode_in = adjustments["white_balance_mode"]
+    else:
+        wb_mode_in = "none" if is_raster else "camera"
+    if not isinstance(wb_mode_in, str):
+        raise AdapterError("white_balance_mode must be a string")
+
+    has_wb_temp = "temperature" in adjustments and adjustments["temperature"] is not None
+    has_wb_tint = "tint" in adjustments and adjustments["tint"] is not None
+
+    if is_raster:
+        if wb_mode_in not in ("camera", "none", "relative"):
+            raise AdapterError("Raster white_balance_mode must be relative, none, or camera")
+        if wb_mode_in != "relative" and (has_wb_temp or has_wb_tint):
+            raise AdapterError("Raster temperature and tint require white_balance_mode='relative'")
+        effective_temp = (
+            round(_num_in(adjustments, "temperature", 6500.0, 2000.0, 50000.0), 2)
+            if wb_mode_in == "relative"
+            else 6500.0
+        )
+        effective_tint = (
+            round(_num_in(adjustments, "tint", 0.0, -150.0, 150.0), 2)
+            if wb_mode_in == "relative"
+            else 0.0
+        )
+        effective_wb_mode = "拍摄时设置"
+    else:
+        if wb_mode_in not in ("camera", "temperature"):
+            raise AdapterError("RAW white_balance_mode must be camera or temperature")
+        if wb_mode_in == "camera" and (has_wb_temp or (master_recipe_id is None and has_wb_tint)):
+            raise AdapterError("RAW camera white_balance_mode conflicts with temperature or tint")
+        effective_temp = (
+            round(_num_in(adjustments, "temperature", 6500.0, 2000.0, 50000.0), 2)
+            if wb_mode_in == "temperature"
+            else 6500.0
+        )
+        effective_tint = (
+            round(_num_in(adjustments, "tint", 0.0, -150.0, 150.0), 2)
+            if (wb_mode_in == "temperature" or master_recipe_id is not None)
+            else 0.0
+        )
+        effective_wb_mode = "拍摄时设置" if wb_mode_in == "camera" else "自定义"
 
     recipe_ver = adjustments.get("master_recipe_settings_version", 4 if master_recipe_id else 3)
     if type(recipe_ver) is not int or recipe_ver not in (2, 3, 4):
@@ -1170,9 +1209,9 @@ def _build_mac_photo_edit_state(
         "x3fMode": x3f_mode,
         "exposureMode": exp_mode_map[exp_mode_in],
         "exposure": round(_num_in(adjustments, "exposure", 0.0, -5.0, 5.0), 6),
-        "temperature": round(_num_in(adjustments, "temperature", 6500.0, 2000.0, 50000.0), 2) if (wb_mode_in == "temperature" and not is_raster) else 6500.0,
-        "tint": round(_num_in(adjustments, "tint", 0.0, -150.0, 150.0), 2) if (wb_mode_in == "temperature" and not is_raster) else 0.0,
-        "whiteBalanceMode": "拍摄时设置" if (is_raster or wb_mode_in == "camera") else "自定义",
+        "temperature": effective_temp,
+        "tint": effective_tint,
+        "whiteBalanceMode": effective_wb_mode,
         "strength": round(_num_in(adjustments, "strength", 1.0, 0.0, 2.0), 6),
         "contrast": round(_num_in(adjustments, "contrast", 0.0, -100.0, 100.0), 4),
         "highlights": round(_num_in(adjustments, "highlights", 0.0, -100.0, 100.0), 4),
