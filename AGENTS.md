@@ -70,7 +70,7 @@
 
 1. 从已验证的 `origin/development` 创建 `release/<version>`，例如 `release/0.5.1`。
 2. 发布分支只做版本号、打包、发布文档和必要的发布修复，不混入新功能。
-3. 完成目标平台构建、测试和发布验收；未覆盖的设备或平台必须明确记录。
+3. 完成目标平台构建、测试和发布验收；**所有待发布成品必须在本机执行真实启动冒烟**（Android 签名且经 R8 混淆的 Release APK 须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` DEX JNI 检查、16 KB 对齐、`apksigner verify`，并在本地模拟器上运行 `bash RawLabAndroid/scripts/smoke-release-apk.sh <apk> --avd <avd-name>` 完成 2 次干净冷启动校验），**不得以“无真机 / 真机验收记录未覆盖边界”免除对实际待发安装包（macOS 签名包、Android 正式 APK 模拟器冷启动、Windows 发布包）的本地启动验证**；仅未覆盖的物理设备/真机硬件能力边界必须明确记录。
 4. 经用户明确授权后通过 PR 合入 `main`，为发布提交创建 `v<version>` 标签（不得覆盖已有标签），
    并将发布修复回合到 `development`。
 5. 上传安装包、创建 Release、签名或部署均需要相应授权；采用 Gitflow 本身不代表授权发布。
@@ -113,7 +113,7 @@
   `ctest --test-dir lutools/build-macos --output-on-failure`。
 - **iOS**：遵守 [RawLab/AGENTS.md](RawLab/AGENTS.md)，使用其现有构建与平台测试。
 - **Mac**：使用 `bash RawLabMac/build.sh` 及受影响的 `RawLabMac/tests/` 检查。
-- **Android**：使用 `RawLabAndroid/` 的 Gradle 测试、构建及相关设备/GLES 验证。
+- **Android**：使用 `RawLabAndroid/` 的 Gradle 测试、构建及相关设备/GLES 验证；Release APK 构建须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` 及 `RawLabAndroid/scripts/smoke-release-apk.sh`。
 - **Windows**：使用 `RawLabWindows/` 的现有构建和测试；没有硬件 GPU 时不声称已完成硬件验证。
 - **纯流程或文档修改**：只检查内容、链接和 diff，不机械执行全平台构建。
 
