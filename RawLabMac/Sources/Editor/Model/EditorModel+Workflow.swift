@@ -321,9 +321,13 @@ extension EditorModel {
         dirty = true
         saveStatusKey = ""
         saveWork?.cancel()
+        saveWork = nil
         if !scheduler.interacting {
             // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
-            let work = DispatchWorkItem { [weak self] in _ = self?.saveEditsAsync() }
+            let work = DispatchWorkItem { [weak self] in
+                self?.saveWork = nil
+                _ = self?.saveEditsAsync()
+            }
             saveWork = work
             DispatchQueue.main.async(execute: work)
         }
@@ -332,6 +336,7 @@ extension EditorModel {
 
     @discardableResult func saveEditsAsync() -> Bool {
         saveWork?.cancel()
+        saveWork = nil
         guard file != nil, dirty else { return true }
         let clearsMigration = pendingAllResetRevision == editRevision
         guard !scheduler.interacting,
@@ -342,6 +347,7 @@ extension EditorModel {
 
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
+        saveWork = nil
         let flushedOK = editStore?.flushPendingCommits() ?? true
         guard flushedOK else { return false }
         guard file != nil else { return true }

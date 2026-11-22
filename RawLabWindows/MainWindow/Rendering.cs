@@ -32,6 +32,7 @@ public partial class MainWindow
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ClearTransferNoticesOnSourceChange();
+            ClearExternalReloadOnSourceChange();
             ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;

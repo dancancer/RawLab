@@ -11,14 +11,19 @@ import tempfile
 
 import anyio
 
-from .config import ServerConfig
+from . import catalog
+from .config import ServerConfig, default_data_dir
+from .errors import AdapterError
 
 
-COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
+REQUIRED_COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
+OPTIONAL_COMMANDS = {"analyze", "print_transfer"}
+COMMANDS = REQUIRED_COMMANDS | OPTIONAL_COMMANDS
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
+_RASTER_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp"}
 
 
 def _copy_exclusive(staged, destination):
@@ -61,12 +66,6 @@ async def _publish(staged, destination):
                 except asyncio.CancelledError:
                     continue
         raise
-
-
-class AdapterError(Exception):
-    def __init__(self, message, code="invalid_argument", status=None):
-        super().__init__(message)
-        self.code, self.status = code, status
 
 
 @dataclass(frozen=True)
@@ -123,7 +122,7 @@ class CliAdapter:
                 or 4 not in versions):
             raise AdapterError("CLI must support recipe schema version 4")
         if (not isinstance(commands, list) or any(not isinstance(c, str) for c in commands)
-                or not COMMANDS.issubset(commands)):
+                or not REQUIRED_COMMANDS.issubset(commands)):
             raise AdapterError("CLI is missing a required command")
         supported = tuple(sorted(RECIPE_VERSIONS.intersection(versions)))
         result = {**result, "recipe_versions": list(supported),
@@ -296,7 +295,7 @@ class CliAdapter:
             raise AdapterError("Output parent must exist within an allowed write root")
         return CheckedPath(path, canonical)
 
-    async def _recipe(self, recipe_path, preview_output=None, *, validating=False):
+    async def _recipe(self, recipe_path, preview_output=None, *, validating=False, ignore_output=False):
         if self.capabilities is None:
             raise AdapterError("CLI negotiation has not completed", "processing_error")
         source = self._read_path(recipe_path, normalize=False)
@@ -335,12 +334,15 @@ class CliAdapter:
                 protected.add(profile_path.canonical)
                 if not validating:
                     profile["path"] = str(profile_path.lexical)
-            output = self._output_path(preview_output if preview_output is not None else reference(recipe["output"]["path"]),
-                                       require_parent=not validating)
-            if not validating and output.canonical in protected:
-                raise AdapterError("Output cannot overwrite the recipe, input or look")
-            if not validating:
-                recipe["output"]["path"] = str(output.lexical)
+            if ignore_output:
+                output = None
+            else:
+                output = self._output_path(preview_output if preview_output is not None else reference(recipe["output"]["path"]),
+                                           require_parent=not validating)
+                if not validating and output.canonical in protected:
+                    raise AdapterError("Output cannot overwrite the recipe, input or look")
+                if not validating:
+                    recipe["output"]["path"] = str(output.lexical)
             return source, recipe, output
         except (KeyError, TypeError, AttributeError, ValueError) as e:
             raise AdapterError(f"Malformed recipe: {e}") from e
@@ -351,6 +353,145 @@ class CliAdapter:
             return await self._run("info", ["--info", path.lexical, "--json"])
         except AdapterError as e:
             return failure("info", e)
+
+    @staticmethod
+    def _validate_sample_arg(value):
+        if not isinstance(value, str) or not value:
+            raise AdapterError("Each sample must be a nonempty string in 'x,y[,label]' form")
+        try:
+            value.encode("utf-8")
+        except UnicodeError as e:
+            raise AdapterError("Sample specification contains invalid Unicode") from e
+        if "\x00" in value:
+            raise AdapterError("Sample specification contains NUL")
+        parts = value.split(",", 2)
+        if len(parts) < 2:
+            raise AdapterError("Sample specification must be 'x,y' or 'x,y,label'")
+        try:
+            x = float(parts[0])
+            y = float(parts[1])
+        except ValueError as e:
+            raise AdapterError("Sample coordinates must be numeric") from e
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            raise AdapterError("Sample coordinates must be in [0.0, 1.0]")
+        if len(parts) == 3 and not parts[2].strip():
+            raise AdapterError("Sample label cannot be empty when specified")
+        return value
+
+    async def diagnose_image(self, image_path=None, recipe_path=None, samples=(), long_edge=1024):
+        try:
+            if bool(image_path) == bool(recipe_path):
+                raise AdapterError("Specify exactly one of image_path or recipe_path")
+            if type(long_edge) is not int or not 1 <= long_edge <= 4294967295:
+                raise AdapterError("long_edge must be a positive uint32")
+            if not isinstance(samples, (list, tuple)) or len(samples) > 16:
+                raise AdapterError("samples must be a list of at most 16 entries")
+            validated_samples = [self._validate_sample_arg(item) for item in samples]
+            if self.capabilities is None:
+                raise AdapterError("CLI negotiation has not completed", "processing_error")
+            if "analyze" not in self.capabilities.result.get("commands", []):
+                raise AdapterError("CLI does not support native BSH diagnostics", "unsupported")
+
+            sample_args = []
+            for s in validated_samples:
+                sample_args.extend(["--sample", s])
+
+            lens_args = []
+            if self.config.lens_database is not None:
+                database = self._read_path(self.config.lens_database, require_file=False)
+                if not (database.canonical.is_file() or database.canonical.is_dir()):
+                    raise AdapterError("Lens database no longer exists within an allowed read root")
+                lens_args = ["--lens-database", database.canonical]
+
+            if image_path is not None:
+                source = self._read_path(image_path)
+                return await self._run(
+                    "analyze",
+                    ["--input", source.lexical, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+                )
+
+            with tempfile.TemporaryDirectory(prefix="rawlab-mcp-analyze-") as tmpdir:
+                _, recipe, _ = await self._recipe(recipe_path, validating=False, ignore_output=True)
+                private_recipe = Path(tmpdir) / "recipe.json"
+                private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+                return await self._run(
+                    "analyze",
+                    ["--recipe", private_recipe, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+                )
+        except AdapterError as e:
+            return failure("analyze", e)
+
+    async def list_catalog_looks(self, category="all", query=None):
+        try:
+            if category not in {"all", "master_recipe", "fuji_flog2", "bundled", "hdr"}:
+                raise AdapterError("Unsupported look category")
+            if query is not None and not isinstance(query, str):
+                raise AdapterError("query must be a string")
+            result = catalog.list_looks(category=category, query=query, read_roots=self.config.read_roots)
+            return Envelope("list_catalog_looks", True, result)
+        except AdapterError as e:
+            return failure("list_catalog_looks", e)
+
+    async def save_preset(
+        self,
+        *,
+        name,
+        values,
+        is_raw=None,
+        processing_version=3,
+        overwrite=False,
+        recipe_context=None,
+        hdr_processing_version=None,
+    ):
+        if not self.config.enable_gui_sync:
+            return failure("save_preset", AdapterError("GUI sync tools require --enable-gui-sync", "unsupported"))
+        from . import gui_sync
+
+        try:
+            data_dir = self.config.data_dir or default_data_dir()
+            result = await asyncio.to_thread(
+                gui_sync.save_preset,
+                data_dir=data_dir,
+                name=name,
+                values=values,
+                is_raw=is_raw,
+                processing_version=processing_version,
+                overwrite=overwrite,
+                recipe_context=recipe_context,
+                hdr_processing_version=hdr_processing_version,
+            )
+            return Envelope("save_preset", True, result)
+        except AdapterError as e:
+            return failure("save_preset", e)
+
+    async def sync_photo_edit(
+        self,
+        *,
+        photo_path,
+        adjustments,
+        film_id="",
+        master_recipe_id=None,
+    ):
+        if not self.config.enable_gui_sync:
+            return failure("sync_photo_edit", AdapterError("GUI sync tools require --enable-gui-sync", "unsupported"))
+        from . import gui_sync
+
+        try:
+            checked = self._read_path(photo_path)
+            is_raster = checked.canonical.suffix.lower() in _RASTER_SUFFIXES
+            data_dir = self.config.data_dir or default_data_dir()
+            result = await asyncio.to_thread(
+                gui_sync.sync_photo_edit,
+                data_dir=data_dir,
+                photo_canonical=checked.canonical,
+                adjustments=adjustments,
+                is_raster=is_raster,
+                film_id=film_id,
+                master_recipe_id=master_recipe_id,
+            )
+            return Envelope("sync_photo_edit", True, result)
+        except AdapterError as e:
+            return failure("sync_photo_edit", e)
 
     async def validate_recipe(self, recipe_path):
         return await self._render("validate_recipe", recipe_path)

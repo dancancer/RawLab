@@ -141,6 +141,21 @@ struct EditorView: View {
                     if !showInspector && model.hslTargetActive {
                         HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
                     }
+                    if model.hasActiveExternalReloadBanner {
+                        HStack(spacing: 10) {
+                            Label(L10n.text("检测到外部调色方案更新"), systemImage: "arrow.triangle.2.circlepath")
+                            Button(L10n.text("重载滑块"), action: model.reloadFromExternalUpdate)
+                                .accessibilityIdentifier("externalReload.reload")
+                            Button(L10n.text("保留当前手动草稿"), action: model.keepCurrentManualDraftOnExternalUpdate)
+                                .accessibilityIdentifier("externalReload.keepDraft")
+                        }
+                        .font(.callout)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(8)
+                        .accessibilityIdentifier("externalReload.banner")
+                    }
                     if model.previewOutdated {
                         HStack(spacing: 8) {
                             Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
@@ -537,6 +552,11 @@ struct EditorView: View {
             Menu {
                 Button(L10n.text("复制调整…")) { model.requestAdjustmentSheet(.copy) }.disabled(model.file == nil)
                 Button(L10n.text("粘贴调整…")) { model.requestAdjustmentSheet(.paste) }.disabled(model.adjustmentClipboard == nil)
+                Divider()
+                Button(L10n.text("导入调整参数 JSON…")) { model.importAdjustmentTransferPanel() }
+                    .disabled(!model.canImportAdjustmentTransfer)
+                Button(L10n.text("导出调整参数 JSON…")) { model.exportAdjustmentTransferPanel() }
+                    .disabled(!model.canExportAdjustmentTransfer)
                 Divider()
                 Button(L10n.text("撤销"), action: model.undoAdjustment).disabled(!model.canUndoAdjustment)
                 Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)

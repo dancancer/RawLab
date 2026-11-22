@@ -128,6 +128,7 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
+        "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+ExternalReload.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
         "$ROOT/Shared/DCPCompiler.swift"
         "$ROOT/Shared/LookLibrary.swift"

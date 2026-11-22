@@ -200,6 +200,7 @@ public partial class MainWindow
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         Volatile.Write(ref closing, true);
+        externalStoreWatcher?.Dispose(); externalStoreWatcher = null;
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();

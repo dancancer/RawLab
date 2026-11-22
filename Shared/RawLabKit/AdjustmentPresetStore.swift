@@ -81,6 +81,13 @@ public final class AdjustmentPresetStore {
     private var file: URL { directory.appendingPathComponent("presets.json") }
     private let readabilityLock = NSLock()
     private var cachedReadability: (probe: ReadabilityProbe, readable: Bool)?
+    private let writeFingerprintLock = NSLock()
+    private var _lastWriteFingerprint: FileStatFingerprint?
+    public var lastWriteFingerprint: FileStatFingerprint? {
+        writeFingerprintLock.lock()
+        defer { writeFingerprintLock.unlock() }
+        return _lastWriteFingerprint
+    }
     public private(set) var diskReadCount = 0
 
     public init(directory: URL = AdjustmentPresetStore.defaultDirectory,
@@ -324,6 +331,11 @@ public final class AdjustmentPresetStore {
         cachedReadability = nil
         readabilityLock.unlock()
         try writeData(out, file)
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL.path
+        let fp = FileStatFingerprint(resolvedPath: resolved)
+        writeFingerprintLock.lock()
+        _lastWriteFingerprint = fp
+        writeFingerprintLock.unlock()
     }
     private func withWriteLock<T>(_ body: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

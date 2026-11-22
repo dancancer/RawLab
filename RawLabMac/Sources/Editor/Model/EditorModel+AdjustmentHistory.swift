@@ -95,6 +95,7 @@ extension EditorModel {
                         }
                         if !self.hasPendingEditCommits {
                             self.objectWillChange.send()
+                            self.flushDeferredExternalEditsCheckIfNeeded()
                         }
                     case .unchanged:
                         self.unsettledAsyncCommitTokens.removeAll { $0 == commitToken }
@@ -103,6 +104,7 @@ extension EditorModel {
                         }
                         if !self.hasPendingEditCommits {
                             self.objectWillChange.send()
+                            self.flushDeferredExternalEditsCheckIfNeeded()
                         }
                     case .failed, .blocked, .conflict, .skipped:
                         guard let idx = self.unsettledAsyncCommitTokens.firstIndex(of: commitToken) else { return }
@@ -124,6 +126,9 @@ extension EditorModel {
                             self.saveError = L10n.format("调整未保存：%@", self.adjustmentErrorMessage(finalOutcome.error))
                             self.saveStatusKey = ""
                             self.adjustmentHistoryRevision &+= 1
+                            if !self.hasPendingEditCommits {
+                                self.flushDeferredExternalEditsCheckIfNeeded()
+                            }
                         }
                     }
                 }

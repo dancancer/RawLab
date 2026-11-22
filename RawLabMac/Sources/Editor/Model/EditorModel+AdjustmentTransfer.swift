@@ -1,5 +1,6 @@
 import RawLabKit
 import AppKit
+import UniformTypeIdentifiers
 
 enum AdjustmentSheetKind: String, Identifiable {
     case copy, paste, history, presets, synchronize
@@ -50,6 +51,83 @@ extension EditorModel {
             availableLookIDs: availableAdjustmentLooks,
             defaultExposureMode: RenderEngine.isRasterInput(url) ? .sensor : .preview,
             hasUncommittedDraft: file == url && (geometryDraft != nil || dirty))
+    }
+
+    var canExportAdjustmentTransfer: Bool {
+        file != nil && !exporting && !aiState.isRunning && geometryDraft == nil
+    }
+
+    var canImportAdjustmentTransfer: Bool {
+        file != nil && !exporting && !aiState.isRunning && geometryDraft == nil
+    }
+
+    func exportAdjustmentTransferData(scope: AdjustmentTransferScope? = nil) throws -> Data {
+        guard !aiState.isRunning else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
+        guard let file, geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if scheduler.interacting { setInteracting(false) }
+        guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
+        guard let committedEdit, try OriginalFileIdentity(file) == committedEdit.identity else {
+            throw AdjustmentCommitError.photoChanged
+        }
+        let targetScope = scope ?? .custom(adjustmentTransferFields)
+        let payload = try MacAdjustmentTransfer.capture(
+            scope: targetScope,
+            snapshot: editState(settings: settings),
+            context: adjustmentTransferContext(for: file)
+        )
+        return try payload.encodeTransferJSONData(prettyPrinted: true)
+    }
+
+    func importAdjustmentTransfer(data: Data) throws {
+        guard !aiState.isRunning else { throw RenderError.failed(L10n.text("当前照片的设置尚不可用。")) }
+        guard let file, geometryDraft == nil else { throw AdjustmentTransferError.draftRequiresPreflight }
+        guard ParameterValueField.resolvePendingInputs() else { throw AdjustmentTransferError.draftRequiresPreflight }
+        if scheduler.interacting { setInteracting(false) }
+        guard saveEdits() else { throw AdjustmentTransferError.draftRequiresPreflight }
+        let payload = try AdjustmentTransferPayload.decodeTransferJSON(data)
+        let operation = try prepareAdjustmentPaste(payload: payload, targets: [file], action: .paste)
+        if let targetError = operation.targets.first?.error { throw targetError }
+        applyAdjustmentPaste(operation)
+        if let failure = adjustmentOutcomes.first(where: { [.blocked, .failed, .conflict].contains($0.status) }) {
+            throw failure.error ?? AdjustmentTransferError.incompatible("target")
+        }
+        pendingExternalReload = nil
+    }
+
+    func exportAdjustmentTransferPanel() {
+        guard canExportAdjustmentTransfer, let file else { return }
+        let panel = NSSavePanel()
+        panel.title = L10n.text("导出调整参数 JSON…")
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-transfer.json"
+        guard panel.runModal() == .OK, let output = panel.url else { return }
+        do {
+            let data = try exportAdjustmentTransferData()
+            try data.write(to: output, options: .atomic)
+            saveError = nil
+            saveStatusKey = "调整已保存"
+            clearSaveStatusLater()
+        } catch {
+            saveError = adjustmentErrorMessage(error)
+        }
+    }
+
+    func importAdjustmentTransferPanel() {
+        guard canImportAdjustmentTransfer else { return }
+        let panel = NSOpenPanel()
+        panel.title = L10n.text("导入调整参数 JSON…")
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let input = panel.url else { return }
+        do {
+            let access = input.startAccessingSecurityScopedResource()
+            defer { if access { input.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: input)
+            try importAdjustmentTransfer(data: data)
+        } catch {
+            saveError = adjustmentErrorMessage(error)
+        }
     }
 
     @discardableResult func copyAdjustments(scope: AdjustmentTransferScope) throws -> AdjustmentTransferPayload {
