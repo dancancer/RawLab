@@ -97,7 +97,7 @@ internal static class MasterRecipeRefinementChecks
             changed.RenderGrading == target.RenderGrading && changed.RenderCurve == target.RenderCurve,
             "Strength-only transfer preserves unselected effective refinements");
         var paramSource = new Adjustments {
-            Curve = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: new(shadows: 40))
+            Curve = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: new(Shadows: 40))
         };
         var zeroTarget = new Adjustments(); zeroTarget.ApplyMasterRecipe(recipe); zeroTarget.ResolveWhiteBalance((5200, 10));
         zeroTarget.Set(Parameter.Strength, 0);

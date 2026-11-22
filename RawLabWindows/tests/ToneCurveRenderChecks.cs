@@ -33,7 +33,7 @@ internal static class ToneCurveRenderChecks
         settings.Curve=ToneCurveSettings.Identity.Inserting(.25,.4).Inserting(.75,.9);
         var changed=Preview(settings);
         check(!changed.SequenceEqual(baseline)&&!changed.SequenceEqual(legacy),"Custom curve invalidates preview cache and reaches native pixels");
-        var samples=ToneCurveSampling.Samples(settings.Curve,256);
+        var samples=ToneCurveSampling.Samples(settings.Curve, count: 256);
         var sample=engine.SampleHsl(input,settings,null,width,false,new(1,1),0,0);
         check(sample.Usable&&samples.Count==256,"Native sampler and pre-HSL probe succeed");
         check(new[]{24,16,31}.Select((value,channel)=>Math.Abs(samples[value].Y-sample.Rgb[channel])<.00001).All(value=>value),

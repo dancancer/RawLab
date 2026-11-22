@@ -29,20 +29,22 @@ public sealed class AgentTransferHotReloadChecks
         var adj = new Adjustments();
         adj.Set(Parameter.Exposure, 0.75);
         adj.Set(Parameter.Contrast, 16);
-        adj.EditingToneControls = new ToneControlsSettings(BlackPoint: -0.15, WhitePoint: 0.1, Vibrance: 0.25);
-        adj.EditingAtmosphere = new AtmosphereSettings(Clarity: 0.3, Dehaze: -0.2);
+        adj.ToneControls = new ToneControlsSettings(BlackPoint: -0.15, WhitePoint: 0.1, Vibrance: 0.25);
+        adj.Atmosphere = new AtmosphereSettings(Clarity: 0.3, Dehaze: -0.2);
         adj.EditingCurve = new ToneCurveSettings(
             ToneCurveMode.Custom,
             [new(0, 0), new(0.25, 0.2), new(1, 1)],
-            ApplyToLuminosity: true,
-            Parametric: new ToneCurveParametric(Highlights: -10, Lights: 6, Darks: -4, Shadows: 12));
-        adj.EditingGrading = new ColorGradingSettings(
-            Shadows: new ColorGradingWheel(215, 25, -5),
-            Midtones: new ColorGradingWheel(),
-            Highlights: new ColorGradingWheel(40, 18, 4),
-            Global: new ColorGradingWheel(180, 12, 2),
-            Blending: 60,
-            Balance: -15);
+            applyToLuminosity: true,
+            parametric: new ToneCurveParametric(Highlights: -10, Lights: 6, Darks: -4, Shadows: 12));
+        adj.EditingGrading = new ColorGradingSettings
+        {
+            Shadows = new ColorGradingWheel(215, 25, -5),
+            Midtones = new ColorGradingWheel(),
+            Highlights = new ColorGradingWheel(40, 18, 4),
+            Global = new ColorGradingWheel(180, 12, 2),
+            Blending = 60,
+            Balance = -15
+        };
 
         var identity = new OriginalIdentity("C:\\photos\\fixture.dng", 100, 200, 300);
         var saved = new SavedEdit(identity, adj.Capture(), null);

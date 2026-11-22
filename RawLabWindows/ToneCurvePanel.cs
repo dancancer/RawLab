@@ -337,26 +337,27 @@ public sealed class ToneCurvePanel : StackPanel
     }
     private void RefreshParametricRows()
     {
-        var sub = AdjustmentFieldSpec.SubFields.LightCurveParametric;
         var p = settings.Parametric;
-        var bandRange = new NumericRange(sub.BandMin, sub.BandMax, 1, 5, .1);
+        var bandRange = new NumericRange(
+            AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMin,
+            AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMax, 1, 5, .1);
         highlightsRow.SourceIdentity = lightsRow.SourceIdentity = darksRow.SourceIdentity = shadowsRow.SourceIdentity = source;
         splitShadowRow.SourceIdentity = splitMidtoneRow.SourceIdentity = splitHighlightRow.SourceIdentity = source;
-        highlightsRow.Refresh(Loc.Text("高光"), bandRange, p.Highlights, sub.BandDefault, "");
-        lightsRow.Refresh(Loc.Text("亮部"), bandRange, p.Lights, sub.BandDefault, "");
-        darksRow.Refresh(Loc.Text("暗部"), bandRange, p.Darks, sub.BandDefault, "");
-        shadowsRow.Refresh(Loc.Text("阴影"), bandRange, p.Shadows, sub.BandDefault, "");
-        var minGap = sub.SplitMinGap;
-        var shadowMax = Math.Min(sub.SplitShadowMax, p.SplitMidtone - minGap);
-        var midMin = Math.Max(sub.SplitMidtoneMin, p.SplitShadow + minGap);
-        var midMax = Math.Min(sub.SplitMidtoneMax, p.SplitHighlight - minGap);
-        var highMin = Math.Max(sub.SplitHighlightMin, p.SplitMidtone + minGap);
-        splitShadowRow.Refresh(Loc.Text("阴影"), new NumericRange(sub.SplitShadowMin, shadowMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitShadow, sub.SplitShadowDefault, "");
+        highlightsRow.Refresh(Loc.Text("高光"), bandRange, p.Highlights, AdjustmentFieldSpec.SubFields.LightCurveParametric.BandDefault, "");
+        lightsRow.Refresh(Loc.Text("亮部"), bandRange, p.Lights, AdjustmentFieldSpec.SubFields.LightCurveParametric.BandDefault, "");
+        darksRow.Refresh(Loc.Text("暗部"), bandRange, p.Darks, AdjustmentFieldSpec.SubFields.LightCurveParametric.BandDefault, "");
+        shadowsRow.Refresh(Loc.Text("阴影"), bandRange, p.Shadows, AdjustmentFieldSpec.SubFields.LightCurveParametric.BandDefault, "");
+        var minGap = AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMinGap;
+        var shadowMax = Math.Min(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMax, p.SplitMidtone - minGap);
+        var midMin = Math.Max(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMin, p.SplitShadow + minGap);
+        var midMax = Math.Min(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMax, p.SplitHighlight - minGap);
+        var highMin = Math.Max(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMin, p.SplitMidtone + minGap);
+        splitShadowRow.Refresh(Loc.Text("阴影"), new NumericRange(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMin, shadowMax, .01, .05, .001, AllowOffGrid: true),
+            p.SplitShadow, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowDefault, "");
         splitMidtoneRow.Refresh(Loc.Text("中间调"), new NumericRange(midMin, midMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitMidtone, sub.SplitMidtoneDefault, "");
-        splitHighlightRow.Refresh(Loc.Text("高光"), new NumericRange(highMin, sub.SplitHighlightMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitHighlight, sub.SplitHighlightDefault, "");
+            p.SplitMidtone, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneDefault, "");
+        splitHighlightRow.Refresh(Loc.Text("高光"), new NumericRange(highMin, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMax, .01, .05, .001, AllowOffGrid: true),
+            p.SplitHighlight, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightDefault, "");
     }
     private void LayoutControls()
     {
