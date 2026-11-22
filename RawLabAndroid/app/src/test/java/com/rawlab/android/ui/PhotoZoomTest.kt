@@ -4,11 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 import com.rawlab.android.editor.canvas.DetailTileKey
 import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.PhotoImageRect
 import com.rawlab.android.editor.canvas.PhotoViewport
 import com.rawlab.android.editor.canvas.PhotoZoom
 import com.rawlab.android.editor.canvas.detailOverlayCovers
+import com.rawlab.android.editor.canvas.detailTileDstRect
 import com.rawlab.android.editor.canvas.detailTileLevel
 import com.rawlab.android.editor.canvas.detailTileSpecs
+import com.rawlab.android.editor.canvas.photoFullImageRect
+import com.rawlab.android.editor.canvas.photoImageRect
 import kotlin.math.hypot
 
 class PhotoZoomTest {
@@ -186,5 +190,46 @@ class PhotoZoomTest {
         val hysteresisScale = (1600f / 6000f) * 0.92f
         assertNull(large.detailRequest(PhotoZoom(hysteresisScale), 1600, active = false))
         assertNotNull(large.detailRequest(PhotoZoom(hysteresisScale), 1600, active = true))
+    }
+
+    @Test fun detailTileDstRectUsesUnclippedFullImageGeometryAndPreservesAspectRatio() {
+        val portrait = PhotoViewport(6000f, 4000f, 1080f, 2000f)
+
+        // Partial zoom: horizontally overflows viewport while vertically letterboxed.
+        val partialZoom = PhotoZoom(0.35f)
+        val partialFull = photoFullImageRect(portrait, partialZoom)
+        assertEquals(PhotoImageRect(-510f, 300f, 1590f, 1700f), partialFull)
+        assertEquals(2100f, partialFull.width, 0.001f)
+        assertEquals(1400f, partialFull.height, 0.001f)
+        val partialClipped = photoImageRect(portrait, partialZoom)
+        assertEquals(PhotoImageRect(0f, 300f, 1080f, 1700f), partialClipped)
+
+        val tile00 = NormalizedRect(0f, 0f, 2048f / 6000f, 2048f / 4000f)
+        val tile10 = NormalizedRect(2048f / 6000f, 0f, 4096f / 6000f, 2048f / 4000f)
+        val dst00 = detailTileDstRect(partialFull, tile00, portrait.width, portrait.height)!!
+        val dst10 = detailTileDstRect(partialFull, tile10, portrait.width, portrait.height)!!
+        assertEquals(-510, dst00.left)
+        assertEquals(300, dst00.top)
+        assertEquals(717, dst00.width)
+        assertEquals(717, dst00.height)
+        assertEquals(dst00.right, dst10.left)
+        assertEquals(717, dst10.width)
+        assertEquals(717, dst10.height)
+
+        // 100% zoom with pan: both axes overflow viewport.
+        val pannedZoom = PhotoZoom(1.0f, 120f, -80f)
+        val pannedFull = photoFullImageRect(portrait, pannedZoom)
+        assertEquals(6000f, pannedFull.width, 0.001f)
+        assertEquals(4000f, pannedFull.height, 0.001f)
+        val centerTile = NormalizedRect(2048f / 6000f, 1024f / 4000f, 3072f / 6000f, 2048f / 4000f)
+        val centerDst = detailTileDstRect(pannedFull, centerTile, portrait.width, portrait.height)!!
+        assertEquals(-292, centerDst.left)
+        assertEquals(-56, centerDst.top)
+        assertEquals(1024, centerDst.width)
+        assertEquals(1024, centerDst.height)
+
+        // Off-screen tile returns null.
+        val offscreenTile = NormalizedRect(0f, 0f, 1024f / 6000f, 1024f / 4000f)
+        assertNull(detailTileDstRect(pannedFull, offscreenTile, portrait.width, portrait.height))
     }
 }

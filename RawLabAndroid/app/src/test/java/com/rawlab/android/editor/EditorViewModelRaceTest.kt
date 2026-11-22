@@ -8,6 +8,7 @@ import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.editor.canvas.DetailTileKey
 import com.rawlab.android.editor.canvas.NormalizedRect
 import com.rawlab.android.editor.canvas.ViewportRoiRequest
+import com.rawlab.android.editor.canvas.detailTileSpecs
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
 import com.rawlab.android.editor.render.Work
@@ -890,6 +891,159 @@ class EditorViewModelRaceTest {
                 assertTrue(seenIncludesNeutral.isNotEmpty() && seenIncludesNeutral.all { it })
             } finally {
                 releaseFirstTile.countDown()
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun detailTileOverscanRespectsCacheBudgetWithoutEvictingVisibleTilesOrThrashing() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("overscan-budget.raw")
+            val detailCalls = AtomicInteger()
+            val model = harness.createViewModel(
+                detailDebounceDelayMs = 0L,
+                detailOverscanRing = 1,
+                renderHandler = { work, _ ->
+                    when (work) {
+                        is Work.Import -> {
+                            val imported = harness.defaultRender(work) as WorkResult.Preview
+                            WorkResult.Preview(imported.request, TestBitmaps.pair(6000, 4000))
+                        }
+                        is Work.Preview -> WorkResult.Preview(work, TestBitmaps.pair(6000, 4000))
+                        is Work.DetailPreview -> {
+                            detailCalls.incrementAndGet()
+                            harness.defaultRender(work)
+                        }
+                        else -> harness.defaultRender(work)
+                    }
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                val visible = NormalizedRect(0.20f, 0.10f, 0.55f, 0.65f)
+                val baseScale = 1600f / 6000f
+                val visibleKeys = detailTileSpecs(visible, 6000, 4000, 1.0f, baseScale, overscanRing = 0)
+                    .mapTo(HashSet()) { it.key }
+                assertTrue("Test scenario must span at least 9 visible tiles", visibleKeys.size >= 9)
+
+                val request = ViewportRoiRequest(
+                    visibleRect = visible,
+                    overscanRect = NormalizedRect(0.165f, 0.045f, 0.585f, 0.705f),
+                    zoomScale = 1.0f,
+                    baseScale = baseScale,
+                    maxOutputLongEdge = 2048,
+                )
+                harness.onMain { model.updateDetailRequest(request) }
+                harness.awaitState(model) { state ->
+                    val cachedKeys = state.detailTiles.mapTo(HashSet()) { it.tileKey }
+                    visibleKeys.all { it in cachedKeys }
+                }
+                Thread.sleep(200)
+                harness.drainMain()
+                val callsAfterNormal = detailCalls.get()
+                assertTrue("Normal mode must stop bounded without thrashing (calls=$callsAfterNormal)", callsAfterNormal in visibleKeys.size..24)
+                Thread.sleep(100)
+                harness.drainMain()
+                assertEquals("Detail calls must remain quiescent after normal mode settles", callsAfterNormal, detailCalls.get())
+                val cachedNormalKeys = model.state.value.detailTiles.mapTo(HashSet()) { it.tileKey }
+                assertTrue("All visible tiles must remain cached", visibleKeys.all { it in cachedNormalKeys })
+
+                // Compare mode doubles tile byte cost; visible tiles must still never evict one another or thrash.
+                harness.onMain { model.setDetailNeedsBefore(true) }
+                harness.awaitState(model) { state ->
+                    visibleKeys.all { k -> state.detailTiles.any { it.tileKey == k && it.neutral != null } }
+                }
+                Thread.sleep(200)
+                harness.drainMain()
+                val compareDelta = detailCalls.get() - callsAfterNormal
+                assertTrue("Compare mode must stop bounded without thrashing (delta=$compareDelta)", compareDelta in visibleKeys.size..16)
+                val callsAfterCompare = detailCalls.get()
+                Thread.sleep(100)
+                harness.drainMain()
+                assertEquals("Detail calls must remain quiescent after compare mode settles", callsAfterCompare, detailCalls.get())
+                assertTrue(
+                    "All visible tiles must keep neutral bitmaps without eviction",
+                    visibleKeys.all { k -> model.state.value.detailTiles.any { it.tileKey == k && it.neutral != null } },
+                )
+            } finally {
+                harness.onMain { model.clearForTest() }
+            }
+        }
+    }
+
+    @Test fun staleDetailCompletionDoesNotClearNewerInFlightDetailTileKey() {
+        EditorViewModelTestHarness().use { harness ->
+            val (_, uri) = harness.createTempPhoto("stale-inflight.raw")
+            val tileAKey = DetailTileKey(0, 0, 0)
+            val tileBKey = DetailTileKey(0, 5, 3)
+            val tileAEntered = CountDownLatch(1)
+            val releaseTileA = CountDownLatch(1)
+            val tileBEntered = CountDownLatch(1)
+            val releaseTileB = CountDownLatch(1)
+            val tileBCount = AtomicInteger()
+            val tileBCancelled = AtomicBoolean(false)
+            val model = harness.createViewModel(
+                detailDebounceDelayMs = 0L,
+                detailOverscanRing = 0,
+                renderHandler = { work, cancellation ->
+                    when (work) {
+                        is Work.Import -> {
+                            val imported = harness.defaultRender(work) as WorkResult.Preview
+                            WorkResult.Preview(imported.request, TestBitmaps.pair(6000, 4000))
+                        }
+                        is Work.Preview -> WorkResult.Preview(work, TestBitmaps.pair(6000, 4000))
+                        is Work.DetailPreview -> {
+                            if (work.tileKey == tileAKey) {
+                                tileAEntered.countDown()
+                                assertTrue(releaseTileA.await(5, TimeUnit.SECONDS))
+                            } else if (work.tileKey == tileBKey) {
+                                tileBCount.incrementAndGet()
+                                tileBEntered.countDown()
+                                assertTrue(releaseTileB.await(5, TimeUnit.SECONDS))
+                                if (cancellation.isCancelled) tileBCancelled.set(true)
+                            }
+                            harness.defaultRender(work)
+                        }
+                        else -> harness.defaultRender(work)
+                    }
+                },
+            )
+            try {
+                harness.onMain { model.importPhoto(uri) }
+                harness.awaitState(model) { it.canExport }
+
+                val baseScale = 1600f / 6000f
+                val regionA = ViewportRoiRequest(
+                    visibleRect = NormalizedRect(0.02f, 0.02f, 0.12f, 0.18f),
+                    overscanRect = NormalizedRect(0.01f, 0.01f, 0.13f, 0.19f),
+                    zoomScale = 1.0f,
+                    baseScale = baseScale,
+                    maxOutputLongEdge = 2048,
+                )
+                harness.onMain { model.updateDetailRequest(regionA) }
+                assertTrue(tileAEntered.await(5, TimeUnit.SECONDS))
+
+                val regionB = regionA.copy(visibleRect = NormalizedRect(0.90f, 0.85f, 0.98f, 0.98f))
+                harness.onMain { model.updateDetailRequest(regionB) }
+
+                releaseTileA.countDown()
+                assertTrue(tileBEntered.await(5, TimeUnit.SECONDS))
+                // Drain main thread so stale tileA completion runs while tileB is still in flight.
+                harness.drainMain()
+
+                val regionBShifted = regionB.copy(visibleRect = NormalizedRect(0.91f, 0.86f, 0.99f, 0.99f))
+                harness.onMain { model.updateDetailRequest(regionBShifted) }
+                harness.drainMain()
+
+                releaseTileB.countDown()
+                harness.awaitState(model) { state -> state.detailTiles.any { it.tileKey == tileBKey } }
+                assertFalse("Stale tile A completion must not cause tile B cancellation", tileBCancelled.get())
+                assertEquals("Sub-tile pan while tile B is in flight must not re-submit tile B", 1, tileBCount.get())
+            } finally {
+                releaseTileA.countDown()
+                releaseTileB.countDown()
                 harness.onMain { model.clearForTest() }
             }
         }
