@@ -111,15 +111,28 @@ int main() {
                    SONY2FUJI_GPU_FALLBACK_DISPLAY_INPUT,
                    "display_input");
 
-    // 2. BasicV3 tone controls.
+    // 2. BasicV3 tone controls run on GPU when a native backend is available.
     resetAllSessionControls(session);
     {
         sony2fuji_tone_controls_config tc{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(tc), 0.4f, 0.f, 0.f};
         assert(sony2fuji_session_set_tone_controls(session, &tc) == SONY2FUJI_STATUS_OK);
-        expectFallback(session, bufferReq,
-                       SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS,
-                       SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS,
-                       "basic_v3_controls");
+        setGpuMode(session, SONY2FUJI_GPU_AUTO);
+        sony2fuji_buffer out{};
+        assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
+        sony2fuji_release_buffer(&out);
+        if (rawlabtest::nativeGpuAvailable()) {
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+            assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_NONE);
+            setGpuMode(session, SONY2FUJI_GPU_FORCE);
+            assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
+            sony2fuji_release_buffer(&out);
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+        } else {
+            assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
+            const auto reason = sony2fuji_session_get_gpu_fallback_reason(session);
+            assert(reason == SONY2FUJI_GPU_FALLBACK_GPU_DISABLED ||
+                   reason == SONY2FUJI_GPU_FALLBACK_NO_ADAPTER);
+        }
     }
 
     // 3. Atmosphere (clarity/dehaze).
@@ -226,19 +239,20 @@ int main() {
     }
 
     // 8. Non-GPU control diagnostics survive an HSL probe without clearing or leaking errors.
+    resetAllSessionControls(session);
     {
-        sony2fuji_tone_controls_config tc{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(tc), 0.3f, 0.f, 0.f};
-        assert(sony2fuji_session_set_tone_controls(session, &tc) == SONY2FUJI_STATUS_OK);
+        sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.3f, 0.f};
+        assert(sony2fuji_session_set_atmosphere(session, &atmo) == SONY2FUJI_STATUS_OK);
         setGpuMode(session, SONY2FUJI_GPU_AUTO);
         sony2fuji_buffer out{};
         assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
         sony2fuji_release_buffer(&out);
-        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS);
+        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_ATMOSPHERE);
 
         sony2fuji_hsl_probe* probe = nullptr;
         assert(sony2fuji_session_create_hsl_probe(session, &bufferReq, 1, 1, &probe) == SONY2FUJI_STATUS_OK);
         sony2fuji_hsl_probe_destroy(probe);
-        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS);
+        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_ATMOSPHERE);
         assert(sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_NONE);
     }
 

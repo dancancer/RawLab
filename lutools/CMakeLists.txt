@@ -1472,7 +1472,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             src/gpu/denoise.cpp src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp
             src/core/chroma_denoise.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
             src/core/color_converter.cpp src/core/photo_color.cpp src/core/photo_effects.cpp
-            src/core/photo_tone_controls.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
+            src/core/photo_tone_controls.cpp src/core/photo_basic_controls_v3.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
         rawlab_add_test(
             NAME gpu_gles_photo_pixel
             TARGET gles_photo_pixel_tests

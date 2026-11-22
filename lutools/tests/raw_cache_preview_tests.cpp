@@ -105,6 +105,10 @@ void largeRawChecks(const std::string& path, std::vector<std::string>& failures)
     auto exportFrame = makeRequest(path.c_str(), true, 0);
     expect(render(session.get(), exportFrame), 0, "large export after preview", failures);
     expect(render(session.get(), exportFrame), 1, "large export after release", failures);
+    auto toneExport = makeRequest(path.c_str(), true, 0);
+    toneExport.highlights = -0.35f;
+    toneExport.shadows = 0.25f;
+    expect(render(session.get(), toneExport), 1, "large export with BasicV3 highlights/shadows", failures);
 
     auto viewport = makeSession(1, false);
     auto viewportPreview = makeRequest(path.c_str(), false, 2000);

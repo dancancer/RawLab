@@ -95,8 +95,8 @@ struct GlesPhotoRenderer::Impl {
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLContext context = EGL_NO_CONTEXT;
     EGLSurface surface = EGL_NO_SURFACE;
-    GLuint program = 0, buffers[3]{}, texture = 0;
-    size_t capacities[3]{}, blockLimit = 0, dispatchLimit = 0;
+    GLuint program = 0, buffers[4]{}, texture = 0;
+    size_t capacities[4]{}, blockLimit = 0, dispatchLimit = 0;
     GLint textureLimit = 0;
     uint64_t cachedRevision = 0;
     uint32_t cachedWidth = 0, cachedHeight = 0;
@@ -107,7 +107,7 @@ struct GlesPhotoRenderer::Impl {
             {
                 Binding binding(display, surface, context);
                 if (binding.bound) {
-                    glDeleteBuffers(3, buffers);
+                    glDeleteBuffers(4, buffers);
                     if (texture) glDeleteTextures(1, &texture);
                     if (program) glDeleteProgram(program);
                 }
@@ -150,7 +150,7 @@ struct GlesPhotoRenderer::Impl {
         blockLimit = static_cast<size_t>(block);
         dispatchLimit = std::min<size_t>(static_cast<size_t>(groups) * kWorkgroup, UINT32_MAX);
         program = makeProgram();
-        glGenBuffers(3, buffers);
+        glGenBuffers(4, buffers);
         checkGL();
         __android_log_print(ANDROID_LOG_INFO, "RawLabGPU", "%s; %s; SSBO=%lld; groups=%d; texture3D=%d",
             glGetString(GL_RENDERER), glGetString(GL_VERSION), static_cast<long long>(block), groups, textureLimit);
@@ -180,11 +180,32 @@ struct GlesPhotoRenderer::Impl {
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), data);
         checkGL();
     }
+    void setBasicToneField(const RenderParams& params) {
+        if (params.basicV3 && params.basicTone.active() && params.basicToneField && !params.basicToneField->empty()) {
+            const auto& f = *params.basicToneField;
+            const size_t n = f.slope.size();
+            std::vector<float> packed(n * 2);
+            for (size_t i = 0; i < n; ++i) {
+                packed[i * 2] = f.slope[i];
+                packed[i * 2 + 1] = f.intercept[i];
+            }
+            const size_t bytes = packed.size() * sizeof(float);
+            allocate(3, bytes);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(bytes), packed.data());
+            checkGL();
+        } else if (capacities[3] == 0) {
+            const float dummy[2]{0.0f, 0.0f};
+            allocate(3, sizeof(dummy));
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(dummy), dummy);
+            checkGL();
+        }
+    }
     void dispatch(int source, int destination, size_t count, uint32_t inputRow, uint32_t outputRow, uint32_t offset, int stage) {
         checkProcessingCancellation();
         if (count > dispatchLimit) throw GpuCapabilityLimitError("Dispatch exceeds device limit");
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffers[source]);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffers[destination]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, buffers[3]);
         glUniform1ui(uniform("sourceStartRow"), inputRow);
         glUniform1ui(uniform("destinationStartRow"), outputRow);
         glUniform1ui(uniform("pixelCount"), static_cast<GLuint>(count));
@@ -324,7 +345,9 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         Binding binding(context.display, context.surface, context.context);
         if (!binding.bound) throw EglFailure(binding.error);
         glUseProgram(context.program);
-        context.matrixUniform("toSrgb", ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
+        context.matrixUniform("toSrgb", params.hasCustomToSrgb
+            ? params.customToSrgb
+            : ColorConverter::getConversionMatrix(inputSpace, ColorSpace::sRGB));
         context.matrixUniform("toFGamut", photoLUTInputMatrix(params.lut ? params.lut->inputTransfer() : LUTTransfer::FLog2));
         const float exposure = std::exp2(params.exposureEV) * params.brightness;
         glUniform3f(context.uniform("exposureWB"),
@@ -346,6 +369,17 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         glUniform4fv(context.uniform("hslHue[0]"), 2, params.hsl.hue.data());
         glUniform4fv(context.uniform("hslSaturation[0]"), 2, params.hsl.saturation.data());
         glUniform4fv(context.uniform("hslLightness[0]"), 2, params.hsl.lightness.data());
+        const bool bt = params.basicV3 && params.basicTone.active() &&
+            params.basicToneField && !params.basicToneField->empty();
+        glUniform1i(context.uniform("basicV3"), params.basicV3 ? 1 : 0);
+        glUniform1i(context.uniform("basicToneActive"), bt ? 1 : 0);
+        glUniform2ui(context.uniform("basicFieldSize"),
+            bt ? static_cast<GLuint>(params.basicToneField->width) : 1u,
+            bt ? static_cast<GLuint>(params.basicToneField->height) : 1u);
+        glUniform4f(context.uniform("basicTone"),
+            bt ? std::clamp(params.basicTone.highlights, -1.0f, 1.0f) : 0.0f,
+            bt ? std::clamp(params.basicTone.shadows, -1.0f, 1.0f) : 0.0f, 0.0f, 0.0f);
+        context.setBasicToneField(params);
         context.setLut(params.lutStrength > 0 ? params.lut : nullptr);
         if (params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
             params.sharpening > 0 || params.preserveSourceResolution) {

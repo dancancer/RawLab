@@ -14,10 +14,56 @@ float luminance(const RGB& p) {
     return p.g+.2126f*(p.r-p.g)+.0722f*(p.b-p.g);
 }
 float linear(float value) {
-    return value<=.04045f ? value/12.92f : std::pow((value+.055f)/1.055f,2.4f);
+    if (value <= .04045f) return value / 12.92f;
+    if (value > 1.f) return std::pow((value + .055f) / 1.055f, 2.4f);
+    static const auto& table = []() -> const std::array<float, 4097>& {
+        static std::array<float, 4097> t{};
+        constexpr double kMin = 0.04045;
+        constexpr double kSpan = 1.0 - kMin;
+        for (size_t i = 0; i < t.size(); ++i) {
+            const double x = kMin + (static_cast<double>(i) / 4096.0) * kSpan;
+            t[i] = static_cast<float>(std::pow((x + 0.055) / 1.055, 2.4));
+        }
+        return t;
+    }();
+    constexpr float kMin = .04045f;
+    constexpr float kScale = 4096.f / (1.f - kMin);
+    const float s = (value - kMin) * kScale;
+    const size_t idx = std::min<size_t>(4095, static_cast<size_t>(s));
+    const float frac = s - static_cast<float>(idx);
+    return table[idx] + (table[idx + 1] - table[idx]) * frac;
 }
 float encoded(float value) {
-    return value<=.0031308f ? 12.92f*value : 1.055f*std::pow(value,1/2.4f)-.055f;
+    if (value <= .0031308f) return 12.92f * value;
+    if (value > 1.f) return 1.055f * std::pow(value, 1.f / 2.4f) - .055f;
+    static const auto& tables = []() {
+        struct Tables {
+            std::array<float, 4097> low{};
+            std::array<float, 4097> high{};
+        };
+        static Tables t;
+        constexpr double kSplit = 0.05;
+        constexpr double kMin = 0.0031308;
+        for (size_t i = 0; i <= 4096; ++i) {
+            const double xLo = kMin + (static_cast<double>(i) / 4096.0) * (kSplit - kMin);
+            t.low[i] = static_cast<float>(1.055 * std::pow(xLo, 1.0 / 2.4) - 0.055);
+            const double xHi = kSplit + (static_cast<double>(i) / 4096.0) * (1.0 - kSplit);
+            t.high[i] = static_cast<float>(1.055 * std::pow(xHi, 1.0 / 2.4) - 0.055);
+        }
+        return &t;
+    }();
+    if (value <= .05f) {
+        constexpr float kScale = 4096.f / (.05f - .0031308f);
+        const float s = (value - .0031308f) * kScale;
+        const size_t idx = std::min<size_t>(4095, static_cast<size_t>(s));
+        const float frac = s - static_cast<float>(idx);
+        return tables->low[idx] + (tables->low[idx + 1] - tables->low[idx]) * frac;
+    }
+    constexpr float kScale = 4096.f / (1.f - .05f);
+    const float s = (value - .05f) * kScale;
+    const size_t idx = std::min<size_t>(4095, static_cast<size_t>(s));
+    const float frac = s - static_cast<float>(idx);
+    return tables->high[idx] + (tables->high[idx + 1] - tables->high[idx]) * frac;
 }
 RGB applyCoefficients(const RGB& pixel, const std::array<RGB,3>& coefficients) {
     const RGB p(linear(pixel.r),linear(pixel.g),linear(pixel.b));
@@ -75,6 +121,9 @@ std::array<float,3> colorGradingWeights(float y) {
     const float highlights=smooth((y-.45f)/.35f);
     const float total=shadows+middle+highlights;
     return {shadows/total,middle/total,highlights/total};
+}
+RGB applyColorGradingCoefficients(const RGB& pixel, const std::array<RGB,3>& coefficients) {
+    return applyCoefficients(pixel, coefficients);
 }
 RGB applyColorGrading(const RGB& pixel, const ColorGradingOptions& options) {
     if (!options.active()) return pixel;

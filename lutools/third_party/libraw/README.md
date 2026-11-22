@@ -8,12 +8,14 @@ pinned LibRaw 0.22.2 `src/demosaic/misc_demosaic.cpp`. The companion
 lookup-table construction. It is a local optimization, not an upstream change
 or a different demosaic algorithm.
 
-For Bayer filters with OpenMP and more than one available worker, each batch reads an immutable
+For Bayer filters with more than one available worker (using OpenMP where enabled,
+Apple GCD `dispatch_apply_f` on Apple non-OpenMP targets such as iOS, or a bounded
+`std::thread` pool on other non-OpenMP targets such as Android), each batch reads an immutable
 snapshot of at most 256 output rows plus a two-row halo on each side. The last
 four source rows survive into the next batch before any overwritten image
 data can be read. Additional storage is bounded by `260 * width * 8` bytes,
-not a second full image. The original scalar path remains available without
-OpenMP, with one worker, or for non-Bayer filters. Progress and cancellation run on the calling thread
+not a second full image. The original scalar path remains available with one
+worker or for non-Bayer filters. Progress and cancellation run on the calling thread
 at the original 256-row boundaries, outside parallel regions.
 
 `vng_parallel_tests.cpp` compares every active channel against fingerprints

@@ -1,4 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "native_gpu_test_support.h"
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -72,14 +75,30 @@ static void basicControlsBackendChecks(const std::string& path) {
         const auto expected = render(pointer, request);
         gpu.mode = SONY2FUJI_GPU_AUTO;
         require(sony2fuji_session_set_gpu_config(pointer, &gpu) == SONY2FUJI_STATUS_OK, "backend auto");
-        require(render(pointer, request) == expected &&
-            sony2fuji_session_get_last_backend(pointer) == SONY2FUJI_BACKEND_CPU,
-            "each active v3 control routes Auto to identical CPU output");
-        gpu.mode = SONY2FUJI_GPU_FORCE;
-        require(sony2fuji_session_set_gpu_config(pointer, &gpu) == SONY2FUJI_STATUS_OK, "backend force");
-        sony2fuji_buffer output{};
-        require(sony2fuji_process(pointer, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED,
-            "each active v3 control reports Force unsupported");
+        const auto autoPixels = render(pointer, request);
+        const bool gpuSupportedControl = control < 6;
+        if (gpuSupportedControl && rawlabtest::nativeGpuAvailable()) {
+            require(sony2fuji_session_get_last_backend(pointer) == rawlabtest::nativeBackend,
+                "GPU-supported BasicV3 control routes Auto to native GPU");
+            require(autoPixels.size() == expected.size(), "BasicV3 GPU output size matches CPU");
+            int maxDiff = 0;
+            for (size_t i = 0; i < expected.size(); ++i) {
+                maxDiff = std::max(maxDiff, std::abs(int(autoPixels[i]) - int(expected[i])));
+            }
+            require(maxDiff <= 2, "BasicV3 GPU output matches CPU reference within 2 DN");
+            gpu.mode = SONY2FUJI_GPU_FORCE;
+            require(sony2fuji_session_set_gpu_config(pointer, &gpu) == SONY2FUJI_STATUS_OK, "backend force");
+            require(render(pointer, request).size() == expected.size(), "BasicV3 control succeeds under GPU Force");
+        } else {
+            require(autoPixels == expected &&
+                sony2fuji_session_get_last_backend(pointer) == SONY2FUJI_BACKEND_CPU,
+                "CPU fallback / Atmosphere control routes Auto to identical CPU output");
+            gpu.mode = SONY2FUJI_GPU_FORCE;
+            require(sony2fuji_session_set_gpu_config(pointer, &gpu) == SONY2FUJI_STATUS_OK, "backend force");
+            sony2fuji_buffer output{};
+            require(sony2fuji_process(pointer, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED,
+                "CPU-only or adapterless BasicV3 control reports Force unsupported");
+        }
     }
 }
 

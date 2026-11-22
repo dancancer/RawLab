@@ -71,9 +71,7 @@ std::shared_ptr<const DcpLook> DcpLook::loadCached(const std::string& path) {
         cache.evict(path);
         return nullptr;
     }
-    std::string fingerprint = std::to_string(stamp->size);
-    for (const auto& fields : {stamp->modified, stamp->changed, stamp->identity})
-        for (const auto value : fields) fingerprint += ":" + std::to_string(value);
+    std::string fingerprint = resourceFileStampKey(*stamp);
     if (auto cached = cache.find(path, fingerprint)) return *cached;
     auto result = std::shared_ptr<DcpLook>(new DcpLook);
     if (!result->load(path, stamp->size) || !(resourceFileStamp(file) == stamp)) {

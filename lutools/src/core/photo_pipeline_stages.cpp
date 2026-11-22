@@ -1,8 +1,12 @@
 #include "core/photo_pipeline_stages.h"
 
+#include "core/lut_compatibility.h"
+#include "core/lut_interpolation.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_color.h"
+#include "core/photo_color_grading.h"
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
 #include "core/photo_rendering.h"
@@ -272,51 +276,86 @@ void applyToneAdjustments(
     const std::array<ToneCurve, 3>& channels,
     bool basicV3
 ) {
+    applyPostLookStages(image, params, {}, {}, {}, channels, basicV3, false);
+}
+
+void applyPostLookStages(
+    ImageData& image,
+    const RenderParams& params,
+    const ToneControlsOptions& toneControls,
+    const HslOptions& hsl,
+    const ColorGradingOptions& colorGrading,
+    const std::array<ToneCurve, 3>& channels,
+    bool basicV3,
+    bool applyHslAndGrading
+) {
     const auto& customCurve = params.customCurve;
     const bool channelsActive = std::any_of(channels.begin(), channels.end(),
         [](const auto& curve) { return curve.active(); });
-    if (!params.needsToneAdjustments() && !customCurve.active() && !channelsActive) {
+    const bool toneActive = params.needsToneAdjustments() || customCurve.active() || channelsActive;
+    const BasicBlackWhiteV3Prepared bwV3(basicV3 ? toneControls : ToneControlsOptions{});
+    const bool bwLegacyActive = !basicV3 && (toneControls.blackPoint != 0.0f || toneControls.whitePoint != 0.0f);
+    const bool vibranceActive = toneControls.vibrance != 0.0f;
+    const bool hslActive = applyHslAndGrading && hsl.active();
+    const bool gradingActive = applyHslAndGrading && colorGrading.active();
+    if (!bwV3.active && !bwLegacyActive && !toneActive && !vibranceActive && !hslActive && !gradingActive) {
         return;
     }
 
-    float exposureScale = 1.0f;
-    float contrast = clampFloat(params.contrast, 0.0f, 2.0f);
-    float saturation = clampFloat(params.saturation, 0.0f, 2.0f);
-    float highlights = clampFloat(params.highlights, -1.0f, 1.0f);
-    float shadows = clampFloat(params.shadows, -1.0f, 1.0f);
-    bool useCurve = params.toneCurve != 0.0f;
-    ToneCurvePoints curve = buildToneCurve(params.toneCurve);
-    RGB wb(1, 1, 1);
+    const float contrast = clampFloat(params.contrast, 0.0f, 2.0f);
+    const float saturation = clampFloat(params.saturation, 0.0f, 2.0f);
+    const float highlights = clampFloat(params.highlights, -1.0f, 1.0f);
+    const float shadows = clampFloat(params.shadows, -1.0f, 1.0f);
+    const bool useCurve = params.toneCurve != 0.0f;
+    const ToneCurvePoints curve = buildToneCurve(params.toneCurve);
+    const BasicContrastV3Lut contrastLut((toneActive && basicV3) ? (contrast - 1.0f) : 0.0f);
+    const auto gradingCoeffs = gradingActive ? colorGradingCoefficients(colorGrading) : std::array<RGB, 3>{};
 
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t index = first; index < last; ++index) {
-            auto& pixel = image.pixels[index];
-            applyExposureAndWhiteBalance(pixel, exposureScale, wb);
-            if (highlights != 0.0f || shadows != 0.0f) {
-                pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
+            RGB pixel = image.pixels[index];
+            if (basicV3) {
+                if (bwV3.active) pixel = bwV3.apply(pixel);
+            } else if (bwLegacyActive) {
+                pixel = applyBlackWhite(pixel, toneControls);
             }
-            if (customCurve.active()) {
-                pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
-                pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
-                pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
-            } else if (useCurve) {
-                pixel.r = applyToneCurve(pixel.r, curve);
-                pixel.g = applyToneCurve(pixel.g, curve);
-                pixel.b = applyToneCurve(pixel.b, curve);
+            if (toneActive) {
+                if (highlights != 0.0f || shadows != 0.0f) {
+                    pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
+                }
+                if (customCurve.active()) {
+                    pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
+                    pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
+                    pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
+                } else if (useCurve) {
+                    pixel.r = applyToneCurve(pixel.r, curve);
+                    pixel.g = applyToneCurve(pixel.g, curve);
+                    pixel.b = applyToneCurve(pixel.b, curve);
+                }
+                if (channelsActive) {
+                    pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
+                    pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
+                    pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+                }
+                if (basicV3 && contrastLut.active) {
+                    pixel.r = contrastLut.apply(pixel.r);
+                    pixel.g = contrastLut.apply(pixel.g);
+                    pixel.b = contrastLut.apply(pixel.b);
+                }
+                if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
+                    applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
+                }
             }
-            if (channelsActive) {
-                pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
-                pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
-                pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+            if (vibranceActive) {
+                pixel = basicV3 ? basicVibranceV3(pixel, toneControls.vibrance) : applyVibrance(pixel, toneControls);
             }
-            if (basicV3 && contrast != 1.0f) {
-                pixel.r = basicContrastV3(pixel.r, contrast - 1);
-                pixel.g = basicContrastV3(pixel.g, contrast - 1);
-                pixel.b = basicContrastV3(pixel.b, contrast - 1);
+            if (hslActive) {
+                pixel = applyHsl(pixel, hsl);
             }
-            if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
-                applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
+            if (gradingActive) {
+                pixel = applyColorGradingCoefficients(pixel, gradingCoeffs);
             }
+            image.pixels[index] = pixel;
         }
     });
 }
@@ -381,6 +420,32 @@ RenderStatus applyPhotoLook(
     }
     const bool srgbLookInput = lut && !dcp && !contract &&
         lut->inputTransfer() == LUTTransfer::SRGB;
+    if (srgbLookInput && !gpuLookTransaction && lut->isValid() && !lut->requiresCPU() &&
+        lut->outputTransfer() == LUTTransfer::Display) {
+        checkProcessingCancellation();
+        const auto low = lut->domainMin();
+        const auto high = lut->domainMax();
+        const float spanR = high.r - low.r;
+        const float spanG = high.g - low.g;
+        const float spanB = high.b - low.b;
+        const bool unitDomain = low.r == 0.0f && low.g == 0.0f && low.b == 0.0f &&
+            high.r == 1.0f && high.g == 1.0f && high.b == 1.0f;
+        const int size = lut->getSize();
+        const RGB* table = lutTableData(*lut);
+        const bool exactOne = strength == 1.0f;
+        parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+            for (size_t i = first; i < last; ++i) {
+                const RGB& src = image.pixels[i];
+                const RGB enc(encode(src.r), encode(src.g), encode(src.b));
+                const float r = std::clamp(unitDomain ? enc.r : (enc.r - low.r) / spanR, 0.0f, 1.0f);
+                const float g = std::clamp(unitDomain ? enc.g : (enc.g - low.g) / spanG, 0.0f, 1.0f);
+                const float b = std::clamp(unitDomain ? enc.b : (enc.b - low.b) / spanB, 0.0f, 1.0f);
+                const RGB look = detail::interpolateLUT(table, size, r, g, b);
+                image.pixels[i] = exactOne ? look : lerpRGB(enc, look, strength);
+            }
+        });
+        return RenderStatus::Ok;
+    }
     auto render = [&](ImageData& working) {
         checkProcessingCancellation();
         auto encodeInPlace = [&](std::vector<RGB>& pixels) {

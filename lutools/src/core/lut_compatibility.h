@@ -5,6 +5,8 @@
 
 namespace sony2fuji {
 class LUT3D;
+struct RGB;
+const RGB* lutTableData(const LUT3D& lut) noexcept;
 LUTContractState parseLUTColorContract(const std::string& text, LUTColorContract& out);
 std::string inspectLUTCompatibility(const std::string& path);
 std::string prepareLUTCompatibility(const std::string& path, const std::string& request);

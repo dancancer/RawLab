@@ -18,6 +18,7 @@ struct ColorGradingOptions {
 
 std::array<RGB,3> colorGradingCoefficients(const ColorGradingOptions& options);
 std::array<float,3> colorGradingWeights(float linearLuminance);
+RGB applyColorGradingCoefficients(const RGB& pixel, const std::array<RGB,3>& coefficients);
 RGB applyColorGrading(const RGB& pixel, const ColorGradingOptions& options);
 void applyColorGrading(ImageData& image, const ColorGradingOptions& options);
 
