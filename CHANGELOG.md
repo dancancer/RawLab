@@ -3,6 +3,25 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.11.2]
+
+### Fixed
+
+- **Android**: Pinch-to-zoom ROI tiles no longer stretch or flicker when zooming
+  or panning past viewport bounds (`photoFullImageRect` / `detailTileDstRect`),
+  visible tiles are retained ahead of overscan within the updated tile cache
+  budget (`64 MiB` / `24` tiles), stale tile callbacks are ignored, and JNI
+  `ViewportRoiScope` explicitly disables the session ROI on exit so full-preview
+  renders stay uncropped.
+- **macOS**: Left-sidebar photo tree thumbnails no longer self-invalidate into
+  a livelock on `atime` (`NOTE_ATTRIB`) updates during decoding, unrelated
+  sibling writes or slow edited renders no longer stall unedited thumbnails, and
+  cancelled tile tasks cancel queued decode operations when no waiters remain.
+
+This is an Android and macOS hotfix; Windows and iOS packages are not
+republished. Version `0.11.2`, build `22`. See the
+[release notes](docs/releases/v0.11/v0.11.2.md).
+
 ## [0.11.1]
 
 ### Fixed

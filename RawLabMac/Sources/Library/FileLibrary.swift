@@ -205,6 +205,21 @@ final class PhotoThumbnails: @unchecked Sendable {
         let generation: UInt64
     }
 
+    private final class WaiterState: @unchecked Sendable {
+        enum Phase {
+            case pending
+            case waiting(InFlightKey, CheckedContinuation<NSImage?, Never>)
+            case finished
+        }
+        let id = UUID()
+        var phase: Phase = .pending
+    }
+
+    private struct InFlightEntry {
+        let operation: BlockOperation
+        var waiters: [UUID: WaiterState]
+    }
+
     struct FileIdentity: Hashable, Sendable {
         let fileSize: UInt64
         let modified: Date
@@ -245,7 +260,7 @@ final class PhotoThumbnails: @unchecked Sendable {
     private var editGenerations: [String: UInt64] = [:]
     private var trackedEditStates: [String: TrackedEditState] = [:]
     private var trackedKeyCount = 0
-    private var inFlight: [InFlightKey: [CheckedContinuation<NSImage?, Never>]] = [:]
+    private var inFlight: [InFlightKey: InFlightEntry] = [:]
     private var _decodeCount = 0
     private var _editedInvalidationCount = 0
     private var persistenceCancellables: Set<AnyCancellable> = []
@@ -596,40 +611,108 @@ final class PhotoThumbnails: @unchecked Sendable {
     }
 
     func image(for url: URL, maxPixelSize: Int = PhotoThumbnails.defaultMaxPixelSize) async -> NSImage? {
+        if Task.isCancelled { return nil }
         guard let key = PhotoThumbnailCacheKey(uneditedFileAt: url, maxPixelSize: maxPixelSize) else { return nil }
-        return await withCheckedContinuation { continuation in
-            lock.lock()
-            if let cached = cache.object(forKey: EntryKey(key)) {
-                lock.unlock()
-                continuation.resume(returning: cached)
-                return
-            }
-            let fileGen = fileGenerations[key.path, default: 0]
-            let flightKey = InFlightKey(key: key, generation: fileGen)
-            if inFlight[flightKey] != nil {
-                inFlight[flightKey]!.append(continuation)
-                lock.unlock()
-                return
-            }
-            inFlight[flightKey] = [continuation]
-            lock.unlock()
-
-            queue.addOperation { [self] in
-                let result = decodeThumbnail(url, maxPixelSize)
-                let cost = result.map(Self.imageCost) ?? 0
+        let waiter = WaiterState()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
                 lock.lock()
-                _decodeCount += 1
-                // 编辑通知或首次渲染可能先于目录监听追踪新身份，只丢弃旧身份的解码。
-                let trackedIdentity = trackedEditStates[key.path]?.identity
-                let identityMatches = trackedIdentity == nil || trackedIdentity == key.fileIdentity
-                let delivered = fileGenerations[key.path, default: 0] == fileGen && identityMatches ? result : nil
-                if let delivered {
-                    insertLocked(delivered, for: key, cost: cost)
+                if case .finished = waiter.phase {
+                    lock.unlock()
+                    continuation.resume(returning: nil)
+                    return
                 }
-                let waiters = inFlight.removeValue(forKey: flightKey) ?? []
+                if Task.isCancelled {
+                    waiter.phase = .finished
+                    lock.unlock()
+                    continuation.resume(returning: nil)
+                    return
+                }
+                if let cached = cache.object(forKey: EntryKey(key)) {
+                    waiter.phase = .finished
+                    lock.unlock()
+                    continuation.resume(returning: cached)
+                    return
+                }
+                let fileGen = fileGenerations[key.path, default: 0]
+                let flightKey = InFlightKey(key: key, generation: fileGen)
+                waiter.phase = .waiting(flightKey, continuation)
+                if var entry = inFlight[flightKey], !entry.operation.isCancelled {
+                    entry.waiters[waiter.id] = waiter
+                    inFlight[flightKey] = entry
+                    lock.unlock()
+                    return
+                }
+                let operation = BlockOperation()
+                operation.addExecutionBlock { [weak operation, self] in
+                    guard let operation, !operation.isCancelled else {
+                        var cancelledWaiters: [CheckedContinuation<NSImage?, Never>] = []
+                        lock.lock()
+                        if let currentOp = operation, let entry = inFlight[flightKey], entry.operation === currentOp {
+                            inFlight.removeValue(forKey: flightKey)
+                            for w in entry.waiters.values {
+                                if case .waiting(_, let cont) = w.phase {
+                                    w.phase = .finished
+                                    cancelledWaiters.append(cont)
+                                }
+                            }
+                        }
+                        lock.unlock()
+                        for cont in cancelledWaiters { cont.resume(returning: nil) }
+                        return
+                    }
+                    let result = decodeThumbnail(url, maxPixelSize)
+                    let cost = result.map(Self.imageCost) ?? 0
+                    var waitersToResume: [CheckedContinuation<NSImage?, Never>] = []
+                    var delivered: NSImage?
+                    lock.lock()
+                    _decodeCount += 1
+                    if let entry = inFlight[flightKey], entry.operation === operation {
+                        inFlight.removeValue(forKey: flightKey)
+                        // 编辑通知或首次渲染可能先于目录监听追踪新身份，只丢弃旧身份的解码。
+                        let trackedIdentity = trackedEditStates[key.path]?.identity
+                        let identityMatches = trackedIdentity == nil || trackedIdentity == key.fileIdentity
+                        delivered = fileGenerations[key.path, default: 0] == fileGen && identityMatches ? result : nil
+                        if let delivered {
+                            insertLocked(delivered, for: key, cost: cost)
+                        }
+                        for w in entry.waiters.values {
+                            if case .waiting(_, let cont) = w.phase {
+                                w.phase = .finished
+                                waitersToResume.append(cont)
+                            }
+                        }
+                    }
+                    lock.unlock()
+                    for cont in waitersToResume { cont.resume(returning: delivered) }
+                }
+                inFlight[flightKey] = InFlightEntry(operation: operation, waiters: [waiter.id: waiter])
                 lock.unlock()
-                for waiter in waiters { waiter.resume(returning: delivered) }
+                queue.addOperation(operation)
             }
+        } onCancel: { [self] in
+            var cancelledContinuation: CheckedContinuation<NSImage?, Never>?
+            lock.lock()
+            switch waiter.phase {
+            case .pending:
+                waiter.phase = .finished
+            case .finished:
+                break
+            case .waiting(let flightKey, let continuation):
+                waiter.phase = .finished
+                cancelledContinuation = continuation
+                if var entry = inFlight[flightKey] {
+                    entry.waiters.removeValue(forKey: waiter.id)
+                    if entry.waiters.isEmpty {
+                        inFlight.removeValue(forKey: flightKey)
+                        entry.operation.cancel()
+                    } else {
+                        inFlight[flightKey] = entry
+                    }
+                }
+            }
+            lock.unlock()
+            cancelledContinuation?.resume(returning: nil)
         }
     }
 }

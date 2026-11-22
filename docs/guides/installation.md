@@ -7,13 +7,14 @@ Get current packages and checksums from the [latest release](https://github.com/
 | Platform | Package | Requirements |
 | --- | --- | --- |
 | Windows | [0.11.0 current-user Setup](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab.Desktop-stable-Setup.exe), [manual ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Windows-0.11.0-x64.zip) | Windows 10/11 x64 |
-| macOS Apple Silicon | [0.11.0 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Mac-0.11.0-arm64.zip) | macOS 14+; HDR editing requires macOS 15+ |
-| macOS Intel | [0.11.0 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Mac-0.11.0-x86_64.zip) | macOS 14+; HDR editing requires macOS 15+; no AI denoising |
-| Android | [0.11.0 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Android-0.11.0.apk) | Android 8+, ARM64 or x86_64 |
+| macOS Apple Silicon | [0.11.2 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.2/RawLab-Mac-0.11.2-arm64.zip) | macOS 14+; HDR editing requires macOS 15+ |
+| macOS Intel | [0.11.2 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.11.2/RawLab-Mac-0.11.2-x86_64.zip) | macOS 14+; HDR editing requires macOS 15+; no AI denoising |
+| Android | [0.11.2 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.11.2/RawLab-Android-0.11.2.apk) | Android 8+, ARM64 or x86_64 |
 | iOS | [0.11.0 unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-iOS-0.11.0-unsigned.ipa) | iOS 18+; valid user signing/provisioning required |
 
-[0.11.0 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt)
-cover this release's assets. No directly installable iOS package is published.
+[0.11.2 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.11.2/SHA256SUMS.txt)
+cover the republished macOS and Android hotfix assets; Windows and iOS remain on
+[0.11.0 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt). No directly installable iOS package is published.
 
 ## Windows
 

@@ -166,11 +166,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.11.1 APK / Download Android v0.11.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.1/RawLab-Android-0.11.1.apk) · [修复说明 / Hotfix notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.1/SHA256SUMS.txt)
+[下载 Android v0.11.2 APK / Download Android v0.11.2 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.2/RawLab-Android-0.11.2.apk) · [修复说明 / Hotfix notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.2) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.2/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.11.1`、`versionCode=21`，沿用 0.11.0 正式签名，可直接覆盖升级。此修复版解决 R8 发布包启动时缺少 RUM JNI 类导致的闪退；0.11.0 的 Android 功能保持不变，详见[修复说明](../docs/releases/v0.11/v0.11.1.md)和[完整功能说明](../docs/releases/v0.11/v0.11.0.md)。macOS、Windows 和 iOS 包不在此次热修复中重发，桌面更新元数据继续保留。
+发布 APK 为 `versionName=0.11.2`、`versionCode=22`，沿用 0.11.0 正式签名，可直接覆盖升级。此修复版解决双指放大时 ROI 瓦片比例失真、缓存逐出闪烁与原生视口 ROI 残留问题；0.11.0 的 Android 功能保持不变，详见[修复说明](../docs/releases/v0.11/v0.11.2.md)和[完整功能说明](../docs/releases/v0.11/v0.11.0.md)。本次热修复仅重新发布 Android 与 macOS 安装包；Windows 和 iOS 包保持 0.11.0 不重发，`windows-stable.json` 继续保留。
 
-The release APK uses version 0.11.1/code 21 and the existing release identity. It fixes the 0.11.0 Android cold-start crash and preserves the 0.11.0 feature set and usage-statistics defaults. See the [hotfix notes](../docs/releases/v0.11/v0.11.1.md) and package provenance for actual build, emulator and physical-device coverage.
+The release APK uses version 0.11.2/code 22 and the existing release identity. It fixes the pinch-to-zoom viewport ROI tile distortion, cache eviction flicker, and sticky native ROI bug while preserving the 0.11.0 feature set and usage-statistics defaults. See the [hotfix notes](../docs/releases/v0.11/v0.11.2.md) and package provenance for actual build, emulator and physical-device coverage. This hotfix republishes Android and macOS packages; Windows and iOS packages remain at 0.11.0 with `windows-stable.json` carried forward.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。
