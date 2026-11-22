@@ -121,6 +121,16 @@
         <MenuItem x:Name="BeforeViewMenu" Header="{DynamicResource '查看调整前'}" IsCheckable="True" Click="BeforeViewClicked"/>
         <MenuItem x:Name="MenuPhotoMargin" Header="{DynamicResource '照片四周留白'}" IsCheckable="True" IsChecked="True" Click="PhotoMarginClicked"/>
         <MenuItem Header="{DynamicResource '显示裁切提示'}" Click="ClippingClicked"/>
+        <Separator/>
+        <MenuItem x:Name="InspectionMonitorMenu" Header="{DynamicResource '取样监视'}" IsCheckable="True" Click="InspectionMonitorClicked"/>
+        <MenuItem x:Name="InspectionOverlayMenu" Header="{DynamicResource '观察层'}">
+          <MenuItem x:Name="MenuOverlayNone" Header="{DynamicResource '关闭观察层'}" IsCheckable="True" IsChecked="True" Click="InspectionOverlayItemClicked" Tag="None"/>
+          <MenuItem x:Name="MenuOverlaySketch" Header="{DynamicResource '素描明度'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="SketchLuminance"/>
+          <MenuItem x:Name="MenuOverlayWarmCool" Header="{DynamicResource '冷暖反差黑白'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="WarmCoolBW"/>
+          <MenuItem x:Name="MenuOverlayHeatmap" Header="{DynamicResource '过饱和熔断热力图'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="OversaturationHeatmap"/>
+          <MenuItem x:Name="MenuOverlaySkin" Header="{DynamicResource '肤色色相放大'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="SkinHueAmplification"/>
+          <MenuItem x:Name="MenuOverlayGray50" Header="{DynamicResource '50% 中性灰'}" IsCheckable="True" InputGestureText="G" Click="InspectionOverlayItemClicked" Tag="NeutralGray50"/>
+        </MenuItem>
         <Separator/><MenuItem Header="{DynamicResource '对比方式'}"><MenuItem x:Name="MenuCompareOff" Header="{DynamicResource '关闭对比'}" IsCheckable="True" Click="CompareOffClicked"/><MenuItem x:Name="MenuCompareSide" Header="{DynamicResource '并排'}" IsCheckable="True" Click="CompareSideClicked"/><MenuItem x:Name="MenuCompareSwipe" Header="{DynamicResource '分割线'}" IsCheckable="True" Click="CompareSwipeClicked"/></MenuItem>
         <MenuItem Header="{DynamicResource '缩放'}"><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><MenuItem Header="{DynamicResource '放大'}" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" Click="ZoomOutClicked"/></MenuItem>
       </MenuItem>
@@ -151,6 +161,24 @@
           <Button x:Name="CompareModeButton" Click="CompareModeClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '对比方式'}" AutomationProperties.Name="{DynamicResource '对比方式'}"><local:EditorIcon Kind="ChevronDown" Width="14" Height="14"/></Button>
           <Button x:Name="ZoomButton" Click="ZoomClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '缩放与显示'}" AutomationProperties.Name="{DynamicResource '缩放与显示'}"><local:EditorIcon Kind="Zoom" Width="22" Height="22"/><Button.ContextMenu><ContextMenu><MenuItem x:Name="ZoomPhotoMargin" Header="{DynamicResource '照片四周留白'}" IsCheckable="True" IsChecked="True" Click="PhotoMarginClicked"/><Separator/><MenuItem Header="{DynamicResource '适合窗口'}" InputGestureText="F" Click="FitClicked"/><MenuItem Header="{DynamicResource '实际像素 · 100%'}" InputGestureText="1" Click="ActualClicked"/><Separator/><MenuItem Header="{DynamicResource '放大'}" InputGestureText="+" Click="ZoomInClicked"/><MenuItem Header="{DynamicResource '缩小'}" InputGestureText="−" Click="ZoomOutClicked"/></ContextMenu></Button.ContextMenu></Button>
           <Button x:Name="ClippingButton" Click="ClippingClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '显示输出高光与黑位裁切'}" AutomationProperties.Name="{DynamicResource '显示裁切提示'}"><local:EditorIcon Kind="Clipping" Width="22" Height="22"/></Button>
+          <Button x:Name="InspectionOverlayButton" Click="InspectionMenuButtonClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '观察层'}" AutomationProperties.Name="{DynamicResource '观察层'}" AutomationProperties.AutomationId="inspection.menu">
+            <local:EditorIcon Kind="Inspection" Width="22" Height="22"/>
+            <Button.ContextMenu>
+              <ContextMenu>
+                <MenuItem x:Name="ToolbarInspectionMonitor" Header="{DynamicResource '取样监视'}" IsCheckable="True" Click="InspectionMonitorClicked"/>
+                <MenuItem x:Name="ToolbarInspectionPin" Header="{DynamicResource '添加锚点'}" Click="InspectionPinNowClicked"/>
+                <MenuItem x:Name="ToolbarInspectionClear" Header="{DynamicResource '清除锚点'}" Click="InspectionClearAnchorsClicked"/>
+                <Separator/>
+                <MenuItem x:Name="ToolbarOverlayNone" Header="{DynamicResource '关闭观察层'}" IsCheckable="True" IsChecked="True" Click="InspectionOverlayItemClicked" Tag="None"/>
+                <MenuItem x:Name="ToolbarOverlaySketch" Header="{DynamicResource '素描明度'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="SketchLuminance"/>
+                <MenuItem x:Name="ToolbarOverlayWarmCool" Header="{DynamicResource '冷暖反差黑白'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="WarmCoolBW"/>
+                <MenuItem x:Name="ToolbarOverlayHeatmap" Header="{DynamicResource '过饱和熔断热力图'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="OversaturationHeatmap"/>
+                <MenuItem x:Name="ToolbarOverlaySkin" Header="{DynamicResource '肤色色相放大'}" IsCheckable="True" Click="InspectionOverlayItemClicked" Tag="SkinHueAmplification"/>
+                <MenuItem x:Name="ToolbarOverlayGray50" Header="{DynamicResource '50% 中性灰'}" IsCheckable="True" InputGestureText="G" Click="InspectionOverlayItemClicked" Tag="NeutralGray50"/>
+              </ContextMenu>
+            </Button.ContextMenu>
+          </Button>
+          <Button x:Name="InspectionGray50Button" Click="ToggleGray50Clicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '50% 中性灰'}" AutomationProperties.Name="{DynamicResource '50% 中性灰'}" AutomationProperties.AutomationId="inspection.gray50"><local:EditorIcon Kind="Gray50" Width="22" Height="22"/></Button>
           <Button x:Name="CollectionReturn" Click="OpenCollectionClicked" Visibility="Collapsed" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '返回批量集合'}" AutomationProperties.Name="{DynamicResource '返回批量集合'}" AutomationProperties.AutomationId="collection.return"><local:EditorIcon Kind="Collection" Width="22" Height="22"/></Button>
           <Button x:Name="InfoButton" Click="InfoClicked" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '照片信息：隐藏 / 文件信息 / 拍摄参数（I）'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="22" Height="22"/></Button>
           <Button x:Name="AdjustToggleButton" Click="DockToggle" Style="{StaticResource ToolbarButton}" ToolTip="{DynamicResource '展开调整栏'}" AutomationProperties.Name="{DynamicResource '调整栏'}" AutomationProperties.AutomationId="workspace.inspector.toggle"><local:EditorIcon Kind="Inspector" Width="22" Height="22"/></Button>
@@ -259,6 +287,26 @@
           <Button x:Name="InfoEntryButton" Grid.RowSpan="2" Grid.ColumnSpan="2" Click="InfoClicked" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Width="32" Height="32" Padding="6" Visibility="Collapsed" ToolTip="{DynamicResource '照片信息'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="18" Height="18"/></Button>
           <Border x:Name="InfoOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,54,14,14" Background="{DynamicResource OverlaySurface}" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
             <StackPanel><TextBlock x:Name="InfoFileText" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="{DynamicResource EditorBodySize}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
+          </Border>
+          <Border x:Name="InspectionHud" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14" Background="{DynamicResource OverlaySurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="6" Padding="10,8" MaxWidth="420" Visibility="Collapsed" AutomationProperties.AutomationId="inspection.hud">
+            <StackPanel>
+              <DockPanel Margin="0,0,0,4">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                  <Button x:Name="InspectionPinModeButton" Content="{DynamicResource '添加锚点'}" Click="InspectionPinModeClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="4,0,0,0"/>
+                  <Button x:Name="InspectionClearAnchorsButton" Content="{DynamicResource '清除锚点'}" Click="InspectionClearAnchorsClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="4,0,0,0" Visibility="Collapsed"/>
+                </StackPanel>
+                <TextBlock Text="{DynamicResource '取样监视'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              </DockPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
+                <Border x:Name="InspectionSwatch" Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center" Background="Transparent" BorderBrush="{DynamicResource Outline}" BorderThickness="1"/>
+                <TextBlock x:Name="InspectionLiveReadout" FontFamily="Consolas" FontSize="{DynamicResource EditorCaptionSize}" VerticalAlignment="Center"/>
+              </StackPanel>
+              <DockPanel x:Name="InspectionOverlayBanner" Visibility="Collapsed" Margin="0,4,0,0">
+                <Button DockPanel.Dock="Right" Content="{DynamicResource '关闭观察层'}" Click="InspectionOverlayClearClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="8,0,0,0"/>
+                <TextBlock x:Name="InspectionOverlayLabel" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}"/>
+              </DockPanel>
+              <StackPanel x:Name="InspectionAnchorsPanel" Margin="0,4,0,0"/>
+            </StackPanel>
           </Border>
           <StackPanel x:Name="Welcome" Grid.RowSpan="2" Grid.ColumnSpan="2" Margin="24" HorizontalAlignment="Stretch" VerticalAlignment="Center">
             <local:EditorIcon Kind="Folder" Width="36" Height="36" HorizontalAlignment="Center" Margin="0,0,0,18" TextElement.Foreground="{DynamicResource Muted}"/>

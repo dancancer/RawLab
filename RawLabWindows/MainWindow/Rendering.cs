@@ -35,6 +35,7 @@ public partial class MainWindow
             ClearExternalReloadOnSourceChange();
             ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
+            inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
             file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;
@@ -181,7 +182,7 @@ public partial class MainWindow
         var referenceKey = source == null ? null : new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
         if(referenceKey == null ? acceptedReference != null : acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         var quiet=viewportOnly && exactReady && !scheduler.Busy && !proxy && !transform.Active;
-        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
+        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference || inspection.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
         quietViewportRevision=quiet ? scheduler.Revision : -1;
         exactReady=false;
         if(!quiet)SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…"));
@@ -266,7 +267,7 @@ public partial class MainWindow
                 work.Settings.Geometry == PreviewGeometry &&
                 work.Settings.Lens == PreviewLens &&
                 work.TransformGeneration == transformGeneration &&
-                (!view.NeedsReference || work.Compare) &&
+                (!(view.NeedsReference || inspection.NeedsReference) || work.Compare) &&
                 (current || (work.Interactive && interacting && work.Edge == RenderEdge(true)));
             var aiRunning = settings.ActiveAIDenoise && aiJob.State.IsRunning;
             var disposition = PreviewFallback.ResolveMainPreviewDisposition(
@@ -312,6 +313,9 @@ public partial class MainWindow
                         syncing=true;
                         try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
                         finally { syncing=false; }
+                        if (work.Settings.Geometry.IsIdentity)
+                            sourceNativeSize = (rendered.NativeWidth > 0 ? rendered.NativeWidth : rendered.Image.PixelWidth,
+                                                rendered.NativeHeight > 0 ? rendered.NativeHeight : rendered.Image.PixelHeight);
                         renderedGpuMode=work.GpuMode;
                         if(work.Compare) {
                             neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(frameSource,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));

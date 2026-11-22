@@ -209,6 +209,7 @@ final class EditorCoordinator: ObservableObject {
     @Published var lookSearchExpanded = false
     @Published var photoViewing = PhotoViewingState()
     @Published var photoViewport = PhotoViewport()
+    @Published var inspection = InspectionSessionState()
     @Published var selectedGroup = EditorAdjustmentGroup.looks
     @Published var selectedAdjustment: AdjustmentKind? = nil
     @Published var selectedHDRRenditionTool: EditorToolSelection? = nil
@@ -794,6 +795,7 @@ final class EditorCoordinator: ObservableObject {
         gradingZone = .shadows
         photoViewing.sourceChanged()
         photoViewport = PhotoViewport()
+        inspection.resetForNewSource()
         pendingFileImport = false
         pendingPhotoImport = false
         pendingAdjustmentAction = nil

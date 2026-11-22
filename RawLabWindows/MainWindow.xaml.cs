@@ -133,6 +133,7 @@ public partial class MainWindow : Window
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
+            RefreshInspection();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
             RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
@@ -213,6 +214,7 @@ public partial class MainWindow : Window
             settings.EditingGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         InitializeHslTarget();
+        InitializeInspection();
         HslEditor.ResetRequested+=RequestReset;
         PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{

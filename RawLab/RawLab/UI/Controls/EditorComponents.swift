@@ -118,6 +118,7 @@ struct FloatingHistogram: View {
     @Binding var expanded: Bool
     var hdr: HDRStatistics? = nil
     var headroom: Double = 1
+    var luminanceCursor: Double? = nil
 
     private var source: String { L10n.text(showingBefore ? "调整前" : "调整后") }
     private var title: String { L10n.text(hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
@@ -186,11 +187,11 @@ struct FloatingHistogram: View {
             Text(source).font(.caption).fixedSize(horizontal: false, vertical: true)
             Group {
                 if let hdr {
-                    HDRLuminanceHistogram(statistics:hdr,headroom:headroom).frame(height:graphHeight)
+                    HDRLuminanceHistogram(statistics:hdr,headroom:headroom,luminanceCursor:luminanceCursor).frame(height:graphHeight)
                     Text(L10n.format("参考白以上 %@",String(format:"%.2f%%",Double(hdr.aboveWhite)*100/Double(hdr.pixels))))
                         .font(.caption).monospacedDigit()
                 } else if let histogram {
-                    HistogramView(histogram: histogram).frame(height: graphHeight)
+                    HistogramView(histogram: histogram, luminanceCursor: luminanceCursor).frame(height: graphHeight)
                 } else {
                     Text(L10n.text("统计不可用")).font(.caption)
                         .multilineTextAlignment(.center)
@@ -208,6 +209,7 @@ struct FloatingHistogram: View {
 
 struct HistogramView: View {
     let histogram: Sony2FujiProcessor.RGBHistogram
+    var luminanceCursor: Double? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -223,6 +225,20 @@ struct HistogramView: View {
                                       width: barWidth, height: (segment.upper - segment.lower) * size.height)
                     context.fill(Path(rect), with: .color(color))
                 }
+            }
+            if let cursor = luminanceCursor, cursor.isFinite {
+                let x = min(1.0, max(0.0, cursor)) * size.width
+                var line = Path()
+                line.move(to: CGPoint(x: x, y: 0))
+                line.addLine(to: CGPoint(x: x, y: size.height))
+                context.stroke(line, with: .color(.black.opacity(0.9)), lineWidth: 3)
+                context.stroke(line, with: .color(.white), lineWidth: 1.2)
+                var marker = Path()
+                marker.move(to: CGPoint(x: x, y: 5))
+                marker.addLine(to: CGPoint(x: x - 4, y: 0))
+                marker.addLine(to: CGPoint(x: x + 4, y: 0))
+                marker.closeSubpath()
+                context.fill(marker, with: .color(.yellow))
             }
         }
     }

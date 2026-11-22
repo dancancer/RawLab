@@ -1062,6 +1062,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME inspection_geometry_parity
+        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp
+        LIBRARIES ${geometry_libs}
+        LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME perspective_api
         SOURCES tests/perspective_api_tests.cpp
         LIBRARIES sony2fuji_core

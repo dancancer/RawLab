@@ -3,6 +3,9 @@ package com.rawlab.android.editor.ui
 import com.rawlab.android.ui.AppIcons
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.inspection.InspectionGeometryMapper
+import com.rawlab.android.editor.inspection.InspectionOverlayMode
+import com.rawlab.android.editor.inspection.InspectionSessionState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 
@@ -135,6 +138,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
+    var inspection by remember { mutableStateOf(InspectionSessionState()) }
+    var overlaySubmenuOpen by remember { mutableStateOf(false) }
+    var workspaceOverlaySubmenuOpen by remember { mutableStateOf(false) }
     val compare = view.comparisonEnabled && state.draft?.group != AdjustmentGroup.GEOMETRY
     var zoomMenu by remember { mutableStateOf(false) }
     var resetMenu by remember { mutableStateOf(false) }
@@ -395,9 +401,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     val holdBefore: (Boolean) -> Unit = { held -> view = if (held) view.beginHold(state.draft?.group != AdjustmentGroup.GEOMETRY && state.controlsEnabled) else view.cancelHold() }
+    LaunchedEffect(toolOpen) {
+        overlaySubmenuOpen = false
+        workspaceOverlaySubmenuOpen = false
+        toolMenu = false
+        menu = false
+    }
     LaunchedEffect(sourceKey) {
         if (viewSource != sourceKey) {
             view = view.forNewPhoto(); viewSource = sourceKey
+            inspection = inspection.resetForNewSource()
+            overlaySubmenuOpen = false
+            workspaceOverlaySubmenuOpen = false
+            toolMenu = false
+            menu = false
         }
     }
     LaunchedEffect(state.draft != null) {
@@ -492,6 +509,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("workspace-histogram"),
                         leadingIcon = { if (workspaceHistogram) Icon(Icons.Outlined.Check, null) },
                         onClick = { workspaceHistogram = !workspaceHistogram; toolMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.sampling_monitor)) },
+                        modifier = Modifier.testTag("inspection-sampling-toggle"),
+                        leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { inspection = inspection.copy(monitorEnabled = !inspection.monitorEnabled); toolMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_gray_50)) },
+                        modifier = Modifier.testTag("inspection-gray50-menu"),
+                        leadingIcon = { if (inspection.overlay == InspectionOverlayMode.NEUTRAL_GRAY_50) Icon(Icons.Outlined.Check, null) },
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { inspection = inspection.toggleNeutralGray50(); toolMenu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_section)) },
+                        modifier = Modifier.testTag("inspection-overlay-menu"),
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { toolMenu = false; workspaceOverlaySubmenuOpen = true })
                     if (hslWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
                         onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
@@ -499,6 +530,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         modifier = Modifier.testTag("adjustment-fine").semantics { selected = fine }, onClick = { fine = !fine; toolMenu = false })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_preview_enter)) },
                         onClick = { toolMenu = false; togglePure() })
+                }
+                InspectionOverlayDropdownMenu(
+                    expanded = workspaceOverlaySubmenuOpen,
+                    selected = inspection.overlay,
+                    onDismissRequest = { workspaceOverlaySubmenuOpen = false },
+                ) { mode ->
+                    inspection = inspection.selectOverlay(mode)
+                    workspaceOverlaySubmenuOpen = false
                 }
             }
         }
@@ -562,6 +601,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; view = view.copy(infoMode = (view.infoMode + 1) % 3) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
                         onClick = { workspaceHistogram = !workspaceHistogram; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.sampling_monitor)) },
+                        modifier = Modifier.testTag("inspection-sampling-toggle"),
+                        leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { inspection = inspection.copy(monitorEnabled = !inspection.monitorEnabled); menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_gray_50)) },
+                        modifier = Modifier.testTag("inspection-gray50-menu"),
+                        leadingIcon = { if (inspection.overlay == InspectionOverlayMode.NEUTRAL_GRAY_50) Icon(Icons.Outlined.Check, null) },
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { inspection = inspection.toggleNeutralGray50(); menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_section)) },
+                        modifier = Modifier.testTag("inspection-overlay-menu"),
+                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                        onClick = { menu = false; overlaySubmenuOpen = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_zoom_display)) }, enabled = state.preview != null && state.draft == null,
                         leadingIcon = { Icon(AppIcons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
@@ -582,6 +635,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_margin)) }, onClick = { view = view.copy(margins = !view.margins) },
                         trailingIcon = { Switch(view.margins, { view = view.copy(margins = it) }) })
                 }
+                InspectionOverlayDropdownMenu(
+                    expanded = overlaySubmenuOpen,
+                    selected = inspection.overlay,
+                    onDismissRequest = { overlaySubmenuOpen = false },
+                ) { mode ->
+                    inspection = inspection.selectOverlay(mode)
+                    overlaySubmenuOpen = false
+                }
             }
         }, expandedHeight = 48.dp)
     }) { padding ->
@@ -592,8 +653,19 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
             val dockHeight = if (!toolOpen && !quickPresetsVisible) com.rawlab.android.editor.controls.editorHomeDockHeight(density.fontScale).dp else dockLayout.height.dp
             val sideDockWidth = com.rawlab.android.editor.controls.EDITOR_SIDE_DOCK_WIDTH.dp
-            LaunchedEffect(compare || view.holdingBefore) {
-                onDetailNeedsBeforeChange(compare || view.holdingBefore)
+            LaunchedEffect(compare || view.holdingBefore || inspection.monitorEnabled || inspection.anchors.isNotEmpty()) {
+                onDetailNeedsBeforeChange(compare || view.holdingBefore || inspection.monitorEnabled || inspection.anchors.isNotEmpty())
+            }
+            val pinCurrentInspectionAnchor: () -> Unit = {
+                state.preview?.let { p ->
+                    val outX = inspection.liveOutputX ?: 0.5f
+                    val outY = inspection.liveOutputY ?: 0.5f
+                    val srcSize = InspectionGeometryMapper.inferSourceSize(p.nativeWidth, p.nativeHeight, p.renderedGeometry)
+                    val srcPt = InspectionGeometryMapper.outputNormToSourceNorm(outX, outY, srcSize.first, srcSize.second, p.renderedGeometry)
+                    if (srcPt != null) {
+                        inspection = inspection.pinAnchor(srcPt.first, srcPt.second)
+                    }
+                }
             }
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
@@ -607,7 +679,28 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
                                 onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest)
+                                onDetailRequest = onDetailRequest,
+                                inspection = inspection,
+                                onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
+                                onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) })
+                            if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
+                                state.preview?.let { p ->
+                                    InspectionSamplingHud(
+                                        inspection = inspection,
+                                        pair = p,
+                                        detailTiles = state.detailTiles,
+                                        detailOverlay = state.detail,
+                                        holdingBefore = view.holdingBefore && !compare && canvasTarget == null,
+                                        onPinAnchor = pinCurrentInspectionAnchor,
+                                        onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                                        onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
+                                        onClearAnchors = { inspection = inspection.clearAnchors() },
+                                        onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
+                                        onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
+                                        modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+                                    )
+                                }
+                            }
                             workspaceActions(Modifier.align(Alignment.BottomCenter))
                             }
                         }
@@ -622,7 +715,28 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
                                 onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest)
+                                onDetailRequest = onDetailRequest,
+                                inspection = inspection,
+                                onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
+                                onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) })
+                    if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
+                        state.preview?.let { p ->
+                            InspectionSamplingHud(
+                                inspection = inspection,
+                                pair = p,
+                                detailTiles = state.detailTiles,
+                                detailOverlay = state.detail,
+                                holdingBefore = view.holdingBefore && !compare && canvasTarget == null,
+                                onPinAnchor = pinCurrentInspectionAnchor,
+                                onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                                onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
+                                onClearAnchors = { inspection = inspection.clearAnchors() },
+                                onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
+                                onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
+                                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+                            )
+                        }
+                    }
                     workspaceActions(Modifier.align(Alignment.BottomCenter))
                     }
                     if (state.photo != null) {

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -31,7 +32,8 @@ import com.rawlab.android.engine.RgbHistogram
 
 @Composable
 internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visible: Boolean, modifier: Modifier = Modifier,
-    showToggle: Boolean = true, expandedOverride: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {}) {
+    showToggle: Boolean = true, expandedOverride: Boolean? = null, onExpandedChange: (Boolean) -> Unit = {},
+    luminanceCursor: Float? = null) {
     var savedExpanded by rememberSaveable { mutableStateOf(false) }
     val expanded = expandedOverride ?: savedExpanded
     fun change(value: Boolean) { if (expandedOverride == null) savedExpanded = value else onExpandedChange(value) }
@@ -74,7 +76,7 @@ internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visi
                         if (histogram == null) Text(unavailable, Modifier.testTag("rgb-histogram-unavailable"), style = MaterialTheme.typography.bodyMedium)
                         else RgbHistogramPlot(histogram, Modifier.fillMaxWidth().height(80.dp).semantics {
                             contentDescription = "$title · $source"
-                        })
+                        }, luminanceCursor = luminanceCursor)
                     }
                 }
             }
@@ -83,7 +85,7 @@ internal fun RgbHistogramOverlay(histogram: RgbHistogram?, before: Boolean, visi
 }
 
 @Composable
-internal fun RgbHistogramPlot(histogram: RgbHistogram, modifier: Modifier = Modifier) {
+internal fun RgbHistogramPlot(histogram: RgbHistogram, modifier: Modifier = Modifier, luminanceCursor: Float? = null) {
     val segments = remember(histogram) { (0..255).map(histogram::segments) }
     Canvas(modifier.background(Color.Black).testTag("rgb-histogram-plot")) {
         val binWidth = size.width / 256
@@ -95,6 +97,18 @@ internal fun RgbHistogramPlot(histogram: RgbHistogram, modifier: Modifier = Modi
             }
             drawRect(color, Offset(bin * binWidth, size.height * (1 - segment.upper)),
                 Size(binWidth, size.height * (segment.upper - segment.lower)))
+        }
+        if (luminanceCursor != null && luminanceCursor.isFinite()) {
+            val x = luminanceCursor.coerceIn(0f, 1f) * size.width
+            drawLine(Color.Black.copy(alpha = 0.9f), Offset(x, 0f), Offset(x, size.height), strokeWidth = 3.dp.toPx())
+            drawLine(Color.White, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.2.dp.toPx())
+            val tri = Path().apply {
+                moveTo(x, 5.dp.toPx())
+                lineTo(x - 4.dp.toPx(), 0f)
+                lineTo(x + 4.dp.toPx(), 0f)
+                close()
+            }
+            drawPath(tri, Color.Yellow)
         }
     }
 }

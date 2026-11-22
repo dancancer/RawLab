@@ -1116,6 +1116,7 @@ struct HDRCameraDevelopmentControls: View {
 struct HDRLuminanceHistogram: View {
     let statistics: HDRStatistics
     let headroom: Double
+    var luminanceCursor: Double? = nil
     var body: some View {
         Canvas { context,size in
             let maximum=statistics.bins.max() ?? 1
@@ -1131,6 +1132,14 @@ struct HDRLuminanceHistogram: View {
                 line.addLine(to:CGPoint(x:position*size.width,y:size.height))
                 context.stroke(line,with:.color(.black.opacity(0.9)),style:StrokeStyle(lineWidth:3,dash:dash))
                 context.stroke(line,with:.color(color),style:StrokeStyle(lineWidth:1,dash:dash))
+            }
+            if let cursor = luminanceCursor, cursor.isFinite {
+                let x = min(1.0, max(0.0, cursor)) * size.width
+                var line = Path()
+                line.move(to: CGPoint(x: x, y: 0))
+                line.addLine(to: CGPoint(x: x, y: size.height))
+                context.stroke(line, with: .color(.black.opacity(0.9)), lineWidth: 3)
+                context.stroke(line, with: .color(.cyan), lineWidth: 1.2)
             }
         }.accessibilityLabel(L10n.text("HDR 亮度直方图"))
     }

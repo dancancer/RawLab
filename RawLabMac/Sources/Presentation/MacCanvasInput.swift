@@ -8,11 +8,14 @@ struct MacCanvasInput: NSViewRepresentable {
     var imageRect: CGRect
     var excludedRects: [CGRect] = []
     var target: HSLTargetCanvasInput? = nil
+    var pinMode: Bool = false
     var canHold: Bool
     var onHold: (Bool) -> Void
     var onPan: (CGSize) -> Void
     var onPanEnd: () -> Void
     var onDoubleClick: () -> Void
+    var onHover: ((CGPoint?) -> Void)? = nil
+    var onPin: ((CGPoint) -> Void)? = nil
     func makeNSView(context: Context) -> InputView { InputView() }
     func updateNSView(_ view: InputView, context: Context) {
         view.configure(self)
@@ -21,12 +24,20 @@ struct MacCanvasInput: NSViewRepresentable {
     final class InputView: NSView {
         var owner: MacCanvasInput?
         private var observers: [NSObjectProtocol] = []
+        private var trackingArea: NSTrackingArea?
         private var targetOrigin: CGPoint?
         private var targetFine = false
+        private weak var pressRecognizer: NSPressGestureRecognizer?
         func configure(_ next: MacCanvasInput) {
             if owner?.target?.scope != next.target?.scope { cancelInput() }
             owner = next
-            for recognizer in gestureRecognizers { recognizer.isEnabled = next.target == nil }
+            for recognizer in gestureRecognizers {
+                if recognizer === pressRecognizer {
+                    recognizer.isEnabled = next.target == nil && !next.pinMode
+                } else {
+                    recognizer.isEnabled = next.target == nil
+                }
+            }
         }
         override func resignFirstResponder() -> Bool { cancelInput(); return super.resignFirstResponder() }
 
@@ -37,11 +48,42 @@ struct MacCanvasInput: NSViewRepresentable {
             let press = NSPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
             press.buttonMask = 1
             addGestureRecognizer(press)
+            self.pressRecognizer = press
             let pan = NSPanGestureRecognizer(target: self, action: #selector(panned(_:)))
             pan.buttonMask = 1
             addGestureRecognizer(pan)
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(area)
+            trackingArea = area
+        }
+        private func normalizedImagePoint(for event: NSEvent) -> CGPoint? {
+            guard let owner, owner.imageRect.width > 0, owner.imageRect.height > 0 else { return nil }
+            let point = convert(event.locationInWindow, from: nil)
+            guard owner.imageRect.contains(point), bounds.contains(point),
+                  !owner.excludedRects.contains(where: { $0.contains(point) }) else { return nil }
+            return CGPoint(
+                x: min(1.0, max(0.0, (point.x - owner.imageRect.minX) / owner.imageRect.width)),
+                y: min(1.0, max(0.0, (point.y - owner.imageRect.minY) / owner.imageRect.height))
+            )
+        }
+        override func mouseMoved(with event: NSEvent) {
+            owner?.onHover?(normalizedImagePoint(for: event))
+        }
+        override func mouseExited(with event: NSEvent) {
+            owner?.onHover?(nil)
+        }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
@@ -54,8 +96,15 @@ struct MacCanvasInput: NSViewRepresentable {
         }
         func cancelInput() {
             targetOrigin = nil; owner?.target?.cancel()
-            owner?.onHold(false); owner?.onPanEnd()
-            for recognizer in gestureRecognizers { recognizer.isEnabled = false; recognizer.isEnabled = owner?.target == nil }
+            owner?.onHold(false); owner?.onPanEnd(); owner?.onHover?(nil)
+            for recognizer in gestureRecognizers {
+                recognizer.isEnabled = false
+                if recognizer === pressRecognizer {
+                    recognizer.isEnabled = owner?.target == nil && owner?.pinMode != true
+                } else {
+                    recognizer.isEnabled = owner?.target == nil
+                }
+            }
         }
         override func cancelOperation(_ sender: Any?) { exitTarget() }
         private func exitTarget() {
@@ -92,6 +141,9 @@ struct MacCanvasInput: NSViewRepresentable {
                 // 输入预检可能结束字段焦点，完成后再接管拖动，避免取消刚记录的起点。
                 targetOrigin = point; targetFine = event.modifierFlags.contains(.shift)
                 window?.makeFirstResponder(self)
+            } else if let owner, owner.pinMode || event.modifierFlags.contains(.option), let pinPoint = normalizedImagePoint(for: event) {
+                window?.makeFirstResponder(self)
+                owner.onPin?(pinPoint)
             } else {
                 window?.makeFirstResponder(self)
                 if event.clickCount == 2 { owner?.onDoubleClick() }
@@ -128,6 +180,7 @@ struct MacViewingKeyboard: NSViewRepresentable {
     var canHold: Bool
     var onHold: (Bool) -> Void
     var onInformation: () -> Void
+    var onToggleGray50: (() -> Void)? = nil
     var onEscape: () -> Bool
     func makeNSView(context: Context) -> KeyboardView { KeyboardView() }
     func updateNSView(_ view: KeyboardView, context: Context) { view.owner = self }
@@ -153,6 +206,7 @@ struct MacViewingKeyboard: NSViewRepresentable {
                    !event.isARepeat, owner.onEscape() { return nil }
                 if event.characters == "\\", owner.canHold { self.heldKeyCode = event.keyCode; owner.onHold(true); return nil }
                 if event.modifierFlags.intersection(.option).isEmpty, event.charactersIgnoringModifiers?.lowercased() == "i", !event.isARepeat { owner.onInformation(); return nil }
+                if event.modifierFlags.intersection([.option, .shift]).isEmpty, event.charactersIgnoringModifiers?.lowercased() == "g", !event.isARepeat, let toggle = owner.onToggleGray50 { toggle(); return nil }
                 return event
             }
             for name in [NSApplication.willResignActiveNotification, NSWindow.didResignKeyNotification] {

@@ -23,6 +23,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
+    @Published var sourceNativeSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String? {
@@ -177,6 +178,7 @@ final class RawEditorViewModel: ObservableObject {
             completedPreviewCache.removeAll()
             completedPreviewCacheBytes = 0
             fullRasterROIBuffer = nil
+            sourceNativeSize = nil
             closeQuickPresets()
         }
     }

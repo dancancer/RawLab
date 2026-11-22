@@ -136,6 +136,16 @@ struct EditorView: View {
                     else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
                 }
             }
+            .overlay(alignment: .bottomLeading) {
+                if model.result != nil && model.geometryDraft == nil {
+                    MacInspectionReadoutPill(
+                        model: model,
+                        showingBefore: viewing.holdingBefore,
+                        showLiveReadout: !showInspector
+                    )
+                    .padding(10)
+                }
+            }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 8) {
                     if !showInspector && model.hslTargetActive {
@@ -260,7 +270,16 @@ struct EditorView: View {
             exitHSLTarget(); model.cancelAdjustmentInteraction()
         }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
-            onInformation: { infoMode = infoMode.next }, onEscape: { workspaceLayout.dismissTransient() }).frame(width: 0, height: 0))
+            onInformation: { infoMode = infoMode.next },
+            onToggleGray50: {
+                if showsPhotoWorkspace && model.result != nil && model.geometryDraft == nil {
+                    model.inspection.toggleNeutralGray50()
+                }
+            },
+            onEscape: {
+                if model.inspection.handleEscape() { return true }
+                return workspaceLayout.dismissTransient()
+            }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
@@ -337,6 +356,10 @@ struct EditorView: View {
             }.padding(.horizontal, 12).frame(minHeight: 34)
             Divider()
             histogram
+            if model.geometryDraft == nil && model.result != nil {
+                Divider()
+                MacInspectionHUD(model: model, showingBefore: viewing.holdingBefore)
+            }
             Divider()
             AdjustmentDock(model: model, resetVersion: resetVersion)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -365,7 +388,8 @@ struct EditorView: View {
     private var histogram: some View {
         WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
             before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
-            hdrDisplay: hdrDisplay, clippingEnabled: model.geometryDraft == nil)
+            hdrDisplay: hdrDisplay, clippingEnabled: model.geometryDraft == nil,
+            luminanceCursor: model.inspectionLuminanceCursor(showingBefore: viewing.holdingBefore))
     }
 
     private var processingSettings: some View {
@@ -574,9 +598,46 @@ struct EditorView: View {
                 .popover(isPresented: $showsHistogram) {
                     WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
                         before: viewing.holdingBefore, clipping: $clipping, expanded: .constant(true),
-                        hdrDisplay: hdrDisplay, collapsible: false, clippingEnabled: model.geometryDraft == nil)
+                        hdrDisplay: hdrDisplay, collapsible: false, clippingEnabled: model.geometryDraft == nil,
+                        luminanceCursor: model.inspectionLuminanceCursor(showingBefore: viewing.holdingBefore))
                         .frame(width: 286)
                 }
+            Menu {
+                Toggle(L10n.text("取样监视"), isOn: $model.inspection.pinModeEnabled)
+                Button(L10n.text("添加锚点")) { _ = model.pinInspectionAnchor() }
+                    .disabled(!model.inspection.canPinMore)
+                Button(L10n.text("清除锚点")) { model.inspection.clearAnchors() }
+                    .disabled(model.inspection.anchors.isEmpty)
+                Divider()
+                Section(L10n.text("观察层")) {
+                    ForEach(InspectionOverlayMode.allCases) { mode in
+                        Button {
+                            model.inspection.selectOverlay(mode)
+                        } label: {
+                            if model.inspection.overlay == mode {
+                                Label(L10n.text(mode.titleKey), systemImage: "checkmark")
+                            } else {
+                                Text(L10n.text(mode.titleKey))
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "scope")
+                    .activeTint(model.inspection.overlay != .none || model.inspection.pinModeEnabled)
+            }
+                .help(L10n.text("观察层"))
+                .accessibilityLabel(L10n.text("观察层"))
+                .accessibilityIdentifier("inspection.menu")
+                .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
+            Button { model.inspection.toggleNeutralGray50() } label: {
+                Image(systemName: "square.lefthalf.filled")
+                    .activeTint(model.inspection.overlay == .neutralGray50)
+            }
+                .help(L10n.text("50% 中性灰"))
+                .accessibilityLabel(L10n.text("50% 中性灰"))
+                .accessibilityIdentifier("inspection.gray50")
+                .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
             Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
@@ -782,7 +843,12 @@ struct EditorView: View {
                     onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil,
                     prepareCropInteraction: { before in
                         ParameterValueField.commitPendingInputs() && model.geometryDraftSettings == before
-                    },hdrDisplay:hdrDisplay)
+                    }, hdrDisplay: hdrDisplay,
+                    inspectionOverlay: model.geometryDraft == nil ? model.inspection.overlay : .none,
+                    inspectionAnchors: model.inspectionMarkerPoints(),
+                    inspectionPinMode: model.geometryDraft == nil && model.inspection.pinModeEnabled,
+                    onInspectionHover: { point in model.updateInspectionHover(point) },
+                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) })
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {

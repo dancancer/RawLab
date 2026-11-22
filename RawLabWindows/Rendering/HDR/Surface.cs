@@ -47,7 +47,7 @@ public sealed class HDRSurface : HwndHost
     internal bool ShowFrame(HDRFloatImage? frame, HDRFloatImage? reference, PhotoCanvas canvas, bool sdr,
         bool falseColor, IEnumerable<FrameworkElement> overlays)
     {
-        if (window == IntPtr.Zero || !nativeWindow || frame == null || sdr || canvas.GeometryEditing || canvas.ShowClipping || !canvas.IsVisible || !Available) { HideFrame(); return false; }
+        if (window == IntPtr.Zero || !nativeWindow || frame == null || sdr || canvas.GeometryEditing || canvas.ShowClipping || canvas.InspectionOverlayActive || !canvas.IsVisible || !Available) { HideFrame(); return false; }
         reference ??= frame;
         if (!ReferenceEquals(uploaded, frame)) {
             if (Upload(window, 0, frame.RGB, (uint)frame.Width, (uint)frame.Height) == 0) { HideFrame(); return false; }

@@ -213,6 +213,9 @@ extension RawEditorViewModel {
                             self.acceptedPreviewRequest=request; self.acceptedPreviewFrameID=renderID; self.previewFailed=false
                             self.updateHDRResourceNotice(hdr.missingResourceMessage)
                             self.nativeImageSize=CGSize(width:edited.outputNativeWidth,height:edited.outputNativeHeight)
+                            if settings.geometrySettings.isIdentity {
+                                self.sourceNativeSize = self.nativeImageSize
+                            }
                             self.cacheCompletedPreview(for: cacheKey)
                         }
                     } catch {
@@ -265,6 +268,9 @@ extension RawEditorViewModel {
                             self.acceptedPreviewRequest = request
                             self.histogram = nil
                             self.nativeImageSize = result.buffer.nativeSize
+                            if settings.geometrySettings.isIdentity {
+                                self.sourceNativeSize = result.buffer.nativeSize
+                            }
                             if let comparison {
                                 self.applyComparison(comparison, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                                                      lens: referenceSettings.lensSettings, key: referenceKey)
@@ -369,6 +375,9 @@ extension RawEditorViewModel {
                 self.acceptedPreviewRequest = request
                 self.histogram = nil
                 self.nativeImageSize = outputBuffer.nativeSize
+                if settings.geometrySettings.isIdentity {
+                    self.sourceNativeSize = outputBuffer.nativeSize
+                }
                 if let comparison {
                     self.applyComparison(comparison, geometry: referenceSettings.geometrySettings, processing: referenceSettings.processing,
                                          lens: referenceSettings.lensSettings, key: referenceKey)
