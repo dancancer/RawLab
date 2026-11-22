@@ -78,4 +78,25 @@ class ColorGradingSettingsTest {
         }
         assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.GradingZone(ColorGradingZone.SHADOWS), source, ctx))
     }
+
+    @Test fun v2WheelLuminanceGlobalBlendingAndBalanceRoundTrip() {
+        val v2 = ColorGradingSettings(
+            shadows = ColorGradingWheel(210f, 35f, -15f),
+            midtones = ColorGradingWheel(40f, 18f, 10f),
+            highlights = ColorGradingWheel(320f, 22f, 5f),
+            global = ColorGradingWheel(180f, 12f, -8f),
+            blending = 68f,
+            balance = -24f,
+        )
+        assertTrue(v2.hasV2Extensions)
+        val settings = EditSettings(colorGrading = v2)
+        assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
+        val hdr = HDRSettings().withColor(HDRColorSettings(grading = v2))
+        assertEquals(9, hdr.processingVersion); assertEquals(10, hdr.recordVersion)
+        assertEquals(hdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = hdr))).hdr)
+        val ctx = AdjustmentTransferContext("grading-v2", false)
+        val payload = AdjustmentTransfer.capture(AdjustmentScope.Modified, settings, ctx)
+        assertTrue(setOf(AdjustmentField.GRADING_GLOBAL, AdjustmentField.GRADING_BLENDING, AdjustmentField.GRADING_BALANCE).all { it in payload.fields })
+        assertEquals(v2, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), ctx).colorGrading)
+    }
 }

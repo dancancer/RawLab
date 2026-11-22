@@ -391,6 +391,111 @@ void atmosphereCompatibility() {
         "old recipe clears previously active atmosphere on reused destination");
 }
 
+void v16AndV17Contracts() {
+    // 1. SDR v17 round trip, default omission, raster relative WB, and legacy rejection.
+    const std::string sdr17Doc = R"({
+        "schema_version": 17,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "photo.png", "type": "raster"},
+        "edits": {
+            "exposure": {"mode": "sensor", "ev": 0.0, "brightness": 1.0},
+            "white_balance": {"mode": "relative", "relative_temperature": 5600, "relative_tint": -12},
+            "tone": {
+                "curve": {
+                    "mode": "custom",
+                    "points": [[0.0, 0.08], [0.5, 0.55], [1.0, 0.92]],
+                    "apply_to_luminosity": true,
+                    "parametric": {
+                        "highlights": -15,
+                        "lights": 10,
+                        "darks": -5,
+                        "shadows": 20,
+                        "split_shadow": 0.22,
+                        "split_midtone": 0.50,
+                        "split_highlight": 0.78
+                    }
+                }
+            },
+            "color_grading": {
+                "shadows": {"hue": 210, "saturation": 25, "luminance": -15},
+                "midtones": {"hue": 35, "saturation": 10, "luminance": 5},
+                "highlights": {"hue": 45, "saturation": 15, "luminance": 10},
+                "global": {"hue": 180, "saturation": 5, "luminance": -3},
+                "blending": 65,
+                "balance": -20
+            }
+        },
+        "output": {"path": "out.jpg", "format": "jpeg", "output_sharpening": "standard"}
+    })";
+    const auto sdr17 = parse(sdr17Doc);
+    check(sdr17.schemaVersion == 17 && sdr17.rasterInput && sdr17.rasterRelativeWb, "v17 raster relative WB parses");
+    check(sdr17.temperatureKelvin == 5600.0f && sdr17.tint == -12.0f, "v17 relative WB values");
+    check(sdr17.curveApplyToLuminosity && sdr17.parametricCurve.highlights == -15.0f &&
+          sdr17.parametricCurve.split_shadow == 0.22f, "v17 curve v2 fields parse");
+    check(sdr17.colorGradingV2.shadows_luminance == -15.0f && sdr17.colorGradingV2.global_hue == 180.0f &&
+          sdr17.colorGradingV2.blending == 65.0f && sdr17.colorGradingV2.balance == -20.0f, "v17 grading v2 fields parse");
+    check(sdr17.outputSharpening == SONY2FUJI_OUTPUT_SHARPENING_STANDARD, "v17 output_sharpening parses");
+    const auto sdr17Saved = sony2fuji::serializeEditRecipe(sdr17);
+    check(sameRecipe(parse(sdr17Saved), sdr17), "v17 round trip is idempotent");
+
+    // Default v17 recipe omits all v0.12 additive keys.
+    const std::string sdr17DefaultDoc = R"({
+        "schema_version": 17,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "photo.ARW", "type": "raw"},
+        "edits": {"exposure": {"mode": "preview"}},
+        "output": {"path": "out.jpg", "format": "jpeg"}
+    })";
+    const auto sdr17DefaultSaved = sony2fuji::serializeEditRecipe(parse(sdr17DefaultDoc));
+    check(sdr17DefaultSaved.find("apply_to_luminosity") == std::string::npos &&
+          sdr17DefaultSaved.find("parametric") == std::string::npos &&
+          sdr17DefaultSaved.find("output_sharpening") == std::string::npos &&
+          sdr17DefaultSaved.find("luminance") == std::string::npos &&
+          sdr17DefaultSaved.find("blending") == std::string::npos, "v17 omits default v0.12 fields");
+
+    // Legacy v5 rejects free endpoints, parametric, apply_to_luminosity, grading v2, output_sharpening, raster relative WB.
+    reject(replaceOnce(sdr17Doc, "\"schema_version\": 17", "\"schema_version\": 5"), "v5 rejects v0.12 fields");
+    reject(replaceOnce(sdr17Doc, "\"split_midtone\": 0.50", "\"split_midtone\": 0.23"), "v17 rejects split gap < 0.02");
+
+    // 2. HDR v16 round trip & toHDRRenderRequestV9.
+    const std::string hdr16Doc = R"({
+        "schema_version": 16,
+        "processing": {"family": "rawlab_hdr", "version": 9, "quality": "standard"},
+        "input": {"path": "photo.ARW", "type": "raw"},
+        "edits": {
+            "exposure": {"ev": 0.25},
+            "white_balance": {"mode": "relative"},
+            "tone": {
+                "curve": {
+                    "mode": "custom",
+                    "points": [[0.0, 0.05], [1.0, 0.95]],
+                    "apply_to_luminosity": true,
+                    "parametric": {"highlights": 10, "shadows": -10}
+                }
+            },
+            "color_grading": {
+                "shadows": {"hue": 190, "saturation": 20, "luminance": -10},
+                "global": {"hue": 40, "saturation": 8, "luminance": 4},
+                "blending": 70,
+                "balance": 15
+            }
+        },
+        "output": {"path": "out.jpg", "format": "hdr_jpeg", "base_color": "srgb", "output_sharpening": "high"}
+    })";
+    const auto hdr16 = parse(hdr16Doc);
+    check(hdr16.schemaVersion == 16 && hdr16.hdr && hdr16.hdr->processingVersion == 9, "HDR v16 parses");
+    const auto hdrReqV9 = hdr16.toHDRRenderRequestV9();
+    check(hdrReqV9.base.base.base.base.base.base.base.base.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION &&
+          hdrReqV9.base.base.base.base.base.base.base.base.struct_size == sizeof(hdrReqV9) &&
+          hdrReqV9.curve_apply_to_luminosity == 1 &&
+          hdrReqV9.output_sharpening == SONY2FUJI_OUTPUT_SHARPENING_HIGH &&
+          hdrReqV9.parametric_curve.highlights == 10.0f &&
+          hdrReqV9.grading_v2.global_hue == 40.0f &&
+          hdrReqV9.grading_v2.blending == 70.0f, "toHDRRenderRequestV9 maps all v9 fields");
+    check(sameRecipe(parse(sony2fuji::serializeEditRecipe(hdr16)), hdr16), "HDR v16 round trip is idempotent");
+    reject(replaceOnce(hdr16Doc, "\"schema_version\": 16", "\"schema_version\": 15"), "v15 rejects processing.version 9 / v16 fields");
+}
+
 } // namespace
 
 TEST_MAIN(
@@ -420,6 +525,7 @@ TEST_MAIN(
     unknownAndDuplicateKeys();
     malformedAndUnicode();
     atmosphereCompatibility();
+    v16AndV17Contracts();
     if (rawlab::test::failureCount() != 0) {
         std::cerr << rawlab::test::failureCount() << " of " << rawlab::test::checkCount() << " rawlab::test::checkCount() failed\n";
     } else {

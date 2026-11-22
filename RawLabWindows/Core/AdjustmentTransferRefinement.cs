@@ -10,22 +10,25 @@ internal static class AdjustmentTransferRefinement
         var previousScale = original.Restore().RefinementScale;
         var targetScale = target.Restore().RefinementScale;
         var originalCurve = original.Curve ?? new();
+        var updatedCurveBase = target.Curve ?? new();
         var selectedCurve = payload[F.Curve] is {} json ? ToneCurveSettings.Parse(json) : null;
         var expectedCurve = selectedCurve?.Scaled(sourceScale) ?? originalCurve.Scaled(previousScale);
         var curve = fullRecipe && selectedCurve != null ? selectedCurve : LogicalCurve(expectedCurve, originalCurve, targetScale);
         if (!Equivalent(curve.Scaled(targetScale), expectedCurve)) throw Unrepresentable(F.Curve);
-        var grading = original.ColorGrading ?? new();
+        curve = new(curve.Mode, curve.Points, curve.Channels, updatedCurveBase.ApplyToLuminosity, updatedCurveBase.Parametric);
+        var originalGrading = original.ColorGrading ?? new();
+        var grading = target.ColorGrading ?? new();
         foreach (var field in AdjustmentFields.RefinementObjects) {
             if (field.GradingZone() is not {} zone) continue;
-            var current = grading[zone];
-            var selected = payload[field] is {} wheel ? new ColorGradingWheel(wheel.GetProperty("hue").GetDouble(), wheel.GetProperty("saturation").GetDouble()) : null;
+            var current = originalGrading[zone];
+            var selected = payload[field] is {} wheel ? AdjustmentTransferValues.ParseWheel(wheel) : null;
             var desired = selected == null ? Scaled(current, previousScale) : Scaled(selected, sourceScale);
             ColorGradingWheel logical;
             if (fullRecipe && selected != null) logical = selected;
             else if (Equivalent(Scaled(current, targetScale), desired)) logical = current;
             else {
-                if (targetScale == 0 && desired.Saturation != 0) throw Unrepresentable(field);
-                logical = new(desired.Hue, targetScale == 0 ? 0 : desired.Saturation / targetScale);
+                if (targetScale == 0 && (desired.Saturation != 0 || desired.Luminance != 0)) throw Unrepresentable(field);
+                logical = new(desired.Hue, targetScale == 0 ? 0 : desired.Saturation / targetScale, targetScale == 0 ? 0 : desired.Luminance / targetScale);
             }
             if (!logical.IsValid || !Equivalent(Scaled(logical, targetScale), desired)) throw Unrepresentable(field);
             grading = grading.With(zone, logical);
@@ -48,8 +51,9 @@ internal static class AdjustmentTransferRefinement
     }
 
     private static ColorGradingWheel Scaled(ColorGradingWheel value, double strength) =>
-        value with { Saturation = Math.Clamp(value.Saturation * strength, 0, 100) };
-    private static bool Equivalent(ColorGradingWheel a, ColorGradingWheel b) => a.Hue == b.Hue && (float)a.Saturation == (float)b.Saturation;
+        value with { Saturation = Math.Clamp(value.Saturation * strength, 0, 100), Luminance = Math.Clamp(value.Luminance * strength, -100, 100) };
+    private static bool Equivalent(ColorGradingWheel a, ColorGradingWheel b) =>
+        a.Hue == b.Hue && (float)a.Saturation == (float)b.Saturation && (float)a.Luminance == (float)b.Luminance;
     private static bool Equivalent(ToneCurveSettings a, ToneCurveSettings b) => Enum.GetValues<ToneCurveChannel>().All(channel => {
         var first = a.Shape(channel); var second = b.Shape(channel);
         return first.Mode == second.Mode && (first.IsIdentity && second.IsIdentity || first.Points.Count == second.Points.Count &&

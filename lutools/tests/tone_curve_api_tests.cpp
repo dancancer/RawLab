@@ -56,6 +56,14 @@ int main(int argc, char** argv) {
         sony2fuji::ToneCurveConfig coreCustom{sony2fuji::ToneCurveMode::Custom, 4,
             {{{0,0},{.25,.12},{.75,.88},{1,1}}}};
         sony2fuji::ToneCurve reference(coreCustom);
+        // Free-endpoint Y validation & active_ check (Wave 0).
+        sony2fuji::ToneCurveConfig freeEnd{sony2fuji::ToneCurveMode::Custom, 2, {{{0, 0}, {1, 0.9}}}};
+        require(!sony2fuji::validToneCurve(freeEnd, false), "v1 rejects unpinned endpoint Y");
+        require(sony2fuji::validToneCurve(freeEnd, true), "v2 allows unpinned endpoint Y");
+        sony2fuji::ToneCurve freeEndCurve(freeEnd, true);
+        require(freeEndCurve.active(), "2-point curve with y1 < 1 must be active");
+        require(std::abs(freeEndCurve.evaluate(0.0) - 0.0) < 1e-9 &&
+                std::abs(freeEndCurve.evaluate(1.0) - 0.9) < 1e-9, "evaluate clamps to endpoint Y");
         double positions[]{0,.125,.25,.5,.75,.875,1}, samples[7]{};
         require(sony2fuji_sample_tone_curve(&custom,positions,samples,7)==SONY2FUJI_STATUS_OK,"shared curve canvas samples");
         for (int i=0;i<7;++i) require(samples[i]==reference.evaluate(positions[i]),"canvas matches rendered curve");

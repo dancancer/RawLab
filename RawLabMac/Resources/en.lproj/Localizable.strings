@@ -16,12 +16,14 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"50% 中性灰" = "50% Neutral Gray";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "AI denoising is active. Standard denoise settings are retained. White balance changes require reprocessing.";
 "AI 降噪" = "AI denoise";
 "AI 降噪仅支持 RAW 照片。" = "AI denoising only supports RAW photos.";
 "AI 降噪失败" = "AI denoising failed";
 "AI 降噪失败：%@" = "AI denoising failed: %@";
 "AI 降噪已取消。" = "AI denoising cancelled.";
+"AI 降噪强度" = "AI Denoise Strength";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "AI denoising cannot be copied yet. Choose Custom to copy other adjustments.";
 "AI 降噪结果连续未就绪，请重试。" = "AI denoise results are still unavailable. Please retry.";
 "AI 降噪（实验）" = "AI denoise (experimental)";
@@ -115,7 +117,9 @@
 "交互预览… %@ × %@ · sRGB" = "Interactive preview… %@ × %@ · sRGB";
 "交换横纵比例" = "Swap Aspect Orientation";
 "亮度降噪" = "Luma Noise Reduction";
+"亮部" = "Lights";
 "仅 RAW 照片支持镜头校正。" = "Lens correction is available only for RAW photos.";
+"仅作用于明度" = "Luminosity Only";
 "仅包含此目录中的 RAW，不包含子目录。" = "Only RAW files in this folder are included, not subfolders.";
 "仅包含此目录中的照片，不包含子目录。" = "Only photos in this folder are included, not subfolders.";
 "仅在暗角强度为负值时可用。" = "Available only when vignette intensity is negative.";
@@ -137,6 +141,7 @@
 "传感器基准" = "Sensor reference";
 "伪红外（旧版）" = "False infrared (legacy)";
 "位置与尺寸" = "Position and size";
+"低" = "Low";
 "作者的小红书主页" = "Author on Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Uses RawLab neutral rendering as the base. This does not reproduce the camera’s Standard style.";
 "使用可调降噪" = "Use adjustable noise reduction";
@@ -154,6 +159,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Save selected adjustments to apply them to other photos later.";
 "保存预设" = "Save Preset";
 "保留任务" = "Keep task";
+"保留当前手动草稿" = "Keep Current Manual Draft";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Keep the damaged file and rebuild update settings. Data will be checked after restarting; automatic updates stay off.";
 "保留旧版的特殊色彩。" = "Preserves the distinctive colors of the legacy renderer.";
 "保留旧编辑记录的降噪算法" = "Keeps the noise reduction method from earlier edits";
@@ -170,17 +176,20 @@
 "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。" = "Compare candidate results before importing. Candidates include assumptions and do not prove that the author's look has been reproduced.";
 "光线" = "Light";
 "全不选" = "Select none";
+"全局" = "Global";
 "全选" = "Select all";
 "全部" = "All";
 "全部外观" = "All looks";
 "全部调整" = "All Adjustments";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "Hue, saturation and lightness will return to 0 for all eight colors. Other adjustments will stay unchanged.";
+"关" = "Off";
 "关于 RawLab" = "About RawLab";
 "关于 RawLab…" = "About RawLab…";
 "关闭" = "Close";
 "关闭 AI 降噪" = "Turn off AI denoise";
 "关闭对比" = "Turn off comparison";
 "关闭提示" = "Dismiss";
+"关闭观察层" = "Overlay Off";
 "关闭镜头选择" = "Close Lens Selection";
 "其他" = "Other";
 "兼容导入" = "Compatibility import";
@@ -189,6 +198,7 @@
 "内存不足，无法解码普通图片。" = "Not enough memory to decode the image.";
 "内容容量 %@ EV" = "Content Headroom %@ EV";
 "内置" = "Built-in";
+"冷暖反差黑白" = "Warm/Cool B&W";
 "减少边缘彩色条纹" = "Reduce Color Fringing";
 "几何" = "Geometry";
 "几何与镜头" = "Geometry & Lens";
@@ -222,6 +232,7 @@
 "去噪优先" = "Noise Reduction Priority";
 "去朦胧" = "Dehaze";
 "参数或输出路径无效。" = "Invalid parameters or output path.";
+"参数曲线" = "Parametric Curve";
 "参考图" = "Reference image";
 "参考图与预览的比例或尺寸不一致，仅可目视比较。" = "The reference and preview have different proportions or dimensions; visual comparison only.";
 "参考图来自同一张原图" = "Reference image comes from the same original";
@@ -231,6 +242,7 @@
 "参考输出为 sRGB，或已按正确配置转换为 sRGB" = "Reference output is sRGB or was converted to sRGB with the correct settings";
 "双击名称或轨道恢复默认值。" = "Double-click the name or track to restore the default.";
 "发现新版本 %@" = "New Version Available: %@";
+"取样监视" = "Sampling Monitor";
 "取消" = "Cancel";
 "取消几何和镜头编辑" = "Cancel Geometry and Lens Editing";
 "取消导出" = "Cancel Export";
@@ -302,6 +314,7 @@
 "导入外观…" = "Import Look…";
 "导入相机配置…" = "Import camera profile…";
 "导入结果" = "Import results";
+"导入调整参数 JSON…" = "Import Adjustments JSON…";
 "导出" = "Export";
 "导出 %@ 张" = "Export Photos (%@)";
 "导出 JPEG…" = "Export JPEG…";
@@ -315,6 +328,7 @@
 "导出已完成的 DNG 到文件…" = "Export Completed DNGs to Files…";
 "导出渲染型 DNG" = "Export Rendered DNG";
 "导出渲染型 DNG…" = "Export Rendered DNG…";
+"导出调整参数 JSON…" = "Export Adjustments JSON…";
 "导出长边像素" = "Export Long Edge (Pixels)";
 "导出长边必须为 1-65535 像素。" = "The long edge must be 1-65535 pixels.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "The following will become independent adjustments to preserve the current appearance of other groups: %@";
@@ -389,6 +403,7 @@
 "常用导出尺寸" = "Commonly used export sizes";
 "常用尺寸" = "Common sizes";
 "平均差异 %@/255 · 最大差异 %@/255" = "Mean difference %@/255 · Maximum difference %@/255";
+"平衡" = "Balance";
 "并排" = "Side by side";
 "应用" = "Apply";
 "应用几何和镜头编辑" = "Apply Geometry and Lens Changes";
@@ -445,6 +460,7 @@
 "批量编辑" = "Batch editing";
 "批量编辑…" = "Batch editing…";
 "找不到 HDR 相机配置，请重新导入。" = "The HDR camera profile is missing. Import it again.";
+"拆分点" = "Split Points";
 "拉直" = "Straighten";
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
@@ -552,6 +568,7 @@
 "旧版色度降噪" = "Legacy Chroma Noise Reduction";
 "旧版降噪" = "Legacy noise reduction";
 "旧版：%@" = "Legacy: %@";
+"明亮度" = "Luminance";
 "明度" = "Lightness";
 "明度：从暗到亮。" = "Lightness: from dark to light.";
 "明暗" = "Tone";
@@ -569,6 +586,7 @@
 "暖金光影 · 质感人像" = "Warm golden light · textured portrait";
 "暗角" = "Vignette";
 "暗角校正" = "Vignetting correction";
+"暗部" = "Darks";
 "暮色黄昏 · 相邻色过渡" = "Twilight dusk · adjacent-color transition";
 "曝光" = "Exposure";
 "曝光基准" = "Exposure reference";
@@ -621,6 +639,7 @@
 "查看目标" = "Review Targets";
 "查看调整前" = "Show before";
 "查看调整范围" = "View Adjustment Scope";
+"标准" = "Standard";
 "标准显影" = "Standard development";
 "校正后裁去空白边缘" = "Crop Blank Edges After Correction";
 "核对 DNG 文件" = "Verify DNG Files";
@@ -633,6 +652,7 @@
 "检查最终调整" = "Review final adjustments";
 "检查目标" = "Check Photos";
 "检查目标…" = "Check target photos…";
+"检测到外部调色方案更新" = "External color grading update detected";
 "横向色差" = "Lateral Chromatic Aberration";
 "横向色差未应用" = "Lateral Chromatic Aberration Not Applied";
 "横向色差标定" = "Lateral Chromatic Aberration Calibration";
@@ -718,15 +738,18 @@
 "添加照片目录" = "Add Photo Folder";
 "添加目录" = "Add Folder";
 "添加目录…" = "Add Folder…";
+"添加锚点" = "Pin Anchor";
 "清晰度" = "Clarity";
 "清空选择" = "Clear Selection";
 "清除搜索" = "Clear search";
 "清除相机配置" = "Clear camera profile";
+"清除锚点" = "Clear Anchors";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel";
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Wheel: %@; Shift: %@; Range: %@ to %@ %@";
 "滨田英明" = "Hideaki Hamada";
 "点击曲线区域添加控制点，拖动中间点调整。" = "Tap the curve area to add a point. Drag interior points to adjust.";
+"点曲线" = "Point Curve";
 "照片" = "Photo";
 "照片信息" = "Photo Information";
 "照片四周留白" = "Space around photo";
@@ -753,6 +776,7 @@
 "畸变矫正" = "Distortion Correction";
 "白场" = "White point";
 "白平衡" = "White Balance";
+"白平衡吸管" = "White Balance Eyedropper";
 "白平衡模式" = "White balance mode";
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "AI denoising is enabled on the target. Turn it off first, or deselect the standard denoise fields.";
 "目标所需的外观不可用，请先导入外观。" = "The required look is unavailable. Import it first.";
@@ -787,6 +811,7 @@
 "粘贴调整…" = "Paste Adjustments…";
 "精确调整" = "Precise Adjustment";
 "精细调整" = "Fine Adjustments";
+"素描明度" = "Sketch Luminance";
 "紫" = "Purple";
 "红" = "Red";
 "纯预览" = "Preview";
@@ -812,6 +837,7 @@
 "缩放与显示" = "Zoom and display";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "As-shot white balance data is missing, so the recipe's appearance cannot be preserved.";
 "羽化" = "Feather";
+"肤色色相放大" = "Skin Hue Amplification";
 "胶片" = "Film";
 "胶片、导入外观和大师配方共用" = "Applies to film simulations, imported looks and master recipes";
 "胶片模拟" = "Film simulation";
@@ -847,6 +873,7 @@
 "草稿已处理，请重新检查最终调整。" = "The draft has been resolved. Review the final adjustments again.";
 "草稿未应用，无法导出或复制设置。" = "Apply the draft before exporting or copying settings.";
 "蓝" = "Blue";
+"融合" = "Blending";
 "裁切" = "Crop";
 "裁切、旋转、翻转和拉直" = "Crop, rotate, flip and straighten";
 "裁切上边" = "Crop top";
@@ -865,6 +892,7 @@
 "裁边 %@%%" = "Crop %@%%";
 "覆盖" = "Overwrite";
 "覆盖预设？" = "Overwrite Preset?";
+"观察层" = "Inspection Overlay";
 "视频范围（10 位 64–940）" = "Video range (10-bit 64–940)";
 "计算与参考的差异" = "Calculate difference from reference";
 "试用方案 · 无颜色依据" = "Trial option · No color basis";
@@ -929,8 +957,10 @@
 "输出参考" = "Output reference";
 "输出坐标" = "Output";
 "输出范围" = "Output range";
+"输出锐化" = "Output Sharpening";
 "输出颜色" = "Output color space";
 "边界比例仅供观察，不能据此判定配置或风格错误。" = "Boundary ratios are for observation only; they cannot establish that a configuration or look is wrong.";
+"过饱和熔断热力图" = "Oversaturation Heatmap";
 "近似基础 · 未验证" = "Approximate base · Unverified";
 "返回调整后" = "Return to after";
 "返回选片集合" = "Return to photo collection";
@@ -991,6 +1021,7 @@
 "重置当前分区" = "Reset current range";
 "重置当前颜色" = "Reset Current Color";
 "重置当前颜色（%@）" = "Reset current color (%@)";
+"重置曲线" = "Reset Curve";
 "重置本工具" = "Reset This Tool";
 "重置调整" = "Reset Adjustments";
 "重置镜头校正" = "Reset Lens Correction";
@@ -999,6 +1030,7 @@
 "重试" = "Try again";
 "重试失败的 %@ 张" = "Retry Failed Photos (%@)";
 "重试未完成项" = "Retry Incomplete";
+"重载滑块" = "Reload Sliders";
 "钨丝电影 · 红灯冷青" = "Tungsten cinema · red lights and cool cyan";
 "锁定当前比例" = "Lock current aspect ratio";
 "锐化" = "Sharpening";
@@ -1050,6 +1082,7 @@
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";
+"高" = "High";
 "高光" = "Highlights";
 "高光 %@" = "Highlights %@";
 "高光保护" = "Highlight protection";

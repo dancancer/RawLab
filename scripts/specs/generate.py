@@ -202,6 +202,7 @@ def _render_swift(doc: dict[str, Any]) -> str:
     subs = _sub_fields_map(doc)
     look_ref = subs["looks.reference"]
     curve = subs["light.curve"]
+    curve_param = subs["light.curve.parametric"]
     grading = subs["color.grading.shadows"]
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
@@ -306,13 +307,31 @@ def _render_swift(doc: dict[str, Any]) -> str:
         f"            public static let customMinPoints = {int(curve['points']['custom_min_count'])}",
         f"            public static let customMaxPoints = {int(curve['points']['custom_max_count'])}",
         f"            public static let coordRange: ClosedRange<Double> = {_fmt_double(curve['points']['coord_min'])}...{_fmt_double(curve['points']['coord_max'])}",
+        f"            public static let endpointsYUnpinned = {'true' if curve['points']['endpoints_y_unpinned'] else 'false'}",
         f"            public static let allowedChannels: [String] = {_swift_str_list(curve['channels']['allowed_keys'])}",
+        "        }",
+        "        public enum LightCurveParametric {",
+        f"            public static let bandMin = {_fmt_double(curve_param['highlights']['min'])}",
+        f"            public static let bandMax = {_fmt_double(curve_param['highlights']['max'])}",
+        f"            public static let bandDefault = {_fmt_double(curve_param['highlights']['default'])}",
+        f"            public static let bandRange: ClosedRange<Double> = {_fmt_double(curve_param['highlights']['min'])}...{_fmt_double(curve_param['highlights']['max'])}",
+        f"            public static let splitShadowRange: ClosedRange<Double> = {_fmt_double(curve_param['split_shadow']['min'])}...{_fmt_double(curve_param['split_shadow']['max'])}",
+        f"            public static let splitShadowDefault = {_fmt_double(curve_param['split_shadow']['default'])}",
+        f"            public static let splitMidtoneRange: ClosedRange<Double> = {_fmt_double(curve_param['split_midtone']['min'])}...{_fmt_double(curve_param['split_midtone']['max'])}",
+        f"            public static let splitMidtoneDefault = {_fmt_double(curve_param['split_midtone']['default'])}",
+        f"            public static let splitHighlightRange: ClosedRange<Double> = {_fmt_double(curve_param['split_highlight']['min'])}...{_fmt_double(curve_param['split_highlight']['max'])}",
+        f"            public static let splitHighlightDefault = {_fmt_double(curve_param['split_highlight']['default'])}",
+        f"            public static let splitMinGap = {_fmt_double(curve_param['split_min_gap'])}",
         "        }",
         "        public enum ColorGradingWheel {",
         f"            public static let hueMin = {_fmt_double(grading['hue']['min'])}",
         f"            public static let hueMax = {_fmt_double(grading['hue']['max'])}",
         f"            public static let hueExclusiveMax = {'true' if grading['hue']['exclusive_max'] else 'false'}",
         f"            public static let saturationRange: ClosedRange<Double> = {_fmt_double(grading['saturation']['min'])}...{_fmt_double(grading['saturation']['max'])}",
+        f"            public static let luminanceMin = {_fmt_double(grading['luminance']['min'])}",
+        f"            public static let luminanceMax = {_fmt_double(grading['luminance']['max'])}",
+        f"            public static let luminanceDefault = {_fmt_double(grading['luminance']['default'])}",
+        f"            public static let luminanceRange: ClosedRange<Double> = {_fmt_double(grading['luminance']['min'])}...{_fmt_double(grading['luminance']['max'])}",
         "        }",
         "        public enum HDRLook {",
         f"            public static let sha256HexLength = {int(hdr_look['sha256']['hex_length'])}",
@@ -434,6 +453,7 @@ def _render_kotlin(doc: dict[str, Any]) -> str:
     subs = _sub_fields_map(doc)
     look_ref = subs["looks.reference"]
     curve = subs["light.curve"]
+    curve_param = subs["light.curve.parametric"]
     grading = subs["color.grading.shadows"]
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
@@ -525,7 +545,23 @@ def _render_kotlin(doc: dict[str, Any]) -> str:
         f"            const val customMaxPoints = {int(curve['points']['custom_max_count'])}",
         f"            const val coordMin = {_fmt_double(curve['points']['coord_min'])}",
         f"            const val coordMax = {_fmt_double(curve['points']['coord_max'])}",
+        f"            const val endpointsYUnpinned = {'true' if curve['points']['endpoints_y_unpinned'] else 'false'}",
         f"            val allowedChannels = {_kotlin_str_list(curve['channels']['allowed_keys'])}",
+        "        }",
+        "        object LightCurveParametric {",
+        f"            const val bandMin = {_fmt_double(curve_param['highlights']['min'])}",
+        f"            const val bandMax = {_fmt_double(curve_param['highlights']['max'])}",
+        f"            const val bandDefault = {_fmt_double(curve_param['highlights']['default'])}",
+        f"            const val splitShadowMin = {_fmt_double(curve_param['split_shadow']['min'])}",
+        f"            const val splitShadowMax = {_fmt_double(curve_param['split_shadow']['max'])}",
+        f"            const val splitShadowDefault = {_fmt_double(curve_param['split_shadow']['default'])}",
+        f"            const val splitMidtoneMin = {_fmt_double(curve_param['split_midtone']['min'])}",
+        f"            const val splitMidtoneMax = {_fmt_double(curve_param['split_midtone']['max'])}",
+        f"            const val splitMidtoneDefault = {_fmt_double(curve_param['split_midtone']['default'])}",
+        f"            const val splitHighlightMin = {_fmt_double(curve_param['split_highlight']['min'])}",
+        f"            const val splitHighlightMax = {_fmt_double(curve_param['split_highlight']['max'])}",
+        f"            const val splitHighlightDefault = {_fmt_double(curve_param['split_highlight']['default'])}",
+        f"            const val splitMinGap = {_fmt_double(curve_param['split_min_gap'])}",
         "        }",
         "        object ColorGradingWheel {",
         f"            const val hueMin = {_fmt_double(grading['hue']['min'])}",
@@ -533,6 +569,9 @@ def _render_kotlin(doc: dict[str, Any]) -> str:
         f"            const val hueExclusiveMax = {'true' if grading['hue']['exclusive_max'] else 'false'}",
         f"            const val saturationMin = {_fmt_double(grading['saturation']['min'])}",
         f"            const val saturationMax = {_fmt_double(grading['saturation']['max'])}",
+        f"            const val luminanceMin = {_fmt_double(grading['luminance']['min'])}",
+        f"            const val luminanceMax = {_fmt_double(grading['luminance']['max'])}",
+        f"            const val luminanceDefault = {_fmt_double(grading['luminance']['default'])}",
         "        }",
         "        object HDRLook {",
         f"            const val sha256HexLength = {int(hdr_look['sha256']['hex_length'])}",
@@ -669,6 +708,7 @@ def _render_csharp(doc: dict[str, Any]) -> str:
     subs = _sub_fields_map(doc)
     look_ref = subs["looks.reference"]
     curve = subs["light.curve"]
+    curve_param = subs["light.curve.parametric"]
     grading = subs["color.grading.shadows"]
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
@@ -764,7 +804,24 @@ def _render_csharp(doc: dict[str, Any]) -> str:
         f"            public const int CustomMaxPoints = {int(curve['points']['custom_max_count'])};",
         f"            public const double CoordMin = {_fmt_double(curve['points']['coord_min'])};",
         f"            public const double CoordMax = {_fmt_double(curve['points']['coord_max'])};",
+        f"            public const bool EndpointsYUnpinned = {'true' if curve['points']['endpoints_y_unpinned'] else 'false'};",
         f"            public static readonly IReadOnlyList<string> AllowedChannels = {_csharp_str_array(curve['channels']['allowed_keys'])};",
+        "        }",
+        "        public static class LightCurveParametric",
+        "        {",
+        f"            public const double BandMin = {_fmt_double(curve_param['highlights']['min'])};",
+        f"            public const double BandMax = {_fmt_double(curve_param['highlights']['max'])};",
+        f"            public const double BandDefault = {_fmt_double(curve_param['highlights']['default'])};",
+        f"            public const double SplitShadowMin = {_fmt_double(curve_param['split_shadow']['min'])};",
+        f"            public const double SplitShadowMax = {_fmt_double(curve_param['split_shadow']['max'])};",
+        f"            public const double SplitShadowDefault = {_fmt_double(curve_param['split_shadow']['default'])};",
+        f"            public const double SplitMidtoneMin = {_fmt_double(curve_param['split_midtone']['min'])};",
+        f"            public const double SplitMidtoneMax = {_fmt_double(curve_param['split_midtone']['max'])};",
+        f"            public const double SplitMidtoneDefault = {_fmt_double(curve_param['split_midtone']['default'])};",
+        f"            public const double SplitHighlightMin = {_fmt_double(curve_param['split_highlight']['min'])};",
+        f"            public const double SplitHighlightMax = {_fmt_double(curve_param['split_highlight']['max'])};",
+        f"            public const double SplitHighlightDefault = {_fmt_double(curve_param['split_highlight']['default'])};",
+        f"            public const double SplitMinGap = {_fmt_double(curve_param['split_min_gap'])};",
         "        }",
         "        public static class ColorGradingWheel",
         "        {",
@@ -773,6 +830,9 @@ def _render_csharp(doc: dict[str, Any]) -> str:
         f"            public const bool HueExclusiveMax = {'true' if grading['hue']['exclusive_max'] else 'false'};",
         f"            public const double SaturationMin = {_fmt_double(grading['saturation']['min'])};",
         f"            public const double SaturationMax = {_fmt_double(grading['saturation']['max'])};",
+        f"            public const double LuminanceMin = {_fmt_double(grading['luminance']['min'])};",
+        f"            public const double LuminanceMax = {_fmt_double(grading['luminance']['max'])};",
+        f"            public const double LuminanceDefault = {_fmt_double(grading['luminance']['default'])};",
         "        }",
         "        public static class HDRLook",
         "        {",

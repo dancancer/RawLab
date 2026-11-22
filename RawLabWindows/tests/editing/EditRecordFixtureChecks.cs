@@ -600,7 +600,16 @@ internal static class EditRecordFixtureChecks
         return new ToneCurveShape(mode, points);
     }
 
-    private static ToneCurveSettings ParseCurve(JsonElement curveElem)
+    private static ToneCurveParametric ParseParametric(JsonElement elem) => new(
+        elem.GetProperty("highlights").GetDouble(),
+        elem.GetProperty("lights").GetDouble(),
+        elem.GetProperty("darks").GetDouble(),
+        elem.GetProperty("shadows").GetDouble(),
+        elem.GetProperty("split_shadow").GetDouble(),
+        elem.GetProperty("split_midtone").GetDouble(),
+        elem.GetProperty("split_highlight").GetDouble());
+
+    private static ToneCurveSettings ParseCurve(JsonElement curveElem, JsonElement containerValues)
     {
         var master = ParseCurveShape(curveElem);
         var channels = new ToneCurveChannels();
@@ -610,11 +619,16 @@ internal static class EditRecordFixtureChecks
                 chElem.TryGetProperty(name, out var item) ? ParseCurveShape(item) : new ToneCurveShape();
             channels = new ToneCurveChannels(ReadChannel("red"), ReadChannel("green"), ReadChannel("blue"));
         }
-        return new ToneCurveSettings(master.Mode, master.Points, channels);
+        var applyLum = containerValues.TryGetProperty("light.curve.apply_to_luminosity", out var al) && al.GetBoolean();
+        var parametric = containerValues.TryGetProperty("light.curve.parametric", out var pe) && pe.ValueKind == JsonValueKind.Object
+            ? ParseParametric(pe)
+            : new ToneCurveParametric();
+        return new ToneCurveSettings(master.Mode, master.Points, channels, applyLum, parametric);
     }
 
     private static ColorGradingWheel ParseWheel(JsonElement elem) =>
-        new(elem.GetProperty("hue").GetDouble(), elem.GetProperty("saturation").GetDouble());
+        new(elem.GetProperty("hue").GetDouble(), elem.GetProperty("saturation").GetDouble(),
+            elem.TryGetProperty("luminance", out var lum) && lum.ValueKind == JsonValueKind.Number ? lum.GetDouble() : 0.0);
 
     private static HDRSettings BuildHDRSettings(JsonElement values, JsonElement metadata, bool activeMode)
     {
@@ -631,7 +645,7 @@ internal static class EditRecordFixtureChecks
         if (values.TryGetProperty("tone.black_point", out var bp)) tone = tone with { BlackPoint = bp.GetDouble() };
         if (values.TryGetProperty("tone.white_point", out var wp)) tone = tone with { WhitePoint = wp.GetDouble() };
         if (values.TryGetProperty("light.s_curve", out var sc)) tone = tone with { CurveStrength = sc.GetDouble() * 100.0 };
-        if (values.TryGetProperty("light.curve", out var cv)) tone = tone with { Curve = ParseCurve(cv) };
+        if (values.TryGetProperty("light.curve", out var cv)) tone = tone with { Curve = ParseCurve(cv, values) };
         hdr = hdr.WithTone(tone);
 
         var color = new HDRColorSettings();
@@ -648,6 +662,9 @@ internal static class EditRecordFixtureChecks
         if (values.TryGetProperty("color.grading.shadows", out var cgs)) grading = grading with { Shadows = ParseWheel(cgs) };
         if (values.TryGetProperty("color.grading.midtones", out var cgm)) grading = grading with { Midtones = ParseWheel(cgm) };
         if (values.TryGetProperty("color.grading.highlights", out var cgh)) grading = grading with { Highlights = ParseWheel(cgh) };
+        if (values.TryGetProperty("color.grading.global", out var cgg)) grading = grading with { Global = ParseWheel(cgg) };
+        if (values.TryGetProperty("color.grading.blending", out var cgbl)) grading = grading with { Blending = cgbl.GetDouble() };
+        if (values.TryGetProperty("color.grading.balance", out var cgba)) grading = grading with { Balance = cgba.GetDouble() };
         color = color with { Hsl = hsl, Grading = grading };
         hdr = hdr.WithColor(color);
 
@@ -835,7 +852,7 @@ internal static class EditRecordFixtureChecks
 
             if (sdrValues.TryGetProperty("light.curve", out var cvObj) && cvObj.ValueKind == JsonValueKind.Object)
             {
-                var parsed = ParseCurve(cvObj);
+                var parsed = ParseCurve(cvObj, sdrValues);
                 curve = parsed.IsDefault ? null : parsed;
             }
 
@@ -846,6 +863,9 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs)) grading = grading with { Shadows = ParseWheel(cgs) };
             if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm)) grading = grading with { Midtones = ParseWheel(cgm) };
             if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh)) grading = grading with { Highlights = ParseWheel(cgh) };
+            if (sdrValues.TryGetProperty("color.grading.global", out var cgg)) grading = grading with { Global = ParseWheel(cgg) };
+            if (sdrValues.TryGetProperty("color.grading.blending", out var cgbl)) grading = grading with { Blending = cgbl.GetDouble() };
+            if (sdrValues.TryGetProperty("color.grading.balance", out var cgba)) grading = grading with { Balance = cgba.GetDouble() };
 
             for (var idx = 0; idx < HslChannels.Length; idx++)
             {
@@ -914,6 +934,8 @@ internal static class EditRecordFixtureChecks
         else if (hasDormant) hdr = BuildHDRSettings(dormantHdr, metadata, activeMode: false);
 
         var aiDenoise = hasLocal && localValues.TryGetProperty("local.ai_denoise_enabled", out var ai) && ai.GetBoolean();
+        double? aiDenoiseBlend = hasLocal && localValues.TryGetProperty("local.ai_denoise_strength", out var aistr) && aistr.ValueKind == JsonValueKind.Number
+            ? aistr.GetDouble() : null;
         var hdrCameraAi = hasLocal && localValues.TryGetProperty("local.hdr_camera_ai_enabled", out var hai) && hai.GetBoolean();
 
         var snapshot = new AdjustmentSnapshot(
@@ -923,6 +945,7 @@ internal static class EditRecordFixtureChecks
             Processing = processing,
             X3fMode = x3fMode,
             AIDenoiseEnabled = aiDenoise,
+            AIDenoiseBlend = aiDenoiseBlend,
             HDRCameraAIEnabled = hdrCameraAi,
             MasterRecipeSettingsVersion = masterRecipeSettingsVersion,
             ToneControls = toneControls.IsIdentity ? null : toneControls,
@@ -1062,6 +1085,10 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("light.shadows", out var lsh)) Expect(Approx(s.Values[(int)Parameter.Shadows] / 100.0, lsh.GetDouble()), "shadows");
             if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) Expect(Approx(s.Values[(int)Parameter.ToneCurve] / 100.0, lsc.GetDouble()), "s_curve");
             if (sdrValues.TryGetProperty("light.curve", out var cv)) VerifyCurve(cv, s.Curve ?? new ToneCurveSettings(), id + ".sdr", mismatches);
+            if (sdrValues.TryGetProperty("light.curve.apply_to_luminosity", out var sal))
+                Expect((s.Curve?.ApplyToLuminosity ?? false) == sal.GetBoolean(), "sdr.curve.apply_to_luminosity");
+            if (sdrValues.TryGetProperty("light.curve.parametric", out var spm))
+                Expect((s.Curve?.Parametric ?? new ToneCurveParametric()) == ParseParametric(spm), "sdr.curve.parametric");
 
             var toneControls = s.ToneControls ?? new ToneControlsSettings();
             if (sdrValues.TryGetProperty("tone.black_point", out var bp)) Expect(Approx(toneControls.BlackPoint, bp.GetDouble()), "black_point");
@@ -1070,11 +1097,19 @@ internal static class EditRecordFixtureChecks
 
             var grading = s.ColorGrading ?? new ColorGradingSettings();
             if (sdrValues.TryGetProperty("color.grading.shadows", out var cgs))
-                Expect(Approx(grading.Shadows.Hue, cgs.GetProperty("hue").GetDouble()) && Approx(grading.Shadows.Saturation, cgs.GetProperty("saturation").GetDouble()), "grading.shadows");
+                Expect(Approx(grading.Shadows.Hue, cgs.GetProperty("hue").GetDouble()) && Approx(grading.Shadows.Saturation, cgs.GetProperty("saturation").GetDouble()) &&
+                       Approx(grading.Shadows.Luminance, cgs.TryGetProperty("luminance", out var l0) ? l0.GetDouble() : 0.0), "grading.shadows");
             if (sdrValues.TryGetProperty("color.grading.midtones", out var cgm))
-                Expect(Approx(grading.Midtones.Hue, cgm.GetProperty("hue").GetDouble()) && Approx(grading.Midtones.Saturation, cgm.GetProperty("saturation").GetDouble()), "grading.midtones");
+                Expect(Approx(grading.Midtones.Hue, cgm.GetProperty("hue").GetDouble()) && Approx(grading.Midtones.Saturation, cgm.GetProperty("saturation").GetDouble()) &&
+                       Approx(grading.Midtones.Luminance, cgm.TryGetProperty("luminance", out var l1) ? l1.GetDouble() : 0.0), "grading.midtones");
             if (sdrValues.TryGetProperty("color.grading.highlights", out var cgh))
-                Expect(Approx(grading.Highlights.Hue, cgh.GetProperty("hue").GetDouble()) && Approx(grading.Highlights.Saturation, cgh.GetProperty("saturation").GetDouble()), "grading.highlights");
+                Expect(Approx(grading.Highlights.Hue, cgh.GetProperty("hue").GetDouble()) && Approx(grading.Highlights.Saturation, cgh.GetProperty("saturation").GetDouble()) &&
+                       Approx(grading.Highlights.Luminance, cgh.TryGetProperty("luminance", out var l2) ? l2.GetDouble() : 0.0), "grading.highlights");
+            if (sdrValues.TryGetProperty("color.grading.global", out var cgg))
+                Expect(Approx(grading.Global.Hue, cgg.GetProperty("hue").GetDouble()) && Approx(grading.Global.Saturation, cgg.GetProperty("saturation").GetDouble()) &&
+                       Approx(grading.Global.Luminance, cgg.TryGetProperty("luminance", out var l3) ? l3.GetDouble() : 0.0), "grading.global");
+            if (sdrValues.TryGetProperty("color.grading.blending", out var cgbl)) Expect(Approx(grading.Blending, cgbl.GetDouble()), "grading.blending");
+            if (sdrValues.TryGetProperty("color.grading.balance", out var cgba)) Expect(Approx(grading.Balance, cgba.GetDouble()), "grading.balance");
 
             if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() is { } modeStr)
             {
@@ -1192,6 +1227,10 @@ internal static class EditRecordFixtureChecks
                 if (hdrCheck.TryGetProperty("tone.black_point", out var hbp)) Expect(Approx(hdr.ToneSettings.BlackPoint, hbp.GetDouble()), "hdr.black_point");
                 if (hdrCheck.TryGetProperty("tone.white_point", out var hwp)) Expect(Approx(hdr.ToneSettings.WhitePoint, hwp.GetDouble()), "hdr.white_point");
                 if (hdrCheck.TryGetProperty("light.curve", out var hcv)) VerifyCurve(hcv, hdr.ToneSettings.Curve, id + ".hdr", mismatches);
+                if (hdrCheck.TryGetProperty("light.curve.apply_to_luminosity", out var hal))
+                    Expect(hdr.ToneSettings.Curve.ApplyToLuminosity == hal.GetBoolean(), "hdr.curve.apply_to_luminosity");
+                if (hdrCheck.TryGetProperty("light.curve.parametric", out var hpm))
+                    Expect(hdr.ToneSettings.Curve.Parametric == ParseParametric(hpm), "hdr.curve.parametric");
 
                 // HDR Color block
                 if (hdrCheck.TryGetProperty("color.vibrance", out var hvib)) Expect(Approx(hdr.ColorSettings.Vibrance, hvib.GetDouble()), "hdr.vibrance");
@@ -1204,13 +1243,24 @@ internal static class EditRecordFixtureChecks
                 }
                 if (hdrCheck.TryGetProperty("color.grading.shadows", out var hcgs))
                     Expect(Approx(hdr.ColorSettings.Grading.Shadows.Hue, hcgs.GetProperty("hue").GetDouble()) &&
-                           Approx(hdr.ColorSettings.Grading.Shadows.Saturation, hcgs.GetProperty("saturation").GetDouble()), "hdr.grading.shadows");
+                           Approx(hdr.ColorSettings.Grading.Shadows.Saturation, hcgs.GetProperty("saturation").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Shadows.Luminance, hcgs.TryGetProperty("luminance", out var hl0) ? hl0.GetDouble() : 0.0), "hdr.grading.shadows");
                 if (hdrCheck.TryGetProperty("color.grading.midtones", out var hcgm))
                     Expect(Approx(hdr.ColorSettings.Grading.Midtones.Hue, hcgm.GetProperty("hue").GetDouble()) &&
-                           Approx(hdr.ColorSettings.Grading.Midtones.Saturation, hcgm.GetProperty("saturation").GetDouble()), "hdr.grading.midtones");
+                           Approx(hdr.ColorSettings.Grading.Midtones.Saturation, hcgm.GetProperty("saturation").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Midtones.Luminance, hcgm.TryGetProperty("luminance", out var hl1) ? hl1.GetDouble() : 0.0), "hdr.grading.midtones");
                 if (hdrCheck.TryGetProperty("color.grading.highlights", out var hcgh))
                     Expect(Approx(hdr.ColorSettings.Grading.Highlights.Hue, hcgh.GetProperty("hue").GetDouble()) &&
-                           Approx(hdr.ColorSettings.Grading.Highlights.Saturation, hcgh.GetProperty("saturation").GetDouble()), "hdr.grading.highlights");
+                           Approx(hdr.ColorSettings.Grading.Highlights.Saturation, hcgh.GetProperty("saturation").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Highlights.Luminance, hcgh.TryGetProperty("luminance", out var hl2) ? hl2.GetDouble() : 0.0), "hdr.grading.highlights");
+                if (hdrCheck.TryGetProperty("color.grading.global", out var hcgg))
+                    Expect(Approx(hdr.ColorSettings.Grading.Global.Hue, hcgg.GetProperty("hue").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Global.Saturation, hcgg.GetProperty("saturation").GetDouble()) &&
+                           Approx(hdr.ColorSettings.Grading.Global.Luminance, hcgg.TryGetProperty("luminance", out var hl3) ? hl3.GetDouble() : 0.0), "hdr.grading.global");
+                if (hdrCheck.TryGetProperty("color.grading.blending", out var hcgbl))
+                    Expect(Approx(hdr.ColorSettings.Grading.Blending, hcgbl.GetDouble()), "hdr.grading.blending");
+                if (hdrCheck.TryGetProperty("color.grading.balance", out var hcgba))
+                    Expect(Approx(hdr.ColorSettings.Grading.Balance, hcgba.GetDouble()), "hdr.grading.balance");
 
                 // HDR Rendition block
                 if (hdrCheck.TryGetProperty("hdr.peak_limit_ev", out var hpk)) Expect(Approx(hdr.RenditionSettings.PeakLimitEV, hpk.GetDouble()), "hdr.peakLimit");
@@ -1282,6 +1332,8 @@ internal static class EditRecordFixtureChecks
 
         if (hasLocal && localValues.TryGetProperty("local.ai_denoise_enabled", out var ai))
             Expect(s.AIDenoiseEnabled == ai.GetBoolean(), "AIDenoiseEnabled");
+        if (hasLocal && localValues.TryGetProperty("local.ai_denoise_strength", out var aistr) && aistr.ValueKind == JsonValueKind.Number)
+            Expect(Approx(s.AIDenoiseStrength, aistr.GetDouble()), "AIDenoiseStrength");
         if (hasLocal && localValues.TryGetProperty("local.hdr_camera_ai_enabled", out var hai))
             Expect(s.HDRCameraAIEnabled == hai.GetBoolean(), "HDRCameraAIEnabled");
 

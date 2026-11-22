@@ -1617,12 +1617,12 @@
             "mode": "custom",
             "points": [
               [
-                0,
+                0.05,
                 0
               ],
               [
                 1,
-                0.99
+                1
               ]
             ]
           }
@@ -1902,6 +1902,126 @@
         },
         "values": {
           "local.ai_denoise_enabled": true
+        }
+      }
+    },
+    {
+      "id": "local-ai-denoise-strength-is-not-transferable",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "local.ai_denoise_strength": 65.0
+        }
+      }
+    },
+    {
+      "id": "curve-unpinned-endpoint-y-valid",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [0, 0.125],
+              [0.5, 0.55],
+              [1, 0.875]
+            ]
+          },
+          "light.curve.apply_to_luminosity": true,
+          "light.curve.parametric": {
+            "highlights": -10,
+            "lights": 15,
+            "darks": -5,
+            "shadows": 20,
+            "split_shadow": 0.2,
+            "split_midtone": 0.5,
+            "split_highlight": 0.8
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-parametric-split-order-invalid",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.curve.parametric": {
+            "highlights": 0,
+            "lights": 0,
+            "darks": 0,
+            "shadows": 0,
+            "split_shadow": 0.4,
+            "split_midtone": 0.4,
+            "split_highlight": 0.75
+          }
+        }
+      }
+    },
+    {
+      "id": "color-grading-v2-valid",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-grading",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.shadows": {
+            "hue": 210,
+            "saturation": 30,
+            "luminance": -15
+          },
+          "color.grading.global": {
+            "hue": 45,
+            "saturation": 10,
+            "luminance": 5
+          },
+          "color.grading.blending": 65,
+          "color.grading.balance": -25
+        }
+      }
+    },
+    {
+      "id": "color-grading-wheel-luminance-out-of-range",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-grading",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.grading.global": {
+            "hue": 45,
+            "saturation": 10,
+            "luminance": 150
+          }
         }
       }
     }

@@ -35,7 +35,7 @@ public sealed class AdjustmentFieldsSpecTests
         Assert.Equal(1, root.GetProperty("spec_version").GetInt32());
 
         var fields = root.GetProperty("fields").EnumerateArray().ToArray();
-        Assert.Equal(83, fields.Length);
+        Assert.Equal(89, fields.Length);
 
         var transferIds = new List<string>();
         var localIds = new List<string>();
@@ -73,8 +73,8 @@ public sealed class AdjustmentFieldsSpecTests
             }
         }
 
-        Assert.Equal(81, transferIds.Count);
-        Assert.Equal(2, localIds.Count);
+        Assert.Equal(86, transferIds.Count);
+        Assert.Equal(3, localIds.Count);
         Assert.Equal(transferIds.ToHashSet(), Enum.GetValues<AdjustmentField>().Select(f => f.ID()).ToHashSet());
         Assert.Equal(Enum.GetValues<AdjustmentField>().Length, transferIds.Count);
         Assert.Equal(localIds, AdjustmentFieldSpec.LocalOnlyFieldIds);
@@ -168,9 +168,13 @@ public sealed class AdjustmentFieldsSpecTests
         var grading = new ColorGradingSettings();
         Assert.True(grading.IsValid);
         Assert.False(new ColorGradingWheel(360, 0).IsValid);
+        Assert.Equal(WinModel("color.grading.blending").GetProperty("default").GetDouble(), grading.Blending);
+        Assert.Equal(WinModel("color.grading.balance").GetProperty("default").GetDouble(), grading.Balance);
+        Assert.Equal(WinModel("local.ai_denoise_strength").GetProperty("default").GetDouble(), adjustments.AIDenoiseStrength);
 
         var curve = new ToneCurveSettings();
         Assert.True(curve.IsDefault);
+        Assert.Equal(WinModel("light.curve.apply_to_luminosity").GetProperty("default").GetBoolean(), curve.ApplyToLuminosity);
         Assert.Throws<ArgumentOutOfRangeException>(() => new ToneCurveShape(ToneCurveMode.Custom, []));
 
         var denoise = new DenoiseSettings();

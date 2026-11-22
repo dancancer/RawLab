@@ -49,7 +49,10 @@ internal static class AdjustmentTransferValues
     {
         var s=edit.Settings; var result=new Dictionary<F,JsonElement>();
         void Put<T>(F field,T value) => result[field]=Value(value);
-        Put(F.Curve, s.Curve ?? new ToneCurveSettings());
+        var curve = s.Curve ?? new ToneCurveSettings();
+        Put(F.Curve, curve);
+        Put(F.CurveApplyToLuminosity, curve.ApplyToLuminosity);
+        result[F.CurveParametric] = ParametricElement(curve.Parametric);
         foreach(var field in NumericFields.Concat(AdjustmentFields.All.Where(f=>f.HslIndex()!=null))) Put(field,Logical(s,field));
         string kind; string? id;
         if(s.MasterRecipeID is {} recipe) { kind="recipe";id=recipe; }
@@ -63,10 +66,13 @@ internal static class AdjustmentTransferValues
         Put(F.WhiteBalanceMode,!context.IsRaw ? "none" : camera ? "camera" : "temperature");
         Put(F.Temperature,camera ? (double?)null : s.Values[(int)Parameter.Temperature]);
         Put(F.Tint,s.MasterRecipeID!=null || !camera ? s.Values[(int)Parameter.Tint] : (double?)null);
+        var grading = s.ColorGrading ?? new();
         foreach (var field in AdjustmentFields.All) if (field.GradingZone() is {} zone) {
-            var wheel = (s.ColorGrading ?? new())[zone];
-            Put(field, new { hue = wheel.Hue, saturation = wheel.Saturation });
+            result[field] = WheelElement(grading[zone]);
         }
+        result[F.GradingGlobal] = WheelElement(grading.Global);
+        Put(F.GradingBlending, grading.Blending);
+        Put(F.GradingBalance, grading.Balance);
         var effects=s.Effects ?? new();
         foreach(var field in AdjustmentFields.All.Where(f=>f is >= F.VignetteAmount and <= F.GrainRoughness)) Put(field,effects[(PhotoEffectParameter)((int)field-(int)F.VignetteAmount)]);
         Put(F.RawDenoise,0);Put(F.PostRGBDenoise,0);Put(F.ChromaDenoise,s.DisplayChromaDenoise);
@@ -136,6 +142,38 @@ internal static class AdjustmentTransferValues
                 s=s with {Lens=l};
             }
         }
+        if (p[F.CurveApplyToLuminosity] is {} applyLum && Boolean(applyLum) is {} applyBool) {
+            var current = s.Curve ?? new();
+            var updated = new ToneCurveSettings(current.Mode, current.Points, current.Channels, applyBool, current.Parametric);
+            s = s with { Curve = updated.IsDefault ? null : updated };
+        }
+        if (p[F.CurveParametric] is {} paramElem) {
+            var current = s.Curve ?? new();
+            var parametric = ToneCurveParametric.Parse(paramElem);
+            var updated = new ToneCurveSettings(current.Mode, current.Points, current.Channels, current.ApplyToLuminosity, parametric);
+            s = s with { Curve = updated.IsDefault ? null : updated };
+        }
+        if (p[F.GradingGlobal] != null || p[F.GradingBlending] != null || p[F.GradingBalance] != null) {
+            var grading = s.ColorGrading ?? new();
+            if (p[F.GradingGlobal] is {} globalElem) grading = grading with { Global = ParseWheel(globalElem) };
+            if (p[F.GradingBlending] is {} blendingElem && Number(blendingElem) is {} blending) grading = grading with { Blending = blending };
+            if (p[F.GradingBalance] is {} balanceElem && Number(balanceElem) is {} balance) grading = grading with { Balance = balance };
+            s = s with { ColorGrading = grading.IsDefault ? null : grading };
+        }
         _=s.Restore(); return s;
     }
+
+    internal static JsonElement ParametricElement(ToneCurveParametric p) => Value(new {
+        highlights = p.Highlights, lights = p.Lights, darks = p.Darks, shadows = p.Shadows,
+        split_shadow = p.SplitShadow, split_midtone = p.SplitMidtone, split_highlight = p.SplitHighlight
+    });
+
+    internal static JsonElement WheelElement(ColorGradingWheel wheel) => wheel.Luminance == 0
+        ? Value(new { hue = wheel.Hue, saturation = wheel.Saturation })
+        : Value(new { hue = wheel.Hue, saturation = wheel.Saturation, luminance = wheel.Luminance });
+
+    internal static ColorGradingWheel ParseWheel(JsonElement wheel) => new(
+        wheel.GetProperty("hue").GetDouble(),
+        wheel.GetProperty("saturation").GetDouble(),
+        wheel.TryGetProperty("luminance", out var lum) && Number(lum) is {} l ? l : 0.0);
 }

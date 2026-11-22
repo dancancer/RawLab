@@ -179,6 +179,13 @@ typedef enum sony2fuji_x3f_mode {
     SONY2FUJI_X3F_NORMAL = 1
 } sony2fuji_x3f_mode;
 
+typedef enum sony2fuji_output_sharpening {
+    SONY2FUJI_OUTPUT_SHARPENING_OFF = 0,
+    SONY2FUJI_OUTPUT_SHARPENING_LOW = 1,
+    SONY2FUJI_OUTPUT_SHARPENING_STANDARD = 2,
+    SONY2FUJI_OUTPUT_SHARPENING_HIGH = 3
+} sony2fuji_output_sharpening;
+
 
 // ============================================================================
 // Request/Buffer
@@ -309,6 +316,26 @@ typedef struct sony2fuji_color_grading_config {
     float highlights_saturation;
 } sony2fuji_color_grading_config;
 
+#define SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION 2u
+typedef struct sony2fuji_color_grading_v2_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float shadows_hue;          // [0, 360)
+    float shadows_saturation;   // 0..100
+    float shadows_luminance;    // -100..100, default 0
+    float midtones_hue;         // [0, 360)
+    float midtones_saturation;  // 0..100
+    float midtones_luminance;   // -100..100, default 0
+    float highlights_hue;       // [0, 360)
+    float highlights_saturation;// 0..100
+    float highlights_luminance; // -100..100, default 0
+    float global_hue;           // [0, 360)
+    float global_saturation;    // 0..100
+    float global_luminance;     // -100..100, default 0
+    float blending;             // 0..100, default 50
+    float balance;              // -100..100, default 0
+} sony2fuji_color_grading_v2_config;
+
 #define SONY2FUJI_TONE_CURVE_CONFIG_VERSION 1u
 #define SONY2FUJI_TONE_CURVE_MAX_POINTS 33u
 typedef enum sony2fuji_curve_mode {
@@ -330,6 +357,30 @@ typedef struct sony2fuji_tone_curve_set_config {
     // RGB master, red, green, blue. Each entry must be initialized, including legacy entries.
     sony2fuji_tone_curve_config curves[4];
 } sony2fuji_tone_curve_set_config;
+
+#define SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION 1u
+typedef struct sony2fuji_tone_curve_parametric_config {
+    uint32_t version;
+    uint32_t struct_size;
+    float highlights;      // -100..100, default 0
+    float lights;          // -100..100, default 0
+    float darks;           // -100..100, default 0
+    float shadows;         // -100..100, default 0
+    float split_shadow;    // [0.05, 0.45], default 0.25
+    float split_midtone;   // [0.25, 0.75], default 0.50
+    float split_highlight; // [0.55, 0.95], default 0.75
+    uint32_t reserved;     // Must be 0
+} sony2fuji_tone_curve_parametric_config;
+
+#define SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION 2u
+typedef struct sony2fuji_tone_curve_set_v2_config {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t apply_to_luminosity; // 0 = RGB (default), 1 = Luminosity
+    uint32_t reserved;           // Must be 0
+    sony2fuji_tone_curve_config curves[4]; // Master (may have free y0/y1 in [0,1]), R, G, B
+    sony2fuji_tone_curve_parametric_config parametric;
+} sony2fuji_tone_curve_set_v2_config;
 
 #define SONY2FUJI_GEOMETRY_CONFIG_VERSION 1u
 typedef struct sony2fuji_geometry_config {
@@ -665,6 +716,130 @@ sony2fuji_status sony2fuji_analyze_image(
     uint32_t* shadows, uint32_t* highlights, sony2fuji_buffer* clipping_mask
 );
 
+#define SONY2FUJI_BSH_DIAGNOSIS_VERSION 1u
+#define SONY2FUJI_BSH_SAMPLE_VERSION 1u
+
+typedef enum sony2fuji_bsh_cast_hint {
+    SONY2FUJI_BSH_CAST_INSUFFICIENT_NEUTRALS = 0,
+    SONY2FUJI_BSH_CAST_BALANCED = 1,
+    SONY2FUJI_BSH_CAST_WARM_YELLOW_AMBER = 2,
+    SONY2FUJI_BSH_CAST_COOL_BLUE = 3,
+    SONY2FUJI_BSH_CAST_GREEN = 4,
+    SONY2FUJI_BSH_CAST_MAGENTA = 5
+} sony2fuji_bsh_cast_hint;
+
+typedef enum sony2fuji_hsl_channel {
+    SONY2FUJI_HSL_CHANNEL_RED = 0,
+    SONY2FUJI_HSL_CHANNEL_ORANGE = 1,
+    SONY2FUJI_HSL_CHANNEL_YELLOW = 2,
+    SONY2FUJI_HSL_CHANNEL_GREEN = 3,
+    SONY2FUJI_HSL_CHANNEL_AQUA = 4,
+    SONY2FUJI_HSL_CHANNEL_BLUE = 5,
+    SONY2FUJI_HSL_CHANNEL_PURPLE = 6,
+    SONY2FUJI_HSL_CHANNEL_MAGENTA = 7
+} sony2fuji_hsl_channel;
+
+typedef struct sony2fuji_bsh_diagnose_options {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t sample_stride; // 0 = auto max(1, max(width, height) / 360)
+    uint32_t reserved;      // Must be 0
+} sony2fuji_bsh_diagnose_options;
+
+typedef struct sony2fuji_bsh_hsl_channel_stats {
+    float coverage_pct;
+    float mean_hue_deg;
+    float mean_sat_pct;
+    float mean_brightness_pct;
+    int32_t active; // 1 when coverage_pct >= 0.2%, else 0
+} sony2fuji_bsh_hsl_channel_stats;
+
+typedef struct sony2fuji_bsh_diagnosis {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t bit_depth;
+    uint32_t channels;
+    uint64_t sampled_pixels;
+
+    float blacks_0_10_pct;
+    float shadows_10_35_pct;
+    float midtones_35_65_pct;
+    float lights_65_90_pct;
+    float highlights_90_100_pct;
+    float mean_luma_0_1;
+    float luma_p01;
+    float luma_p05;
+    float luma_p25;
+    float luma_p50;
+    float luma_p75;
+    float luma_p95;
+    float luma_p99;
+    float dynamic_spread_p95_minus_p05;
+
+    float shadow_crush_pct;
+    float white_blowout_pct;
+    float channel_clip_high_any_pct;
+    float channel_clip_high_r_pct;
+    float channel_clip_high_g_pct;
+    float channel_clip_high_b_pct;
+
+    float neutral_midtone_coverage_pct;
+    float r_over_g;
+    float b_over_g;
+    sony2fuji_bsh_cast_hint cast_hint;
+
+    float mean_s_pct;
+    float p95_s_pct;
+    float low_sat_pct;
+    float melting_saturation_pct;
+    int32_t melting_warning;
+    uint32_t reserved;
+
+    sony2fuji_bsh_hsl_channel_stats hsl_channels[SONY2FUJI_HSL_CHANNELS];
+} sony2fuji_bsh_diagnosis;
+
+typedef struct sony2fuji_bsh_sample_query {
+    uint32_t version;
+    uint32_t struct_size;
+    float norm_x;      // [0, 1]
+    float norm_y;      // [0, 1]
+    float radius_norm; // >= 0; 0 = 1x1 pixel; >0 = box half-extent round(radius_norm * max(w, h))
+    uint32_t reserved; // Must be 0
+} sony2fuji_bsh_sample_query;
+
+typedef struct sony2fuji_bsh_sample_result {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pixel_x;
+    uint32_t pixel_y;
+    uint32_t sample_count;
+    sony2fuji_hsl_channel nearest_hsl_channel;
+    float linear_rgb[3];
+    float srgb_rgb[3];
+    float hsb[3]; // [0]=hue [0,360), [1]=sat % [0,100], [2]=brightness % [0,100]
+    uint32_t rgb_8bit[3];
+} sony2fuji_bsh_sample_result;
+
+// Computes full B->S->H quantitative diagnostics from an in-memory sRGB RGB8/RGBA8/RGBA16 buffer.
+// options may be NULL (uses default auto stride). Preserves existing sony2fuji_analyze_image untouched.
+sony2fuji_status sony2fuji_diagnose_image(
+    const sony2fuji_buffer* image,
+    const sony2fuji_bsh_diagnose_options* options,
+    sony2fuji_bsh_diagnosis* out_diagnosis
+);
+
+// Samples a normalized region on an sRGB RGB8/RGBA8/RGBA16 buffer and returns mean linear RGB,
+// sRGB RGB, HSB, 8-bit RGB, and nearest HSL channel (red..magenta).
+sony2fuji_status sony2fuji_sample_region_bsh(
+    const sony2fuji_buffer* image,
+    const sony2fuji_bsh_sample_query* query,
+    sony2fuji_bsh_sample_result* out_result
+);
+
 // Does not change request v2 layout. The mode participates in the RAW cache key.
 sony2fuji_status sony2fuji_session_set_raw_exposure_mode(
     sony2fuji_session* session, sony2fuji_raw_exposure_mode mode
@@ -692,6 +867,9 @@ sony2fuji_status sony2fuji_session_set_ai_device(sony2fuji_session* session, con
 // Runtime messages can contain paths: clients must redact them before exporting. Valid until the next getter call.
 const char* sony2fuji_session_get_ai_diagnostics(const sony2fuji_session* session);
 sony2fuji_status sony2fuji_session_set_ai_denoise(sony2fuji_session* session, const sony2fuji_ai_denoise_config* config);
+// Sets DualDn AI denoise blend strength in [0.0, 1.0] (default 1.0 = full AI denoise).
+// Does not invalidate prepared AI disk caches or trigger re-inference.
+sony2fuji_status sony2fuji_session_set_ai_denoise_blend(sony2fuji_session* session, float strength);
 // Explicit full-resolution preparation. Use a separate worker-owned session so previews remain responsive.
 // Cache keys exclude exposure/LUT/geometry, include WB and processing version for RGB, and retain reusable RAW output.
 // Missing/corrupt results make process/export return AI_NOT_READY; process never starts inference or silently disables AI.
@@ -787,6 +965,11 @@ sony2fuji_status sony2fuji_session_set_color_grading(
     sony2fuji_session* session, const sony2fuji_color_grading_config* config
 );
 
+// Additive v2 color grading setter (per-zone luminance, global wheel, blending, balance).
+sony2fuji_status sony2fuji_session_set_color_grading_v2(
+    sony2fuji_session* session, const sony2fuji_color_grading_v2_config* config
+);
+
 // Legacy mode has count=0 and uses request.tone_curve unchanged. Custom mode
 // requires 2..33 finite normalized points, fixed (0,0)/(1,1), increasing x and
 // nondecreasing y; request.tone_curve must be zero. Identity is an exact bypass.
@@ -805,6 +988,20 @@ sony2fuji_status sony2fuji_session_set_tone_curves(
 // untouched. x and y may be the same array; no session/render lock is needed.
 sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* config,
     const double* x, double* y, uint32_t count);
+
+// Additive v2 tone curve setter (free endpoints y0/y1 in [0,1], luminosity mode, parametric bands).
+sony2fuji_status sony2fuji_session_set_tone_curves_v2(
+    sony2fuji_session* session, const sony2fuji_tone_curve_set_v2_config* config
+);
+
+// Stateless evaluator supporting free-endpoint custom curves + optional parametric curve (NULL = none).
+sony2fuji_status sony2fuji_sample_tone_curve_v2(
+    const sony2fuji_tone_curve_config* config,
+    const sony2fuji_tone_curve_parametric_config* parametric,
+    const double* x,
+    double* y,
+    uint32_t count
+);
 
 // Additive API; request v2 is unchanged. Identity is an exact bypass.
 // Already-oriented pixels rotate, flip, apply perspective, straighten within a
@@ -907,6 +1104,44 @@ sony2fuji_status sony2fuji_session_resolve_recipe_wb(
     sony2fuji_session* session,
     const sony2fuji_recipe_wb_request* request,
     sony2fuji_recipe_wb_result* result
+);
+
+#define SONY2FUJI_WB_PROBE_VERSION 1u
+
+typedef enum sony2fuji_wb_probe_availability {
+    SONY2FUJI_WB_PROBE_AVAILABLE = 0,
+    SONY2FUJI_WB_PROBE_OVEREXPOSED = 1, // All pixels in window had a channel >= 0.98
+    SONY2FUJI_WB_PROBE_OUTSIDE = 2,     // norm_x / norm_y outside [0, 1] or nonfinite
+    SONY2FUJI_WB_PROBE_UNAVAILABLE = 3  // Uncalibrated RAW or unsupported input
+} sony2fuji_wb_probe_availability;
+
+typedef struct sony2fuji_wb_probe_query {
+    uint32_t version;
+    uint32_t struct_size;
+    float norm_x;          // [0, 1] in post-geometry canvas coordinates
+    float norm_y;          // [0, 1] in post-geometry canvas coordinates
+    uint32_t window_size;  // 0 = default 3; allowed values: 0, 1, 3, 5
+    uint32_t reserved;     // Must be 0
+} sony2fuji_wb_probe_query;
+
+typedef struct sony2fuji_wb_probe_result {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_wb_probe_availability availability;
+    uint32_t valid_pixel_count;
+    uint32_t rejected_overexposed_count;
+    float temperature;    // [2000, 50000] K (relative around 6500 K for raster/X3F)
+    float tint;           // [-150, 150]
+    float sampled_rgb[3]; // Mean linear RGB of accepted pixels
+    float wb_mul[3];      // Normalized multipliers (wb_mul[1] == 1.0)
+    uint32_t reserved;
+} sony2fuji_wb_probe_result;
+
+sony2fuji_status sony2fuji_session_sample_wb_probe(
+    sony2fuji_session* session,
+    const sony2fuji_request* request,
+    const sony2fuji_wb_probe_query* query,
+    sony2fuji_wb_probe_result* out_result
 );
 
 sony2fuji_status sony2fuji_session_set_gpu_config(

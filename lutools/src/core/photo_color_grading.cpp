@@ -49,14 +49,24 @@ RGB applyCoefficients(const RGB& pixel, const std::array<RGB,3>& coefficients) {
 } // namespace
 
 bool ColorGradingOptions::valid() const {
-    for (const auto& w : wheels)
-        if (!std::isfinite(w.hue) || w.hue<0 || w.hue>=360 ||
-            !std::isfinite(w.saturation) || w.saturation<0 || w.saturation>100) return false;
+    auto validWheel = [](const ColorGradingWheel& w) {
+        return std::isfinite(w.hue) && w.hue >= 0 && w.hue < 360 &&
+               std::isfinite(w.saturation) && w.saturation >= 0 && w.saturation <= 100 &&
+               std::isfinite(w.luminance) && w.luminance >= -100 && w.luminance <= 100;
+    };
+    for (const auto& w : wheels) {
+        if (!validWheel(w)) return false;
+    }
+    if (!validWheel(global)) return false;
+    if (!std::isfinite(blending) || blending < 0 || blending > 100) return false;
+    if (!std::isfinite(balance) || balance < -100 || balance > 100) return false;
     return true;
 }
 bool ColorGradingOptions::active() const {
-    for (const auto& w : wheels) if (w.saturation!=0) return true;
-    return false;
+    for (const auto& w : wheels) {
+        if (w.saturation != 0 || w.luminance != 0) return true;
+    }
+    return global.saturation != 0 || global.luminance != 0;
 }
 std::array<RGB,3> colorGradingCoefficients(const ColorGradingOptions& options) {
     std::array<RGB,3> result{};

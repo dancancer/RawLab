@@ -84,14 +84,21 @@
     <string name="color_grading">"Étalonnage des couleurs"</string>
     <string name="curve_add_point">"Ajouter un point"</string>
     <string name="curve_custom">"Courbe à points"</string>
+    <string name="curve_darks">"Tons foncés"</string>
     <string name="curve_edit_point">"Modifier le point"</string>
     <string name="curve_fixed_endpoint">"Les extrémités sont fixes"</string>
     <string name="curve_hint">"Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster."</string>
     <string name="curve_input">"Entrée"</string>
+    <string name="curve_lights">"Tons clairs"</string>
+    <string name="curve_luminosity_only">"Luminance uniquement"</string>
     <string name="curve_output">"Sortie"</string>
+    <string name="curve_parametric_mode">"Courbe paramétrique"</string>
+    <string name="curve_point_mode">"Courbe à points"</string>
     <string name="curve_point_number">"Point %1$d"</string>
     <string name="curve_remove_point">"Supprimer le point"</string>
+    <string name="curve_reset">"Réinitialiser la courbe"</string>
     <string name="curve_reset_identity">"Rétablir une droite"</string>
+    <string name="curve_split_points">"Points de séparation"</string>
     <string name="curve_summary">"Courbe à points (%1$d points)"</string>
     <string name="curve_switch">"Changer"</string>
     <string name="curve_switch_custom">"La courbe à points commence par une droite. La valeur de courbe en S est conservée."</string>
@@ -190,6 +197,10 @@
     <string name="geometry_perspective_tool">"Perspective"</string>
     <string name="geometry_position_size">"Position et dimensions"</string>
     <string name="geometry_rotation_tool">"Rotation"</string>
+    <string name="grading_balance">"Balance"</string>
+    <string name="grading_blending">"Fusion"</string>
+    <string name="grading_global">"Global"</string>
+    <string name="grading_luminance">"Luminance"</string>
     <string name="grading_midtones">"Tons moyens"</string>
     <string name="grading_reset_all">"Réinitialiser l’étalonnage des couleurs"</string>
     <string name="grading_reset_message">"Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?"</string>
@@ -342,6 +353,13 @@
     <string name="lut_unsupported_color">"L’espace colorimétrique ou le style de base de la LUT n’est pas pris en charge. Elle n’a pas été importée. Aucun rendu neutre ne sera substitué."</string>
     <string name="lut_use_library_photo">"Utiliser cette photo"</string>
     <string name="output_destination">"Emplacement"</string>
+    <string name="overlay_gray_50" formatted="false">"Gris neutre 50 %"</string>
+    <string name="overlay_none">"Sans calque"</string>
+    <string name="overlay_oversaturation_heatmap">"Carte thermique de saturation"</string>
+    <string name="overlay_section">"Calque d’inspection"</string>
+    <string name="overlay_sketch_luminance">"Luminance esquisse"</string>
+    <string name="overlay_skin_hue_boost">"Amplification teinte peau"</string>
+    <string name="overlay_warm_cool_bw">"N&amp;B chaud/froid"</string>
     <string name="photo_processing_settings">"Réglages de traitement photo"</string>
     <string name="png_description">"sRGB · 16 bits sans perte · métadonnées de prise de vue"</string>
     <string name="preset_another_name">"Saisissez un autre nom pour le préréglage."</string>
@@ -391,6 +409,9 @@
     <string name="reset_all_body">"Le film actuel est conservé. La recette et les autres réglages sont réinitialisés. Les photos, looks et tâches par lot sont conservés."</string>
     <string name="reset_all_title">"Réinitialiser tous les réglages ?"</string>
     <string name="reset_effect">"Réinitialiser %1$s"</string>
+    <string name="sampling_clear_anchors">"Effacer les repères"</string>
+    <string name="sampling_monitor">"Moniteur d’échantillonnage"</string>
+    <string name="sampling_pin_anchor">"Épingler un repère"</string>
     <string name="select_photo">"Choisir une photo"</string>
     <string name="storage_camera_originals_summary">"%1$d fichiers · %2$s"</string>
     <string name="storage_clear_camera_originals">"Nettoyer les originaux exportés de l’appareil photo"</string>
@@ -522,6 +543,7 @@
     <string name="transfer_unrepresentable">"Les réglages non sélectionnés ne peuvent pas être préservés. Modifiez la sélection à copier."</string>
     <string name="vibrance">"Vibrance"</string>
     <string name="vignette_highlights_unavailable">"Disponible uniquement lorsque l’intensité du vignettage est négative."</string>
+    <string name="wb_eyedropper">"Pipette de balance des blancs"</string>
     <string name="white_point">"Point blanc"</string>
     <string name="x3f_legacy">"Faux infrarouge (ancien)"</string>
     <string name="x3f_legacy_description">"Conserve les couleurs particulières de l’ancien développement."</string>

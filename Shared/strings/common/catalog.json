@@ -8854,5 +8854,269 @@
     "es": "La cámara no aceptó el punto de enfoque en su estado actual.",
     "fr": "L’appareil n’a pas accepté le point de mise au point dans son état actuel.",
     "ja": "現在の状態ではカメラがピント位置の設定を受け付けませんでした。"
+  },
+  "仅作用于明度": {
+    "en": "Luminosity Only",
+    "de": "Nur Luminanz",
+    "fr": "Luminance uniquement",
+    "es": "Solo luminancia",
+    "ja": "輝度のみに適用",
+    "zh-Hans": "仅作用于明度"
+  },
+  "点曲线": {
+    "en": "Point Curve",
+    "de": "Punktkurve",
+    "fr": "Courbe à points",
+    "es": "Curva de puntos",
+    "ja": "ポイントカーブ",
+    "zh-Hans": "点曲线"
+  },
+  "参数曲线": {
+    "en": "Parametric Curve",
+    "de": "Parametrische Kurve",
+    "fr": "Courbe paramétrique",
+    "es": "Curva paramétrica",
+    "ja": "パラメトリックカーブ",
+    "zh-Hans": "参数曲线"
+  },
+  "亮部": {
+    "en": "Lights",
+    "de": "Helle Mitteltöne",
+    "fr": "Tons clairs",
+    "es": "Claros",
+    "ja": "ライト",
+    "zh-Hans": "亮部"
+  },
+  "暗部": {
+    "en": "Darks",
+    "de": "Dunkle Mitteltöne",
+    "fr": "Tons foncés",
+    "es": "Oscuros",
+    "ja": "ダーク",
+    "zh-Hans": "暗部"
+  },
+  "拆分点": {
+    "en": "Split Points",
+    "de": "Trennpunkte",
+    "fr": "Points de séparation",
+    "es": "Puntos de división",
+    "ja": "分割ポイント",
+    "zh-Hans": "拆分点"
+  },
+  "重置曲线": {
+    "en": "Reset Curve",
+    "de": "Kurve zurücksetzen",
+    "fr": "Réinitialiser la courbe",
+    "es": "Restablecer curva",
+    "ja": "カーブをリセット",
+    "zh-Hans": "重置曲线"
+  },
+  "明亮度": {
+    "en": "Luminance",
+    "de": "Luminanz",
+    "fr": "Luminance",
+    "es": "Luminancia",
+    "ja": "輝度",
+    "zh-Hans": "明亮度"
+  },
+  "全局": {
+    "en": "Global",
+    "de": "Global",
+    "fr": "Global",
+    "es": "Global",
+    "ja": "全体",
+    "zh-Hans": "全局"
+  },
+  "融合": {
+    "en": "Blending",
+    "de": "Überblendung",
+    "fr": "Fusion",
+    "es": "Fusión",
+    "ja": "ブレンディング",
+    "zh-Hans": "融合"
+  },
+  "平衡": {
+    "en": "Balance",
+    "de": "Balance",
+    "fr": "Balance",
+    "es": "Equilibrio",
+    "ja": "バランス",
+    "zh-Hans": "平衡"
+  },
+  "白平衡吸管": {
+    "en": "White Balance Eyedropper",
+    "de": "Weißabgleich-Pipette",
+    "fr": "Pipette de balance des blancs",
+    "es": "Cuentagotas de balance de blancos",
+    "ja": "ホワイトバランススポイト",
+    "zh-Hans": "白平衡吸管"
+  },
+  "取样监视": {
+    "en": "Sampling Monitor",
+    "de": "Messmonitor",
+    "fr": "Moniteur d’échantillonnage",
+    "es": "Monitor de muestreo",
+    "ja": "サンプリングモニター",
+    "zh-Hans": "取样监视"
+  },
+  "添加锚点": {
+    "en": "Pin Anchor",
+    "de": "Anker setzen",
+    "fr": "Épingler un repère",
+    "es": "Fijar ancla",
+    "ja": "アンカーを追加",
+    "zh-Hans": "添加锚点"
+  },
+  "清除锚点": {
+    "en": "Clear Anchors",
+    "de": "Anker löschen",
+    "fr": "Effacer les repères",
+    "es": "Borrar anclas",
+    "ja": "アンカーを消去",
+    "zh-Hans": "清除锚点"
+  },
+  "观察层": {
+    "en": "Inspection Overlay",
+    "de": "Kontrollansicht",
+    "fr": "Calque d’inspection",
+    "es": "Capa de inspección",
+    "ja": "診断オーバーレイ",
+    "zh-Hans": "观察层"
+  },
+  "关闭观察层": {
+    "en": "Overlay Off",
+    "de": "Kontrollansicht aus",
+    "fr": "Sans calque",
+    "es": "Sin capa",
+    "ja": "オーバーレイオフ",
+    "zh-Hans": "关闭观察层"
+  },
+  "素描明度": {
+    "en": "Sketch Luminance",
+    "de": "Skizzen-Luminanz",
+    "fr": "Luminance esquisse",
+    "es": "Luminancia boceto",
+    "ja": "スケッチ輝度",
+    "zh-Hans": "素描明度"
+  },
+  "冷暖反差黑白": {
+    "en": "Warm/Cool B&W",
+    "de": "Warm/Kalt-SW",
+    "fr": "N&B chaud/froid",
+    "es": "B/N cálido/frío",
+    "ja": "寒暖コントラストモノクロ",
+    "zh-Hans": "冷暖反差黑白"
+  },
+  "过饱和熔断热力图": {
+    "en": "Oversaturation Heatmap",
+    "de": "Übersättigungs-Heatmap",
+    "fr": "Carte thermique de saturation",
+    "es": "Mapa térmico de sobresaturación",
+    "ja": "過飽和ヒートマップ",
+    "zh-Hans": "过饱和熔断热力图"
+  },
+  "肤色色相放大": {
+    "en": "Skin Hue Amplification",
+    "de": "Hautton-Verstärkung",
+    "fr": "Amplification teinte peau",
+    "es": "Amplificación de tono de piel",
+    "ja": "肌色色相強調",
+    "zh-Hans": "肤色色相放大"
+  },
+  "50% 中性灰": {
+    "en": "50% Neutral Gray",
+    "de": "50 % Neutralgrau",
+    "fr": "Gris neutre 50 %",
+    "es": "Gris neutro 50 %",
+    "ja": "50% ニュートラルグレー",
+    "zh-Hans": "50% 中性灰"
+  },
+  "输出锐化": {
+    "en": "Output Sharpening",
+    "de": "Ausgabeschärfung",
+    "fr": "Netteté de sortie",
+    "es": "Enfoque de salida",
+    "ja": "出力シャープ",
+    "zh-Hans": "输出锐化"
+  },
+  "关": {
+    "en": "Off",
+    "de": "Aus",
+    "fr": "Désactivé",
+    "es": "Desactivado",
+    "ja": "オフ",
+    "zh-Hans": "关"
+  },
+  "低": {
+    "en": "Low",
+    "de": "Niedrig",
+    "fr": "Faible",
+    "es": "Bajo",
+    "ja": "弱",
+    "zh-Hans": "低"
+  },
+  "标准": {
+    "en": "Standard",
+    "de": "Standard",
+    "fr": "Standard",
+    "es": "Estándar",
+    "ja": "標準",
+    "zh-Hans": "标准"
+  },
+  "高": {
+    "en": "High",
+    "de": "Hoch",
+    "fr": "Élevé",
+    "es": "Alto",
+    "ja": "強",
+    "zh-Hans": "高"
+  },
+  "AI 降噪强度": {
+    "en": "AI Denoise Strength",
+    "de": "KI-Entrauschungsstärke",
+    "fr": "Intensité débruitage IA",
+    "es": "Intensidad de reducción de ruido IA",
+    "ja": "AI ノイズ低減強度",
+    "zh-Hans": "AI 降噪强度"
+  },
+  "导入调整参数 JSON…": {
+    "en": "Import Adjustments JSON…",
+    "de": "Anpassungen als JSON importieren…",
+    "fr": "Importer les réglages JSON…",
+    "es": "Importar ajustes JSON…",
+    "ja": "調整パラメータ JSON を読み込む…",
+    "zh-Hans": "导入调整参数 JSON…"
+  },
+  "导出调整参数 JSON…": {
+    "en": "Export Adjustments JSON…",
+    "de": "Anpassungen als JSON exportieren…",
+    "fr": "Exporter les réglages JSON…",
+    "es": "Exportar ajustes JSON…",
+    "ja": "調整パラメータ JSON を書き出す…",
+    "zh-Hans": "导出调整参数 JSON…"
+  },
+  "检测到外部调色方案更新": {
+    "en": "External color grading update detected",
+    "de": "Externes Update der Farbabstimmung erkannt",
+    "fr": "Mise à jour externe des réglages détectée",
+    "es": "Actualización externa de ajustes detectada",
+    "ja": "外部からの調色プラン更新を検出しました",
+    "zh-Hans": "检测到外部调色方案更新"
+  },
+  "重载滑块": {
+    "en": "Reload Sliders",
+    "de": "Regler neu laden",
+    "fr": "Recharger les curseurs",
+    "es": "Recargar controles",
+    "ja": "スライダーを再読み込み",
+    "zh-Hans": "重载滑块"
+  },
+  "保留当前手动草稿": {
+    "en": "Keep Current Manual Draft",
+    "de": "Aktuellen manuellen Entwurf behalten",
+    "fr": "Conserver le brouillon manuel",
+    "es": "Conservar borrador manual actual",
+    "ja": "現在の手動ドラフトを保持",
+    "zh-Hans": "保留当前手动草稿"
   }
 }

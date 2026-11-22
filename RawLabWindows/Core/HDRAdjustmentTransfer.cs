@@ -30,7 +30,15 @@ internal static class HDRAdjustmentTransfer
             _ => throw new AdjustmentTransferException(AdjustmentFailure.InvalidPayload, "scope")
         };
         if (fields.Count == 0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
-        var requiredVersion = fields.Contains(F.HdrLook) ? 7 : fields.Overlaps(AdjustmentFields.HDRDetail) ? 6 :
+        var requiredVersion = fields.Overlaps(AdjustmentFields.HDRV9ToneExtensions) ||
+            fields.Overlaps(AdjustmentFields.HDRV9ColorExtensions) ||
+            Enum.GetValues<ColorGradingZone>().Any(z => fields.Contains(z switch {
+                ColorGradingZone.Shadows => F.GradingShadows,
+                ColorGradingZone.Midtones => F.GradingMidtones,
+                _ => F.GradingHighlights
+            }) && settings.ColorSettings.Grading[z].Luminance != 0)
+            ? 9
+            : fields.Contains(F.HdrLook) ? 7 : fields.Overlaps(AdjustmentFields.HDRDetail) ? 6 :
             fields.Overlaps(AdjustmentFields.HDREffects) ? 5 : fields.Overlaps(AdjustmentFields.HDRRendition) ? 4 :
             fields.Overlaps(AdjustmentFields.HDRColor) ? 3 : fields.Overlaps(AdjustmentFields.HDRTone) ? 2 : 1;
         var version = Math.Max(requiredVersion, settings.ProcessingVersion);
@@ -63,9 +71,9 @@ internal static class HDRAdjustmentTransfer
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.target");
         if (!payload.Fields.IsSubsetOf(AdjustmentFields.HDRTransferFields(cameraRaw)))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.fields");
-        if (!payload.Source.IsHDR && payload.Fields.Overlaps(AdjustmentFields.HDRTone))
+        if (!payload.Source.IsHDR && (payload.Fields.Overlaps(AdjustmentFields.HDRTone) || payload.Fields.Overlaps(AdjustmentFields.HDRV9ToneExtensions)))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.tone");
-        if (!payload.Source.IsHDR && payload.Fields.Overlaps(AdjustmentFields.HDRColor))
+        if (!payload.Source.IsHDR && (payload.Fields.Overlaps(AdjustmentFields.HDRColor) || payload.Fields.Overlaps(AdjustmentFields.HDRV9ColorExtensions)))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.color");
         if (!payload.Source.IsHDR && payload.Fields.Overlaps(AdjustmentFields.HDREffects))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.effects");
@@ -108,7 +116,14 @@ internal static class HDRAdjustmentTransfer
         if (Number(payload[F.WhitePoint]) is { } white) tone = tone with { WhitePoint = white };
         if (Number(payload[F.SCurve]) is { } strength && strength != tone.CurveStrength / 100)
             tone = tone with { CurveStrength = strength * 100 };
-        if (payload[F.Curve] is { } curve) tone = tone with { Curve = ToneCurveSettings.Parse(curve) };
+        if (payload[F.Curve] is { } curve) {
+            var parsed = ToneCurveSettings.Parse(curve);
+            tone = tone with { Curve = new(parsed.Mode, parsed.Points, parsed.Channels, tone.Curve.ApplyToLuminosity, tone.Curve.Parametric) };
+        }
+        if (Boolean(payload[F.CurveApplyToLuminosity]) is { } applyLum)
+            tone = tone with { Curve = new(tone.Curve.Mode, tone.Curve.Points, tone.Curve.Channels, applyLum, tone.Curve.Parametric) };
+        if (payload[F.CurveParametric] is { } paramElem)
+            tone = tone with { Curve = new(tone.Curve.Mode, tone.Curve.Points, tone.Curve.Channels, tone.Curve.ApplyToLuminosity, ToneCurveParametric.Parse(paramElem)) };
         var color = result.ColorSettings;
         if (Number(payload[F.Vibrance]) is { } vibrance) color = color with { Vibrance = vibrance };
         foreach (var field in payload.Fields)
@@ -116,9 +131,14 @@ internal static class HDRAdjustmentTransfer
             if (field.HslIndex() is { } index && Number(payload[field]) is { } amount)
                 color = color with { Hsl = color.Hsl.WithValue(index / 8, index % 8, amount) };
             if (field.GradingZone() is { } zone && payload[field] is { } wheel)
-                color = color with { Grading = color.Grading.With(zone,
-                    new(wheel.GetProperty("hue").GetDouble(), wheel.GetProperty("saturation").GetDouble())) };
+                color = color with { Grading = color.Grading.With(zone, AdjustmentTransferValues.ParseWheel(wheel)) };
         }
+        if (payload[F.GradingGlobal] is { } globalElem)
+            color = color with { Grading = color.Grading with { Global = AdjustmentTransferValues.ParseWheel(globalElem) } };
+        if (Number(payload[F.GradingBlending]) is { } blending)
+            color = color with { Grading = color.Grading with { Blending = blending } };
+        if (Number(payload[F.GradingBalance]) is { } balance)
+            color = color with { Grading = color.Grading with { Balance = balance } };
         var rendition = result.RenditionSettings;
         rendition = rendition with {
             PeakLimitEV = Number(payload[F.HdrPeakLimit]) ?? rendition.PeakLimitEV,
@@ -189,6 +209,11 @@ internal static class HDRAdjustmentTransfer
             [F.PerspectiveVertical] = Value(settings.Geometry.PerspectiveVertical),
             [F.BlackPoint] = Value(tone.BlackPoint), [F.WhitePoint] = Value(tone.WhitePoint),
             [F.SCurve] = Value(tone.CurveStrength / 100), [F.Curve] = JsonSerializer.SerializeToElement(tone.Curve),
+            [F.CurveApplyToLuminosity] = Value(tone.Curve.ApplyToLuminosity),
+            [F.CurveParametric] = AdjustmentTransferValues.ParametricElement(tone.Curve.Parametric),
+            [F.GradingGlobal] = AdjustmentTransferValues.WheelElement(color.Grading.Global),
+            [F.GradingBlending] = Value(color.Grading.Blending),
+            [F.GradingBalance] = Value(color.Grading.Balance),
             [F.Vibrance] = Value(color.Vibrance), [F.Sharpening] = Value(detail.Sharpening),
             [F.Clarity] = Value(detail.Clarity * 100), [F.Dehaze] = Value(detail.Dehaze * 100),
             [F.PostRGBDenoise] = Value(detail.Denoise),
@@ -200,10 +225,7 @@ internal static class HDRAdjustmentTransfer
         {
             if (field.HslIndex() is { } index) result[field] = Value(color.Hsl.Value(index / 8, index % 8));
             if (field.GradingZone() is { } zone)
-            {
-                var wheel = color.Grading[zone];
-                result[field] = JsonSerializer.SerializeToElement(new { hue = wheel.Hue, saturation = wheel.Saturation });
-            }
+                result[field] = AdjustmentTransferValues.WheelElement(color.Grading[zone]);
         }
         return result;
     }

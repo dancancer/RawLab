@@ -235,6 +235,7 @@
     <string name="expand_vignette">"Show Vignette Settings"</string>
     <string name="export">"Export"</string>
     <string name="export_done">"Photo saved"</string>
+    <string name="export_output_sharpening">"Output Sharpening"</string>
     <string name="exporting">"Exporting…"</string>
     <string name="exposure">"Exposure"</string>
     <string name="exposure_basis">"Exposure reference"</string>
@@ -438,6 +439,10 @@
     <string name="output_custom_size">"Custom"</string>
     <string name="output_long_edge">"Long-edge limit (px)"</string>
     <string name="output_original_size">"Original size"</string>
+    <string name="output_sharpening_high">"High"</string>
+    <string name="output_sharpening_low">"Low"</string>
+    <string name="output_sharpening_off">"Off"</string>
+    <string name="output_sharpening_standard">"Standard"</string>
     <string name="output_size">"Export Size"</string>
     <string name="output_size_error">"The long edge must be 1-65535 pixels."</string>
     <string name="output_size_range">"1–65535 pixels"</string>

@@ -34,10 +34,20 @@ public enum HDRRecipe {
             let color = settings.colorSettings
             edits["color"] = ["vibrance": color.vibrance / 100]
             edits["hsl"] = ["hue": color.hsl.hue, "saturation": color.hsl.saturation, "lightness": color.hsl.lightness]
-            edits["color_grading"] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
+            var gradingDict: [String: Any] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
                 let wheel = color.grading[zone]
-                return (zone.rawValue, ["hue": wheel.hue, "saturation": wheel.saturation])
+                var wheelDict: [String: Any] = ["hue": wheel.hue, "saturation": wheel.saturation]
+                if wheel.luminance != 0.0 { wheelDict["luminance"] = wheel.luminance }
+                return (zone.rawValue, wheelDict)
             })
+            if !color.grading.global.isDefault {
+                var globalDict: [String: Any] = ["hue": color.grading.global.hue, "saturation": color.grading.global.saturation]
+                if color.grading.global.luminance != 0.0 { globalDict["luminance"] = color.grading.global.luminance }
+                gradingDict["global"] = globalDict
+            }
+            if color.grading.blending != 50.0 { gradingDict["blending"] = color.grading.blending }
+            if color.grading.balance != 0.0 { gradingDict["balance"] = color.grading.balance }
+            edits["color_grading"] = gradingDict
         }
         if version >= 4 {
             let rendition = settings.renditionSettings
@@ -60,7 +70,7 @@ public enum HDRRecipe {
             edits["look"] = ["path": asset.path, "sha256": fingerprint, "strength": settings.lookSettings.strength]
         }
         let document: [String:Any]=[
-            "schema_version": version == 8 ? 15 : version == 1 ? 6 : version + 6,
+            "schema_version": version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6,
             "processing":["family":"rawlab_hdr","version":version,"quality":"standard"],
             "input":["path":input.standardizedFileURL.path,"type":"hdr_raster"],
             "edits":edits,

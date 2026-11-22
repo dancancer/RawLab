@@ -7,6 +7,8 @@
 #include "core/render_params.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -112,6 +114,25 @@ bool toCoreToneCurveConfig(const sony2fuji_tone_curve_config& src, sony2fuji::To
         out.points[i] = {src.points[i].x, src.points[i].y};
     }
     return true;
+}
+
+bool toCoreParametricCurveConfig(
+    const sony2fuji_tone_curve_parametric_config& src,
+    sony2fuji::ToneCurveParametricConfig& out
+) noexcept {
+    if (src.version != SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION ||
+        src.struct_size != sizeof(src) ||
+        src.reserved != 0) {
+        return false;
+    }
+    out.highlights = src.highlights;
+    out.lights = src.lights;
+    out.darks = src.darks;
+    out.shadows = src.shadows;
+    out.splitShadow = src.split_shadow;
+    out.splitMidtone = src.split_midtone;
+    out.splitHighlight = src.split_highlight;
+    return out.valid();
 }
 
 } // namespace
@@ -645,6 +666,48 @@ sony2fuji_status sony2fuji_session_resolve_recipe_wb(
     return toFfiStatus(status);
 }
 
+sony2fuji_status sony2fuji_session_sample_wb_probe(
+    sony2fuji_session* handle,
+    const sony2fuji_request* request,
+    const sony2fuji_wb_probe_query* query,
+    sony2fuji_wb_probe_result* out_result
+) {
+    SessionLease lease;
+    sony2fuji::RenderParams params;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderParams(request, params) ||
+        !query || !out_result ||
+        query->version != SONY2FUJI_WB_PROBE_VERSION ||
+        query->struct_size < sizeof(*query) ||
+        query->reserved != 0 ||
+        (query->window_size != 0 && query->window_size != 1 &&
+         query->window_size != 3 && query->window_size != 5) ||
+        out_result->version != SONY2FUJI_WB_PROBE_VERSION ||
+        out_result->struct_size < sizeof(*out_result)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint32_t preservedVersion = out_result->version;
+    const uint32_t preservedSize = out_result->struct_size;
+    std::memset(out_result, 0, sizeof(*out_result));
+    out_result->version = preservedVersion;
+    out_result->struct_size = preservedSize;
+    const bool outside = !std::isfinite(query->norm_x) || !std::isfinite(query->norm_y) ||
+                         query->norm_x < 0.0f || query->norm_x > 1.0f ||
+                         query->norm_y < 0.0f || query->norm_y > 1.0f;
+    out_result->availability = outside ? SONY2FUJI_WB_PROBE_OUTSIDE : SONY2FUJI_WB_PROBE_UNAVAILABLE;
+    out_result->temperature = 6500.0f;
+    out_result->tint = 0.0f;
+    out_result->wb_mul[0] = 1.0f;
+    out_result->wb_mul[1] = 1.0f;
+    out_result->wb_mul[2] = 1.0f;
+    return SONY2FUJI_STATUS_OK;
+}
+
+sony2fuji_status sony2fuji_session_set_ai_denoise_blend(sony2fuji_session* handle, float strength) {
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    return toFfiStatus(lease.raw()->pipeline.setAiDenoiseBlend(strength));
+}
+
 sony2fuji_status sony2fuji_session_set_photo_effects(sony2fuji_session* handle, const sony2fuji_photo_effects_config* config) {
     SessionLease lease;
     if (!SessionLease::acquire(handle, lease) || !config ||
@@ -706,6 +769,29 @@ sony2fuji_status sony2fuji_session_set_color_grading(sony2fuji_session* handle, 
     return toFfiStatus(lease.raw()->pipeline.setColorGrading(options));
 }
 
+sony2fuji_status sony2fuji_session_set_color_grading_v2(
+    sony2fuji_session* handle,
+    const sony2fuji_color_grading_v2_config* config
+) {
+    static_assert(sizeof(sony2fuji_color_grading_v2_config) == 64, "Color grading v2 C ABI layout");
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config ||
+        config->version != SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION ||
+        config->struct_size != sizeof(*config)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    sony2fuji::ColorGradingOptions options;
+    options.wheels = {
+        sony2fuji::ColorGradingWheel{config->shadows_hue, config->shadows_saturation, config->shadows_luminance},
+        sony2fuji::ColorGradingWheel{config->midtones_hue, config->midtones_saturation, config->midtones_luminance},
+        sony2fuji::ColorGradingWheel{config->highlights_hue, config->highlights_saturation, config->highlights_luminance}
+    };
+    options.global = sony2fuji::ColorGradingWheel{config->global_hue, config->global_saturation, config->global_luminance};
+    options.blending = config->blending;
+    options.balance = config->balance;
+    return toFfiStatus(lease.raw()->pipeline.setColorGrading(options));
+}
+
 sony2fuji_status sony2fuji_session_set_tone_curve(sony2fuji_session* handle, const sony2fuji_tone_curve_config* config) {
     static_assert(sizeof(sony2fuji_tone_curve_config) == 544, "Tone curve C ABI layout");
     SessionLease lease;
@@ -737,6 +823,51 @@ sony2fuji_status sony2fuji_sample_tone_curve(const sony2fuji_tone_curve_config* 
     sony2fuji::ToneCurveConfig coreConfig;
     if (!config || !toCoreToneCurveConfig(*config, coreConfig)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     return toFfiStatus(sony2fuji::Pipeline::sampleToneCurve(coreConfig, x, y, count));
+}
+
+sony2fuji_status sony2fuji_session_set_tone_curves_v2(
+    sony2fuji_session* handle,
+    const sony2fuji_tone_curve_set_v2_config* config
+) {
+    static_assert(sizeof(sony2fuji_tone_curve_parametric_config) == 40, "Parametric tone curve C ABI layout");
+    static_assert(sizeof(sony2fuji_tone_curve_set_v2_config) == 2232, "Tone curve set v2 C ABI layout");
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !config ||
+        config->version != SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION ||
+        config->struct_size != sizeof(*config) ||
+        (config->apply_to_luminosity != 0 && config->apply_to_luminosity != 1) ||
+        config->reserved != 0) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    sony2fuji::ToneCurveConfig master;
+    std::array<sony2fuji::ToneCurveConfig, 3> channels;
+    sony2fuji::ToneCurveParametricConfig parametric;
+    if (!toCoreToneCurveConfig(config->curves[0], master) ||
+        !toCoreToneCurveConfig(config->curves[1], channels[0]) ||
+        !toCoreToneCurveConfig(config->curves[2], channels[1]) ||
+        !toCoreToneCurveConfig(config->curves[3], channels[2]) ||
+        !toCoreParametricCurveConfig(config->parametric, parametric)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    return toFfiStatus(lease.raw()->pipeline.setToneCurvesV2(
+        master, channels, config->apply_to_luminosity != 0, parametric));
+}
+
+sony2fuji_status sony2fuji_sample_tone_curve_v2(
+    const sony2fuji_tone_curve_config* config,
+    const sony2fuji_tone_curve_parametric_config* parametric,
+    const double* x,
+    double* y,
+    uint32_t count
+) {
+    sony2fuji::ToneCurveConfig coreConfig;
+    if (!config || !toCoreToneCurveConfig(*config, coreConfig)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji::ToneCurveParametricConfig coreParametric;
+    if (parametric && !toCoreParametricCurveConfig(*parametric, coreParametric)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    return toFfiStatus(sony2fuji::Pipeline::sampleToneCurveV2(
+        coreConfig, parametric ? &coreParametric : nullptr, x, y, count));
 }
 
 sony2fuji_status sony2fuji_session_set_geometry(sony2fuji_session* handle, const sony2fuji_geometry_config* config) {

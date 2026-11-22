@@ -209,6 +209,102 @@ int main() {
     })";
     REQUIRE(sony2fuji_apply_params(session, kX3fRecipe) == SONY2FUJI_STATUS_OK);
 
+    // 8. Wave 0 v17 apply_params, raster relative WB, and additive C ABI stubs.
+    const char* kV17RasterRelativeWb = R"({
+      "schema_version": 17,
+      "processing": { "family": "rawlab", "version": 3, "quality": "standard" },
+      "input": { "path": "memory.png", "type": "raster" },
+      "edits": {
+        "exposure": { "mode": "sensor", "ev": 0.0, "brightness": 1.0 },
+        "white_balance": { "mode": "relative", "relative_temperature": 5200.0, "relative_tint": -10.0 },
+        "tone": {
+          "curve": {
+            "mode": "custom",
+            "points": [[0.0, 0.05], [1.0, 0.95]],
+            "apply_to_luminosity": true,
+            "parametric": { "highlights": -10.0, "shadows": 15.0 }
+          }
+        },
+        "color_grading": {
+          "shadows": { "hue": 200.0, "saturation": 20.0, "luminance": -5.0 },
+          "global": { "hue": 30.0, "saturation": 10.0, "luminance": 2.0 },
+          "blending": 60.0,
+          "balance": -10.0
+        }
+      },
+      "output": { "path": "out.png", "format": "png", "output_sharpening": "low", "size": { "mode": "native" } }
+    })";
+    REQUIRE(sony2fuji_apply_params(session, kV17RasterRelativeWb) == SONY2FUJI_STATUS_OK);
+    const auto v17WbPixels = renderDisplay(session, inputPixels, kWidth, kHeight);
+    REQUIRE(v17WbPixels != baselinePixels);
+    // Reset to neutral returns exact baseline.
+    REQUIRE(sony2fuji_apply_params(session, kNeutralRasterRecipe) == SONY2FUJI_STATUS_OK);
+    REQUIRE(renderDisplay(session, inputPixels, kWidth, kHeight) == baselinePixels);
+
+    // Additive C ABI stubs validation & safe behavior.
+    REQUIRE(sony2fuji_session_set_ai_denoise_blend(session, 0.5f) == SONY2FUJI_STATUS_OK);
+    REQUIRE(sony2fuji_session_set_ai_denoise_blend(session, 1.5f) == SONY2FUJI_STATUS_INVALID_ARGUMENT);
+    REQUIRE(sony2fuji_session_set_ai_denoise_blend(session, 1.0f) == SONY2FUJI_STATUS_OK);
+
+    sony2fuji_color_grading_v2_config cgV2{};
+    cgV2.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+    cgV2.struct_size = sizeof(cgV2);
+    cgV2.blending = 50.0f;
+    REQUIRE(sony2fuji_session_set_color_grading_v2(session, &cgV2) == SONY2FUJI_STATUS_OK);
+
+    sony2fuji_tone_curve_set_v2_config tcV2{};
+    tcV2.version = SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION;
+    tcV2.struct_size = sizeof(tcV2);
+    for (auto& c : tcV2.curves) {
+        c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+        c.struct_size = sizeof(c);
+        c.mode = SONY2FUJI_CURVE_LEGACY;
+    }
+    tcV2.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+    tcV2.curves[0].count = 2;
+    tcV2.curves[0].points[0] = {0.0, 0.1};
+    tcV2.curves[0].points[1] = {1.0, 0.9};
+    tcV2.parametric.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+    tcV2.parametric.struct_size = sizeof(tcV2.parametric);
+    tcV2.parametric.split_shadow = 0.25f;
+    tcV2.parametric.split_midtone = 0.50f;
+    tcV2.parametric.split_highlight = 0.75f;
+    REQUIRE(sony2fuji_session_set_tone_curves_v2(session, &tcV2) == SONY2FUJI_STATUS_OK);
+
+    const double xs[3] = {0.0, 0.5, 1.0};
+    double ys[3] = {0.0, 0.0, 0.0};
+    REQUIRE(sony2fuji_sample_tone_curve_v2(&tcV2.curves[0], &tcV2.parametric, xs, ys, 3) == SONY2FUJI_STATUS_OK);
+    REQUIRE(std::abs(ys[0] - 0.1) < 1e-6 && std::abs(ys[1] - 0.5) < 1e-6 && std::abs(ys[2] - 0.9) < 1e-6);
+
+    sony2fuji_buffer imgBuf{};
+    imgBuf.data = const_cast<uint8_t*>(inputPixels.data());
+    imgBuf.size_bytes = inputPixels.size();
+    imgBuf.width = kWidth;
+    imgBuf.height = kHeight;
+    imgBuf.stride_bytes = kWidth * 4;
+    imgBuf.pixel_format = SONY2FUJI_PIXEL_RGBA8;
+
+    sony2fuji_bsh_diagnosis diag{};
+    diag.version = SONY2FUJI_BSH_DIAGNOSIS_VERSION;
+    diag.struct_size = sizeof(diag);
+    REQUIRE(sony2fuji_diagnose_image(&imgBuf, nullptr, &diag) == SONY2FUJI_STATUS_OK);
+    REQUIRE(diag.width == kWidth && diag.height == kHeight && diag.bit_depth == 8 && diag.channels == 4);
+
+    sony2fuji_bsh_sample_query bshQ{SONY2FUJI_BSH_SAMPLE_VERSION, sizeof(bshQ), 0.5f, 0.5f, 0.02f, 0};
+    sony2fuji_bsh_sample_result bshRes{};
+    bshRes.version = SONY2FUJI_BSH_SAMPLE_VERSION;
+    bshRes.struct_size = sizeof(bshRes);
+    REQUIRE(sony2fuji_sample_region_bsh(&imgBuf, &bshQ, &bshRes) == SONY2FUJI_STATUS_OK);
+    REQUIRE(bshRes.width == kWidth && bshRes.height == kHeight);
+
+    const auto dispReq = makeDisplayRequest(inputPixels, kWidth, kHeight);
+    sony2fuji_wb_probe_query wbQ{SONY2FUJI_WB_PROBE_VERSION, sizeof(wbQ), 0.5f, 0.5f, 3, 0};
+    sony2fuji_wb_probe_result wbRes{};
+    wbRes.version = SONY2FUJI_WB_PROBE_VERSION;
+    wbRes.struct_size = sizeof(wbRes);
+    REQUIRE(sony2fuji_session_sample_wb_probe(session, &dispReq, &wbQ, &wbRes) == SONY2FUJI_STATUS_OK);
+    REQUIRE(wbRes.availability == SONY2FUJI_WB_PROBE_UNAVAILABLE);
+
     sony2fuji_session_destroy(session);
     std::cout << "apply_params_api_tests passed\n";
     return 0;

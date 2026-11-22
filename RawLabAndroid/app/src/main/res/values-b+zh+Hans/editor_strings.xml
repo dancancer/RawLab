@@ -84,14 +84,21 @@
     <string name="color_grading">"颜色分级"</string>
     <string name="curve_add_point">"添加控制点"</string>
     <string name="curve_custom">"多点曲线"</string>
+    <string name="curve_darks">"暗部"</string>
     <string name="curve_edit_point">"编辑控制点"</string>
     <string name="curve_fixed_endpoint">"端点固定"</string>
     <string name="curve_hint">"点击曲线区域添加控制点，拖动中间点调整。"</string>
     <string name="curve_input">"输入坐标"</string>
+    <string name="curve_lights">"亮部"</string>
+    <string name="curve_luminosity_only">"仅作用于明度"</string>
     <string name="curve_output">"输出坐标"</string>
+    <string name="curve_parametric_mode">"参数曲线"</string>
+    <string name="curve_point_mode">"点曲线"</string>
     <string name="curve_point_number">"控制点 %1$d"</string>
     <string name="curve_remove_point">"删除控制点"</string>
+    <string name="curve_reset">"重置曲线"</string>
     <string name="curve_reset_identity">"重置为直线"</string>
+    <string name="curve_split_points">"拆分点"</string>
     <string name="curve_summary">"多点曲线（%1$d 个控制点）"</string>
     <string name="curve_switch">"切换"</string>
     <string name="curve_switch_custom">"多点曲线将从直线开始，旧 S 曲线数值会保留。"</string>
@@ -190,6 +197,10 @@
     <string name="geometry_perspective_tool">"透视"</string>
     <string name="geometry_position_size">"位置与尺寸"</string>
     <string name="geometry_rotation_tool">"旋转"</string>
+    <string name="grading_balance">"平衡"</string>
+    <string name="grading_blending">"融合"</string>
+    <string name="grading_global">"全局"</string>
+    <string name="grading_luminance">"明亮度"</string>
     <string name="grading_midtones">"中间调"</string>
     <string name="grading_reset_all">"重置颜色分级"</string>
     <string name="grading_reset_message">"恢复阴影、中间调和高光的颜色分级默认值？"</string>
@@ -342,6 +353,13 @@
     <string name="lut_unsupported_color">"LUT 的颜色空间或基础风格暂不支持，未导入。不会自动替换为中性显影。"</string>
     <string name="lut_use_library_photo">"使用此照片"</string>
     <string name="output_destination">"保存位置"</string>
+    <string name="overlay_gray_50" formatted="false">"50% 中性灰"</string>
+    <string name="overlay_none">"关闭观察层"</string>
+    <string name="overlay_oversaturation_heatmap">"过饱和熔断热力图"</string>
+    <string name="overlay_section">"观察层"</string>
+    <string name="overlay_sketch_luminance">"素描明度"</string>
+    <string name="overlay_skin_hue_boost">"肤色色相放大"</string>
+    <string name="overlay_warm_cool_bw">"冷暖反差黑白"</string>
     <string name="photo_processing_settings">"照片处理设置"</string>
     <string name="png_description">"sRGB · 16 位无损图像 · 保留拍摄元数据"</string>
     <string name="preset_another_name">"请输入不同的预设名称。"</string>
@@ -391,6 +409,9 @@
     <string name="reset_all_body">"保留当前普通胶片，清除配方并恢复其余默认值。照片、外观库和批量任务保留。"</string>
     <string name="reset_all_title">"重置所有调整？"</string>
     <string name="reset_effect">"重置%1$s"</string>
+    <string name="sampling_clear_anchors">"清除锚点"</string>
+    <string name="sampling_monitor">"取样监视"</string>
+    <string name="sampling_pin_anchor">"添加锚点"</string>
     <string name="select_photo">"选择照片"</string>
     <string name="storage_camera_originals_summary">"共 %1$d 个文件 · %2$s"</string>
     <string name="storage_clear_camera_originals">"清理已导出的相机原件"</string>
@@ -522,6 +543,7 @@
     <string name="transfer_unrepresentable">"目标无法保留未选参数，请调整复制范围。"</string>
     <string name="vibrance">"鲜艳度"</string>
     <string name="vignette_highlights_unavailable">"仅在暗角强度为负值时可用。"</string>
+    <string name="wb_eyedropper">"白平衡吸管"</string>
     <string name="white_point">"白场"</string>
     <string name="x3f_legacy">"伪红外（旧版）"</string>
     <string name="x3f_legacy_description">"保留旧版的特殊色彩。"</string>

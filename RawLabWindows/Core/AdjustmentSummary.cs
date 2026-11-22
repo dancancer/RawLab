@@ -47,13 +47,16 @@ internal sealed class AdjustmentSummary
             F.HdrSDRExposure => NumberText(number, signed: true, minimum: 2) + " EV",
             F.HdrSDRContrast or F.HdrSDRSaturation => NumberText(number, signed: true) + "%",
             F.HdrTint => NumberText(number, signed: true) + "（" + text("相对白平衡") + "）",
-            F.WhiteBalanceMode => text(Text(value) switch { "camera" => "相机白平衡（按目标照片）", "temperature" => "自定义", _ => "不适用" }),
+            F.WhiteBalanceMode => text(Text(value) switch { "camera" => "相机白平衡（按目标照片）", "temperature" => "自定义", "relative" => "相对白平衡", _ => "不适用" }),
             F.Temperature or F.Tint => Null(value)
                 ? text(Text(payload[F.WhiteBalanceMode]) == "camera" ? "相机白平衡（按目标照片）" : "不适用")
                 : NumberText(number, signed: field == F.Tint) + (field == F.Temperature ? " K" : ""),
             F.Curve => CurveText(value),
-            F.GradingShadows or F.GradingMidtones or F.GradingHighlights => text("色相") + " " + NumberText(value.GetProperty("hue").GetDouble()) + "° · " +
-                text("饱和度") + " " + NumberText(value.GetProperty("saturation").GetDouble()) + "%",
+            F.CurveApplyToLuminosity => text(Boolean(value) == true ? "开启" : "停用"),
+            F.CurveParametric => ParametricText(value),
+            F.GradingShadows or F.GradingMidtones or F.GradingHighlights or F.GradingGlobal => GradingText(value),
+            F.GradingBlending => NumberText(number) + "%",
+            F.GradingBalance => NumberText(number, signed: true),
             F.VignetteAmount or F.VignetteRoundness => NumberText(number, signed: true),
             F.PerspectiveHorizontal or F.PerspectiveVertical => NumberText(number * 100, signed: true),
             F.VignetteMidpoint or F.VignetteFeather or F.VignetteHighlights or F.GrainAmount or F.GrainSize or F.GrainRoughness or F.RawDenoise or F.PostRGBDenoise => NumberText(number),
@@ -104,6 +107,21 @@ internal sealed class AdjustmentSummary
         return string.Join("\n", parts);
     }
 
+    private string ParametricText(JsonElement value) => string.Join(" · ",
+        text("高光") + " " + NumberText(value.GetProperty("highlights").GetDouble(), signed: true),
+        text("亮部") + " " + NumberText(value.GetProperty("lights").GetDouble(), signed: true),
+        text("暗部") + " " + NumberText(value.GetProperty("darks").GetDouble(), signed: true),
+        text("阴影") + " " + NumberText(value.GetProperty("shadows").GetDouble(), signed: true));
+
+    private string GradingText(JsonElement value)
+    {
+        var summary = text("色相") + " " + NumberText(value.GetProperty("hue").GetDouble()) + "° · " +
+            text("饱和度") + " " + NumberText(value.GetProperty("saturation").GetDouble()) + "%";
+        if (value.TryGetProperty("luminance", out var lum) && Number(lum) is { } l && l != 0)
+            summary += " · " + text("明亮度") + " " + NumberText(l, signed: true);
+        return summary;
+    }
+
     private string WaveletText(JsonElement value)
     {
         if (Null(value)) return text("默认降噪设置");
@@ -132,7 +150,8 @@ internal sealed class AdjustmentSummary
             foreach (var field in moved) fields.Remove(field);
             fields.InsertRange(fields.IndexOf(anchor) + 1, moved);
         }
-        MoveAfter(F.SCurve, F.Curve, F.BlackPoint, F.WhitePoint, F.Vibrance, F.GradingShadows, F.GradingMidtones, F.GradingHighlights);
+        MoveAfter(F.SCurve, F.Curve, F.CurveApplyToLuminosity, F.CurveParametric, F.BlackPoint, F.WhitePoint, F.Vibrance,
+            F.GradingShadows, F.GradingMidtones, F.GradingHighlights, F.GradingGlobal, F.GradingBlending, F.GradingBalance);
         MoveAfter(F.Saturation, F.HdrTemperature, F.HdrTint);
         MoveAfter(F.GrainAmount, F.Clarity, F.Dehaze);
         return fields;

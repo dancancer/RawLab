@@ -8,10 +8,14 @@ namespace sony2fuji {
 struct ColorGradingWheel {
     float hue = 0;
     float saturation = 0;
+    float luminance = 0;
 };
 
 struct ColorGradingOptions {
     std::array<ColorGradingWheel,3> wheels{};
+    ColorGradingWheel global{};
+    float blending = 50.0f;
+    float balance = 0.0f;
     bool valid() const;
     bool active() const;
 };

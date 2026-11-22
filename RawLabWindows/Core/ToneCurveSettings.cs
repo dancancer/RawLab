@@ -33,7 +33,8 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
         }));
     }
     private bool IsValid => Mode == ToneCurveMode.Legacy ? Points.Count == 0 : Mode == ToneCurveMode.Custom &&
-        Points.Count is >= 2 and <= 33 && Points[0] == new ToneCurvePoint(0, 0) && Points[^1] == new ToneCurvePoint(1, 1) &&
+        Points.Count is >= 2 and <= 33 && Points[0].X == 0 && Points[^1].X == 1 &&
+        (AdjustmentFieldSpec.SubFields.LightCurve.EndpointsYUnpinned || (Points[0].Y == 0 && Points[^1].Y == 1)) &&
         Points.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1) &&
         Points.Zip(Points.Skip(1)).All(pair => pair.First.X < pair.Second.X && pair.First.Y <= pair.Second.Y);
     public bool IsInterior(int index) => Mode == ToneCurveMode.Custom && index > 0 && index + 1 < Points.Count;
@@ -69,9 +70,12 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
         for (var i = 0; i < Points.Count; i++) { values[i * 2] = Points[i].X; values[i * 2 + 1] = Points[i].Y; }
         return new() { Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ToneCurveConfig>(), Mode = (int)Mode, Count = (uint)Points.Count, Points = values };
     }
-    internal static ToneCurveShape Parse(JsonElement json, bool allowChannels = false)
+    internal static ToneCurveShape Parse(JsonElement json, bool allowExtensions = false)
     {
-        if (json.ValueKind != JsonValueKind.Object || !json.EnumerateObject().Select(p => p.Name).Where(key => !allowChannels || key != "channels").Order().SequenceEqual(new[] { "mode", "points" }))
+        if (json.ValueKind != JsonValueKind.Object ||
+            !json.EnumerateObject().Select(p => p.Name)
+                .Where(key => !allowExtensions || key is not ("channels" or "apply_to_luminosity" or "parametric"))
+                .Order().SequenceEqual(new[] { "mode", "points" }))
             throw new JsonException("Invalid curve fields");
         var mode = json.GetProperty("mode");
         if (mode.ValueKind != JsonValueKind.String || mode.GetString() is not ("legacy" or "custom")) throw new JsonException("Invalid curve mode");
@@ -111,37 +115,113 @@ public sealed record ToneCurveChannels(ToneCurveShape Red, ToneCurveShape Green,
     public ToneCurveChannels Scaled(double strength) => new(Red.Scaled(strength), Green.Scaled(strength), Blue.Scaled(strength));
 }
 
+public sealed record ToneCurveParametric(
+    double Highlights = 0,
+    double Lights = 0,
+    double Darks = 0,
+    double Shadows = 0,
+    double SplitShadow = 0.25,
+    double SplitMidtone = 0.50,
+    double SplitHighlight = 0.75)
+{
+    public bool IsDefault => Highlights == 0 && Lights == 0 && Darks == 0 && Shadows == 0 &&
+        SplitShadow == AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowDefault &&
+        SplitMidtone == AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneDefault &&
+        SplitHighlight == AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightDefault;
+    public bool IsIdentity => Highlights == 0 && Lights == 0 && Darks == 0 && Shadows == 0;
+    public bool IsValid => double.IsFinite(Highlights) && double.IsFinite(Lights) &&
+        double.IsFinite(Darks) && double.IsFinite(Shadows) &&
+        double.IsFinite(SplitShadow) && double.IsFinite(SplitMidtone) && double.IsFinite(SplitHighlight) &&
+        Highlights is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMax &&
+        Lights is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMax &&
+        Darks is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMax &&
+        Shadows is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.BandMax &&
+        SplitShadow is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMax &&
+        SplitMidtone is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMax &&
+        SplitHighlight is >= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMin and <= AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMax &&
+        SplitShadow + AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMinGap <= SplitMidtone &&
+        SplitMidtone + AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMinGap <= SplitHighlight;
+    public double Progress => Math.Max(Math.Max(Math.Abs(Highlights), Math.Abs(Lights)),
+        Math.Max(Math.Abs(Darks), Math.Abs(Shadows))) / 100.0;
+    public ToneCurveParametric Scaled(double strength) => this with {
+        Highlights = Math.Clamp(Highlights * strength, -100, 100),
+        Lights = Math.Clamp(Lights * strength, -100, 100),
+        Darks = Math.Clamp(Darks * strength, -100, 100),
+        Shadows = Math.Clamp(Shadows * strength, -100, 100)
+    };
+    internal static ToneCurveParametric Parse(JsonElement json)
+    {
+        if (json.ValueKind != JsonValueKind.Object || !json.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .SequenceEqual(new[] { "darks", "highlights", "lights", "shadows", "split_highlight", "split_midtone", "split_shadow" }))
+            throw new JsonException("Invalid parametric curve fields");
+        double ReadDouble(string name) {
+            var prop = json.GetProperty(name);
+            if (prop.ValueKind != JsonValueKind.Number || !prop.TryGetDouble(out var v)) throw new JsonException("Invalid parametric curve value");
+            return v;
+        }
+        var result = new ToneCurveParametric(
+            ReadDouble("highlights"), ReadDouble("lights"), ReadDouble("darks"), ReadDouble("shadows"),
+            ReadDouble("split_shadow"), ReadDouble("split_midtone"), ReadDouble("split_highlight"));
+        if (!result.IsValid) throw new JsonException("Invalid parametric curve values");
+        return result;
+    }
+    internal void WriteObject(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("highlights", Highlights);
+        writer.WriteNumber("lights", Lights);
+        writer.WriteNumber("darks", Darks);
+        writer.WriteNumber("shadows", Shadows);
+        writer.WriteNumber("split_shadow", SplitShadow);
+        writer.WriteNumber("split_midtone", SplitMidtone);
+        writer.WriteNumber("split_highlight", SplitHighlight);
+        writer.WriteEndObject();
+    }
+}
+
 [JsonConverter(typeof(ToneCurveJsonConverter))]
 public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
 {
     public ToneCurveShape Master { get; }
     public ToneCurveChannels Channels { get; }
+    public bool ApplyToLuminosity { get; }
+    public ToneCurveParametric Parametric { get; }
     public ToneCurveMode Mode => Master.Mode;
     public IReadOnlyList<ToneCurvePoint> Points => Master.Points;
     public ToneCurveSettings(ToneCurveMode mode = ToneCurveMode.Legacy, IEnumerable<ToneCurvePoint>? points = null,
-        ToneCurveChannels? channels = null) { Master = new(mode, points); Channels = channels ?? new(); }
+        ToneCurveChannels? channels = null, bool applyToLuminosity = false, ToneCurveParametric? parametric = null)
+    {
+        Master = new(mode, points);
+        Channels = channels ?? new();
+        ApplyToLuminosity = applyToLuminosity;
+        Parametric = parametric ?? new();
+        if (!Parametric.IsValid) throw new ArgumentOutOfRangeException(nameof(parametric), "Invalid parametric curve");
+    }
     public static ToneCurveSettings Identity { get; } = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points);
-    public bool IsDefault => Master.IsDefault && Channels.IsDefault;
-    public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity;
+    public bool IsDefault => Master.IsDefault && Channels.IsDefault && !ApplyToLuminosity && Parametric.IsDefault;
+    public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity && Parametric.IsIdentity;
     public bool HasChannelCurves => !Channels.IsDefault;
-    public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress }.Max();
+    public bool HasV2Extensions => ApplyToLuminosity || !Parametric.IsDefault;
+    public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress, Parametric.Progress }.Max();
     public ToneCurveShape Shape(ToneCurveChannel channel) => channel switch {
         ToneCurveChannel.Rgb => Master, ToneCurveChannel.Red => Channels.Red, ToneCurveChannel.Green => Channels.Green, _ => Channels.Blue };
     public ToneCurveSettings Replacing(ToneCurveChannel channel, ToneCurveShape shape) => channel switch {
-        ToneCurveChannel.Rgb => new(shape.Mode, shape.Points, Channels),
-        ToneCurveChannel.Red => new(Mode, Points, Channels with { Red = shape }),
-        ToneCurveChannel.Green => new(Mode, Points, Channels with { Green = shape }),
-        _ => new(Mode, Points, Channels with { Blue = shape }) };
+        ToneCurveChannel.Rgb => new(shape.Mode, shape.Points, Channels, ApplyToLuminosity, Parametric),
+        ToneCurveChannel.Red => new(Mode, Points, Channels with { Red = shape }, ApplyToLuminosity, Parametric),
+        ToneCurveChannel.Green => new(Mode, Points, Channels with { Green = shape }, ApplyToLuminosity, Parametric),
+        _ => new(Mode, Points, Channels with { Blue = shape }, ApplyToLuminosity, Parametric) };
     public ToneCurveSettings Scaled(double strength) {
-        var master = Master.Scaled(strength); return new(master.Mode, master.Points, Channels.Scaled(strength));
+        var master = Master.Scaled(strength);
+        return new(master.Mode, master.Points, Channels.Scaled(strength), ApplyToLuminosity, Parametric.Scaled(strength));
     }
     public bool IsInterior(int index) => Master.IsInterior(index);
     public ToneCurveSettings Inserting(double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Inserting(x, y));
     public ToneCurveSettings Moving(int index, double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Moving(index, x, y));
     public ToneCurveSettings Removing(int index) => Replacing(ToneCurveChannel.Rgb, Master.Removing(index));
-    public bool Equals(ToneCurveSettings? other) => other is not null && Master == other.Master && Channels == other.Channels;
+    public bool Equals(ToneCurveSettings? other) => other is not null && Master == other.Master && Channels == other.Channels &&
+        ApplyToLuminosity == other.ApplyToLuminosity && Parametric == other.Parametric;
     public override bool Equals(object? other) => other is ToneCurveSettings curve && Equals(curve);
-    public override int GetHashCode() => HashCode.Combine(Master, Channels);
+    public override int GetHashCode() => HashCode.Combine(Master, Channels, ApplyToLuminosity, Parametric);
     public static bool operator ==(ToneCurveSettings? a, ToneCurveSettings? b) => Equals(a, b);
     public static bool operator !=(ToneCurveSettings? a, ToneCurveSettings? b) => !Equals(a, b);
     internal Native.ToneCurveConfig NativeConfig() => Master.NativeConfig();
@@ -157,7 +237,14 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
             ToneCurveShape Shape(string key) => fields.TryGetProperty(key, out var value) ? ToneCurveShape.Parse(value) : new();
             channels = new(Shape("red"), Shape("green"), Shape("blue"));
         }
-        return new(master.Mode, master.Points, channels);
+        var applyToLuminosity = false;
+        if (json.TryGetProperty("apply_to_luminosity", out var applyElem)) {
+            if (applyElem.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new JsonException("Invalid apply_to_luminosity");
+            applyToLuminosity = applyElem.GetBoolean();
+        }
+        var parametric = json.TryGetProperty("parametric", out var paramElem) ? ToneCurveParametric.Parse(paramElem) : new();
+        return new(master.Mode, master.Points, channels, applyToLuminosity, parametric);
     }
 }
 
@@ -176,6 +263,11 @@ public sealed class ToneCurveJsonConverter : JsonConverter<ToneCurveSettings>
             writer.WritePropertyName("green"); JsonSerializer.Serialize(writer, value.Channels.Green, options);
             writer.WritePropertyName("blue"); JsonSerializer.Serialize(writer, value.Channels.Blue, options);
             writer.WriteEndObject();
+        }
+        if (value.ApplyToLuminosity) writer.WriteBoolean("apply_to_luminosity", true);
+        if (!value.Parametric.IsDefault) {
+            writer.WritePropertyName("parametric");
+            value.Parametric.WriteObject(writer);
         }
         writer.WriteEndObject();
     }

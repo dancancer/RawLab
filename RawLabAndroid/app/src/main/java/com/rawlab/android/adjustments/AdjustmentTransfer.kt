@@ -29,8 +29,8 @@ object AdjustmentTransfer {
         if (!targetIsHDR) {
             if (hdr.temperature == 6500f && hdr.tint == 0f)
                 fields.removeAll(setOf(AdjustmentField.HDR_TEMPERATURE, AdjustmentField.HDR_TINT))
-            if (hdr.toneSettings.isDefault) fields.removeAll(AdjustmentField.HDR_TONE)
-            if (hdr.colorSettings.isDefault) fields.removeAll(AdjustmentField.HDR_COLOR)
+            if (hdr.toneSettings.isDefault) fields.removeAll(AdjustmentField.HDR_TONE + AdjustmentField.HDR_V9_TONE_EXTENSIONS)
+            if (hdr.colorSettings.isDefault) fields.removeAll(AdjustmentField.HDR_COLOR + AdjustmentField.HDR_V9_COLOR_EXTENSIONS)
             if (hdr.renditionSettings.isDefault) fields.removeAll(AdjustmentField.HDR_RENDITION)
             if (hdr.effectSettings == PhotoEffectsSettings()) fields.removeAll(AdjustmentField.HDR_EFFECTS)
             if (hdr.detailSettings.isDefault) fields.removeAll(AdjustmentField.HDR_DETAIL)
@@ -67,8 +67,8 @@ object AdjustmentTransfer {
                 val legacy=if(payload.source.isHDR) {
                     payload.validate()
                     if(payload.fields.any {it.isHDRRelative})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.relative_white_balance")
-                    if(payload.fields.any {it in AdjustmentField.HDR_TONE})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.tone")
-                    if(payload.fields.any {it in AdjustmentField.HDR_COLOR})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.color")
+                    if(payload.fields.any {it in AdjustmentField.HDR_TONE || it in AdjustmentField.HDR_V9_TONE_EXTENSIONS})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.tone")
+                    if(payload.fields.any {it in AdjustmentField.HDR_COLOR || it in AdjustmentField.HDR_V9_COLOR_EXTENSIONS})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.color")
                     if(payload.fields.any {it.isHDRRendition})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.rendition")
                     if(payload.fields.any {it in AdjustmentField.HDR_EFFECTS})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.effects")
                     if(payload.fields.any {it in AdjustmentField.HDR_DETAIL})throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.detail")
@@ -210,6 +210,7 @@ object AdjustmentTransfer {
         if (!allowed.containsAll(selected))
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.fields")
         val requiredVersion = when {
+            selected.any { it in AdjustmentField.HDR_V9_TONE_EXTENSIONS || it in AdjustmentField.HDR_V9_COLOR_EXTENSIONS } -> 9
             AdjustmentField.HDR_LOOK in selected -> 7
             selected.any { it in AdjustmentField.HDR_DETAIL } -> 6
             selected.any { it in AdjustmentField.HDR_EFFECTS } -> 5
@@ -230,9 +231,9 @@ object AdjustmentTransfer {
         payload.validate()
         if(!AdjustmentField.hdrTransferFields(context.supportsHDRCameraDevelopment).containsAll(payload.fields))
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.fields")
-        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_TONE})
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_TONE || it in AdjustmentField.HDR_V9_TONE_EXTENSIONS})
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.tone")
-        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_COLOR})
+        if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_COLOR || it in AdjustmentField.HDR_V9_COLOR_EXTENSIONS})
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.color")
         if(!payload.source.isHDR && payload.fields.any {it in AdjustmentField.HDR_EFFECTS})
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.effects")
@@ -270,10 +271,16 @@ object AdjustmentTransfer {
         number(AdjustmentField.PERSPECTIVE_HORIZONTAL)?.let { geometry = geometry.copy(perspectiveHorizontal = it.toFloat()) }
         number(AdjustmentField.PERSPECTIVE_VERTICAL)?.let { geometry = geometry.copy(perspectiveVertical = it.toFloat()) }
         val tone = hdr.toneSettings
+        var nextCurve = payload[AdjustmentField.CURVE]?.let { AdjustmentPayload.curve(it) } ?: tone.curve
+        val nextApplyToLuminosity = payload[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY]?.boolean ?: nextCurve.applyToLuminosity
+        val nextParametric = payload[AdjustmentField.CURVE_PARAMETRIC]?.let { AdjustmentPayload.parametricCurve(it) } ?: nextCurve.parametric
+        if (nextApplyToLuminosity != nextCurve.applyToLuminosity || nextParametric != nextCurve.parametric) {
+            nextCurve = ToneCurveSettings(nextCurve.mode, nextCurve.points, nextCurve.channels, nextApplyToLuminosity, nextParametric)
+        }
         val nextTone = tone.copy(blackPoint = number(AdjustmentField.BLACK_POINT)?.toFloat() ?: tone.blackPoint,
             whitePoint = number(AdjustmentField.WHITE_POINT)?.toFloat() ?: tone.whitePoint,
             curveStrength = number(AdjustmentField.S_CURVE)?.let { (it * 100).toFloat() } ?: tone.curveStrength,
-            curve = payload[AdjustmentField.CURVE]?.let { AdjustmentPayload.curve(it) } ?: tone.curve)
+            curve = nextCurve)
         var color = hdr.colorSettings
         number(AdjustmentField.VIBRANCE)?.let { color = color.copy(vibrance = it.toFloat().canonicalZero()) }
         for (field in payload.fields) {
@@ -283,9 +290,17 @@ object AdjustmentTransfer {
             field.gradingZone?.let { zone ->
                 val wheel = requireNotNull(payload[field]?.objectValue)
                 color = color.copy(grading = color.grading.with(zone, ColorGradingWheel.fromNumbers(
-                    requireNotNull(wheel["hue"]?.number), requireNotNull(wheel["saturation"]?.number))))
+                    requireNotNull(wheel["hue"]?.number), requireNotNull(wheel["saturation"]?.number),
+                    wheel["luminance"]?.number ?: 0.0)))
             }
         }
+        payload[AdjustmentField.GRADING_GLOBAL]?.objectValue?.let { wheel ->
+            color = color.copy(grading = color.grading.copy(global = ColorGradingWheel.fromNumbers(
+                requireNotNull(wheel["hue"]?.number), requireNotNull(wheel["saturation"]?.number),
+                wheel["luminance"]?.number ?: 0.0)))
+        }
+        number(AdjustmentField.GRADING_BLENDING)?.let { color = color.copy(grading = color.grading.copy(blending = it.toFloat().canonicalZero())) }
+        number(AdjustmentField.GRADING_BALANCE)?.let { color = color.copy(grading = color.grading.copy(balance = it.toFloat().canonicalZero())) }
         val rendition = hdr.renditionSettings
         val nextRendition = rendition.copy(
             peakLimitEV = number(AdjustmentField.HDR_PEAK_LIMIT)?.toFloat()?.canonicalZero() ?: rendition.peakLimitEV,
@@ -373,18 +388,26 @@ object AdjustmentTransfer {
         put(AdjustmentField.WHITE_POINT, AdjustmentValue.Number(tone.whitePoint.toDouble()))
         put(AdjustmentField.S_CURVE, AdjustmentValue.Number(tone.curveStrength / 100.0))
         put(AdjustmentField.CURVE, AdjustmentPayload.curveValue(tone.curve))
+        put(AdjustmentField.CURVE_APPLY_TO_LUMINOSITY, AdjustmentValue.Boolean(tone.curve.applyToLuminosity))
+        put(AdjustmentField.CURVE_PARAMETRIC, AdjustmentPayload.parametricCurveValue(tone.curve.parametric))
         val color = hdr.colorSettings
         put(AdjustmentField.VIBRANCE, AdjustmentValue.Number(color.vibrance.toDouble()))
+        fun hdrWheel(wheel: ColorGradingWheel) = AdjustmentValue.Object(buildMap {
+            put("hue", AdjustmentValue.Number(wheel.hue.toDouble()))
+            put("saturation", AdjustmentValue.Number(wheel.saturation.toDouble()))
+            if (wheel.luminance != 0f) put("luminance", AdjustmentValue.Number(wheel.luminance.toDouble()))
+        })
         for (field in AdjustmentField.HDR_COLOR) {
             field.hslLocation?.let { (axis, channel) ->
                 put(field, AdjustmentValue.Number(color.hsl.value(axis, channel).toDouble()))
             }
             field.gradingZone?.let { zone ->
-                val wheel = color.grading[zone]
-                put(field, AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(wheel.hue.toDouble()),
-                    "saturation" to AdjustmentValue.Number(wheel.saturation.toDouble()))))
+                put(field, hdrWheel(color.grading[zone]))
             }
         }
+        put(AdjustmentField.GRADING_GLOBAL, hdrWheel(color.grading.global))
+        put(AdjustmentField.GRADING_BLENDING, AdjustmentValue.Number(color.grading.blending.toDouble()))
+        put(AdjustmentField.GRADING_BALANCE, AdjustmentValue.Number(color.grading.balance.toDouble()))
         val rendition = hdr.renditionSettings
         put(AdjustmentField.HDR_PEAK_LIMIT, AdjustmentValue.Number(rendition.peakLimitEV.toDouble()))
         put(AdjustmentField.HDR_SDR_EXPOSURE, AdjustmentValue.Number(rendition.sdrExposureEV.toDouble()))

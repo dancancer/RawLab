@@ -609,7 +609,7 @@ void geometry() {
 
 void validation() {
     auto source = fixture();
-    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
+    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION + 1;
     rejects([&] { renderHDRPair(source, options); }, "unknown HDR processing version accepted");
     options = {}; options.exposureEV = 5;
     rejects([&] { renderHDRPair(source, options); }, "exposure range not enforced");

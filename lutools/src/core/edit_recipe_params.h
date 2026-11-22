@@ -41,6 +41,8 @@ struct CanonicalSdrRecipe {
     float sCurve = 0.0f;
     ToneCurveConfig toneCurve{};
     std::array<ToneCurveConfig, 3> channelCurves{};
+    bool curveApplyToLuminosity = false;
+    ToneCurveParametricConfig parametricCurve{};
     ToneControlsOptions toneControls{};
     AtmosphereOptions atmosphere{};
     ColorGradingOptions colorGrading{};
@@ -58,6 +60,7 @@ struct CanonicalSdrRecipe {
     RenderOutputFormat outputFormat = RenderOutputFormat::JPEG;
     uint32_t jpegQuality = 95;
     uint32_t outputLongEdge = 0;
+    OutputSharpening outputSharpening = OutputSharpening::Off;
     GeometryOptions geometry{};
 
     RenderParams toRenderParams() const;
@@ -65,7 +68,7 @@ struct CanonicalSdrRecipe {
 
 bool validProfileId(const std::string& id);
 
-// Parses canonical SDR recipe JSON (schema_version 1..5 or 7).
+// Parses canonical SDR recipe JSON (schema_version 1..5, 7, or 17).
 // When allowRasterLensCorrection is false (CLI/Agent JSON contract), active lens
 // correction on raster inputs is rejected. Invalid documents leave out unchanged.
 bool parseCanonicalSdrRecipe(

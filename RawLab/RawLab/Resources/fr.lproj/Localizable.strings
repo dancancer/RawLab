@@ -5,11 +5,13 @@
 "%@ · 质量 %@" = "%@ · qualité %@";
 "%@数值" = "Valeur de %@";
 "1. 复制下方密码，前往系统「设置 → 无线局域网」加入该网络。" = "1. Copiez le mot de passe ci-dessous et rejoignez ce réseau dans « Réglages → Wi-Fi ».";
+"16-bit PNG" = "PNG 16 bits";
 "16:9" = "16:9";
 "1:1" = "1:1";
 "2. 返回 RawLab，点击“已连接，继续”。" = "2. Revenez dans RawLab et touchez « Connecté, continuer ».";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"50% 中性灰" = "Gris neutre 50 %";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Le DCP contient des gains spatiaux, un traitement HDR ou des tables RGB non pris en charge et ne peut pas être converti.";
 "DCP 导入选项" = "Options d’importation DCP";
@@ -112,7 +114,9 @@
 "乡村秋日 · 古典油画" = "Automne rural · peinture à l'huile classique";
 "交换横纵比例" = "Inverser l’orientation du format";
 "亮度降噪" = "Réduction du bruit de luminance";
+"亮部" = "Tons clairs";
 "仅 RAW 照片支持镜头校正。" = "La correction de l’objectif est réservée aux photos RAW.";
+"仅作用于明度" = "Luminance uniquement";
 "仅在暗角强度为负值时可用。" = "Disponible uniquement lorsque l’intensité du vignettage est négative.";
 "仅已修改" = "Modifiés uniquement";
 "仅显示在本机用 RawLab 打开过的照片。" = "Photos ouvertes avec RawLab sur cet appareil.";
@@ -138,6 +142,7 @@
 "传输格式" = "Format de transfert";
 "伪红外（旧版）" = "Faux infrarouge (ancien)";
 "位置与尺寸" = "Position et dimensions";
+"低" = "Faible";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Utilise le développement neutre de RawLab comme base, sans reproduire le style Standard de l’appareil.";
 "使用当前调整批量导出…" = "Exporter par lots avec les réglages actuels…";
 "使用旧版显影重试" = "Réessayer avec l’ancien développement";
@@ -173,6 +178,7 @@
 "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。" = "Comparez les résultats proposés avant l’importation. Ils reposent sur des hypothèses et ne prouvent pas que le rendu de l’auteur a été reproduit.";
 "光圈" = "Ouverture";
 "光线" = "Lumière";
+"全局" = "Global";
 "全选" = "Tout sélectionner";
 "全部" = "Tout";
 "全部外观" = "Tous les rendus";
@@ -180,8 +186,10 @@
 "全部调整" = "Tous les réglages";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "La teinte, la saturation et la luminosité des huit couleurs reviendront à 0. Les autres réglages resteront inchangés.";
 "共 %d 个相机原件，占用 %@。" = "%d originaux de l’appareil photo occupant %@";
+"关" = "Désactivé";
 "关闭" = "Fermer";
 "关闭对比" = "Désactiver la comparaison";
+"关闭观察层" = "Sans calque";
 "其他" = "Autres";
 "兼容导入" = "Importation compatible";
 "兼容导入 · 未验证" = "Compatible · Non vérifié";
@@ -189,6 +197,7 @@
 "内存不足，无法解码普通图片。" = "Mémoire insuffisante pour décoder l’image.";
 "内容容量 %@ EV" = "Marge du contenu %@ EV";
 "内置" = "Intégré";
+"冷暖反差黑白" = "N&B chaud/froid";
 "几何" = "Géométrie";
 "几何与镜头" = "Géométrie et objectif";
 "几何与镜头仅在“全部”或显式选择时包含。" = "La géométrie et l’objectif sont inclus uniquement avec « Tout » ou une sélection explicite.";
@@ -219,6 +228,7 @@
 "去噪优先" = "Priorité à la réduction du bruit";
 "去朦胧" = "Correction du voile";
 "参数或输出路径无效。" = "Paramètres ou chemin de sortie non valides.";
+"参数曲线" = "Courbe paramétrique";
 "参考图" = "Image de référence";
 "参考图与预览的比例或尺寸不一致，仅可目视比较。" = "La référence et l’aperçu ont des proportions ou dimensions différentes ; seule une comparaison visuelle est possible.";
 "参考图来自同一张原图" = "L’image de référence provient du même original";
@@ -228,6 +238,7 @@
 "参考输出为 sRGB，或已按正确配置转换为 sRGB" = "La sortie de référence est en sRGB ou a été convertie en sRGB avec la configuration correcte";
 "双击名称或轨道恢复默认值。" = "Touchez deux fois le nom ou la piste pour rétablir la valeur par défaut.";
 "取景已暂停" = "Visée en direct en pause";
+"取样监视" = "Moniteur d’échantillonnage";
 "取消" = "Annuler";
 "取消对焦" = "Annuler la mise au point";
 "取消导出" = "Annuler l’exportation";
@@ -395,6 +406,7 @@
 "已选 %@ 项" = "%@ sélectionnés";
 "已重做 %@ 张 · 未完成 %@ 张" = "Rétablies %@ · Inachevées %@";
 "平均差异 %@/255 · 最大差异 %@/255" = "Écart moyen %@/255 · Écart maximal %@/255";
+"平衡" = "Balance";
 "并排" = "Côte à côte";
 "应用" = "Appliquer";
 "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。" = "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, utilisez les Réglages Wi-Fi ci-dessus.";
@@ -453,6 +465,7 @@
 "批量导出" = "Exportation par lots";
 "批量编辑" = "Retouche par lot";
 "找不到 HDR 相机配置，请重新导入。" = "Le profil de caméra HDR est introuvable. Importez-le à nouveau.";
+"拆分点" = "Points de séparation";
 "拉直" = "Redresser";
 "拍后审片" = "Vérifier après la prise de vue";
 "拍摄一张" = "Prendre une photo";
@@ -565,6 +578,7 @@
 "日系青空 · 高调日光" = "Ciel bleu japonais · lumière du jour high-key";
 "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Les anciens réglages ont été enregistrés avec le seul identifiant Photos. Restaurez-les si la photo d’origine est la même.";
 "旧版降噪" = "Ancienne réduction du bruit";
+"明亮度" = "Luminance";
 "明度" = "Luminosité";
 "明度：从暗到亮。" = "Luminosité : du sombre au clair.";
 "显示图像" = "Image affichée";
@@ -582,6 +596,7 @@
 "暗角校正" = "Correction du vignetage";
 "暗角羽化" = "Contour progressif du vignettage";
 "暗角高光保护" = "Protection des hautes lumières du vignettage";
+"暗部" = "Tons foncés";
 "暮色黄昏 · 相邻色过渡" = "Crépuscule · transition de couleurs voisines";
 "曝光" = "Exposition";
 "曝光基准" = "Référence d'exposition";
@@ -632,6 +647,7 @@
 "查看目标" = "Examiner les destinations";
 "查看调整前" = "Afficher avant";
 "查看调整范围" = "Voir les réglages sélectionnés";
+"标准" = "Standard";
 "标准显影" = "Développement standard";
 "标准灵敏度" = "Sensibilité standard";
 "核对 DNG 文件" = "Vérifier les fichiers DNG";
@@ -716,6 +732,7 @@
 "添加" = "Ajouter";
 "添加控制点" = "Ajouter un point";
 "添加照片" = "Ajouter des photos";
+"添加锚点" = "Épingler un repère";
 "清晰度" = "Clarté";
 "清理原件" = "Nettoyer les originaux";
 "清理已导出的相机原件" = "Nettoyer les originaux exportés de l’appareil photo";
@@ -723,10 +740,12 @@
 "清空选择" = "Effacer la sélection";
 "清除搜索" = "Effacer la recherche";
 "清除相机配置" = "Retirer le profil de caméra";
+"清除锚点" = "Effacer les repères";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation";
 "渲染型 DNG 未生成。" = "Le DNG développé n’a pas été créé.";
 "滨田英明" = "Hideaki Hamada";
 "点击曲线区域添加控制点，拖动中间点调整。" = "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.";
+"点曲线" = "Courbe à points";
 "焦距（mm）" = "Distance focale (mm)";
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
@@ -753,6 +772,7 @@
 "畸变矫正" = "Correction de la distorsion";
 "白场" = "Point blanc";
 "白平衡" = "Balance des blancs";
+"白平衡吸管" = "Pipette de balance des blancs";
 "白平衡模式" = "Mode de balance des blancs";
 "白炽灯" = "Incandescent";
 "目标所需的外观不可用，请先导入外观。" = "Le rendu requis est indisponible. Importez-le d’abord.";
@@ -801,6 +821,7 @@
 "粘贴调整" = "Coller les réglages";
 "精细" = "Réglage fin";
 "系统权限设置" = "Autorisations système";
+"素描明度" = "Luminance esquisse";
 "紫" = "Violet";
 "红" = "Rouge";
 "纯预览" = "Aperçu";
@@ -825,6 +846,7 @@
 "联机已暂停" = "Prise de vue connectée en pause";
 "联机拍摄" = "Prise de vue connectée";
 "联机拍摄设置" = "Réglages de prise de vue connectée";
+"肤色色相放大" = "Amplification teinte peau";
 "胶片" = "Film";
 "自动" = "Auto";
 "自动 HDR" = "HDR automatique";
@@ -851,6 +873,7 @@
 "蓝" = "Bleu";
 "蓝牙发现相机后点击连接，可自动唤醒相机 Wi-Fi。具备 Hotspot 权限时将自动加入；个人免费签名会显示 Wi-Fi 名称和一次性复制密码，按提示在系统设置加入后返回继续。" = "Touchez un appareil détecté en Bluetooth pour réveiller son Wi-Fi. Avec le droit Hotspot il se connecte seul ; avec une signature gratuite, copiez le mot de passe affiché pour rejoindre le réseau dans Réglages.";
 "蓝牙发现相机（可选）" = "Détecter l’appareil en Bluetooth (facultatif)";
+"融合" = "Fusion";
 "补充镜头信息" = "Compléter les informations de l’objectif";
 "裁切" = "Recadrage";
 "裁切上边" = "Bord supérieur";
@@ -868,6 +891,7 @@
 "裁边 %@%%" = "Recadrage %@%%";
 "覆盖" = "Remplacer";
 "覆盖预设？" = "Remplacer le préréglage ?";
+"观察层" = "Calque d’inspection";
 "视频范围（10 位 64–940）" = "Plage vidéo (10 bits 64–940)";
 "计算与参考的差异" = "Calculer l’écart avec la référence";
 "设置结果未确认，请重新连接后检查。" = "Le résultat du réglage n’est pas confirmé. Reconnectez-vous et vérifiez-le.";
@@ -930,8 +954,10 @@
 "输出参考" = "Référence en sortie";
 "输出坐标" = "Sortie";
 "输出范围" = "Plage en sortie";
+"输出锐化" = "Netteté de sortie";
 "输出颜色" = "Espace couleur en sortie";
 "边界比例仅供观察，不能据此判定配置或风格错误。" = "Les proportions aux limites sont indicatives ; elles ne permettent pas de conclure que la configuration ou le rendu est erroné.";
+"过饱和熔断热力图" = "Carte thermique de saturation";
 "近似基础 · 未验证" = "Base approchée · Non vérifié";
 "返回" = "Retour";
 "返回批量集合" = "Revenir à la collection par lot";
@@ -998,6 +1024,7 @@
 "重置当前颜色" = "Réinitialiser la couleur actuelle";
 "重置当前颜色（%@）" = "Réinitialiser la couleur actuelle (%@)";
 "重置所有调整并返回中性" = "Réinitialiser tous les réglages et revenir au rendu neutre";
+"重置曲线" = "Réinitialiser la courbe";
 "重置本工具" = "Réinitialiser cet outil";
 "重置调整" = "Réinitialiser les réglages";
 "重置镜头校正" = "Réinitialiser la correction optique";
@@ -1059,6 +1086,7 @@
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation : du gris à la couleur.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Nuit urbaine néon à Séoul, base cyan froide opposée aux hautes lumières rose-violet et aux reflets de rue mouillée";
+"高" = "Élevé";
 "高光" = "Hautes lumières";
 "高光保护" = "Protection des hautes lumières";
 "高度" = "Hauteur";

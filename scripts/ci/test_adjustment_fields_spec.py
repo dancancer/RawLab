@@ -26,13 +26,13 @@ SCALES = {"p": lambda p: p, "-p": lambda p: -p, "p - 1": lambda p: p - 1.0, "p *
 
 
 def validate_spec_document(doc: dict) -> None:
-    if doc.get("spec_version") != 1 or len(doc["fields"]) != 83:
-        raise AssertionError("Spec must be version 1 with 83 fields")
+    if doc.get("spec_version") != 1 or len(doc["fields"]) != 89:
+        raise AssertionError("Spec must be version 1 with 89 fields")
     fields = doc["fields"]
-    if len({f["field_id"] for f in fields}) != 83:
+    if len({f["field_id"] for f in fields}) != 89:
         raise AssertionError("Duplicate field_id in spec")
     summary, policy = doc["summary"], doc["divergence_policy"]
-    if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 65:
+    if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 64:
         raise AssertionError("Invalid divergence_policy ratchet")
     allowed_milestones = policy.get("allowed_expiration_milestones")
     if (
@@ -50,7 +50,7 @@ def validate_spec_document(doc: dict) -> None:
         )
     all_div = [f for f in fields if f["divergence"]["has_divergence"]]
     transfer = [f for f in fields if f["protocol"]["transferable"]]
-    if len(transfer) != 81 or summary["divergent_fields"] != len(all_div) or summary["identical_fields"] != 83 - len(all_div):
+    if len(transfer) != 86 or summary["divergent_fields"] != len(all_div) or summary["identical_fields"] != 89 - len(all_div):
         raise AssertionError("Summary counts mismatch")
     if summary["divergent_fields"] > policy["max_divergent_fields"]:
         raise AssertionError(f"divergent_fields={summary['divergent_fields']} exceeds max_divergent_fields={policy['max_divergent_fields']}")
@@ -103,7 +103,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
         validate_spec_document(doc)
         over = copy.deepcopy(doc)
-        over["divergence_policy"]["max_divergent_fields"] = 64
+        over["divergence_policy"]["max_divergent_fields"] = 63
         with self.assertRaisesRegex(AssertionError, r"exceeds max_divergent_fields"):
             validate_spec_document(over)
         missing_exp = copy.deepcopy(doc)
@@ -114,8 +114,11 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
     def test_expiration_milestones_are_registered_and_reject_fictional_waves(self) -> None:
         doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
         policy = doc["divergence_policy"]
-        self.assertEqual(policy["allowed_expiration_milestones"], ["v0.12"])
-        self.assertEqual(policy["default_expiration_wave"], "v0.12")
+        self.assertEqual(
+            policy["allowed_expiration_milestones"],
+            ["v0.13", "platform_step_policy", "platform_capability"],
+        )
+        self.assertEqual(policy["default_expiration_wave"], "v0.13")
         for field in doc["fields"]:
             if field["divergence"]["has_divergence"]:
                 self.assertIn(field["divergence"]["expires_wave"], policy["allowed_expiration_milestones"])

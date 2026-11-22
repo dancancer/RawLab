@@ -215,7 +215,7 @@ public static class EditorAdjustmentRules
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
             EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects, Atmosphere = null },
-            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false },
+            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null },
             EditorAdjustmentGroup.Geometry => value with { Geometry = defaults.Geometry, Lens = defaults.Lens },
             _ => value
         };
@@ -243,7 +243,7 @@ public static class EditorAdjustmentRules
                 foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == (tool == EditorAdjustmentTool.Vignette)))
                     effects = SetEffectDefault(effects, spec.Id);
                 return value with { Effects = effects };
-            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false };
+            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null };
             case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
             case EditorAdjustmentTool.Lens: return value with { Lens = defaults.Lens };
             default:

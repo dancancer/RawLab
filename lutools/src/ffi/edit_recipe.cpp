@@ -82,7 +82,7 @@ void hslAxis(const Json& object, const char* key, float* destination) {
     }
 }
 
-void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config) {
+void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config, bool allowFreeEndpoints) {
     const std::string path = "edits.tone.curve";
     fields(curve, path, {"mode", "points"});
     const auto mode = text(required(curve, "mode", path), path + ".mode");
@@ -105,11 +105,11 @@ void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config) {
     for (uint32_t i = 0; i < std::min(config.count, kToneCurveMaxPoints); ++i)
         coreConfig.points[i] = {config.points[i].x, config.points[i].y};
     if (config.version != SONY2FUJI_TONE_CURVE_CONFIG_VERSION || config.struct_size != sizeof(config) ||
-        !validToneCurve(coreConfig))
+        !validToneCurve(coreConfig, allowFreeEndpoints))
         throw std::invalid_argument(path + ".points are invalid for the selected mode");
 }
 
-bool validAbiToneCurve(const sony2fuji_tone_curve_config& config) {
+bool validAbiToneCurve(const sony2fuji_tone_curve_config& config, bool allowFreeEndpoints = false) {
     if (config.version != SONY2FUJI_TONE_CURVE_CONFIG_VERSION || config.struct_size != sizeof(config)) return false;
     if (config.mode != SONY2FUJI_CURVE_LEGACY && config.mode != SONY2FUJI_CURVE_CUSTOM) return false;
     ToneCurveConfig coreConfig;
@@ -117,7 +117,64 @@ bool validAbiToneCurve(const sony2fuji_tone_curve_config& config) {
     coreConfig.count = config.count;
     for (uint32_t i = 0; i < std::min(config.count, kToneCurveMaxPoints); ++i)
         coreConfig.points[i] = {config.points[i].x, config.points[i].y};
-    return validToneCurve(coreConfig);
+    return validToneCurve(coreConfig, allowFreeEndpoints);
+}
+
+ToneCurveParametricConfig toCoreParametricCurve(const sony2fuji_tone_curve_parametric_config& src) {
+    ToneCurveParametricConfig out;
+    out.highlights = src.highlights;
+    out.lights = src.lights;
+    out.darks = src.darks;
+    out.shadows = src.shadows;
+    out.splitShadow = src.split_shadow;
+    out.splitMidtone = src.split_midtone;
+    out.splitHighlight = src.split_highlight;
+    return out;
+}
+
+sony2fuji_tone_curve_parametric_config toAbiParametricCurve(const ToneCurveParametricConfig& src) {
+    sony2fuji_tone_curve_parametric_config out{};
+    out.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+    out.struct_size = sizeof(out);
+    out.highlights = src.highlights;
+    out.lights = src.lights;
+    out.darks = src.darks;
+    out.shadows = src.shadows;
+    out.split_shadow = src.splitShadow;
+    out.split_midtone = src.splitMidtone;
+    out.split_highlight = src.splitHighlight;
+    out.reserved = 0;
+    return out;
+}
+
+bool isDefaultParametricCurve(const sony2fuji_tone_curve_parametric_config& p) {
+    return p.highlights == 0.0f && p.lights == 0.0f && p.darks == 0.0f && p.shadows == 0.0f &&
+           p.split_shadow == 0.25f && p.split_midtone == 0.50f && p.split_highlight == 0.75f;
+}
+
+bool validAbiParametricCurve(const sony2fuji_tone_curve_parametric_config& p) {
+    return p.version == SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION &&
+           p.struct_size == sizeof(p) &&
+           p.reserved == 0 &&
+           toCoreParametricCurve(p).valid();
+}
+
+void readParametricCurve(const Json& param, sony2fuji_tone_curve_parametric_config& out) {
+    const std::string path = "edits.tone.curve.parametric";
+    fields(param, path, {"highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"});
+    out.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+    out.struct_size = sizeof(out);
+    out.highlights = number(param, "highlights", 0.0f, -100.0, 100.0, path);
+    out.lights = number(param, "lights", 0.0f, -100.0, 100.0, path);
+    out.darks = number(param, "darks", 0.0f, -100.0, 100.0, path);
+    out.shadows = number(param, "shadows", 0.0f, -100.0, 100.0, path);
+    out.split_shadow = number(param, "split_shadow", 0.25f, 0.05, 0.45, path);
+    out.split_midtone = number(param, "split_midtone", 0.50f, 0.25, 0.75, path);
+    out.split_highlight = number(param, "split_highlight", 0.75f, 0.55, 0.95, path);
+    out.reserved = 0;
+    if (!toCoreParametricCurve(out).valid()) {
+        throw std::invalid_argument(path + " split points must be strictly increasing with minimum gap 0.02");
+    }
 }
 
 Json writeToneCurve(const sony2fuji_tone_curve_config& curve) {
@@ -131,35 +188,70 @@ bool hasChannelCurves(const EditRecipe& recipe) {
         [](const auto& value) { return value.mode == SONY2FUJI_CURVE_CUSTOM; });
 }
 
-Json writeToneCurves(const EditRecipe& recipe) {
+Json writeToneCurves(const EditRecipe& recipe, bool allowV12) {
     auto curve = writeToneCurve(recipe.toneCurve);
     if (hasChannelCurves(recipe)) {
         curve["channels"] = {{"red", writeToneCurve(recipe.channelCurves[0])},
             {"green", writeToneCurve(recipe.channelCurves[1])}, {"blue", writeToneCurve(recipe.channelCurves[2])}};
     }
+    if (allowV12) {
+        if (recipe.curveApplyToLuminosity) {
+            curve["apply_to_luminosity"] = true;
+        }
+        if (!isDefaultParametricCurve(recipe.parametricCurve)) {
+            const auto& p = recipe.parametricCurve;
+            curve["parametric"] = {
+                {"highlights", p.highlights},
+                {"lights", p.lights},
+                {"darks", p.darks},
+                {"shadows", p.shadows},
+                {"split_shadow", p.split_shadow},
+                {"split_midtone", p.split_midtone},
+                {"split_highlight", p.split_highlight}
+            };
+        }
+    }
     return curve;
 }
 
 void completeEdits(const Json& edits, EditRecipe& parsed) {
+    const bool allowV12 = parsed.hdr ? parsed.schemaVersion >= 16 : parsed.schemaVersion >= 17;
     if (edits.contains("color_grading")) {
         const auto& grading=edits.at("color_grading");
-        fields(grading,"edits.color_grading",{"shadows","midtones","highlights"});
-        auto readWheel=[&](const char* zone,float& hue,float& saturation) {
+        if (allowV12)
+            fields(grading,"edits.color_grading",{"shadows","midtones","highlights","global","blending","balance"});
+        else
+            fields(grading,"edits.color_grading",{"shadows","midtones","highlights"});
+        auto readWheel=[&](const char* zone,float& hue,float& saturation,float& luminance) {
             if (!grading.contains(zone)) return;
             const auto path=std::string("edits.color_grading.")+zone;
             const auto& wheel=grading.at(zone);
-            fields(wheel,path,{"hue","saturation"});
+            if (allowV12) fields(wheel,path,{"hue","saturation","luminance"});
+            else fields(wheel,path,{"hue","saturation"});
             required(wheel,"hue",path);required(wheel,"saturation",path);
             hue=number(wheel,"hue",0,0,360,path);
             if (wheel.at("hue").get<double>()>=360) throw std::invalid_argument(path+".hue is out of range");
             // 合法 double 在 float 环回点舍入为 360 时，保持等价的 canonical 0。
             if (hue==360) hue=0;
             saturation=number(wheel,"saturation",0,0,100,path);
+            if (allowV12) luminance=number(wheel,"luminance",0,-100,100,path);
         };
         auto& config=parsed.colorGrading;
-        readWheel("shadows",config.shadows_hue,config.shadows_saturation);
-        readWheel("midtones",config.midtones_hue,config.midtones_saturation);
-        readWheel("highlights",config.highlights_hue,config.highlights_saturation);
+        auto& v2=parsed.colorGradingV2;
+        readWheel("shadows",config.shadows_hue,config.shadows_saturation,v2.shadows_luminance);
+        readWheel("midtones",config.midtones_hue,config.midtones_saturation,v2.midtones_luminance);
+        readWheel("highlights",config.highlights_hue,config.highlights_saturation,v2.highlights_luminance);
+        if (allowV12) {
+            v2.shadows_hue=config.shadows_hue;
+            v2.shadows_saturation=config.shadows_saturation;
+            v2.midtones_hue=config.midtones_hue;
+            v2.midtones_saturation=config.midtones_saturation;
+            v2.highlights_hue=config.highlights_hue;
+            v2.highlights_saturation=config.highlights_saturation;
+            readWheel("global",v2.global_hue,v2.global_saturation,v2.global_luminance);
+            v2.blending=number(grading,"blending",50.0f,0.0,100.0,"edits.color_grading");
+            v2.balance=number(grading,"balance",0.0f,-100.0,100.0,"edits.color_grading");
+        }
     }
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
@@ -175,16 +267,25 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
         parsed.toneControls.white_point = number(tone, "white_point", 0, -1, 1, "edits.tone");
         if (tone.contains("curve")) {
             const auto& root = tone.at("curve");
+            if (!root.is_object()) throw std::invalid_argument("edits.tone.curve must be an object");
             auto master = root;
             if (root.contains("channels")) {
                 const auto& channels = root.at("channels");
                 fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
                 const char* names[]{"red", "green", "blue"};
                 for (size_t i = 0; i < 3; ++i)
-                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i]);
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], allowV12);
                 master.erase("channels");
             }
-            readToneCurve(master, parsed.toneCurve);
+            if (allowV12 && root.contains("apply_to_luminosity")) {
+                parsed.curveApplyToLuminosity = boolean(root, "apply_to_luminosity", "edits.tone.curve") != 0;
+                master.erase("apply_to_luminosity");
+            }
+            if (allowV12 && root.contains("parametric")) {
+                readParametricCurve(root.at("parametric"), parsed.parametricCurve);
+                master.erase("parametric");
+            }
+            readToneCurve(master, parsed.toneCurve, allowV12);
             if (parsed.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -283,14 +384,100 @@ uint32_t hdrProcessingVersionForSchema(uint32_t schema) {
     case 13: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     case 14: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     case 15: return SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    case 16: return SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
     default: return 0;
     }
 }
 
-Json writeGrading(const sony2fuji_color_grading_config& grading) {
-    return {{"shadows", {{"hue", grading.shadows_hue}, {"saturation", grading.shadows_saturation}}},
-        {"midtones", {{"hue", grading.midtones_hue}, {"saturation", grading.midtones_saturation}}},
-        {"highlights", {{"hue", grading.highlights_hue}, {"saturation", grading.highlights_saturation}}}};
+sony2fuji_color_grading_v2_config effectiveGradingV2(const EditRecipe& recipe) {
+    const auto& v1 = recipe.colorGrading;
+    auto v2 = recipe.colorGradingV2;
+    const bool v2ZonePopulated = v2.shadows_hue != 0 || v2.shadows_saturation != 0 ||
+        v2.midtones_hue != 0 || v2.midtones_saturation != 0 ||
+        v2.highlights_hue != 0 || v2.highlights_saturation != 0;
+    const bool v1ZonePopulated = v1.shadows_hue != 0 || v1.shadows_saturation != 0 ||
+        v1.midtones_hue != 0 || v1.midtones_saturation != 0 ||
+        v1.highlights_hue != 0 || v1.highlights_saturation != 0;
+    if (!v2ZonePopulated && v1ZonePopulated) {
+        v2.shadows_hue = v1.shadows_hue;
+        v2.shadows_saturation = v1.shadows_saturation;
+        v2.midtones_hue = v1.midtones_hue;
+        v2.midtones_saturation = v1.midtones_saturation;
+        v2.highlights_hue = v1.highlights_hue;
+        v2.highlights_saturation = v1.highlights_saturation;
+    }
+    return v2;
+}
+
+bool hasV2GradingFeatures(const sony2fuji_color_grading_v2_config& v2) {
+    return v2.shadows_luminance != 0.0f || v2.midtones_luminance != 0.0f ||
+           v2.highlights_luminance != 0.0f || v2.global_hue != 0.0f ||
+           v2.global_saturation != 0.0f || v2.global_luminance != 0.0f ||
+           v2.blending != 50.0f || v2.balance != 0.0f;
+}
+
+bool validAbiGradingV1(const sony2fuji_color_grading_config& v1) {
+    if (v1.version != SONY2FUJI_COLOR_GRADING_CONFIG_VERSION || v1.struct_size != sizeof(v1)) return false;
+    auto validWheel = [](float h, float s) {
+        return std::isfinite(h) && h >= 0 && h < 360 &&
+               std::isfinite(s) && s >= 0 && s <= 100;
+    };
+    return validWheel(v1.shadows_hue, v1.shadows_saturation) &&
+           validWheel(v1.midtones_hue, v1.midtones_saturation) &&
+           validWheel(v1.highlights_hue, v1.highlights_saturation);
+}
+
+bool validAbiGradingV2(const sony2fuji_color_grading_v2_config& v2) {
+    if (v2.version != SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION || v2.struct_size != sizeof(v2)) return false;
+    auto validWheel = [](float h, float s, float l) {
+        return std::isfinite(h) && h >= 0 && h < 360 &&
+               std::isfinite(s) && s >= 0 && s <= 100 &&
+               std::isfinite(l) && l >= -100 && l <= 100;
+    };
+    return validWheel(v2.shadows_hue, v2.shadows_saturation, v2.shadows_luminance) &&
+           validWheel(v2.midtones_hue, v2.midtones_saturation, v2.midtones_luminance) &&
+           validWheel(v2.highlights_hue, v2.highlights_saturation, v2.highlights_luminance) &&
+           validWheel(v2.global_hue, v2.global_saturation, v2.global_luminance) &&
+           std::isfinite(v2.blending) && v2.blending >= 0 && v2.blending <= 100 &&
+           std::isfinite(v2.balance) && v2.balance >= -100 && v2.balance <= 100;
+}
+
+const char* outputSharpeningName(sony2fuji_output_sharpening s) {
+    switch (s) {
+        case SONY2FUJI_OUTPUT_SHARPENING_OFF: return "off";
+        case SONY2FUJI_OUTPUT_SHARPENING_LOW: return "low";
+        case SONY2FUJI_OUTPUT_SHARPENING_STANDARD: return "standard";
+        case SONY2FUJI_OUTPUT_SHARPENING_HIGH: return "high";
+        default: throw std::invalid_argument("Invalid output_sharpening");
+    }
+}
+
+Json writeWheel(float hue, float sat, float lum, bool allowV12) {
+    Json w = {{"hue", hue}, {"saturation", sat}};
+    if (allowV12 && lum != 0.0f) {
+        w["luminance"] = lum;
+    }
+    return w;
+}
+
+Json writeGrading(const sony2fuji_color_grading_v2_config& grading, bool allowV12) {
+    Json out = {
+        {"shadows", writeWheel(grading.shadows_hue, grading.shadows_saturation, grading.shadows_luminance, allowV12)},
+        {"midtones", writeWheel(grading.midtones_hue, grading.midtones_saturation, grading.midtones_luminance, allowV12)},
+        {"highlights", writeWheel(grading.highlights_hue, grading.highlights_saturation, grading.highlights_luminance, allowV12)}
+    };
+    if (allowV12) {
+        if (grading.global_hue != 0.0f || grading.global_saturation != 0.0f || grading.global_luminance != 0.0f) {
+            out["global"] = writeWheel(grading.global_hue, grading.global_saturation, grading.global_luminance, true);
+        }
+        if (grading.blending != 50.0f) {
+            out["blending"] = grading.blending;
+        }
+        if (grading.balance != 0.0f) {
+            out["balance"] = grading.balance;
+        }
+    }
+    return out;
 }
 
 Json writeEffects(const sony2fuji_photo_effects_config& fx) {
@@ -440,7 +627,8 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
         }
     }
     const auto& output=required(root,"output","recipe");
-    fields(output,"output",{"path","format","base_color","jpeg_quality","size"});
+    if (schema >= 16) fields(output,"output",{"path","format","base_color","jpeg_quality","size","output_sharpening"});
+    else fields(output,"output",{"path","format","base_color","jpeg_quality","size"});
     parsed.outputPath=text(required(output,"path","output"),"output.path");
     const auto format=text(required(output,"format","output"),"output.format");
     parsed.hdr->hdrOutput=format=="hdr_jpeg";
@@ -457,6 +645,14 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
     else if (color=="display_p3") parsed.hdr->baseColor=SONY2FUJI_HDR_COLOR_DISPLAY_P3;
     else throw std::invalid_argument("output.base_color must be srgb or display_p3");
     if (output.contains("jpeg_quality")) parsed.jpegQuality=integer(output.at("jpeg_quality"),1,100,"output.jpeg_quality");
+    if (schema >= 16 && output.contains("output_sharpening")) {
+        const auto os = text(output.at("output_sharpening"), "output.output_sharpening");
+        if (os == "off") parsed.outputSharpening = SONY2FUJI_OUTPUT_SHARPENING_OFF;
+        else if (os == "low") parsed.outputSharpening = SONY2FUJI_OUTPUT_SHARPENING_LOW;
+        else if (os == "standard") parsed.outputSharpening = SONY2FUJI_OUTPUT_SHARPENING_STANDARD;
+        else if (os == "high") parsed.outputSharpening = SONY2FUJI_OUTPUT_SHARPENING_HIGH;
+        else throw std::invalid_argument("output.output_sharpening must be off, low, standard or high");
+    }
     if (output.contains("size")) {
         const auto& size=output.at("size"); fields(size,"output.size",{"mode","long_edge"});
         const auto mode=text(required(size,"mode","output.size"),"output.size.mode");
@@ -470,7 +666,19 @@ EditRecipe parseHDR(const Json& root, uint32_t schema) {
 std::string serializeHDR(const EditRecipe& recipe) {
     if (!recipe.hdr) throw std::invalid_argument("HDR recipe requires HDR settings");
     const auto& h=*recipe.hdr; const auto& g=recipe.geometry;
-    if (!validAbiToneCurve(recipe.toneCurve) || !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validAbiToneCurve)) throw std::invalid_argument("Invalid HDR tone curve configuration");
+    const bool allowV12 = recipe.schemaVersion >= 16;
+    if (!validAbiToneCurve(recipe.toneCurve, allowV12) ||
+        !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+            [allowV12](const auto& c) { return validAbiToneCurve(c, allowV12); }))
+        throw std::invalid_argument("Invalid HDR tone curve configuration");
+    if (!validAbiParametricCurve(recipe.parametricCurve))
+        throw std::invalid_argument("Invalid HDR parametric curve configuration");
+    const auto gradingV2 = effectiveGradingV2(recipe);
+    if (!validAbiGradingV1(recipe.colorGrading) || !validAbiGradingV2(gradingV2))
+        throw std::invalid_argument("Invalid HDR color grading configuration");
+    if (!allowV12 && (recipe.curveApplyToLuminosity || !isDefaultParametricCurve(recipe.parametricCurve) ||
+        hasV2GradingFeatures(gradingV2) || recipe.outputSharpening != SONY2FUJI_OUTPUT_SHARPENING_OFF))
+        throw std::invalid_argument("HDR v0.12 fields require schema_version 16");
     if (recipe.schemaVersion == 6 && (recipe.toneControls.black_point != 0 || recipe.toneControls.white_point != 0 ||
         recipe.sCurve != 0 || recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM))
         throw std::invalid_argument("HDR tone fields require schema_version 8");
@@ -512,13 +720,16 @@ std::string serializeHDR(const EditRecipe& recipe) {
         tone["black_point"] = recipe.toneControls.black_point;
         tone["white_point"] = recipe.toneControls.white_point;
         tone["s_curve"] = recipe.sCurve;
-        tone["curve"] = writeToneCurves(recipe);
+        tone["curve"] = writeToneCurves(recipe, allowV12);
     }
     if (recipe.schemaVersion >= 9) {
         auto& edits = result["edits"];
         edits["color"] = {{"vibrance", recipe.toneControls.vibrance}};
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
-        edits["color_grading"] = writeGrading(recipe.colorGrading);
+        edits["color_grading"] = writeGrading(gradingV2, allowV12);
+    }
+    if (allowV12 && recipe.outputSharpening != SONY2FUJI_OUTPUT_SHARPENING_OFF) {
+        result["output"]["output_sharpening"] = outputSharpeningName(recipe.outputSharpening);
     }
     if (recipe.schemaVersion >= 10)
         result["edits"]["rendition"] = {{"peak_limit_ev", h.peakLimitEV}, {"sdr_exposure_ev", h.sdrExposureEV},
@@ -568,7 +779,9 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.exposureMode = static_cast<RawExposureMode>(recipe.exposureMode);
     core.exposureEv = recipe.exposureEv;
     core.brightness = recipe.brightness;
-    core.whiteBalanceMode = static_cast<RenderWhiteBalanceMode>(recipe.whiteBalanceMode);
+    core.whiteBalanceMode = recipe.rasterRelativeWb
+        ? RenderWhiteBalanceMode::Relative
+        : static_cast<RenderWhiteBalanceMode>(recipe.whiteBalanceMode);
     core.temperatureKelvin = recipe.temperatureKelvin;
     core.tint = recipe.tint;
     core.lookStrength = recipe.lookStrength;
@@ -579,13 +792,19 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.sCurve = recipe.sCurve;
     core.toneCurve = toCoreToneCurve(recipe.toneCurve);
     for (size_t i = 0; i < 3; ++i) core.channelCurves[i] = toCoreToneCurve(recipe.channelCurves[i]);
+    core.curveApplyToLuminosity = recipe.curveApplyToLuminosity;
+    core.parametricCurve = toCoreParametricCurve(recipe.parametricCurve);
     core.toneControls = {recipe.toneControls.black_point, recipe.toneControls.white_point, recipe.toneControls.vibrance};
     core.atmosphere = {recipe.atmosphere.clarity, recipe.atmosphere.dehaze};
+    const auto gradingV2 = effectiveGradingV2(recipe);
     core.colorGrading.wheels = {
-        ColorGradingWheel{recipe.colorGrading.shadows_hue, recipe.colorGrading.shadows_saturation},
-        ColorGradingWheel{recipe.colorGrading.midtones_hue, recipe.colorGrading.midtones_saturation},
-        ColorGradingWheel{recipe.colorGrading.highlights_hue, recipe.colorGrading.highlights_saturation}
+        ColorGradingWheel{gradingV2.shadows_hue, gradingV2.shadows_saturation, gradingV2.shadows_luminance},
+        ColorGradingWheel{gradingV2.midtones_hue, gradingV2.midtones_saturation, gradingV2.midtones_luminance},
+        ColorGradingWheel{gradingV2.highlights_hue, gradingV2.highlights_saturation, gradingV2.highlights_luminance}
     };
+    core.colorGrading.global = ColorGradingWheel{gradingV2.global_hue, gradingV2.global_saturation, gradingV2.global_luminance};
+    core.colorGrading.blending = gradingV2.blending;
+    core.colorGrading.balance = gradingV2.balance;
     core.sharpening = recipe.sharpening;
     core.rawNoiseReduction = recipe.rawNoiseReduction;
     core.chromaDenoise = recipe.chromaDenoise;
@@ -606,6 +825,7 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.outputFormat = static_cast<RenderOutputFormat>(recipe.outputFormat);
     core.jpegQuality = recipe.jpegQuality;
     core.outputLongEdge = recipe.outputLongEdge;
+    core.outputSharpening = static_cast<OutputSharpening>(recipe.outputSharpening);
     core.geometry = {
         recipe.geometry.crop_x, recipe.geometry.crop_y, recipe.geometry.crop_width, recipe.geometry.crop_height,
         recipe.geometry.quarter_turns, recipe.geometry.flip_horizontal != 0, recipe.geometry.flip_vertical != 0,
@@ -626,7 +846,8 @@ EditRecipe fromCoreSdrRecipe(const CanonicalSdrRecipe& core) {
     parsed.exposureMode = static_cast<sony2fuji_raw_exposure_mode>(core.exposureMode);
     parsed.exposureEv = core.exposureEv;
     parsed.brightness = core.brightness;
-    parsed.whiteBalanceMode = static_cast<sony2fuji_wb_mode>(core.whiteBalanceMode);
+    parsed.rasterRelativeWb = core.whiteBalanceMode == RenderWhiteBalanceMode::Relative;
+    parsed.whiteBalanceMode = parsed.rasterRelativeWb ? SONY2FUJI_WB_CAMERA : static_cast<sony2fuji_wb_mode>(core.whiteBalanceMode);
     parsed.temperatureKelvin = core.temperatureKelvin;
     parsed.tint = core.tint;
     parsed.lookStrength = core.lookStrength;
@@ -637,6 +858,8 @@ EditRecipe fromCoreSdrRecipe(const CanonicalSdrRecipe& core) {
     parsed.sCurve = core.sCurve;
     parsed.toneCurve = toAbiToneCurve(core.toneCurve);
     for (size_t i = 0; i < 3; ++i) parsed.channelCurves[i] = toAbiToneCurve(core.channelCurves[i]);
+    parsed.curveApplyToLuminosity = core.curveApplyToLuminosity;
+    parsed.parametricCurve = toAbiParametricCurve(core.parametricCurve);
     parsed.toneControls = {SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(sony2fuji_tone_controls_config),
         core.toneControls.blackPoint, core.toneControls.whitePoint, core.toneControls.vibrance};
     parsed.atmosphere = {SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(sony2fuji_atmosphere_config),
@@ -645,6 +868,12 @@ EditRecipe fromCoreSdrRecipe(const CanonicalSdrRecipe& core) {
         core.colorGrading.wheels[0].hue, core.colorGrading.wheels[0].saturation,
         core.colorGrading.wheels[1].hue, core.colorGrading.wheels[1].saturation,
         core.colorGrading.wheels[2].hue, core.colorGrading.wheels[2].saturation};
+    parsed.colorGradingV2 = {SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, sizeof(sony2fuji_color_grading_v2_config),
+        core.colorGrading.wheels[0].hue, core.colorGrading.wheels[0].saturation, core.colorGrading.wheels[0].luminance,
+        core.colorGrading.wheels[1].hue, core.colorGrading.wheels[1].saturation, core.colorGrading.wheels[1].luminance,
+        core.colorGrading.wheels[2].hue, core.colorGrading.wheels[2].saturation, core.colorGrading.wheels[2].luminance,
+        core.colorGrading.global.hue, core.colorGrading.global.saturation, core.colorGrading.global.luminance,
+        core.colorGrading.blending, core.colorGrading.balance};
     parsed.sharpening = core.sharpening;
     parsed.rawNoiseReduction = core.rawNoiseReduction;
     parsed.chromaDenoise = core.chromaDenoise;
@@ -665,6 +894,7 @@ EditRecipe fromCoreSdrRecipe(const CanonicalSdrRecipe& core) {
     parsed.outputFormat = static_cast<sony2fuji_output_format>(core.outputFormat);
     parsed.jpegQuality = core.jpegQuality;
     parsed.outputLongEdge = core.outputLongEdge;
+    parsed.outputSharpening = static_cast<sony2fuji_output_sharpening>(core.outputSharpening);
     parsed.geometry = {SONY2FUJI_GEOMETRY_CONFIG_VERSION, sizeof(sony2fuji_geometry_config),
         core.geometry.crop_x, core.geometry.crop_y, core.geometry.crop_width, core.geometry.crop_height,
         core.geometry.quarter_turns, core.geometry.flip_horizontal ? 1 : 0, core.geometry.flip_vertical ? 1 : 0,
@@ -715,19 +945,36 @@ bool parseEditRecipe(const std::string& document, EditRecipe& recipe, std::strin
 std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (hdrProcessingVersionForSchema(recipe.schemaVersion)) return serializeHDR(recipe);
     if (recipe.hdr) throw std::invalid_argument("HDR settings require an HDR recipe schema");
-    if (!validAbiToneCurve(recipe.toneCurve) || !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validAbiToneCurve)) throw std::invalid_argument("Invalid tone curve configuration");
+    const bool allowV12 = recipe.schemaVersion >= 17;
+    if (!validAbiToneCurve(recipe.toneCurve, allowV12) ||
+        !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+            [allowV12](const auto& c) { return validAbiToneCurve(c, allowV12); }))
+        throw std::invalid_argument("Invalid tone curve configuration");
+    if (!validAbiParametricCurve(recipe.parametricCurve))
+        throw std::invalid_argument("Invalid parametric curve configuration");
+    if (recipe.outputSharpening < SONY2FUJI_OUTPUT_SHARPENING_OFF ||
+        recipe.outputSharpening > SONY2FUJI_OUTPUT_SHARPENING_HIGH)
+        throw std::invalid_argument("Invalid output_sharpening configuration");
     if (recipe.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && (recipe.schemaVersion < 5 || recipe.sCurve != 0))
         throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
     if (hasChannelCurves(recipe) && recipe.schemaVersion < 5)
         throw std::invalid_argument("Channel curves require schema_version 5");
-    if (recipe.schemaVersion < 1 || recipe.schemaVersion > 7)
+    if (recipe.schemaVersion != 17 && (recipe.schemaVersion < 1 || recipe.schemaVersion > 7))
         throw std::invalid_argument("Unsupported schema_version");
     if (recipe.x3fMode != SONY2FUJI_X3F_LEGACY && recipe.x3fMode != SONY2FUJI_X3F_NORMAL)
         throw std::invalid_argument("Unsupported x3f_mode");
     if (recipe.schemaVersion < 7 && recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
         throw std::invalid_argument("Normal X3F rendering requires schema_version 7");
+    if ((recipe.schemaVersion == 7 || recipe.schemaVersion == 17) && recipe.rasterInput &&
+        recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
+        throw std::invalid_argument("Normal X3F rendering requires a raw input");
     if (recipe.schemaVersion == 7 && recipe.rasterInput)
         throw std::invalid_argument("schema_version 7 requires an X3F raw input");
+    if (recipe.rasterRelativeWb && (!allowV12 || !recipe.rasterInput))
+        throw std::invalid_argument("Raster relative white balance requires schema_version 17 and raster input");
+    if (!allowV12 && (recipe.curveApplyToLuminosity || !isDefaultParametricCurve(recipe.parametricCurve) ||
+        recipe.outputSharpening != SONY2FUJI_OUTPUT_SHARPENING_OFF))
+        throw std::invalid_argument("SDR v0.12 fields require schema_version 17");
     if (recipe.processingVersion != SONY2FUJI_PROCESSING_LEGACY &&
         recipe.processingVersion != SONY2FUJI_PROCESSING_C5_V2 &&
         recipe.processingVersion != SONY2FUJI_PROCESSING_BASIC_V3)
@@ -753,14 +1000,19 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     const auto& grading=recipe.colorGrading;
     if (grading.version!=SONY2FUJI_COLOR_GRADING_CONFIG_VERSION || grading.struct_size!=sizeof(grading))
         throw std::invalid_argument("Invalid color grading configuration");
+    const auto gradingV2 = effectiveGradingV2(recipe);
+    if (!validAbiGradingV1(grading) || !validAbiGradingV2(gradingV2))
+        throw std::invalid_argument("Invalid color grading v2 configuration");
+    if (!allowV12 && hasV2GradingFeatures(gradingV2))
+        throw std::invalid_argument("Color grading v2 fields require schema_version 17");
     bool storedGrading=false;
-    for (const auto wheel : {std::pair{grading.shadows_hue,grading.shadows_saturation},
-             std::pair{grading.midtones_hue,grading.midtones_saturation},std::pair{grading.highlights_hue,grading.highlights_saturation}}) {
-        if (!std::isfinite(wheel.first) || wheel.first<0 || wheel.first>=360 ||
-            !std::isfinite(wheel.second) || wheel.second<0 || wheel.second>100)
-            throw std::invalid_argument("Color grading hue/saturation is out of range");
+    for (const auto wheel : {std::pair{gradingV2.shadows_hue,gradingV2.shadows_saturation},
+             std::pair{gradingV2.midtones_hue,gradingV2.midtones_saturation},
+             std::pair{gradingV2.highlights_hue,gradingV2.highlights_saturation},
+             std::pair{gradingV2.global_hue,gradingV2.global_saturation}}) {
         storedGrading=storedGrading || wheel.first!=0 || wheel.second!=0;
     }
+    storedGrading = storedGrading || (allowV12 && hasV2GradingFeatures(gradingV2));
     if (recipe.schemaVersion<5 && storedGrading)
         throw std::invalid_argument("Color grading requires schema_version 5");
     const char* wbMode = nullptr;
@@ -771,8 +1023,17 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         default: throw std::invalid_argument("Invalid white balance mode");
     }
     Json wb = {{"mode", wbMode}};
-    if (recipe.rasterInput) wb = {{"mode", "none"}};
-    if (recipe.whiteBalanceMode == SONY2FUJI_WB_TEMPERATURE) {
+    if (recipe.rasterInput) {
+        if (recipe.rasterRelativeWb) {
+            if (!std::isfinite(recipe.temperatureKelvin) || recipe.temperatureKelvin < 2000 || recipe.temperatureKelvin > 50000 ||
+                !std::isfinite(recipe.tint) || std::abs(recipe.tint) > 150) {
+                throw std::invalid_argument("Invalid raster relative white balance");
+            }
+            wb = {{"mode", "relative"}, {"relative_temperature", recipe.temperatureKelvin}, {"relative_tint", recipe.tint}};
+        } else {
+            wb = {{"mode", "none"}};
+        }
+    } else if (recipe.whiteBalanceMode == SONY2FUJI_WB_TEMPERATURE) {
         wb["temperature_kelvin"] = recipe.temperatureKelvin;
         wb["tint"] = recipe.tint;
     }
@@ -786,10 +1047,13 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
                              {"strength", recipe.lookStrength}}}}},
         {"output", {{"path", recipe.outputPath}, {"format", formatName(recipe.outputFormat)},
                     {"jpeg_quality", recipe.jpegQuality}, {"size", size}}}};
+    if (allowV12 && recipe.outputSharpening != SONY2FUJI_OUTPUT_SHARPENING_OFF) {
+        document["output"]["output_sharpening"] = outputSharpeningName(recipe.outputSharpening);
+    }
     if (recipe.schemaVersion >= 5)
         document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
             {"quality", "standard"}};
-    if (recipe.schemaVersion == 7)
+    if (recipe.schemaVersion == 7 || (recipe.schemaVersion == 17 && !recipe.rasterInput && recipe.x3fMode == SONY2FUJI_X3F_NORMAL))
         document["x3f_mode"] = recipe.x3fMode == SONY2FUJI_X3F_NORMAL ? "normal-v1" : "legacy";
     if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;
@@ -807,13 +1071,13 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         edits["tone"] = {{"contrast", recipe.contrast}, {"saturation", recipe.saturation},
             {"highlights", recipe.highlights}, {"shadows", recipe.shadows}, {"s_curve", recipe.sCurve}};
         if (recipe.schemaVersion >= 5) {
-            edits["tone"]["curve"] = writeToneCurves(recipe);
+            edits["tone"]["curve"] = writeToneCurves(recipe, allowV12);
         }
         // Identity omits additive keys so existing normalized recipes stay byte-identical.
         if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
         if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;
         if (controls.vibrance != 0) edits["color"]["vibrance"] = controls.vibrance;
-        if (storedGrading) edits["color_grading"] = writeGrading(grading);
+        if (storedGrading) edits["color_grading"] = writeGrading(gradingV2, allowV12);
         edits["detail"] = {{"sharpening", recipe.sharpening}};
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
         edits["effects"] = writeEffects(recipe.effects);
@@ -839,7 +1103,9 @@ sony2fuji_request EditRecipe::toRequest() const {
     request.input_path = inputPath.c_str();
     request.lut_path = lookPath.empty() ? nullptr : lookPath.c_str();
     request.lut_strength = params.lutStrength;
-    request.wb_mode = static_cast<sony2fuji_wb_mode>(params.wbMode);
+    request.wb_mode = params.wbMode == RenderWhiteBalanceMode::Relative
+        ? SONY2FUJI_WB_CAMERA
+        : static_cast<sony2fuji_wb_mode>(params.wbMode);
     request.exposure_ev = params.exposureEV;
     request.brightness = params.brightness;
     request.contrast = params.contrast;
@@ -934,6 +1200,21 @@ sony2fuji_hdr_request_v8 EditRecipe::toHDRRenderRequest() const {
         std::copy(channelCurves.begin(), channelCurves.end(), extended.channels);
     }
     return extended;
+}
+
+sony2fuji_hdr_request_v9 EditRecipe::toHDRRenderRequestV9() const {
+    const auto version = hdrProcessingVersionForSchema(schemaVersion);
+    if (version < SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION || !hdr)
+        throw std::invalid_argument("Typed HDR request v9 requires schema_version 16");
+    sony2fuji_hdr_request_v9 v9{};
+    v9.base = toHDRRenderRequest();
+    auto& baseV1 = v9.base.base.base.base.base.base.base.base;
+    baseV1.struct_size = sizeof(v9);
+    v9.curve_apply_to_luminosity = curveApplyToLuminosity ? 1 : 0;
+    v9.output_sharpening = static_cast<uint32_t>(outputSharpening);
+    v9.parametric_curve = parametricCurve;
+    v9.grading_v2 = effectiveGradingV2(*this);
+    return v9;
 }
 
 } // namespace sony2fuji

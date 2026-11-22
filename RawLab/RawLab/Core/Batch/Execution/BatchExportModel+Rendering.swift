@@ -8,6 +8,7 @@ extension BatchOutputFormat {
     var hdrPhotoFormat: Sony2FujiProcessor.HDRPhotoFormat? {
         switch self {
         case .jpeg: return .sdrJPEG
+        case .png: return nil
         case .hdrJPEG: return .hdrJPEG
         case .hdrHEIF: return .hdrHEIF
         case .renderedDNG: return nil

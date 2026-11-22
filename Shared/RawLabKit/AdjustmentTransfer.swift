@@ -44,8 +44,10 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case exposure = "light.exposure", exposureMode = "light.exposure_mode"
     case contrast = "light.contrast", highlights = "light.highlights", shadows = "light.shadows", sCurve = "light.s_curve"
     case curve = "light.curve"
+    case curveApplyToLuminosity = "light.curve.apply_to_luminosity", curveParametric = "light.curve.parametric"
     case blackPoint = "tone.black_point", whitePoint = "tone.white_point", vibrance = "color.vibrance"
     case gradingShadows = "color.grading.shadows", gradingMidtones = "color.grading.midtones", gradingHighlights = "color.grading.highlights"
+    case gradingGlobal = "color.grading.global", gradingBlending = "color.grading.blending", gradingBalance = "color.grading.balance"
     case whiteBalanceMode = "color.white_balance.mode", temperature = "color.white_balance.temperature_kelvin"
     case tint = "color.white_balance.tint", saturation = "color.saturation"
     case hdrTemperature = "hdr.relative_temperature", hdrTint = "hdr.relative_tint"
@@ -111,8 +113,11 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     public static let hdrV5Supported = hdrV4Supported.union(hdrEffects)
     public static let hdrV6Supported = hdrV5Supported.union(hdrDetail)
     public static let hdrSupported = hdrV6Supported.union([.hdrLook])
+    public static let hdrV9ToneExtensions: Set<Self> = [.curveApplyToLuminosity, .curveParametric]
+    public static let hdrV9ColorExtensions: Set<Self> = [.gradingGlobal, .gradingBlending, .gradingBalance]
+    public static let hdrV9Supported = hdrSupported.union(hdrV9ToneExtensions).union(hdrV9ColorExtensions)
     public static func hdrTransferFields(cameraRAW: Bool) -> Set<Self> {
-        cameraRAW ? hdrSupported.union([.hdrCameraDevelopment]) : hdrSupported
+        cameraRAW ? hdrV9Supported.union([.hdrCameraDevelopment]) : hdrV9Supported
     }
     public static func hdrSupported(version: Int) -> Set<Self> {
         if version == 1 { return hdrV1Supported }
@@ -120,7 +125,8 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
         if version == 3 { return hdrV3Supported }
         if version == 4 { return hdrV4Supported }
         if version == 5 { return hdrV5Supported }
-        return version == 6 ? hdrV6Supported : hdrSupported
+        if version == 6 { return hdrV6Supported }
+        return version >= 9 ? hdrV9Supported : hdrSupported
     }
     public static let whiteBalanceFields: Set<Self> = [.whiteBalanceMode, .temperature, .tint]
     public static let lensFields: Set<Self> = [.lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop, .lensProfile]
@@ -214,6 +220,38 @@ public enum AdjustmentTransferValue: Codable, Equatable {
         }
         return result
     }
+    public var parametricCurve: ToneCurveParametric? {
+        let expected = Set(AdjustmentFieldSpec.Fields.lightCurveParametric.protocolSpec.objectKeys)
+        guard let object, Set(object.keys) == expected,
+              let highlights = object["highlights"]?.number,
+              let lights = object["lights"]?.number,
+              let darks = object["darks"]?.number,
+              let shadows = object["shadows"]?.number,
+              let splitShadow = object["split_shadow"]?.number,
+              let splitMidtone = object["split_midtone"]?.number,
+              let splitHighlight = object["split_highlight"]?.number else { return nil }
+        let value = ToneCurveParametric(
+            highlights: highlights, lights: lights, darks: darks, shadows: shadows,
+            splitShadow: splitShadow, splitMidtone: splitMidtone, splitHighlight: splitHighlight
+        )
+        return value.isValid ? value : nil
+    }
+    public var gradingWheel: ColorGradingWheel? {
+        let proto = AdjustmentFieldSpec.Fields.colorGradingShadows.protocolSpec
+        guard let wheel = object,
+              Set(wheel.keys).isSuperset(of: proto.objectKeys),
+              Set(wheel.keys).isSubset(of: Set(proto.objectKeys).union(proto.optionalKeys)),
+              let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return nil }
+        let luminance: Double
+        if let lumVal = wheel["luminance"] {
+            guard let lum = lumVal.number else { return nil }
+            luminance = lum
+        } else {
+            luminance = 0.0
+        }
+        let result = ColorGradingWheel(hue: hue, saturation: saturation, luminance: luminance)
+        return result.isValid ? result : nil
+    }
 
     public init(from decoder: Decoder) throws {
         let value = try decoder.singleValueContainer()
@@ -254,8 +292,26 @@ public extension ToneCurveSettings {
     }
 }
 
+public extension ToneCurveParametric {
+    var transferValue: AdjustmentTransferValue {
+        .object([
+            "highlights": .number(highlights),
+            "lights": .number(lights),
+            "darks": .number(darks),
+            "shadows": .number(shadows),
+            "split_shadow": .number(splitShadow),
+            "split_midtone": .number(splitMidtone),
+            "split_highlight": .number(splitHighlight),
+        ])
+    }
+}
+
 public extension ColorGradingWheel {
-    var transferValue: AdjustmentTransferValue { .object(["hue": .number(hue), "saturation": .number(saturation)]) }
+    var transferValue: AdjustmentTransferValue {
+        var obj: [String: AdjustmentTransferValue] = ["hue": .number(hue), "saturation": .number(saturation)]
+        if luminance != 0.0 { obj["luminance"] = .number(luminance) }
+        return .object(obj)
+    }
 }
 
 // 曲线和色轮在完整复制时保留逻辑值；部分复制只转换一次实际效果。
@@ -291,11 +347,14 @@ public enum AdjustmentTransferRefinement {
 
     public static func scaled(_ value: Value, field: Field, by strength: Double) throws -> Value {
         if field == .curve, let curve = value.curve { return curve.scaled(by: strength).transferValue }
-        guard field.gradingZone != nil, let wheel = value.object,
-              let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else {
+        guard field.gradingZone != nil, let wheel = value.gradingWheel else {
             throw AdjustmentTransferError.invalidPayload(field.rawValue)
         }
-        return ColorGradingWheel(hue: hue, saturation: min(100, max(0, saturation * strength))).transferValue
+        return ColorGradingWheel(
+            hue: wheel.hue,
+            saturation: min(100, max(0, wheel.saturation * strength)),
+            luminance: min(100, max(-100, wheel.luminance * strength))
+        ).transferValue
     }
 
     public static func logical(_ effective: Value, field: Field, strength: Double, preserving current: Value) throws -> Value {
@@ -315,10 +374,13 @@ public enum AdjustmentTransferRefinement {
             }
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
-        } else if field.gradingZone != nil, let wheel = effective.object,
-                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number {
-            guard strength != 0 || saturation == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            let inverse = ColorGradingWheel(hue: hue, saturation: strength == 0 ? 0 : saturation / strength)
+        } else if field.gradingZone != nil, let wheel = effective.gradingWheel {
+            guard strength != 0 || (wheel.saturation == 0 && wheel.luminance == 0) else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
+            let inverse = ColorGradingWheel(
+                hue: wheel.hue,
+                saturation: strength == 0 ? 0 : wheel.saturation / strength,
+                luminance: strength == 0 ? 0 : wheel.luminance / strength
+            )
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
         } else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }
@@ -339,9 +401,8 @@ public enum AdjustmentTransferRefinement {
                 }
             }
         }
-        guard let first = a.object, let second = b.object,
-              let firstSat = first["saturation"]?.number, let secondSat = second["saturation"]?.number else { return false }
-        return first["hue"] == second["hue"] && Float(firstSat) == Float(secondSat)
+        guard let first = a.gradingWheel, let second = b.gradingWheel else { return false }
+        return first.hue == second.hue && Float(first.saturation) == Float(second.saturation) && Float(first.luminance) == Float(second.luminance)
     }
 }
 
@@ -421,7 +482,7 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
         guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
             (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
         if source.isHDR {
-            guard let version = source.hdrProcessingVersion, (1...8).contains(version) else {
+            guard let version = source.hdrProcessingVersion, (1...9).contains(version) else {
                 throw AdjustmentTransferError.unsupportedVersion
             }
             let supported = AdjustmentTransferField.hdrSupported(version: version).union([.hdrCameraDevelopment])
@@ -481,11 +542,8 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
         let proto = field.spec.protocolSpec
         if value == .null { return proto.nullable }
         if field == .curve { return value.curve != nil }
-        if field.gradingZone != nil {
-            guard let wheel = value.object, Set(wheel.keys) == Set(proto.objectKeys),
-                  let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number else { return false }
-            return ColorGradingWheel(hue: hue, saturation: saturation).isValid
-        }
+        if field == .curveParametric { return value.parametricCurve != nil }
+        if field.gradingZone != nil || field == .gradingGlobal { return value.gradingWheel != nil }
         switch field {
         case .hdrLook: return value.hdrLookSettings != nil
         case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil

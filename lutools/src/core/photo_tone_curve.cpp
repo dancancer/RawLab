@@ -38,7 +38,28 @@ double endTangent(double h0, double h1, double dy0, double dy1) {
 
 } // namespace
 
-bool validToneCurve(const ToneCurveConfig& config) {
+bool ToneCurveParametricConfig::valid() const noexcept {
+    const float bands[] = {highlights, lights, darks, shadows};
+    for (float v : bands) {
+        if (!std::isfinite(v) || v < -100.0f || v > 100.0f) return false;
+    }
+    if (!std::isfinite(splitShadow) || !std::isfinite(splitMidtone) || !std::isfinite(splitHighlight)) {
+        return false;
+    }
+    if (splitShadow < 0.05f || splitShadow > 0.45f ||
+        splitMidtone < 0.25f || splitMidtone > 0.75f ||
+        splitHighlight < 0.55f || splitHighlight > 0.95f) {
+        return false;
+    }
+    return (splitShadow + 0.02f <= splitMidtone + 1e-6f) &&
+           (splitMidtone + 0.02f <= splitHighlight + 1e-6f);
+}
+
+bool ToneCurveParametricConfig::active() const noexcept {
+    return highlights != 0.0f || lights != 0.0f || darks != 0.0f || shadows != 0.0f;
+}
+
+bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
     if (config.mode == ToneCurveMode::Legacy) return config.count == 0;
     if (config.mode != ToneCurveMode::Custom || config.count < 2 || config.count > kToneCurveMaxPoints) return false;
     for (uint32_t i = 0; i < config.count; ++i) {
@@ -47,11 +68,14 @@ bool validToneCurve(const ToneCurveConfig& config) {
         if (i && (p.x <= config.points[i - 1].x || p.y < config.points[i - 1].y)) return false;
     }
     const auto first = config.points[0], last = config.points[config.count - 1];
+    if (allowFreeEndpoints) {
+        return first.x == 0 && last.x == 1;
+    }
     return first.x == 0 && first.y == 0 && last.x == 1 && last.y == 1;
 }
 
-ToneCurve::ToneCurve(const ToneCurveConfig& config) {
-    if (!validToneCurve(config)) throw std::invalid_argument("invalid tone curve");
+ToneCurve::ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
+    if (!validToneCurve(config, allowFreeEndpoints)) throw std::invalid_argument("invalid tone curve");
     custom_ = config.mode == ToneCurveMode::Custom;
     if (!custom_) return;
     count_ = config.count - 1;
@@ -61,6 +85,7 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config) {
         dy[i] = config.points[i + 1].y - config.points[i].y;
         active_ |= config.points[i].x != config.points[i].y;
     }
+    active_ |= config.points[count_].x != config.points[count_].y;
     if (!active_) return;
     for (uint32_t i = 0; i < count_; ++i) {
         auto& s = segments_[i];
@@ -80,8 +105,8 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config) {
 
 double ToneCurve::evaluate(double value) const {
     if (!active_) return value;
-    if (value <= 0) return 0;
-    if (value >= 1) return 1;
+    if (value <= 0) return segments_[0].y0;
+    if (value >= 1) return segments_[count_ - 1].y1;
     uint32_t index = 0;
     while (index + 1 < count_ && value > segments_[index].x1) ++index;
     const auto& s = segments_[index];

@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.ColorGradingSettings
 import com.rawlab.android.settings.ColorGradingWheel
@@ -11,6 +12,7 @@ import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.ToneCurveChannels
 import com.rawlab.android.settings.ToneCurveMode
+import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurvePoint
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.ToneCurveShape
@@ -91,5 +93,33 @@ class CanonicalEditRecipeTest {
         assertFalse(edits.getJSONObject("lens_correction").has("profile_id"))
         assertEquals(0, edits.getJSONObject("denoise").getInt("chroma_mode"))
         assertFalse(edits.getJSONObject("denoise").has("wavelet"))
+    }
+
+    @Test
+    fun v012ExtensionsSerializeToCanonicalV17Json() {
+        val settings = EditSettings(
+            colorGrading = ColorGradingSettings(
+                shadows = ColorGradingWheel(200f, 30f, -10f),
+                global = ColorGradingWheel(45f, 15f, 8f),
+                blending = 65f,
+                balance = -20f,
+            ),
+            curve = ToneCurveSettings(
+                mode = ToneCurveMode.CUSTOM,
+                points = listOf(ToneCurvePoint(0.0, 0.08), ToneCurvePoint(1.0, 0.94)),
+                applyToLuminosity = true,
+                parametric = ToneCurveParametric(highlights = -12.0, shadows = 18.0),
+            ),
+        )
+        val root = JSONObject(settings.toCanonicalRecipeJson(outputSharpening = OutputSharpening.STANDARD))
+        assertEquals(17, root.getInt("schema_version"))
+        assertEquals("standard", root.getJSONObject("output").getString("sharpening"))
+        val curve = root.getJSONObject("edits").getJSONObject("tone").getJSONObject("curve")
+        assertTrue(curve.getBoolean("apply_to_luminosity"))
+        assertEquals(-12.0, curve.getJSONObject("parametric").getDouble("highlights"), 1e-6)
+        val grading = root.getJSONObject("edits").getJSONObject("color_grading")
+        assertEquals(-10.0, grading.getJSONObject("shadows").getDouble("luminance"), 1e-6)
+        assertEquals(65.0, grading.getDouble("blending"), 1e-6)
+        assertEquals(-20.0, grading.getDouble("balance"), 1e-6)
     }
 }

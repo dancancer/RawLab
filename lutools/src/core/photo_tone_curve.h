@@ -23,7 +23,20 @@ struct ToneCurveConfig {
     std::array<ToneCurvePoint, kToneCurveMaxPoints> points{};
 };
 
-bool validToneCurve(const ToneCurveConfig& config);
+struct ToneCurveParametricConfig {
+    float highlights = 0.0f;
+    float lights = 0.0f;
+    float darks = 0.0f;
+    float shadows = 0.0f;
+    float splitShadow = 0.25f;
+    float splitMidtone = 0.50f;
+    float splitHighlight = 0.75f;
+
+    bool valid() const noexcept;
+    bool active() const noexcept;
+};
+
+bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints = false);
 
 // 归一化区间切线避免把很窄区间展开成溢出的三次多项式系数。
 struct ToneCurveSegment {
@@ -33,7 +46,7 @@ struct ToneCurveSegment {
 class ToneCurve {
 public:
     ToneCurve() = default;
-    explicit ToneCurve(const ToneCurveConfig& config);
+    explicit ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints = false);
     bool custom() const { return custom_; }
     bool active() const { return active_; }
     bool gpuSupported() const { return gpuSupported_; }

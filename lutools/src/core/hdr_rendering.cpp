@@ -102,8 +102,8 @@ RGB toneSDR(RGB p, const HDRRenderOptions& o) {
     return {decodeSRGB(p.r), decodeSRGB(p.g), decodeSRGB(p.b)};
 }
 
-ToneCurve hdrCurve(const HDRToneOptions& tone) {
-    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve);
+ToneCurve hdrCurve(const HDRToneOptions& tone, bool allowFreeEndpoints) {
+    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve, allowFreeEndpoints);
     if (tone.curveStrength == 0) return {};
     auto config = tone.curve;
     const double offset = tone.curveStrength / 1600.0;
@@ -203,10 +203,11 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
     const bool toneActive = o.contrast != 0 || o.highlights != 0 || o.shadows != 0 || o.saturation != 0;
     const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
-    const auto curve = useToneV2 ? hdrCurve(o.tone) : ToneCurve();
+    const bool allowFreeEndpoints = o.processingVersion >= kHdrProcessingV2GradingCurveVersion;
+    const auto curve = useToneV2 ? hdrCurve(o.tone, allowFreeEndpoints) : ToneCurve();
     std::array<ToneCurve, 3> channels;
     if (o.processingVersion >= kHdrProcessingChannelCurvesVersion)
-        for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i]);
+        for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i], allowFreeEndpoints);
     const bool channelsActive = std::any_of(channels.begin(), channels.end(), [](const auto& value) { return value.active(); });
     const bool advancedToneActive = useToneV2 && (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active());
     const bool useColor = o.processingVersion >= kHdrProcessingColorVersion;
@@ -736,7 +737,8 @@ RGB hdrRelativeWhiteBalance(float temperature, float tint) {
 
 void validateHDRRenderOptions(const HDRRenderOptions& o) {
     const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
-    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingChannelCurvesVersion ||
+    const bool allowFreeEndpoints = o.processingVersion >= kHdrProcessingV2GradingCurveVersion;
+    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingV2GradingCurveVersion ||
         !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
         !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
         !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
@@ -744,11 +746,16 @@ void validateHDRRenderOptions(const HDRRenderOptions& o) {
         (o.intent != HDRQuality::Preview && o.intent != HDRQuality::Final))
         throw std::invalid_argument("Invalid HDR render settings");
     if (useToneV2 && (!inRange(o.tone.blackPoint, -100, 100) || !inRange(o.tone.whitePoint, -100, 100) ||
-        !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve)))
+        !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve, allowFreeEndpoints)))
         throw std::invalid_argument("Invalid HDR tone settings");
     if (o.processingVersion >= kHdrProcessingChannelCurvesVersion &&
-        !std::all_of(o.tone.channels.begin(), o.tone.channels.end(), validToneCurve))
+        !std::all_of(o.tone.channels.begin(), o.tone.channels.end(),
+            [allowFreeEndpoints](const auto& c) { return validToneCurve(c, allowFreeEndpoints); }))
         throw std::invalid_argument("Invalid HDR channel curves");
+    if (o.processingVersion >= kHdrProcessingV2GradingCurveVersion &&
+        (!o.tone.parametric.valid() ||
+         o.outputSharpening < OutputSharpening::Off || o.outputSharpening > OutputSharpening::High))
+        throw std::invalid_argument("Invalid HDR v9 tone parametric or output sharpening settings");
     if (o.processingVersion >= kHdrProcessingColorVersion &&
         (!inRange(o.color.vibrance, -100, 100) || !o.color.hsl.valid() || !o.color.grading.valid()))
         throw std::invalid_argument("Invalid HDR color settings");

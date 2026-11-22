@@ -30,6 +30,7 @@ public enum CanonicalEditRecipe {
         public var waveletDenoise: WaveletDenoiseSettings?
         public var chromaDenoise: Int
         public var rawNoiseReduction: Int
+        public var outputSharpening: OutputSharpening
 
         public init(
             processing: ProcessingIdentity = .current,
@@ -46,7 +47,8 @@ public enum CanonicalEditRecipe {
             photoEffects: PhotoEffectsSettings = .init(),
             waveletDenoise: WaveletDenoiseSettings? = nil,
             chromaDenoise: Int = 0,
-            rawNoiseReduction: Int = 0
+            rawNoiseReduction: Int = 0,
+            outputSharpening: OutputSharpening = .off
         ) {
             self.processing = processing
             self.x3fMode = x3fMode
@@ -63,6 +65,7 @@ public enum CanonicalEditRecipe {
             self.waveletDenoise = waveletDenoise
             self.chromaDenoise = chromaDenoise
             self.rawNoiseReduction = rawNoiseReduction
+            self.outputSharpening = outputSharpening
         }
     }
 
@@ -87,7 +90,7 @@ public enum CanonicalEditRecipe {
                 denoise: nil,
                 lensCorrection: nil
             ),
-            output: .init(path: "session.png", format: "png", size: .init(mode: "native"))
+            output: .init(path: "session.png", format: "png", size: .init(mode: "native"), outputSharpening: nil)
         )
         let data = try! encoder.encode(payload)
         return String(decoding: data, as: UTF8.self)
@@ -119,9 +122,10 @@ public enum CanonicalEditRecipe {
             green: CurveShapePayload(state.toneCurve.channels.green),
             blue: CurveShapePayload(state.toneCurve.channels.blue)
         )
+        let hasV12Features = state.toneCurve.hasV2Extensions || state.colorGrading.hasV2Extensions || state.outputSharpening != .off
 
         let payload = Payload(
-            schemaVersion: state.isRaster ? 5 : 7,
+            schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: state.isRaster ? "session.png" : "session.raw", type: state.isRaster ? "raster" : "raw"),
@@ -156,14 +160,19 @@ public enum CanonicalEditRecipe {
                     curve: .init(
                         mode: state.toneCurve.mode.rawValue,
                         points: state.toneCurve.points.map { [$0.x, $0.y] },
-                        channels: channels
+                        channels: channels,
+                        applyToLuminosity: state.toneCurve.applyToLuminosity ? true : nil,
+                        parametric: state.toneCurve.parametric.isDefault ? nil : CurveParametricPayload(state.toneCurve.parametric)
                     )
                 ),
                 color: .init(vibrance: state.toneControls.vibrance / 100.0),
                 colorGrading: .init(
-                    shadows: .init(hue: state.colorGrading.shadows.hue, saturation: state.colorGrading.shadows.saturation),
-                    midtones: .init(hue: state.colorGrading.midtones.hue, saturation: state.colorGrading.midtones.saturation),
-                    highlights: .init(hue: state.colorGrading.highlights.hue, saturation: state.colorGrading.highlights.saturation)
+                    shadows: WheelPayload(state.colorGrading.shadows),
+                    midtones: WheelPayload(state.colorGrading.midtones),
+                    highlights: WheelPayload(state.colorGrading.highlights),
+                    global: state.colorGrading.global.isDefault ? nil : WheelPayload(state.colorGrading.global),
+                    blending: state.colorGrading.blending == 50.0 ? nil : state.colorGrading.blending,
+                    balance: state.colorGrading.balance == 0.0 ? nil : state.colorGrading.balance
                 ),
                 detail: .init(sharpening: 0),
                 hsl: .init(
@@ -198,7 +207,12 @@ public enum CanonicalEditRecipe {
                     profileId: profileID
                 )
             ),
-            output: .init(path: "session.png", format: "png", size: .init(mode: "native"))
+            output: .init(
+                path: "session.png",
+                format: "png",
+                size: .init(mode: "native"),
+                outputSharpening: state.outputSharpening == .off ? nil : state.outputSharpening.rawValue
+            )
         )
 
         let data = try encoder.encode(payload)
@@ -240,6 +254,12 @@ public enum CanonicalEditRecipe {
         let path: String
         let format: String
         let size: SizePayload
+        let outputSharpening: String?
+
+        enum CodingKeys: String, CodingKey {
+            case path, format, size
+            case outputSharpening = "output_sharpening"
+        }
     }
 
     private struct SizePayload: Encodable {
@@ -355,10 +375,45 @@ public enum CanonicalEditRecipe {
         let blue: CurveShapePayload
     }
 
+    private struct CurveParametricPayload: Encodable {
+        let highlights: Double
+        let lights: Double
+        let darks: Double
+        let shadows: Double
+        let splitShadow: Double
+        let splitMidtone: Double
+        let splitHighlight: Double
+
+        init(_ p: ToneCurveParametric) {
+            highlights = p.highlights
+            lights = p.lights
+            darks = p.darks
+            shadows = p.shadows
+            splitShadow = p.splitShadow
+            splitMidtone = p.splitMidtone
+            splitHighlight = p.splitHighlight
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case highlights, lights, darks, shadows
+            case splitShadow = "split_shadow"
+            case splitMidtone = "split_midtone"
+            case splitHighlight = "split_highlight"
+        }
+    }
+
     private struct CurvePayload: Encodable {
         let mode: String
         let points: [[Double]]
         let channels: CurveChannelsPayload?
+        let applyToLuminosity: Bool?
+        let parametric: CurveParametricPayload?
+
+        enum CodingKeys: String, CodingKey {
+            case mode, points, channels
+            case applyToLuminosity = "apply_to_luminosity"
+            case parametric
+        }
     }
 
     private struct ColorPayload: Encodable {
@@ -368,12 +423,22 @@ public enum CanonicalEditRecipe {
     private struct WheelPayload: Encodable {
         let hue: Double
         let saturation: Double
+        let luminance: Double?
+
+        init(_ wheel: ColorGradingWheel) {
+            hue = wheel.hue
+            saturation = wheel.saturation
+            luminance = wheel.luminance == 0.0 ? nil : wheel.luminance
+        }
     }
 
     private struct ColorGradingPayload: Encodable {
         let shadows: WheelPayload
         let midtones: WheelPayload
         let highlights: WheelPayload
+        let global: WheelPayload?
+        let blending: Double?
+        let balance: Double?
     }
 
     private struct DetailPayload: Encodable {

@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.ToneCurveShape
@@ -36,6 +37,7 @@ internal object CanonicalEditRecipe {
 internal fun EditSettings.toCanonicalRecipeJson(
     isRaster: Boolean = false,
     includeDenoise: Boolean = true,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ): String {
     val exposureString = if (isRaster) {
         "sensor"
@@ -54,6 +56,12 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("green", curveShapeJson(renderCurve.channels.green))
             .put("blue", curveShapeJson(renderCurve.channels.blue)))
     }
+    if (renderCurve.applyToLuminosity) {
+        curveObject.put("apply_to_luminosity", true)
+    }
+    if (!renderCurve.parametric.isDefault) {
+        curveObject.put("parametric", renderCurve.parametric.json())
+    }
 
     val hslValues = renderHsl.packed()
     fun hslAxisJson(offset: Int): JSONArray {
@@ -66,6 +74,21 @@ internal fun EditSettings.toCanonicalRecipeJson(
     fun wheelJson(wheel: ColorGradingWheel): JSONObject = JSONObject()
         .put("hue", wheel.hue.toDouble())
         .put("saturation", wheel.saturation.toDouble())
+        .also { if (wheel.luminance != 0f) it.put("luminance", wheel.luminance.toDouble()) }
+
+    val colorGradingObj = JSONObject()
+        .put("shadows", wheelJson(grading.shadows))
+        .put("midtones", wheelJson(grading.midtones))
+        .put("highlights", wheelJson(grading.highlights))
+    if (!grading.global.isDefault) {
+        colorGradingObj.put("global", wheelJson(grading.global))
+    }
+    if (grading.blending != 50f) {
+        colorGradingObj.put("blending", grading.blending.toDouble())
+    }
+    if (grading.balance != 0f) {
+        colorGradingObj.put("balance", grading.balance.toDouble())
+    }
 
     val lensObj = JSONObject()
         .put("distortion", lens.distortion)
@@ -117,10 +140,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("white_point", renderWhitePoint.toDouble() / 100.0)
             .put("curve", curveObject))
         .put("color", JSONObject().put("vibrance", renderVibrance.toDouble() / 100.0))
-        .put("color_grading", JSONObject()
-            .put("shadows", wheelJson(grading.shadows))
-            .put("midtones", wheelJson(grading.midtones))
-            .put("highlights", wheelJson(grading.highlights)))
+        .put("color_grading", colorGradingObj)
         .put("detail", JSONObject().put("sharpening", 0.0))
         .put("hsl", JSONObject()
             .put("hue", hslAxisJson(0))
@@ -140,8 +160,17 @@ internal fun EditSettings.toCanonicalRecipeJson(
         .put("denoise", denoiseObj)
         .put("lens_correction", lensObj)
 
+    val activeV012 = renderCurve.hasV2Extensions || grading.hasV2Extensions || outputSharpening != OutputSharpening.OFF
+    val outputObj = JSONObject()
+        .put("path", "session.png")
+        .put("format", "png")
+        .put("size", JSONObject().put("mode", "native"))
+    if (outputSharpening != OutputSharpening.OFF) {
+        outputObj.put("sharpening", outputSharpening.wireValue)
+    }
+
     val root = JSONObject()
-        .put("schema_version", if (isRaster) 5 else 7)
+        .put("schema_version", if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)
@@ -150,10 +179,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("path", if (isRaster) "session.png" else "session.raw")
             .put("type", if (isRaster) "raster" else "raw"))
         .put("edits", edits)
-        .put("output", JSONObject()
-            .put("path", "session.png")
-            .put("format", "png")
-            .put("size", JSONObject().put("mode", "native")))
+        .put("output", outputObj)
     if (!isRaster) {
         root.put("x3f_mode", x3fMode.id)
     }

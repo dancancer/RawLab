@@ -152,6 +152,13 @@ public:
 
     // Tone curve sampling (stateless)
     static RenderStatus sampleToneCurve(const ToneCurveConfig& config, const double* x, double* y, uint32_t count);
+    static RenderStatus sampleToneCurveV2(
+        const ToneCurveConfig& config,
+        const ToneCurveParametricConfig* parametric,
+        const double* x,
+        double* y,
+        uint32_t count
+    );
 
     // Atomic edit-state application (replaces all edit-state fields transactionally)
     RenderStatus applyParams(const char* recipeJson);
@@ -220,6 +227,13 @@ public:
     RenderStatus setColorGrading(const ColorGradingOptions& options);
     RenderStatus setToneCurve(const ToneCurveConfig& config);
     RenderStatus setToneCurves(const ToneCurveConfig& master, const std::array<ToneCurveConfig, 3>& channels);
+    RenderStatus setToneCurvesV2(
+        const ToneCurveConfig& master,
+        const std::array<ToneCurveConfig, 3>& channels,
+        bool applyToLuminosity,
+        const ToneCurveParametricConfig& parametric
+    );
+    RenderStatus setAiDenoiseBlend(float strength) noexcept;
 
     // X3F per-pipeline state (pipeline_x3f.cpp)
     static bool isNormalX3f(const char* inputPath, X3fMode mode);
@@ -352,6 +366,13 @@ private:
     ColorGradingOptions colorGrading_{};
     ToneCurve toneCurve_{};
     std::array<ToneCurve, 3> channelCurves_{};
+    bool curveApplyToLuminosity_ = false;
+    ToneCurveParametricConfig parametricCurve_{};
+    float aiDenoiseBlend_ = 1.0f;
+    OutputSharpening outputSharpening_ = OutputSharpening::Off;
+    bool rasterRelativeWbActive_ = false;
+    float rasterRelativeTemp_ = 6500.0f;
+    float rasterRelativeTint_ = 0.0f;
     GeometryOptions geometry_{};
     uint32_t geometryWidth_ = 0;
     uint32_t geometryHeight_ = 0;

@@ -13,10 +13,15 @@ enum class AdjustmentField(val id: String) {
     SHADOWS("light.shadows"),
     S_CURVE("light.s_curve"),
     CURVE("light.curve"),
+    CURVE_APPLY_TO_LUMINOSITY("light.curve.apply_to_luminosity"),
+    CURVE_PARAMETRIC("light.curve.parametric"),
     BLACK_POINT("tone.black_point"),
     WHITE_POINT("tone.white_point"),
     VIBRANCE("color.vibrance"),
     GRADING_SHADOWS("color.grading.shadows"), GRADING_MIDTONES("color.grading.midtones"), GRADING_HIGHLIGHTS("color.grading.highlights"),
+    GRADING_GLOBAL("color.grading.global"),
+    GRADING_BLENDING("color.grading.blending"),
+    GRADING_BALANCE("color.grading.balance"),
     WHITE_BALANCE_MODE("color.white_balance.mode"),
     TEMPERATURE("color.white_balance.temperature_kelvin"),
     TINT("color.white_balance.tint"),
@@ -123,7 +128,10 @@ enum class AdjustmentField(val id: String) {
         val HDR_V5_SUPPORTED = HDR_V4_SUPPORTED + HDR_EFFECTS
         val HDR_V6_SUPPORTED = HDR_V5_SUPPORTED + HDR_DETAIL
         val HDR_SUPPORTED = HDR_V6_SUPPORTED + HDR_LOOK
-        fun hdrTransferFields(cameraRAW: Boolean) = if (cameraRAW) HDR_SUPPORTED + HDR_CAMERA_DEVELOPMENT else HDR_SUPPORTED
+        val HDR_V9_TONE_EXTENSIONS = setOf(CURVE_APPLY_TO_LUMINOSITY, CURVE_PARAMETRIC)
+        val HDR_V9_COLOR_EXTENSIONS = setOf(GRADING_GLOBAL, GRADING_BLENDING, GRADING_BALANCE)
+        val HDR_V9_SUPPORTED = HDR_SUPPORTED + HDR_V9_TONE_EXTENSIONS + HDR_V9_COLOR_EXTENSIONS
+        fun hdrTransferFields(cameraRAW: Boolean) = if (cameraRAW) HDR_V9_SUPPORTED + HDR_CAMERA_DEVELOPMENT else HDR_V9_SUPPORTED
         fun hdrSupported(version: Int) = when (version) {
             1 -> HDR_V1_SUPPORTED
             2 -> HDR_V2_SUPPORTED
@@ -132,6 +140,7 @@ enum class AdjustmentField(val id: String) {
             5 -> HDR_V5_SUPPORTED
             6 -> HDR_V6_SUPPORTED
             7, 8 -> HDR_SUPPORTED
+            9 -> HDR_V9_SUPPORTED
             else -> error("Unsupported HDR processing version")
         }
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)

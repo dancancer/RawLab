@@ -98,4 +98,31 @@ class ToneCurveSettingsTest {
         assertTrue(ToneCurveSettings.identity.isIdentity)
         assertFalse(ToneCurveSettings.identity.isDefault)
     }
+
+    @Test fun unpinnedEndpointYAndParametricCurveRoundTripThroughStorageHDRAndTransfer() {
+        val unpinned = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.12), ToneCurvePoint(0.5, 0.55), ToneCurvePoint(1.0, 0.91)))
+        assertEquals(0.12, unpinned.points.first().y, 0.0)
+        assertEquals(0.91, unpinned.points.last().y, 0.0)
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.05, 0.0), ToneCurvePoint(1.0, 1.0)))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveParametric(splitShadow = 0.45, splitMidtone = 0.46)
+        }
+        val param = ToneCurveParametric(highlights = -18.0, lights = 12.0, darks = -8.0, shadows = 24.0,
+            splitShadow = 0.2, splitMidtone = 0.52, splitHighlight = 0.8)
+        val v2Curve = ToneCurveSettings(ToneCurveMode.CUSTOM, unpinned.points, applyToLuminosity = true, parametric = param)
+        assertTrue(v2Curve.hasV2Extensions)
+        val source = EditSettings(curve = v2Curve)
+        assertEquals(source, SettingsCodec.decode(SettingsCodec.encode(source)))
+        val hdr = HDRSettings().withTone(HDRToneSettings(curve = v2Curve))
+        assertEquals(9, hdr.processingVersion); assertEquals(10, hdr.recordVersion)
+        assertEquals(hdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = hdr))).hdr)
+        val context = AdjustmentTransferContext("v2curve", false)
+        val payload = AdjustmentTransfer.capture(
+            AdjustmentScope.Custom(setOf(AdjustmentField.CURVE, AdjustmentField.CURVE_APPLY_TO_LUMINOSITY, AdjustmentField.CURVE_PARAMETRIC)),
+            source, context,
+        )
+        assertEquals(v2Curve, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), context).curve)
+    }
 }

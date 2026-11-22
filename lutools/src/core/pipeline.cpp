@@ -61,6 +61,13 @@ void Pipeline::copyConfigurationFrom(const Pipeline& source) {
     colorGrading_ = source.colorGrading_;
     toneCurve_ = source.toneCurve_;
     channelCurves_ = source.channelCurves_;
+    curveApplyToLuminosity_ = source.curveApplyToLuminosity_;
+    parametricCurve_ = source.parametricCurve_;
+    aiDenoiseBlend_ = source.aiDenoiseBlend_;
+    outputSharpening_ = source.outputSharpening_;
+    rasterRelativeWbActive_ = source.rasterRelativeWbActive_;
+    rasterRelativeTemp_ = source.rasterRelativeTemp_;
+    rasterRelativeTint_ = source.rasterRelativeTint_;
     geometry_ = source.geometry_;
     lensCorrection_ = source.lensCorrection_;
     displayLensMetadata_ = source.displayLensMetadata_;
@@ -140,6 +147,38 @@ RenderStatus Pipeline::sampleToneCurve(const ToneCurveConfig& config, const doub
     }
     try {
         const ToneCurve curve(config);
+        for (uint32_t i = 0; i < count; ++i) {
+            y[i] = curve.evaluate(x[i]);
+        }
+        return RenderStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::sampleToneCurveV2(
+    const ToneCurveConfig& config,
+    const ToneCurveParametricConfig* parametric,
+    const double* x,
+    double* y,
+    uint32_t count
+) {
+    if (!x || !y || count == 0 || !validToneCurve(config, /*allowFreeEndpoints=*/true)) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (parametric && !parametric->valid()) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (config.mode != ToneCurveMode::Custom && !(parametric && parametric->active())) {
+        return RenderStatus::InvalidArgument;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        if (!std::isfinite(x[i])) return RenderStatus::InvalidArgument;
+    }
+    try {
+        const ToneCurve curve(config, /*allowFreeEndpoints=*/true);
         for (uint32_t i = 0; i < count; ++i) {
             y[i] = curve.evaluate(x[i]);
         }
@@ -460,7 +499,8 @@ RenderStatus Pipeline::setToneCurve(const ToneCurveConfig& config) {
 
 RenderStatus Pipeline::setToneCurves(const ToneCurveConfig& masterConfig, const std::array<ToneCurveConfig, 3>& channelConfigs) {
     if (!validToneCurve(masterConfig) ||
-        !std::all_of(channelConfigs.begin(), channelConfigs.end(), validToneCurve)) {
+        !std::all_of(channelConfigs.begin(), channelConfigs.end(),
+            [](const auto& c) { return validToneCurve(c); })) {
         return RenderStatus::InvalidArgument;
     }
     try {
@@ -472,12 +512,53 @@ RenderStatus Pipeline::setToneCurves(const ToneCurveConfig& masterConfig, const 
         };
         toneCurve_ = std::move(master);
         channelCurves_ = std::move(channels);
+        curveApplyToLuminosity_ = false;
+        parametricCurve_ = {};
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
     } catch (...) {
         return RenderStatus::ProcessingError;
     }
+}
+
+RenderStatus Pipeline::setToneCurvesV2(
+    const ToneCurveConfig& masterConfig,
+    const std::array<ToneCurveConfig, 3>& channelConfigs,
+    bool applyToLuminosity,
+    const ToneCurveParametricConfig& parametric
+) {
+    if (!validToneCurve(masterConfig, /*allowFreeEndpoints=*/true) ||
+        !std::all_of(channelConfigs.begin(), channelConfigs.end(),
+            [](const auto& c) { return validToneCurve(c, /*allowFreeEndpoints=*/true); }) ||
+        !parametric.valid()) {
+        return RenderStatus::InvalidArgument;
+    }
+    try {
+        ToneCurve master(masterConfig, /*allowFreeEndpoints=*/true);
+        std::array<ToneCurve, 3> channels = {
+            ToneCurve(channelConfigs[0], /*allowFreeEndpoints=*/true),
+            ToneCurve(channelConfigs[1], /*allowFreeEndpoints=*/true),
+            ToneCurve(channelConfigs[2], /*allowFreeEndpoints=*/true)
+        };
+        toneCurve_ = std::move(master);
+        channelCurves_ = std::move(channels);
+        curveApplyToLuminosity_ = applyToLuminosity;
+        parametricCurve_ = parametric;
+        return RenderStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::setAiDenoiseBlend(float strength) noexcept {
+    if (!std::isfinite(strength) || strength < 0.0f || strength > 1.0f) {
+        return RenderStatus::InvalidArgument;
+    }
+    aiDenoiseBlend_ = strength;
+    return RenderStatus::Ok;
 }
 
 RenderStatus Pipeline::applyParams(const char* recipeJson) {
@@ -524,22 +605,25 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         if (wavelet.active() && !waveletDenoiseAvailable()) {
             return RenderStatus::Unsupported;
         }
+        const bool freeCurveEndpoints = recipe.schemaVersion >= 17;
         if (!recipe.effects.valid() || !recipe.hsl.valid() || !recipe.toneControls.valid() ||
-            !recipe.atmosphere.valid() || !recipe.colorGrading.valid()) {
+            !recipe.atmosphere.valid() || !recipe.colorGrading.valid() || !recipe.parametricCurve.valid() ||
+            recipe.outputSharpening < OutputSharpening::Off || recipe.outputSharpening > OutputSharpening::High) {
             return RenderStatus::InvalidArgument;
         }
-        if (!validToneCurve(recipe.toneCurve) ||
-            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validToneCurve)) {
+        if (!validToneCurve(recipe.toneCurve, freeCurveEndpoints) ||
+            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+                [freeCurveEndpoints](const auto& c) { return validToneCurve(c, freeCurveEndpoints); })) {
             return RenderStatus::InvalidArgument;
         }
-        ToneCurve masterCurve(recipe.toneCurve);
+        ToneCurve masterCurve(recipe.toneCurve, freeCurveEndpoints);
         if (masterCurve.custom() && recipe.sCurve != 0.0f) {
             return RenderStatus::InvalidArgument;
         }
         std::array<ToneCurve, 3> channelCurves = {
-            ToneCurve(recipe.channelCurves[0]),
-            ToneCurve(recipe.channelCurves[1]),
-            ToneCurve(recipe.channelCurves[2])
+            ToneCurve(recipe.channelCurves[0], freeCurveEndpoints),
+            ToneCurve(recipe.channelCurves[1], freeCurveEndpoints),
+            ToneCurve(recipe.channelCurves[2], freeCurveEndpoints)
         };
         GeometryOptions geometry = recipe.geometry;
         if (!geometry.valid()) {
@@ -579,6 +663,18 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         colorGrading_ = recipe.colorGrading;
         toneCurve_ = std::move(masterCurve);
         channelCurves_ = std::move(channelCurves);
+        curveApplyToLuminosity_ = recipe.curveApplyToLuminosity;
+        parametricCurve_ = recipe.parametricCurve;
+        outputSharpening_ = recipe.outputSharpening;
+        if (recipe.rasterInput && recipe.whiteBalanceMode == RenderWhiteBalanceMode::Relative) {
+            rasterRelativeWbActive_ = true;
+            rasterRelativeTemp_ = recipe.temperatureKelvin;
+            rasterRelativeTint_ = recipe.tint;
+        } else {
+            rasterRelativeWbActive_ = false;
+            rasterRelativeTemp_ = 6500.0f;
+            rasterRelativeTint_ = 0.0f;
+        }
         geometry_ = geometry;
         geometryWidth_ = geometryHeight_ = 0;
         lensCorrection_ = std::move(lens);
@@ -1182,6 +1278,11 @@ RenderStatus Pipeline::processPreviewRoi(
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
     local.customCurve = toneCurve_;
+    local.channelCurves = channelCurves_;
+    local.curveApplyToLuminosity = curveApplyToLuminosity_;
+    local.parametricCurve = parametricCurve_;
+    local.aiDenoiseBlend = aiDenoiseBlend_;
+    local.outputSharpening = outputSharpening_;
 
     ColorConverter converter;
     converter.convertImage(image, colorSpace, ColorSpace::sRGB);
@@ -1262,6 +1363,15 @@ RenderStatus Pipeline::processImpl(
     if (status != RenderStatus::Ok) return status;
 
     RenderParams local = params;
+    if (local.inputType == RenderInputType::DisplayBuffer &&
+        local.wbMode == RenderWhiteBalanceMode::Camera &&
+        local.temperature == 6500.0f &&
+        local.tint == 0.0f &&
+        rasterRelativeWbActive_) {
+        local.wbMode = RenderWhiteBalanceMode::Relative;
+        local.temperature = rasterRelativeTemp_;
+        local.tint = rasterRelativeTint_;
+    }
     if (toneCurve_.custom() && local.toneCurve != 0.0f) return RenderStatus::InvalidArgument;
     const bool cpuAnalysis = preHsl != nullptr;
     const auto effectiveGpuMode = cpuAnalysis ? GpuMode::Off : gpuConfig_.mode;
@@ -1675,6 +1785,11 @@ RenderStatus Pipeline::processImpl(
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
     local.customCurve = toneCurve_;
+    local.channelCurves = channelCurves_;
+    local.curveApplyToLuminosity = curveApplyToLuminosity_;
+    local.parametricCurve = parametricCurve_;
+    local.aiDenoiseBlend = aiDenoiseBlend_;
+    local.outputSharpening = outputSharpening_;
 
 #if defined(SONY2FUJI_ENABLE_METAL)
     if (gpuPipeline) {

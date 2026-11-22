@@ -189,6 +189,7 @@ internal object StructuredSettingsCodec {
                 fields.number("grain_size", 0.0..100.0), fields.number("grain_roughness", 0.0..100.0))
         } else null
         val version = when {
+            tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
             tone?.curve?.hasChannelCurves == true -> 8
             value.has("look") -> 7
             value.has("detail") -> 6
@@ -210,7 +211,13 @@ internal object StructuredSettingsCodec {
                 if (fields.isNull("name")) null else fields.string("name"), fields.number("strength", 0.0..2.0))
         } else null
         val camera = if (value.has("camera_development")) decodeHDRCamera(value.getJSONObject("camera_development")) else null
-        require(value.integer("record_version") == (if (version == 8) 9 else if (camera == null) version else 8) && value.integer("hdr_processing_version") == version) {
+        val expectedRecordVersion = when {
+            version >= 9 -> 10
+            version == 8 -> 9
+            camera == null -> version
+            else -> 8
+        }
+        require(value.integer("record_version") == expectedRecordVersion && value.integer("hdr_processing_version") == version) {
             "Unsupported HDR settings version"
         }
         val geometry = value.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
@@ -257,20 +264,38 @@ internal object StructuredSettingsCodec {
             if (value.has("lens_vignetting")) value.boolean("lens_vignetting") else false)
     }
 
+    private fun ColorGradingWheel.json() = JSONObject().put("hue", hue).put("saturation", saturation).also {
+        if (luminance != 0f) it.put("luminance", luminance)
+    }
+
     private fun ColorGradingSettings.json() = JSONObject().also { grading ->
-        ColorGradingZone.entries.forEach { zone ->
-            grading.put(zone.id, JSONObject().put("hue", this[zone].hue).put("saturation", this[zone].saturation))
-        }
+        ColorGradingZone.entries.forEach { zone -> grading.put(zone.id, this[zone].json()) }
+        if (!global.isDefault) grading.put("global", global.json())
+        if (blending != 50f) grading.put("blending", blending)
+        if (balance != 0f) grading.put("balance", balance)
     }
 
     private fun grading(json: JSONObject): ColorGradingSettings {
-        json.keysExactly("shadows", "midtones", "highlights")
-        return ColorGradingZone.entries.fold(ColorGradingSettings()) { result, zone ->
-            val wheel = json.getJSONObject(zone.id).keysExactly("hue", "saturation")
+        json.keysWithOptional(setOf("global", "blending", "balance"), "shadows", "midtones", "highlights")
+        fun decodeWheel(key: String): ColorGradingWheel {
+            val wheel = json.getJSONObject(key).keysWithOptional(setOf("luminance"), "hue", "saturation")
             val hue = wheel.get("hue"); val saturation = wheel.get("saturation")
             require(hue is Number && saturation is Number)
-            result.with(zone, ColorGradingWheel.fromNumbers(hue.toDouble(), saturation.toDouble()))
+            val luminance = if (wheel.has("luminance")) {
+                val value = wheel.get("luminance")
+                require(value is Number)
+                value.toDouble()
+            } else 0.0
+            return ColorGradingWheel.fromNumbers(hue.toDouble(), saturation.toDouble(), luminance)
         }
+        val base = ColorGradingZone.entries.fold(ColorGradingSettings()) { result, zone ->
+            result.with(zone, decodeWheel(zone.id))
+        }
+        return base.copy(
+            global = if (json.has("global")) decodeWheel("global") else ColorGradingWheel(),
+            blending = if (json.has("blending")) json.number("blending", 0.0..100.0) else 50f,
+            balance = if (json.has("balance")) json.number("balance", -100.0..100.0) else 0f,
+        )
     }
     private fun JSONObject.keysWithOptional(optional: Set<String>, vararg required: String): JSONObject = apply {
         val actual = keys().asSequence().toSet()

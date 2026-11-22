@@ -50,9 +50,14 @@ internal static class ToneCurveChecks
         Check(Marshal.SizeOf<Native.ToneCurveConfig>() == 544 && config.Count == 4 && config.Points[2] == curve.Points[1].X,
             "Additive curve config retains binary64 points and stable ABI");
         foreach (var bad in new[] { """{"mode":"custom","points":[[0,0],[1,1,2]]}""",
+            """{"mode":"custom","points":[[0.1,0],[1,1]]}""",
             """{"mode":"custom","points":[[0,0],[0.5,0.6],[0.6,0.5],[1,1]]}""",
             """{"mode":"custom","points":[[0,0],[1,1]],"future":0}""" })
             Reject(() => JsonSerializer.Deserialize<ToneCurveSettings>(bad));
+        var unpinned = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.125), new(0.5, 0.55), new(1, 0.875)],
+            applyToLuminosity: true, parametric: new ToneCurveParametric(-10, 15, -5, 20, 0.2, 0.5, 0.8));
+        Check(JsonSerializer.Deserialize<ToneCurveSettings>(JsonSerializer.Serialize(unpinned)) == unpinned,
+            "Unpinned Y and parametric curve round-trip");
         var context = new AdjustmentTransferContext("curve", false);
         var original = new OriginalIdentity("curve.jpg", 1, 2, 3);
         SavedEdit Edit(Adjustments value) => new(original, value.Capture(), null);

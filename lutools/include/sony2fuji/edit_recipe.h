@@ -49,6 +49,7 @@ struct EditRecipe {
     float exposureEv = 0;
     float brightness = 1;
     sony2fuji_wb_mode whiteBalanceMode = SONY2FUJI_WB_CAMERA;
+    bool rasterRelativeWb = false;
     float temperatureKelvin = 6500;
     float tint = 0;
     float lookStrength = 1;
@@ -61,12 +62,23 @@ struct EditRecipe {
     sony2fuji_tone_curve_config toneCurve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
         sizeof(sony2fuji_tone_curve_config), SONY2FUJI_CURVE_LEGACY, 0, {}};
     std::array<sony2fuji_tone_curve_config, 3> channelCurves{{toneCurve, toneCurve, toneCurve}};
+    bool curveApplyToLuminosity = false;
+    sony2fuji_tone_curve_parametric_config parametricCurve{
+        SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION,
+        sizeof(sony2fuji_tone_curve_parametric_config),
+        0, 0, 0, 0, 0.25f, 0.50f, 0.75f, 0
+    };
     sony2fuji_tone_controls_config toneControls{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION,
         sizeof(sony2fuji_tone_controls_config), 0, 0, 0};
     sony2fuji_atmosphere_config atmosphere{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION,
         sizeof(sony2fuji_atmosphere_config), 0, 0};
     sony2fuji_color_grading_config colorGrading{SONY2FUJI_COLOR_GRADING_CONFIG_VERSION,
         sizeof(sony2fuji_color_grading_config), 0, 0, 0, 0, 0, 0};
+    sony2fuji_color_grading_v2_config colorGradingV2{
+        SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION,
+        sizeof(sony2fuji_color_grading_v2_config),
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 50.0f, 0
+    };
     float sharpening = 0;
     int32_t rawNoiseReduction = 0;
     int32_t chromaDenoise = 0;
@@ -84,6 +96,7 @@ struct EditRecipe {
     uint32_t jpegQuality = 95;
     // Zero preserves source dimensions; otherwise a no-upscale pixel ceiling.
     uint32_t outputLongEdge = 0;
+    sony2fuji_output_sharpening outputSharpening = SONY2FUJI_OUTPUT_SHARPENING_OFF;
     // v2: normalized crop after clockwise turns, flips and straightening.
     sony2fuji_geometry_config geometry{SONY2FUJI_GEOMETRY_CONFIG_VERSION,
         sizeof(sony2fuji_geometry_config), 0, 0, 1, 1, 0, 0, 0, 0};
@@ -95,6 +108,7 @@ struct EditRecipe {
     sony2fuji_request toRequest() const;
     sony2fuji_hdr_request_v1 toHDRRequest() const;
     sony2fuji_hdr_request_v8 toHDRRenderRequest() const;
+    sony2fuji_hdr_request_v9 toHDRRenderRequestV9() const;
 };
 
 // Invalid documents leave the destination unchanged. Error includes the field.

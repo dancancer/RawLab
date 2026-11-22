@@ -113,15 +113,30 @@ struct Harness {
         return ToneCurveSettings(mode: mode, points: points, channels: channels)
     }
 
+    static func parseParametric(_ obj: [String: Any]) -> ToneCurveParametric {
+        ToneCurveParametric(
+            highlights: num(obj["highlights"]) ?? 0,
+            lights: num(obj["lights"]) ?? 0,
+            darks: num(obj["darks"]) ?? 0,
+            shadows: num(obj["shadows"]) ?? 0,
+            splitShadow: num(obj["split_shadow"]) ?? 0.25,
+            splitMidtone: num(obj["split_midtone"]) ?? 0.5,
+            splitHighlight: num(obj["split_highlight"]) ?? 0.75
+        )
+    }
+
     static func parseGrading(_ sdr: [String: Any], prefix: String = "color.grading.") -> ColorGradingSettings {
         func wheel(_ key: String) -> ColorGradingWheel {
             guard let o = sdr[key] as? [String: Any] else { return ColorGradingWheel() }
-            return ColorGradingWheel(hue: num(o["hue"]) ?? 0, saturation: num(o["saturation"]) ?? 0)
+            return ColorGradingWheel(hue: num(o["hue"]) ?? 0, saturation: num(o["saturation"]) ?? 0, luminance: num(o["luminance"]) ?? 0)
         }
         var grading = ColorGradingSettings()
         grading.shadows = wheel(prefix + "shadows")
         grading.midtones = wheel(prefix + "midtones")
         grading.highlights = wheel(prefix + "highlights")
+        grading.global = wheel(prefix + "global")
+        if let v = num(sdr[prefix + "blending"]) { grading.blending = v }
+        if let v = num(sdr[prefix + "balance"]) { grading.balance = v }
         return grading
     }
 
@@ -152,6 +167,8 @@ struct Harness {
         if let v = num(values["tone.white_point"]) { tone.whitePoint = v }
         if let v = num(values["light.s_curve"]) { tone.curveStrength = v * 100.0 }
         if let cObj = values["light.curve"] as? [String: Any] { tone.curve = try parseCurve(cObj) }
+        if let applyLum = values["light.curve.apply_to_luminosity"] as? Bool { tone.curve.applyToLuminosity = applyLum }
+        if let paramObj = values["light.curve.parametric"] as? [String: Any] { tone.curve.parametric = parseParametric(paramObj) }
         hdr.toneSettings = tone
 
         var color = HDRColorSettings()
@@ -276,7 +293,10 @@ struct Harness {
         if let v = num(sdrValues["light.shadows"]) { settings.shadows = v }
         if let v = num(sdrValues["light.s_curve"]) { settings.toneCurve = v }
         if let cObj = sdrValues["light.curve"] as? [String: Any] {
-            settings.curveSettings = try parseCurve(cObj)
+            var parsed = try parseCurve(cObj)
+            if let applyLum = sdrValues["light.curve.apply_to_luminosity"] as? Bool { parsed.applyToLuminosity = applyLum }
+            if let paramObj = sdrValues["light.curve.parametric"] as? [String: Any] { parsed.parametric = parseParametric(paramObj) }
+            settings.curveSettings = parsed
         }
         if let v = num(sdrValues["tone.black_point"]) { settings.blackPoint = v }
         if let v = num(sdrValues["tone.white_point"]) { settings.whitePoint = v }
@@ -415,9 +435,17 @@ struct Harness {
             for (zoneName, zone) in [("shadows", ColorGradingZone.shadows), ("midtones", .midtones), ("highlights", .highlights)] {
                 if let g = values["color.grading.\(zoneName)"] as? [String: Any] {
                     verify(approx(actualGrading[zone].hue, num(g["hue"]) ?? -1) &&
-                           approx(actualGrading[zone].saturation, num(g["saturation"]) ?? -1), "\(label).grading.\(zoneName)")
+                           approx(actualGrading[zone].saturation, num(g["saturation"]) ?? -1) &&
+                           approx(actualGrading[zone].luminance, num(g["luminance"]) ?? 0), "\(label).grading.\(zoneName)")
                 }
             }
+            if let g = values["color.grading.global"] as? [String: Any] {
+                verify(approx(actualGrading.global.hue, num(g["hue"]) ?? -1) &&
+                       approx(actualGrading.global.saturation, num(g["saturation"]) ?? -1) &&
+                       approx(actualGrading.global.luminance, num(g["luminance"]) ?? 0), "\(label).grading.global")
+            }
+            if let v = num(values["color.grading.blending"]) { verify(approx(actualGrading.blending, v), "\(label).grading.blending") }
+            if let v = num(values["color.grading.balance"]) { verify(approx(actualGrading.balance, v), "\(label).grading.balance") }
         }
         func verifyGeomInto(_ values: [String: Any], _ actualGeom: GeometrySettings, _ label: String) {
             if let v = num(values["geometry.crop.x"]) { verify(approx(actualGeom.cropX, v), "\(label).cropX") }
@@ -469,6 +497,12 @@ struct Harness {
         if let v = num(sdrValues["light.shadows"]) { verify(approx(s.shadows, v), "light.shadows") }
         if let v = num(sdrValues["light.s_curve"]) { verify(approx(s.toneCurve, v), "light.s_curve") }
         if let cObj = sdrValues["light.curve"] as? [String: Any] { verifyCurveInto(cObj, s.curveSettings, "sdr") }
+        if let applyLum = sdrValues["light.curve.apply_to_luminosity"] as? Bool {
+            verify(s.curveSettings.applyToLuminosity == applyLum, "sdr.curve.apply_to_luminosity")
+        }
+        if let paramObj = sdrValues["light.curve.parametric"] as? [String: Any] {
+            verify(s.curveSettings.parametric == parseParametric(paramObj), "sdr.curve.parametric")
+        }
         if let v = num(sdrValues["tone.black_point"]) { verify(approx(s.blackPoint, v), "tone.black_point") }
         if let v = num(sdrValues["tone.white_point"]) { verify(approx(s.whitePoint, v), "tone.white_point") }
         if let v = num(sdrValues["color.vibrance"]) { verify(approx(s.vibrance, v), "color.vibrance") }
@@ -532,6 +566,12 @@ struct Harness {
             if let v = num(hdrCheck["tone.white_point"]) { verify(approx(hdr.toneSettings.whitePoint, v), "hdr.whitePoint") }
             if let v = num(hdrCheck["light.s_curve"]) { verify(approx(hdr.toneSettings.curveStrength / 100, v), "hdr.sCurve") }
             if let cObj = hdrCheck["light.curve"] as? [String: Any] { verifyCurveInto(cObj, hdr.toneSettings.curve, "hdr") }
+            if let applyLum = hdrCheck["light.curve.apply_to_luminosity"] as? Bool {
+                verify(hdr.toneSettings.curve.applyToLuminosity == applyLum, "hdr.curve.apply_to_luminosity")
+            }
+            if let paramObj = hdrCheck["light.curve.parametric"] as? [String: Any] {
+                verify(hdr.toneSettings.curve.parametric == parseParametric(paramObj), "hdr.curve.parametric")
+            }
             if let v = num(hdrCheck["color.vibrance"]) { verify(approx(hdr.colorSettings.vibrance, v), "hdr.vibrance") }
             verifyHSLInto(hdrCheck, hdr.colorSettings.hsl, "hdr")
             verifyGradingInto(hdrCheck, hdr.colorSettings.grading, "hdr")

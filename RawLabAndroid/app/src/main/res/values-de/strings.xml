@@ -235,6 +235,7 @@
     <string name="expand_vignette">"Vignetteneinstellungen ausklappen"</string>
     <string name="export">"Exportieren"</string>
     <string name="export_done">"Foto gespeichert"</string>
+    <string name="export_output_sharpening">"Ausgabeschärfung"</string>
     <string name="exporting">"Wird exportiert…"</string>
     <string name="exposure">"Belichtung"</string>
     <string name="exposure_basis">"Belichtungsreferenz"</string>
@@ -438,6 +439,10 @@
     <string name="output_custom_size">"Benutzerdefiniert"</string>
     <string name="output_long_edge">"Begrenzung der langen Kante (px)"</string>
     <string name="output_original_size">"Originalgröße"</string>
+    <string name="output_sharpening_high">"Hoch"</string>
+    <string name="output_sharpening_low">"Niedrig"</string>
+    <string name="output_sharpening_off">"Aus"</string>
+    <string name="output_sharpening_standard">"Standard"</string>
     <string name="output_size">"Exportgröße"</string>
     <string name="output_size_error">"Die lange Seite muss 1-65535 Pixel betragen."</string>
     <string name="output_size_range">"1–65535 Pixel"</string>

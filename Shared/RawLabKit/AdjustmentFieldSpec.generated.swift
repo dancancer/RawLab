@@ -96,13 +96,31 @@ public enum AdjustmentFieldSpec {
             public static let customMinPoints = 2
             public static let customMaxPoints = 33
             public static let coordRange: ClosedRange<Double> = 0.0...1.0
+            public static let endpointsYUnpinned = true
             public static let allowedChannels: [String] = ["red", "green", "blue"]
+        }
+        public enum LightCurveParametric {
+            public static let bandMin = -100.0
+            public static let bandMax = 100.0
+            public static let bandDefault = 0.0
+            public static let bandRange: ClosedRange<Double> = -100.0...100.0
+            public static let splitShadowRange: ClosedRange<Double> = 0.05...0.45
+            public static let splitShadowDefault = 0.25
+            public static let splitMidtoneRange: ClosedRange<Double> = 0.25...0.75
+            public static let splitMidtoneDefault = 0.5
+            public static let splitHighlightRange: ClosedRange<Double> = 0.55...0.95
+            public static let splitHighlightDefault = 0.75
+            public static let splitMinGap = 0.02
         }
         public enum ColorGradingWheel {
             public static let hueMin = 0.0
             public static let hueMax = 360.0
             public static let hueExclusiveMax = true
             public static let saturationRange: ClosedRange<Double> = 0.0...100.0
+            public static let luminanceMin = -100.0
+            public static let luminanceMax = 100.0
+            public static let luminanceDefault = 0.0
+            public static let luminanceRange: ClosedRange<Double> = -100.0...100.0
         }
         public enum HDRLook {
             public static let sha256HexLength = 64
@@ -192,6 +210,20 @@ public enum AdjustmentFieldSpec {
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
+        public static let lightCurveApplyToLuminosity = AdjustmentFieldDefinition(
+            id: "light.curve.apply_to_luminosity",
+            group: "light",
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .boolean, wirePrecision: .boolean, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "bool", nullable: false, min: nil, max: nil, defaultValue: .boolean(false), scaleFromProtocol: "p", quantization: .discrete, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "bool", nullable: false, min: nil, max: nil, defaultValue: .boolean(false), scaleFromProtocol: "p", quantization: .discrete, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
+        public static let lightCurveParametric = AdjustmentFieldDefinition(
+            id: "light.curve.parametric",
+            group: "light",
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
         public static let toneBlackPoint = AdjustmentFieldDefinition(
             id: "tone.black_point",
             group: "light",
@@ -216,28 +248,49 @@ public enum AdjustmentFieldSpec {
         public static let colorGradingShadows = AdjustmentFieldDefinition(
             id: "color.grading.shadows",
             group: "color",
-            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: ["luminance"], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
         public static let colorGradingMidtones = AdjustmentFieldDefinition(
             id: "color.grading.midtones",
             group: "color",
-            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: ["luminance"], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
         public static let colorGradingHighlights = AdjustmentFieldDefinition(
             id: "color.grading.highlights",
             group: "color",
-            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: ["luminance"], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
+        public static let colorGradingGlobal = AdjustmentFieldDefinition(
+            id: "color.grading.global",
+            group: "color",
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .object, wirePrecision: .object, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: ["hue", "saturation"], optionalKeys: ["luminance"], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "object", nullable: false, min: nil, max: nil, defaultValue: .object, scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
+        public static let colorGradingBlending = AdjustmentFieldDefinition(
+            id: "color.grading.blending",
+            group: "color",
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .number, wirePrecision: .continuousDouble, nullable: false, min: 0.0, max: 100.0, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "double", nullable: false, min: 0.0, max: 100.0, defaultValue: .number(50.0), scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "double", nullable: false, min: 0.0, max: 100.0, defaultValue: .number(50.0), scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
+        public static let colorGradingBalance = AdjustmentFieldDefinition(
+            id: "color.grading.balance",
+            group: "color",
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .number, wirePrecision: .continuousDouble, nullable: false, min: -100.0, max: 100.0, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "double", nullable: false, min: -100.0, max: 100.0, defaultValue: .number(0.0), scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr", "hdr"], storageType: "double", nullable: false, min: -100.0, max: 100.0, defaultValue: .number(0.0), scaleFromProtocol: "p", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
         public static let colorWhiteBalanceMode = AdjustmentFieldDefinition(
             id: "color.white_balance.mode",
             group: "color",
-            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .string, wirePrecision: .enumString, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: ["camera", "temperature", "none"], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            protocolSpec: AdjustmentProtocolSpec(transferable: true, valueType: .string, wirePrecision: .enumString, nullable: false, min: nil, max: nil, exclusiveMin: false, nonEmpty: false, allowedStringValues: ["camera", "temperature", "relative", "none"], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr"], storageType: "enum", nullable: false, min: nil, max: nil, defaultValue: .string("camera"), scaleFromProtocol: "p", quantization: .discrete, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr"], storageType: "enum", nullable: false, min: nil, max: nil, defaultValue: .string("camera"), scaleFromProtocol: "p", quantization: .discrete, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
@@ -703,6 +756,13 @@ public enum AdjustmentFieldSpec {
             macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr"], storageType: "bool", nullable: false, min: nil, max: nil, defaultValue: .boolean(false), scaleFromProtocol: "none", quantization: .discrete, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
             iosModel: AdjustmentFieldModelSpec(supported: false, modes: [], storageType: "none", nullable: false, min: nil, max: nil, defaultValue: .none, scaleFromProtocol: "none", quantization: .none, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
         )
+        public static let localAiDenoiseStrength = AdjustmentFieldDefinition(
+            id: "local.ai_denoise_strength",
+            group: "detail",
+            protocolSpec: AdjustmentProtocolSpec(transferable: false, valueType: .number, wirePrecision: .continuousDouble, nullable: false, min: 0.0, max: 100.0, exclusiveMin: false, nonEmpty: false, allowedStringValues: [], allowedIntValues: [], objectKeys: [], optionalKeys: [], isHDROnly: false, isHDRRelative: false, isHDRRendition: false),
+            macosModel: AdjustmentFieldModelSpec(supported: true, modes: ["sdr"], storageType: "double", nullable: false, min: 0.0, max: 100.0, defaultValue: .number(100.0), scaleFromProtocol: "none", quantization: .continuous, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil),
+            iosModel: AdjustmentFieldModelSpec(supported: false, modes: [], storageType: "none", nullable: false, min: nil, max: nil, defaultValue: .none, scaleFromProtocol: "none", quantization: .none, hdrMin: nil, hdrMax: nil, hdrDefaultNumber: nil, hdrScaleFromProtocol: nil)
+        )
         public static let localHdrCameraAiEnabled = AdjustmentFieldDefinition(
             id: "local.hdr_camera_ai_enabled",
             group: "detail",
@@ -713,10 +773,10 @@ public enum AdjustmentFieldSpec {
     }
 
     public static let allFields: [AdjustmentFieldDefinition] = [
-        Fields.looksReference, Fields.looksStrength, Fields.lightExposure, Fields.lightExposureMode, Fields.lightContrast, Fields.lightHighlights, Fields.lightShadows, Fields.lightSCurve, Fields.lightCurve, Fields.toneBlackPoint, Fields.toneWhitePoint, Fields.colorVibrance, Fields.colorGradingShadows, Fields.colorGradingMidtones, Fields.colorGradingHighlights, Fields.colorWhiteBalanceMode, Fields.colorWhiteBalanceTemperatureKelvin, Fields.colorWhiteBalanceTint, Fields.colorSaturation, Fields.hdrRelativeTemperature, Fields.hdrRelativeTint, Fields.hdrPeakLimitEv, Fields.hdrSdrExposureEv, Fields.hdrSdrContrast, Fields.hdrSdrSaturation, Fields.hdrLook, Fields.hdrCameraDevelopment, Fields.colorHslHueRed, Fields.colorHslHueOrange, Fields.colorHslHueYellow, Fields.colorHslHueGreen, Fields.colorHslHueAqua, Fields.colorHslHueBlue, Fields.colorHslHuePurple, Fields.colorHslHueMagenta, Fields.colorHslSaturationRed, Fields.colorHslSaturationOrange, Fields.colorHslSaturationYellow, Fields.colorHslSaturationGreen, Fields.colorHslSaturationAqua, Fields.colorHslSaturationBlue, Fields.colorHslSaturationPurple, Fields.colorHslSaturationMagenta, Fields.colorHslLightnessRed, Fields.colorHslLightnessOrange, Fields.colorHslLightnessYellow, Fields.colorHslLightnessGreen, Fields.colorHslLightnessAqua, Fields.colorHslLightnessBlue, Fields.colorHslLightnessPurple, Fields.colorHslLightnessMagenta, Fields.effectsVignetteAmount, Fields.effectsVignetteMidpoint, Fields.effectsVignetteRoundness, Fields.effectsVignetteFeather, Fields.effectsVignetteHighlights, Fields.effectsGrainAmount, Fields.effectsClarity, Fields.effectsDehaze, Fields.effectsGrainSize, Fields.effectsGrainRoughness, Fields.detailSharpening, Fields.detailDenoiseRawLevel, Fields.detailDenoisePostRgb, Fields.detailDenoiseChromaMode, Fields.detailDenoiseWavelet, Fields.geometryCropX, Fields.geometryCropY, Fields.geometryCropWidth, Fields.geometryCropHeight, Fields.geometryQuarterTurns, Fields.geometryFlipHorizontal, Fields.geometryFlipVertical, Fields.geometryStraightenDegrees, Fields.geometryPerspectiveHorizontal, Fields.geometryPerspectiveVertical, Fields.geometryLensDistortion, Fields.geometryLensTca, Fields.geometryLensVignetting, Fields.geometryLensAutoCrop, Fields.geometryLensProfileId, Fields.localAiDenoiseEnabled, Fields.localHdrCameraAiEnabled
+        Fields.looksReference, Fields.looksStrength, Fields.lightExposure, Fields.lightExposureMode, Fields.lightContrast, Fields.lightHighlights, Fields.lightShadows, Fields.lightSCurve, Fields.lightCurve, Fields.lightCurveApplyToLuminosity, Fields.lightCurveParametric, Fields.toneBlackPoint, Fields.toneWhitePoint, Fields.colorVibrance, Fields.colorGradingShadows, Fields.colorGradingMidtones, Fields.colorGradingHighlights, Fields.colorGradingGlobal, Fields.colorGradingBlending, Fields.colorGradingBalance, Fields.colorWhiteBalanceMode, Fields.colorWhiteBalanceTemperatureKelvin, Fields.colorWhiteBalanceTint, Fields.colorSaturation, Fields.hdrRelativeTemperature, Fields.hdrRelativeTint, Fields.hdrPeakLimitEv, Fields.hdrSdrExposureEv, Fields.hdrSdrContrast, Fields.hdrSdrSaturation, Fields.hdrLook, Fields.hdrCameraDevelopment, Fields.colorHslHueRed, Fields.colorHslHueOrange, Fields.colorHslHueYellow, Fields.colorHslHueGreen, Fields.colorHslHueAqua, Fields.colorHslHueBlue, Fields.colorHslHuePurple, Fields.colorHslHueMagenta, Fields.colorHslSaturationRed, Fields.colorHslSaturationOrange, Fields.colorHslSaturationYellow, Fields.colorHslSaturationGreen, Fields.colorHslSaturationAqua, Fields.colorHslSaturationBlue, Fields.colorHslSaturationPurple, Fields.colorHslSaturationMagenta, Fields.colorHslLightnessRed, Fields.colorHslLightnessOrange, Fields.colorHslLightnessYellow, Fields.colorHslLightnessGreen, Fields.colorHslLightnessAqua, Fields.colorHslLightnessBlue, Fields.colorHslLightnessPurple, Fields.colorHslLightnessMagenta, Fields.effectsVignetteAmount, Fields.effectsVignetteMidpoint, Fields.effectsVignetteRoundness, Fields.effectsVignetteFeather, Fields.effectsVignetteHighlights, Fields.effectsGrainAmount, Fields.effectsClarity, Fields.effectsDehaze, Fields.effectsGrainSize, Fields.effectsGrainRoughness, Fields.detailSharpening, Fields.detailDenoiseRawLevel, Fields.detailDenoisePostRgb, Fields.detailDenoiseChromaMode, Fields.detailDenoiseWavelet, Fields.geometryCropX, Fields.geometryCropY, Fields.geometryCropWidth, Fields.geometryCropHeight, Fields.geometryQuarterTurns, Fields.geometryFlipHorizontal, Fields.geometryFlipVertical, Fields.geometryStraightenDegrees, Fields.geometryPerspectiveHorizontal, Fields.geometryPerspectiveVertical, Fields.geometryLensDistortion, Fields.geometryLensTca, Fields.geometryLensVignetting, Fields.geometryLensAutoCrop, Fields.geometryLensProfileId, Fields.localAiDenoiseEnabled, Fields.localAiDenoiseStrength, Fields.localHdrCameraAiEnabled
     ]
-    public static let transferFieldIds: [String] = ["looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.grain.size", "effects.grain.roughness", "detail.sharpening", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id"]
-    public static let localOnlyFieldIds: [String] = ["local.ai_denoise_enabled", "local.hdr_camera_ai_enabled"]
+    public static let transferFieldIds: [String] = ["looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "light.curve.apply_to_luminosity", "light.curve.parametric", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.grading.global", "color.grading.blending", "color.grading.balance", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.grain.size", "effects.grain.roughness", "detail.sharpening", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id"]
+    public static let localOnlyFieldIds: [String] = ["local.ai_denoise_enabled", "local.ai_denoise_strength", "local.hdr_camera_ai_enabled"]
     public static let byId: [String: AdjustmentFieldDefinition] = Dictionary(uniqueKeysWithValues: allFields.map { ($0.id, $0) })
 
     public static func forId(_ id: String) -> AdjustmentFieldDefinition? { byId[id] }

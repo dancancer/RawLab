@@ -30,7 +30,7 @@ final class ToneCurveModelTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: bytes), curve)
 
         for invalid in [
-            #"{"mode":"custom","points":[[0,0],[1,0.9]]}"#,
+            #"{"mode":"custom","points":[[0.1,0],[1,1]]}"#,
             #"{"mode":"custom","points":[[0,0],[0.5,0.7],[0.6,0.5],[1,1]]}"#,
             #"{"mode":"custom","points":[[0,0],[0.5,0.2],[0.5,0.7],[1,1]]}"#,
             #"{"mode":"legacy","points":[[0,0],[1,1]]}"#,
@@ -64,5 +64,16 @@ final class ToneCurveModelTests: XCTestCase {
         let doubled = flat.scaled(by: 2)
         XCTAssertEqual(doubled.points.map(\.x), flat.points.map(\.x))
         XCTAssertEqual(doubled.points.map(\.y), [0, 1, 1, 1])
+
+        let unpinned = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.125), .init(x: 0.5, y: 0.55), .init(x: 1, y: 0.875)],
+            applyToLuminosity: true,
+            parametric: ToneCurveParametric(highlights: -10, lights: 15, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
+        )
+        XCTAssertTrue(unpinned.isValid)
+        let encodedUnpinned = try JSONEncoder().encode(unpinned)
+        XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: encodedUnpinned), unpinned)
+        XCTAssertFalse(ToneCurveParametric(splitShadow: 0.4, splitMidtone: 0.41, splitHighlight: 0.75).isValid)
     }
 }
