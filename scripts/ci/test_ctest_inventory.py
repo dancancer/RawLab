@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -21,11 +23,18 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 
 
-def _make_entry(name: str, labels: list[str], executable: str | None = None) -> dict:
+def _make_entry(
+    name: str,
+    labels: list[str],
+    executable: str | None = None,
+    environment: list[str] | None = None,
+) -> dict:
     entry: dict = {
         "name": name,
         "properties": [{"name": "LABELS", "value": labels}],
     }
+    if environment is not None:
+        entry["properties"].append({"name": "ENVIRONMENT", "value": environment})
     if executable:
         entry["command"] = [f"/tmp/build/{executable}"]
     return entry
@@ -216,6 +225,151 @@ class CTestInventoryTests(unittest.TestCase):
                     ),
                     [],
                 )
+
+    def test_inventory_rejects_semicolon_packed_environment_entries(self) -> None:
+        packed = _make_entry(
+            "abi_layout_fixture",
+            ["contracts", "abi", "ci_macos_arm64"],
+            environment=["CXX=/usr/bin/clang++;RAWLAB_REQUIRE_ABI_CHECK=1"],
+        )
+        errors = cci.validate_ctest_inventory({"tests": [packed]}, ci_label="ci_macos_arm64")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("semicolon-packed ENVIRONMENT", errors[0])
+
+        split = _make_entry(
+            "abi_layout_fixture",
+            ["contracts", "abi", "ci_macos_arm64"],
+            environment=["CXX=/usr/bin/clang++", "RAWLAB_REQUIRE_ABI_CHECK=1", "LIST_VAL=alpha;beta"],
+        )
+        self.assertEqual(cci.validate_ctest_inventory({"tests": [split]}, ci_label="ci_macos_arm64"), [])
+
+    @unittest.skipUnless(shutil.which("cmake") and shutil.which("ctest"), "cmake and ctest are required")
+    def test_rawlab_add_test_environment_guard_and_lutools_invocations(self) -> None:
+        rawlab_add_test_cmake = (ROOT / "lutools/cmake/rawlab_add_test.cmake").as_posix()
+        wrapper_snippet = """
+if(NOT COMMAND _rawlab_add_test)
+    function(rawlab_add_test)
+        set(_rawlab_fwd "")
+        if(ARGC GREATER 0)
+            math(EXPR _rawlab_last_arg "${ARGC} - 1")
+            foreach(_rawlab_idx RANGE 0 ${_rawlab_last_arg})
+                string(APPEND _rawlab_fwd " \\"\\${ARGV${_rawlab_idx}}\\"")
+            endforeach()
+        endif()
+        cmake_language(EVAL CODE "_rawlab_add_test(${_rawlab_fwd})")
+    endfunction()
+endif()
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            # 1. Packed ENVIRONMENT must fail CMake configure closed.
+            bad_src = root / "bad"
+            bad_src.mkdir()
+            (bad_src / "CMakeLists.txt").write_text(
+                f'cmake_minimum_required(VERSION 3.15)\nproject(BadEnv NONE)\ninclude(CTest)\n'
+                f'include("{rawlab_add_test_cmake}")\n{wrapper_snippet}\n'
+                'rawlab_add_test(NAME packed_env COMMAND /usr/bin/true ENVIRONMENT "RAWLAB_A=1;RAWLAB_B=2" LABELS core)\n',
+                encoding="utf-8",
+            )
+            bad_res = subprocess.run(
+                ["cmake", "-S", str(bad_src), "-B", str(bad_src / "build")],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(bad_res.returncode, 0)
+            self.assertIn("pass each ENVIRONMENT entry as a separate argument", " ".join(bad_res.stderr.split()))
+
+            # 2. Split ENVIRONMENT works end-to-end AND every ENVIRONMENT call in lutools/CMakeLists.txt is valid.
+            good_src = root / "good"
+            good_src.mkdir()
+            (good_src / "edit_pixel_golden_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (good_src / "metal_workspace_tests.mm").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (good_src / "vng_parallel_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (good_src / "gpu_photo_tests.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            (good_src / "raw_probe.py").write_text(
+                'import os, sys\nassert os.environ["RAWLAB_A"] == "1" and os.environ["RAWLAB_B"] == "2"\n',
+                encoding="utf-8",
+            )
+
+            cmakelists_text = (ROOT / "lutools/CMakeLists.txt").read_text(encoding="utf-8")
+            env_calls: list[str] = []
+            for match in re.finditer(r"rawlab_add_test\(", cmakelists_text):
+                start = match.start()
+                depth = 0
+                in_quote = False
+                i = match.end() - 1
+                while i < len(cmakelists_text):
+                    ch = cmakelists_text[i]
+                    if ch == '"' and cmakelists_text[i - 1] != "\\":
+                        in_quote = not in_quote
+                    elif not in_quote:
+                        if ch == "#":
+                            nl = cmakelists_text.find("\n", i)
+                            i = len(cmakelists_text) if nl == -1 else nl
+                            continue
+                        if ch == "(":
+                            depth += 1
+                        elif ch == ")":
+                            depth -= 1
+                            if depth == 0:
+                                block = cmakelists_text[start : i + 1]
+                                if re.search(r"\bENVIRONMENT\b", block):
+                                    # Rewrite only target/COMMAND dependencies so every real ENVIRONMENT arg list executes here.
+                                    rewritten = block
+                                    rewritten = re.sub(r"\bSOURCES\s+\S+", "", rewritten)
+                                    rewritten = re.sub(r"\bLIBRARIES\s+[^\n]+", "", rewritten)
+                                    if not re.search(r"\bCOMMAND\b", rewritten):
+                                        rewritten = re.sub(
+                                            r"(NAME\s+\S+)",
+                                            r'\1 COMMAND "${CMAKE_COMMAND}" -E true',
+                                            rewritten,
+                                            count=1,
+                                        )
+                                    else:
+                                        rewritten = re.sub(
+                                            r"\bCOMMAND\b[\s\S]*?(?=\n\s*(?:ARGS|ENVIRONMENT|LABELS|SKIP_RETURN_CODE)\b)",
+                                            'COMMAND "${CMAKE_COMMAND}" -E true',
+                                            rewritten,
+                                        )
+                                    rewritten = re.sub(
+                                        r"\bARGS\b[\s\S]*?(?=\n\s*(?:ENVIRONMENT|LABELS|SKIP_RETURN_CODE)\b)",
+                                        "",
+                                        rewritten,
+                                    )
+                                    env_calls.append(rewritten)
+                                break
+                    i += 1
+
+            self.assertGreaterEqual(len(env_calls), 6)
+            joined_calls = "\n".join(env_calls)
+            (good_src / "CMakeLists.txt").write_text(
+                'cmake_minimum_required(VERSION 3.15)\nproject(GoodEnv NONE)\ninclude(CTest)\n'
+                f'include("{rawlab_add_test_cmake}")\n{wrapper_snippet}\n'
+                'set(RAWLAB_ABI_CLANGXX "/usr/bin/clang++")\n'
+                'set(RAWLAB_SHADER_PYTHON "python3")\n'
+                f'rawlab_add_test(\n    NAME env_child_check\n    COMMAND "{sys.executable}" "{good_src / "raw_probe.py"}"\n'
+                '    ENVIRONMENT "RAWLAB_A=1" "RAWLAB_B=2"\n    LABELS core\n)\n'
+                + joined_calls
+                + "\n",
+                encoding="utf-8",
+            )
+            good_build = good_src / "build"
+            subprocess.run(["cmake", "-S", str(good_src), "-B", str(good_build)], check=True, capture_output=True, text=True)
+            subprocess.run(["ctest", "--test-dir", str(good_build), "-R", "^env_child_check$", "--output-on-failure"], check=True, capture_output=True, text=True)
+            ct_json = cci.load_ctest_json(good_build)
+            self.assertEqual(cci.validate_ctest_inventory(ct_json), [])
+            by_name = {entry["name"]: cci.test_environment(entry) for entry in ct_json["tests"]}
+            self.assertEqual(by_name["abi_layout_fixture"], ["CXX=/usr/bin/clang++", "RAWLAB_REQUIRE_ABI_CHECK=1"])
+            self.assertEqual(
+                by_name["metal_workspace"],
+                [
+                    "MTL_SHADER_VALIDATION=1",
+                    "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1",
+                    "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1",
+                ],
+            )
+            self.assertEqual(by_name["metal_edit_pixel_golden"], by_name["metal_workspace"])
 
 
 if __name__ == "__main__":

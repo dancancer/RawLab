@@ -16,6 +16,7 @@ import tarfile
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -307,6 +308,90 @@ class AssetsManifestAndPrepareTests(unittest.TestCase):
                         cwd=ROOT,
                     )
                     self.assertNotEqual(print_res.returncode, 0)
+
+    def test_materialized_epoch_zero_files_clamp_mtime_for_zip_portability(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            cache = root / "shared-cache"
+            repo.mkdir()
+
+            payload = b"LUT_3D_SIZE 2\n0 0 0\n1 1 1\n"
+            archive_sha, archive_size = _write_deterministic_targz(
+                cache / "staging" / "luts.tar.gz",
+                {"Shared/BundledLooks/epoch0.cube": payload},
+            )
+            (cache / archive_sha).mkdir(parents=True)
+            archive_path = cache / archive_sha / "luts.tar.gz"
+            (cache / "staging" / "luts.tar.gz").replace(archive_path)
+
+            manifest = {
+                "schemaVersion": 1,
+                "releaseTag": "assets-v1",
+                "groups": {
+                    "luts": {
+                        "archive": "luts.tar.gz",
+                        "url": "https://example.invalid/luts.tar.gz",
+                        "sha256": archive_sha,
+                        "bytes": archive_size,
+                        "files": [{
+                            "path": "Shared/BundledLooks/epoch0.cube",
+                            "sha256": hashlib.sha256(payload).hexdigest(),
+                            "bytes": len(payload),
+                        }],
+                    }
+                },
+            }
+            manifest_path = repo / "Shared/assets-manifest.json"
+            manifest_path.parent.mkdir(parents=True)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with mock.patch.dict(os.environ, {"RAWLAB_ASSET_CACHE": str(cache)}):
+                rc = PREPARE.main([
+                    "--group", "luts", "--offline", "--quiet",
+                    "--repo-root", str(repo), "--manifest", str(manifest_path),
+                ])
+            self.assertEqual(rc, 0)
+
+            mat_file = repo / "Shared/BundledLooks/epoch0.cube"
+            cached_file = cache / archive_sha / "extracted/Shared/BundledLooks/epoch0.cube"
+            self.assertGreaterEqual(mat_file.stat().st_mtime, PREPARE.MIN_PORTABLE_MTIME)
+            self.assertGreaterEqual(cached_file.stat().st_mtime, PREPARE.MIN_PORTABLE_MTIME)
+
+            # Real ZIP archiving rejects <1980 timestamps; clamped output must package cleanly.
+            zip_out = root / "bundle.zip"
+            with zipfile.ZipFile(zip_out, "w") as zf:
+                zf.write(mat_file, arcname="LUTs/epoch0.cube")
+                info = zf.getinfo("LUTs/epoch0.cube")
+            self.assertGreaterEqual(info.date_time[:3], (1980, 1, 2))
+
+            # Reset to Unix epoch 0; --check stays read-only, while prepare --offline heals fast-path & cache-hit paths.
+            os.utime(cached_file, (0, 0))
+            if cached_file.stat().st_ino != mat_file.stat().st_ino:
+                os.utime(mat_file, (0, 0))
+            self.assertEqual(mat_file.stat().st_mtime, 0)
+            self.assertEqual(
+                PREPARE.main(["--group", "luts", "--check", "--quiet", "--repo-root", str(repo), "--manifest", str(manifest_path)]),
+                0,
+            )
+            self.assertEqual(mat_file.stat().st_mtime, 0)
+
+            with mock.patch.dict(os.environ, {"RAWLAB_ASSET_CACHE": str(cache)}):
+                self.assertEqual(
+                    PREPARE.main(["--group", "luts", "--offline", "--quiet", "--repo-root", str(repo), "--manifest", str(manifest_path)]),
+                    0,
+                )
+            self.assertGreaterEqual(mat_file.stat().st_mtime, PREPARE.MIN_PORTABLE_MTIME)
+
+            mat_file.unlink()
+            os.utime(cached_file, (0, 0))
+            with mock.patch.dict(os.environ, {"RAWLAB_ASSET_CACHE": str(cache)}):
+                self.assertEqual(
+                    PREPARE.main(["--group", "luts", "--offline", "--quiet", "--repo-root", str(repo), "--manifest", str(manifest_path)]),
+                    0,
+                )
+            self.assertGreaterEqual(mat_file.stat().st_mtime, PREPARE.MIN_PORTABLE_MTIME)
+            self.assertGreaterEqual(cached_file.stat().st_mtime, PREPARE.MIN_PORTABLE_MTIME)
 
 
 if __name__ == "__main__":
