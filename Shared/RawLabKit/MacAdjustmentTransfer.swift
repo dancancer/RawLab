@@ -361,9 +361,10 @@ public enum MacAdjustmentTransfer {
         result[Field.exposureMode.rawValue] = .string(!isRaw ? "sensor" : settings.exposureMode == .scene ? "scene" : settings.exposureMode == .preview ? "preview" : "sensor")
         let camera = !isRaw || settings.usesAsShotWhiteBalance
         let recipe = settings.masterRecipe != nil
-        result[Field.whiteBalanceMode.rawValue] = .string(!isRaw ? "none" : camera ? "camera" : "temperature")
-        result[Field.temperature.rawValue] = !isRaw || camera ? .null : .number(settings.temperature)
-        result[Field.tint.rawValue] = recipe ? .number(settings.tint) : !isRaw || camera ? .null : .number(settings.tint)
+        let rasterRelative = !isRaw && !recipe && (settings.temperature != 6500 || settings.tint != 0)
+        result[Field.whiteBalanceMode.rawValue] = .string(!isRaw ? (rasterRelative ? "relative" : "none") : camera ? "camera" : "temperature")
+        result[Field.temperature.rawValue] = rasterRelative ? .number(settings.temperature) : (!isRaw || camera ? .null : .number(settings.temperature))
+        result[Field.tint.rawValue] = recipe ? .number(settings.tint) : rasterRelative ? .number(settings.tint) : (!isRaw || camera ? .null : .number(settings.tint))
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hslSettings.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
@@ -522,6 +523,16 @@ public enum MacAdjustmentTransfer {
             && selected.allSatisfy({ payload[$0] == targetValues[$0.rawValue] }) { return }
         if selected == Field.whiteBalanceFields {
             let mode = payload[.whiteBalanceMode]!.string!
+            if !context.isRaw && !payload.source.isRaw {
+                if mode == "relative", let temp = payload[.temperature]?.number, let tint = payload[.tint]?.number {
+                    result.whiteBalanceMode = .asShot
+                    result.temperature = temp
+                    result.tint = tint
+                } else {
+                    result.resetWhiteBalance()
+                }
+                return
+            }
             let balance: [String: Value] = [
                 "mode": .string(mode == "none" && payload.source.recipe != nil ? "camera" : mode),
                 "temperature": payload[.temperature]!, "tint": .number(payload[.tint]?.number ?? 0),
@@ -533,7 +544,20 @@ public enum MacAdjustmentTransfer {
             else if context.isRaw { try applyResolvedWB(desired, to: &result) }
             return
         }
-        guard context.isRaw else { return }
+        if !context.isRaw {
+            guard !payload.source.isRaw else { return }
+            let selectedMode = payload[.whiteBalanceMode]?.string
+            if selectedMode == "none" {
+                if payload[.temperature]?.number != nil || payload[.tint]?.number != nil {
+                    throw AdjustmentTransferError.incompatible("select white balance mode with temperature/tint")
+                }
+                result.resetWhiteBalance()
+                return
+            }
+            if let temp = payload[.temperature]?.number { result.whiteBalanceMode = .asShot; result.temperature = temp }
+            if let tint = payload[.tint]?.number { result.whiteBalanceMode = .asShot; result.tint = tint }
+            return
+        }
         try applyPartialWhiteBalance(payload, target: target, to: &result, contextChanged: contextChanged)
     }
 

@@ -136,4 +136,37 @@ final class CanonicalEditRecipeTests: XCTestCase {
         ) as? [String: Any])
         XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
     }
+
+    func testRasterRelativeWhiteBalanceEmitsRelativeSchema17AndNoneSchema5() throws {
+        let neutralIos = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(RawSettings.default.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(neutralIos["schema_version"] as? Int, 5)
+        let neutralWb = try XCTUnwrap((neutralIos["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(neutralWb["mode"] as? String, "none")
+
+        var editedIos = RawSettings.default
+        editedIos.temperature = 5200
+        editedIos.tint = -15
+        let relativeIos = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(editedIos.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(relativeIos["schema_version"] as? Int, 17)
+        let relWb = try XCTUnwrap((relativeIos["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(relWb["mode"] as? String, "relative")
+        XCTAssertEqual(relWb["relative_temperature"] as? Double, 5200)
+        XCTAssertEqual(relWb["relative_tint"] as? Double, -15)
+
+        var editedMac = Adjustments()
+        editedMac.temperature = 7800
+        editedMac.tint = 22
+        let relativeMac = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(editedMac.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(relativeMac["schema_version"] as? Int, 17)
+        let macWb = try XCTUnwrap((relativeMac["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(macWb["mode"] as? String, "relative")
+        XCTAssertEqual(macWb["relative_temperature"] as? Double, 7800)
+        XCTAssertEqual(macWb["relative_tint"] as? Double, 22)
+    }
 }

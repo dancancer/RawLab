@@ -98,5 +98,11 @@ class ColorGradingSettingsTest {
         val payload = AdjustmentTransfer.capture(AdjustmentScope.Modified, settings, ctx)
         assertTrue(setOf(AdjustmentField.GRADING_GLOBAL, AdjustmentField.GRADING_BLENDING, AdjustmentField.GRADING_BALANCE).all { it in payload.fields })
         assertEquals(v2, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), ctx).colorGrading)
+        val resetCtx = EditorResetContext(PhotoInputKind.RASTER, EditSettings())
+        val afterGlobalReset = (EditorAdjustmentRules.prepareReset(EditorResetScope.GradingGlobal, settings, resetCtx) as EditorResetResult.Ready).candidate
+        assertEquals(ColorGradingWheel(), afterGlobalReset.colorGrading.global)
+        assertEquals(v2.shadows, afterGlobalReset.colorGrading.shadows)
+        assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.GradingGlobal, settings, resetCtx))
+        assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.GradingGlobal, afterGlobalReset, resetCtx))
     }
 }

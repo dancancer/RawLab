@@ -20,6 +20,8 @@ cbuffer Params : register(b0) {
     float4 toneControls;
     float4 colorGrading[3];
     float4 curveRanges[32], curveTangents[32];
+    float4 colorGradingGlobal;
+    float4 colorGradingMix;
     uint4 band; // source row, destination row, output rows, reserved
 };
 StructuredBuffer<float3> source : register(t0);
@@ -118,7 +120,12 @@ float3 evaluate(float3 inputColor) {
         pixel=(pixel-.5)*tone.x+.5;float light=dot(pixel,float3(.2126,.7152,.0722));
         pixel=light+(pixel-light)*tone.y;
     }
-    return cgApply(applyHsl(tcVibrance(pixel,toneControls.z)),colorGrading[0].xyz,colorGrading[1].xyz,colorGrading[2].xyz);
+    return cgApply(applyHsl(tcVibrance(pixel,toneControls.z)),
+        colorGrading[0].xyz,colorGrading[0].w,
+        colorGrading[1].xyz,colorGrading[1].w,
+        colorGrading[2].xyz,colorGrading[2].w,
+        colorGradingGlobal.xyz,colorGradingGlobal.w,
+        colorGradingMix.x,colorGradingMix.y);
 }
 float3 readPixel(uint2 p) { return source[(p.y-band.x)*dimensions.x+p.x]; }
 float3 resize(uint2 xy) {

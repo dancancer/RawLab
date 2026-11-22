@@ -20,6 +20,7 @@
 #include "core/render_params.h"
 #include "core/wavelet_cache.h"
 #include "core/wavelet_denoise.h"
+#include "core/white_balance.h"
 
 #include <array>
 #include <cstdint>
@@ -125,6 +126,29 @@ struct RecipeWbResult {
     float cameraTemperature = 0.0f;
     float cameraTint = 0.0f;
     bool cameraCalibrated = false;
+};
+
+enum class WbProbeAvailability : int32_t {
+    Available = 0,
+    Overexposed = 1,
+    Outside = 2,
+    Unavailable = 3
+};
+
+struct WbProbeQuery {
+    float normX = 0.0f;
+    float normY = 0.0f;
+    uint32_t windowSize = 3;
+};
+
+struct WbProbeResult {
+    WbProbeAvailability availability = WbProbeAvailability::Unavailable;
+    uint32_t validPixelCount = 0;
+    uint32_t rejectedOverexposedCount = 0;
+    float temperature = 6500.0f;
+    float tint = 0.0f;
+    std::array<float, 3> sampledRgb{};
+    std::array<float, 3> wbMul{1.0f, 1.0f, 1.0f};
 };
 
 class Pipeline {
@@ -277,6 +301,7 @@ public:
     RenderStatus process(const RenderParams& params, OwnedPixelBuffer* outBuffer);
     RenderStatus previewLutCompatibility(const RenderParams& params, const char* configuration, OwnedPixelBuffer& outBuffer);
     RenderStatus createHslProbe(const RenderParams& params, uint64_t sourceRevision, uint64_t requestRevision, HslProbeData& outProbe);
+    RenderStatus sampleWbProbe(const RenderParams& params, const WbProbeQuery& query, WbProbeResult& outResult);
     RenderStatus estimateAutoExposure(const RenderParams& params, float& outExposureEv);
     RenderStatus migrateProcessing(const RenderParams& params, ProcessingMigrationResult& outResult) const;
 
@@ -299,6 +324,7 @@ private:
         bool copyImage = true,
         bool applyAI = true
     );
+    RenderStatus loadRawForWbProbe(const RenderParams& params);
 
     // pipeline_geometry.cpp
     RenderStatus finishGeometry(const RenderParams& params, ImageData& image, uint32_t nativeWidth, uint32_t nativeHeight);
@@ -392,6 +418,11 @@ private:
     float asShotTemperature_ = 6500.0f;
     float asShotTint_ = 0.0f;
     bool calibratedWb_ = false;
+    bool hasCachedRawWb_ = false;
+    CameraWhiteBalance cachedRawWb_{};
+    std::array<std::array<float, 3>, 3> cachedRgbCam_{};
+    std::array<float, 3> cachedWbUsed_{1.0f, 1.0f, 1.0f};
+    float cachedBaselineEv_ = 0.0f;
     bool lastRenderRendered_ = false;
     bool lastRenderWasRaw_ = false;
     bool lastRenderWasNormalX3f_ = false;

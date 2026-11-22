@@ -121,9 +121,20 @@ public enum EditorAdjustmentRules {
             case .adjustment(.exposure):
                 return snapshot.settings.exposure != 0 ||
                     (context.isRaw && snapshot.settings.exposureMode != context.defaultExposureMode)
-            case .adjustment(.temperature), .adjustment(.tint):
-                return context.isRaw && (snapshot.settings.whiteBalanceMode != .camera ||
-                    (snapshot.settings.masterRecipeID != nil && snapshot.settings.tint != 0))
+            case .adjustment(.temperature):
+                if context.isRaw {
+                    return snapshot.settings.whiteBalanceMode != .camera ||
+                        (snapshot.settings.masterRecipeID != nil && snapshot.settings.tint != 0)
+                }
+                return snapshot.settings.masterRecipeID == nil && snapshot.settings.whiteBalanceMode == .camera &&
+                    (snapshot.settings.temperature != 6500 || snapshot.settings.tint != 0)
+            case .adjustment(.tint):
+                if context.isRaw {
+                    return snapshot.settings.whiteBalanceMode != .camera ||
+                        (snapshot.settings.masterRecipeID != nil && snapshot.settings.tint != 0)
+                }
+                return snapshot.settings.masterRecipeID == nil && snapshot.settings.whiteBalanceMode == .camera &&
+                    snapshot.settings.tint != 0
             default: return resetting(scope, settings: snapshot.settings, context: context) != snapshot.settings
             }
         }
@@ -143,8 +154,10 @@ public enum EditorAdjustmentRules {
         }
         if case .group(.color) = scope {
             let settings = snapshot.settings
-            let whiteBalance = context.isRaw && (settings.whiteBalanceMode != .camera ||
-                (settings.masterRecipeID != nil && settings.tint != 0))
+            let whiteBalance = context.isRaw
+                ? (settings.whiteBalanceMode != .camera || (settings.masterRecipeID != nil && settings.tint != 0))
+                : (settings.masterRecipeID == nil && settings.whiteBalanceMode == .camera &&
+                   (settings.temperature != 6500 || settings.tint != 0))
             return whiteBalance || settings.saturation != 1 || settings.vibrance != 0 || !settings.hsl.isIdentity || !settings.gradingSettings.isDefault
         }
         let reset = resetting(scope, settings: snapshot.settings, context: context)

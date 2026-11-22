@@ -102,6 +102,44 @@ int main(int argc, char** argv) {
         }
         gpu.mode=SONY2FUJI_GPU_OFF;require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"restore CPU mode");
         require(sony2fuji_session_set_color_grading(session,&identity)==SONY2FUJI_STATUS_OK,"restore grading identity");
+
+        // Color Grading v2 C ABI: luminance, global wheel, blending, balance, validation, zero bypass, CPU/GPU parity
+        sony2fuji_color_grading_v2_config v2{
+            SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, sizeof(v2),
+            220, 75, -25,
+            110, 35, 15,
+            35, 60, 35,
+            310, 30, -10,
+            75, -30
+        };
+        require(sony2fuji_session_set_color_grading_v2(session,&v2)==SONY2FUJI_STATUS_OK,"v2 setter accepts valid v2 fields");
+        const auto v2Cpu=render(session,scene);
+        if (available) {
+            gpu.mode=SONY2FUJI_GPU_FORCE;require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"v2 GPU mode");
+            const auto v2Gpu=render(session,scene);
+            for (size_t i=0;i<v2Gpu.size();++i)require(std::abs(int(v2Gpu[i])-int(v2Cpu[i]))<=2,"v2 grading GPU RGB8 within two DN");
+            gpu.mode=SONY2FUJI_GPU_OFF;require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"restore CPU after v2 GPU");
+        }
+        auto v2Invalid=v2; v2Invalid.blending=120;
+        require(sony2fuji_session_set_color_grading_v2(session,&v2Invalid)!=SONY2FUJI_STATUS_OK,"out-of-range blending rejected");
+        v2Invalid=v2; v2Invalid.balance=-120;
+        require(sony2fuji_session_set_color_grading_v2(session,&v2Invalid)!=SONY2FUJI_STATUS_OK,"out-of-range balance rejected");
+        v2Invalid=v2; v2Invalid.global_luminance=150;
+        require(sony2fuji_session_set_color_grading_v2(session,&v2Invalid)!=SONY2FUJI_STATUS_OK,"out-of-range luminance rejected");
+        // Verify failed v2 setter didn't corrupt existing valid config
+        require(render(session,scene)==v2Cpu,"failed v2 setter preserves previous valid grading");
+        // Zero-value bypass with non-zero hues and non-default blending/balance
+        sony2fuji_color_grading_v2_config v2Zero{
+            SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, sizeof(v2Zero),
+            220, 0, 0,
+            110, 0, 0,
+            35, 0, 0,
+            180, 0, 0,
+            90, -80
+        };
+        require(sony2fuji_session_set_color_grading_v2(session,&v2Zero)==SONY2FUJI_STATUS_OK,"v2 zero bypass setter");
+        require(render(session,request)==original,"v2 zero bypass restores original bytes");
+        require(sony2fuji_session_set_color_grading(session,&identity)==SONY2FUJI_STATUS_OK,"restore grading identity after v2");
         if (argc>1) {
             const char* argRaw=*argv[1] ? argv[1] : nullptr;
             const char* envRaw=std::getenv("RAWLAB_TEST_RAW");

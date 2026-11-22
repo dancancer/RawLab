@@ -514,7 +514,8 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: url != nil, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: effective.lensSettings)
-            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true)
+            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
             applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
@@ -540,6 +541,58 @@ struct Sony2FujiProcessor {
         }
     }
 
+    func sampleWBProbe(url: URL?, buffer: Buffer?, settings: RawSettings, previewLongEdge: CGFloat,
+                       lutURL: URL?, interactive: Bool, point: CGPoint) throws -> (availability: sony2fuji_wb_probe_availability, temperature: Double, tint: Double) {
+        let inputType: sony2fuji_input_type
+        let width: UInt32, height: UInt32
+        if let url {
+            _ = try url.checkResourceIsReachable()
+            inputType = SONY2FUJI_INPUT_RAW
+            width = 0; height = 0
+        } else if let buffer {
+            inputType = semanticInputType(for: buffer)
+            width = UInt32(buffer.width); height = UInt32(buffer.height)
+        } else { throw ProcessorError.rasterDecodeFailed }
+        return try withRawSession(reuse: url != nil, inputType: inputType) { session in
+            let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: effective.lensSettings)
+            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
+            var request = makeBaseRequest(settings: effective, inputType: inputType)
+            request.input_type = inputType
+            applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
+            request.lut_strength = lutURL == nil ? 0 : effective.clampedLUTStrength
+            var query = sony2fuji_wb_probe_query()
+            query.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+            query.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_query>.size)
+            query.norm_x = Float(point.x)
+            query.norm_y = Float(point.y)
+            query.window_size = 3
+            query.reserved = 0
+            var result = sony2fuji_wb_probe_result()
+            result.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+            result.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_result>.size)
+            let status: sony2fuji_status = (lutURL?.path ?? "").withCString { look in
+                request.lut_path = lutURL == nil ? nil : look
+                if let url {
+                    return url.path.withCString { path in
+                        request.input_path = path
+                        return sony2fuji_session_sample_wb_probe(session, &request, &query, &result)
+                    }
+                }
+                guard let buffer else { return SONY2FUJI_STATUS_INVALID_ARGUMENT }
+                request.input_width = UInt32(buffer.width); request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat; request.input_color_space = SONY2FUJI_COLOR_SRGB
+                return buffer.data.withUnsafeBytes { bytes in
+                    request.input_pixels = bytes.baseAddress
+                    return sony2fuji_session_sample_wb_probe(session, &request, &query, &result)
+                }
+            }
+            guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
+            return (result.availability, Double(result.temperature), Double(result.tint))
+        }
+    }
+
     func migrateProcessing(url: URL, isRaw: Bool, settings: RawSettings, lutURL: URL?,
                            cancellation: ProcessingMigrationCancellation) throws -> ProcessingMigrationOutcome {
         guard !settings.isHDREditing, settings.masterRecipeID == nil, (1...2).contains(settings.processing.version) else {
@@ -550,7 +603,8 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: isRaw ? url : nil, inputType: inputType)
             try configureDisplayLens(session, metadata: raster?.sourceLensMetadata, settings: effective.lensSettings)
-            try configureSession(session, settings: effective, interactive: false, viewportPreview: false)
+            try configureSession(session, settings: effective, interactive: false, viewportPreview: false,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
             request.intent = SONY2FUJI_INTENT_FINAL
@@ -834,7 +888,8 @@ struct Sony2FujiProcessor {
             try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
             try configureSession(session, settings: settings,
                                  interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
-                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
+                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
 
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType
@@ -892,7 +947,8 @@ struct Sony2FujiProcessor {
                 if isCancelled() { throw CancellationError() }
                 let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
                 try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true,
+                                     isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
                 let roiStatus = applyViewportROI(session: session, roi: nil)
                 guard roiStatus == SONY2FUJI_STATUS_OK else {
                     throw processingFailure(roiStatus, session: session)
@@ -951,7 +1007,8 @@ struct Sony2FujiProcessor {
             try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
                 let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
                 try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true,
+                                     isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
                 let roiStatus = applyViewportROI(session: session, roi: roi)
                 guard roiStatus == SONY2FUJI_STATUS_OK else {
                     throw processingFailure(roiStatus, session: session)
@@ -1043,7 +1100,8 @@ struct Sony2FujiProcessor {
         try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-            try configureSession(session, settings: settings, interactive: false)
+            try configureSession(session, settings: settings, interactive: false,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
 
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType

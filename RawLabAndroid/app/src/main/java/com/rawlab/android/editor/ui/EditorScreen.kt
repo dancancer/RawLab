@@ -3,6 +3,7 @@ package com.rawlab.android.editor.ui
 import com.rawlab.android.ui.AppIcons
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.WbProbeActions
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 
@@ -103,6 +104,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onPresetActionConsumed: () -> Unit = {}, onPresetActionReady: (AdjustmentPresetAction) -> Unit = {},
     onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
     hslTarget: HslTargetActions = HslTargetActions(),
+    wbProbe: WbProbeActions = WbProbeActions(),
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
     onCollection: () -> Unit = {}, collectionEditing: Boolean = false,
@@ -149,6 +151,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var tool by rememberSaveable { mutableIntStateOf(0) }
     var channel by rememberSaveable { mutableIntStateOf(0) }
     var gradingZone by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(com.rawlab.android.settings.ColorGradingZone.SHADOWS) }
+    var gradingGlobal by rememberSaveable(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
     var pendingAll by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
     var prepareAllWhenReady by remember(state.photo?.identity, state.photo?.file?.absolutePath) { mutableStateOf(false) }
     var preparedReset by remember { mutableStateOf<PreparedEditorReset?>(null) }
@@ -369,6 +372,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val liveTarget by rememberUpdatedState(hslTarget)
     val hdrMode = state.edits.isHDREditing
     val liveHDRMode by rememberUpdatedState(hdrMode)
+    val liveWbProbe by rememberUpdatedState(wbProbe)
     val targetAxis = hslTarget.state.axis
     val hslWorkspace = toolOpen && tool == 14 && state.draft?.group == AdjustmentGroup.HSL
     val liveHslWorkspace by rememberUpdatedState(hslWorkspace)
@@ -377,9 +381,17 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         liveHslWorkspace && liveTarget.state.enabled &&
             liveSourceKey == sourceKey && liveTarget.state.axis == targetAxis && liveHDRMode == hdrMode
     } else null
+    val wbWorkspace = toolOpen && tool == 8 && !hdrMode && state.draft?.group == AdjustmentGroup.WHITE_BALANCE
+    val liveWbWorkspace by rememberUpdatedState(wbWorkspace)
+    val wbTargetMode = wbProbe.state.enabled && wbWorkspace
+    val canvasWbProbe = if (wbTargetMode) wbProbe.guarded {
+        liveWbWorkspace && liveWbProbe.state.enabled && liveSourceKey == sourceKey && !liveHDRMode
+    } else null
     LaunchedEffect(hslWorkspace) { if (!hslWorkspace && liveTarget.state.enabled) liveTarget.enabled(false) }
-    LaunchedEffect(targetMode) { if (targetMode) view = view.cancelHold() }
+    LaunchedEffect(wbWorkspace) { if (!wbWorkspace && liveWbProbe.state.enabled) liveWbProbe.enabled(false) }
+    LaunchedEffect(targetMode, wbTargetMode) { if (targetMode || wbTargetMode) view = view.cancelHold() }
     BackHandler(targetMode) { hslTarget.enabled(false) }
+    BackHandler(wbTargetMode) { wbProbe.enabled(false) }
     val cancelAdjustment = onCancelAdjustment
     val cancelRuler: (() -> Unit) -> Unit = { restore ->
         if (liveSourceKey == sourceKey) {
@@ -405,13 +417,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { onClosePresets(); view = view.cancelHold(); liveTarget.cancel() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { onClosePresets(); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() } }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel() }
+        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() }
     }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.recoverUnusableRecord, state.operation) {
-        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.recoverUnusableRecord || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel() }
+        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.recoverUnusableRecord || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() }
     }
     BackHandler(quickPresetsVisible) { onClosePresets() }
     BackHandler(view.purePreview) { togglePure() }
@@ -447,7 +459,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onFilmSelected, onGeometryRatio, selectGroup, channel, { onCancelAdjustment(); channel = it }, requestReset, side, !pendingAll, compact,
             onGeometryLock, onGeometrySwap, onGeometryGrid, onPresets = { if (quickPresetsVisible) onClosePresets() else openQuickPresets() },
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
-            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it }, hslTarget = hslTarget, onSelectFilm = onSelectFilm,
+            onGradingZoneChange = { onCancelAdjustment(); gradingZone = it },
+            gradingGlobal = gradingGlobal, onGradingGlobalChange = { onCancelAdjustment(); gradingGlobal = it },
+            hslTarget = hslTarget, wbProbe = wbProbe, onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
             processingContext = processingContext, onDismissProcessingContext = { processingContext = false },
@@ -455,7 +469,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
-        tool = tool, channel = channel, gradingZone = gradingZone, pendingAll = pendingAll,
+        tool = tool, channel = channel, gradingZone = gradingZone, pendingAll = pendingAll, globalSelected = gradingGlobal,
     ) else null
     LaunchedEffect(resetPresentation?.isEnabled) { if (resetPresentation?.isEnabled != true) resetMenu = false }
     @Composable fun workspaceActions(modifier: Modifier) {
@@ -607,7 +621,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
                                 onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest)
+                                onDetailRequest = onDetailRequest,
+                                wbProbe = canvasWbProbe)
                             workspaceActions(Modifier.align(Alignment.BottomCenter))
                             }
                         }
@@ -622,7 +637,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 workspaceControls = true, histogramExpanded = workspaceHistogram,
                                 onHistogramExpandedChange = { workspaceHistogram = it },
                                 onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest)
+                                onDetailRequest = onDetailRequest,
+                                wbProbe = canvasWbProbe)
                     workspaceActions(Modifier.align(Alignment.BottomCenter))
                     }
                     if (state.photo != null) {

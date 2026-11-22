@@ -380,4 +380,81 @@ final class RulesAndTransferTests: XCTestCase {
         XCTAssertEqual(undone.first?.status, .applied)
         XCTAssertGreaterThanOrEqual(callbackQueries, 6)
     }
+
+    func testMacAiDenoiseStrengthRulesAndRasterWhiteBalanceResetAndTransfer() throws {
+        var macSettings = Adjustments()
+        macSettings.aiDenoiseEnabled = true
+        macSettings.aiDenoiseStrength = 45
+        let rawCtx = MacEditorAdjustmentContext(isRaw: true, defaultExposureMode: .preview, neutralFilmID: "")
+        let macSnap = MacPhotoEditState(settings: macSettings, filmID: "")
+        XCTAssertTrue(MacEditorAdjustmentRules.isModified(scope: .tool(.denoise), snapshot: macSnap, context: rawCtx))
+        XCTAssertTrue(MacEditorAdjustmentRules.isModified(scope: .group(.detail), snapshot: macSnap, context: rawCtx))
+        guard case .candidate(let resetDenoise) = MacEditorAdjustmentRules.prepareReset(scope: .tool(.denoise), snapshot: macSnap, context: rawCtx) else {
+            return XCTFail("Expected candidate reset for aiDenoiseStrength")
+        }
+        XCTAssertEqual(resetDenoise.settings.aiDenoiseEnabled, false)
+        XCTAssertEqual(resetDenoise.settings.aiDenoiseStrength, 100)
+
+        // Raster relative WB: dirty detection, reset, raster->raster transfer, and recipe detach parity with v2 grading
+        var rasterSrc = Adjustments()
+        rasterSrc.temperature = 5200
+        rasterSrc.tint = -12
+        let rasterCtx = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "")
+        let rasterSnap = MacPhotoEditState(settings: rasterSrc, filmID: "")
+        XCTAssertTrue(MacEditorAdjustmentRules.isModified(scope: .tool(.whiteBalance), snapshot: rasterSnap, context: rasterCtx))
+        XCTAssertTrue(MacEditorAdjustmentRules.isModified(scope: .group(.color), snapshot: rasterSnap, context: rasterCtx))
+
+        let payload = try MacAdjustmentTransfer.capture(
+            scope: .custom([.whiteBalanceMode, .temperature, .tint]),
+            snapshot: rasterSnap,
+            context: MacAdjustmentTransferContext(identifier: "raster-a.png", isRaw: false)
+        )
+        XCTAssertEqual(payload[.whiteBalanceMode]?.string, "relative")
+        let applied = try MacAdjustmentTransfer.prepare(
+            payload: payload,
+            target: MacPhotoEditState(settings: Adjustments(), filmID: ""),
+            context: MacAdjustmentTransferContext(identifier: "raster-b.png", isRaw: false)
+        )
+        XCTAssertEqual(applied.settings.temperature, 5200)
+        XCTAssertEqual(applied.settings.tint, -12)
+
+        // iOS raster->raster transfer + rules
+        var iosSrc = RawSettings.default
+        iosSrc.temperature = 4900
+        iosSrc.tint = 18
+        let iosCtx = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
+        XCTAssertTrue(EditorAdjustmentRules.isModified(.tool(.adjustment(.temperature)),
+                                                     snapshot: PhotoEditState(settings: iosSrc), context: iosCtx))
+        let iosPayload = try IOSAdjustmentTransfer.capture(
+            scope: .custom([.whiteBalanceMode, .temperature, .tint]),
+            snapshot: PhotoEditState(settings: iosSrc),
+            context: IOSAdjustmentTransferContext(identifier: "ios-a.jpg", isRaw: false)
+        )
+        XCTAssertEqual(iosPayload[.whiteBalanceMode]?.string, "relative")
+        let iosApplied = try IOSAdjustmentTransfer.prepare(
+            payload: iosPayload,
+            target: PhotoEditState(settings: .default),
+            context: IOSAdjustmentTransferContext(identifier: "ios-b.jpg", isRaw: false)
+        )
+        XCTAssertEqual(iosApplied.settings.temperature, 4900)
+        XCTAssertEqual(iosApplied.settings.tint, 18)
+
+        // Mac recipe detach parity preserves v2 grading (luminance/global/blending/balance)
+        var v2GradingSettings = Adjustments()
+        if let firstRecipe = MasterRecipe.allRecipes.first {
+            v2GradingSettings.applyMasterRecipe(firstRecipe)
+            v2GradingSettings.gradingSettings.shadows = ColorGradingWheel(hue: 210, saturation: 40, luminance: -20)
+            v2GradingSettings.gradingSettings.global = ColorGradingWheel(hue: 35, saturation: 25, luminance: 10)
+            v2GradingSettings.gradingSettings.blending = 75
+            v2GradingSettings.gradingSettings.balance = -30
+            let v2Snap = MacPhotoEditState(settings: v2GradingSettings, filmID: "", masterRecipeID: firstRecipe.id)
+            guard case .candidate(let detached) = MacEditorAdjustmentRules.prepareReset(scope: .tool(.recipe), snapshot: v2Snap, context: rasterCtx) else {
+                return XCTFail("Expected clean recipe detach on v2 grading")
+            }
+            XCTAssertEqual(detached.settings.gradingSettings.shadows.luminance, -20)
+            XCTAssertEqual(detached.settings.gradingSettings.global.luminance, 10)
+            XCTAssertEqual(detached.settings.gradingSettings.blending, 75)
+            XCTAssertEqual(detached.settings.gradingSettings.balance, -30)
+        }
+    }
 }

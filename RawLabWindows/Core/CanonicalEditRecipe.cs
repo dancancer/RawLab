@@ -76,7 +76,13 @@ internal static class CanonicalEditRecipe
                 Green: ToCurveShapePayload(curve.Channels.Green),
                 Blue: ToCurveShapePayload(curve.Channels.Blue));
 
-        var hasV12Features = curve.HasV2Extensions || grading.HasV2Extensions || outputSharpening != OutputSharpening.Off;
+        var rasterRelativeActive = isRaster && settings.MasterRecipeID == null &&
+            (settings[Parameter.Temperature] != 6500 || settings[Parameter.Tint] != 0);
+        if (rasterRelativeActive &&
+            (!double.IsFinite(settings[Parameter.Temperature]) || settings[Parameter.Temperature] is < 2000 or > 50000 ||
+             !double.IsFinite(settings[Parameter.Tint]) || settings[Parameter.Tint] is < -150 or > 150))
+            throw new ArgumentOutOfRangeException(nameof(settings), "Invalid raster relative white balance");
+        var hasV12Features = curve.HasV2Extensions || grading.HasV2Extensions || rasterRelativeActive || outputSharpening != OutputSharpening.Off;
         var profileId = string.IsNullOrEmpty(settings.Lens.CoreProfileId) ? null : settings.Lens.CoreProfileId;
 
         var payload = new Payload(
@@ -86,7 +92,9 @@ internal static class CanonicalEditRecipe
             Input: new InputPayload(isRaster ? "session.png" : "session.raw", isRaster ? "raster" : "raw"),
             Edits: new EditsPayload(
                 Exposure: new ExposurePayload(exposureMode, 0, 1),
-                WhiteBalance: new WhiteBalancePayload(isRaster ? "none" : "camera"),
+                WhiteBalance: rasterRelativeActive
+                    ? new WhiteBalancePayload("relative", settings[Parameter.Temperature], settings[Parameter.Tint])
+                    : new WhiteBalancePayload(isRaster ? "none" : "camera"),
                 Look: new LookPayload(null, 1),
                 Geometry: new GeometryPayload(
                     Crop: new CropPayload(geometry.CropX, geometry.CropY, geometry.CropWidth, geometry.CropHeight),
@@ -207,7 +215,9 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("brightness")] double Brightness);
 
     private sealed record WhiteBalancePayload(
-        [property: JsonPropertyName("mode")] string Mode);
+        [property: JsonPropertyName("mode")] string Mode,
+        [property: JsonPropertyName("relative_temperature")] double? RelativeTemperature = null,
+        [property: JsonPropertyName("relative_tint")] double? RelativeTint = null);
 
     private sealed record LookPayload(
         [property: JsonPropertyName("path"), JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Path,

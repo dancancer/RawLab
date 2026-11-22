@@ -16,6 +16,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.WbProbeActions
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -177,6 +178,7 @@ internal fun PhotoCanvas(
     detail: PreviewDetailOverlay? = null,
     detailTiles: List<PreviewDetailOverlay> = emptyList(),
     onDetailRequest: (ViewportRoiRequest?) -> Unit = {},
+    wbProbe: WbProbeActions? = null,
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -189,6 +191,7 @@ internal fun PhotoCanvas(
     val tap by rememberUpdatedState(onCanvasTap)
     val hold by rememberUpdatedState(onHoldBefore)
     val target by rememberUpdatedState(hslTarget)
+    val probe by rememberUpdatedState(wbProbe)
     val latestOnDetailRequest by rememberUpdatedState(onDetailRequest)
     val focusRequester = remember { FocusRequester() }
     var canvasOrigin by remember { mutableStateOf(Offset.Zero) }
@@ -197,7 +200,7 @@ internal fun PhotoCanvas(
     var targetAnchor by remember { mutableStateOf<Offset?>(null) }
     var targetImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     val hdrParameters = hdrPreview.parameters
-    DisposableEffect(Unit) { onDispose { hold(false); target?.cancel() } }
+    DisposableEffect(Unit) { onDispose { hold(false); target?.cancel(); probe?.cancel() } }
     BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) photoViewMargin else 0.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         val canvasWidth = constraints.maxWidth.toFloat(); val canvasHeight = constraints.maxHeight.toFloat()
@@ -239,7 +242,7 @@ internal fun PhotoCanvas(
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
         LaunchedEffect(detailRequest) { latestOnDetailRequest(detailRequest) }
         val percent = "${(projectedZoom.scale * 100).roundToInt()}%"
-        val before = holdingBefore && !compare && hslTarget == null
+        val before = holdingBefore && !compare && hslTarget == null && wbProbe == null
         val resultOrigin = Offset(if (sideBySide && horizontal) primary.width + gapPx else 0f,
             if (sideBySide && !horizontal) primary.height + gapPx else 0f)
         val touchImage by rememberUpdatedState(pair.result)
@@ -268,8 +271,8 @@ internal fun PhotoCanvas(
                 val shownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
                 val activeTiles = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
-                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null) {
-                        if (hslTarget == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
+                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null, wbProbe != null) {
+                        if (hslTarget == null && wbProbe == null) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
                             onLongPress = { if (!compare && viewingEnabled) hold(true) },
                             onPress = { try { tryAwaitRelease() } finally { hold(false) } }, onTap = { if (viewingEnabled || !showOverlays) tap() })
                     }) {
@@ -351,14 +354,14 @@ internal fun PhotoCanvas(
             customActions = buildList {
                 add(CustomAccessibilityAction("100%") { state.zoom = PhotoZoom(1f); true })
                 add(CustomAccessibilityAction(fitDescription) { state.view = PhotoViewTransform(); true })
-                if (hslTarget == null && (viewingEnabled || !showOverlays)) add(CustomAccessibilityAction(pureAction) { tap(); true })
-                if (hslTarget == null && viewingEnabled && !compare) add(CustomAccessibilityAction(holdAction) { hold(!holdingBefore); true })
+                if (hslTarget == null && wbProbe == null && (viewingEnabled || !showOverlays)) add(CustomAccessibilityAction(pureAction) { tap(); true })
+                if (hslTarget == null && wbProbe == null && viewingEnabled && !compare) add(CustomAccessibilityAction(holdAction) { hold(!holdingBefore); true })
             }
         }) {
             // 手势接收层只包住照片，保证跨 pane 的两指仍在同一命中链；控件叠层保持优先。
-            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis) {
+            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, wbProbe != null) {
                 photoGestures(state, primary, compare && mode == ComparisonMode.WIPE, { hold(false) },
-                    target = { target }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
+                    target = { target }, wbProbe = { probe }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
                     targetPointer = { position, anchor ->
                         targetTouch = position
                         if (anchor != null) { targetAnchor = anchor; targetImage = touchImage }
@@ -383,7 +386,7 @@ internal fun PhotoCanvas(
                         Modifier.align(Alignment.TopEnd)
                             .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
-                if (hslTarget == null) {
+                if (hslTarget == null && wbProbe == null) {
                     BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (workspaceControls) 48.dp else 0.dp)) {
                         PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp, !workspaceControls)
                     }
@@ -410,18 +413,25 @@ internal fun PhotoCanvas(
                     }
                 }
             }
-            if (hslTarget != null && hslTarget.state.x != null && hslTarget.state.y != null) {
+            val markerPoint = when {
+                hslTarget != null && hslTarget.state.x != null && hslTarget.state.y != null ->
+                    Offset(hslTarget.state.x, hslTarget.state.y)
+                wbProbe != null && wbProbe.state.x != null && wbProbe.state.y != null ->
+                    Offset(wbProbe.state.x, wbProbe.state.y)
+                else -> null
+            }
+            if (markerPoint != null) {
                 val projected = state.view.project(primary)
                 val photoWidth = primary.imageWidth*projected.scale; val photoHeight = primary.imageHeight*projected.scale
                 val photoLeft = resultOrigin.x+(primary.width-photoWidth)/2+projected.x
                 val photoTop = resultOrigin.y+(primary.height-photoHeight)/2+projected.y
                 Canvas(Modifier.fillMaxSize()) {
-                    val point = Offset(photoLeft+hslTarget.state.x*photoWidth, photoTop+hslTarget.state.y*photoHeight)
+                    val point = Offset(photoLeft+markerPoint.x*photoWidth, photoTop+markerPoint.y*photoHeight)
                     drawCircle(Color.Black, 9.dp.toPx(), point, style = Stroke(4.dp.toPx()))
                     drawCircle(Color.White, 9.dp.toPx(), point, style = Stroke(2.dp.toPx()))
                 }
                 val finger = targetTouch; val anchor = targetAnchor; val magnified = targetImage
-                if (finger != null && anchor != null && magnified != null) {
+                if (hslTarget != null && finger != null && anchor != null && magnified != null) {
                     val radius = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
                     val centerX = finger.x.coerceIn(radius, maxOf(radius, canvasWidth-radius))
                     val centerY = (if (finger.y > radius*2.5f) finger.y-radius*1.65f else finger.y+radius*1.65f)
@@ -437,7 +447,7 @@ internal fun PhotoCanvas(
                     }
                 }
             }
-            RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && pair.hdr == null,
+            RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && wbProbe == null && pair.hdr == null,
                 Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
                 showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange)
         }
@@ -503,7 +513,8 @@ private fun InfoLine(title: String, value: String?) {
 }
 
 private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, area: PhotoViewport, wipe: Boolean,
-    cancelHold: () -> Unit, target: () -> HslTargetActions? = { null }, targetHit: (Offset) -> Offset? = { null },
+    cancelHold: () -> Unit, target: () -> HslTargetActions? = { null }, wbProbe: () -> WbProbeActions? = { null },
+    targetHit: (Offset) -> Offset? = { null },
     targetPointer: (Offset?, Offset?) -> Unit = { _, _ -> }, targetFocus: () -> Unit = {}, paneOrigin: (Offset) -> Offset) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -516,14 +527,21 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
         val handleX = image.splitX(initialSplit).coerceIn(image.left + minOf(24.dp.toPx(), image.width / 2), image.right - minOf(24.dp.toPx(), image.width / 2))
         val wipeHit = wipe && abs(downPosition.x - handleX) <= 24.dp.toPx() && downPosition.x in image.left..image.right && downPosition.y in image.top..image.bottom
         var targeting = target()
-        if (wipeHit) { targeting?.cancel(); targeting = null }
+        var activeProbe = if (targeting == null) wbProbe() else null
+        if (wipeHit) {
+            targeting?.cancel(); targeting = null
+            activeProbe?.cancel(); activeProbe = null
+        }
         var targetStarted = false; var targetEnded = false
+        var probeDownPoint: Offset? = null
         if (targeting != null) {
             val point = targetHit(down.position)
             if (point != null) {
                 targetStarted = true; targeting.begin(point.x, point.y); targetPointer(down.position, point)
                 targetFocus(); down.consume()
             } else targeting.reject()
+        } else if (activeProbe != null) {
+            probeDownPoint = targetHit(down.position)
         }
         val targetScale = .5f / 1.dp.toPx()
         var transformed = false
@@ -535,6 +553,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                 event.changes.filter { it.pressed }.forEach { origins.getOrPut(it.id) { paneOrigin(it.position) } }
                 if (fingers >= 2) {
                     if (targetStarted) { targeting?.cancel(); targetStarted = false; targetPointer(null, null) }
+                    activeProbe = null; probeDownPoint = null
                     cancelHold(); transformed = true
                     val zoom = state.view.project(area)
                     val pointers = event.changes.filter { it.pressed && it.previousPressed }
@@ -554,6 +573,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                         if (targetStarted) { targeting.move((down.position.y-change.position.y)*targetScale); targetPointer(change.position, null) }
                         change.consume()
                     } else if (dragging) {
+                        activeProbe = null; probeDownPoint = null
                         cancelHold()
                         if (wipeHit) state.split = (initialSplit + (change.position.x - down.position.x) / image.width).coerceIn(0f, 1f)
                         else state.transform(1f, event.calculatePan(), change.previousPosition - origin, area)
@@ -563,6 +583,12 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                 if (fingers == 0 && targetStarted) {
                     event.changes.firstOrNull { it.id == down.id }?.let { targeting?.move((down.position.y-it.position.y)*targetScale) }
                     targeting?.end(); targetEnded = true
+                }
+                if (fingers == 0 && activeProbe != null && !transformed && !dragging) {
+                    val sampled = probeDownPoint
+                    if (sampled != null) activeProbe.sample(sampled.x, sampled.y)
+                    else activeProbe.reject()
+                    activeProbe = null
                 }
             } while (event.changes.any { it.pressed })
         } finally {

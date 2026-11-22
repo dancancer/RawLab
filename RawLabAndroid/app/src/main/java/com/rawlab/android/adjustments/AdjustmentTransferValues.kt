@@ -78,10 +78,17 @@ internal object AdjustmentTransferValues {
         values[AdjustmentField.LOOK] = AdjustmentValue.Object(mapOf("kind" to AdjustmentValue.Text(kind),
             "id" to (id?.let(AdjustmentValue::Text) ?: AdjustmentValue.Null)))
         values[AdjustmentField.EXPOSURE_MODE] = AdjustmentValue.Text(if (!context.isRaw) "sensor" else listOf("scene", "preview", "sensor")[s.exposureMode])
-        val camera = !context.isRaw || !s.customWb
-        values[AdjustmentField.WHITE_BALANCE_MODE] = AdjustmentValue.Text(if (!context.isRaw) "none" else if (camera) "camera" else "temperature")
-        values[AdjustmentField.TEMPERATURE] = if (camera) AdjustmentValue.Null else AdjustmentValue.Number(s.temperature.toDouble())
-        values[AdjustmentField.TINT] = if (s.recipeID != null || !camera) AdjustmentValue.Number(s.tint.toDouble()) else AdjustmentValue.Null
+        if (!context.isRaw) {
+            val rasterRelative = s.recipeID == null && (s.temperature != 6500f || s.tint != 0f)
+            values[AdjustmentField.WHITE_BALANCE_MODE] = AdjustmentValue.Text(if (rasterRelative) "relative" else "none")
+            values[AdjustmentField.TEMPERATURE] = if (rasterRelative) AdjustmentValue.Number(s.temperature.toDouble()) else AdjustmentValue.Null
+            values[AdjustmentField.TINT] = if (rasterRelative || s.recipeID != null) AdjustmentValue.Number(s.tint.toDouble()) else AdjustmentValue.Null
+        } else {
+            val camera = !s.customWb
+            values[AdjustmentField.WHITE_BALANCE_MODE] = AdjustmentValue.Text(if (camera) "camera" else "temperature")
+            values[AdjustmentField.TEMPERATURE] = if (camera) AdjustmentValue.Null else AdjustmentValue.Number(s.temperature.toDouble())
+            values[AdjustmentField.TINT] = if (s.recipeID != null || !camera) AdjustmentValue.Number(s.tint.toDouble()) else AdjustmentValue.Null
+        }
         with(s.effects) {
             number(AdjustmentField.VIGNETTE_AMOUNT, vignetteAmount); number(AdjustmentField.VIGNETTE_MIDPOINT, vignetteMidpoint)
             number(AdjustmentField.VIGNETTE_ROUNDNESS, vignetteRoundness); number(AdjustmentField.VIGNETTE_FEATHER, vignetteFeather)

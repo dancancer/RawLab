@@ -663,7 +663,7 @@ int32_t gCapturedChromaDenoise = 0;
 int gCapturedProcessingVersion = 0;
 int gCapturedX3fMode = 0;
 int gCapturedExposureMode = 0;
-sony2fuji_hdr_request_v8 gCapturedHdrRequest{};
+sony2fuji_hdr_request_v9 gCapturedHdrRequest{};
 std::string gCapturedHdrLookPath;
 sony2fuji_hdr_request_v1 gCapturedHdrGeometryRequest{};
 sony2fuji_recipe_wb_request gCapturedRecipeWbRequest{};
@@ -1219,6 +1219,17 @@ sony2fuji_status sony2fuji_session_resolve_recipe_wb(sony2fuji_session* s, const
     res->tint = req->recipe_active ? (res->camera_tint + req->tint * req->recipe_strength) : req->tint;
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_session_sample_wb_probe(sony2fuji_session* s, const sony2fuji_request* req,
+    const sony2fuji_wb_probe_query* query, sony2fuji_wb_probe_result* out) {
+    SessionCallScope scope(s);
+    if (!req || !query || !out) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    out->availability = SONY2FUJI_WB_PROBE_AVAILABLE;
+    out->valid_pixel_count = query->window_size * query->window_size;
+    out->rejected_overexposed_count = 0;
+    out->temperature = 5420.0f;
+    out->tint = -12.5f;
+    return SONY2FUJI_STATUS_OK;
+}
 int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path) {
     gCapturedMpfPath = path ? path : "";
     return gMockMpfResult;
@@ -1394,8 +1405,8 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* s, const sony2fuji_hdr_
             const size_t copyBytes = std::min<size_t>(req->struct_size, sizeof(gCapturedHdrRequest));
             std::memcpy(&gCapturedHdrRequest, req, copyBytes);
             if (req->hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_LOOK_VERSION &&
-                gCapturedHdrRequest.base.look_path) {
-                gCapturedHdrLookPath = gCapturedHdrRequest.base.look_path;
+                gCapturedHdrRequest.base.base.look_path) {
+                gCapturedHdrLookPath = gCapturedHdrRequest.base.base.look_path;
             } else {
                 gCapturedHdrLookPath.clear();
             }
@@ -2439,6 +2450,7 @@ void testStructuredHdrMarshalling() {
     setFloatField(gradingObj, "midtonesSaturation", 40.f);
     setFloatField(gradingObj, "highlightsHue", 50.f);
     setFloatField(gradingObj, "highlightsSaturation", 60.f);
+    setFloatField(gradingObj, "blending", 50.f);
 
     std::vector<jfloat> hdrHsl(24);
     for (int i = 0; i < 24; ++i) hdrHsl[i] = static_cast<jfloat>(i + 1);
@@ -2490,7 +2502,7 @@ void testStructuredHdrMarshalling() {
     auto ex = consumeException();
     require(outPair > 0 && !ex.active, "Full v8 HDR render failed: " + ex.message);
 
-    const auto& v8 = gCapturedHdrRequest;
+    const auto& v8 = gCapturedHdrRequest.base;
     const auto& v7 = v8.base;
     const auto& v6 = v7.base;
     const auto& v5 = v6.base;
@@ -2825,6 +2837,65 @@ void testHdrSessionProgressCallbackAndScopeCleanup() {
     std::cout << "PASS: testHdrSessionProgressCallbackAndScopeCleanup" << std::endl;
 }
 
+void testHdrV9GradingV2AndWbProbe() {
+    resetMocks();
+    gCapturePayloads = true;
+    LocalEnv env;
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 0);
+    const jlong p = Java_com_rawlab_android_engine_NativeHDRBridge_nativeDecode(env.ptr(), nullptr, 0, makeJString("hdr_v9.jpg"), 0, -1, nullptr);
+    require(p > 0, "HDR decode for v9 test failed");
+
+    jobject req = makeNativeHdrRenderRequest(0);
+    setFloatField(req, "exposureEv", 0.5f);
+    jobject toneObj = makeStruct("com/rawlab/android/engine/NativeHDRTone");
+    setObjField(toneObj, "curve", makeNativeToneCurve(0, {}));
+    setObjField(req, "tone", toneObj);
+    jobject gradingObj = makeStruct("com/rawlab/android/engine/NativeColorGrading");
+    setFloatField(gradingObj, "shadowsHue", 210.f);
+    setFloatField(gradingObj, "shadowsSaturation", 25.f);
+    setFloatField(gradingObj, "shadowsLuminance", -12.f);
+    setFloatField(gradingObj, "globalHue", 45.f);
+    setFloatField(gradingObj, "globalSaturation", 18.f);
+    setFloatField(gradingObj, "globalLuminance", 9.f);
+    setFloatField(gradingObj, "blending", 72.f);
+    setFloatField(gradingObj, "balance", -15.f);
+    jobject colorObj = makeStruct("com/rawlab/android/engine/NativeHDRColor");
+    setObjField(colorObj, "hsl", makeJFloatArray(std::vector<jfloat>(24, 0.f)));
+    setObjField(colorObj, "grading", gradingObj);
+    setObjField(req, "color", colorObj);
+
+    const jlong outPair = Java_com_rawlab_android_engine_NativeHDRBridge_nativeRender(env.ptr(), nullptr, s, p, req, -1, nullptr);
+    auto ex = consumeException();
+    require(outPair > 0 && !ex.active, "v9 HDR render failed: " + ex.message);
+    require(gCapturedHdrRequest.base.base.base.base.base.base.base.base.struct_size == sizeof(sony2fuji_hdr_request_v9),
+        "HDR v9 struct_size mismatch");
+    require(gCapturedHdrRequest.base.base.base.base.base.base.base.base.hdr_processing_version == SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION,
+        "HDR v9 processing version mismatch");
+    require(gCapturedHdrRequest.grading_v2.shadows_luminance == -12.f &&
+            gCapturedHdrRequest.grading_v2.global_hue == 45.f &&
+            gCapturedHdrRequest.grading_v2.global_saturation == 18.f &&
+            gCapturedHdrRequest.grading_v2.global_luminance == 9.f &&
+            gCapturedHdrRequest.grading_v2.blending == 72.f &&
+            gCapturedHdrRequest.grading_v2.balance == -15.f,
+        "HDR v9 grading_v2 mismatch");
+
+    // Also test nativeSampleWbProbe
+    jobject procReq = makeNativeProcessRequest("wb_probe.dng", 1024, -1);
+    jfloatArray outArr = env.ptr()->NewFloatArray(5);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeSampleWbProbe(env.ptr(), nullptr, s, procReq, 0.5f, 0.5f, 9, outArr);
+    ex = consumeException();
+    require(!ex.active, "nativeSampleWbProbe failed: " + ex.message);
+    auto* arr = static_cast<FakeJObject*>(reinterpret_cast<void*>(outArr));
+    require(arr->floats[0] == static_cast<jfloat>(SONY2FUJI_WB_PROBE_AVAILABLE) &&
+            arr->floats[3] == 5420.0f && arr->floats[4] == -12.5f,
+        "nativeSampleWbProbe output mismatch");
+
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, outPair);
+    Java_com_rawlab_android_engine_NativeHDRBridge_nativeRelease(env.ptr(), nullptr, p);
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    std::cout << "PASS: testHdrV9GradingV2AndWbProbe" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2850,6 +2921,7 @@ int main() {
         {"testBitmapPreviewMidCopyCancellationUnlocksSymmetrically", testBitmapPreviewMidCopyCancellationUnlocksSymmetrically},
         {"testNativePlaneDirectCopyAndMetadataInspection", testNativePlaneDirectCopyAndMetadataInspection},
         {"testHdrSessionProgressCallbackAndScopeCleanup", testHdrSessionProgressCallbackAndScopeCleanup},
+        {"testHdrV9GradingV2AndWbProbe", testHdrV9GradingV2AndWbProbe},
     };
     int failures = 0;
     for (const auto& c : cases) {

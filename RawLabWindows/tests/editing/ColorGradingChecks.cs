@@ -75,6 +75,27 @@ internal static class ColorGradingChecks
         Check(JsonSerializer.Deserialize<BatchJob>(JsonSerializer.Serialize(batch))!.Settings.Restore().ColorGrading == grading, "Frozen batch preserves grading");
         state = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(state)).Candidate!.Settings.Restore();
         Check(state.ColorGrading.IsDefault, "Direct full reset clears grading");
+
+        var gradingV2 = new ColorGradingSettings
+        {
+            Shadows = new(210, 30, -15),
+            Midtones = new(45, 20, 5),
+            Highlights = new(320, 15, 10),
+            Global = new(90, 25, 12),
+            Blending = 82,
+            Balance = -35
+        };
+        var nativeV2 = gradingV2.NativeV2Config();
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.ColorGradingV2Config>() == 64 &&
+              nativeV2.Version == 2 && nativeV2.StructSize == 64 &&
+              nativeV2.ShadowsLuminance == -15f && nativeV2.GlobalHue == 90f &&
+              nativeV2.GlobalLuminance == 12f && nativeV2.Blending == 82f && nativeV2.Balance == -35f,
+            "NativeV2Config marshals 64-byte v2 grading ABI");
+        var v2State = new Adjustments { ColorGrading = gradingV2 };
+        var globalReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.GradingGlobal), Edit(v2State));
+        Check(globalReset.Status == EditorResetStatus.Ready &&
+              globalReset.Candidate!.Settings.Restore().ColorGrading == (gradingV2 with { Global = new() }),
+            "GradingGlobal reset clears global wheel while preserving zones, blending, and balance");
         Console.WriteLine("PASS: grading persistence, pending hue, bounds, transfer, recipe independence, reset and batch");
     }
 }

@@ -39,9 +39,11 @@ struct alignas(16) Parameters {
     float toneControls[4];
     float colorGrading[3][4];
     float curveRanges[32][4], curveTangents[32][4];
+    float colorGradingGlobal[4];
+    float colorGradingMix[4];
     uint32_t band[4]; // source row, destination row, output rows, reserved
 };
-static_assert(sizeof(Parameters) == 1424);
+static_assert(sizeof(Parameters) == 1456);
 static_assert(offsetof(Parameters, hslHue) == 224);
 static_assert(offsetof(Parameters, colorGrading) == 336);
 static_assert(offsetof(Parameters, curveRanges) == 384);
@@ -281,10 +283,19 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         p.control[1]=params.hsl.active();
         p.toneControls[0]=params.toneControls.blackPoint; p.toneControls[1]=params.toneControls.whitePoint;
         p.toneControls[2]=params.toneControls.vibrance;
-        const auto grading=colorGradingCoefficients(params.colorGrading);
+        const auto grading=colorGradingParameters(params.colorGrading);
         for (size_t zone=0;zone<3;++zone) {
-            p.colorGrading[zone][0]=grading[zone].r;p.colorGrading[zone][1]=grading[zone].g;p.colorGrading[zone][2]=grading[zone].b;
+            p.colorGrading[zone][0]=grading.coefficients[zone].r;
+            p.colorGrading[zone][1]=grading.coefficients[zone].g;
+            p.colorGrading[zone][2]=grading.coefficients[zone].b;
+            p.colorGrading[zone][3]=grading.luminance[zone];
         }
+        p.colorGradingGlobal[0]=grading.coefficients[3].r;
+        p.colorGradingGlobal[1]=grading.coefficients[3].g;
+        p.colorGradingGlobal[2]=grading.coefficients[3].b;
+        p.colorGradingGlobal[3]=grading.luminance[3];
+        p.colorGradingMix[0]=grading.blending;
+        p.colorGradingMix[1]=grading.balance;
         for (size_t index=0;index<8;++index) {
             p.hslHue[index/4][index%4]=params.hsl.hue[index];
             p.hslSaturation[index/4][index%4]=params.hsl.saturation[index];

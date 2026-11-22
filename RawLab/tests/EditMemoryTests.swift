@@ -400,6 +400,16 @@ extension EditMemoryTests {
                 check(true, "raster custom WB effective no-op leaves stored values alone")
             } else { fatalError("raster custom WB generated a no-op candidate") }
         }
+        var rasterRelativeWB = RawSettings.default
+        rasterRelativeWB.temperature = 5400; rasterRelativeWB.tint = 12
+        let rasterRelative = PhotoEditState(settings: rasterRelativeWB)
+        check(EditorAdjustmentRules.isModified(.group(.color), snapshot: rasterRelative, context: raster) &&
+              EditorAdjustmentRules.isModified(.tool(.adjustment(.temperature)), snapshot: rasterRelative, context: raster),
+              "raster relative WB marks color group and temperature modified")
+        if case .candidate(let resetRaster, _) = EditorAdjustmentRules.prepareReset(.tool(.adjustment(.temperature)), snapshot: rasterRelative, context: raster) {
+            check(resetRaster.settings.temperature == 6500 && resetRaster.settings.tint == 0,
+                  "raster relative WB resets cleanly to 6500/0")
+        } else { fatalError("raster relative WB reset failed") }
         var rasterRecipe = RawSettings.default
         rasterRecipe.masterRecipeID = "fixture-recipe"; rasterRecipe.tint = 18
         check(!EditorAdjustmentRules.isModified(.group(.color), snapshot: PhotoEditState(settings: rasterRecipe), context: raster),

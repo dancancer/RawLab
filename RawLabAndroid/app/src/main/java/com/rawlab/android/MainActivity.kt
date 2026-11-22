@@ -3,6 +3,7 @@ package com.rawlab.android
 import com.rawlab.android.camera.CameraImportScreen
 import com.rawlab.android.camera.CameraImportViewModel
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.WbProbeActions
 
 import android.os.Build
 import android.os.Bundle
@@ -129,6 +130,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
     var presetLibraryRevision by remember { mutableIntStateOf(0) }
     val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
+    val wbProbe by model.wbProbe.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
@@ -280,6 +282,8 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
                 { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget),
+            wbProbe = WbProbeActions(wbProbe, model::setWbProbeEnabled, model::beginWbProbe,
+                model::cancelWbProbe, model::rejectWbProbe),
             onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onResetUnusableRecord = model::resetUnusableImportRecord,

@@ -108,4 +108,24 @@ class HDRNativeRequestTest {
         assertEquals(geometry.toNativeGeometry(), request.geometry)
         assertEquals(512, request.longEdge)
     }
+
+    @Test
+    fun v9ColorGradingExtensionFieldsAndProcessingVersion() {
+        val v2 = com.rawlab.android.settings.ColorGradingSettings(
+            shadows = com.rawlab.android.settings.ColorGradingWheel(200f, 30f, -15f),
+            global = com.rawlab.android.settings.ColorGradingWheel(50f, 15f, 10f),
+            blending = 70f,
+            balance = -20f,
+        )
+        val hdr = HDRSettings().withColor(HDRColorSettings(grading = v2))
+        assertEquals(9, hdr.processingVersion)
+        val native = hdr.toNativeRequest(longEdge = 1024)
+        val grading = native.color?.grading!!
+        assertEquals(-15f, grading.shadowsLuminance, 0f)
+        assertEquals(50f, grading.globalHue, 0f)
+        assertEquals(15f, grading.globalSaturation, 0f)
+        assertEquals(10f, grading.globalLuminance, 0f)
+        assertEquals(70f, grading.blending, 0f)
+        assertEquals(-20f, grading.balance, 0f)
+    }
 }

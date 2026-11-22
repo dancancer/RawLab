@@ -302,6 +302,41 @@ public sealed class Adjustments
         if (id is Parameter.Temperature or Parameter.Tint)
             CameraWhiteBalance = AsShot is { } wb && this[Parameter.Temperature] == wb.Temperature && this[Parameter.Tint] == wb.Tint;
     }
+    public void SetRasterWhiteBalance(Parameter id, double value)
+    {
+        if (id is not (Parameter.Temperature or Parameter.Tint))
+        {
+            Set(id, value);
+            return;
+        }
+        if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        if (IsHDREditing && HDRSettings.Supports(id))
+        {
+            HDR = HDR!.Set(id, value);
+            return;
+        }
+        var spec = ParameterSpec.All[(int)id];
+        values[(int)id] = Math.Clamp(value, spec.Min, spec.Max);
+        AsShot = null;
+        CameraWhiteBalance = true;
+    }
+    public void SetRelativeWhiteBalance(double temperature, double tint)
+    {
+        if (!double.IsFinite(temperature) || !double.IsFinite(tint))
+            throw new ArgumentOutOfRangeException(nameof(temperature));
+        if (IsHDREditing)
+        {
+            HDR = HDR!.Set(Parameter.Temperature, temperature).Set(Parameter.Tint, tint);
+            return;
+        }
+        var tempSpec = ParameterSpec.All[(int)Parameter.Temperature];
+        var tintSpec = ParameterSpec.All[(int)Parameter.Tint];
+        values[(int)Parameter.Temperature] = Math.Clamp(temperature, tempSpec.Min, tempSpec.Max);
+        values[(int)Parameter.Tint] = Math.Clamp(tint, tintSpec.Min, tintSpec.Max);
+        AsShot = null;
+        CameraWhiteBalance = true;
+    }
+    internal void ClearAsShotWhiteBalance() => AsShot = null;
     public void ResolveWhiteBalance((double Temperature, double Tint)? wb)
     {
         AsShot = wb;
@@ -454,6 +489,13 @@ public sealed class Adjustments
             wbMode = wb.WbMode;
             temperature = wb.WbMode == 3 ? wb.Temperature : 6500f;
             tint = wb.WbMode == 3 ? wb.Tint : 0f;
+        }
+        else if (PhotoInput.IsRaster(path))
+        {
+            var relativeActive = MasterRecipeID == null && (this[Parameter.Temperature] != 6500 || this[Parameter.Tint] != 0);
+            wbMode = relativeActive ? 4 : 0;
+            temperature = relativeActive ? (float)this[Parameter.Temperature] : 6500f;
+            tint = relativeActive ? (float)this[Parameter.Tint] : 0f;
         }
         else
         {

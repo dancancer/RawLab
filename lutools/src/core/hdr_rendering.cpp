@@ -172,19 +172,43 @@ RGB hdrHsl(const RGB& pixel, const HslOptions& settings) {
     return {channel(direction.r), channel(direction.g), channel(direction.b)};
 }
 
-RGB hdrGrade(const RGB& pixel, const std::array<RGB, 3>& coefficients) {
+RGB hdrGrade(const RGB& pixel, const ColorGradingOptions& options, const ColorGradingShaderParams& params) {
     const float y = luminance(pixel);
     if (y <= 0) return pixel;
     const float stops = std::log2(y);
-    const float shadows = 1 - smooth(stops, -5, -2.5f);
-    const float highlights = smooth(stops, -1, 1);
-    const float middle = 1 - shadows - highlights;
-    const auto channel = [=](float value, float shadow, float midtone, float highlight) {
-        return float(value + .25 * y * (shadows * shadow + middle * midtone + highlights * highlight));
+    float shadows = 0.0f;
+    float middle = 0.0f;
+    float highlights = 0.0f;
+    if (options.blending == 50.0f && options.balance == 0.0f) {
+        shadows = 1 - smooth(stops, -5, -2.5f);
+        highlights = smooth(stops, -1, 1);
+        middle = 1 - shadows - highlights;
+    } else {
+        const float shift = 1.5f * (options.balance / 100.0f);
+        const float scale = 0.10f + 1.80f * (options.blending / 100.0f);
+        const float s = stops + shift;
+        shadows = 1 - smooth(s, -3.75f - 1.25f * scale, -3.75f + 1.25f * scale);
+        highlights = smooth(s, -1.0f * scale, 1.0f * scale);
+        middle = std::max(0.0f, 1.0f - shadows - highlights);
+        const float total = shadows + middle + highlights;
+        if (total > 0.0f) {
+            shadows /= total;
+            middle /= total;
+            highlights /= total;
+        }
+    }
+    const float lumStops = 0.5f * (shadows * params.luminance[0] + middle * params.luminance[1] +
+                                   highlights * params.luminance[2] + params.luminance[3]);
+    const float lumScale = (lumStops == 0.0f) ? 1.0f : std::exp2(lumStops);
+    const float yScaled = y * lumScale;
+    const auto channel = [=](float value, float shadow, float midtone, float highlight, float global) {
+        return float(value * lumScale + .25 * yScaled * (shadows * shadow + middle * midtone + highlights * highlight + global));
     };
-    return {channel(pixel.r, coefficients[0].r, coefficients[1].r, coefficients[2].r),
-        channel(pixel.g, coefficients[0].g, coefficients[1].g, coefficients[2].g),
-        channel(pixel.b, coefficients[0].b, coefficients[1].b, coefficients[2].b)};
+    return {
+        channel(pixel.r, params.coefficients[0].r, params.coefficients[1].r, params.coefficients[2].r, params.coefficients[3].r),
+        channel(pixel.g, params.coefficients[0].g, params.coefficients[1].g, params.coefficients[2].g, params.coefficients[3].g),
+        channel(pixel.b, params.coefficients[0].b, params.coefficients[1].b, params.coefficients[2].b, params.coefficients[3].b)
+    };
 }
 
 RGB limitHDRLuminance(const RGB& pixel, double knee, double span) {
@@ -214,7 +238,7 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const bool vibranceActive = useColor && o.color.vibrance != 0;
     const bool hslActive = useColor && o.color.hsl.active();
     const bool gradingActive = useColor && o.color.grading.active();
-    const auto grading = gradingActive ? colorGradingCoefficients(o.color.grading) : std::array<RGB, 3>{};
+    const auto grading = gradingActive ? colorGradingParameters(o.color.grading) : ColorGradingShaderParams{};
     const bool lookActive = o.processingVersion >= kHdrProcessingLookVersion && o.look && o.lookStrength != 0;
     const bool useRendition = o.processingVersion >= kHdrProcessingRenditionVersion;
     const auto& rendition = o.rendition;
@@ -242,7 +266,7 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
             if (channelsActive) p = {editChannelCurve(p.r, channels[0]), editChannelCurve(p.g, channels[1]), editChannelCurve(p.b, channels[2])};
             if (vibranceActive) p = hdrVibrance(p, o.color.vibrance);
             if (hslActive) p = hdrHsl(p, o.color.hsl);
-            if (gradingActive) p = hdrGrade(p, grading);
+            if (gradingActive) p = hdrGrade(p, o.color.grading, grading);
             if (lookActive) p = o.look->apply(p, o.lookStrength);
             if (limitHDR) p = limitHDRLuminance(p, knee, peak - knee);
             if (adjustBase) p = toneSDR({p.r * baseExposure, p.g * baseExposure, p.b * baseExposure}, baseTone);

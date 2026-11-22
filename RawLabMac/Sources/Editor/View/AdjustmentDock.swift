@@ -153,6 +153,7 @@ struct AdjustmentDock: View {
             } else if open {
                 if tool == .colorGrading || tool == .toneCurve { model.cancelAdjustmentInteraction() }
                 if tool == .hsl { model.cancelHSLTarget(); model.hslTargetEnabled = false }
+                if tool == .whiteBalance { model.cancelWBProbe(); model.wbEyedropperEnabled = false }
                 ParameterValueField.cancelPendingInputs()
                 collapsedTool = tool
             } else {
@@ -288,8 +289,11 @@ struct AdjustmentDock: View {
     }
 
     private var whiteBalance: some View {
-        VStack(spacing: 4) {
-            if model.settings.isHDREditing {
+        let isRaster = model.file.map(RenderEngine.isRasterInput) == true
+        let isRaw = !isRaster && !model.settings.isHDREditing
+        let isCalibratedRaw = !isRaw || model.settings.asShotWhiteBalance != nil
+        return VStack(spacing: 4) {
+            if model.settings.isHDREditing || isRaster {
                 Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
             } else {
                 Picker(L10n.text("白平衡"), selection: Binding(get: { model.settings.whiteBalanceMode }, set: { mode in
@@ -299,13 +303,45 @@ struct AdjustmentDock: View {
                     ForEach(WhiteBalanceMode.allCases) { Text($0.title).tag($0) }
                 }.controlSize(.small).id(localizationLocale.identifier)
             }
+            if !model.settings.isHDREditing {
+                HStack {
+                    Button {
+                        model.cancelWBProbe()
+                        model.wbEyedropperEnabled.toggle()
+                    } label: {
+                        Label(L10n.text("白平衡吸管"), systemImage: "eyedropper")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(model.wbEyedropperEnabled ? .yellow : .secondary)
+                    .disabled(!model.canUseWBProbe || model.result == nil)
+                    .accessibilityIdentifier("wb.eyedropper")
+                    .accessibilityValue(L10n.text(model.wbEyedropperEnabled ? "开启" : "关闭"))
+                    Spacer(minLength: 0)
+                }
+                if let noticeText = wbProbeNoticeText {
+                    Text(noticeText).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("wb.eyedropper.status")
+                }
+            }
             parameterRow(.temperature)
             parameterRow(.tint)
-            if !model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil {
+            if isRaw && model.settings.asShotWhiteBalance == nil {
                 Text(L10n.text("此照片没有可用的相机白平衡校准。")).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }.disabled(!model.settings.isHDREditing && model.settings.asShotWhiteBalance == nil)
+        }.disabled(!isCalibratedRaw)
+    }
+
+    private var wbProbeNoticeText: String? {
+        if model.wbProbeSampling { return L10n.text("正在取色…") }
+        switch model.wbProbeNotice {
+        case .overexposed: return L10n.text("此像素不可取样。")
+        case .outside: return L10n.text("请在调整后的照片区域取色。")
+        case .stale: return L10n.text("预览已变化，请重新取色。")
+        case .unavailable, .failed: return L10n.text("取色失败，请重试。")
+        case nil: return nil
+        }
     }
 
     @ViewBuilder private var gradingResets: some View {
@@ -321,7 +357,18 @@ struct AdjustmentDock: View {
     private func parameterRow(_ parameter: AdjustmentParameter, title: String? = nil, showsTicks: Bool = false) -> some View {
         AdjustmentRow(parameter: parameter, value: Binding(
             get: { parameter.value(from: model.settings) },
-            set: { model.settings.set(parameter, to: $0) }
+            set: { newValue in
+                if parameter.isWhiteBalance, model.file.map(RenderEngine.isRasterInput) == true, !model.settings.isHDREditing {
+                    guard newValue.isFinite else { return }
+                    let range = parameter.spec(for: model.settings).range
+                    let clamped = min(max(newValue, range.lowerBound), range.upperBound)
+                    if parameter == .temperature { model.settings.temperature = clamped }
+                    else if parameter == .tint { model.settings.tint = clamped }
+                    model.settings.whiteBalanceMode = .asShot
+                } else {
+                    model.settings.set(parameter, to: newValue)
+                }
+            }
         ), showsTicks: showsTicks, specOverride: parameter.spec(for: model.settings), onEditingChanged: model.setInteracting,
         onAuto: parameter == .exposure ? model.autoExposure : nil,
         autoBusy: model.autoExposing, compact: true, titleOverride: title)

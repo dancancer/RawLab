@@ -143,6 +143,56 @@ public sealed class WpfSuiteTests
         WpfTestHost.Run(() => EditorShellChecks.Run(TestInputs.Results("screenshots"), Check));
 
     [StaFact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "editor-shell")]
+    public void ColorGradingV2AndWhiteBalancePanelsWork() =>
+        WpfTestHost.Run(() =>
+        {
+            _ = System.Windows.Application.Current ?? TestWindowState.CreateApplication();
+            var gradingPanel = new ColorGradingPanel();
+            ColorGradingSettings? updated = null;
+            EditorResetScope? resetScope = null;
+            gradingPanel.Changed += (value, _) => updated = value;
+            gradingPanel.ResetRequested += scope => resetScope = scope;
+            gradingPanel.Refresh(new ColorGradingSettings
+            {
+                Shadows = new(180, 20, -10),
+                Global = new(45, 25, 15),
+                Blending = 72,
+                Balance = -18
+            }, "photo-1");
+            gradingPanel.SelectGlobal();
+            Check(gradingPanel.GlobalSelected, "SelectGlobal activates the Global wheel tab");
+            Check(gradingPanel.LuminanceRow.Number.Text == "15" &&
+                  gradingPanel.BlendingRow.Number.Text == "72" &&
+                  gradingPanel.BalanceRow.Number.Text == "-18",
+                "ColorGradingPanel displays Global luminance, blending, and balance");
+            gradingPanel.LuminanceRow.Slider.Value = 30;
+            Check(updated?.Global.Luminance == 30, "Luminance slider updates active Global wheel");
+            gradingPanel.BlendingRow.Slider.Value = 85;
+            Check(updated?.Blending == 85, "Blending slider updates ColorGradingSettings.Blending");
+            gradingPanel.BalanceRow.Slider.Value = 25;
+            Check(updated?.Balance == 25, "Balance slider updates ColorGradingSettings.Balance");
+            gradingPanel.ResetZoneButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Check(resetScope == new EditorResetScope(EditorResetKind.GradingGlobal), "Global tab zone reset emits GradingGlobal scope");
+
+            var wbPanel = new WhiteBalancePanel();
+            var rasterAdjustments = new Adjustments();
+            rasterAdjustments.SetRelativeWhiteBalance(5200, 14);
+            bool? probeToggled = null;
+            wbPanel.EyedropperToggled += v => probeToggled = v;
+            wbPanel.Refresh(rasterAdjustments, enabled: true, isRaster: true, wbProbeAvailable: true, wbProbeEnabled: false, wbProbeNotice: "Sample notice");
+            Check(wbPanel.TemperatureRow.IsEnabled && wbPanel.TintRow.IsEnabled &&
+                  wbPanel.EyedropperButton.Visibility == System.Windows.Visibility.Visible &&
+                  wbPanel.EyedropperButton.IsEnabled &&
+                  wbPanel.ProbeStatusBlock.Visibility == System.Windows.Visibility.Visible,
+                "WhiteBalancePanel unlocks SDR raster sliders and shows WB eyedropper and status");
+            wbPanel.EyedropperButton.IsChecked = true;
+            wbPanel.EyedropperButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Check(probeToggled == true, "Clicking WB eyedropper emits EyedropperToggled(true)");
+        });
+
+    [StaFact]
     [Trait("Category", "Native")]
     [Trait("Suite", "geometry")]
     public void GeometryWorks() =>

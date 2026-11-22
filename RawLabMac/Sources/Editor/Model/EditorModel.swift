@@ -172,6 +172,10 @@ final class EditorModel: ObservableObject {
     @Published var hslTargetInteraction = HSLTargetInteraction()
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
+    enum WBProbeNotice: Equatable { case overexposed, outside, stale, unavailable, failed }
+    @Published var wbEyedropperEnabled = false
+    @Published var wbProbeSampling = false
+    @Published var wbProbeNotice: WBProbeNotice?
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
     var hslAcceptedRequest: RenderRequest<RenderWork>?
@@ -183,6 +187,7 @@ final class EditorModel: ObservableObject {
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+        wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
     } }

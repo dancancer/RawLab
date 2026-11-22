@@ -230,7 +230,7 @@ internal static class HDRNative
 
     internal static (uint Width,uint Height) GeometrySize(uint width,uint height,GeometrySettings geometry)
     {
-        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base;
+        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.Base;
         var diagnostic=Diagnostic();
         var status=Native.sony2fuji_hdr_geometry_size(width,height,ref request,out var w,out var h,ref diagnostic);
         if(status==StatusCancelled)throw new OperationCanceledException();

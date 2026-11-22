@@ -167,6 +167,22 @@ public sealed record ToneCurveParametric(
         if (!result.IsValid) throw new JsonException("Invalid parametric curve values");
         return result;
     }
+    internal Native.ToneCurveParametricConfig NativeConfig()
+    {
+        if (!IsValid) throw new ArgumentOutOfRangeException(nameof(ToneCurveParametric), "Invalid parametric curve");
+        return new() {
+            Version = 1,
+            StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.ToneCurveParametricConfig>(),
+            Highlights = (float)Highlights,
+            Lights = (float)Lights,
+            Darks = (float)Darks,
+            Shadows = (float)Shadows,
+            SplitShadow = (float)SplitShadow,
+            SplitMidtone = (float)SplitMidtone,
+            SplitHighlight = (float)SplitHighlight,
+            Reserved = 0
+        };
+    }
     internal void WriteObject(Utf8JsonWriter writer)
     {
         writer.WriteStartObject();

@@ -210,7 +210,7 @@ class EditorAdjustmentRulesTest {
         assertTrue(rules.prepareReset(EditorResetScope.Tool(15), dependent, context(shot = AsShotWhiteBalance(Float.NaN, 0f))) is EditorResetResult.Blocked)
         assertEquals(0f, candidate(EditorResetScope.Tool(15), dependent.copy(strength = 0f)).tint)
         assertEquals(dependent.copy(exposure = 0f), candidate(EditorResetScope.Tool(2), dependent.copy(exposure = 1f)))
-        assertEquals(dependent.copy(recipeID = null), candidate(EditorResetScope.Tool(15), dependent, context(PhotoInputKind.RASTER)))
+        assertEquals(dependent.copy(recipeID = null, tint = 0f), candidate(EditorResetScope.Tool(15), dependent, context(PhotoInputKind.RASTER)))
     }
 
     @Test fun outOfRangeOrUnknownRecipeIsBlockedAndLightResetNeverReplaysRecipe() {
@@ -352,5 +352,17 @@ class EditorAdjustmentRulesTest {
         val toolMenu = toolPresentation.style as EditorWorkspaceResetStyle.Menu
         assertEquals(listOf(EditorResetScope.Tool(24), EditorResetScope.All), toolMenu.items.map { it.scope })
         assertTrue(toolMenu.items.all { it.isEnabled })
+    }
+
+    @Test fun rasterRelativeWhiteBalanceMarksColorAndResetsToNeutral() {
+        val ctx = context(PhotoInputKind.RASTER)
+        val relative = EditSettings(customWb = false, temperature = 5600f, tint = -12f)
+        assertTrue(rules.isModified(EditorResetScope.Tool(8), relative, ctx))
+        assertTrue(rules.isModified(EditorResetScope.Group(EditorAdjustmentGroup.COLOR), relative, ctx))
+        assertTrue(rules.isModified(EditorResetScope.All, relative, ctx))
+        val afterWb = candidate(EditorResetScope.Tool(8), relative, ctx)
+        assertFalse(afterWb.customWb)
+        assertEquals(6500f, afterWb.temperature, 0f)
+        assertEquals(0f, afterWb.tint, 0f)
     }
 }

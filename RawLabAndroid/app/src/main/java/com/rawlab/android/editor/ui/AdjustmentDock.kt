@@ -64,6 +64,8 @@ import com.rawlab.android.editor.controls.ColorGradingControls
 import com.rawlab.android.editor.controls.ToneCurveControls
 import com.rawlab.android.editor.controls.HslTargetControls
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.WbProbeActions
+import com.rawlab.android.editor.controls.WbProbeControls
 import com.rawlab.android.settings.Film
 import com.rawlab.android.settings.editingBlackPoint
 import com.rawlab.android.settings.editingWhitePoint
@@ -113,7 +115,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onResetScope: (EditorResetScope) -> Unit, sideDock: Boolean, navigationEnabled: Boolean, compactNavigation: Boolean,
     onGeometryLock: () -> Unit = {}, onGeometrySwap: () -> Unit = {}, onGeometryGrid: () -> Unit = {},
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
-    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, hslTarget: HslTargetActions = HslTargetActions(),
+    onGradingZoneChange: (ColorGradingZone) -> Unit = {}, gradingGlobal: Boolean = false, onGradingGlobalChange: (Boolean) -> Unit = {},
+    hslTarget: HslTargetActions = HslTargetActions(), wbProbe: WbProbeActions = WbProbeActions(),
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
@@ -154,9 +157,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val filmItems = remember(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds) {
         browseLooks(state.looks, bundledFilms, lookCategory, lookQuery, state.recentLookIds)
     }
-    val calibrated = edits.isHDREditing || state.preview?.temperature?.isFinite() == true
-    val neutralTemperature = if (edits.isHDREditing) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
-    val neutralTint = if (edits.isHDREditing) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
+    val calibrated = edits.isHDREditing || !rawInput || state.preview?.temperature?.isFinite() == true
+    val neutralTemperature = if (edits.isHDREditing || !rawInput) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
+    val neutralTint = if (edits.isHDREditing || !rawInput) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
     var menuLookId by remember { mutableStateOf<String?>(null) }
     var renameLookId by remember { mutableStateOf<String?>(null) }
     var deleteLookId by remember { mutableStateOf<String?>(null) }
@@ -359,16 +362,38 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             8 -> {
                 if (!calibrated) Text(stringResource(R.string.wb_unavailable), Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                 else Column {
+                    if (!rawInput && !edits.isHDREditing) {
+                        Text(
+                            stringResource(R.string.adjustment_summary_relative_white_balance),
+                            Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("wb-relative-note"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!edits.isHDREditing) {
+                        WbProbeControls(wbProbe, parameterEnabled)
+                    }
                     NumericControl(R.string.temperature, edits.temperature, 2000f..50000f, "K", parameterEnabled,
-                        { value, dragging -> editParameter(edits.copy(customWb = true, temperature = value), dragging) },
-                        { editParameter(edits.copy(temperature = neutralTemperature,
-                            customWb = edits.recipeID == null && edits.tint != neutralTint), false) }, reciprocal = true,
-                            defaultValue = neutralTemperature)
+                        { value, dragging ->
+                            val nextCustomWb = if (rawInput || edits.isHDREditing) true else false
+                            editParameter(edits.copy(customWb = nextCustomWb, temperature = value), dragging)
+                        },
+                        {
+                            val nextCustomWb = if (rawInput || edits.isHDREditing) edits.recipeID == null && edits.tint != neutralTint else false
+                            editParameter(edits.copy(temperature = neutralTemperature, customWb = nextCustomWb), false)
+                        }, reciprocal = true, defaultValue = neutralTemperature)
                     NumericControl(R.string.tint, edits.tint, -150f..150f, "", parameterEnabled,
-                        { value, dragging -> editParameter(edits.copy(customWb = if (edits.recipeID == null) true else edits.customWb, tint = value), dragging) },
-                        { editParameter(edits.copy(tint = if (edits.recipeID == null) neutralTint else 0f,
-                            customWb = edits.customWb && edits.temperature != neutralTemperature), false) },
-                            defaultValue = if (edits.recipeID == null) neutralTint else 0f)
+                        { value, dragging ->
+                            val nextCustomWb = if (rawInput || edits.isHDREditing) {
+                                if (edits.recipeID == null) true else edits.customWb
+                            } else false
+                            editParameter(edits.copy(customWb = nextCustomWb, tint = value), dragging)
+                        },
+                        {
+                            val nextTint = if (edits.recipeID == null || !rawInput) neutralTint else 0f
+                            val nextCustomWb = if (rawInput || edits.isHDREditing) edits.customWb && edits.temperature != neutralTemperature else false
+                            editParameter(edits.copy(tint = nextTint, customWb = nextCustomWb), false)
+                        }, defaultValue = if (edits.recipeID == null || !rawInput) neutralTint else 0f)
                 }
             }
             11 -> if (edits.isHDREditing) {
@@ -385,7 +410,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled, onReset = { resetParameter(EditorResetScope.Tool(13)) }) { value, dragging ->
                 editParameter(edits.withEditingEffects(value), dragging)
             }
-            21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange) { value, dragging ->
+            21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange,
+                globalSelected = gradingGlobal, onGlobalSelectedChange = onGradingGlobalChange) { value, dragging ->
                 editParameter(edits.withEditingGrading(value), dragging)
             }
             14 -> Column {

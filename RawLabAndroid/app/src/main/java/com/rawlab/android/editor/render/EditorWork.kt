@@ -111,6 +111,8 @@ internal sealed interface Work {
         val includeNeutral: Boolean = true, val tileKey: DetailTileKey? = null) : Work
     data class HslProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
         val token: Long, val axis: Int, val x: Float, val y: Float) : Work
+    data class WbProbe(val preview: Preview, val before: EditSettings, val revision: HslTargetRevision,
+        val token: Long, val x: Float, val y: Float) : Work
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,
         val gpuMode: Int, val sourceRevision: Long, val edge: Int = 1600) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
@@ -126,6 +128,7 @@ internal sealed interface WorkResult {
     data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
+    data class WbProbe(val request: Work.WbProbe, val sample: com.rawlab.android.engine.NativeProcessor.WbProbeSample) : WorkResult
     data class CameraHDRPreflight(val request: Work.CameraHDRPreflight) : WorkResult
     data object Export : WorkResult
     data class AutoExposure(val request: Work.AutoExposure, val exposure: Float) : WorkResult

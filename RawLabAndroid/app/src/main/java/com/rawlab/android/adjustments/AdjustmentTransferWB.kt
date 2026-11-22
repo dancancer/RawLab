@@ -99,6 +99,15 @@ internal object AdjustmentTransferWB {
         val temperature = payload[AdjustmentField.TEMPERATURE]
         val tint = payload[AdjustmentField.TINT]
         if (selected == AdjustmentField.WHITE_BALANCE) {
+            if (!context.isRaw && !payload.source.isRaw) {
+                val temp = temperature?.number?.toFloat()
+                val t = tint?.number?.toFloat()
+                return if (mode == "relative" && temp != null && t != null) {
+                    result.copy(customWb = false, temperature = temp, tint = t)
+                } else {
+                    result.copy(customWb = false, temperature = 6500f, tint = 0f)
+                }
+            }
             val cameraMode = mode == "camera" || mode == "none" && payload.source.recipe != null
             val desired = resolved(cameraMode, temperature!!.number, tint!!.number ?: 0.0,
                 payload.source.recipe != null || mode == "camera", payload.source.recipe, context)
@@ -112,7 +121,20 @@ internal object AdjustmentTransferWB {
             } else if (context.isRaw) result = applyResolved(desired, result, context)
             return result
         }
-        if (!context.isRaw) return result
+        if (!context.isRaw) {
+            if (payload.source.isRaw) return result
+            if (mode == "none") {
+                if (temperature?.number != null || tint?.number != null) {
+                    throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "select white balance mode with temperature/tint")
+                }
+                return result.copy(customWb = false, temperature = 6500f, tint = 0f)
+            }
+            return result.copy(
+                customWb = false,
+                temperature = temperature?.number?.toFloat() ?: result.temperature,
+                tint = tint?.number?.toFloat() ?: result.tint,
+            )
+        }
         val cameraMode = mode?.let { it != "temperature" } ?: !target.customWb
         if (temperature != null && if (cameraMode) temperature != AdjustmentValue.Null else temperature.number == null)
             throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "select white balance mode with temperature")

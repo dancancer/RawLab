@@ -81,6 +81,10 @@ RenderStatus Pipeline::loadRawImage(
         ":" + std::to_string(static_cast<int>(rawExposureMode_)) + ":" + std::to_string(rawNoiseReduction);
     for (float multiplier : params.wbMul) key += ":" + std::to_string(multiplier);
     key += aiKey;
+    if (useAI) {
+        const float blend = std::clamp(aiDenoiseBlend_, 0.0f, 1.0f) + 0.0f;
+        key += ":ai-blend:" + std::to_string(blend);
+    }
     if (params.wbMode == RenderWhiteBalanceMode::Temperature)
         key += ":" + std::to_string(params.temperature) + ":" + std::to_string(params.tint);
     std::string lensKey;
@@ -138,7 +142,10 @@ RenderStatus Pipeline::loadRawImage(
             RAWBayerSource metadata;
             const bool bayer = processor.getBayerMetadata(metadata);
             prepared = runtime_->ai->takeResult(params.inputPath.c_str(), wbOptions, bayer ? &metadata : nullptr, aiSourceIdentity);
-            if (!prepared->isSceneRGB()) options.bayerOverride = &prepared->bayer;
+            if (!prepared->isSceneRGB()) {
+                prepared->bayer.blend = std::clamp(aiDenoiseBlend_, 0.0f, 1.0f);
+                options.bayerOverride = &prepared->bayer;
+            }
         }
 #endif
         ImageData decoded;
@@ -166,7 +173,8 @@ RenderStatus Pipeline::loadRawImage(
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
         if (prepared && prepared->isSceneRGB()) {
             ai::applySceneRGBCorrection(decoded, prepared->scene, ColorSpace::AdobeRGB,
-                std::exp2(processor.getBaselineExposureEV() + options.exposure) * options.brightness);
+                std::exp2(processor.getBaselineExposureEV() + options.exposure) * options.brightness,
+                std::clamp(aiDenoiseBlend_, 0.0f, 1.0f));
             prepared.reset();
         }
 #endif
@@ -189,6 +197,28 @@ RenderStatus Pipeline::loadRawImage(
         baselineEv_ = anchoredPreview ? previewCameraEv_ : processor.getBaselineExposureEV();
         metadataEv_ = processor.getMetadataExposureEV();
         calibratedWb_ = processor.getAsShotWhiteBalance(asShotTemperature_, asShotTint_);
+        hasCachedRawWb_ = false;
+        double wbFirst[3][3]{}, wbSecond[3][3]{};
+        double wbFirstTemp = 0.0, wbSecondTemp = 0.0;
+        float rgbCam[3][3]{};
+        float wbUsed[3]{1.0f, 1.0f, 1.0f};
+        if (calibratedWb_ && !normalX3f &&
+            processor.getWhiteBalanceCalibration(wbFirst, wbSecond, wbFirstTemp, wbSecondTemp) &&
+            processor.getLastRgbCam(rgbCam) &&
+            processor.getLastWbUsed(wbUsed)) {
+            std::array<std::array<double, 3>, 3> firstMat{}, secondMat{};
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 3; ++c) {
+                    firstMat[r][c] = wbFirst[r][c];
+                    secondMat[r][c] = wbSecond[r][c];
+                    cachedRgbCam_[r][c] = rgbCam[r][c];
+                }
+                cachedWbUsed_[r] = wbUsed[r];
+            }
+            cachedRawWb_ = CameraWhiteBalance(firstMat, secondMat, wbFirstTemp, wbSecondTemp);
+            cachedBaselineEv_ = baselineEv_;
+            hasCachedRawWb_ = cachedRawWb_.available();
+        }
         if (!normalX3f) {
             std::string wbFileKey;
             if (buildFileIdentityKey(params.inputPath.c_str(), wbFileKey)) {
@@ -221,6 +251,21 @@ RenderStatus Pipeline::loadRawImage(
     *space = ColorSpace::AdobeRGB;
     *isLinear = true;
     return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::loadRawForWbProbe(const RenderParams& params) {
+    ImageData unused;
+    ColorSpace space = ColorSpace::AdobeRGB;
+    bool isLinear = true;
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    if (aiEnabled()) {
+        try {
+            return loadRawImage(params, unused, &space, &isLinear, false, true);
+        } catch (const ai::NotReady&) {
+        }
+    }
+#endif
+    return loadRawImage(params, unused, &space, &isLinear, false, false);
 }
 
 } // namespace sony2fuji

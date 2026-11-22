@@ -234,6 +234,24 @@ void color() {
     near(luminance(next.hdr.pixels[4]), 4, "HDR grading changed luminance");
     require(next.hdr.pixels[3].b > next.hdr.pixels[2].b &&
         next.hdr.pixels[3].b - next.hdr.pixels[2].b < .001f, "HDR grading jumped at reference white");
+    // Color Grading v2 in HDR: per-zone luminance, Global wheel, blending/balance, validation
+    auto v2Source = source;
+    v2Source.hdr.pixels[0] = {0.01f, 0.01f, 0.01f};
+    v3.color = {};
+    v3.color.grading.wheels[2] = {0, 0, 60};
+    next = renderHDRPair(v2Source, v3);
+    require(luminance(next.hdr.pixels[4]) > luminance(v2Source.hdr.pixels[4]), "HDR v2 highlight luminance did not brighten highlights");
+    require(next.hdr.pixels[0].r == v2Source.hdr.pixels[0].r, "HDR v2 highlight luminance touched dark shadow pixel");
+    v3.color = {};
+    v3.color.grading.global = {35, 50, 25};
+    v3.color.grading.blending = 80;
+    v3.color.grading.balance = -20;
+    next = renderHDRPair(v2Source, v3);
+    require(next.hdr.pixels[2].r > next.hdr.pixels[2].b && luminance(next.hdr.pixels[2]) > luminance(v2Source.hdr.pixels[2]),
+        "HDR v2 global wheel did not tint/lift mid-tone/white");
+    v3.color.grading.wheels[0].luminance = 150;
+    rejects([&] { renderHDRPair(source, v3); }, "invalid v2 grading luminance was accepted");
+    v3.color = {};
     v3.color.vibrance = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { renderHDRPair(source, v3); }, "invalid v3 color options were accepted");
 }

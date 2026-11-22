@@ -732,7 +732,7 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && !model.wbProbeActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
         let source = model.sourceRevision, axis = model.hslTargetAxis, hdr = model.settings.isHDREditing
@@ -745,13 +745,24 @@ struct EditorView: View {
             exit: exitHSLTarget)
     }
 
+    private var wbProbeInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "wb-\(source)-\(hdr)",
+            begin: { if current() { model.sampleWBProbe(at: $0) } },
+            change: { _ in },
+            end: {}, cancel: { if current() { model.cancelWBProbe() } },
+            key: { _ in }, reject: { if current() { model.rejectWBProbe() } },
+            exit: exitWBProbe)
+    }
+
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
         PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
-                    clipping: showMask && !model.hslTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+                    clipping: showMask && !model.hslTargetActive && !model.wbProbeActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
                     split: wipe ? $viewing.split : nil,
                     comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
-                    hslTarget: model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil,
-                    hslTargetPoint: model.hslTargetPoint,
+                    hslTarget: model.wbProbeActive && model.result?.image === frame.image ? wbProbeInput : (model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil),
+                    hslTargetPoint: model.hslTargetActive ? model.hslTargetPoint : nil,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
                     }, sourceHeight: model.result?.nativeHeight,
@@ -775,6 +786,10 @@ struct EditorView: View {
 
     private func exitHSLTarget() {
         model.cancelHSLTarget(); model.hslTargetEnabled = false
+    }
+
+    private func exitWBProbe() {
+        model.cancelWBProbe(); model.wbEyedropperEnabled = false
     }
 
     private func toggleInspector() {

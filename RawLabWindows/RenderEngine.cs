@@ -21,7 +21,7 @@ internal sealed partial class RenderEngine : IDisposable
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
     private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,int Mode,OriginalIdentity Raw,OriginalIdentity? Lut,HDRSettings? HDR,int? ProRAWDecodeVersion,string? SourceFingerprint);
+        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,double AIBlend,int Mode,OriginalIdentity Raw,OriginalIdentity? Lut,HDRSettings? HDR,int? ProRAWDecodeVersion,string? SourceFingerprint);
     private readonly string lensDatabase;
     private readonly AppPaths appPaths;
     private Stamp? lensStamp;
@@ -150,7 +150,7 @@ internal sealed partial class RenderEngine : IDisposable
         settings = prepared.Settings;
         EnsureInput(path);
         ApplyParams(path, settings, includeDenoise: false, validateAiX3f: true);
-        ConfigureAI(settings.AIDenoiseEnabled);
+        ConfigureAI(settings.AIDenoiseEnabled, settings.AIDenoiseStrength);
         var request = prepared.Request(path, null, 0, null);
         SetInput(ref request,path);
         aiNativeOperationStarted=true;
@@ -221,7 +221,7 @@ internal sealed partial class RenderEngine : IDisposable
             var key=new PreviewKey(
                 preparedRecipe is { } resolved ? resolved.Request(path,lut,2000,null) : settings.Request(path,lut,2000,null),
                 keySettings.Denoise,keySettings.Effects,keySettings.ToneControls,keySettings.Atmosphere,keySettings.ColorGrading,keySettings.Curve,keySettings.DisplayChromaDenoise,
-                keySettings.ExposureMode,keySettings.Hsl,keySettings.Lens,keySettings.Geometry,keySettings.Processing,keySettings.X3fMode,keySettings.MasterRecipeSettingsVersion,keySettings[Parameter.Strength],keySettings.ActiveAIDenoise,gpuMode,rawStamp,lutStamp,keySettings.HDR,keySettings.ProRAWDecodeVersion,sourceFingerprint);
+                keySettings.ExposureMode,keySettings.Hsl,keySettings.Lens,keySettings.Geometry,keySettings.Processing,keySettings.X3fMode,keySettings.MasterRecipeSettingsVersion,keySettings[Parameter.Strength],keySettings.ActiveAIDenoise,keySettings.AIDenoiseStrength,gpuMode,rawStamp,lutStamp,keySettings.HDR,keySettings.ProRAWDecodeVersion,sourceFingerprint);
             var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
             lastSourceFingerprint = sourceFingerprint;
             // HDR previews have a 2000px ceiling, including the viewport's native-size request.
@@ -498,12 +498,40 @@ internal sealed partial class RenderEngine : IDisposable
         settings = prepared.Settings;
         if (inputOverride == null) EnsureInput(path);
         ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path));
-        ConfigureAI(settings.AIDenoiseEnabled);
+        ConfigureAI(settings.AIDenoiseEnabled, settings.AIDenoiseStrength);
         Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
         Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
         var request = prepared.Request(path,lut,edge,output,longEdge);
         if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
         return (settings,request);
+    }
+    internal sealed record WbProbeSample(Native.WbProbeAvailability Availability, double Temperature, double Tint, uint ValidPixelCount, uint RejectedOverexposedCount);
+    internal WbProbeSample SampleWhiteBalance(string path, Adjustments settings, string? lut, int edge, double x, double y, uint windowSize = 3)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y) || x < 0 || x > 1 || y < 0 || y > 1)
+            return new(Native.WbProbeAvailability.Outside, 6500, 0, 0, 0);
+        BeginAIOperation("wb_probe", path);
+        try
+        {
+            var (_, request) = PrepareRequest(path, settings, lut, edge, false, null, null, true);
+            var query = new Native.WbProbeQuery {
+                Version = 1, StructSize = (uint)Marshal.SizeOf<Native.WbProbeQuery>(),
+                NormX = (float)x, NormY = (float)y, WindowSize = windowSize, Reserved = 0
+            };
+            var result = new Native.WbProbeResult {
+                Version = 1, StructSize = (uint)Marshal.SizeOf<Native.WbProbeResult>(),
+                SampledRgb = new float[3], WbMul = new float[3]
+            };
+            aiNativeOperationStarted = true;
+            var status = Native.sony2fuji_session_sample_wb_probe(session, ref request, ref query, ref result);
+            if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status, session);
+            return new((Native.WbProbeAvailability)result.Availability, result.Temperature, result.Tint, result.ValidPixelCount, result.RejectedOverexposedCount);
+        }
+        catch (Exception error) when (settings.ActiveAIDenoise && error is not OperationCanceledException && error is not AINotReadyException)
+        {
+            CaptureAIFailure(error);
+            throw;
+        }
     }
     internal HslTargetSample SampleHsl(string path,Adjustments settings,string? lut,int edge,bool interactive,HslTargetRevision revision,double x,double y)
     {

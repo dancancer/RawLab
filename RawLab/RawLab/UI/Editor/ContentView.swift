@@ -342,12 +342,16 @@ struct ContentView: View {
         .onChange(of: coordinator.selectedAdjustment) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.selectedHDRRenditionTool) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
@@ -357,6 +361,7 @@ struct ContentView: View {
             cancelSliderInteraction()
         }
         .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.wbEyedropperEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()

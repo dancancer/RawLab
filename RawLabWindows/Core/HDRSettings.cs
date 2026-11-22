@@ -231,7 +231,8 @@ public sealed record HDRSettings
         };
     }
 
-    internal Native.HDRRequestV8 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null)
+    internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null,
+        OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var tone = ToneSettings;
         var color = ColorSettings;
@@ -260,8 +261,19 @@ public sealed record HDRSettings
                 Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
             LookPath = look.AssetPath(lookDirectory), LookStrength = (float)look.Strength, LookSha256 = fingerprint
         };
-        return new() { Base = lookRequest, Red = tone.Curve.Channels.Red.NativeConfig(),
-            Green = tone.Curve.Channels.Green.NativeConfig(), Blue = tone.Curve.Channels.Blue.NativeConfig() };
+        var v8 = new Native.HDRRequestV8 {
+            Base = lookRequest,
+            Red = tone.Curve.Channels.Red.NativeConfig(),
+            Green = tone.Curve.Channels.Green.NativeConfig(),
+            Blue = tone.Curve.Channels.Blue.NativeConfig()
+        };
+        return new() {
+            Base = v8,
+            CurveApplyToLuminosity = ProcessingVersion >= 9 && tone.Curve.ApplyToLuminosity ? 1 : 0,
+            OutputSharpening = ProcessingVersion >= 9 ? (uint)outputSharpening : 0u,
+            ParametricCurve = tone.Curve.Parametric.NativeConfig(),
+            GradingV2 = color.Grading.NativeV2Config()
+        };
     }
 
     private Native.HDRRequest NativeRequest(HDRIntent intent, uint longEdge) => new() {
@@ -273,7 +285,8 @@ public sealed record HDRSettings
             5 => Marshal.SizeOf<Native.HDRRequestV5>(),
             6 => Marshal.SizeOf<Native.HDRRequestV6>(),
             7 => Marshal.SizeOf<Native.HDRRequestV7>(),
-            _ => Marshal.SizeOf<Native.HDRRequestV8>()
+            8 => Marshal.SizeOf<Native.HDRRequestV8>(),
+            _ => Marshal.SizeOf<Native.HDRRequestV9>()
         }),
         HDRProcessingVersion = (uint)ProcessingVersion, Intent = (uint)intent,
         ExposureEv = (float)Exposure, Temperature = (float)Temperature, Tint = (float)Tint,

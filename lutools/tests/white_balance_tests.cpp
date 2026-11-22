@@ -65,6 +65,116 @@ int main(int argc,char** argv) {
           "Missing as-shot multipliers do not disable a supplied profile's custom WB");
     checkPass(!missingNeutral.multipliers(1000,0,gains,&profile),
           "A supplied profile does not bypass custom WB parameter validation");
+
+    // solveTemperatureTint inverse check against CameraWhiteBalance::multipliers
+    {
+        float targetGains[4]{};
+        checkPass(synthetic.multipliers(5200.0, 12.0, targetGains), "Compute forward gains at 5200K/+12");
+        const std::array<double,3> sampleCamRgb = {1.0 / targetGains[0], 1.0 / targetGains[1], 1.0 / targetGains[2]};
+        sony2fuji::TemperatureTint solved{};
+        checkPass(synthetic.solveTemperatureTint(sampleCamRgb, solved),
+                  "solveTemperatureTint succeeds for calibrated camera");
+        checkPass(std::abs(solved.temperature - 5200.0) < 15.0 && std::abs(solved.tint - 12.0) < 0.5,
+                  "solveTemperatureTint recovers 5200K / +12 within tolerance");
+    }
+
+    // SDR Raster Relative WB + WB Eyedropper on DisplayBuffer + Auto Exposure + Zero Bypass
+    {
+        sony2fuji_session* rasterSession = nullptr;
+        checkPass(sony2fuji_session_create(&rasterSession) == SONY2FUJI_STATUS_OK && rasterSession != nullptr,
+                  "Create session for raster WB tests");
+        // 8x8 raster image: left warm/bluish neutralizable patch, top-right overexposed clipped pixels, mixed patch at x=0.5,y=0.25
+        constexpr int W = 8, H = 8;
+        std::vector<uint8_t> img(size_t(W) * H * 4, 0);
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                const size_t idx = (size_t(y) * W + x) * 4;
+                if (x >= 5 && y <= 2) {
+                    img[idx] = 255; img[idx + 1] = 255; img[idx + 2] = 255; img[idx + 3] = 255;
+                } else if (x == 4 && y == 1) {
+                    img[idx] = 160; img[idx + 1] = 140; img[idx + 2] = 110; img[idx + 3] = 255;
+                } else {
+                    img[idx] = 180; img[idx + 1] = 155; img[idx + 2] = 120; img[idx + 3] = 255;
+                }
+            }
+        }
+        sony2fuji_request rReq{};
+        rReq.version = SONY2FUJI_REQUEST_VERSION; rReq.struct_size = sizeof(rReq);
+        rReq.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+        rReq.input_pixels = img.data(); rReq.input_width = W; rReq.input_height = H;
+        rReq.input_pixel_format = SONY2FUJI_PIXEL_RGBA8;
+        rReq.wb_mode = SONY2FUJI_WB_CAMERA; rReq.temperature = 6500; rReq.tint = 0;
+        rReq.brightness = 1; rReq.contrast = 1; rReq.saturation = 1;
+        rReq.intent = SONY2FUJI_INTENT_FINAL; rReq.size_mode = SONY2FUJI_SIZE_NATIVE;
+        rReq.output_target = SONY2FUJI_TARGET_BUFFER; rReq.output_format = SONY2FUJI_OUTPUT_RGB8;
+
+        auto renderRaster = [&](const sony2fuji_request& req) {
+            sony2fuji_buffer buf{};
+            checkPass(sony2fuji_process(rasterSession, &req, &buf) == SONY2FUJI_STATUS_OK, "Raster render");
+            const auto* p = static_cast<const uint8_t*>(buf.data);
+            std::vector<uint8_t> out(p, p + buf.size_bytes);
+            sony2fuji_release_buffer(&buf);
+            return out;
+        };
+        const auto noneOut = renderRaster(rReq);
+        auto applyRasterRelativeWb = [&](double temp, double tint) {
+            const std::string json =
+                R"({"schema_version":17,"processing":{"family":"rawlab","version":3,"quality":"standard"},"input":{"path":"memory.png","type":"raster"},"edits":{"exposure":{"mode":"sensor","ev":0.0,"brightness":1.0},"white_balance":{"mode":"relative","relative_temperature":)" +
+                std::to_string(temp) + R"(,"relative_tint":)" + std::to_string(tint) +
+                R"(}},"output":{"path":"out.png","format":"png","size":{"mode":"native"}}})";
+            checkPass(sony2fuji_apply_params(rasterSession, json.c_str()) == SONY2FUJI_STATUS_OK,
+                      "Apply raster relative WB via canonical recipe");
+        };
+        applyRasterRelativeWb(6500.0, 0.0);
+        checkPass(renderRaster(rReq) == noneOut, "Raster Relative 6500K/0 tint zero-bypass matches neutral bit-identical");
+
+        // Probe warm gray card at center (0.25, 0.5)
+        sony2fuji_wb_probe_query q{SONY2FUJI_WB_PROBE_VERSION, sizeof(q), 0.25f, 0.5f, 3, 0};
+        sony2fuji_wb_probe_result res{};
+        res.version = SONY2FUJI_WB_PROBE_VERSION; res.struct_size = sizeof(res);
+        checkPass(sony2fuji_session_sample_wb_probe(rasterSession, &rReq, &q, &res) == SONY2FUJI_STATUS_OK, "Probe warm patch");
+        checkPass(res.availability == SONY2FUJI_WB_PROBE_AVAILABLE && res.valid_pixel_count == 9 && res.temperature < 6500.f,
+                  "Warm cast resolves cooler neutralizing relative Kelvin");
+
+        // Apply solved relative WB -> pixels neutralize
+        applyRasterRelativeWb(res.temperature, res.tint);
+        const auto neutralized = renderRaster(rReq);
+        checkPass(neutralized != noneOut, "Relative WB changes SDR raster output");
+        // Verify auto exposure accepts Relative WB on raster
+        float autoEv = 0;
+        checkPass(sony2fuji_session_estimate_auto_exposure(rasterSession, &rReq, &autoEv) == SONY2FUJI_STATUS_OK,
+                  "estimateAutoExposure accepts Relative WB on raster");
+
+        // All-clipped top-right corner returns OVEREXPOSED
+        sony2fuji_wb_probe_query qClip{SONY2FUJI_WB_PROBE_VERSION, sizeof(qClip), 0.85f, 0.1f, 3, 0};
+        sony2fuji_wb_probe_result resClip{};
+        resClip.version = SONY2FUJI_WB_PROBE_VERSION; resClip.struct_size = sizeof(resClip);
+        checkPass(sony2fuji_session_sample_wb_probe(rasterSession, &rReq, &qClip, &resClip) == SONY2FUJI_STATUS_OK &&
+                  resClip.availability == SONY2FUJI_WB_PROBE_OVEREXPOSED && resClip.valid_pixel_count == 0,
+                  "All-clipped 3x3 patch returns OVEREXPOSED");
+
+        // Partial-clipped patch around (4/7, 1/7) returns AVAILABLE with reduced valid_pixel_count
+        sony2fuji_wb_probe_query qPartial{SONY2FUJI_WB_PROBE_VERSION, sizeof(qPartial), 0.57f, 0.18f, 3, 0};
+        sony2fuji_wb_probe_result resPartial{};
+        resPartial.version = SONY2FUJI_WB_PROBE_VERSION; resPartial.struct_size = sizeof(resPartial);
+        checkPass(sony2fuji_session_sample_wb_probe(rasterSession, &rReq, &qPartial, &resPartial) == SONY2FUJI_STATUS_OK &&
+                  resPartial.availability == SONY2FUJI_WB_PROBE_AVAILABLE &&
+                  resPartial.valid_pixel_count > 0 && resPartial.rejected_overexposed_count > 0,
+                  "Partially clipped 3x3 patch filters out clipped pixels while remaining AVAILABLE");
+
+        // Post-geometry coordinate mapping: after quarter_turns=1, clipped top-right corner moves to bottom-right!
+        sony2fuji_geometry_config geom{};
+        geom.version = SONY2FUJI_GEOMETRY_CONFIG_VERSION; geom.struct_size = sizeof(geom);
+        geom.crop_width = 1.0f; geom.crop_height = 1.0f; geom.quarter_turns = 1;
+        checkPass(sony2fuji_session_set_geometry(rasterSession, &geom) == SONY2FUJI_STATUS_OK, "Set quarter_turns=1 geometry");
+        sony2fuji_wb_probe_query qRot{SONY2FUJI_WB_PROBE_VERSION, sizeof(qRot), 0.9f, 0.85f, 1, 0};
+        sony2fuji_wb_probe_result resRot{};
+        resRot.version = SONY2FUJI_WB_PROBE_VERSION; resRot.struct_size = sizeof(resRot);
+        checkPass(sony2fuji_session_sample_wb_probe(rasterSession, &rReq, &qRot, &resRot) == SONY2FUJI_STATUS_OK &&
+                  resRot.availability == SONY2FUJI_WB_PROBE_OVEREXPOSED,
+                  "WB probe applies post-geometry coordinate transform");
+        sony2fuji_session_destroy(rasterSession);
+    }
     if (argc<2) return rawlab::test::exitCode();
     if (rawlab::test::failureCount()) return 1;
     const char* rawPath=nullptr;
@@ -156,6 +266,28 @@ int main(int argc,char** argv) {
     request.wb_mode=SONY2FUJI_WB_TEMPERATURE; request.temperature=8500; render();
     sony2fuji_session_get_raw_exposure(session,&customBaseline,&metadata);
     checkPass(std::abs(baseline-customBaseline)<1e-5,"White balance leaves preview-matched exposure anchored to as-shot");
+
+    // Calibrated RAW WB eyedropper: sample at (0.5, 0.5), apply solved (temperature, tint), and verify idempotence
+    {
+        request.wb_mode = SONY2FUJI_WB_CAMERA; request.temperature = 6500; request.tint = 0;
+        sony2fuji_wb_probe_query rq{SONY2FUJI_WB_PROBE_VERSION, sizeof(rq), 0.5f, 0.5f, 3, 0};
+        sony2fuji_wb_probe_result rres{};
+        rres.version = SONY2FUJI_WB_PROBE_VERSION; rres.struct_size = sizeof(rres);
+        checkPass(sony2fuji_session_sample_wb_probe(session, &request, &rq, &rres) == SONY2FUJI_STATUS_OK,
+                  "Calibrated RAW WB probe succeeds");
+        if (rres.availability == SONY2FUJI_WB_PROBE_AVAILABLE) {
+            request.wb_mode = SONY2FUJI_WB_TEMPERATURE;
+            request.temperature = rres.temperature;
+            request.tint = rres.tint;
+            sony2fuji_wb_probe_result rres2{};
+            rres2.version = SONY2FUJI_WB_PROBE_VERSION; rres2.struct_size = sizeof(rres2);
+            checkPass(sony2fuji_session_sample_wb_probe(session, &request, &rq, &rres2) == SONY2FUJI_STATUS_OK &&
+                      rres2.availability == SONY2FUJI_WB_PROBE_AVAILABLE &&
+                      std::abs(rres2.temperature - rres.temperature) < 50.0f &&
+                      std::abs(rres2.tint - rres.tint) < 2.0f,
+                      "RAW WB eyedropper probe is idempotent across re-renders");
+        }
+    }
     sony2fuji_session_destroy(session);
     return rawlab::test::exitCode();
 }

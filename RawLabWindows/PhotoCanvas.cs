@@ -115,6 +115,12 @@ public sealed partial class PhotoCanvas : FrameworkElement
             if(HslTargetEnabled) {
                 if(draggingDivider)CancelHslPointer();else {BeginHslPointer(point);e.Handled=true;return;}
             }
+            if(WbProbeEnabled) {
+                if(draggingDivider)WbProbeCancelled?.Invoke();
+                else if(HslCoordinates(point) is {} wbSample)WbProbeClicked?.Invoke(wbSample);
+                else WbProbeRejected?.Invoke();
+                e.Handled=true;return;
+            }
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
             pressOrigin=point;panning=false;
@@ -125,7 +131,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
             var next=e.GetPosition(this);
             if(MoveHslPointer(next)){e.Handled=true;return;}
             if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
-            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : Cursors.Hand;
+            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : WbProbeEnabled ? Cursors.Cross : Cursors.Hand;
             if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
             if(drag is not {} point)return;
             if(!panning && (Math.Abs(next.X-pressOrigin.X)>SystemParameters.MinimumHorizontalDragDistance || Math.Abs(next.Y-pressOrigin.Y)>SystemParameters.MinimumVerticalDragDistance))
@@ -137,7 +143,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         LostKeyboardFocus+=(_,_)=>{CancelHslPointer();CancelHold();};
         TouchDown+=(_,_)=>{CancelHslPointer();CancelHold();};
         IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();else UpdateTransform();};
-        KeyDown+=(_,e)=> { if(HandleHslKey(e)){e.Handled=true;return;}if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        KeyDown+=(_,e)=> { if(HandleHslKey(e)){e.Handled=true;return;}if(WbProbeEnabled && e.Key==Key.Escape){WbProbeCancelled?.Invoke();e.Handled=true;return;}if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{CancelPointer();UpdateTransform();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
@@ -161,8 +167,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
             var unit=new Rect(0,0,1,1);dc.DrawImage(bitmap,unit);
             if(show && clipping!=null)dc.DrawImage(clipping,unit);
         }
-        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping && !HslTargetEnabled);
-        Draw(editedDrawing,image,mask,ShowClipping && !HslTargetEnabled);
+        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping && !HslTargetEnabled && !WbProbeEnabled);
+        Draw(editedDrawing,image,mask,ShowClipping && !HslTargetEnabled && !WbProbeEnabled);
     }
     private void UpdateTransform()
     {

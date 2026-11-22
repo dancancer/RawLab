@@ -340,9 +340,15 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         glUniform1i(context.uniform("hslActive"), params.hsl.active());
         glUniform3f(context.uniform("toneControls"),
             params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);
-        const auto grading=colorGradingCoefficients(params.colorGrading);
-        const float coefficients[]={grading[0].r,grading[0].g,grading[0].b,grading[1].r,grading[1].g,grading[1].b,grading[2].r,grading[2].g,grading[2].b};
-        glUniform3fv(context.uniform("colorGrading[0]"),3,coefficients);
+        const auto grading = colorGradingParameters(params.colorGrading);
+        const float coefficients[16] = {
+            grading.coefficients[0].r, grading.coefficients[0].g, grading.coefficients[0].b, grading.luminance[0],
+            grading.coefficients[1].r, grading.coefficients[1].g, grading.coefficients[1].b, grading.luminance[1],
+            grading.coefficients[2].r, grading.coefficients[2].g, grading.coefficients[2].b, grading.luminance[2],
+            grading.coefficients[3].r, grading.coefficients[3].g, grading.coefficients[3].b, grading.luminance[3]
+        };
+        glUniform4fv(context.uniform("colorGrading[0]"), 4, coefficients);
+        glUniform4f(context.uniform("colorGradingMix"), grading.blending, grading.balance, 0.0f, 0.0f);
         glUniform4fv(context.uniform("hslHue[0]"), 2, params.hsl.hue.data());
         glUniform4fv(context.uniform("hslSaturation[0]"), 2, params.hsl.saturation.data());
         glUniform4fv(context.uniform("hslLightness[0]"), 2, params.hsl.lightness.data());
