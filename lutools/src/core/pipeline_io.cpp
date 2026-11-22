@@ -295,6 +295,7 @@ RenderStatus Pipeline::finishOutput(
             rawProcessor_.reset();
             processorKey_.clear();
             rawCacheWbValid_ = false;
+            rawCacheAnchoredPreview_ = false;
         }
     }
     const auto status = finishGeometry(params, image, nativeWidth, nativeHeight);

@@ -126,6 +126,7 @@ RenderStatus Pipeline::loadRawImage(
         rawKey_.clear();
         rawCacheWbBaseKey_.clear();
         rawCacheWbValid_ = false;
+        rawCacheAnchoredPreview_ = false;
         if (!rawProcessor_ || processorKey_ != fileKey) {
             rawProcessor_.reset();
             processorKey_.clear();
@@ -255,6 +256,8 @@ RenderStatus Pipeline::loadRawImage(
             processor.getLastAppliedWhiteBalanceMultipliers(rawCacheAppliedWbMul_.data()) &&
             processor.getCameraToSrgbMatrix(rawCacheCamToSrgb_) &&
             processor.getAsShotWhiteBalanceMultipliers(rawCacheAsShotWbMul_.data());
+        rawCacheAnchoredPreview_ = rawExposureMode_ == RawExposureMode::Preview &&
+            (anchoredPreview || params.wbMode == RenderWhiteBalanceMode::Camera);
         if (rawExposureMode_ == RawExposureMode::Preview && params.wbMode == RenderWhiteBalanceMode::Camera) {
             previewExposureKey_ = previewExposureKey;
             previewCameraEv_ = baselineEv_;
@@ -274,6 +277,7 @@ RenderStatus Pipeline::loadRawImage(
         rawProcessor_.reset();
         processorKey_.clear();
         rawCacheWbValid_ = false;
+        rawCacheAnchoredPreview_ = false;
     }
     lensReport_ = rawLensReport_;
     if (copyImage) image = rawCache_;

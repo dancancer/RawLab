@@ -401,6 +401,7 @@ private:
     std::string processorKey_;
     std::string rawCacheWbBaseKey_;
     bool rawCacheWbValid_ = false;
+    bool rawCacheAnchoredPreview_ = false;
     std::array<float, 3> rawCacheAppliedWbMul_{1.0f, 1.0f, 1.0f};
     std::array<float, 3> rawCacheAsShotWbMul_{1.0f, 1.0f, 1.0f};
     float rawCacheCamToSrgb_[3][3]{};

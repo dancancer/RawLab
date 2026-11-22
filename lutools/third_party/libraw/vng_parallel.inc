@@ -121,6 +121,14 @@
           std::atomic<int> nextOffset{0};
           std::vector<std::thread> pool;
           pool.reserve(rowWorkers - 1);
+          struct ThreadJoinGuard {
+            std::vector<std::thread> &threads;
+            ~ThreadJoinGuard() {
+              for (auto &th : threads) {
+                if (th.joinable()) th.join();
+              }
+            }
+          } joinGuard{pool};
           const auto worker = [&]() {
             for (;;)
             {
@@ -131,7 +139,6 @@
           };
           for (unsigned t = 1; t < rowWorkers; ++t) pool.emplace_back(worker);
           worker();
-          for (auto &th : pool) th.join();
         }
 #endif
         // 这四行仍是原始双线性结果；下一批不能从已写回的 image 重读。

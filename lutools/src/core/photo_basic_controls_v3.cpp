@@ -32,7 +32,7 @@ std::vector<float> boxMean(const std::vector<float>& input, int width, int heigh
             }
         }
     });
-    constexpr int kColStrip = 32;
+    static constexpr int kColStrip = 32;
     const int strips = (width + kColStrip - 1) / kColStrip;
     parallelRowRanges(strips, height * kColStrip, [&](int firstStrip, int lastStrip) {
         for (int s = firstStrip; s < lastStrip; ++s) {

@@ -1409,7 +1409,8 @@ RenderStatus Pipeline::processImpl(
             std::string baseSourceKey, fileKey, wbBaseKey, previewExposureKey;
             const bool keysOk = buildRawCacheWbKeys(local, baseSourceKey, fileKey, wbBaseKey, previewExposureKey);
             const bool exposureOk = rawExposureMode_ != RawExposureMode::Preview ||
-                ((local.wbMode == RenderWhiteBalanceMode::Camera || local.wbMode == RenderWhiteBalanceMode::Temperature) &&
+                (rawCacheAnchoredPreview_ &&
+                 (local.wbMode == RenderWhiteBalanceMode::Camera || local.wbMode == RenderWhiteBalanceMode::Temperature) &&
                  previewExposureKey_ == previewExposureKey);
             if (keysOk && wbBaseKey == rawCacheWbBaseKey_ && exposureOk) {
                 bool sizeOk = std::pair{rawCache_.width, rawCache_.height} == rawNativeSize_;
