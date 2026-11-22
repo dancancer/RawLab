@@ -62,6 +62,27 @@ class BundledAssetBytesTests(unittest.TestCase):
                 self.assertEqual(attribute, "text")
                 self.assertEqual(value, "unset", "Byte-hashed bundled assets require -text")
 
+    def test_mcp_catalog_matches_repo_sources_without_external_paths(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "tools/mcp/src"))
+        from rawlab_mcp import catalog  # noqa: E402
+
+        catalog_src = (ROOT / "tools/mcp/src/rawlab_mcp/catalog.py").read_text(encoding="utf-8")
+        self.assertNotIn(".gemini", catalog_src)
+
+        repo_master = json.loads((ROOT / "Shared/master-recipes.json").read_text(encoding="utf-8"))
+        repo_bundled = json.loads((ROOT / "Shared/BundledLooks/catalog.json").read_text(encoding="utf-8"))
+        bundled_snapshot = json.loads((ROOT / "tools/mcp/src/rawlab_mcp/catalog_data.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(bundled_snapshot["master_recipes"], repo_master)
+        self.assertEqual(bundled_snapshot["bundled_looks"], repo_bundled)
+
+        listed = catalog.list_looks(category="all")
+        self.assertEqual(listed["counts"]["master_recipe"], len(repo_master))
+        self.assertEqual(listed["counts"]["bundled"], len(repo_bundled))
+        self.assertEqual(listed["counts"]["fuji_flog2"], 16)
+        self.assertEqual(listed["counts"]["hdr"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

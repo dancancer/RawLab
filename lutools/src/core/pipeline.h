@@ -275,6 +275,7 @@ public:
 
     // Core processing entry points
     RenderStatus process(const RenderParams& params, OwnedPixelBuffer* outBuffer);
+    RenderStatus processToImageData(const RenderParams& params, ImageData& outImage);
     RenderStatus previewLutCompatibility(const RenderParams& params, const char* configuration, OwnedPixelBuffer& outBuffer);
     RenderStatus createHslProbe(const RenderParams& params, uint64_t sourceRevision, uint64_t requestRevision, HslProbeData& outProbe);
     RenderStatus estimateAutoExposure(const RenderParams& params, float& outExposureEv);
@@ -286,7 +287,8 @@ private:
         OwnedPixelBuffer* outBuffer,
         ImageData* preHsl = nullptr,
         std::shared_ptr<LUT3D> previewLut = nullptr,
-        MigrationFrame* migrationFrame = nullptr
+        MigrationFrame* migrationFrame = nullptr,
+        ImageData* outImage = nullptr
     );
 
     // pipeline_raw.cpp
@@ -331,7 +333,8 @@ private:
         OwnedPixelBuffer* outBuffer,
         uint32_t nativeWidth,
         uint32_t nativeHeight,
-        MigrationFrame* migrationFrame = nullptr
+        MigrationFrame* migrationFrame = nullptr,
+        ImageData* outImage = nullptr
     );
 
     // pipeline_ai.cpp

@@ -171,6 +171,32 @@ public final class AdjustmentTransferSession {
         ledger.adoptProcessingMigration(record)
     }
 
+    @discardableResult
+    public func adoptExternalReload(
+        expected: MacPhotoEditRecord,
+        reloaded: MacPhotoEditRecord
+    ) -> AdjustmentTransferOutcome {
+        let key = reloaded.identity.path
+        guard expected.identity.path == key else {
+            return outcome(key, .conflict, error: AdjustmentCommitError.photoChanged)
+        }
+        if expected.state == reloaded.state {
+            ledger.remember(reloaded, advanceGeneration: false)
+            return outcome(key, .unchanged, saved: reloaded)
+        }
+        let known = ledger.knownRecord(forKey: key)
+        let before = (known?.identity == reloaded.identity ? known : nil) ?? expected
+        _ = ledger.record(
+            id: UUID(),
+            action: .edit,
+            fields: [],
+            displayName: "",
+            before: before,
+            after: reloaded
+        )
+        return outcome(key, .applied, saved: reloaded)
+    }
+
     @discardableResult public func resetToUnmodified(_ url: URL) throws -> MacPhotoEditRecord {
         _ = store.flushPendingCommits()
         let cleared = try store.resetToUnmodified(url)

@@ -182,6 +182,8 @@ final class EditorModel: ObservableObject {
         processingMigrationReceipt = nil
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
+        pendingExternalReload = nil
+        dismissedExternalReloadFingerprints.removeAll()
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
@@ -340,10 +342,16 @@ final class EditorModel: ObservableObject {
     }
     var confirmUnusableRecordReset: ((URL, String) -> Bool)?
     let editDirectory: URL
+    let presetDirectory: URL
     let batchJournal: MacBatchJournal
     var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
+    @Published var pendingExternalReload: PendingExternalReload?
+    @Published var presetLibraryRevision: UInt64 = 0
+    var dismissedExternalReloadFingerprints: Set<FileStatFingerprint> = []
+    var deferredExternalEditsCheck = false
+    var externalStoreWatcher: ExternalStoreFileWatcher?
     var lookLibrary: LookLibrary?
     let onUsage: (UsageEvent) -> Void
     var pendingImportEvent = false
@@ -376,6 +384,7 @@ final class EditorModel: ObservableObject {
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
+        self.presetDirectory = presetDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = MacBatchJournal(directory: batchDirectory)
         recentLooks = RecentLooks.load(from: recentLooksURL)
@@ -405,8 +414,9 @@ final class EditorModel: ObservableObject {
         }
         timer.resume()
         debounceTimer = timer
+        startExternalStoreWatcher()
     }
-    deinit { debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel() }
+    deinit { externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel() }
 }
 
 extension EditorModel {

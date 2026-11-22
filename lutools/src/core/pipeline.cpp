@@ -722,6 +722,31 @@ RenderStatus Pipeline::process(const RenderParams& params, OwnedPixelBuffer* out
     }
 }
 
+RenderStatus Pipeline::processToImageData(const RenderParams& params, ImageData& outImage) {
+    outImage = {};
+    try {
+        beginAiOperation("render");
+        const bool cancellable =
+            params.outputTarget == RenderOutputTarget::Buffer || params.intent == RenderIntent::Final;
+        ProcessingCancellationScope scope(cancellable ? cancellation_ : ProcessingCancellation{});
+        return processImpl(params, nullptr, nullptr, nullptr, nullptr, &outImage);
+    } catch (const ProcessingCancelled&) {
+        return RenderStatus::Cancelled;
+    } catch (const std::bad_alloc& error) {
+        return recordAiError(RenderStatus::OutOfMemory, error.what());
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    } catch (const ai::NotReady& error) {
+        return recordAiError(RenderStatus::AiNotReady, error.what());
+    } catch (const ai::Unsupported& error) {
+        return recordAiError(RenderStatus::Unsupported, error.what());
+#endif
+    } catch (const std::exception& error) {
+        return recordAiError(RenderStatus::ProcessingError, error.what());
+    } catch (...) {
+        return recordAiError(RenderStatus::ProcessingError, "Unknown native AI failure");
+    }
+}
+
 RenderStatus Pipeline::previewLutCompatibility(
     const RenderParams& params,
     const char* configuration,
@@ -1343,7 +1368,8 @@ RenderStatus Pipeline::processImpl(
     OwnedPixelBuffer* outBuffer,
     ImageData* preHsl,
     std::shared_ptr<LUT3D> previewLut,
-    MigrationFrame* migrationFrame
+    MigrationFrame* migrationFrame,
+    ImageData* outImage
 ) {
     x3fError_.clear();
     unsupportedReason_ = UnsupportedReason::None;
@@ -1353,7 +1379,7 @@ RenderStatus Pipeline::processImpl(
     geometryWidth_ = geometryHeight_ = 0;
     viewportRoiResult_ = {};
 
-    RenderStatus status = validateRenderParams(params, outBuffer != nullptr);
+    RenderStatus status = validateRenderParams(params, outBuffer != nullptr || outImage != nullptr);
     if (status != RenderStatus::Ok) return status;
 
     status = validateRenderParamsSize(params);
@@ -1808,7 +1834,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::Metal;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1847,7 +1873,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::Gles;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1881,7 +1907,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::D3d11;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1948,7 +1974,7 @@ RenderStatus Pipeline::processImpl(
     checkProcessingCancellation();
     applyPhotoEffects(image, photoEffects_);
 
-    return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+    return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
 }
 
 } // namespace sony2fuji

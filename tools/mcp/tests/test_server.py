@@ -62,7 +62,18 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
             tools = (await client.list_tools()).tools
             self.assertEqual({tool.name for tool in tools}, {
                 "capabilities", "validate_recipe", "image_info", "render_preview", "export_photo",
+                "diagnose_image", "list_catalog_looks",
             })
+            # Write/sync tools MUST NOT be exposed or callable by default
+            self.assertNotIn("save_preset", {tool.name for tool in tools})
+            self.assertNotIn("sync_photo_edit", {tool.name for tool in tools})
+            denied = await client.call_tool("save_preset", {"name": "Blocked", "values": {"light.exposure": 0.5}})
+            self.assertTrue(denied.is_error)
+
+            catalog_res = await client.call_tool("list_catalog_looks", {"category": "master_recipe"})
+            self.assertFalse(catalog_res.is_error, str(catalog_res))
+            self.assertEqual(catalog_res.structured_content["result"]["total_count"], 14)
+
             result = await client.call_tool("capabilities")
             self.assertFalse(result.is_error)
             self.assertEqual(result.structured_content["result"]["recipe_versions"], [1, 2, 3, 4])
@@ -109,6 +120,50 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.is_error)
                 self.assertEqual(result.structured_content["error"]["code"], "invalid_argument")
                 self.assertIsNone(result.structured_content["error"]["status"])
+
+    async def test_gui_sync_enabled_exposes_nine_tools_and_writes_inside_data_dir(self):
+        f = self.fixture
+        data_dir = f.root / "gui-sync-appdata"
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", SERVER_MODULE, "--cli", str(f.cli),
+                  "--read-root", str(f.read_root), "--write-root", str(f.write_root),
+                  "--enable-gui-sync", "--data-dir", str(data_dir)],
+            env={**os.environ, "PYTHONPATH": TEST_PYTHONPATH,
+                 "RAWLAB_MCP_TEST_CLI_SCRIPT": str(f.cli),
+                 "FAKE_ARGV_LOG": str(f.argv_log), "FAKE_RECIPE_LOG": str(f.recipe_log)},
+        )
+        async with Client(params) as client:
+            tools = (await client.list_tools()).tools
+            self.assertEqual({tool.name for tool in tools}, {
+                "capabilities", "validate_recipe", "image_info", "render_preview", "export_photo",
+                "diagnose_image", "list_catalog_looks", "save_preset", "sync_photo_edit",
+            })
+            extra_rejected = await client.call_tool("save_preset", {
+                "name": "P", "values": {"light.exposure": 0.2}, "unexpected": True,
+            })
+            self.assertTrue(extra_rejected.is_error)
+            self.assertEqual(extra_rejected.structured_content["error"]["code"], "invalid_argument")
+
+            saved = await client.call_tool("save_preset", {
+                "name": "Server Preset", "values": {"light.exposure": 0.25},
+            })
+            self.assertFalse(saved.is_error, str(saved))
+            self.assertTrue((data_dir / "Presets" / "presets.json").is_file())
+
+            saved_hdr = await client.call_tool("save_preset", {
+                "name": "Server HDR v9",
+                "hdr_processing_version": 9,
+                "values": {
+                    "hdr.relative_temperature": 6000.0,
+                    "hdr.peak_limit_ev": 2.5,
+                    "light.curve.parametric": {
+                        "highlights": 5.0, "lights": 0.0, "darks": 0.0, "shadows": -5.0,
+                        "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
+                    },
+                },
+            })
+            self.assertFalse(saved_hdr.is_error, str(saved_hdr))
 
 
 if __name__ == "__main__":

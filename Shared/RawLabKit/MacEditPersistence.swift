@@ -41,6 +41,14 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     public static let registryCacheCapacity = 32
 
+    private let writeFingerprintLock = NSLock()
+    private var _lastWriteFingerprint: FileStatFingerprint?
+    public var lastWriteFingerprint: FileStatFingerprint? {
+        writeFingerprintLock.lock()
+        defer { writeFingerprintLock.unlock() }
+        return _lastWriteFingerprint
+    }
+
     private final class RegistryCache: @unchecked Sendable {
         private struct Entry {
             let fingerprint: FileStatFingerprint
@@ -399,6 +407,10 @@ public final class MacEditPersistence: @unchecked Sendable {
             throw error
         }
         let postWritePath = Self.resolvedRegistryFileURL(forDirectory: directory).path
+        let writtenFingerprint = FileStatFingerprint(resolvedPath: postWritePath)
+        writeFingerprintLock.lock()
+        _lastWriteFingerprint = writtenFingerprint
+        writeFingerprintLock.unlock()
         Self.registryCache.updateAfterWrite(path: postWritePath, registry: updated)
         if postWritePath != preWritePath {
             Self.registryCache.invalidate(path: preWritePath)

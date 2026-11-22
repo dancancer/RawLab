@@ -312,7 +312,10 @@ public sealed class AdjustmentPayload
             JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true, _ => false
         };
     }
-    public string ToJson()
+    public string ToJson() => SerializeJson(indented: false);
+    public string ToIndentedJson() => SerializeJson(indented: true);
+
+    private string SerializeJson(bool indented)
     {
         var source = new Dictionary<string, object?> {
             ["identifier"] = Source.Identifier, ["is_raw"] = Source.IsRaw,
@@ -323,7 +326,7 @@ public sealed class AdjustmentPayload
         return JsonSerializer.Serialize(new {
             payload_version = PayloadVersion, scope_version = ScopeVersion, source,
             values = Values.ToDictionary(p => p.Key.ID(), p => p.Value)
-        });
+        }, indented ? new JsonSerializerOptions { WriteIndented = true } : null);
     }
     public static AdjustmentPayload Parse(string json)
     {

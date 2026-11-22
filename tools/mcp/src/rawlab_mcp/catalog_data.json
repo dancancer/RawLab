@@ -1,0 +1,1872 @@
+{
+  "master_recipes": [
+    {
+      "contrastDelta": -5,
+      "exposureDelta": 0.4,
+      "highlightsDelta": -15,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          1,
+          1,
+          0,
+          4,
+          1,
+          0,
+          0
+        ]
+      },
+      "id": "hamada_daylight_v2",
+      "lutFileName": "hamada_daylight_pro_v2.cube",
+      "name": "滨田英明",
+      "saturationDelta": -8,
+      "shadowsDelta": 20,
+      "subtitle": "日系青空 · 高调日光",
+      "summary": "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色",
+      "tintDelta": 5,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -1,
+        "vibrance": 4
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.1,
+            0.115
+          ],
+          [
+            0.35,
+            0.365
+          ],
+          [
+            0.6,
+            0.61
+          ],
+          [
+            0.85,
+            0.825
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 200,
+          "saturation": 1
+        },
+        "midtones": {
+          "hue": 35,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 45,
+          "saturation": 2
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -15,
+        "exposureDelta": 0.4,
+        "highlightsDelta": -15,
+        "saturationDelta": -8,
+        "shadowsDelta": 20,
+        "tintDelta": 5
+      }
+    },
+    {
+      "contrastDelta": 22,
+      "exposureDelta": 0,
+      "highlightsDelta": -35,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "takashi_yasui_zen",
+      "lutFileName": "takashi_yasui_zen.cube",
+      "name": "保井崇志",
+      "saturationDelta": -15,
+      "shadowsDelta": -25,
+      "subtitle": "极简禅意 · 日系街拍",
+      "summary": "强明暗对比，深沉冷青暗部，大面积克制黑阶与点睛暖光",
+      "tintDelta": 2,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -2,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.1,
+            0.11
+          ],
+          [
+            0.4,
+            0.41
+          ],
+          [
+            0.8,
+            0.78
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 200,
+          "saturation": 4
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 42,
+          "saturation": 5
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 30,
+        "exposureDelta": 0,
+        "highlightsDelta": -35,
+        "saturationDelta": -15,
+        "shadowsDelta": -25,
+        "tintDelta": 2
+      }
+    },
+    {
+      "contrastDelta": -8,
+      "exposureDelta": 0.35,
+      "highlightsDelta": -25,
+      "hsl": {
+        "hue": [
+          0,
+          1,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          1,
+          2,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "takahiro_sakai_blue",
+      "lutFileName": "takahiro_sakai_blue.cube",
+      "name": "酒井贵弘",
+      "saturationDelta": -10,
+      "shadowsDelta": 35,
+      "subtitle": "空气清透 · 少女淡蓝",
+      "summary": "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光",
+      "tintDelta": 4,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": -1,
+        "whitePoint": -1,
+        "vibrance": 3
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.15,
+            0.13
+          ],
+          [
+            0.4,
+            0.41
+          ],
+          [
+            0.65,
+            0.68
+          ],
+          [
+            0.85,
+            0.86
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 205,
+          "saturation": 1.5
+        },
+        "midtones": {
+          "hue": 30,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 45,
+          "saturation": 1
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -15,
+        "exposureDelta": 0.35,
+        "highlightsDelta": -25,
+        "saturationDelta": -10,
+        "shadowsDelta": 35,
+        "tintDelta": 4
+      }
+    },
+    {
+      "contrastDelta": 7,
+      "exposureDelta": 0.1,
+      "highlightsDelta": -30,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "withluke_epic",
+      "lutFileName": "withluke_epic.cube",
+      "name": "withluke",
+      "saturationDelta": -12,
+      "shadowsDelta": 25,
+      "subtitle": "史诗自然 · 雾气冷青",
+      "summary": "苍茫雪山与森林雾气，去除数码刺眼生绿，苔原冷绿与柔和暖金交织",
+      "tintDelta": -2,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": -1,
+        "whitePoint": -2,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.12,
+            0.115
+          ],
+          [
+            0.4,
+            0.405
+          ],
+          [
+            0.75,
+            0.76
+          ],
+          [
+            0.9,
+            0.89
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 205,
+          "saturation": 2
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 42,
+          "saturation": 2
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 10,
+        "exposureDelta": 0.1,
+        "highlightsDelta": -30,
+        "saturationDelta": -12,
+        "shadowsDelta": 25,
+        "tintDelta": -2
+      }
+    },
+    {
+      "contrastDelta": 15,
+      "exposureDelta": 0.15,
+      "highlightsDelta": -25,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "daniel_casson_autumn",
+      "lutFileName": "daniel_casson_autumn.cube",
+      "name": "Daniel Casson",
+      "saturationDelta": 5,
+      "shadowsDelta": 25,
+      "subtitle": "乡村秋日 · 古典油画",
+      "summary": "英国乡村秋日油画风，厚重大地色，枯草金黄与深林墨绿交织",
+      "tintDelta": -3,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": 0,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "legacy",
+        "points": []
+      },
+      "grading": {
+        "shadows": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "midtones": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 0,
+          "saturation": 0
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 15,
+        "exposureDelta": 0.15,
+        "highlightsDelta": -25,
+        "saturationDelta": 5,
+        "shadowsDelta": 25,
+        "tintDelta": -3
+      }
+    },
+    {
+      "contrastDelta": 18,
+      "exposureDelta": -0.2,
+      "highlightsDelta": -30,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "billy_dinh_cinema",
+      "lutFileName": "billy_dinh_cinema.cube",
+      "name": "Billy Dinh",
+      "saturationDelta": -10,
+      "shadowsDelta": -12,
+      "subtitle": "纽约电影 · 戏剧光影",
+      "summary": "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光",
+      "tintDelta": 2,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -2,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.15,
+            0.155
+          ],
+          [
+            0.45,
+            0.45
+          ],
+          [
+            0.75,
+            0.78
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 220,
+          "saturation": 3
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 45,
+          "saturation": 5
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 25,
+        "exposureDelta": -0.2,
+        "highlightsDelta": -30,
+        "saturationDelta": -10,
+        "shadowsDelta": -15,
+        "tintDelta": 2
+      }
+    },
+    {
+      "contrastDelta": 20,
+      "exposureDelta": 0,
+      "highlightsDelta": -40,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "rkrkrk_cyberpunk",
+      "lutFileName": "rkrkrk_cyberpunk.cube",
+      "name": "rkrkrk",
+      "saturationDelta": 9,
+      "shadowsDelta": 25,
+      "subtitle": "赛博朋克 · 极致反差",
+      "summary": "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞",
+      "tintDelta": 5,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -2,
+        "vibrance": 7
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.12,
+            0.12
+          ],
+          [
+            0.4,
+            0.405
+          ],
+          [
+            0.75,
+            0.76
+          ],
+          [
+            0.9,
+            0.89
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 215,
+          "saturation": 2
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 40,
+          "saturation": 2
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 25,
+        "exposureDelta": 0,
+        "highlightsDelta": -40,
+        "saturationDelta": 15,
+        "shadowsDelta": 25,
+        "tintDelta": 5
+      }
+    },
+    {
+      "contrastDelta": 0,
+      "exposureDelta": 0.15,
+      "highlightsDelta": -25,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "samalive_vintage",
+      "lutFileName": "samalive_vintage.cube",
+      "name": "Samalive",
+      "saturationDelta": 5,
+      "shadowsDelta": 20,
+      "subtitle": "油润复古 · 城市胶片",
+      "summary": "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感",
+      "tintDelta": 4,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -1,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.12,
+            0.11
+          ],
+          [
+            0.4,
+            0.405
+          ],
+          [
+            0.75,
+            0.765
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 200,
+          "saturation": 1
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 43,
+          "saturation": 3
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -5,
+        "exposureDelta": 0.15,
+        "highlightsDelta": -25,
+        "saturationDelta": 5,
+        "shadowsDelta": 20,
+        "tintDelta": 4
+      }
+    },
+    {
+      "contrastDelta": -6,
+      "exposureDelta": 0.1,
+      "highlightsDelta": -20,
+      "hsl": {
+        "hue": [
+          -1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          1,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0
+        ]
+      },
+      "id": "iwona_fairy_tale",
+      "lutFileName": "iwona_fairy_tale.cube",
+      "name": "Iwona",
+      "saturationDelta": -5,
+      "shadowsDelta": 15,
+      "subtitle": "童话油画 · 梦幻微光",
+      "summary": "童话绘本油画感，深邃沉静暗部，暖金柔光包裹与漫反射微光",
+      "tintDelta": 3,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -1,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.12,
+            0.115
+          ],
+          [
+            0.4,
+            0.41
+          ],
+          [
+            0.7,
+            0.73
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 215,
+          "saturation": 2
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 43,
+          "saturation": 4
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -15,
+        "exposureDelta": 0.1,
+        "highlightsDelta": -20,
+        "saturationDelta": -5,
+        "shadowsDelta": 15,
+        "tintDelta": 3
+      }
+    },
+    {
+      "contrastDelta": 10,
+      "exposureDelta": 0.1,
+      "highlightsDelta": -35,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "cinestill_800t",
+      "lutFileName": "cinestill_800t.cube",
+      "name": "CineStill 800T",
+      "saturationDelta": 7,
+      "shadowsDelta": 20,
+      "subtitle": "钨丝电影 · 红灯冷青",
+      "summary": "电影夜景胶片色调，红色灯光与深邃冷青绿暗部",
+      "tintDelta": -5,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": -3,
+        "vibrance": 3
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.12,
+            0.13
+          ],
+          [
+            0.4,
+            0.41
+          ],
+          [
+            0.75,
+            0.76
+          ],
+          [
+            0.9,
+            0.89
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 190,
+          "saturation": 2
+        },
+        "midtones": {
+          "hue": 40,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 35,
+          "saturation": 2
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 10,
+        "exposureDelta": 0.1,
+        "highlightsDelta": -35,
+        "saturationDelta": 10,
+        "shadowsDelta": 20,
+        "tintDelta": -5
+      }
+    },
+    {
+      "contrastDelta": -10,
+      "exposureDelta": 0.25,
+      "highlightsDelta": -20,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          2,
+          0,
+          0,
+          0,
+          1,
+          2,
+          1,
+          1
+        ]
+      },
+      "id": "wilson_lee_golden",
+      "lutFileName": "wilson_lee_golden.cube",
+      "name": "Wilson Lee",
+      "saturationDelta": 0,
+      "shadowsDelta": 20,
+      "subtitle": "暖调日系 · 漫射金光",
+      "summary": "加州阳光与日系胶片融合，城市漫射金光，通透温润微光感",
+      "tintDelta": 3,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": 0,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "legacy",
+        "points": []
+      },
+      "grading": {
+        "shadows": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "midtones": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 0,
+          "saturation": 0
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -10,
+        "exposureDelta": 0.25,
+        "highlightsDelta": -20,
+        "saturationDelta": 0,
+        "shadowsDelta": 20,
+        "tintDelta": 3
+      }
+    },
+    {
+      "contrastDelta": 10,
+      "exposureDelta": 0.2,
+      "highlightsDelta": -35,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "luizclas_portrait",
+      "lutFileName": "luizclas_portrait.cube",
+      "name": "Luiz Clas",
+      "saturationDelta": 5,
+      "shadowsDelta": 25,
+      "subtitle": "暖金光影 · 质感人像",
+      "summary": "黄金时刻质感大片，大光比下人物温润通透，深邃阴影与金黄发丝轮廓",
+      "tintDelta": 4,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": 0,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "legacy",
+        "points": []
+      },
+      "grading": {
+        "shadows": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "midtones": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 0,
+          "saturation": 0
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 10,
+        "exposureDelta": 0.2,
+        "highlightsDelta": -35,
+        "saturationDelta": 5,
+        "shadowsDelta": 25,
+        "tintDelta": 4
+      }
+    },
+    {
+      "contrastDelta": -20,
+      "exposureDelta": 0.15,
+      "highlightsDelta": -30,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "ivan_ivanchenko_twilight",
+      "lutFileName": "ivan_ivanchenko_twilight.cube",
+      "name": "Ivan Ivanchenko",
+      "saturationDelta": -5,
+      "shadowsDelta": 25,
+      "subtitle": "暮色黄昏 · 相邻色过渡",
+      "summary": "黄昏柔和微光，暖金高光与柔和青蓝暗部，低反差油画人像与相邻色呼应",
+      "tintDelta": 2,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": 0,
+        "whitePoint": 0,
+        "vibrance": 0
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "legacy",
+        "points": []
+      },
+      "grading": {
+        "shadows": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "midtones": {
+          "hue": 0,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 0,
+          "saturation": 0
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": -20,
+        "exposureDelta": 0.15,
+        "highlightsDelta": -30,
+        "saturationDelta": -5,
+        "shadowsDelta": 25,
+        "tintDelta": 2
+      }
+    },
+    {
+      "contrastDelta": 10,
+      "exposureDelta": 0,
+      "highlightsDelta": -35,
+      "hsl": {
+        "hue": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "lightness": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "saturation": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "id": "jungraphy_neon",
+      "lutFileName": "jungraphy_neon.cube",
+      "name": "Jungraphy",
+      "saturationDelta": 8,
+      "shadowsDelta": 20,
+      "subtitle": "霓虹都市 · 冷青粉紫",
+      "summary": "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影",
+      "tintDelta": 2,
+      "settingsVersion": 4,
+      "tone": {
+        "blackPoint": -1,
+        "whitePoint": -2,
+        "vibrance": 8
+      },
+      "atmosphere": {
+        "clarity": 0,
+        "dehaze": 0
+      },
+      "curve": {
+        "mode": "custom",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            0.15,
+            0.14
+          ],
+          [
+            0.45,
+            0.46
+          ],
+          [
+            0.75,
+            0.78
+          ],
+          [
+            0.9,
+            0.9
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "grading": {
+        "shadows": {
+          "hue": 205,
+          "saturation": 3
+        },
+        "midtones": {
+          "hue": 330,
+          "saturation": 0
+        },
+        "highlights": {
+          "hue": 330,
+          "saturation": 0
+        }
+      },
+      "legacyDefaults": {
+        "contrastDelta": 15,
+        "exposureDelta": 0,
+        "highlightsDelta": -35,
+        "saturationDelta": 15,
+        "shadowsDelta": 25,
+        "tintDelta": 8
+      }
+    }
+  ],
+  "bundled_looks": [
+    {
+      "id": "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65",
+      "name": "EKTAR 100 RawLab edition",
+      "fileName": "EKTAR_100_Phuket_v2_Strong_FLog2_FGamut_65.cube",
+      "artworkName": "ektar-100-phuket",
+      "sha256": "5ddd5c15d8e3ffcebf17c8203a61701d736bbbf7d8d404b4f986e1872fa8cea4",
+      "input": "F-Log2 / original F-Gamut / D65 / full range",
+      "output": "display-sRGB / BT.709 primaries / D65 / full range",
+      "license": "GPL-3.0-only",
+      "source": "experiments/ektar100-phuket-v2/generate.py"
+    },
+    {
+      "id": "RawLab_camera_contax_nd_std_sRGB_v1",
+      "name": "Contax ND STD",
+      "fileName": "RawLab_camera_contax_nd_std_sRGB_v1.cube",
+      "artworkName": "camera-contax-nd-std",
+      "sha256": "9c57857d8d981207e91de2249e5433ab4b6de0d9672f5baa17b890bf6239e36e",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "Contax_ND_STD_33_sRGB.cube"
+    },
+    {
+      "id": "RawLab_camera_lumix_s1r_vivid_sRGB_v1",
+      "name": "Lumix S1R Vivid",
+      "fileName": "RawLab_camera_lumix_s1r_vivid_sRGB_v1.cube",
+      "artworkName": "camera-lumix-s1r-vivid",
+      "sha256": "e214156869b05abdd60841957a2571db65f4361bdb51b580bfc6f18a8f778a60",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "Lumix_S1R_Vivid_sRGB_33.cube"
+    },
+    {
+      "id": "RawLab_camera_pentax_k5_reversal_sRGB_v1",
+      "name": "Pentax K-5 Reversal",
+      "fileName": "RawLab_camera_pentax_k5_reversal_sRGB_v1.cube",
+      "artworkName": "camera-pentax-k5-reversal",
+      "sha256": "2cea6db86c515ca806ec91912f5e635f63ece2e60c3468685b5e3ab7a360a4cf",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "Pentax_K5_Reversal_Film_33_sRGB.cube"
+    },
+    {
+      "id": "RawLab_camera_ricoh_gr2_hibw_sRGB_v1",
+      "name": "Ricoh GR II Hi-BW",
+      "fileName": "RawLab_camera_ricoh_gr2_hibw_sRGB_v1.cube",
+      "artworkName": "camera-ricoh-gr2-hibw",
+      "sha256": "f0ec1af222a43b8c38b7d9b6ba5e7a13625f5e74595109f4c5cf1162e30c8602",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "Ricoh_GR2_HiBW_33_sRGB.cube"
+    },
+    {
+      "id": "RawLab_camera_ricoh_gr2_vivid_sRGB_v1",
+      "name": "Ricoh GR II Vivid",
+      "fileName": "RawLab_camera_ricoh_gr2_vivid_sRGB_v1.cube",
+      "artworkName": "camera-ricoh-gr2-vivid",
+      "sha256": "852e4287e5be1930f2407d67bb9c39e87d2f939663e8d0f75627428d206dc2a3",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "Ricoh_GR2_VIVID_33_sRGB.cube"
+    },
+    {
+      "id": "RawLab_look_2383_sRGB_v1",
+      "name": "Kodak 2383 RGB",
+      "fileName": "RawLab_look_2383_sRGB_v1.cube",
+      "artworkName": "look-2383",
+      "sha256": "df618f7b6a3cb5668d679647f073c4fc9f1a255b61aac4607b8dda8846a57936",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_2383_constlclip.cube"
+    },
+    {
+      "id": "RawLab_look_2393_sRGB_v1",
+      "name": "Kodak 2393 RGB",
+      "fileName": "RawLab_look_2393_sRGB_v1.cube",
+      "artworkName": "look-2393",
+      "sha256": "5a94f032887b9b24de46515dbceb327b2259347762113370c77324818568cd72",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_2393_constlclip.cube"
+    },
+    {
+      "id": "RawLab_look_bw_400_cn_sRGB_v1",
+      "name": "Kodak BW 400 CN",
+      "fileName": "RawLab_look_bw_400_cn_sRGB_v1.cube",
+      "artworkName": "look-bw-400-cn",
+      "sha256": "b87259a26b6490c013978996b595caa99dbca025b72e924d5695107748a6ef0b",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_bw_400_cn.cube"
+    },
+    {
+      "id": "RawLab_look_e100_gx_sRGB_v1",
+      "name": "Kodak E100 GX",
+      "fileName": "RawLab_look_e100_gx_sRGB_v1.cube",
+      "artworkName": "look-e100-gx",
+      "sha256": "0543656c77f2a828b2fd1c5f45be726a1507d2abd5d10f394a228dc0f5736aa5",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_e-100_gx_ektachrome_100.cube"
+    },
+    {
+      "id": "RawLab_look_ektachrome_100_vs_sRGB_v1",
+      "name": "Kodak Ektachrome 100 VS",
+      "fileName": "RawLab_look_ektachrome_100_vs_sRGB_v1.cube",
+      "artworkName": "look-ektachrome-100-vs",
+      "sha256": "12a613cd84f27031861d6af5494f762df5a264a752d9f66ae88960ae611f5224",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_ektachrome_100_vs.cube"
+    },
+    {
+      "id": "RawLab_look_ektar_100_sRGB_v1",
+      "name": "Ektar 100 G'MIC",
+      "fileName": "RawLab_look_ektar_100_sRGB_v1.cube",
+      "artworkName": "look-ektar-100",
+      "sha256": "5aad37d56c1eec7f9aa60df60a4042481a9e2ad7677567070ee6f561e7a7b35a",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_ektar_100.cube"
+    },
+    {
+      "id": "RawLab_look_elite_100_xpro_sRGB_v1",
+      "name": "Kodak Elite 100 XPRO",
+      "fileName": "RawLab_look_elite_100_xpro_sRGB_v1.cube",
+      "artworkName": "look-elite-100-xpro",
+      "sha256": "c72ff68ca90ecf4bd90d331448bbc37c4be42b9595d01068aa61a1eebffa003d",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_100_xpro.cube"
+    },
+    {
+      "id": "RawLab_look_elite_chrome_200_sRGB_v1",
+      "name": "Kodak Elite Chrome 200",
+      "fileName": "RawLab_look_elite_chrome_200_sRGB_v1.cube",
+      "artworkName": "look-elite-chrome-200",
+      "sha256": "ae4e0b3df2ec8eb19545cd5ac28cf3d049f68254b06f62c41f376377a4c764cb",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_chrome_200.cube"
+    },
+    {
+      "id": "RawLab_look_elite_chrome_400_sRGB_v1",
+      "name": "Kodak Elite Chrome 400",
+      "fileName": "RawLab_look_elite_chrome_400_sRGB_v1.cube",
+      "artworkName": "look-elite-chrome-400",
+      "sha256": "1741ce66cc74a61cacdf710395caddd8fefe31409a87c1f5e633d229dedf2a9d",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_chrome_400.cube"
+    },
+    {
+      "id": "RawLab_look_elite_color_200_sRGB_v1",
+      "name": "Kodak Elite Color 200",
+      "fileName": "RawLab_look_elite_color_200_sRGB_v1.cube",
+      "artworkName": "look-elite-color-200",
+      "sha256": "a8ae97ca2b189bbf1ca7aae9fca54206c742ebee0a57c63abaa092b29e15bdee",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_color_200.cube"
+    },
+    {
+      "id": "RawLab_look_elite_color_400_sRGB_v1",
+      "name": "Kodak Elite Color 400",
+      "fileName": "RawLab_look_elite_color_400_sRGB_v1.cube",
+      "artworkName": "look-elite-color-400",
+      "sha256": "78b30e357f5b1869602ea0f6458d71d2d16f2131df6c370440ee4a3b43b57c3b",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_color_400.cube"
+    },
+    {
+      "id": "RawLab_look_elite_extracolor_100_sRGB_v1",
+      "name": "Kodak Elite Extra 100",
+      "fileName": "RawLab_look_elite_extracolor_100_sRGB_v1.cube",
+      "artworkName": "look-elite-extracolor-100",
+      "sha256": "e101a75d40b5cd42375eaa22d79ee03126434159329836c482253e5164dcac64",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_elite_extracolor_100.cube"
+    },
+    {
+      "id": "RawLab_look_hie_sRGB_v1",
+      "name": "Kodak HIE Infrared",
+      "fileName": "RawLab_look_hie_sRGB_v1.cube",
+      "artworkName": "look-hie",
+      "sha256": "c1ece09b26946a25b9959c801ce587ca134b6f8e748807b7391aac26b308c64d",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_hie_hs_infra.cube"
+    },
+    {
+      "id": "RawLab_look_kodachrome_200_sRGB_v1",
+      "name": "Kodak Kodachrome 200",
+      "fileName": "RawLab_look_kodachrome_200_sRGB_v1.cube",
+      "artworkName": "look-kodachrome-200",
+      "sha256": "d3fa6f342876b39246468f9f19e3de800a943ca41cd12b31392eef2c19eaa80e",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_kodachrome_200.cube"
+    },
+    {
+      "id": "RawLab_look_kodachrome_25_sRGB_v1",
+      "name": "Kodak Kodachrome 25",
+      "fileName": "RawLab_look_kodachrome_25_sRGB_v1.cube",
+      "artworkName": "look-kodachrome-25",
+      "sha256": "07a0ecc8abed11f244ccaf4d39b11efca976da3fef0966c894de07bc4f507a7f",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_kodachrome_25.cube"
+    },
+    {
+      "id": "RawLab_look_kodachrome_64_sRGB_v1",
+      "name": "Kodak Kodachrome 64",
+      "fileName": "RawLab_look_kodachrome_64_sRGB_v1.cube",
+      "artworkName": "look-kodachrome-64",
+      "sha256": "ba61e4fd7fdce0a8473c5ba3584ab7448367cffb8ffb31919aadfc1537975f52",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_kodachrome_64.cube"
+    },
+    {
+      "id": "RawLab_look_portra_160_sRGB_v1",
+      "name": "Kodak Portra 160",
+      "fileName": "RawLab_look_portra_160_sRGB_v1.cube",
+      "artworkName": "look-portra-160",
+      "sha256": "3e4e1be84493d9b88d68e74c7a4089ca1cb135813c739ec9430f537b8a24660b",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_portra_160_-.cube"
+    },
+    {
+      "id": "RawLab_look_portra_400_sRGB_v1",
+      "name": "Kodak Portra 400",
+      "fileName": "RawLab_look_portra_400_sRGB_v1.cube",
+      "artworkName": "look-portra-400",
+      "sha256": "a3c0fdbfa9be03f3e8b5eaa01c705553e3ddd8027b0c1dc6e54a3136bb6d9083",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_portra_400_-.cube"
+    },
+    {
+      "id": "RawLab_look_portra_800_sRGB_v1",
+      "name": "Kodak Portra 800",
+      "fileName": "RawLab_look_portra_800_sRGB_v1.cube",
+      "artworkName": "look-portra-800",
+      "sha256": "7d89e929d5a8a0ff15517958977c2f39a1e387fa04f922b3db577ba3079536c2",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_portra_800_-.cube"
+    },
+    {
+      "id": "RawLab_look_tmax_100_sRGB_v1",
+      "name": "Kodak T-MAX 100",
+      "fileName": "RawLab_look_tmax_100_sRGB_v1.cube",
+      "artworkName": "look-tmax-100",
+      "sha256": "5398dfde4543491810831406c0e91947445fea28e8e4db780eed8b16519fff0e",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_t-max_100.cube"
+    },
+    {
+      "id": "RawLab_look_tmax_400_sRGB_v1",
+      "name": "Kodak T-MAX 400",
+      "fileName": "RawLab_look_tmax_400_sRGB_v1.cube",
+      "artworkName": "look-tmax-400",
+      "sha256": "f8c23217a7f781c21face2319a4cea2121adbdc44bfe170a869343e7c70cfa3f",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_t-max_400.cube"
+    },
+    {
+      "id": "RawLab_look_tmax_3200_sRGB_v1",
+      "name": "Kodak T-MAX 3200",
+      "fileName": "RawLab_look_tmax_3200_sRGB_v1.cube",
+      "artworkName": "look-tmax-3200",
+      "sha256": "0cff515b82030659d79b727be018f253d80e08c90bab2c45508b221f11c3c8de",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_tmax_3200_-.cube"
+    },
+    {
+      "id": "RawLab_look_trix_400_sRGB_v1",
+      "name": "Kodak TRI-X 400",
+      "fileName": "RawLab_look_trix_400_sRGB_v1.cube",
+      "artworkName": "look-trix-400",
+      "sha256": "e5a52ca5f03182b12ad0e0c9072dfb75ae94329ed2b0fa273bfb3c717eb81904",
+      "input": "neutral display-sRGB / BT.709 / D65 / full range",
+      "output": "display-sRGB / BT.709 / D65 / full range",
+      "license": "UNCONFIRMED - redistribution permission not verified",
+      "source": "kodak/kodak_tri-x_400_-.cube"
+    }
+  ],
+  "fuji_flog2_looks": [
+    {
+      "id": "fuji33:ETERNA-BB",
+      "name": "ETERNA-BB (33)",
+      "fileName": "X100VI_FLog2_FGamut_to_ETERNA-BB_BT.709_33grid_V.1.00.cube",
+      "path": "lutools/F-Log2/X100VI_FLog2_FGamut_to_ETERNA-BB_BT.709_33grid_V.1.00.cube",
+      "sha256": "bf0ff86522603bb769197bbb5d15eaf19e2bbb65a58e7f01e24b23a8734b9d9c",
+      "grid": 33
+    },
+    {
+      "id": "fuji33:ETERNA",
+      "name": "ETERNA (33)",
+      "fileName": "X100VI_FLog2_FGamut_to_ETERNA_BT.709_33grid_V.1.00.cube",
+      "path": "lutools/F-Log2/X100VI_FLog2_FGamut_to_ETERNA_BT.709_33grid_V.1.00.cube",
+      "sha256": "e391462e36f9bf7240ae9b54846e84fff7350cec8bfa2f71a97658643066d9a2",
+      "grid": 33
+    },
+    {
+      "id": "fuji33:FLog2",
+      "name": "FLog2 (33)",
+      "fileName": "X100VI_FLog2_FGamut_to_FLog2_BT.709_33grid_V.1.00.cube",
+      "path": "lutools/F-Log2/X100VI_FLog2_FGamut_to_FLog2_BT.709_33grid_V.1.00.cube",
+      "sha256": "2d7a8b9ada47437cd5461715f3c8cf4da3acaa5b2e74ea3097f9fe2e4d6cd60e",
+      "grid": 33
+    },
+    {
+      "id": "fuji33:WDR",
+      "name": "WDR (33)",
+      "fileName": "X100VI_FLog2_FGamut_to_WDR_BT.709_33grid_V.1.00.cube",
+      "path": "lutools/F-Log2/X100VI_FLog2_FGamut_to_WDR_BT.709_33grid_V.1.00.cube",
+      "sha256": "8658133b586630c47c0cd20a885a6d473e2537e7fa29987a70b716638055aa4c",
+      "grid": 33
+    },
+    {
+      "id": "fuji:ACROS",
+      "name": "ACROS",
+      "fileName": "FLog2_to_ACROS_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_ACROS_65grid_V.1.00.cube",
+      "sha256": "1e7b6c1b05924c5bdb9f2e922e962dcb608f2df15f38e628a9aac3a646293da4",
+      "grid": 65
+    },
+    {
+      "id": "fuji:ASTIA",
+      "name": "ASTIA",
+      "fileName": "FLog2_to_ASTIA_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_ASTIA_65grid_V.1.00.cube",
+      "sha256": "164871904f39c581e5ad51bd69f254cd268b7e3d77bad6a17a54c7b22f5bcc27",
+      "grid": 65
+    },
+    {
+      "id": "fuji:CLASSIC-CHROME",
+      "name": "CLASSIC-CHROME",
+      "fileName": "FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_CLASSIC-CHROME_65grid_V.1.00.cube",
+      "sha256": "43f7fc5f262eaa2525c0de805ad7fa50f5b77d85873840ae48ab2a07a6b36ff9",
+      "grid": 65
+    },
+    {
+      "id": "fuji:CLASSIC-Neg.",
+      "name": "CLASSIC-Neg.",
+      "fileName": "FLog2_to_CLASSIC-Neg._65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_CLASSIC-Neg._65grid_V.1.00.cube",
+      "sha256": "f890a58d2ae278703aa09e73d6037a32cb925a6d90414292da7675e12b7dd3c9",
+      "grid": 65
+    },
+    {
+      "id": "fuji:ETERNA-BB",
+      "name": "ETERNA-BB",
+      "fileName": "FLog2_to_ETERNA-BB_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_ETERNA-BB_65grid_V.1.00.cube",
+      "sha256": "367024b32ca0f263e2122febd1b83a024d2ffc232a1770f8e061432468ffd5a6",
+      "grid": 65
+    },
+    {
+      "id": "fuji:ETERNA",
+      "name": "ETERNA",
+      "fileName": "FLog2_to_ETERNA_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_ETERNA_65grid_V.1.00.cube",
+      "sha256": "5c0a909c021e114adc1d1c9c8d085264db303f235d2a285f8543019062edc944",
+      "grid": 65
+    },
+    {
+      "id": "fuji:FLog2-709",
+      "name": "FLog2-709",
+      "fileName": "FLog2_to_FLog2-709_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_FLog2-709_65grid_V.1.00.cube",
+      "sha256": "16fd6b1f65cb0c7bceb7068f8ca8e1f289460e66597b12756bd4fe0af1c56a0f",
+      "grid": 65
+    },
+    {
+      "id": "fuji:PRO-Neg.Std",
+      "name": "PRO-Neg.Std",
+      "fileName": "FLog2_to_PRO-Neg.Std_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_PRO-Neg.Std_65grid_V.1.00.cube",
+      "sha256": "3cf531162720aa31ac09609f3dec5aca7680a4c07887cbc8502468533b434cdc",
+      "grid": 65
+    },
+    {
+      "id": "fuji:PROVIA",
+      "name": "PROVIA",
+      "fileName": "FLog2_to_PROVIA_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_PROVIA_65grid_V.1.00.cube",
+      "sha256": "322d1fc83072ebd4ba73287f32b88bf7fc71582ea03da459fa976a3eb6cdc68f",
+      "grid": 65
+    },
+    {
+      "id": "fuji:REALA-ACE",
+      "name": "REALA-ACE",
+      "fileName": "FLog2_to_REALA-ACE_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_REALA-ACE_65grid_V.1.00.cube",
+      "sha256": "a57a8473d666eda294ca3c32886af7708d7097d185c20240a290e3c2a0cb7c2b",
+      "grid": 65
+    },
+    {
+      "id": "fuji:Velvia",
+      "name": "Velvia",
+      "fileName": "FLog2_to_Velvia_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_Velvia_65grid_V.1.00.cube",
+      "sha256": "80a9ac219c30e9d1c230bd157d96ab25c2e6052de3bad7dc650823de65a0ac77",
+      "grid": 65
+    },
+    {
+      "id": "fuji:WDR",
+      "name": "WDR",
+      "fileName": "FLog2_to_WDR_65grid_V.1.00.cube",
+      "path": "lutools/flog-2-new/FLog2_to_WDR_65grid_V.1.00.cube",
+      "sha256": "9f478280c8c77d11ac15d7eb0625e32a1c7005cafaa1a89b1a2c74c7f3ad7bc2",
+      "grid": 65
+    }
+  ],
+  "hdr_looks": [
+    {
+      "id": "hdr:HDR Silver",
+      "name": "HDR Silver",
+      "fileName": "HDR Silver.cube",
+      "path": "Shared/BundledLooks/HDR/HDR Silver.cube",
+      "masterRecipePath": "Shared/BundledLooks/HDR/HDR Silver Master.json",
+      "sha256": "ecb5bbdcfd1a551079c846ab34db72a765e0851ae2a606bac34e105029eff3c3",
+      "transferPreset": {
+        "payload_version": 2,
+        "scope_version": 2,
+        "source": {
+          "identifier": "builtin:hdr-silver-master",
+          "is_raw": false,
+          "processing_version": 2,
+          "hdr_processing_version": 7
+        },
+        "values": {
+          "hdr.look": {
+            "name": "HDR Silver",
+            "sha256": "ecb5bbdcfd1a551079c846ab34db72a765e0851ae2a606bac34e105029eff3c3",
+            "strength": 1
+          },
+          "tone.black_point": -8,
+          "tone.white_point": 8,
+          "light.curve": {
+            "mode": "legacy",
+            "points": []
+          },
+          "light.s_curve": 0.14,
+          "effects.grain.amount": 14,
+          "effects.grain.size": 24,
+          "effects.grain.roughness": 42
+        }
+      }
+    }
+  ]
+}

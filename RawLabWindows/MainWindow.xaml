@@ -96,6 +96,10 @@
         <MenuItem x:Name="CopyAdjustmentMenu" Header="{DynamicResource '复制调整…'}" InputGestureText="Ctrl+Shift+C" Click="CopyAdjustmentsClicked" AutomationProperties.AutomationId="adjustment.copy.open"/>
         <MenuItem x:Name="PasteAdjustmentMenu" Header="{DynamicResource '粘贴调整…'}" InputGestureText="Ctrl+Shift+V" Click="PasteAdjustmentsClicked" AutomationProperties.AutomationId="adjustment.paste.open"/>
         <MenuItem x:Name="PastePhotosAdjustmentMenu" Header="{DynamicResource '粘贴到所选照片…'}" Click="PasteAdjustmentsToPhotosClicked" AutomationProperties.AutomationId="adjustment.paste.photos"/>
+        <Separator/>
+        <MenuItem x:Name="ImportTransferJsonMenu" Header="{DynamicResource '导入调整参数 JSON…'}" Click="ImportTransferJsonClicked" AutomationProperties.AutomationId="adjustment.transfer.import-json"/>
+        <MenuItem x:Name="ExportTransferJsonMenu" Header="{DynamicResource '导出调整参数 JSON…'}" Click="ExportTransferJsonClicked" AutomationProperties.AutomationId="adjustment.transfer.export-json"/>
+        <Separator/>
         <MenuItem x:Name="HistoryAdjustmentMenu" Header="{DynamicResource '本次会话历史…'}" Click="ShowAdjustmentHistoryClicked" AutomationProperties.AutomationId="adjustment.history.open"/>
         <MenuItem x:Name="PresetsAdjustmentMenu" Header="{DynamicResource '我的预设'}" Click="ShowPresetsClicked" AutomationProperties.AutomationId="preset.library.open"/>
         <Separator/>
@@ -238,6 +242,13 @@
               <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>
               <TextBlock Text="{DynamicResource '拖动照片调整颜色；退出目标模式后可平移。'}" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="0,6,0,0"/>
             </StackPanel>
+          </Border>
+          <Border x:Name="ExternalReloadBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="600" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="externalReload.banner">
+            <WrapPanel VerticalAlignment="Center">
+              <TextBlock Text="{DynamicResource '检测到外部调色方案更新'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+              <Button x:Name="ReloadExternalUpdateButton" Content="{DynamicResource '重载滑块'}" Click="ReloadExternalUpdateClicked" Margin="0,0,8,0" AutomationProperties.AutomationId="externalReload.reload"/>
+              <Button x:Name="KeepManualDraftButton" Content="{DynamicResource '保留当前手动草稿'}" Click="KeepManualDraftClicked" AutomationProperties.AutomationId="externalReload.keepDraft"/>
+            </WrapPanel>
           </Border>
           <Grid x:Name="BusyIndicator" Grid.RowSpan="2" Grid.ColumnSpan="2" Height="2" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" AutomationProperties.Name="{DynamicResource '正在显影…'}"><ProgressBar x:Name="BusyAnimation" Height="2" Foreground="{DynamicResource Indicator}" Background="{DynamicResource ProgressSurface}" IsIndeterminate="True"/><Border x:Name="BusyStill" Background="{DynamicResource Indicator}" Visibility="Collapsed"/></Grid>
           <Canvas x:Name="PhotoLabels" Grid.RowSpan="2" Grid.ColumnSpan="2" IsHitTestVisible="False" ClipToBounds="True">

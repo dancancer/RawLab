@@ -600,6 +600,17 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
             wavelet[key]?.number.map { $0.isFinite && range.contains($0) } == true
         }
     }
+
+    public func encodeTransferJSONData(prettyPrinted: Bool = true) throws -> Data {
+        try validate()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+        return try encoder.encode(self)
+    }
+
+    public static func decodeTransferJSON(_ data: Data) throws -> AdjustmentTransferPayload {
+        try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data)
+    }
 }
 
 private struct TransferCodingKey: CodingKey {

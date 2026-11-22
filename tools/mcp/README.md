@@ -40,6 +40,12 @@ uv sync --project tools/mcp --frozen
 | `image_info` | `image_path` | `--info PATH --json` |
 | `render_preview` | `recipe_path`、`output_path`、可选 `long_edge`（默认 1280） | `--recipe PATH --preview PATH --long-edge N --json` |
 | `export_photo` | `recipe_path` | `--recipe PATH --json` |
+| `diagnose_image` | `image_path` 或 `recipe_path`、可选 `samples`（`x,y[,label]`）、可选 `long_edge`（默认 1024） | `--input/--recipe PATH --analyze [--sample ...] [--long-edge N] --json` |
+| `list_catalog_looks` | 可选 `category`、`query` | 离线读取仓库目录内建造型目录 |
+| `save_preset`（默认隐藏） | `name`、`values` 等 | 仅 `--enable-gui-sync` 开启，原子写入 `<data-dir>/Presets/presets.json` |
+| `sync_photo_edit`（默认隐藏） | `photo_path`、`adjustments` 等 | 仅 `--enable-gui-sync` 开启（macOS），原子写入 `<data-dir>/Edits/edits.json` |
+
+默认运行仅暴露 7 个只读/导出沙盒工具；`save_preset` 与 `sync_photo_edit` 默认不注册且拒绝调用，必须显式传入 `--enable-gui-sync`（以及可选 `--data-dir` 指定受控应用数据根目录）才会启用，并严格校验目录与目标文件不得为逃逸符号链接。
 
 工具参数中的路径必须为绝对路径、有效 Unicode，且不能包含 NUL 或当前文件系统不能编码的字符；未配对的 Unicode 代理字符统一返回 `invalid_argument`。recipe 源文件本身保留调用方传入的 lexical path 交给 CLI 打开并确定相对目录；只有 recipe 内的 input/look/output 引用按 CLI 的 lexical `normpath` 规则处理，包括 recipe 本身为符号链接的情况。适配层保留 CLI 使用的 lexical absolute path 作为参数和返回字段，同时解析 canonical path 检查允许根、保护身份和创建同卷暂存目录；同一允许根内的输入符号链接与 output parent 符号链接会保留这种字段语义，leaf output 符号链接仍会拒绝。引用路径不能借软链接逃逸。`long_edge` 必须为正 uint32，多余参数会被拒绝。
 

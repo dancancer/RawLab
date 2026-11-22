@@ -18,7 +18,7 @@ ERROR_CODES = {
     "invalid_argument", "invalid_recipe", "io_error", "processing_error",
     "unsupported", "out_of_memory", "output_io_error",
 }
-COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
+COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"}
 
 
 class AgentCommands(unittest.TestCase):
@@ -103,8 +103,8 @@ class AgentCommands(unittest.TestCase):
         declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15] if hdr else []),
-            "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15, 16] if hdr else []) + [17],
+            "commands": ["capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],

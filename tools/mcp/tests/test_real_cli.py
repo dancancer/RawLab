@@ -111,11 +111,11 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 capabilities = direct("--capabilities")
                 capabilities["recipe_versions"] = [
                     version for version in capabilities["recipe_versions"]
-                    if version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+                    if version in range(1, 18)
                 ]
                 capabilities["commands"] = [
                     command for command in capabilities["commands"]
-                    if command in ("capabilities", "validate_recipe", "info", "preview", "export")
+                    if command in ("capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer")
                 ]
                 self.assertEqual(await call("capabilities"), capabilities)
                 self.assertEqual(await call("image_info", image_path=str(source)), direct("--info", source))
@@ -361,3 +361,139 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 )
             self.assertFalse((root / "missing" / "mcp.png").exists())
             self.assertEqual(list(root.glob(".rawlab-mcp-*")), [])
+
+    async def test_diagnose_image_matches_cli_and_schema(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-real-analyze-") as directory:
+            root = Path(directory).resolve()
+            source = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            recipe = root / "recipe.json"
+            recipe.write_text(json.dumps({
+                "schema_version": 5,
+                "processing": {"family": "rawlab", "version": 2, "quality": "standard"},
+                "input": {"path": source.name},
+                "edits": {
+                    "exposure": {"mode": "scene", "ev": 0.35},
+                    "tone": {"saturation": 1.15},
+                    "color": {"vibrance": 0.25},
+                },
+                "output": {"path": "unused.png", "format": "png"},
+            }), encoding="utf-8")
+
+            direct_img = subprocess.run(
+                [CLI, "--input", str(source), "--analyze", "--sample", "0.5,0.5,center", "--long-edge", "1024", "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(direct_img.returncode, 0, direct_img.stderr)
+            direct_img_json = json.loads(direct_img.stdout)
+            self.assertTrue(direct_img_json["ok"])
+
+            direct_recipe = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--analyze", "--sample", "0.5,0.5,skin", "--long-edge", "512", "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(direct_recipe.returncode, 0, direct_recipe.stderr)
+            direct_recipe_json = json.loads(direct_recipe.stdout)
+            self.assertTrue(direct_recipe_json["ok"])
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                caps = await client.call_tool("capabilities")
+                self.assertIn("analyze", caps.structured_content["result"]["commands"])
+                self.assertIn(17, caps.structured_content["result"]["recipe_versions"])
+
+                mcp_img = await client.call_tool("diagnose_image", {
+                    "image_path": str(source),
+                    "samples": ["0.5,0.5,center"],
+                    "long_edge": 1024,
+                })
+                self.assertFalse(mcp_img.is_error, str(mcp_img))
+                self.assertEqual(mcp_img.structured_content["result"], direct_img_json["result"])
+
+                mcp_recipe = await client.call_tool("diagnose_image", {
+                    "recipe_path": str(recipe),
+                    "samples": ["0.5,0.5,skin"],
+                    "long_edge": 512,
+                })
+                self.assertFalse(mcp_recipe.is_error, str(mcp_recipe))
+                self.assertEqual(mcp_recipe.structured_content["result"], direct_recipe_json["result"])
+                diag = mcp_recipe.structured_content["result"]
+                self.assertIn("luma_zones", diag)
+                self.assertIn("color_balance", diag)
+                self.assertIn("saturation", diag)
+                self.assertIn("hsl_channels", diag)
+                self.assertIn("portrait_skin_check", diag["samples"][0])
+
+    async def test_print_transfer_roundtrips_into_save_preset(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-print-transfer-") as directory:
+            root = Path(directory).resolve()
+            source = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            recipe = root / "recipe_v17.json"
+            recipe.write_text(json.dumps({
+                "schema_version": 17,
+                "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+                "input": {"path": source.name, "type": "raw"},
+                "edits": {
+                    "exposure": {"mode": "preview", "ev": 0.45, "brightness": 1.0},
+                    "white_balance": {"mode": "camera"},
+                    "look": {"path": None, "strength": 1.0},
+                    "tone": {
+                        "contrast": 1.15,
+                        "saturation": 1.1,
+                        "highlights": 0.0,
+                        "shadows": 0.1,
+                        "s_curve": 0.0,
+                        "black_point": -0.05,
+                        "white_point": 0.05,
+                        "curve": {
+                            "mode": "custom",
+                            "points": [[0.0, 0.0], [0.5, 0.56], [1.0, 1.0]],
+                            "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [1.0, 1.0]]}},
+                            "apply_to_luminosity": True,
+                            "parametric": {
+                                "highlights": -10, "lights": 6, "darks": -4, "shadows": 12,
+                                "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
+                            },
+                        },
+                    },
+                    "color": {"vibrance": 0.12},
+                    "color_grading": {
+                        "shadows": {"hue": 220, "saturation": 25, "luminance": -6},
+                        "midtones": {"hue": 0, "saturation": 0, "luminance": 0},
+                        "highlights": {"hue": 0, "saturation": 0, "luminance": 0},
+                        "global": {"hue": 180, "saturation": 10, "luminance": 2},
+                        "blending": 62,
+                        "balance": -8,
+                    },
+                },
+                "output": {"path": "unused.png", "format": "png"},
+            }), encoding="utf-8")
+
+            transfer = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--print-transfer", "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(transfer.returncode, 0, f"stdout={transfer.stdout} stderr={transfer.stderr}")
+            transfer_doc = json.loads(transfer.stdout)
+            self.assertTrue(transfer_doc["ok"])
+            payload = transfer_doc["result"]
+
+            data_dir = root / "appdata"
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+                "--enable-gui-sync", "--data-dir", str(data_dir),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                saved = await client.call_tool("save_preset", {
+                    "name": "CLI Transfer V17",
+                    "values": payload["values"],
+                    "is_raw": payload["source"]["is_raw"],
+                    "processing_version": payload["source"]["processing_version"],
+                })
+                self.assertFalse(saved.is_error, str(saved))
+                self.assertTrue((data_dir / "Presets" / "presets.json").is_file())

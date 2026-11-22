@@ -198,9 +198,12 @@ public sealed class EditStore
     private readonly Func<string, OriginalIdentity>? customReadIdentity;
     private readonly Func<string, PathStatStamp> captureStamp;
     private readonly object cacheGate = new();
+    private readonly object writeStampGate = new();
+    private PathStatStamp? lastWriteStamp;
     private CachedRegistry? cachedRegistry;
     private long diskReadCount;
     internal long DiskReadCount => Interlocked.Read(ref diskReadCount);
+    internal PathStatStamp? LastWriteStamp { get { lock (writeStampGate) return lastWriteStamp; } }
     public string? LastQuarantinedPath { get; private set; }
     public event Action<PhotoEditState>? Changed;
     private void NotifyChanged(PhotoEditState state)
@@ -272,6 +275,7 @@ public sealed class EditStore
 
         var nextEpoch = BumpPathEpoch(canonicalPath);
         var afterStamp = captureStamp(canonicalPath);
+        lock (writeStampGate) lastWriteStamp = afterStamp;
         var afterIdentity = afterStamp.StatReliable && afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
         if (beforeStamp.StatReliable &&
             afterStamp.StatReliable &&

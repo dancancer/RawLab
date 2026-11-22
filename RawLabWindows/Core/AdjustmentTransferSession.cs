@@ -241,6 +241,20 @@ public sealed class AdjustmentTransferSession(EditStore store)
         if(index<0)history.Add(new(id,action,fields.ToHashSet(),new[]{part}));
         else history[index]=history[index] with {Parts=history[index].Parts.Append(part).ToArray()};
     }
+
+    internal AdjustmentOutcome AdoptExternalReload(PhotoEditState expected, PhotoEditState reloaded)
+    {
+        var key = reloaded.Identity.Path;
+        if (!SamePath(expected.Identity.Path, key))
+            return new(key, AdjustmentStatus.Conflict, Error: new PhotoChangedException());
+        if (SavedEdit.Same(expected.Edit, reloaded.Edit)) {
+            Remember(reloaded);
+            return new(key, AdjustmentStatus.Unchanged, reloaded);
+        }
+        var before = knownRecords.TryGetValue(key, out var known) && known.Identity.SameFile(reloaded.Identity) ? known : expected;
+        Record(Guid.NewGuid(), AdjustmentHistoryAction.Edit, new HashSet<AdjustmentField>(), Path.GetFileName(key), before, reloaded);
+        return new(key, AdjustmentStatus.Applied, reloaded);
+    }
     private void Remember(PhotoEditState saved)
     {
         var key=saved.Identity.Path;

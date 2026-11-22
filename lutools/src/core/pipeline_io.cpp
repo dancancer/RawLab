@@ -285,7 +285,8 @@ RenderStatus Pipeline::finishOutput(
     OwnedPixelBuffer* outBuffer,
     uint32_t nativeWidth,
     uint32_t nativeHeight,
-    MigrationFrame* migrationFrame
+    MigrationFrame* migrationFrame,
+    ImageData* outImage
 ) {
     // 预览保留唯一 RAW 缓存供连续调整复用；导出前由 Swift 释放预览 session。
     if (params.intent != RenderIntent::Preview || params.outputTarget != RenderOutputTarget::Buffer) {
@@ -299,6 +300,14 @@ RenderStatus Pipeline::finishOutput(
     if (geometry_.active()) lastBackend_ = RenderBackend::Cpu;
     if (migrationFrame) {
         *migrationFrame = captureMigrationFrame(image, migrationFrame->retainNativePixels, migrationFrame->validationReference);
+        return RenderStatus::Ok;
+    }
+    if (outImage) {
+        *outImage = image;
+    }
+    if (params.outputTarget == RenderOutputTarget::Buffer && !outBuffer && outImage) {
+        geometryWidth_ = nativeWidth;
+        geometryHeight_ = nativeHeight;
         return RenderStatus::Ok;
     }
     const auto written = params.outputTarget == RenderOutputTarget::File
