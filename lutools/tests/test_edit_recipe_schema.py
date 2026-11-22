@@ -204,7 +204,7 @@ class EditRecipeSchema(unittest.TestCase):
     def test_v6_hdr_schema_and_strict_groups(self):
         schema=json.loads((ROOT / "docs/edit-json-v6.schema.json").read_text())
         document=json.loads((ROOT / "examples/edit-recipes/hdr-v6.json").read_text())
-        capabilities=subprocess.run([str(CLI),"--capabilities","--json"],capture_output=True,text=True,check=True)
+        capabilities=subprocess.run([str(CLI),"--capabilities","--json"],capture_output=True,text=True,encoding="utf-8",errors="replace",check=True)
         if 6 not in json.loads(capabilities.stdout)["result"]["recipe_versions"]:
             self.skipTest("CLI runtime has no HDR v6 capability")
         normalized=self.normalize(document)
@@ -326,6 +326,8 @@ class EditRecipeSchema(unittest.TestCase):
             cwd=self.root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
 
@@ -501,7 +503,7 @@ class EditRecipeSchema(unittest.TestCase):
             if jsonschema:
                 self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
             process = subprocess.run([str(CLI), "--recipe", str(self.recipe), "--json"],
-                                     capture_output=True, text=True, timeout=120)
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertNotEqual(process.returncode, 0)
             self.assertEqual(json.loads(process.stdout)["error"]["code"], "invalid_recipe")
             self.assertEqual(output.read_bytes(), b"existing output")

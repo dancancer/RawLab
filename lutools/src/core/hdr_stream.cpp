@@ -680,23 +680,25 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
 
         if (!highDynamicRange) {
             const auto stagedLow = scratch->path / "sdr.rgb32f";
-            File lowFile(stagedLow, true);
-            for (bool hdr : {true, false}) {
-                for (uint32_t row = 0; row < source.height; row += decodeRows) {
-                    checkProcessingCancellation();
-                    ImageData strip(source.width, std::min(decodeRows, source.height - row));
-                    const float missing = std::numeric_limits<float>::quiet_NaN();
-                    std::fill(strip.pixels.begin(), strip.pixels.end(), RGB(missing, missing, missing));
-                    source.read(hdr, row, strip.height, strip.pixels.data());
-                    checkProcessingCancellation();
-                    if (hdr) {
-                        validateAndUpdateSourceHeadroom(strip, result.sourceHeadroom);
-                        continue;
+            {
+                File lowFile(stagedLow, true);
+                for (bool hdr : {true, false}) {
+                    for (uint32_t row = 0; row < source.height; row += decodeRows) {
+                        checkProcessingCancellation();
+                        ImageData strip(source.width, std::min(decodeRows, source.height - row));
+                        const float missing = std::numeric_limits<float>::quiet_NaN();
+                        std::fill(strip.pixels.begin(), strip.pixels.end(), RGB(missing, missing, missing));
+                        source.read(hdr, row, strip.height, strip.pixels.data());
+                        checkProcessingCancellation();
+                        if (hdr) {
+                            validateAndUpdateSourceHeadroom(strip, result.sourceHeadroom);
+                            continue;
+                        }
+                        editHDRPixels(strip, options, false);
+                        applyStripEffects(strip, row, effects, 0);
+                        lowFile.append(strip.pixels.data(), strip.pixels.size() * sizeof(RGB));
+                        reportHdrProgress(150 + uint32_t((uint64_t(row + strip.height) * 300) / source.height), 1000);
                     }
-                    editHDRPixels(strip, options, false);
-                    applyStripEffects(strip, row, effects, 0);
-                    lowFile.append(strip.pixels.data(), strip.pixels.size() * sizeof(RGB));
-                    reportHdrProgress(150 + uint32_t((uint64_t(row + strip.height) * 300) / source.height), 1000);
                 }
             }
             source.finish(); checkProcessingCancellation();

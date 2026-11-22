@@ -368,14 +368,28 @@ void syncOutput(const std::filesystem::path& path) {
     if (!okay) fail(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot flush HDR output transaction");
 }
 std::vector<uint8_t> srgbICC(const std::vector<uint8_t>& jpeg) {
-    auto profile=cmsCreate_sRGBProfile(); if (!profile) throw std::bad_alloc();
-    cmsUInt32Number size=0; bool okay=cmsSaveProfileToMem(profile,nullptr,&size)!=0;
-    std::vector<uint8_t> icc(size);
-    okay=okay && cmsSaveProfileToMem(profile,icc.data(),&size)!=0; cmsCloseProfile(profile);
-    if (!okay || size>65519) throw std::runtime_error("Cannot encode SDR RGB profile");
-    const uint32_t length=size+16;
+    static const std::vector<uint8_t> icc = []() -> std::vector<uint8_t> {
+        auto profile = cmsCreate_sRGBProfile();
+        if (!profile) throw std::bad_alloc();
+        cmsUInt32Number size = 0;
+        bool okay = cmsSaveProfileToMem(profile, nullptr, &size) != 0;
+        std::vector<uint8_t> bytes(size);
+        okay = okay && cmsSaveProfileToMem(profile, bytes.data(), &size) != 0;
+        cmsCloseProfile(profile);
+        if (!okay || size > 65519) throw std::runtime_error("Cannot encode SDR RGB profile");
+        if (bytes.size() >= 128 && std::memcmp(bytes.data() + 36, "acsp", 4) == 0) {
+            static constexpr uint8_t kFixedUtcDate[12] = {
+                0x07, 0xEA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            };
+            std::memcpy(bytes.data() + 24, kFixedUtcDate, sizeof(kFixedUtcDate));
+        }
+        return bytes;
+    }();
+    const uint32_t length = uint32_t(icc.size()) + 16;
     std::vector<uint8_t> output{255,0xd8,255,0xe2,uint8_t(length>>8),uint8_t(length),'I','C','C','_','P','R','O','F','I','L','E',0,1,1};
-    output.insert(output.end(),icc.begin(),icc.end()); output.insert(output.end(),jpeg.begin()+2,jpeg.end()); return output;
+    output.insert(output.end(), icc.begin(), icc.end());
+    output.insert(output.end(), jpeg.begin() + 2, jpeg.end());
+    return output;
 }
 }
 

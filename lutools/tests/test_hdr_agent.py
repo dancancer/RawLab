@@ -111,14 +111,14 @@ class HDRAgent(unittest.TestCase):
                             self.assertEqual(max(info["result"]["identified_size"][axis] for axis in ("width", "height")), 32)
 
     def run_cli(self, *arguments):
-        process = subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, timeout=120)
+        process = subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         return process, json.loads(process.stdout)
 
     def test_hdr_recipe_export_preview_info_and_atomic_failure(self):
         with tempfile.TemporaryDirectory(prefix="rawlab-hdr-agent-") as temporary:
             root=Path(temporary)
             source=root / "phone.jpg"
-            generated=subprocess.run([str(FIXTURE), "--fixture", str(source)], capture_output=True, text=True)
+            generated=subprocess.run([str(FIXTURE), "--fixture", str(source)], capture_output=True, text=True, encoding="utf-8", errors="replace")
             if generated.returncode==77:
                 self.skipTest("native HDR fixture requires macOS15/iOS18")
             self.assertEqual(generated.returncode,0,generated.stderr)
