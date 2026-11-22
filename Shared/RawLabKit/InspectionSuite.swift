@@ -553,6 +553,12 @@ public final class InspectionSamplerCache: @unchecked Sendable {
         self.maxEntries = max(1, maxEntries)
     }
 
+    public var entryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.count
+    }
+
     public func clear() {
         lock.lock()
         entries.removeAll()
@@ -606,6 +612,7 @@ public final class InspectionOverlayRenderer: @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    private let renderQueue = DispatchQueue(label: "com.rawlab.inspection.overlay", qos: .userInitiated, attributes: .concurrent)
     private let maxEntries: Int
     private var cache: [CacheKey: CacheEntry] = [:]
     private var lru: [CacheKey] = []
@@ -614,11 +621,41 @@ public final class InspectionOverlayRenderer: @unchecked Sendable {
         self.maxEntries = max(1, maxEntries)
     }
 
+    public var entryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache.count
+    }
+
     public func clear() {
         lock.lock()
         cache.removeAll()
         lru.removeAll()
         lock.unlock()
+    }
+
+    public func cached(_ image: CGImage, mode: InspectionOverlayMode) -> CGImage? {
+        if mode == .none { return image }
+        let key = CacheKey(imageID: ObjectIdentifier(image), mode: mode)
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = cache[key], existing.source === image {
+            lru.removeAll { $0 == key }
+            lru.append(key)
+            return existing.rendered
+        }
+        return nil
+    }
+
+    public func renderAsync(_ image: CGImage, mode: InspectionOverlayMode, completion: @escaping @Sendable (CGImage?) -> Void) {
+        if let hit = cached(image, mode: mode) {
+            completion(hit)
+            return
+        }
+        renderQueue.async { [weak self] in
+            let rendered = self?.render(image, mode: mode)
+            completion(rendered)
+        }
     }
 
     @inline(__always)

@@ -135,4 +135,26 @@ class InspectionSuiteTest {
         assertTrue(session.anchors.isEmpty())
         assertEquals(InspectionOverlayMode.NONE, session.overlay)
     }
+
+    @Test
+    fun sessionStateSaveRestorePreservesAnchorsOverlayAndSelectionAcrossRotation() {
+        var session = InspectionSessionState(monitorEnabled = true, liveOutputX = 0.25f, liveOutputY = 0.75f)
+        session = session.pinAnchor(0.12f, 0.34f)
+        session = session.pinAnchor(0.56f, 0.78f)
+        session = session.selectOverlay(InspectionOverlayMode.SKIN_HUE_AMPLIFICATION)
+        session = session.toggleNeutralGray50()
+
+        val saved = session.saveToList()
+        val restored = InspectionSessionState.restoreFromList(saved)
+
+        assertEquals(session, restored)
+        assertTrue(restored.monitorEnabled)
+        assertEquals(0.25f, restored.liveOutputX ?: -1f, 1e-6f)
+        assertEquals(0.75f, restored.liveOutputY ?: -1f, 1e-6f)
+        assertEquals(2, restored.anchors.size)
+        assertEquals(2L, restored.selectedAnchorId)
+        assertEquals(InspectionOverlayMode.NEUTRAL_GRAY_50, restored.overlay)
+        assertEquals(InspectionOverlayMode.SKIN_HUE_AMPLIFICATION, restored.lastNonGrayOverlay)
+        assertEquals(3L, restored.nextAnchorId)
+    }
 }

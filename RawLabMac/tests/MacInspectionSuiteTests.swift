@@ -361,6 +361,16 @@ struct MacInspectionSuiteTests {
             let shift = hypot(post.point.x - pre.point.x, post.point.y - pre.point.y)
             check(shift < 1e-3, "Native HDR marker #\(pre.index) shift < 1e-3 after exposure edit (shift=\(shift))")
         }
+
+        // 7. Photo switch clears shared sampler & overlay caches
+        let cacheProbeImg = makeTestImage(width: 8, height: 8) { _, _ in (120, 140, 160) }
+        _ = InspectionSamplerCache.shared.sample(cacheProbeImg, atNormalized: CGPoint(x: 0.5, y: 0.5))
+        _ = InspectionOverlayRenderer.shared.render(cacheProbeImg, mode: .warmCoolBW)
+        check(InspectionSamplerCache.shared.entryCount > 0 && InspectionOverlayRenderer.shared.entryCount > 0,
+              "Shared inspection caches populated before source switch")
+        reopened.sourceRevision = UUID()
+        check(InspectionSamplerCache.shared.entryCount == 0 && InspectionOverlayRenderer.shared.entryCount == 0,
+              "sourceRevision change clears InspectionSamplerCache and InspectionOverlayRenderer")
     }
     #endif
 }

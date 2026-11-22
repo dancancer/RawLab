@@ -104,6 +104,60 @@ data class InspectionSessionState(
     fun clearAnchors(): InspectionSessionState = copy(anchors = emptyList(), selectedAnchorId = null)
 
     fun resetForNewSource(): InspectionSessionState = InspectionSessionState()
+
+    fun saveToList(): List<Any?> = buildList {
+        add(monitorEnabled)
+        add(liveOutputX)
+        add(liveOutputY)
+        add(selectedAnchorId)
+        add(overlay.ordinal)
+        add(lastNonGrayOverlay.ordinal)
+        add(nextAnchorId)
+        add(anchors.size)
+        for (anchor in anchors) {
+            add(anchor.id)
+            add(anchor.sourceX)
+            add(anchor.sourceY)
+        }
+    }
+
+    companion object {
+        fun restoreFromList(raw: List<Any?>): InspectionSessionState {
+            if (raw.size < 8) return InspectionSessionState()
+            val monitor = raw[0] as? Boolean ?: false
+            val liveX = (raw[1] as? Number)?.toFloat()
+            val liveY = (raw[2] as? Number)?.toFloat()
+            val selectedId = (raw[3] as? Number)?.toLong()
+            val overlayOrdinal = (raw[4] as? Number)?.toInt() ?: 0
+            val lastOrdinal = (raw[5] as? Number)?.toInt() ?: 0
+            val nextId = (raw[6] as? Number)?.toLong() ?: 1L
+            val anchorCount = (raw[7] as? Number)?.toInt() ?: 0
+            val entries = InspectionOverlayMode.entries
+            val overlayMode = entries.getOrElse(overlayOrdinal) { InspectionOverlayMode.NONE }
+            val lastMode = entries.getOrElse(lastOrdinal) { InspectionOverlayMode.NONE }
+            val restoredAnchors = buildList {
+                var idx = 8
+                for (i in 0 until anchorCount) {
+                    if (idx + 2 >= raw.size) break
+                    val id = (raw[idx] as? Number)?.toLong() ?: break
+                    val sx = (raw[idx + 1] as? Number)?.toFloat() ?: break
+                    val sy = (raw[idx + 2] as? Number)?.toFloat() ?: break
+                    add(InspectionAnchor(id = id, sourceX = sx, sourceY = sy))
+                    idx += 3
+                }
+            }
+            return InspectionSessionState(
+                monitorEnabled = monitor,
+                liveOutputX = liveX,
+                liveOutputY = liveY,
+                anchors = restoredAnchors,
+                selectedAnchorId = selectedId,
+                overlay = overlayMode,
+                lastNonGrayOverlay = lastMode,
+                nextAnchorId = nextId,
+            )
+        }
+    }
 }
 
 object InspectionColorMath {

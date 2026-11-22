@@ -140,7 +140,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
-    var inspection by remember { mutableStateOf(InspectionSessionState()) }
+    var inspection by rememberSaveable(
+        stateSaver = listSaver<InspectionSessionState, Any?>(
+            save = { it.saveToList() },
+            restore = { InspectionSessionState.restoreFromList(it) },
+        )
+    ) { mutableStateOf(InspectionSessionState()) }
     var overlaySubmenuOpen by remember { mutableStateOf(false) }
     var workspaceOverlaySubmenuOpen by remember { mutableStateOf(false) }
     val compare = view.comparisonEnabled && state.draft?.group != AdjustmentGroup.GEOMETRY
@@ -432,6 +437,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         if (viewSource != sourceKey) {
             view = view.forNewPhoto(); viewSource = sourceKey
             inspection = inspection.resetForNewSource()
+            com.rawlab.android.editor.inspection.InspectionBitmap.clearOverlayCache()
             overlaySubmenuOpen = false
             workspaceOverlaySubmenuOpen = false
             toolMenu = false

@@ -3,16 +3,68 @@ package com.rawlab.android.editor.inspection
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.rawlab.android.editor.render.PreviewDetailOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 internal object InspectionBitmap {
+    private const val MAX_CACHE_ENTRIES = 24
+
+    private data class OverlayCacheKey(
+        val identityHash: Int,
+        val generationId: Int,
+        val width: Int,
+        val height: Int,
+        val mode: InspectionOverlayMode,
+    )
+
+    private val cacheLock = Any()
+    private val overlayCache = object : LinkedHashMap<OverlayCacheKey, Bitmap>(MAX_CACHE_ENTRIES, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<OverlayCacheKey, Bitmap>?): Boolean =
+            size > MAX_CACHE_ENTRIES
+    }
+
+    fun clearOverlayCache() {
+        synchronized(cacheLock) {
+            overlayCache.clear()
+        }
+    }
+
+    private fun cacheKey(source: Bitmap, mode: InspectionOverlayMode): OverlayCacheKey =
+        OverlayCacheKey(
+            identityHash = System.identityHashCode(source),
+            generationId = source.generationId,
+            width = source.width,
+            height = source.height,
+            mode = mode,
+        )
+
+    private fun lookupCache(key: OverlayCacheKey): Bitmap? =
+        synchronized(cacheLock) {
+            val hit = overlayCache[key]
+            if (hit != null && hit.isRecycled) {
+                overlayCache.remove(key)
+                null
+            } else {
+                hit
+            }
+        }
+
+    private fun storeCache(key: OverlayCacheKey, bitmap: Bitmap) {
+        synchronized(cacheLock) {
+            overlayCache[key] = bitmap
+        }
+    }
+
     private val gray50Bitmap: Bitmap by lazy {
         Bitmap.createBitmap(intArrayOf(0xff808080.toInt(), 0xff808080.toInt(), 0xff808080.toInt(), 0xff808080.toInt()), 2, 2, Bitmap.Config.ARGB_8888)
     }
@@ -101,8 +153,14 @@ internal object InspectionBitmap {
     fun rememberBitmap(source: Bitmap, mode: InspectionOverlayMode): Bitmap {
         if (mode == InspectionOverlayMode.NONE) return source
         if (mode == InspectionOverlayMode.NEUTRAL_GRAY_50) return gray50Bitmap
-        val rendered by produceState<Bitmap?>(null, source, mode) {
-            value = null
+        val key = cacheKey(source, mode)
+        val cached = lookupCache(key)
+        var lastRendered by remember(mode) { mutableStateOf<Bitmap?>(null) }
+        if (cached != null) {
+            lastRendered = cached
+            return cached
+        }
+        val rendered by produceState<Bitmap?>(null, key) {
             value = withContext(Dispatchers.Default) {
                 val w = source.width
                 val h = source.height
@@ -124,9 +182,19 @@ internal object InspectionBitmap {
                         )
                     }
                 }
-                Bitmap.createBitmap(dstPixels, w, h, Bitmap.Config.ARGB_8888)
+                val bmp = Bitmap.createBitmap(dstPixels, w, h, Bitmap.Config.ARGB_8888)
+                storeCache(key, bmp)
+                bmp
             }
         }
-        return rendered ?: source
+        if (rendered != null) {
+            lastRendered = rendered
+            return rendered!!
+        }
+        val fallback = lastRendered?.takeIf {
+            !it.isRecycled && it.width > 0 && it.height > 0 && source.width > 0 && source.height > 0 &&
+                abs(it.width.toFloat() / it.height - source.width.toFloat() / source.height) < 0.02f
+        }
+        return fallback ?: source
     }
 }

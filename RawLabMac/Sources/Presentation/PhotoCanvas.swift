@@ -180,9 +180,7 @@ struct PhotoCanvas: View {
         if inspectionOverlay == .neutralGray50 {
             Color(red: 128.0 / 255.0, green: 128.0 / 255.0, blue: 128.0 / 255.0)
         } else if inspectionOverlay != .none {
-            let base = frame.hdr?.sdrImage ?? frame.image
-            let transformed = InspectionOverlayRenderer.shared.render(base, mode: inspectionOverlay) ?? base
-            Image(decorative: transformed, scale: 1).resizable().interpolation(.high)
+            InspectionOverlayPhotoView(base: frame.hdr?.sdrImage ?? frame.image, mode: inspectionOverlay)
         } else if let presentation = frame.hdr, let hdrDisplay {
             HDRCanvas(presentation: presentation, state: hdrDisplay)
         } else {
@@ -195,6 +193,40 @@ struct PhotoCanvas: View {
             .background { GeometryReader { geometry in
                 Color.clear.preference(key: PhotoLabelBounds.self, value: [geometry.frame(in: .named("photoCanvas"))])
             } }
+    }
+}
+
+private struct InspectionOverlayPhotoView: View {
+    let base: CGImage
+    let mode: InspectionOverlayMode
+    @State private var rendered: (sourceID: ObjectIdentifier, mode: InspectionOverlayMode, image: CGImage)?
+
+    private struct RenderKey: Equatable {
+        let sourceID: ObjectIdentifier
+        let mode: InspectionOverlayMode
+    }
+
+    var body: some View {
+        let cached = InspectionOverlayRenderer.shared.cached(base, mode: mode)
+        let display = cached
+            ?? (rendered?.mode == mode ? rendered?.image : nil)
+            ?? base
+        Image(decorative: display, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .task(id: RenderKey(sourceID: ObjectIdentifier(base), mode: mode)) {
+                if let hit = InspectionOverlayRenderer.shared.cached(base, mode: mode) {
+                    rendered = (ObjectIdentifier(base), mode, hit)
+                    return
+                }
+                let result = await withCheckedContinuation { continuation in
+                    InspectionOverlayRenderer.shared.renderAsync(base, mode: mode) { output in
+                        continuation.resume(returning: output)
+                    }
+                }
+                guard !Task.isCancelled, let result else { return }
+                rendered = (ObjectIdentifier(base), mode, result)
+            }
     }
 }
 

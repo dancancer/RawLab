@@ -137,13 +137,15 @@ final class PhotoCanvasView: UIView {
     private var inspectionAnchors: [(index: Int, point: CGPoint, selected: Bool)] = []
     private var unmaskedSampleImage: UIImage?
     private var inspectionDragging = false
+    private var overlayTokens: [String: UInt64] = [:]
+    private var lastOverlayImages: [String: (mode: InspectionOverlayMode, image: UIImage)] = [:]
     var onInspectionPointChange: ((CGPoint) -> Void)?
     var onViewingChange: ((PhotoViewingState) -> Void)?
     var onViewportChange: ((PhotoViewport) -> Void)?
     var onPreviewSizeChange: ((Int) -> Void)?
     var onDetailRequest: ((PhotoDetailRequest?) -> Void)?
 
-    private static let neutralGray50UIImage: UIImage = {
+    static let neutralGray50UIImage: UIImage = {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
         return renderer.image { ctx in
             UIColor(red: 128.0 / 255.0, green: 128.0 / 255.0, blue: 128.0 / 255.0, alpha: 1.0).setFill()
@@ -151,19 +153,42 @@ final class PhotoCanvasView: UIView {
         }
     }()
 
-    private static func displayImage(for image: UIImage?, hdr: HDRDisplayImage?, overlay: InspectionOverlayMode) -> UIImage? {
-        guard overlay != .none else { return image }
-        if overlay == .neutralGray50 { return neutralGray50UIImage }
-        guard let cg = hdr?.sdrImage ?? image?.cgImage,
-              let rendered = InspectionOverlayRenderer.shared.render(cg, mode: overlay) else { return image }
-        return UIImage(cgImage: rendered, scale: 1, orientation: .up)
-    }
-
-    static func displayCGImage(for cgImage: CGImage?, overlay: InspectionOverlayMode) -> CGImage? {
-        guard overlay != .none else { return cgImage }
-        if overlay == .neutralGray50 { return neutralGray50UIImage.cgImage }
-        guard let cgImage else { return nil }
-        return InspectionOverlayRenderer.shared.render(cgImage, mode: overlay) ?? cgImage
+    private func displayImage(
+        for image: UIImage?,
+        hdr: HDRDisplayImage?,
+        overlay: InspectionOverlayMode,
+        slot: String,
+        apply: @escaping (UIImage) -> Void
+    ) -> UIImage? {
+        guard overlay != .none else {
+            overlayTokens[slot] = (overlayTokens[slot] ?? 0) &+ 1
+            lastOverlayImages.removeValue(forKey: slot)
+            return image
+        }
+        if overlay == .neutralGray50 {
+            overlayTokens[slot] = (overlayTokens[slot] ?? 0) &+ 1
+            return Self.neutralGray50UIImage
+        }
+        guard let cg = hdr?.sdrImage ?? image?.cgImage else { return image }
+        if let cached = InspectionOverlayRenderer.shared.cached(cg, mode: overlay) {
+            let ui = UIImage(cgImage: cached, scale: 1, orientation: .up)
+            lastOverlayImages[slot] = (overlay, ui)
+            return ui
+        }
+        let token = (overlayTokens[slot] ?? 0) &+ 1
+        overlayTokens[slot] = token
+        InspectionOverlayRenderer.shared.renderAsync(cg, mode: overlay) { [weak self] rendered in
+            DispatchQueue.main.async {
+                guard let self, self.overlayTokens[slot] == token, let rendered else { return }
+                let ui = UIImage(cgImage: rendered, scale: 1, orientation: .up)
+                self.lastOverlayImages[slot] = (overlay, ui)
+                apply(ui)
+            }
+        }
+        if let prev = lastOverlayImages[slot], prev.mode == overlay {
+            return prev.image
+        }
+        return image
     }
 
     override init(frame: CGRect) {
@@ -304,11 +329,40 @@ final class PhotoCanvasView: UIView {
         let pixels = nativePixelSize ?? renderedPixels
         let sideBySide = displayState.enabled && displayState.preferredMode == .sideBySide && !isDraft
         let wipeActive = displayState.enabled && displayState.preferredMode == .wipe && !isDraft
+        let compareBeforeNeeded = wipeActive || sideBySide || displayState.holdingBefore
         let activeOverlay = isDraft ? .none : inspectionOverlay
         let rawResultImage = displayState.holdingBefore ? imageBefore : image
         unmaskedSampleImage = rawResultImage
-        let nextResultImage = Self.displayImage(for: rawResultImage, hdr: displayState.holdingBefore ? referenceHDR : hdr, overlay: activeOverlay)
-        let nextBeforeImage = Self.displayImage(for: imageBefore, hdr: referenceHDR, overlay: activeOverlay)
+        let nextResultImage = displayImage(
+            for: rawResultImage,
+            hdr: displayState.holdingBefore ? referenceHDR : hdr,
+            overlay: activeOverlay,
+            slot: "result"
+        ) { [weak self] updated in
+            guard let self, self.result.imageView.image !== updated else { return }
+            self.result.imageView.image = updated
+        }
+        let nextBeforeImage: UIImage?
+        if compareBeforeNeeded {
+            nextBeforeImage = displayImage(
+                for: imageBefore,
+                hdr: referenceHDR,
+                overlay: activeOverlay,
+                slot: "before"
+            ) { [weak self] updated in
+                guard let self else { return }
+                if self.reference.imageView.image !== updated {
+                    self.reference.imageView.image = updated
+                }
+                if self.state.enabled && self.state.preferredMode == .wipe && !self.isDraft {
+                    self.result.comparisonImage = updated
+                }
+            }
+        } else {
+            overlayTokens["before"] = (overlayTokens["before"] ?? 0) &+ 1
+            lastOverlayImages.removeValue(forKey: "before")
+            nextBeforeImage = imageBefore
+        }
         let nextAvoidance = displayState.enabled && !displayState.previewOnly && !isDraft ? overlayAvoidanceRect : .zero
         let anchorsChanged = self.inspectionAnchors.count != inspectionAnchors.count ||
             zip(self.inspectionAnchors, inspectionAnchors).contains { $0.0 != $1.0 || $0.1 != $1.1 || $0.2 != $1.2 }
@@ -389,12 +443,25 @@ final class PhotoCanvasView: UIView {
         let activeTiles = isDraft ? [] : detailTiles
         let useTiledSDR = !activeTiles.isEmpty && hdr == nil
         let activeDetail = (isDraft || useTiledSDR) ? nil : detailOverlay
-        let afterDetailImage = activeDetail?.cgImage.flatMap {
-            Self.displayCGImage(for: $0, overlay: activeOverlay).map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+        let afterDetailImage = activeDetail?.cgImage.flatMap { cg in
+            result.resolveOverlayCG(cg, overlay: activeOverlay, slot: "detailAfter") { [weak self] updated in
+                guard let self else { return }
+                let ui = UIImage(cgImage: updated, scale: 1, orientation: .up)
+                self.result.detailImageView.image = ui
+            }.map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
         }
-        let beforeDetailImage = activeDetail?.beforeCGImage.flatMap {
-            Self.displayCGImage(for: $0, overlay: activeOverlay).map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
-        }
+        let beforeDetailImage = compareBeforeNeeded ? activeDetail?.beforeCGImage.flatMap { cg in
+            result.resolveOverlayCG(cg, overlay: activeOverlay, slot: "detailBefore") { [weak self] updated in
+                guard let self else { return }
+                let ui = UIImage(cgImage: updated, scale: 1, orientation: .up)
+                if self.state.enabled && self.state.preferredMode == .wipe && !self.isDraft {
+                    self.result.beforeDetailImageView.image = ui
+                }
+                if self.state.enabled && self.state.preferredMode == .sideBySide && !self.isDraft {
+                    self.reference.detailImageView.image = ui
+                }
+            }.map { UIImage(cgImage: $0, scale: 1, orientation: .up) }
+        } : nil
         result.setDetailBacking(activeBacking, showBefore: displayState.holdingBefore, wipeBefore: wipeActive, overlay: activeOverlay)
         result.setDetailTiles(useTiledSDR ? activeTiles : [], showBefore: displayState.holdingBefore, wipeBefore: wipeActive, overlay: activeOverlay)
         result.setDetail(
@@ -775,6 +842,42 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
     private var lastAccessibilitySignature: (Bool, Bool, Bool)?
     private var afterTileLayers: [PhotoDetailTileKey: (layer: CALayer, normalizedRect: CGRect, cgImage: CGImage)] = [:]
     private var beforeTileLayers: [PhotoDetailTileKey: (layer: CALayer, normalizedRect: CGRect, cgImage: CGImage)] = [:]
+    private var detailOverlayTokens: [String: UInt64] = [:]
+    private var lastDetailOverlayCG: [String: (mode: InspectionOverlayMode, cg: CGImage)] = [:]
+
+    func resolveOverlayCG(
+        _ cgImage: CGImage,
+        overlay: InspectionOverlayMode,
+        slot: String,
+        apply: @escaping (CGImage) -> Void
+    ) -> CGImage? {
+        if overlay == .none {
+            detailOverlayTokens[slot] = (detailOverlayTokens[slot] ?? 0) &+ 1
+            lastDetailOverlayCG.removeValue(forKey: slot)
+            return cgImage
+        }
+        if overlay == .neutralGray50 {
+            detailOverlayTokens[slot] = (detailOverlayTokens[slot] ?? 0) &+ 1
+            return PhotoCanvasView.neutralGray50UIImage.cgImage ?? cgImage
+        }
+        if let cached = InspectionOverlayRenderer.shared.cached(cgImage, mode: overlay) {
+            lastDetailOverlayCG[slot] = (overlay, cached)
+            return cached
+        }
+        let token = (detailOverlayTokens[slot] ?? 0) &+ 1
+        detailOverlayTokens[slot] = token
+        InspectionOverlayRenderer.shared.renderAsync(cgImage, mode: overlay) { [weak self] rendered in
+            DispatchQueue.main.async {
+                guard let self, self.detailOverlayTokens[slot] == token, let rendered else { return }
+                self.lastDetailOverlayCG[slot] = (overlay, rendered)
+                apply(rendered)
+            }
+        }
+        if let prev = lastDetailOverlayCG[slot], prev.mode == overlay {
+            return prev.cg
+        }
+        return cgImage
+    }
 
     var activeDetailTileCount: Int { afterTileLayers.count }
     var activeBeforeDetailTileCount: Int { beforeTileLayers.count }
@@ -806,11 +909,27 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
-        let nextAfter = backing.flatMap {
-            PhotoCanvasView.displayCGImage(for: showBefore ? ($0.beforeCGImage ?? $0.cgImage) : $0.cgImage, overlay: overlay)
+        let nextAfter = backing.flatMap { b -> CGImage? in
+            let src = showBefore ? (b.beforeCGImage ?? b.cgImage) : b.cgImage
+            return resolveOverlayCG(src, overlay: overlay, slot: "backingAfter") { [weak self] updated in
+                guard let self, !self.detailBackingLayer.isHidden else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.detailBackingLayer.contents = updated
+                self.afterBackingCGImage = updated
+                CATransaction.commit()
+            }
         }
-        let nextBefore = wipeBefore ? backing.flatMap {
-            PhotoCanvasView.displayCGImage(for: $0.beforeCGImage ?? $0.cgImage, overlay: overlay)
+        let nextBefore = wipeBefore ? backing.flatMap { b -> CGImage? in
+            let src = b.beforeCGImage ?? b.cgImage
+            return resolveOverlayCG(src, overlay: overlay, slot: "backingBefore") { [weak self] updated in
+                guard let self, !self.beforeDetailBackingLayer.isHidden else { return }
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.beforeDetailBackingLayer.contents = updated
+                self.beforeBackingCGImage = updated
+                CATransaction.commit()
+            }
         } : nil
 
         detailBackingLayer.frame = imageView.bounds
@@ -916,12 +1035,28 @@ final class PhotoScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecogn
         for tile in tiles {
             guard let key = tile.tileKey else { continue }
             if let afterRaw = showBefore ? (tile.beforeCGImage ?? tile.cgImage) : tile.cgImage,
-               let afterCG = PhotoCanvasView.displayCGImage(for: afterRaw, overlay: overlay) {
+               let afterCG = resolveOverlayCG(afterRaw, overlay: overlay, slot: "tileAfter:\(key.level):\(key.col):\(key.row)", apply: { [weak self] updated in
+                   guard let self, var entry = self.afterTileLayers[key] else { return }
+                   CATransaction.begin()
+                   CATransaction.setDisableActions(true)
+                   entry.layer.contents = updated
+                   entry.cgImage = updated
+                   self.afterTileLayers[key] = entry
+                   CATransaction.commit()
+               }) {
                 desiredAfter[key] = (tile, afterCG)
             }
             if wipeBefore,
                let beforeRaw = tile.beforeCGImage ?? tile.cgImage,
-               let beforeCG = PhotoCanvasView.displayCGImage(for: beforeRaw, overlay: overlay) {
+               let beforeCG = resolveOverlayCG(beforeRaw, overlay: overlay, slot: "tileBefore:\(key.level):\(key.col):\(key.row)", apply: { [weak self] updated in
+                   guard let self, var entry = self.beforeTileLayers[key] else { return }
+                   CATransaction.begin()
+                   CATransaction.setDisableActions(true)
+                   entry.layer.contents = updated
+                   entry.cgImage = updated
+                   self.beforeTileLayers[key] = entry
+                   CATransaction.commit()
+               }) {
                 desiredBefore[key] = (tile, beforeCG)
             }
         }

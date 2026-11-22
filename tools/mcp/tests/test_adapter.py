@@ -1290,6 +1290,20 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 "exposure_reference": "preview", "fbdd_level": 0,
             }}, {"hdr_processing_version": 9}),
             ({"light.exposure": 0.5}, {"recipe_context": {"id": "r", "strength": 2.1, "settings_version": 4}}),
+            # P0-2 HDR version gates: channels require >= 8; free endpoints & luminance require >= 9
+            ({"light.curve": {
+                "mode": "legacy", "points": [],
+                "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]]}},
+            }}, {"hdr_processing_version": 7}),
+            ({"light.curve": {
+                "mode": "custom", "points": [[0.0, 0.1], [1.0, 1.0]],
+            }}, {"hdr_processing_version": 8}),
+            ({"light.curve": {
+                "mode": "legacy", "points": [],
+                "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [1.0, 0.9]]}},
+            }}, {"hdr_processing_version": 8}),
+            ({"color.grading.shadows": {"hue": 120.0, "saturation": 25.0, "luminance": -5.0}}, {"hdr_processing_version": 8}),
+            ({"color.grading.global": {"hue": 30.0, "saturation": 10.0, "luminance": 2.5}}, {"hdr_processing_version": 8}),
         ]
         for idx, (bad_values, extra_kwargs) in enumerate(invalid_cases):
             res = await adapter.save_preset(name=f"Bad {idx}", values=bad_values, **extra_kwargs)
@@ -1597,6 +1611,72 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after_settings["colorGrading"]["global"]["hue"], 180.0)
         self.assertEqual(after_state["masterRecipeID"], "hamada_daylight_v2")
         self.assertEqual(after_state["filmID"], "builtin:classic_chrome")
+
+    async def test_sync_photo_edit_preserves_other_raw_slices_and_cleans_stale_migration(self):
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+        data_dir = self.root / "appdata-slices"
+        edits_file = data_dir / "Edits" / "edits.json"
+        edits_file.parent.mkdir(parents=True, exist_ok=True)
+        other_path = "/tmp/other_photo_untouched.DNG"
+        other_raw_slice = (
+            '{  "identity" : { "path": "/tmp/other_photo_untouched.DNG", "size": 42, "modified": 1.000, "fileNumber": 99 }, '
+            '"state": { "filmID": "", "settings": { "exposure": 0.500, "futureField": [ 1, 2 ] } }  }'
+        )
+        other_mig_slice = '{ "status": "migrated", "marker": 1.000 }'
+        raw_path_canon = gui_sync._mac_foundation_canonical_path(self.input_path)
+        target_slice = json.dumps({
+            "identity": gui_sync._swift_identity_for_file(self.input_path),
+            "state": {
+                "filmID": "",
+                "settings": {
+                    "processing": {"family": "rawlab", "quality": "standard", "version": 2},
+                    "exposureMode": "匹配内嵌预览",
+                    "exposure": 0.25,
+                    "aiDenoiseEnabled": True,
+                    "aiDenoiseBlend": 60.0,
+                },
+            },
+        })
+        target_mig_slice = '{"status":"migrated","version":2}'
+        edits_file.write_text(
+            '{"records":{'
+            + json.dumps(other_path) + ':' + other_raw_slice + ','
+            + json.dumps(raw_path_canon) + ':' + target_slice
+            + '},"processingMigrations":{'
+            + json.dumps(other_path) + ':' + other_mig_slice + ','
+            + json.dumps(raw_path_canon) + ':' + target_mig_slice
+            + '},"version":1}',
+            encoding="utf-8",
+        )
+
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        res = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"processing_version": 3, "exposure": 0.8, "ai_denoise_blend": 45.0},
+        )
+        self.assertTrue(res.ok, str(res.error))
+        updated_text = edits_file.read_text(encoding="utf-8")
+        # Byte-for-byte raw slice preservation for unrelated photo & its migration
+        self.assertIn(other_raw_slice, updated_text)
+        self.assertIn(other_mig_slice, updated_text)
+
+        updated_doc = json.loads(updated_text)
+        self.assertNotIn(raw_path_canon, updated_doc.get("processingMigrations", {}))
+        self.assertIn(other_path, updated_doc["processingMigrations"])
+        target_settings = updated_doc["records"][raw_path_canon]["state"]["settings"]
+        self.assertEqual(target_settings["processing"]["version"], 3)
+        self.assertEqual(target_settings["exposure"], 0.8)
+        self.assertIs(target_settings["aiDenoiseEnabled"], True)
+        self.assertEqual(target_settings["aiDenoiseBlend"], 45.0)
 
     def test_store_lock_windows_open_retry_and_timeout(self):
         lock_file = self.root / "Presets" / "presets.json.lock"

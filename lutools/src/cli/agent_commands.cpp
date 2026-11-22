@@ -663,7 +663,7 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
-                    {"processing_versions",{1,2,3,4,5,6,7,8}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"processing_versions",{1,2,3,4,5,6,7,8,9}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
                     {"effects_recipe_version",11},
                     {"detail_recipe_version",12},
                     {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},
@@ -692,6 +692,7 @@ int runAgentCommands(int argc, char* argv[]) {
             raster = {{"formats", {"jpeg", "png", "tiff", "heif"}}, {"bits_per_component", {8, 16}},
 #endif
                 {"tiff_bits_per_component", {8, 16}},
+                {"white_balance_modes", {"none", "relative"}},
                 {"alpha", "opaque_only"}, {"dynamic_range", "sdr"}, {"color_space", "srgb"},
                 {"backend", "cpu"}, {"max_pixels", 128000000}};
 #endif
@@ -716,10 +717,16 @@ int runAgentCommands(int argc, char* argv[]) {
                 {"edit_groups", {"exposure", "white_balance", "look", "geometry", "tone", "color", "color_grading", "detail", "hsl", "effects", "denoise", "lens_correction"}},
                 {"tone_controls", {{"version", 1}, {"recipe_min_version", 5}, {"range", {-1,1}},
                     {"fields", {"tone.black_point","tone.white_point","color.vibrance"}}}},
-                {"color_grading", {{"version",1},{"recipe_min_version",5},{"zones",{"shadows","midtones","highlights"}},
-                    {"hue_degrees",{{"minimum",0},{"exclusive_maximum",360}}},{"saturation_range",{0,100}}}},
-                {"tone_curve", {{"version",1},{"recipe_min_version",5},{"modes",{"legacy","custom"}},
-                    {"channels",{"red","green","blue"}},{"max_points",33},{"interpolation","pchip"},{"fixed_endpoints",true},{"monotone",true}}},
+                {"color_grading", {{"version",2},{"recipe_min_version",5},{"v2_recipe_min_version",17},
+                    {"zones",{"shadows","midtones","highlights","global"}},
+                    {"hue_degrees",{{"minimum",0},{"exclusive_maximum",360}}},{"saturation_range",{0,100}},
+                    {"luminance_range",{-100,100}},{"blending_range",{0,100}},{"balance_range",{-100,100}}}},
+                {"tone_curve", {{"version",2},{"recipe_min_version",5},{"v2_recipe_min_version",17},
+                    {"modes",{"legacy","custom"}},
+                    {"channels",{"red","green","blue"}},{"max_points",33},{"interpolation","pchip"},
+                    {"fixed_endpoints",false},{"monotone",true},{"apply_to_luminosity",true},
+                    {"parametric",{"highlights","lights","darks","shadows","split_shadow","split_midtone","split_highlight"}}}},
+                {"output_sharpening", {"off","low","standard","high"}},
                 {"atmosphere", {{"version",1},{"recipe_min_version",5},{"range",{-1,1}},
                     {"fields",{"effects.clarity","effects.dehaze"}},{"backend","cpu"},
                     {"gpu_force","unsupported"},{"preview","complete_source"}}},

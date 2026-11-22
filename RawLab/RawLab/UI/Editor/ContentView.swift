@@ -480,6 +480,8 @@ struct ContentView: View {
             _ = viewModel.saveCurrentSettings(settings)
             coordinator.photoViewing.endTemporaryViewing()
             cancelPhotoImport()
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             testHooks.onDisappear?()
         }
     }

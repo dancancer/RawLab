@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from contextlib import contextmanager
 import json
 import math
@@ -453,7 +455,11 @@ def validate_transfer_values(
             raise AdapterError(f"Field '{key}' is not nullable")
 
         if key in _GRADING_WHEEL_FIELDS:
-            _validate_grading_wheel(val, field_name=key)
+            wheel = _validate_grading_wheel(val, field_name=key)
+            if is_hdr and hdr_processing_version is not None and hdr_processing_version < 9 and wheel["luminance"] != 0.0:
+                raise AdapterError(
+                    f"{key}.luminance is not supported in hdr_processing_version={hdr_processing_version}"
+                )
         elif key == "looks.reference":
             sub = proto["sub_fields"]
             if not isinstance(val, dict) or set(val.keys()) != set(proto["object_keys"]):
@@ -477,11 +483,22 @@ def validate_transfer_values(
                 raise AdapterError("light.curve must include mode and points")
             if not set(val.keys()).issubset({"mode", "points", "channels"}):
                 raise AdapterError("light.curve contains unexpected keys")
-            _validate_tone_curve_shape(
+            master_curve = _validate_tone_curve_shape(
                 {"mode": val["mode"], "points": val["points"]},
                 field_name="light.curve",
             )
+            if is_hdr and hdr_processing_version is not None and hdr_processing_version < 9:
+                if master_curve["mode"] == "custom" and (
+                    master_curve["points"][0][1] != 0.0 or master_curve["points"][-1][1] != 1.0
+                ):
+                    raise AdapterError(
+                        f"Free curve endpoints on light.curve require hdr_processing_version >= 9 (got {hdr_processing_version})"
+                    )
             if "channels" in val:
+                if is_hdr and hdr_processing_version is not None and hdr_processing_version < 8:
+                    raise AdapterError(
+                        f"light.curve.channels is not supported in hdr_processing_version={hdr_processing_version}"
+                    )
                 ch = val["channels"]
                 if not isinstance(ch, dict):
                     raise AdapterError("light.curve.channels must be an object")
@@ -489,7 +506,14 @@ def validate_transfer_values(
                 if not set(ch.keys()).issubset(allowed_ch):
                     raise AdapterError("light.curve.channels keys must be a subset of red, green, blue")
                 for c_name, c_shape in ch.items():
-                    _validate_tone_curve_shape(c_shape, field_name=f"light.curve.channels.{c_name}")
+                    ch_curve = _validate_tone_curve_shape(c_shape, field_name=f"light.curve.channels.{c_name}")
+                    if is_hdr and hdr_processing_version is not None and hdr_processing_version < 9:
+                        if ch_curve["mode"] == "custom" and (
+                            ch_curve["points"][0][1] != 0.0 or ch_curve["points"][-1][1] != 1.0
+                        ):
+                            raise AdapterError(
+                                f"Free curve endpoints on light.curve.channels.{c_name} require hdr_processing_version >= 9 (got {hdr_processing_version})"
+                            )
         elif key == "light.curve.parametric":
             _validate_parametric_curve(val, field_name="light.curve.parametric")
         elif key == "detail.denoise.wavelet":
@@ -1162,6 +1186,8 @@ def _build_mac_photo_edit_state_and_explicit(
         "geometry",
         "lens_correction",
         "master_recipe_settings_version",
+        "ai_denoise_enabled",
+        "ai_denoise_blend",
     }
     unknown = set(adjustments.keys()) - allowed_keys
     if unknown:
@@ -1255,6 +1281,17 @@ def _build_mac_photo_edit_state_and_explicit(
         "supportsRawNoiseReduction": not is_raster,
         "masterRecipeSettingsVersion": recipe_ver,
     }
+
+    if "ai_denoise_enabled" in adjustments and adjustments["ai_denoise_enabled"] is not None:
+        ai_on = adjustments["ai_denoise_enabled"]
+        if type(ai_on) is not bool:
+            raise AdapterError("ai_denoise_enabled must be a boolean")
+        if is_raster and ai_on:
+            raise AdapterError("Raster inputs do not support AI denoise")
+        settings["aiDenoiseEnabled"] = ai_on
+
+    if "ai_denoise_blend" in adjustments and adjustments["ai_denoise_blend"] is not None:
+        settings["aiDenoiseBlend"] = round(_num_in(adjustments, "ai_denoise_blend", 100.0, 0.0, 100.0), 2)
 
     if "chroma_noise_reduction" in adjustments and adjustments["chroma_noise_reduction"] is not None:
         cdn = adjustments["chroma_noise_reduction"]
@@ -1498,6 +1535,8 @@ def _build_mac_photo_edit_state_and_explicit(
         "photo_effects": "photoEffects",
         "lens_correction": "lensCorrection",
         "geometry": "geometry",
+        "ai_denoise_enabled": "aiDenoiseEnabled",
+        "ai_denoise_blend": "aiDenoiseBlend",
     }
     for adj_key, settings_key in key_map.items():
         if adj_key in adjustments and adjustments[adj_key] is not None and settings_key in settings:
@@ -1554,25 +1593,64 @@ def sync_photo_edit(
     edits_file.parent.mkdir(parents=True, exist_ok=True)
 
     with _store_lock(lock_file):
+        record_slices: dict[str, bytes] = {}
+        migration_slices: dict[str, bytes] | None = None
+
         if edits_file.exists():
             try:
-                registry = json.loads(edits_file.read_text(encoding="utf-8"))
+                raw_bytes = edits_file.read_bytes()
+                root_node = _StrictJSONScanner(raw_bytes).scan_root()
             except (OSError, ValueError, UnicodeError) as e:
                 raise AdapterError(f"Corrupt edits.json: {e}", "output_io_error") from e
-            if (not isinstance(registry, dict) or registry.get("version") != 1
-                    or type(registry.get("version")) is not int
-                    or not isinstance(registry.get("records"), dict)):
-                raise AdapterError("Unsupported or corrupt edits.json", "output_io_error")
-        else:
-            registry = {"records": {}, "version": 1}
 
-        records: dict[str, Any] = dict(registry["records"])
-        existing_record = records.get(identity["path"])
-        had_existing = existing_record is not None
+            if root_node[0] != "object" or root_node[3]:
+                raise AdapterError("Unsupported or corrupt edits.json", "output_io_error")
+            member_map = {k: child for k, child in root_node[5]}
+            rv_node = member_map.get("version")
+            records_node = member_map.get("records")
+            if (
+                rv_node is None
+                or rv_node[0] != "number"
+                or not _StrictJSONScanner.is_integer_literal(rv_node[5])
+                or int(rv_node[5]) != 1
+                or records_node is None
+                or records_node[0] != "object"
+                or records_node[3]
+            ):
+                raise AdapterError("Unsupported or corrupt edits.json", "output_io_error")
+
+            record_slices = {
+                k: raw_bytes[child[1]:child[2]]
+                for k, child in records_node[5]
+            }
+
+            if "processingMigrations" in member_map and member_map["processingMigrations"][0] != "null":
+                mig_node = member_map["processingMigrations"]
+                if mig_node[0] != "object" or mig_node[3]:
+                    raise AdapterError("Unsupported or corrupt edits.json", "output_io_error")
+                migration_slices = {
+                    k: raw_bytes[child[1]:child[2]]
+                    for k, child in mig_node[5]
+                }
+
+        photo_key = identity["path"]
+        existing_slice = record_slices.get(photo_key)
+        had_existing = existing_slice is not None
+        existing_record: Any = None
+        if existing_slice is not None:
+            try:
+                existing_record = json.loads(existing_slice.decode("utf-8"))
+            except (ValueError, UnicodeError) as e:
+                raise AdapterError(f"Corrupt record for {photo_key} in edits.json: {e}", "output_io_error") from e
 
         if isinstance(existing_record, dict) and isinstance(existing_record.get("state"), dict):
             existing_state = existing_record["state"]
             existing_settings = existing_state.get("settings")
+            old_proc_ver = (
+                existing_settings.get("processing", {}).get("version")
+                if isinstance(existing_settings, dict) and isinstance(existing_settings.get("processing"), dict)
+                else None
+            )
             if isinstance(existing_settings, dict):
                 merged_settings = dict(existing_settings)
                 for key, value in new_state["settings"].items():
@@ -1581,6 +1659,16 @@ def sync_photo_edit(
                 merged_settings["supportsRawNoiseReduction"] = not is_raster
             else:
                 merged_settings = dict(new_state["settings"])
+
+            new_proc_ver = (
+                merged_settings.get("processing", {}).get("version")
+                if isinstance(merged_settings.get("processing"), dict)
+                else None
+            )
+            if migration_slices is not None and "processing" in explicit_keys and old_proc_ver != new_proc_ver:
+                migration_slices.pop(photo_key, None)
+                if not migration_slices:
+                    migration_slices = None
 
             final_state = dict(existing_state)
             final_state["settings"] = merged_settings
@@ -1598,15 +1686,28 @@ def sync_photo_edit(
         else:
             final_state = new_state
             final_record = {"identity": identity, "state": final_state}
+            if migration_slices is not None and "processing" in explicit_keys:
+                migration_slices.pop(photo_key, None)
+                if not migration_slices:
+                    migration_slices = None
 
-        records[identity["path"]] = final_record
+        record_slices[photo_key] = json.dumps(
+            final_record, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
 
-        out_reg: dict[str, Any] = {"records": records}
-        if registry.get("processingMigrations") is not None:
-            out_reg["processingMigrations"] = registry["processingMigrations"]
-        out_reg["version"] = 1
+        def _encode_raw_map(slices: dict[str, bytes]) -> bytes:
+            parts = [
+                json.dumps(k, ensure_ascii=False).encode("utf-8") + b":" + slices[k]
+                for k in sorted(slices.keys())
+            ]
+            return b"{" + b",".join(parts) + b"}"
 
-        encoded = json.dumps(out_reg, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        encoded = (
+            b'{"records":'
+            + _encode_raw_map(record_slices)
+            + (b',"processingMigrations":' + _encode_raw_map(migration_slices) if migration_slices else b"")
+            + b',"version":1}'
+        )
         atomic_write_bytes(edits_file, encoded)
 
     return {

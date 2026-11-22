@@ -211,6 +211,8 @@ final class EditorModel: ObservableObject {
         dismissedExternalReloadFingerprints.removeAll()
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         inspection.resetForNewSource()
+        InspectionSamplerCache.shared.clear()
+        InspectionOverlayRenderer.shared.clear()
         sourceNativeSize = nil
         wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
         closeQuickPresets()

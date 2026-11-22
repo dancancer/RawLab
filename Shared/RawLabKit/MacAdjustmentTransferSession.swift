@@ -176,6 +176,7 @@ public final class AdjustmentTransferSession {
         expected: MacPhotoEditRecord,
         reloaded: MacPhotoEditRecord
     ) -> AdjustmentTransferOutcome {
+        _ = store.flushPendingCommits()
         let key = reloaded.identity.path
         guard expected.identity.path == key else {
             return outcome(key, .conflict, error: AdjustmentCommitError.photoChanged)

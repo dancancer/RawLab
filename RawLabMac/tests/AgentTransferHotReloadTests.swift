@@ -164,6 +164,21 @@ private func rendered(_ model: EditorModel) throws {
         let presetNotified = waitUntil(3.0) { model.presetLibraryRevision > initialPresetRev }
         try check(presetNotified, "external presets.json write bumps presetLibraryRevision")
 
+        // 6. Un-dirtied crop draft -> Keep Manual Draft -> Esc/cancelGeometryDraft re-triggers external check
+        model.beginGeometryDraft()
+        try check(model.hasUnsavedManualDraft, "un-dirtied geometry draft marks hasUnsavedManualDraft")
+        var extAdj4 = Adjustments()
+        extAdj4.exposureMode = .sensor
+        extAdj4.exposure = 1.85
+        _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj4, filmID: ""))
+        let bannerOnDraft = waitUntil(3.0) { model.hasActiveExternalReloadBanner }
+        try check(bannerOnDraft, "external edit during un-dirtied geometry draft shows banner")
+        model.keepCurrentManualDraftOnExternalUpdate()
+        try check(!model.hasActiveExternalReloadBanner, "Keep Manual Draft dismisses banner")
+        model.cancelGeometryDraft()
+        let reloadedAfterCancel = waitUntil(3.0) { abs(model.settings.exposure - 1.85) < 1e-6 }
+        try check(reloadedAfterCancel, "cancelling un-dirtied geometry draft re-triggers external check and auto-reloads")
+
         try rendered(model)
         print("ALL AgentTransferHotReloadTests PASSED")
     }

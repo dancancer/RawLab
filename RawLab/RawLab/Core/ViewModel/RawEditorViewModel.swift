@@ -179,6 +179,8 @@ final class RawEditorViewModel: ObservableObject {
             completedPreviewCacheBytes = 0
             fullRasterROIBuffer = nil
             sourceNativeSize = nil
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             closeQuickPresets()
         }
     }
@@ -329,6 +331,8 @@ final class RawEditorViewModel: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.clearDetailState(releaseRaster: true, keepRequest: true)
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             self.renderStateLock.lock()
             self.detailPrewarmScheduledFrameID = self.acceptedPreviewFrameID
             self.renderStateLock.unlock()

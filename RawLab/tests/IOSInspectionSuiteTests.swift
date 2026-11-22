@@ -170,10 +170,38 @@ func runIOSInspectionSuite() throws {
         check(curPng == basePng, "iOS export PNG byte-identical with overlay \(mode.rawValue)")
     }
 
-    // 4. Reset on source change
+    // 4. Reset on source change + cache clear & async overlay render
     coordinator.resetForNewSource()
     check(coordinator.inspection.anchors.isEmpty && coordinator.inspection.overlay == .none && coordinator.inspection.liveOutputPoint == nil,
           "resetForNewSource clears inspection anchors, overlay, and live point")
+
+    final class AsyncOverlayBox: @unchecked Sendable {
+        let lock = NSLock()
+        var image: CGImage?
+    }
+    let sem = DispatchSemaphore(value: 0)
+    let asyncBox = AsyncOverlayBox()
+    InspectionOverlayRenderer.shared.clear()
+    InspectionSamplerCache.shared.clear()
+    check(InspectionOverlayRenderer.shared.entryCount == 0 && InspectionSamplerCache.shared.entryCount == 0,
+          "clear() empties shared inspection caches")
+    InspectionOverlayRenderer.shared.renderAsync(afterImg, mode: .sketchLuminance) { out in
+        asyncBox.lock.lock()
+        asyncBox.image = out
+        asyncBox.lock.unlock()
+        sem.signal()
+    }
+    let waitResult = sem.wait(timeout: .now() + 2.0)
+    asyncBox.lock.lock()
+    let asyncRendered = asyncBox.image
+    asyncBox.lock.unlock()
+    check(waitResult == .success && asyncRendered != nil, "renderAsync produces overlay off main thread")
+    check(InspectionOverlayRenderer.shared.cached(afterImg, mode: .sketchLuminance) === asyncRendered,
+          "cached() hits async-rendered overlay without recomputation")
+    InspectionOverlayRenderer.shared.clear()
+    InspectionSamplerCache.shared.clear()
+    check(InspectionOverlayRenderer.shared.entryCount == 0 && InspectionSamplerCache.shared.entryCount == 0,
+          "second clear() leaves caches empty")
 }
 
 @main

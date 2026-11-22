@@ -26,6 +26,10 @@ These instructions apply to `lutools/`, the C++17 RAW/LUT core and CLI shared by
   AI denoising is an exception: it runs only on hardware GPU backends (Mac Core ML, Windows DirectML).
   If unavailable, report this explicitly without falling back to CPU neural-network inference; the CPU path for ordinary photo processing is unaffected.
 - Public C/C++ interfaces are shared across clients. Check affected callers when changing them, and never claim all camera models are calibrated from a few sample files.
+- **Interface & Layering Discipline**:
+  1. Freeze `sony2fuji_hdr_request_v1..v9` nested structs and loose sticky setters: new render parameters must flow through `CanonicalEditRecipe` JSON rather than adding `v10` nested structs or standalone sticky setters.
+  2. Keep the CLI layer (`lutools/src/cli/`) dependent only on public `include/sony2fuji/` headers; do not add new `#include "core/..."` private header dependencies.
+  3. Keep `lutools_core` focused on deterministic color, math, and pixel diagnostic data; prompt engineering and portrait grading prose belong in upper-layer Agent/MCP tools.
 - Follow existing C++17 patterns and four-space indentation. Add abstractions only for a concrete benefit, not to meet arbitrary line-count or folder-size limits.
 
 ## Verification

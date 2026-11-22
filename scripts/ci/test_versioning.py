@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
 import shutil
@@ -46,6 +47,101 @@ def _run_generator(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         cwd=ROOT,
     )
+
+
+def _parse_semver(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def _current_branch(repo_root: Path) -> str:
+    for env_key in ("GITHUB_HEAD_REF", "GITHUB_REF_NAME"):
+        val = os.environ.get(env_key, "").strip()
+        if val:
+            return val
+    res = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    return res.stdout.strip() if res.returncode == 0 else ""
+
+
+def _read_version_at_ref(repo_root: Path, ref: str) -> tuple[str, int] | None:
+    res = subprocess.run(
+        ["git", "show", f"{ref}:Shared/version.json"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        return None
+    data = json.loads(res.stdout)
+    return str(data["version"]), int(data["build"])
+
+
+def verify_release_version_and_ancestry(repo_root: Path, branch_override: str | None = None) -> None:
+    source = json.loads((repo_root / "Shared/version.json").read_text(encoding="utf-8"))
+    current_version = str(source["version"])
+    current_build = int(source["build"])
+    branch = branch_override if branch_override is not None else _current_branch(repo_root)
+
+    tags_res = subprocess.run(
+        ["git", "tag", "--list", "v*"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    tags = [line.strip() for line in tags_res.stdout.splitlines() if line.strip()] if tags_res.returncode == 0 else []
+
+    released_builds: list[int] = []
+    tag_versions: list[tuple[int, ...]] = []
+    for tag in tags:
+        parsed = _read_version_at_ref(repo_root, tag)
+        if parsed is not None:
+            ver, bld = parsed
+            tag_versions.append(_parse_semver(ver))
+            released_builds.append(bld)
+
+    origin_main_exists = (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "origin/main"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+    if origin_main_exists:
+        parsed_main = _read_version_at_ref(repo_root, "origin/main")
+        if parsed_main is not None:
+            released_builds.append(parsed_main[1])
+
+    # Shallow checkouts with neither tags nor origin/main cannot verify historical refs locally.
+    if not released_builds and not origin_main_exists:
+        return
+
+    on_release_or_hotfix = branch.startswith("release/") or branch.startswith("hotfix/")
+    version_exceeds_tag = bool(tag_versions) and _parse_semver(current_version) > max(tag_versions)
+    if (on_release_or_hotfix or version_exceeds_tag) and released_builds:
+        max_released_build = max(released_builds)
+        if current_build <= max_released_build:
+            raise AssertionError(
+                f"Monotonic build gate failed on branch '{branch}' (version {current_version}): "
+                f"build={current_build} must be strictly greater than max released build={max_released_build}"
+            )
+
+    if branch.startswith("release/") and origin_main_exists:
+        ancestry = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        if ancestry.returncode != 0:
+            raise AssertionError(
+                f"Release branch '{branch}' must include origin/main as an ancestor (git merge-base --is-ancestor origin/main HEAD failed)"
+            )
 
 
 class SingleSourceVersioningTests(unittest.TestCase):
@@ -252,6 +348,88 @@ class SingleSourceVersioningTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.splitlines(), [source["version"], str(source["build"])])
+
+    def test_committed_release_build_monotonic_and_main_ancestry(self) -> None:
+        verify_release_version_and_ancestry(ROOT)
+
+    def test_release_gate_rejects_build_regression_and_missing_main_ancestry(self) -> None:
+        def git(cwd: Path, *args: str) -> str:
+            res = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+            if res.returncode != 0:
+                raise RuntimeError(f"git {' '.join(args)} failed: {res.stderr}")
+            return res.stdout.strip()
+
+        def write_ver(repo: Path, version: str, build: int) -> None:
+            (repo / "Shared").mkdir(parents=True, exist_ok=True)
+            (repo / "Shared/version.json").write_text(
+                json.dumps({"version": version, "build": build}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+        with tempfile.TemporaryDirectory(prefix="rawlab-ver-gate-") as tmp:
+            tmp_path = Path(tmp)
+            # 1. Shallow clone without tags or origin/main passes safely
+            shallow = tmp_path / "shallow"
+            shallow.mkdir()
+            git(shallow, "init")
+            git(shallow, "config", "user.email", "test@example.com")
+            git(shallow, "config", "user.name", "Tester")
+            write_ver(shallow, "0.12.0", 21)
+            git(shallow, "add", "Shared/version.json")
+            git(shallow, "commit", "-m", "init")
+            verify_release_version_and_ancestry(shallow, branch_override="release/0.12.0")
+
+            # 2. Full simulated remote with origin/main (build 22, v0.11.2)
+            remote = tmp_path / "remote.git"
+            remote.mkdir()
+            git(remote, "init", "--bare")
+
+            work = tmp_path / "work"
+            work.mkdir()
+            git(work, "init")
+            git(work, "config", "user.email", "test@example.com")
+            git(work, "config", "user.name", "Tester")
+            write_ver(work, "0.11.0", 20)
+            git(work, "add", "Shared/version.json")
+            git(work, "commit", "-m", "v0.11.0")
+            git(work, "branch", "-M", "main")
+            git(work, "checkout", "-b", "development")
+
+            # Advance main to v0.11.2 (build 22)
+            git(work, "checkout", "main")
+            write_ver(work, "0.11.2", 22)
+            git(work, "commit", "-am", "v0.11.2")
+            git(work, "tag", "v0.11.2")
+            git(work, "remote", "add", "origin", str(remote))
+            git(work, "push", "origin", "main", "development", "--tags")
+            git(work, "fetch", "origin", "--tags")
+
+            # Feature branch bumping version > tag without bumping build > 22 fails
+            git(work, "checkout", "development")
+            git(work, "checkout", "-b", "feature/bump")
+            write_ver(work, "0.12.0", 21)
+            git(work, "commit", "-am", "bump 0.12.0 build 21")
+            with self.assertRaisesRegex(AssertionError, r"Monotonic build gate failed"):
+                verify_release_version_and_ancestry(work, branch_override="feature/bump")
+
+            # Release branch missing origin/main ancestry fails even with build 23
+            git(work, "checkout", "-b", "release/0.12.0")
+            write_ver(work, "0.12.0", 23)
+            git(work, "commit", "-am", "release build 23 without main")
+            with self.assertRaisesRegex(AssertionError, r"must include origin/main as an ancestor"):
+                verify_release_version_and_ancestry(work, branch_override="release/0.12.0")
+
+            # Hotfix branch with stale build 22 fails
+            with self.assertRaisesRegex(AssertionError, r"Monotonic build gate failed"):
+                write_ver(work, "0.11.3", 22)
+                verify_release_version_and_ancestry(work, branch_override="hotfix/0.11.3")
+
+            # Merging origin/main + build 23 passes cleanly
+            write_ver(work, "0.12.0", 23)
+            git(work, "merge", "-X", "ours", "--no-ff", "origin/main", "-m", "merge main")
+            write_ver(work, "0.12.0", 23)
+            git(work, "commit", "--allow-empty", "-am", "set release 0.12.0 build 23")
+            verify_release_version_and_ancestry(work, branch_override="release/0.12.0")
 
 
 if __name__ == "__main__":

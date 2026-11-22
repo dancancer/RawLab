@@ -196,6 +196,17 @@ public sealed class AgentTransferHotReloadChecks
         Check(nextExternal.NextState.TryAcceptReload(hasPendingAsyncSave: false, out var readyDisk) &&
               readyDisk != null && readyDisk.SameAs(disk),
             "TryAcceptReload yields pending record once in-flight async save drains");
+
+        // Cancelling an un-dirtied tool draft (e.g., crop -> Keep Manual Draft -> Esc) or pending text input
+        // transitions HasUnsavedManualDraft from true -> false; re-evaluating external disk state must AutoReload
+        // even though the same stamp was previously dismissed while the draft was active.
+        var undirtiedDraftEval = state.Evaluate(committed, committed.Edit, disk, stamp1, hasUnsavedManualDraft: true);
+        Check(undirtiedDraftEval.Decision == ExternalReloadDecision.ShowBanner,
+            "Un-dirtied active tool or pending parameter input shows external reload banner");
+        var dismissedDuringDraft = undirtiedDraftEval.NextState.KeepManualDraft();
+        var afterCancelDraft = dismissedDuringDraft.Evaluate(committed, committed.Edit, disk, stamp1, hasUnsavedManualDraft: false);
+        Check(afterCancelDraft.Decision == ExternalReloadDecision.AutoReload && !afterCancelDraft.NextState.Visible,
+            "Cancelling un-dirtied draft re-evaluates external state and auto-reloads dismissed stamp");
     }
 
     private static void ExternalStoreWatcherChecks()

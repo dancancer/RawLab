@@ -12,7 +12,8 @@ public partial class MainWindow
     private bool deferredExternalReloadAccept;
 
     private bool HasUnsavedManualDraft =>
-        editDirty || transform.Active || editGesture != null || interacting || editSaveTimer.IsEnabled || HasPendingEditSaves;
+        editDirty || transform.Active || editGesture != null || interacting || editSaveTimer.IsEnabled ||
+        HasPendingEditSaves || ParameterRows(AdjustmentPanel).Any(row => row.HasPendingInput);
 
     private bool HasPendingEditSaves =>
         pendingEditSaves.HasPending || editSaveQueue.HasPendingWork;
@@ -140,11 +141,13 @@ public partial class MainWindow
             transform.Cancel();
             EndTransform();
         }
+        CancelParameterInputs();
         editSaveTimer.Stop();
         editGesture = null;
         interacting = false;
         editDirty = false;
         pendingMigrationReceiptClear = false;
+        ++editRevision;
         ApplyExternalReloadRecord(diskRecord);
     }
 

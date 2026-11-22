@@ -338,4 +338,37 @@ final class ExternalReloadAndTransferTests: XCTestCase {
         XCTAssertEqual(state.settings.gradingSettings.global.hue, 190.0, accuracy: 1e-6)
         XCTAssertEqual(state.settings.geometrySettings.perspectiveHorizontal, -0.75, accuracy: 1e-6)
     }
+
+    func testAdoptExternalReloadFlushesPendingCommits() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-reload-flush-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let photoURL = root.appendingPathComponent("photo.png")
+        try Data([1, 2, 3, 4]).write(to: photoURL)
+        let identity = try OriginalFileIdentity(photoURL)
+
+        let editsDir = root.appendingPathComponent("Edits")
+        let store = try MacEditPersistence(directory: editsDir)
+        let session = AdjustmentTransferSession(store: store)
+
+        var firstAdj = Adjustments()
+        firstAdj.exposureMode = .sensor
+        firstAdj.exposure = 0.25
+        let firstState = MacPhotoEditState(settings: firstAdj, filmID: "")
+        try store.enqueueSaveState(identity: identity, state: firstState)
+
+        var extAdj = Adjustments()
+        extAdj.exposureMode = .sensor
+        extAdj.exposure = 1.15
+        let extRecord = MacPhotoEditRecord(identity: identity, state: MacPhotoEditState(settings: extAdj, filmID: ""))
+
+        let outcome = session.adoptExternalReload(
+            expected: MacPhotoEditRecord(identity: identity, state: firstState),
+            reloaded: extRecord
+        )
+        XCTAssertFalse(store.hasPendingCommits, "adoptExternalReload must flush pending async commits before adopting external reload")
+        XCTAssertEqual(outcome.status, .applied)
+        XCTAssertEqual(outcome.saved?.state?.settings.exposure ?? 0, 1.15, accuracy: 1e-6)
+    }
 }

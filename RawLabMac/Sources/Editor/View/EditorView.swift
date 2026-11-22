@@ -257,6 +257,10 @@ struct EditorView: View {
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
+        .onDisappear {
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
+        }
         .toolbar {
             if #available(macOS 26.0, *) {
                 editorToolbar.sharedBackgroundVisibility(.hidden)

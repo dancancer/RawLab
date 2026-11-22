@@ -236,4 +236,40 @@ final class InspectionSuiteTests: XCTestCase {
             XCTAssertEqual(recipeAfter, baseRecipe)
         }
     }
+
+    func testOverlayRendererAsyncAndCacheClear() throws {
+        let sampler = InspectionSamplerCache()
+        let renderer = InspectionOverlayRenderer()
+        let img = try makeRGBA8CGImage(width: 8, height: 8) { x, _ in (UInt8(x * 32), 120, 90) }
+
+        XCTAssertNil(renderer.cached(img, mode: .sketchLuminance))
+        _ = sampler.sample(img, atNormalized: CGPoint(x: 0.5, y: 0.5))
+        XCTAssertEqual(sampler.entryCount, 1)
+
+        let exp = expectation(description: "renderAsync completes off main thread")
+        final class ResultBox: @unchecked Sendable {
+            let lock = NSLock()
+            var image: CGImage?
+        }
+        let box = ResultBox()
+        renderer.renderAsync(img, mode: .sketchLuminance) { rendered in
+            box.lock.lock()
+            box.image = rendered
+            box.lock.unlock()
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 2.0)
+        box.lock.lock()
+        let capturedOut = box.image
+        box.lock.unlock()
+        XCTAssertNotNil(capturedOut)
+        XCTAssertEqual(renderer.entryCount, 1)
+        XCTAssertTrue(renderer.cached(img, mode: .sketchLuminance) === capturedOut)
+
+        sampler.clear()
+        renderer.clear()
+        XCTAssertEqual(sampler.entryCount, 0)
+        XCTAssertEqual(renderer.entryCount, 0)
+        XCTAssertNil(renderer.cached(img, mode: .sketchLuminance))
+    }
 }
