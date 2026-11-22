@@ -19,26 +19,27 @@ def _is_test_filename(name: str) -> bool:
     return name.endswith(".py") and (name.startswith("test_") or name.endswith("_test.py"))
 
 
-def _tracked_python_tests() -> set[str]:
-    output = subprocess.check_output(
+def _is_hyphenated_test_filename(name: str) -> bool:
+    return name.endswith(".py") and (name.startswith("test-") or name.endswith("-test.py"))
+
+
+def _tracked_python_files() -> list[str]:
+    tracked = subprocess.check_output(
         ["git", "ls-files", "*.py"],
         cwd=ROOT,
         text=True,
-    )
-    tracked = set()
-    for line in output.splitlines():
-        if _is_test_filename(Path(line).name):
-            tracked.add(line)
-    # Include untracked non-ignored local test files so new orphans fail before commit.
+    ).splitlines()
+    # Include untracked non-ignored local files so new orphans fail before commit.
     untracked = subprocess.check_output(
         ["git", "ls-files", "--others", "--exclude-standard", "*.py"],
         cwd=ROOT,
         text=True,
-    )
-    for line in untracked.splitlines():
-        if _is_test_filename(Path(line).name):
-            tracked.add(line)
-    return tracked
+    ).splitlines()
+    return sorted(set(tracked + untracked))
+
+
+def _tracked_python_tests() -> set[str]:
+    return {line for line in _tracked_python_files() if _is_test_filename(Path(line).name)}
 
 
 class PythonTestDiscoveryContracts(unittest.TestCase):
@@ -100,6 +101,20 @@ class PythonTestDiscoveryContracts(unittest.TestCase):
                 continue
 
         self.assertEqual(orphans, [], f"Orphan Python test file(s) outside pyproject.toml testpaths: {orphans}")
+
+        # Also guard against hyphenated test filenames silently skipped by pytest.
+        hyphenated = [
+            rel
+            for rel in _tracked_python_files()
+            if _is_hyphenated_test_filename(Path(rel).name)
+            and Path(rel).parts[0] != "experiments"
+            and not Path(rel).is_relative_to(Path("tools/mcp/tests"))
+        ]
+        self.assertEqual(
+            hyphenated,
+            [],
+            f"Hyphenated Python test file(s) silently skipped by pytest: {hyphenated}",
+        )
 
         # Also guard that every file in RawLabMac/tests/ or lutools/tests/ matching test_*.py is accounted for.
         self.assertFalse(

@@ -31,6 +31,7 @@ NATIVE_BUILD_MARKERS = (
     "RawLabMac/build.sh",
     "RawLabWindows/build.ps1",
     "assembleDebug",
+    "assembleRelease",
     "run-v08.ps1",
 )
 UI_TEST_MARKERS = (
@@ -849,6 +850,26 @@ class WorkflowContractTests(unittest.TestCase):
                     capture_output=True, text=True,
                 )
                 self.assertNotEqual(bad_v08.returncode, 0, f"run-v08.ps1 passed on {bad_mode}")
+
+    def test_android_build_verifies_minified_release_apk_jni_and_alignment(self):
+        steps = self.workflow["jobs"]["android"]["steps"]
+        build_steps = [
+            step for step in steps
+            if _strip_expr(step.get("if", "")) == "needs.changes.outputs.build == 'true'"
+            and "RAWLAB_CI_CACHE_HIT" in step.get("env", {})
+        ]
+        self.assertEqual(len(build_steps), 1)
+        run = _non_comment_text(build_steps[0]["run"])
+        self.assertIn("fetch-rum-sdk.sh", run)
+        self.assertIn(":app:assembleRelease", run)
+        self.assertIn("libproducer.so", run)
+        self.assertIn("check-rum-jni-classes.py", run)
+        self.assertIn("app-release-unsigned.apk", run)
+        self.assertIn("zipalign", run)
+        self.assertIn("check-native.sh", run)
+        self.assertNotIn("--no-rum", run)
+        self.assertNotIn("apksigner sign", run)
+        self.assertNotIn("RAWLAB_RELEASE_KEYSTORE", run)
 
 
 if __name__ == "__main__":
