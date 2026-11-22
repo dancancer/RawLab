@@ -11,11 +11,18 @@ OUTPUT="$ROOT/app/build/outputs/apk/release/RawLab-Android-release.apk"
 RUM="${RAWLAB_RUM_RELEASE:-true}"
 test -r "$KEYSTORE"
 test -r "$PASSWORD"
+if [[ "$RUM" == true ]]; then
+  python3 "$ROOT/tests/test-rum-jni-class-check.py"
+fi
 "$ROOT/gradlew" -p "$ROOT" -PrawlabRumRelease="$RUM" :app:assembleRelease
 UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
 if [[ "$RUM" == true ]] && ! unzip -Z1 "$UNSIGNED" lib/arm64-v8a/libproducer.so > /dev/null 2>&1; then
   printf 'Release APK is missing the Aliyun RUM SDK; refusing to sign it.\n' >&2
   exit 2
+fi
+if [[ "$RUM" == true ]]; then
+  python3 "$ROOT/tests/check-rum-jni-classes.py" "$UNSIGNED" \
+    --apkanalyzer "$SDK/cmdline-tools/latest/bin/apkanalyzer"
 fi
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
