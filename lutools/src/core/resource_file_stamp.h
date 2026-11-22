@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -64,6 +65,13 @@ inline std::optional<ResourceFileStamp> resourceFileStamp(const std::filesystem:
         {uint64_t(modified.tv_sec), uint64_t(modified.tv_nsec)},
         {uint64_t(changed.tv_sec), uint64_t(changed.tv_nsec)}, {uint64_t(info.st_dev), uint64_t(info.st_ino)}};
 #endif
+}
+
+inline std::string resourceFileStampKey(const ResourceFileStamp& stamp) {
+    std::string key = std::to_string(stamp.size);
+    for (const auto& fields : {stamp.modified, stamp.changed, stamp.identity})
+        for (const auto value : fields) key += ":" + std::to_string(value);
+    return key;
 }
 
 } // namespace sony2fuji

@@ -597,6 +597,44 @@ int main() {
         sony2fuji_session_set_chroma_denoise(target, 0);
     }
     compareForcedCase(session, forced, baseline, "HSL reset restores the existing GPU path");
+    {
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_processing_version(target, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                "BasicV3 session version sets");
+        }
+        const auto srgbLutPath = makePhotoLUT("sRGB", "Display");
+        {
+            // makePhotoLUT writes FLog header unless overridden; write an explicit sRGB LUT for BasicV3 parity.
+            std::ofstream file(srgbLutPath);
+            file << "# Gamma: sRGB to sRGB\n# Gamut: ITUR BT709 to ITUR BT709\n"
+                 << "LUT_3D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n";
+            for (int b = 0; b < 2; ++b) for (int g = 0; g < 2; ++g) for (int r = 0; r < 2; ++r)
+                file << (0.04f + 0.92f * r) << ' ' << (0.05f + 0.90f * g) << ' ' << (0.06f + 0.88f * b) << '\n';
+        }
+        const auto srgbLutUtf8 = srgbLutPath.u8string();
+        sony2fuji_tone_controls_config v3Tone{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(v3Tone), -0.3f, 0.4f, 0.5f};
+        for (auto* target : {session, forced}) sony2fuji_session_set_tone_controls(target, &v3Tone);
+        auto v3Req = baseRequest(ramp, 17, 13);
+        v3Req.lut_path = srgbLutUtf8.c_str();
+        v3Req.lut_strength = 0.85f;
+        v3Req.highlights = -0.4f;
+        v3Req.shadows = 0.5f;
+        v3Req.contrast = 1.35f;
+        v3Req.saturation = 1.15f;
+        for (bool preview : {true, false}) {
+            v3Req.intent = preview ? SONY2FUJI_INTENT_PREVIEW : SONY2FUJI_INTENT_FINAL;
+            v3Req.target_width = preview ? 11 : 9;
+            v3Req.target_height = preview ? 9 : 7;
+            compareForcedCase(session, forced, v3Req,
+                std::string("BasicV3 GPU vs CPU ") + (preview ? "PREVIEW" : "FINAL"));
+        }
+        v3Tone.black_point = v3Tone.white_point = v3Tone.vibrance = 0;
+        for (auto* target : {session, forced}) {
+            sony2fuji_session_set_tone_controls(target, &v3Tone);
+            sony2fuji_session_set_processing_version(target, SONY2FUJI_PROCESSING_LEGACY);
+        }
+        std::filesystem::remove(srgbLutPath);
+    }
     std::filesystem::remove(hslLutPath);
     sony2fuji_session_destroy(forced);
 

@@ -19,7 +19,7 @@ int main() {
     if (FAILED(D3DReflect(code->GetBufferPointer(), code->GetBufferSize(), IID_PPV_ARGS(&reflection)))) return 1;
     auto* buffer = reflection->GetConstantBufferByName("Params");
     D3D11_SHADER_BUFFER_DESC description{};
-    if (FAILED(buffer->GetDesc(&description)) || description.Size != 1424) return 1;
+    if (FAILED(buffer->GetDesc(&description)) || description.Size != 1456) return 1;
     const char* names[] = {"hslHue", "hslSaturation", "hslLightness"};
     for (unsigned index = 0; index < 3; ++index) {
         D3D11_SHADER_VARIABLE_DESC variable{};
@@ -37,9 +37,11 @@ int main() {
         ranges.StartOffset != 384 || ranges.Size != 512) return 1;
     if (FAILED(buffer->GetVariableByName("curveTangents")->GetDesc(&tangents)) ||
         tangents.StartOffset != 896 || tangents.Size != 512) return 1;
-    D3D11_SHADER_VARIABLE_DESC band{};
+    D3D11_SHADER_VARIABLE_DESC band{}, basicV3{}, basicTone{};
     if (FAILED(buffer->GetVariableByName("band")->GetDesc(&band)) || band.StartOffset != 1408 || band.Size != 16) return 1;
-    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 1424-byte host layout\n";
+    if (FAILED(buffer->GetVariableByName("basicV3")->GetDesc(&basicV3)) || basicV3.StartOffset != 1424 || basicV3.Size != 16) return 1;
+    if (FAILED(buffer->GetVariableByName("basicTone")->GetDesc(&basicTone)) || basicTone.StartOffset != 1440 || basicTone.Size != 16) return 1;
+    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 1456-byte host layout\n";
     std::cout << "Shader compilation/reflection does not establish hardware GPU execution\n";
     return 0;
 }

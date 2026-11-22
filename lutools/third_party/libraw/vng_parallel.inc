@@ -3,8 +3,14 @@
  * Copyright 2019-2025 LibRaw LLC (info@libraw.org).
  * Available under LGPL-2.1 or CDDL-1.0, as with the original LibRaw source.
  */
-#ifdef LIBRAW_USE_OPENMP
-  if (filters > 1000 && omp_get_max_threads() > 1)
+#if defined(LIBRAW_USE_OPENMP)
+  const unsigned vngWorkers = static_cast<unsigned>(std::max(1, omp_get_max_threads()));
+#elif defined(__APPLE__) && !defined(RAWLAB_VNG_FORCE_STD_THREAD)
+  const unsigned vngWorkers = std::min<unsigned>(std::max(1u, std::thread::hardware_concurrency()), 8u);
+#else
+  const unsigned vngWorkers = std::min<unsigned>(std::max(1u, std::thread::hardware_concurrency()), 8u);
+#endif
+  if (filters > 1000 && vngWorkers > 1)
   {
     using VngPixel = ushort[4];
     const int batchRows = 256;
@@ -20,14 +26,12 @@
       for (int first = 2; first < height - 2; first += batchRows)
       {
         const int count = MIN(batchRows, height - 2 - first);
-        // 回调只在调用线程运行；取消异常不跨越 OpenMP 区域。
+        // 回调只在调用线程运行；取消异常不跨越并行区域。
         RUN_CALLBACK(LIBRAW_PROGRESS_INTERPOLATE, (first - 2) / 256 + 1,
                      ((height - 3) / 256) + 1);
         memcpy(source + size_t(4) * width, image + size_t(first + 2) * width,
                size_t(count) * rowBytes);
-#pragma omp parallel for schedule(static)
-        for (int r = first; r < first + count; ++r)
-        {
+        const auto processRow = [&](int r) {
           for (int col = 2; col < width - 2; ++col)
           {
             const ushort *pix = source[size_t(r - first + 2) * width + col];
@@ -79,11 +83,60 @@
               out[c] = CLIP(value);
             }
           }
+        };
+#if defined(LIBRAW_USE_OPENMP)
+#pragma omp parallel for schedule(static)
+        for (int r = first; r < first + count; ++r)
+        {
+          processRow(r);
         }
+#elif defined(__APPLE__) && !defined(RAWLAB_VNG_FORCE_STD_THREAD)
+        if (count <= 1)
+        {
+          for (int r = first; r < first + count; ++r) processRow(r);
+        }
+        else
+        {
+          struct VngDispatchContext {
+            const decltype(processRow) *fn;
+            int firstRow;
+          } ctx{&processRow, first};
+          dispatch_apply_f(
+              static_cast<size_t>(count),
+              dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+              &ctx,
+              [](void *rawCtx, size_t idx) {
+                const auto *c = static_cast<const VngDispatchContext *>(rawCtx);
+                (*c->fn)(c->firstRow + static_cast<int>(idx));
+              });
+        }
+#else
+        if (count <= 1)
+        {
+          for (int r = first; r < first + count; ++r) processRow(r);
+        }
+        else
+        {
+          const unsigned rowWorkers = std::min<unsigned>(vngWorkers, static_cast<unsigned>(count));
+          std::atomic<int> nextOffset{0};
+          std::vector<std::thread> pool;
+          pool.reserve(rowWorkers - 1);
+          const auto worker = [&]() {
+            for (;;)
+            {
+              const int offset = nextOffset.fetch_add(1, std::memory_order_relaxed);
+              if (offset >= count) break;
+              processRow(first + offset);
+            }
+          };
+          for (unsigned t = 1; t < rowWorkers; ++t) pool.emplace_back(worker);
+          worker();
+          for (auto &th : pool) th.join();
+        }
+#endif
         // 这四行仍是原始双线性结果；下一批不能从已写回的 image 重读。
         memmove(source, source + size_t(count) * width, 4 * rowBytes);
       }
       return;
     }
   }
-#endif

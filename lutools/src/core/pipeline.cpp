@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -279,92 +280,22 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
             cameraTint = recipeWbCache_.tint;
             cameraCalibrated = true;
         } else {
-            struct ProbeGuard {
-                Pipeline& self;
-                ProcessingVersion processingVersion;
-                X3fMode x3fMode;
-                RawExposureMode rawExposureMode;
-                LensCorrectionOptions lensCorrection;
-                int32_t rawNoiseReduction;
-                int32_t chromaDenoise;
-                bool interactivePreview;
-                bool viewportPreview;
-                LensCorrectionReport lensReport;
-                LensCorrectionReport rawLensReport;
-                std::string x3fError;
-                UnsupportedReason unsupportedReason;
-                GpuFallbackReason gpuFallbackReason;
-                std::string gpuErrorDetail;
-                explicit ProbeGuard(Pipeline& pipeline)
-                    : self(pipeline),
-                      processingVersion(pipeline.processingVersion_),
-                      x3fMode(pipeline.x3fMode_),
-                      rawExposureMode(pipeline.rawExposureMode_),
-                      lensCorrection(pipeline.lensCorrection_),
-                      rawNoiseReduction(pipeline.rawNoiseReduction_),
-                      chromaDenoise(pipeline.chromaDenoise_),
-                      interactivePreview(pipeline.interactivePreview_),
-                      viewportPreview(pipeline.viewportPreview_),
-                      lensReport(pipeline.lensReport_),
-                      rawLensReport(pipeline.rawLensReport_),
-                      x3fError(pipeline.x3fError_),
-                      unsupportedReason(pipeline.unsupportedReason_),
-                      gpuFallbackReason(pipeline.gpuFallbackReason_),
-                      gpuErrorDetail(pipeline.gpuErrorDetail_) {}
-                ~ProbeGuard() {
-                    self.processingVersion_ = processingVersion;
-                    self.x3fMode_ = x3fMode;
-                    self.rawExposureMode_ = rawExposureMode;
-                    self.lensCorrection_ = lensCorrection;
-                    self.rawNoiseReduction_ = rawNoiseReduction;
-                    self.chromaDenoise_ = chromaDenoise;
-                    self.interactivePreview_ = interactivePreview;
-                    self.viewportPreview_ = viewportPreview;
-                    self.lensReport_ = lensReport;
-                    self.rawLensReport_ = rawLensReport;
-                    self.x3fError_ = std::move(x3fError);
-                    self.unsupportedReason_ = unsupportedReason;
-                    self.gpuFallbackReason_ = gpuFallbackReason;
-                    self.gpuErrorDetail_ = std::move(gpuErrorDetail);
-                    self.rawProcessor_.reset();
-                    self.processorKey_.clear();
-                }
-            } guard(*this);
-
             try {
                 ProcessingCancellationScope cancelScope(cancellation_);
                 checkProcessingCancellation();
-                processingVersion_ = request.processingVersion;
-                x3fMode_ = request.x3fMode;
-                rawExposureMode_ = request.exposureMode;
-                lensCorrection_ = {};
-                rawNoiseReduction_ = 0;
-                chromaDenoise_ = 0;
-                interactivePreview_ = false;
-                viewportPreview_ = false;
 
-                RenderParams probeParams;
-                probeParams.inputType = RenderInputType::Raw;
-                probeParams.inputPath = request.inputPath;
-                probeParams.intent = RenderIntent::Preview;
-                probeParams.previewLongEdge = 32;
-                probeParams.wbMode = RenderWhiteBalanceMode::Camera;
-                probeParams.exposureEV = 0.0f;
-                probeParams.brightness = 1.0f;
-
-                ImageData scratch;
-                ColorSpace space = ColorSpace::AdobeRGB;
-                bool isLinear = true;
-                const auto status = loadRawImage(probeParams, scratch, &space, &isLinear, false, false);
+                RAWProcessor probe(sony2fuji::usesLegacySonyCrop(request.processingVersion));
+                const auto inspected = probe.inspectFile(request.inputPath);
                 checkProcessingCancellation();
-                if (status != RenderStatus::Ok) {
-                    return status;
+                if (inspected != ErrorCode::Success) {
+                    return mapErrorCode(inspected);
                 }
+
                 float rawTemp = 0.0f;
                 float rawTint = 0.0f;
-                const auto wbStatus = getRawWhiteBalance(rawTemp, rawTint);
-                if (wbStatus == RenderStatus::Unsupported ||
-                    (wbStatus == RenderStatus::Ok && (!std::isfinite(rawTemp) || !std::isfinite(rawTint)))) {
+                const bool calibrated = probe.getAsShotWhiteBalance(rawTemp, rawTint) &&
+                    std::isfinite(rawTemp) && std::isfinite(rawTint);
+                if (!calibrated) {
                     recipeWbCache_ = {
                         true,
                         std::move(fileKey),
@@ -376,9 +307,6 @@ RenderStatus Pipeline::resolveRecipeWhiteBalance(const RecipeWbRequest& request,
                         0.0f
                     };
                     return RenderStatus::Unsupported;
-                }
-                if (wbStatus != RenderStatus::Ok) {
-                    return wbStatus;
                 }
                 cameraTemp = std::round(rawTemp);
                 cameraTint = std::round(rawTint);
@@ -969,9 +897,7 @@ RenderStatus Pipeline::processPreviewRoi(
     int canvasH = 0;
 
     if (local.inputType == RenderInputType::Raw) {
-        RenderParams rawRequest = local;
-        rawRequest.intent = RenderIntent::Final;
-        RenderStatus status = loadRawImage(rawRequest, image, &colorSpace, &isLinear, false);
+        RenderStatus status = loadRawImage(local, image, &colorSpace, &isLinear, false, true, true);
         if (status != RenderStatus::Ok) return status;
         if (rawCache_.width <= 0 || rawCache_.height <= 0 || rawCache_.pixels.empty()) {
             return RenderStatus::ProcessingError;
@@ -1329,7 +1255,7 @@ RenderStatus Pipeline::processImpl(
     const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
         [](const auto& curve) { return curve.active(); });
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive || !toneCurve_.gpuSupported();
+    const bool cpuOnlyStages = atmosphereActive || channelCurvesActive || !toneCurve_.gpuSupported();
 #else
     const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive ||
         toneCurve_.active() || colorGradingActive || toneControlsActive || hslActive ||
@@ -1341,7 +1267,9 @@ RenderStatus Pipeline::processImpl(
         local.intent == RenderIntent::Preview && local.outputTarget == RenderOutputTarget::Buffer;
     auto cpuStageFallbackReason = [&]() {
         if (atmosphereActive) return GpuFallbackReason::Atmosphere;
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
         if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
+#endif
         if (channelCurvesActive || !toneCurve_.gpuSupported()) return GpuFallbackReason::Curves;
         if (c5Wavelet) return GpuFallbackReason::C5Wavelet;
         return GpuFallbackReason::GpuDisabled;
@@ -1472,29 +1400,119 @@ RenderStatus Pipeline::processImpl(
     ColorSpace colorSpace = ColorSpace::sRGB;
     bool isLinear = false;
     if (local.inputType == RenderInputType::Raw) {
-        auto rawRequest = local;
-        // Atmosphere 的分析尺度和 native 元信息仍以精确 RAW 为准；交互和 settled
-        // 视口共用该缓存，只缩小后续工作图，避免 half-size 解码改变空间尺度。
-        if (geometryActive || neighborhoodActive) rawRequest.intent = RenderIntent::Final;
-        status = loadRawImage(rawRequest, image, &colorSpace, &isLinear, false);
-        // Use a full decode when the viewport needs more pixels than the RAW proxy provides.
-        if (status == RenderStatus::Ok && viewportPreview &&
-            std::pair{image.width, image.height} != rawNativeSize_) {
-            const auto [sourceWidth, sourceHeight] = rawNativeSize_;
-            uint32_t width = 0, height = 0;
-            status = computeTargetSize(local, static_cast<uint32_t>(sourceWidth), static_cast<uint32_t>(sourceHeight), &width, &height);
-            if (status == RenderStatus::Ok && (width > uint32_t(image.width) || height > uint32_t(image.height))) {
-                rawRequest.intent = RenderIntent::Final;
-                status = loadRawImage(rawRequest, image, &colorSpace, &isLinear, false);
+        bool wbMatrixShortcutUsed = false;
+        if (interactivePreview_ && viewportPreview && previewToBuffer &&
+            !geometryActive && !waveletActive && !roiActive && !normalX3f && !useAI &&
+            !rawDisplayReferred_ && !rawCache_.pixels.empty() && rawCacheWbValid_ && rawProcessor_ &&
+            local.wbMode != RenderWhiteBalanceMode::Auto &&
+            rawNativeSize_.first > 0 && rawNativeSize_.second > 0) {
+            std::string baseSourceKey, fileKey, wbBaseKey, previewExposureKey;
+            const bool keysOk = buildRawCacheWbKeys(local, baseSourceKey, fileKey, wbBaseKey, previewExposureKey);
+            const bool exposureOk = rawExposureMode_ != RawExposureMode::Preview ||
+                ((local.wbMode == RenderWhiteBalanceMode::Camera || local.wbMode == RenderWhiteBalanceMode::Temperature) &&
+                 previewExposureKey_ == previewExposureKey);
+            if (keysOk && wbBaseKey == rawCacheWbBaseKey_ && exposureOk) {
+                bool sizeOk = std::pair{rawCache_.width, rawCache_.height} == rawNativeSize_;
+                if (!sizeOk) {
+                    uint32_t reqW = 0, reqH = 0;
+                    const RenderStatus szStatus = computeTargetSize(local,
+                        static_cast<uint32_t>(rawNativeSize_.first),
+                        static_cast<uint32_t>(rawNativeSize_.second), &reqW, &reqH);
+                    sizeOk = szStatus == RenderStatus::Ok &&
+                        reqW <= static_cast<uint32_t>(rawCache_.width) &&
+                        reqH <= static_cast<uint32_t>(rawCache_.height);
+                }
+                if (sizeOk) {
+                    float targetMul[3]{};
+                    bool hasTarget = false;
+                    if (local.wbMode == RenderWhiteBalanceMode::Camera) {
+                        std::copy_n(rawCacheAsShotWbMul_.data(), 3, targetMul);
+                        hasTarget = true;
+                    } else if (local.wbMode == RenderWhiteBalanceMode::Temperature) {
+                        hasTarget = rawProcessor_->computeTemperatureWhiteBalanceMultipliers(
+                            local.temperature, local.tint, targetMul);
+                    } else if (local.wbMode == RenderWhiteBalanceMode::Custom &&
+                               std::isfinite(local.wbMul[0]) && local.wbMul[0] > 0.0f &&
+                               std::isfinite(local.wbMul[1]) && local.wbMul[1] > 0.0f &&
+                               std::isfinite(local.wbMul[2]) && local.wbMul[2] > 0.0f) {
+                        targetMul[0] = local.wbMul[0] / local.wbMul[1];
+                        targetMul[1] = 1.0f;
+                        targetMul[2] = local.wbMul[2] / local.wbMul[1];
+                        hasTarget = true;
+                    }
+                    if (hasTarget) {
+                        float ratio[3]{};
+                        bool validRatio = true;
+                        for (int c = 0; c < 3; ++c) {
+                            ratio[c] = targetMul[c] / rawCacheAppliedWbMul_[c];
+                            if (!std::isfinite(ratio[c]) || ratio[c] <= 0.0f) {
+                                validRatio = false;
+                                break;
+                            }
+                        }
+                        if (validRatio) {
+                            if (std::abs(ratio[0] - 1.0f) > 1e-6f || std::abs(ratio[2] - 1.0f) > 1e-6f) {
+                                ColorConverter::Matrix3x3 M;
+                                for (int r = 0; r < 3; ++r)
+                                    for (int c = 0; c < 3; ++c)
+                                        M[r][c] = rawCacheCamToSrgb_[r][c];
+                                const auto M_inv = ColorConverter::invertMatrix(M);
+                                const ColorConverter::Matrix3x3 D{{
+                                    {ratio[0], 0.0f, 0.0f},
+                                    {0.0f, ratio[1], 0.0f},
+                                    {0.0f, 0.0f, ratio[2]}
+                                }};
+                                const auto W = ColorConverter::multiplyMatrices(M, ColorConverter::multiplyMatrices(D, M_inv));
+                                const auto B = ColorConverter::getConversionMatrix(ColorSpace::AdobeRGB, ColorSpace::sRGB);
+                                const auto T = ColorConverter::multiplyMatrices(W, B);
+                                bool finiteT = true;
+                                for (const auto& row : T)
+                                    for (float v : row)
+                                        if (!std::isfinite(v)) finiteT = false;
+                                if (finiteT) {
+                                    local.hasCustomToSrgb = true;
+                                    local.customToSrgb = T;
+                                    wbMatrixShortcutUsed = true;
+                                }
+                            } else {
+                                wbMatrixShortcutUsed = true;
+                            }
+                        }
+                    }
+                }
             }
         }
-        if (status == RenderStatus::Ok && !viewportPreview && (!gpuPipeline || waveletActive)) {
-            const bool large = rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget;
-            // C5 失败不会破坏工作图；Legacy 的 GPU 重试仍需要原始 RAW。
-            const bool reloadableWavelet = waveletActive &&
-                !usesC5Denoise(waveletDenoise_.processingVersion);
-            if (large && !previewToBuffer && !reloadableWavelet && !preHsl) image = std::move(rawCache_);
-            else image = rawCache_;
+        if (wbMatrixShortcutUsed) {
+            image.width = rawCache_.width;
+            image.height = rawCache_.height;
+            colorSpace = ColorSpace::AdobeRGB;
+            isLinear = true;
+            lensReport_ = rawLensReport_;
+            status = RenderStatus::Ok;
+        } else {
+            // Atmosphere 的分析尺度和 native 元信息仍以精确 RAW 为准；BasicToneV3 在交互视口预览时可复用 half-size，
+            // settled 与导出仍走精确 RAW，避免改变空间分析尺度，同时保留 Preview+Buffer 语义。
+            const bool forceFullRes = geometryActive || atmosphereActive ||
+                (basicToneActive && !(interactivePreview_ && viewportPreview));
+            status = loadRawImage(local, image, &colorSpace, &isLinear, false, true, forceFullRes);
+            // Use a full decode when the viewport needs more pixels than the RAW proxy provides.
+            if (status == RenderStatus::Ok && viewportPreview &&
+                std::pair{image.width, image.height} != rawNativeSize_) {
+                const auto [sourceWidth, sourceHeight] = rawNativeSize_;
+                uint32_t width = 0, height = 0;
+                status = computeTargetSize(local, static_cast<uint32_t>(sourceWidth), static_cast<uint32_t>(sourceHeight), &width, &height);
+                if (status == RenderStatus::Ok && (width > uint32_t(image.width) || height > uint32_t(image.height))) {
+                    status = loadRawImage(local, image, &colorSpace, &isLinear, false, true, true);
+                }
+            }
+            if (status == RenderStatus::Ok && !viewportPreview && (!gpuPipeline || waveletActive)) {
+                const bool large = rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget;
+                // C5 失败不会破坏工作图；Legacy 的 GPU 重试仍需要原始 RAW。
+                const bool reloadableWavelet = waveletActive &&
+                    !usesC5Denoise(waveletDenoise_.processingVersion);
+                if (large && !previewToBuffer && !reloadableWavelet && !preHsl) image = std::move(rawCache_);
+                else image = rawCache_;
+            }
         }
     } else {
         status = loadBufferImage(local, image, &colorSpace, &isLinear);
@@ -1670,11 +1688,55 @@ RenderStatus Pipeline::processImpl(
     local.relativeWB = wb;
     local.effects = photoEffects_;
     local.chromaDenoise = chromaMode;
-    local.preserveSourceResolution = waveletActive || geometryActive;
+    local.preserveSourceResolution = waveletActive || geometryActive || (basicToneActive && !viewportPreview);
     local.hsl = hsl_;
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
     local.customCurve = toneCurve_;
+    local.basicV3 = basicV3;
+    local.basicTone = basicV3 ? basicTone : BasicToneV3{};
+
+    int basicFieldSourceWidth = 0;
+    int basicFieldSourceHeight = 0;
+    if (basicToneActive && (gpuPipeline || (local.inputType == RenderInputType::Raw && !waveletActive && !geometryActive))) {
+        const auto& fieldSource = (local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview &&
+            !rawCache_.pixels.empty()) ? rawCache_ : image;
+        basicFieldSourceWidth = fieldSource.width;
+        basicFieldSourceHeight = fieldSource.height;
+        const auto fieldToSrgb = local.hasCustomToSrgb
+            ? local.customToSrgb
+            : ColorConverter::getConversionMatrix(colorSpace, ColorSpace::sRGB);
+        const RGB exposureWB(exposure * wb.r, exposure * wb.g, exposure * wb.b);
+        const bool cacheBasicField = local.inputType == RenderInputType::Raw && !waveletActive && !geometryActive;
+        std::string fieldKey;
+        if (cacheBasicField) {
+            auto appendFloatBits = [&](float value) {
+                uint32_t bits = 0;
+                std::memcpy(&bits, &value, sizeof(bits));
+                fieldKey.push_back(':');
+                fieldKey += std::to_string(bits);
+            };
+            fieldKey = rawKey_ + ":dec:" + std::to_string(rawDecodeCount_) +
+                ":src:" + std::to_string(fieldSource.width) + "x" + std::to_string(fieldSource.height) +
+                ":atm:" + std::to_string(atmosphereSourceWidth) + "x" + std::to_string(atmosphereSourceHeight);
+            for (const auto& row : fieldToSrgb)
+                for (float v : row) appendFloatBits(v);
+            appendFloatBits(exposureWB.r);
+            appendFloatBits(exposureWB.g);
+            appendFloatBits(exposureWB.b);
+        }
+        if (cacheBasicField && basicToneFieldCache_.field && basicToneFieldCache_.key == fieldKey) {
+            local.basicToneField = basicToneFieldCache_.field;
+        } else {
+            auto computed = std::make_shared<BasicToneV3Field>(
+                buildBasicToneV3Field(fieldSource, fieldToSrgb, exposureWB, atmosphereSourceWidth, atmosphereSourceHeight));
+            if (cacheBasicField) {
+                basicToneFieldCache_.key = std::move(fieldKey);
+                basicToneFieldCache_.field = computed;
+            }
+            local.basicToneField = std::move(computed);
+        }
+    }
 
 #if defined(SONY2FUJI_ENABLE_METAL)
     if (gpuPipeline) {
@@ -1792,14 +1854,28 @@ RenderStatus Pipeline::processImpl(
             image = resizeBilinear(image, width, height);
     }
 
-    ColorConverter converter;
-    converter.convertImage(image, colorSpace, ColorSpace::sRGB);
-    colorSpace = ColorSpace::sRGB;
+    const auto cpuToSrgb = local.hasCustomToSrgb
+        ? local.customToSrgb
+        : ColorConverter::getConversionMatrix(colorSpace, ColorSpace::sRGB);
+    const bool applyMatrix = local.hasCustomToSrgb || colorSpace != ColorSpace::sRGB;
+    const RGB exposureWB(exposure * wb.r, exposure * wb.g, exposure * wb.b);
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) applyExposureAndWhiteBalance(image.pixels[i], exposure, wb);
+        for (size_t i = first; i < last; ++i) {
+            RGB p = applyMatrix ? ColorConverter::applyMatrix(image.pixels[i], cpuToSrgb) : image.pixels[i];
+            p.r *= exposureWB.r;
+            p.g *= exposureWB.g;
+            p.b *= exposureWB.b;
+            image.pixels[i] = p;
+        }
     });
+    colorSpace = ColorSpace::sRGB;
     if (basicToneActive) {
-        applyBasicToneV3(image, basicTone, atmosphereSourceWidth, atmosphereSourceHeight);
+        if (local.basicToneField && !local.basicToneField->empty() &&
+            image.width == basicFieldSourceWidth && image.height == basicFieldSourceHeight) {
+            applyBasicToneV3WithField(image, basicTone, *local.basicToneField, {});
+        } else {
+            applyBasicToneV3(image, basicTone, atmosphereSourceWidth, atmosphereSourceHeight);
+        }
         local.highlights = local.shadows = 0.0f;
     }
 
@@ -1813,18 +1889,13 @@ RenderStatus Pipeline::processImpl(
     checkProcessingCancellation();
     applyDehaze(image, atmosphere_.dehaze, &dehazeAnalysis_,
         atmosphereSourceWidth, atmosphereSourceHeight, processingVersion_);
-    if (basicV3) applyBasicBlackWhiteV3(image, toneControls_);
-    else applyBlackWhite(image, toneControls_);
-    applyToneAdjustments(image, local, channelCurves_, basicV3);
-    if (basicV3) applyBasicVibranceV3(image, toneControls_.vibrance);
-    else applyVibrance(image, toneControls_);
+    applyPostLookStages(image, local, toneControls_, hsl_, colorGrading_,
+        channelCurves_, basicV3, !preHsl);
     if (preHsl) {
         status = finishGeometry(local, image, nativeWidth, nativeHeight);
         if (status == RenderStatus::Ok) *preHsl = std::move(image);
         return status;
     }
-    applyHsl(image, hsl_);
-    applyColorGrading(image, colorGrading_);
     const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
     checkProcessingCancellation();
     if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);

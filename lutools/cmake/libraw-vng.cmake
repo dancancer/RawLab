@@ -3,7 +3,7 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/../third_party/libraw/vng_parallel.inc
     "${LIBRAW_SOURCE_DIR}/src/demosaic/rawlab_vng_parallel.inc" COPYONLY)
 replace_libraw(src/demosaic/misc_demosaic.cpp
     "#include \"../../internal/dcraw_defs.h\""
-    "#include \"../../internal/dcraw_defs.h\"\n#include <memory>\n#ifdef LIBRAW_USE_OPENMP\n#include <omp.h>\n#endif")
+    "#include <algorithm>\n#include <atomic>\n#include <memory>\n#include <thread>\n#include <vector>\n#if defined(__APPLE__) && !defined(RAWLAB_VNG_FORCE_STD_THREAD)\n#include <dispatch/dispatch.h>\n#endif\n#include \"../../internal/dcraw_defs.h\"\n#ifdef LIBRAW_USE_OPENMP\n#include <omp.h>\n#endif")
 replace_libraw(src/demosaic/misc_demosaic.cpp
     "  static const signed char *cp,\n      terms[] ="
     "  const signed char *cp;\n  static const signed char terms[] =")

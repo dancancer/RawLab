@@ -42,12 +42,14 @@ Lightroom 的响应会随图像内容变化。尤其白场正端、阴影和去�
 
 ## 后端、预览与兼容
 
-新增高光/阴影、对比度、黑白场、鲜艳度以及非零氛围控制使用 CPU。
-GPU Auto 返回完整 CPU 路径；Force 明确返回 unsupported。未启用这些控制时，
-已有曝光和饱和度 GPU 路径不变。未执行的移动 GPU 或 Windows 硬件验证应单独列明。
+高光/阴影（局部照明场引导滤波仍由 CPU 计算并缓存，逐像素应用在 GPU 执行）、对比度、黑白场和鲜艳度在
+Metal、Direct3D 11 与 OpenGL ES 3.1 后端均已支持 GPU 加速；仅氛围控制（清晰度、去朦胧）仍使用 CPU。
+启用氛围控制或关闭/缺少 GPU 时，GPU Auto 返回完整 CPU 路径，Force 明确返回 unsupported。
+未执行真机验证的移动 GPU（GLES）或 Windows D3D11 硬件环境应单独列明（桌面 Metal 已接入同一着色公式，离线与主机回归按平台区分）。
 
-高光/阴影与氛围控制需要邻域信息。FINAL、文件导出和默认精确预览使用完整源图，
-仅显式启用的 viewport PREVIEW+BUFFER 可使用缩小工作图，并保留全源分析尺度。
+高光/阴影与氛围控制需要邻域信息。FINAL、文件导出和默认精确预览使用完整源图；
+显式启用的交互视口预览（`interactive && viewportPreview`）对高光/阴影允许复用 half-size 线性源与视口尺寸工作图，
+settled 与导出仍使用精确全分辨率源图并保持全源分析尺度。
 去朦胧缓存包含处理版本；版本切换不能复用另一版本的分析结果。
 
 新建编辑采用 v3。旧编辑先使用原身份显示，再按[自动迁移契约](processing-migration.md)

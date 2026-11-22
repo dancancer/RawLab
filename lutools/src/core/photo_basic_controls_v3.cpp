@@ -19,27 +19,43 @@ float luminance(const RGB& pixel) {
 
 std::vector<float> boxMean(const std::vector<float>& input, int width, int height, int radius) {
     std::vector<float> horizontal(input.size()), output(input.size());
-    for (int y = 0; y < height; ++y) {
-        checkProcessingCancellation();
-        double sum = 0;
-        int left = 0, right = -1;
-        for (int x = 0; x < width; ++x) {
-            const int first = std::max(0, x - radius), last = std::min(width - 1, x + radius);
-            while (right < last) sum += input[size_t(y) * width + ++right];
-            while (left < first) sum -= input[size_t(y) * width + left++];
-            horizontal[size_t(y) * width + x] = static_cast<float>(sum / (last - first + 1));
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            double sum = 0;
+            int left = 0, right = -1;
+            const size_t rowBase = size_t(y) * width;
+            for (int x = 0; x < width; ++x) {
+                const int first = std::max(0, x - radius), last = std::min(width - 1, x + radius);
+                while (right < last) sum += input[rowBase + ++right];
+                while (left < first) sum -= input[rowBase + left++];
+                horizontal[rowBase + x] = static_cast<float>(sum / (last - first + 1));
+            }
         }
-    }
-    for (int x = 0; x < width; ++x) {
-        double sum = 0;
-        int top = 0, bottom = -1;
-        for (int y = 0; y < height; ++y) {
-            const int first = std::max(0, y - radius), last = std::min(height - 1, y + radius);
-            while (bottom < last) sum += horizontal[size_t(++bottom) * width + x];
-            while (top < first) sum -= horizontal[size_t(top++) * width + x];
-            output[size_t(y) * width + x] = static_cast<float>(sum / (last - first + 1));
+    });
+    constexpr int kColStrip = 32;
+    const int strips = (width + kColStrip - 1) / kColStrip;
+    parallelRowRanges(strips, height * kColStrip, [&](int firstStrip, int lastStrip) {
+        for (int s = firstStrip; s < lastStrip; ++s) {
+            const int x0 = s * kColStrip;
+            const int count = std::min(kColStrip, width - x0);
+            double sum[kColStrip]{};
+            int top = 0, bottom = -1;
+            for (int y = 0; y < height; ++y) {
+                const int first = std::max(0, y - radius), last = std::min(height - 1, y + radius);
+                while (bottom < last) {
+                    const size_t rowBase = size_t(++bottom) * width + x0;
+                    for (int dx = 0; dx < count; ++dx) sum[dx] += horizontal[rowBase + dx];
+                }
+                while (top < first) {
+                    const size_t rowBase = size_t(top++) * width + x0;
+                    for (int dx = 0; dx < count; ++dx) sum[dx] -= horizontal[rowBase + dx];
+                }
+                const double denom = double(last - first + 1);
+                const size_t outBase = size_t(y) * width + x0;
+                for (int dx = 0; dx < count; ++dx) output[outBase + dx] = static_cast<float>(sum[dx] / denom);
+            }
         }
-    }
+    });
     return output;
 }
 
@@ -54,9 +70,9 @@ float sample(const std::vector<float>& values, int width, int height, float x, f
     return top * (1 - ty) + bottom * ty;
 }
 
-} // namespace
-
-BasicToneV3Field buildBasicToneV3Field(const ImageData& image, int sourceWidth, int sourceHeight) {
+template <typename LumFn>
+BasicToneV3Field buildBasicToneV3FieldImpl(const ImageData& image, LumFn&& pixelLuminance,
+    int sourceWidth, int sourceHeight) {
     BasicToneV3Field field;
     if (image.width <= 0 || image.height <= 0) return field;
     if (sourceWidth <= 0 || sourceHeight <= 0) {
@@ -77,7 +93,7 @@ BasicToneV3Field buildBasicToneV3Field(const ImageData& image, int sourceWidth, 
                 for (int ix = int(left); ix < std::min(image.width, int(std::ceil(right))); ++ix) {
                     const double weight = (std::min(right, double(ix + 1)) - std::max(left, double(ix))) *
                         (std::min(bottom, double(iy + 1)) - std::max(top, double(iy)));
-                    const float light = luminance(image.at(ix, iy));
+                    const float light = pixelLuminance(image.at(ix, iy));
                     sum += weight * std::log2(std::max(std::isfinite(light) ? light : 0.f, 1e-7f) / .1845f);
                 }
             }
@@ -101,6 +117,25 @@ BasicToneV3Field buildBasicToneV3Field(const ImageData& image, int sourceWidth, 
     field.slope = boxMean(slope, width, height, radius);
     field.intercept = boxMean(intercept, width, height, radius);
     return field;
+}
+
+} // namespace
+
+BasicToneV3Field buildBasicToneV3Field(const ImageData& image, int sourceWidth, int sourceHeight) {
+    return buildBasicToneV3FieldImpl(image, [](const RGB& pixel) {
+        return luminance(pixel);
+    }, sourceWidth, sourceHeight);
+}
+
+BasicToneV3Field buildBasicToneV3Field(const ImageData& image,
+    const ColorConverter::Matrix3x3& toSrgb, const RGB& exposureWB,
+    int sourceWidth, int sourceHeight) {
+    return buildBasicToneV3FieldImpl(image, [&](const RGB& raw) {
+        const float r = (toSrgb[0][0] * raw.r + toSrgb[0][1] * raw.g + toSrgb[0][2] * raw.b) * exposureWB.r;
+        const float g = (toSrgb[1][0] * raw.r + toSrgb[1][1] * raw.g + toSrgb[1][2] * raw.b) * exposureWB.g;
+        const float b = (toSrgb[2][0] * raw.r + toSrgb[2][1] * raw.g + toSrgb[2][2] * raw.b) * exposureWB.b;
+        return g + .2126f * (r - g) + .0722f * (b - g);
+    }, sourceWidth, sourceHeight);
 }
 
 void applyBasicToneV3WithField(ImageData& image, const BasicToneV3& options,
@@ -151,28 +186,7 @@ float basicContrastV3(float value, float amount) {
 }
 
 RGB basicBlackWhiteV3(const RGB& pixel, const ToneControlsOptions& options) {
-    if (options.blackPoint == 0 && options.whitePoint == 0) return pixel;
-    auto result = pixel;
-    if (options.blackPoint < 0) {
-        const float black = .24f * options.blackPoint * options.blackPoint;
-        const float scale = 1 / (1 - black);
-        result = RGB((result.r - black) * scale, (result.g - black) * scale, (result.b - black) * scale);
-    } else if (options.blackPoint > 0) {
-        const float y = std::clamp(luminance(result), 0.f, 1.f);
-        const float black = std::pow(options.blackPoint, 1.4f) *
-            (.15f * (1 - std::exp(-y / .06f)) + .01f * std::pow(1 - y, 7.f));
-        result = RGB(result.r * (1 - black) + black, result.g * (1 - black) + black,
-            result.b * (1 - black) + black);
-    }
-    if (options.whitePoint != 0) {
-        const float y = std::max(0.f, luminance(result));
-        const float scale = options.whitePoint < 0 ? 1 / (1 - .18f * options.whitePoint * y) :
-            (y > 0 ? 1 + .18f * std::pow(options.whitePoint, 1.4f) * smooth(y / .8f) / y : 1);
-        result.r *= scale;
-        result.g *= scale;
-        result.b *= scale;
-    }
-    return result;
+    return BasicBlackWhiteV3Prepared(options).apply(pixel);
 }
 
 RGB basicVibranceV3(const RGB& pixel, float amount) {
@@ -208,9 +222,10 @@ RGB basicVibranceV3(const RGB& pixel, float amount) {
 }
 
 void applyBasicBlackWhiteV3(ImageData& image, const ToneControlsOptions& options) {
-    if (options.blackPoint == 0 && options.whitePoint == 0) return;
+    const BasicBlackWhiteV3Prepared prepared(options);
+    if (!prepared.active) return;
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) image.pixels[i] = basicBlackWhiteV3(image.pixels[i], options);
+        for (size_t i = first; i < last; ++i) image.pixels[i] = prepared.apply(image.pixels[i]);
     });
 }
 

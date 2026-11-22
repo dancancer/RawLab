@@ -680,6 +680,22 @@ struct Sony2FujiProcessor {
         }
     }
 
+    private static func isCustomCurveGpuSupported(_ curve: ToneCurveShape) -> Bool {
+        guard curve.mode == .custom && !curve.isIdentity else { return true }
+        guard curve.isValid else { return false }
+        for index in 0..<(curve.points.count - 1) {
+            let p0 = curve.points[index]
+            let p1 = curve.points[index + 1]
+            let gpuWidth = Float(p1.x) - Float(p0.x)
+            let dx = p1.x - p0.x
+            let dy = p1.y - p0.y
+            if gpuWidth < Float.leastNormalMagnitude || 3.0 * dy / dx > 16.0 {
+                return false
+            }
+        }
+        return true
+    }
+
     func canFastMetalFullRes(url: URL, settings: RawSettings, lutURL: URL?) -> Bool {
         guard gpuMode != SONY2FUJI_GPU_OFF,
               !settings.isHDREditing,
@@ -693,9 +709,7 @@ struct Sony2FujiProcessor {
         guard resolved.geometrySettings.isIdentity,
               resolved.atmosphereSettings.isIdentity,
               resolved.curveSettings.channels.isIdentity,
-              (resolved.curveSettings.mode != .custom || resolved.curveSettings.master.isIdentity),
-              !(resolved.processing.core == SONY2FUJI_PROCESSING_BASIC_V3 &&
-                (resolved.highlights != 0 || resolved.shadows != 0 || resolved.contrast != 1 || !resolved.toneSettings.isIdentity)),
+              Self.isCustomCurveGpuSupported(resolved.curveSettings.master),
               !isNormalX3f(url, settings: resolved) else {
             return false
         }

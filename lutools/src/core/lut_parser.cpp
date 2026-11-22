@@ -17,6 +17,7 @@
 #include "../../third_party/nlohmann/json.hpp"
 #include "sha256.h"
 #include "parsed_resource_cache.h"
+#include "resource_file_stamp.h"
 #include "lut_compatibility.h"
 #include "lut_contract_json.h"
 
@@ -478,22 +479,36 @@ std::unique_ptr<LUT3D> LUTParser::loadLUT(const std::string& path) {
 }
 
 std::shared_ptr<LUT3D> LUTParser::loadLUTCached(const std::string& path) {
+    static ParsedResourceCache<std::shared_ptr<LUT3D>> cache;
     const auto format = detectFormat(path);
     if (format != "cube" && format != "vlt") return nullptr;
-    std::ifstream file(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
-    if (!file) return nullptr;
-    const auto length = file.tellg();
-    if (length < 0 || length > 256u * 1024u * 1024u) return nullptr;
-    file.seekg(0);
-    std::string bytes(static_cast<size_t>(length), '\0');
-    if (!file.read(bytes.data(), bytes.size()) || file.peek() != std::char_traits<char>::eof()) return nullptr;
-    // 文件可能被同大小内容覆盖且时间戳不变；缓存命中必须基于实际字节。
-    const auto digest = hash::sha256Bytes(bytes.data(), bytes.size());
-    static ParsedResourceCache<std::shared_ptr<LUT3D>> cache;
-    if (auto cached = cache.find(path, digest)) return *cached;
+    const auto file = std::filesystem::u8path(path);
+    const auto stamp = resourceFileStamp(file);
+    if (!stamp || stamp->size > 256u * 1024u * 1024u) {
+        cache.evict(path);
+        return nullptr;
+    }
+    std::string fingerprint = resourceFileStampKey(*stamp);
+    if (auto cached = cache.find(path, fingerprint)) return *cached;
+    std::ifstream stream(file, std::ios::binary);
+    if (!stream) {
+        cache.evict(path);
+        return nullptr;
+    }
+    std::string bytes(static_cast<size_t>(stamp->size), '\0');
+    if ((stamp->size > 0 && !stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) ||
+        stream.gcount() != static_cast<std::streamsize>(bytes.size()) ||
+        stream.peek() != std::char_traits<char>::eof()) {
+        cache.evict(path);
+        return nullptr;
+    }
     auto parsed = std::make_shared<LUT3D>();
-    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success) return nullptr;
-    return cache.put(path, digest, std::move(parsed));
+    if (parsed->loadFromData(bytes, format == "vlt") != ErrorCode::Success ||
+        !(resourceFileStamp(file) == stamp)) {
+        cache.evict(path);
+        return nullptr;
+    }
+    return cache.put(path, std::move(fingerprint), std::move(parsed));
 }
 
 std::string LUTParser::detectFormat(const std::string& path) {

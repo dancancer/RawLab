@@ -139,6 +139,8 @@ public:
      * @return 错误码
      */
     ErrorCode process(const RAWProcessOptions& options, ImageData& output);
+    // Estimates scene/preview-matched baseline EV using fast half-size camera-WB demosaic without building a full ImageData.
+    ErrorCode estimatePreviewExposure(const RAWProcessOptions& options, float& outBaselineEV);
     ErrorCode readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output);
     bool getBayerMetadata(RAWBayerSource& output) const;
 
@@ -157,6 +159,10 @@ public:
     float getBaselineExposureEV() const;
     float getMetadataExposureEV() const;
     bool getAsShotWhiteBalance(float& temperature, float& tint) const;
+    bool getAsShotWhiteBalanceMultipliers(float multipliers[3]) const;
+    bool computeTemperatureWhiteBalanceMultipliers(float temperature, float tint, float multipliers[3]) const;
+    bool getLastAppliedWhiteBalanceMultipliers(float multipliers[3]) const;
+    bool getCameraToSrgbMatrix(float matrix[3][3]) const;
     bool supportsNoiseReduction() const;
     bool isDisplayReferred() const;
     const std::string& getLastError() const;
