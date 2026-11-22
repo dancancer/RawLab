@@ -50,7 +50,7 @@ object EditorResetTransaction {
         val draftTool = draft?.group?.tool
         val allowedDraftScope = (pair && draftTool in listOf(16, 17)) || tool == draftTool ||
             (draftTool == 14 && (scope is EditorResetScope.HslChannel || scope == EditorResetScope.AllHsl)) ||
-            (draftTool == 21 && (scope is EditorResetScope.GradingZone || scope == EditorResetScope.AllGrading))
+            (draftTool == 21 && (scope is EditorResetScope.GradingZone || scope == EditorResetScope.GradingGlobal || scope == EditorResetScope.AllGrading))
         if ((draft == null && geometry) || (draft != null && !allowedDraftScope)) {
             return EditorResetPreparation(EditorResetResult.Blocked("Resolve the current adjustment draft first"))
         }

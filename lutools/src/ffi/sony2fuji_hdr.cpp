@@ -135,7 +135,8 @@ void requireCpuSession(sony2fuji_session* h, SessionLease& lease, const char* ms
 size_t requestSize(uint32_t v) {
     constexpr size_t sizes[] = {0, sizeof(sony2fuji_hdr_request_v1), sizeof(sony2fuji_hdr_request_v2),
         sizeof(sony2fuji_hdr_request_v3), sizeof(sony2fuji_hdr_request_v4), sizeof(sony2fuji_hdr_request_v5),
-        sizeof(sony2fuji_hdr_request_v6), sizeof(sony2fuji_hdr_request_v7), sizeof(sony2fuji_hdr_request_v8)};
+        sizeof(sony2fuji_hdr_request_v6), sizeof(sony2fuji_hdr_request_v7), sizeof(sony2fuji_hdr_request_v8),
+        sizeof(sony2fuji_hdr_request_v9)};
     return v < std::size(sizes) ? sizes[v] : 0;
 }
 void validateRequestVersion(const sony2fuji_hdr_request_v1* req) {
@@ -192,6 +193,39 @@ HDRRenderOptions parseRenderOptions(const sony2fuji_hdr_request_v1* req, const S
     if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION) {
         const auto e = readExt<sony2fuji_hdr_request_v8>(req);
         for (size_t i = 0; i < 3; ++i) o.tone.channels[i] = toCoreToneCurveConfig(e.channels[i]);
+    }
+    if (o.processingVersion >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION) {
+        const auto e = readExt<sony2fuji_hdr_request_v9>(req);
+        if ((e.curve_apply_to_luminosity != 0 && e.curve_apply_to_luminosity != 1) ||
+            e.output_sharpening > SONY2FUJI_OUTPUT_SHARPENING_HIGH ||
+            e.parametric_curve.version != SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION ||
+            e.parametric_curve.struct_size != sizeof(e.parametric_curve) ||
+            e.parametric_curve.reserved != 0 ||
+            e.grading_v2.version != SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION ||
+            e.grading_v2.struct_size != sizeof(e.grading_v2)) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_REQUEST, "Invalid HDR v9 request configuration");
+        }
+        o.tone.applyToLuminosity = e.curve_apply_to_luminosity != 0;
+        o.tone.parametric = {
+            e.parametric_curve.highlights,
+            e.parametric_curve.lights,
+            e.parametric_curve.darks,
+            e.parametric_curve.shadows,
+            e.parametric_curve.split_shadow,
+            e.parametric_curve.split_midtone,
+            e.parametric_curve.split_highlight
+        };
+        o.outputSharpening = static_cast<OutputSharpening>(e.output_sharpening);
+        o.color.grading.wheels = {{
+            {e.grading_v2.shadows_hue, e.grading_v2.shadows_saturation, e.grading_v2.shadows_luminance},
+            {e.grading_v2.midtones_hue, e.grading_v2.midtones_saturation, e.grading_v2.midtones_luminance},
+            {e.grading_v2.highlights_hue, e.grading_v2.highlights_saturation, e.grading_v2.highlights_luminance}
+        }};
+        o.color.grading.global = {
+            e.grading_v2.global_hue, e.grading_v2.global_saturation, e.grading_v2.global_luminance
+        };
+        o.color.grading.blending = e.grading_v2.blending;
+        o.color.grading.balance = e.grading_v2.balance;
     }
     validateHDRRenderOptions(o);
     return o;

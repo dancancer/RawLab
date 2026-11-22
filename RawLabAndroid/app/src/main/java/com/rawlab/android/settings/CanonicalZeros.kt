@@ -3,6 +3,28 @@ package com.rawlab.android.settings
 internal fun Float.canonicalZero(): Float = if (this == 0f) 0f else this
 internal fun Double.canonicalZero(): Double = if (this == 0.0) 0.0 else this
 
+private fun ColorGradingWheel.canonicalZeros(): ColorGradingWheel =
+    copy(hue = hue.canonicalZero(), saturation = saturation.canonicalZero(), luminance = luminance.canonicalZero())
+
+private fun ColorGradingSettings.canonicalZeros(): ColorGradingSettings = copy(
+    shadows = shadows.canonicalZeros(),
+    midtones = midtones.canonicalZeros(),
+    highlights = highlights.canonicalZeros(),
+    global = global.canonicalZeros(),
+    blending = blending.canonicalZero(),
+    balance = balance.canonicalZero(),
+)
+
+private fun ToneCurveSettings.canonicalZeros(): ToneCurveSettings = ToneCurveSettings(
+    mode, points, channels, applyToLuminosity,
+    with(parametric) {
+        ToneCurveParametric(
+            highlights.canonicalZero(), lights.canonicalZero(), darks.canonicalZero(), shadows.canonicalZero(),
+            splitShadow.canonicalZero(), splitMidtone.canonicalZero(), splitHighlight.canonicalZero(),
+        )
+    },
+)
+
 // Android 与 JVM JSON 对负零的编码不同；编辑、传输和持久化入口统一为正零。
 internal fun EditSettings.canonicalZeros(): EditSettings = copy(
     strength = strength.canonicalZero(), exposure = exposure.canonicalZero(),
@@ -19,15 +41,16 @@ internal fun EditSettings.canonicalZeros(): EditSettings = copy(
     geometry = with(geometry) { copy(cropX = cropX.canonicalZero(), cropY = cropY.canonicalZero(),
         cropWidth = cropWidth.canonicalZero(), cropHeight = cropHeight.canonicalZero(), straightenDegrees = straightenDegrees.canonicalZero(),
         perspectiveHorizontal = perspectiveHorizontal.canonicalZero(), perspectiveVertical = perspectiveVertical.canonicalZero()) },
-    colorGrading = ColorGradingZone.entries.fold(colorGrading) { value, zone ->
-        value.with(zone, value[zone].let { it.copy(hue = it.hue.canonicalZero(), saturation = it.saturation.canonicalZero()) }) },
-    curve = ToneCurveSettings(curve.mode, curve.points, curve.channels),
+    colorGrading = colorGrading.canonicalZeros(),
+    curve = curve.canonicalZeros(),
     hdr = hdr?.copy(exposure = hdr.exposure.canonicalZero(), temperature = hdr.temperature.canonicalZero(),
         tint = hdr.tint.canonicalZero(), contrast = hdr.contrast.canonicalZero(),
         highlights = hdr.highlights.canonicalZero(), shadows = hdr.shadows.canonicalZero(),
         saturation = hdr.saturation.canonicalZero(), tone = hdr.tone?.let {
             it.copy(blackPoint = it.blackPoint.canonicalZero(), whitePoint = it.whitePoint.canonicalZero(),
-                curveStrength = it.curveStrength.canonicalZero())
+                curveStrength = it.curveStrength.canonicalZero(), curve = it.curve.canonicalZeros())
+        }, color = hdr.color?.let {
+            it.copy(vibrance = it.vibrance.canonicalZero(), grading = it.grading.canonicalZeros())
         }, detail = hdr.detail?.let {
             it.copy(sharpening = it.sharpening.canonicalZero(), clarity = it.clarity.canonicalZero(),
                 dehaze = it.dehaze.canonicalZero(), denoise = it.denoise.canonicalZero())

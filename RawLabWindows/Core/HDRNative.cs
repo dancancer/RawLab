@@ -213,10 +213,10 @@ internal static class HDRNative
     }
 
     internal static HDRPairOwner Render(Native.Session session, HDRPairOwner source, HDRSettings settings,
-        HDRIntent intent, uint longEdge = 0, string? lookDirectory = null)
+        HDRIntent intent, uint longEdge = 0, string? lookDirectory = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
-        var request = settings.NativeRenderRequest(intent, longEdge, lookDirectory);
+        var request = settings.NativeRenderRequest(intent, longEdge, lookDirectory, outputSharpening);
         var result = Pair(); var diagnostic = Diagnostic();
         var status = Native.sony2fuji_hdr_render(session, ref source.Pair, ref request, ref result, ref diagnostic);
         if (status != StatusOk)
@@ -230,7 +230,7 @@ internal static class HDRNative
 
     internal static (uint Width,uint Height) GeometrySize(uint width,uint height,GeometrySettings geometry)
     {
-        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base;
+        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.Base;
         var diagnostic=Diagnostic();
         var status=Native.sony2fuji_hdr_geometry_size(width,height,ref request,out var w,out var h,ref diagnostic);
         if(status==StatusCancelled)throw new OperationCanceledException();
@@ -351,11 +351,12 @@ internal static class HDRNative
     }
 
     internal static Native.HDRStreamResult ExportProRAW(Native.Session session, string sourcePath, HDRSettings settings,
-        string destination, byte[] sha256, bool keepHdr, uint longEdge = 0, uint quality = 95, string? temporaryRoot = null)
+        string destination, byte[] sha256, bool keepHdr, uint longEdge = 0, uint quality = 95, string? temporaryRoot = null,
+        OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
         if (sha256.Length != 32) throw new ArgumentException("A frozen SHA-256 digest is required.", nameof(sha256));
-        var request = settings.NativeRenderRequest(HDRIntent.Final, longEdge);
+        var request = settings.NativeRenderRequest(HDRIntent.Final, longEdge, outputSharpening: outputSharpening);
         var config = new Native.HDRExportConfig {
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRExportConfig>(), JpegQuality = quality,
             BaseColor = ColorSrgb, MetadataPolicy = MetadataIsoXmp, MetadataSourcePath = sourcePath,

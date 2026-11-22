@@ -10,25 +10,28 @@ enum ProRAWExporter {
 
     @discardableResult
     static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
-                       longEdge: Int? = nil, keepHDR: Bool, session: OpaquePointer,
+                       longEdge: Int? = nil, outputSharpening: OutputSharpening = .off,
+                       keepHDR: Bool, session: OpaquePointer,
                        temporaryRoot: URL = FileManager.default.temporaryDirectory,
                        cancelled: () -> Bool = { false },
                        progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
         try export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
-                   format: keepHDR ? .hdrJPEG : .sdrJPEG, session: session, temporaryRoot: temporaryRoot,
-                   cancelled: cancelled, progress: progress)
+                   outputSharpening: outputSharpening, format: keepHDR ? .hdrJPEG : .sdrJPEG,
+                   session: session, temporaryRoot: temporaryRoot, cancelled: cancelled, progress: progress)
     }
 
     @discardableResult
     static func export(url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
-                       longEdge: Int? = nil, format: Format, session: OpaquePointer,
+                       longEdge: Int? = nil, outputSharpening: OutputSharpening = .off,
+                       format: Format, session: OpaquePointer,
                        temporaryRoot: URL = FileManager.default.temporaryDirectory,
                        cancelled: () -> Bool = { false },
                        progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
         guard let source = info.proRAW, let stamp = info.cameraStamp, settings.cameraDevelopmentSettings.isDefault else {
             throw HDRSettings.ModeError.unsupportedSource
         }
-        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge,
+                                         outputSharpening: format == .renderedDNG ? .off : outputSharpening)
         return try withoutActuallyEscaping(cancelled) { cancellation in
             let reader = Reader(url: url, source: source, stamp: stamp, cancelled: cancellation)
             defer { reader.releaseDecoder() }

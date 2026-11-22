@@ -113,6 +113,62 @@ int main() {
             "subnormal interval retains nonzero PCHIP harmonic tangent");
         require(std::abs(curve.evaluate(tiny/2)-1.0625*tiny)<=4*std::numeric_limits<double>::denorm_min(),
             "subnormal PCHIP reference remains accurate");
+
+        // v2: unpinned endpoints
+        const auto matteFade = config({{0.0, 0.12}, {0.5, 0.52}, {1.0, 0.88}});
+        require(!validToneCurve(matteFade, false), "v1 rejects unpinned endpoints");
+        require(validToneCurve(matteFade, true), "v2 accepts unpinned endpoints");
+        const ToneCurve matteCurve(matteFade, true);
+        require(matteCurve.active() && matteCurve.gpuSupported(), "unpinned curve active and GPU supported");
+        require(std::abs(matteCurve.evaluate(-0.2) - 0.12) < 1e-12 &&
+                std::abs(matteCurve.evaluate(0.0) - 0.12) < 1e-12 &&
+                std::abs(matteCurve.evaluate(1.0) - 0.88) < 1e-12 &&
+                std::abs(matteCurve.evaluate(1.5) - 0.88) < 1e-12,
+            "unpinned curve clamps outside [0,1] to y0 and y1");
+
+        // v2: parametric curve validation, zero-band bypass with custom splits, and strict monotonicity
+        ToneCurveParametricConfig zeroCustomSplits{};
+        zeroCustomSplits.splitShadow = 0.15f;
+        zeroCustomSplits.splitMidtone = 0.40f;
+        zeroCustomSplits.splitHighlight = 0.85f;
+        require(zeroCustomSplits.valid() && !zeroCustomSplits.active(), "zero bands inactive regardless of splits");
+        const ToneCurveParametric bypassParam(zeroCustomSplits);
+        require(!bypassParam.active(), "parametric evaluator inactive when bands are zero");
+        for (double v : {-0.5, 0.0, 0.18, 0.5, 1.0, 1.75}) {
+            require(bypassParam.evaluate(v) == v, "parametric zero-band bypass preserves residual exactly");
+        }
+
+        const std::array<ToneCurveParametricConfig, 4> extremeCases{{
+            { -100.f, 100.f, -100.f, 100.f, 0.25f, 0.27f, 0.55f },
+            { 100.f, -100.f, 100.f, -100.f, 0.25f, 0.27f, 0.55f },
+            { -100.f, 100.f, -100.f, 100.f, 0.05f, 0.25f, 0.55f },
+            { 100.f, -100.f, 100.f, -100.f, 0.43f, 0.45f, 0.95f },
+        }};
+        for (const auto& cfg : extremeCases) {
+            require(cfg.valid() && cfg.active(), "extreme min-gap parametric config valid");
+            const ToneCurveParametric p(cfg);
+            require(p.evaluate(0.0) == 0.0 && p.evaluate(1.0) == 1.0, "parametric endpoints stay 0 and 1");
+            double prev = -1.0;
+            for (int k = 0; k <= 2000; ++k) {
+                const double x = static_cast<double>(k) / 2000.0;
+                const double y = p.evaluate(x);
+                require(std::isfinite(y) && y >= 0.0 && y <= 1.0, "parametric output bounded in [0,1]");
+                if (k > 0) require(y > prev, "parametric curve strictly increasing even at min split gap");
+                prev = y;
+            }
+        }
+        {
+            ToneCurveParametricConfig bad = zeroCustomSplits;
+            bad.shadows = 101.f;
+            require(!bad.valid(), "rejects band > 100");
+            bad = zeroCustomSplits;
+            bad.splitShadow = 0.26f;
+            bad.splitMidtone = 0.27f;
+            require(!bad.valid(), "rejects split gap < 0.02");
+            bad = zeroCustomSplits;
+            bad.splitHighlight = std::numeric_limits<float>::quiet_NaN();
+            require(!bad.valid(), "rejects NaN split");
+        }
         std::cout << "Tone curve checks passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n';return 1; }

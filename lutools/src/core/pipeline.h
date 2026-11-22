@@ -21,6 +21,7 @@
 #include "core/render_params.h"
 #include "core/wavelet_cache.h"
 #include "core/wavelet_denoise.h"
+#include "core/white_balance.h"
 
 #include <array>
 #include <cstdint>
@@ -128,6 +129,29 @@ struct RecipeWbResult {
     bool cameraCalibrated = false;
 };
 
+enum class WbProbeAvailability : int32_t {
+    Available = 0,
+    Overexposed = 1,
+    Outside = 2,
+    Unavailable = 3
+};
+
+struct WbProbeQuery {
+    float normX = 0.0f;
+    float normY = 0.0f;
+    uint32_t windowSize = 3;
+};
+
+struct WbProbeResult {
+    WbProbeAvailability availability = WbProbeAvailability::Unavailable;
+    uint32_t validPixelCount = 0;
+    uint32_t rejectedOverexposedCount = 0;
+    float temperature = 6500.0f;
+    float tint = 0.0f;
+    std::array<float, 3> sampledRgb{};
+    std::array<float, 3> wbMul{1.0f, 1.0f, 1.0f};
+};
+
 class Pipeline {
 public:
     using AiProgressCallback = std::function<bool(int32_t phase, uint64_t completed, uint64_t total)>;
@@ -153,6 +177,13 @@ public:
 
     // Tone curve sampling (stateless)
     static RenderStatus sampleToneCurve(const ToneCurveConfig& config, const double* x, double* y, uint32_t count);
+    static RenderStatus sampleToneCurveV2(
+        const ToneCurveConfig& config,
+        const ToneCurveParametricConfig* parametric,
+        const double* x,
+        double* y,
+        uint32_t count
+    );
 
     // Atomic edit-state application (replaces all edit-state fields transactionally)
     RenderStatus applyParams(const char* recipeJson);
@@ -221,6 +252,13 @@ public:
     RenderStatus setColorGrading(const ColorGradingOptions& options);
     RenderStatus setToneCurve(const ToneCurveConfig& config);
     RenderStatus setToneCurves(const ToneCurveConfig& master, const std::array<ToneCurveConfig, 3>& channels);
+    RenderStatus setToneCurvesV2(
+        const ToneCurveConfig& master,
+        const std::array<ToneCurveConfig, 3>& channels,
+        bool applyToLuminosity,
+        const ToneCurveParametricConfig& parametric
+    );
+    RenderStatus setAiDenoiseBlend(float strength) noexcept;
 
     // X3F per-pipeline state (pipeline_x3f.cpp)
     static bool isNormalX3f(const char* inputPath, X3fMode mode);
@@ -262,8 +300,10 @@ public:
 
     // Core processing entry points
     RenderStatus process(const RenderParams& params, OwnedPixelBuffer* outBuffer);
+    RenderStatus processToImageData(const RenderParams& params, ImageData& outImage);
     RenderStatus previewLutCompatibility(const RenderParams& params, const char* configuration, OwnedPixelBuffer& outBuffer);
     RenderStatus createHslProbe(const RenderParams& params, uint64_t sourceRevision, uint64_t requestRevision, HslProbeData& outProbe);
+    RenderStatus sampleWbProbe(const RenderParams& params, const WbProbeQuery& query, WbProbeResult& outResult);
     RenderStatus estimateAutoExposure(const RenderParams& params, float& outExposureEv);
     RenderStatus migrateProcessing(const RenderParams& params, ProcessingMigrationResult& outResult) const;
 
@@ -273,7 +313,8 @@ private:
         OwnedPixelBuffer* outBuffer,
         ImageData* preHsl = nullptr,
         std::shared_ptr<LUT3D> previewLut = nullptr,
-        MigrationFrame* migrationFrame = nullptr
+        MigrationFrame* migrationFrame = nullptr,
+        ImageData* outImage = nullptr
     );
 
     // pipeline_raw.cpp
@@ -294,6 +335,7 @@ private:
         bool applyAI = true,
         bool forceFullResolution = false
     );
+    RenderStatus loadRawForWbProbe(const RenderParams& params);
 
     // pipeline_geometry.cpp
     RenderStatus finishGeometry(const RenderParams& params, ImageData& image, uint32_t nativeWidth, uint32_t nativeHeight);
@@ -326,7 +368,8 @@ private:
         OwnedPixelBuffer* outBuffer,
         uint32_t nativeWidth,
         uint32_t nativeHeight,
-        MigrationFrame* migrationFrame = nullptr
+        MigrationFrame* migrationFrame = nullptr,
+        ImageData* outImage = nullptr
     );
 
     // pipeline_ai.cpp
@@ -361,6 +404,13 @@ private:
     ColorGradingOptions colorGrading_{};
     ToneCurve toneCurve_{};
     std::array<ToneCurve, 3> channelCurves_{};
+    bool curveApplyToLuminosity_ = false;
+    ToneCurveParametricConfig parametricCurve_{};
+    float aiDenoiseBlend_ = 1.0f;
+    OutputSharpening outputSharpening_ = OutputSharpening::Off;
+    bool rasterRelativeWbActive_ = false;
+    float rasterRelativeTemp_ = 6500.0f;
+    float rasterRelativeTint_ = 0.0f;
     GeometryOptions geometry_{};
     uint32_t geometryWidth_ = 0;
     uint32_t geometryHeight_ = 0;
@@ -380,6 +430,11 @@ private:
     float asShotTemperature_ = 6500.0f;
     float asShotTint_ = 0.0f;
     bool calibratedWb_ = false;
+    bool hasCachedRawWb_ = false;
+    CameraWhiteBalance cachedRawWb_{};
+    std::array<std::array<float, 3>, 3> cachedRgbCam_{};
+    std::array<float, 3> cachedWbUsed_{1.0f, 1.0f, 1.0f};
+    float cachedBaselineEv_ = 0.0f;
     bool lastRenderRendered_ = false;
     bool lastRenderWasRaw_ = false;
     bool lastRenderWasNormalX3f_ = false;

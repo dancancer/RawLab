@@ -136,10 +136,37 @@ struct EditorView: View {
                     else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
                 }
             }
+            .overlay(alignment: .bottomLeading) {
+                if model.result != nil && model.geometryDraft == nil {
+                    MacInspectionReadoutPill(
+                        model: model,
+                        showingBefore: viewing.holdingBefore,
+                        showLiveReadout: !showInspector
+                    )
+                    .padding(10)
+                }
+            }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 8) {
                     if !showInspector && model.hslTargetActive {
                         HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
+                    } else if !showInspector && model.curveTargetActive {
+                        CurveTargetCanvasControls(channel: model.curveTargetChannel, onExit: exitCurveTarget).padding(8)
+                    }
+                    if model.hasActiveExternalReloadBanner {
+                        HStack(spacing: 10) {
+                            Label(L10n.text("检测到外部调色方案更新"), systemImage: "arrow.triangle.2.circlepath")
+                            Button(L10n.text("重载滑块"), action: model.reloadFromExternalUpdate)
+                                .accessibilityIdentifier("externalReload.reload")
+                            Button(L10n.text("保留当前手动草稿"), action: model.keepCurrentManualDraftOnExternalUpdate)
+                                .accessibilityIdentifier("externalReload.keepDraft")
+                        }
+                        .font(.callout)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .padding(8)
+                        .accessibilityIdentifier("externalReload.banner")
                     }
                     if model.previewOutdated {
                         HStack(spacing: 8) {
@@ -199,6 +226,8 @@ struct EditorView: View {
             if current != nil { workspaceLayout.photoOpened() }
         }
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.curveTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.wbEyedropperEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.quickPresetsVisible) { _, visible in
             if visible { workspaceLayout.setMode(.editing); workspaceLayout.showInspector() }
         }
@@ -215,14 +244,22 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
+            model.cancelCurveTarget()
+            model.cancelWBProbe()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willResignActiveNotification)) { _ in
             if model.quickPresetState.isPreparing { model.cancelQuickPreset() }
             model.cancelHSLTarget()
+            model.cancelCurveTarget()
+            model.cancelWBProbe()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
+        }
+        .onDisappear {
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
         }
         .toolbar {
             if #available(macOS 26.0, *) {
@@ -242,10 +279,19 @@ struct EditorView: View {
             else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
         .onExitCommand {
-            exitHSLTarget(); model.cancelAdjustmentInteraction()
+            exitHSLTarget(); exitCurveTarget(); exitWBProbe(); model.cancelAdjustmentInteraction()
         }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
-            onInformation: { infoMode = infoMode.next }, onEscape: { workspaceLayout.dismissTransient() }).frame(width: 0, height: 0))
+            onInformation: { infoMode = infoMode.next },
+            onToggleGray50: {
+                if showsPhotoWorkspace && model.result != nil && model.geometryDraft == nil {
+                    model.inspection.toggleNeutralGray50()
+                }
+            },
+            onEscape: {
+                if model.inspection.handleEscape() { return true }
+                return workspaceLayout.dismissTransient()
+            }).frame(width: 0, height: 0))
         .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
@@ -322,6 +368,10 @@ struct EditorView: View {
             }.padding(.horizontal, 12).frame(minHeight: 34)
             Divider()
             histogram
+            if model.geometryDraft == nil && model.result != nil {
+                Divider()
+                MacInspectionHUD(model: model, showingBefore: viewing.holdingBefore)
+            }
             Divider()
             AdjustmentDock(model: model, resetVersion: resetVersion)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -350,7 +400,8 @@ struct EditorView: View {
     private var histogram: some View {
         WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
             before: viewing.holdingBefore, clipping: $clipping, expanded: $histogramExpanded,
-            hdrDisplay: hdrDisplay, clippingEnabled: model.geometryDraft == nil)
+            hdrDisplay: hdrDisplay, clippingEnabled: model.geometryDraft == nil,
+            luminanceCursor: model.inspectionLuminanceCursor(showingBefore: viewing.holdingBefore))
     }
 
     private var processingSettings: some View {
@@ -538,6 +589,11 @@ struct EditorView: View {
                 Button(L10n.text("复制调整…")) { model.requestAdjustmentSheet(.copy) }.disabled(model.file == nil)
                 Button(L10n.text("粘贴调整…")) { model.requestAdjustmentSheet(.paste) }.disabled(model.adjustmentClipboard == nil)
                 Divider()
+                Button(L10n.text("导入调整参数 JSON…")) { model.importAdjustmentTransferPanel() }
+                    .disabled(!model.canImportAdjustmentTransfer)
+                Button(L10n.text("导出调整参数 JSON…")) { model.exportAdjustmentTransferPanel() }
+                    .disabled(!model.canExportAdjustmentTransfer)
+                Divider()
                 Button(L10n.text("撤销"), action: model.undoAdjustment).disabled(!model.canUndoAdjustment)
                 Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)
                 Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
@@ -554,9 +610,46 @@ struct EditorView: View {
                 .popover(isPresented: $showsHistogram) {
                     WorkspaceHistogram(frame: viewing.holdingBefore ? model.neutral : model.result,
                         before: viewing.holdingBefore, clipping: $clipping, expanded: .constant(true),
-                        hdrDisplay: hdrDisplay, collapsible: false, clippingEnabled: model.geometryDraft == nil)
+                        hdrDisplay: hdrDisplay, collapsible: false, clippingEnabled: model.geometryDraft == nil,
+                        luminanceCursor: model.inspectionLuminanceCursor(showingBefore: viewing.holdingBefore))
                         .frame(width: 286)
                 }
+            Menu {
+                Toggle(L10n.text("取样监视"), isOn: $model.inspection.pinModeEnabled)
+                Button(L10n.text("添加锚点")) { _ = model.pinInspectionAnchor() }
+                    .disabled(!model.inspection.canPinMore)
+                Button(L10n.text("清除锚点")) { model.inspection.clearAnchors() }
+                    .disabled(model.inspection.anchors.isEmpty)
+                Divider()
+                Section(L10n.text("观察层")) {
+                    ForEach(InspectionOverlayMode.allCases) { mode in
+                        Button {
+                            model.inspection.selectOverlay(mode)
+                        } label: {
+                            if model.inspection.overlay == mode {
+                                Label(L10n.text(mode.titleKey), systemImage: "checkmark")
+                            } else {
+                                Text(L10n.text(mode.titleKey))
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "scope")
+                    .activeTint(model.inspection.overlay != .none || model.inspection.pinModeEnabled)
+            }
+                .help(L10n.text("观察层"))
+                .accessibilityLabel(L10n.text("观察层"))
+                .accessibilityIdentifier("inspection.menu")
+                .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
+            Button { model.inspection.toggleNeutralGray50() } label: {
+                Image(systemName: "square.lefthalf.filled")
+                    .activeTint(model.inspection.overlay == .neutralGray50)
+            }
+                .help(L10n.text("50% 中性灰"))
+                .accessibilityLabel(L10n.text("50% 中性灰"))
+                .accessibilityIdentifier("inspection.gray50")
+                .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
             Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
                 .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
                 .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
@@ -671,7 +764,7 @@ struct EditorView: View {
         Menu {
             let tool = model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing).tool
             if tool == .colorGrading {
-                resetButton(.gradingZone(model.adjustmentNavigation.selectedGradingZone), title: L10n.text("重置当前分区"))
+                resetButton(model.adjustmentNavigation.currentGradingResetScope, title: L10n.text("重置当前分区"))
                 resetButton(.allGrading, title: L10n.text("重置颜色分级"))
             } else if tool == .hsl {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
@@ -732,7 +825,8 @@ struct EditorView: View {
         viewport.focus = CGPoint(x: 0.5, y: 0.5)
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var canHoldBefore: Bool { showsPhotoWorkspace && !model.hslTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
+    private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive || model.wbProbeActive }
+    private var canHoldBefore: Bool { showsPhotoWorkspace && !anyTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
         let source = model.sourceRevision, axis = model.hslTargetAxis, hdr = model.settings.isHDREditing
@@ -745,13 +839,43 @@ struct EditorView: View {
             exit: exitHSLTarget)
     }
 
+    private var curveTargetInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, channel = model.curveTargetChannel, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.curveTargetChannel == channel && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "curve-\(source)-\(channel.rawValue)-\(hdr)",
+            begin: { if current() { model.beginCurveTarget($0) } },
+            change: { if current() { model.moveCurveTarget($0) } },
+            end: { if current() { model.endCurveTarget() } }, cancel: { if current() { model.cancelCurveTarget() } },
+            key: { if current() { model.keyCurveTarget($0) } }, reject: { if current() { model.rejectCurveTarget() } },
+            exit: exitCurveTarget)
+    }
+
+    private var wbProbeInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "wb-\(source)-\(hdr)",
+            begin: { if current() { model.sampleWBProbe(at: $0) } },
+            change: { _ in },
+            end: {}, cancel: { if current() { model.cancelWBProbe() } },
+            key: { _ in }, reject: { if current() { model.rejectWBProbe() } },
+            exit: exitWBProbe)
+    }
+
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
-        PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
-                    clipping: showMask && !model.hslTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
+        let activeTargetInput: HSLTargetCanvasInput? = {
+            guard model.result?.image === frame.image else { return nil }
+            if model.wbProbeActive { return wbProbeInput }
+            if model.hslTargetActive { return hslTargetInput }
+            if model.curveTargetActive { return curveTargetInput }
+            return nil
+        }()
+        let activeTargetPoint = model.hslTargetActive ? model.hslTargetPoint : (model.curveTargetActive ? model.curveTargetPoint : nil)
+        return PhotoCanvas(frame: frame, viewport: $viewport, sourceWidth: model.result?.nativeWidth ?? frame.image.width,
+                    clipping: showMask && !anyTargetActive, margins: viewing.margins, beforeFrame: wipe ? model.neutral : nil,
                     split: wipe ? $viewing.split : nil,
                     comparisonLabel: (viewing.enabled && model.canComparePreview) || viewing.holdingBefore ? title : nil,
-                    hslTarget: model.hslTargetActive && model.result?.image === frame.image ? hslTargetInput : nil,
-                    hslTargetPoint: model.hslTargetPoint,
+                    hslTarget: activeTargetInput,
+                    hslTargetPoint: activeTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
                     }, sourceHeight: model.result?.nativeHeight,
@@ -762,7 +886,12 @@ struct EditorView: View {
                     onCropEditingChanged: model.geometryCropInputEnabled ? model.setGeometryCropInteracting : nil,
                     prepareCropInteraction: { before in
                         ParameterValueField.commitPendingInputs() && model.geometryDraftSettings == before
-                    },hdrDisplay:hdrDisplay)
+                    }, hdrDisplay: hdrDisplay,
+                    inspectionOverlay: model.geometryDraft == nil ? model.inspection.overlay : .none,
+                    inspectionAnchors: model.inspectionMarkerPoints(),
+                    inspectionPinMode: model.geometryDraft == nil && model.inspection.pinModeEnabled,
+                    onInspectionHover: { point in model.updateInspectionHover(point) },
+                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) })
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {
@@ -775,6 +904,14 @@ struct EditorView: View {
 
     private func exitHSLTarget() {
         model.cancelHSLTarget(); model.hslTargetEnabled = false
+    }
+
+    private func exitCurveTarget() {
+        model.cancelCurveTarget(); model.curveTargetEnabled = false
+    }
+
+    private func exitWBProbe() {
+        model.cancelWBProbe(); model.wbEyedropperEnabled = false
     }
 
     private func toggleInspector() {

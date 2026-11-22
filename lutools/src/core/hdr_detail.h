@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/photo_geometry.h"
+#include "core/render_params.h"
 
 namespace sony2fuji {
 
@@ -29,6 +30,10 @@ HDRDetailPlan planHDRDetail(int width, int height, const HDRDetailOptions& setti
 // The input covers the center rows and the required halo on the full canvas.
 // Input and output are separate; the output receives only the center rows.
 void renderHDRDetailBand(const HDRDetailPlan& plan, const RGB* input, int inputTop, int inputRows,
+    RGB* output, int outputTop, int outputRows);
+
+void renderHDROutputSharpeningBand(OutputSharpening level, int width, int height, double peak,
+    const RGB* input, int inputTop, int inputRows,
     RGB* output, int outputTop, int outputRows);
 
 } // namespace sony2fuji

@@ -247,6 +247,7 @@
     <string name="expand_vignette">"周辺減光の設定を展開"</string>
     <string name="export">"書き出し"</string>
     <string name="export_done">"写真を保存しました"</string>
+    <string name="export_output_sharpening">"出力シャープ"</string>
     <string name="exporting">"書き出し中…"</string>
     <string name="exposure">"露出"</string>
     <string name="exposure_basis">"露出基準"</string>
@@ -450,6 +451,10 @@
     <string name="output_custom_size">"カスタム"</string>
     <string name="output_long_edge">"長辺の上限（px）"</string>
     <string name="output_original_size">"元のサイズ"</string>
+    <string name="output_sharpening_high">"強"</string>
+    <string name="output_sharpening_low">"弱"</string>
+    <string name="output_sharpening_off">"オフ"</string>
+    <string name="output_sharpening_standard">"標準"</string>
     <string name="output_size">"書き出しサイズ"</string>
     <string name="output_size_error">"書き出しの長辺は 1～65535 ピクセルにしてください。"</string>
     <string name="output_size_range">"1～65535 ピクセル"</string>

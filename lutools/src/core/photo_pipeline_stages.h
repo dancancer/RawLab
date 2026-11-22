@@ -70,6 +70,8 @@ void applyDetailAdjustments(
     const SubRectMap& roiMap = {}
 );
 
+void applyOutputSharpening(ImageData& image, OutputSharpening level);
+
 RenderStatus applyPhotoLook(
     ImageData& image,
     const std::shared_ptr<LUT3D>& lut,

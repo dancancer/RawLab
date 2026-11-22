@@ -209,6 +209,44 @@ class CTestInventoryTests(unittest.TestCase):
             self.assertTrue(any("gles_photo_pixel_tests.cpp" in e for e in errors), errors)
             self.assertTrue(any("gles_renderer_retry_tests.cpp" in e for e in errors), errors)
 
+    def test_ai_package_and_model_gated_sources_match_cmake_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tdir = Path(tmp)
+            for name in ("tiff_ifd_tests.cpp", "ai_session_memory_tests.cpp", "dualdn_session_tests.cpp", "dualdn_onnx_tests.cpp"):
+                (tdir / name).write_text("int main() { return 0; }\n", encoding="utf-8")
+            data = {
+                "tests": [
+                    _make_entry("tiff_ifd", ["core", "ci_macos_arm64"], "tiff_ifd_tests"),
+                    _make_entry("ai_session_memory", ["ai", "ci_macos_arm64"], "ai_session_memory_tests"),
+                    _make_entry("dualdn_session", ["ai", "ci_macos_arm64"], "dualdn_session_tests"),
+                ]
+            }
+            self.assertEqual(
+                cci.validate_ctest_inventory(
+                    data,
+                    ci_label="ci_macos_arm64",
+                    platform="macos",
+                    tests_dir=tdir,
+                    ai_enabled=True,
+                    ai_package_present=True,
+                    ai_model_present=False,
+                    glslang_available=False,
+                ),
+                [],
+            )
+            errors = cci.validate_ctest_inventory(
+                data,
+                ci_label="ci_macos_arm64",
+                platform="macos",
+                tests_dir=tdir,
+                ai_enabled=True,
+                ai_package_present=True,
+                ai_model_present=True,
+                glslang_available=False,
+            )
+            self.assertEqual(len(errors), 1)
+            self.assertIn("dualdn_onnx_tests.cpp", errors[0])
+
     def test_optional_live_build_dir_reconciliation(self) -> None:
         build_dir = os.environ.get("RAWLAB_CTEST_BUILD_DIR")
         if not build_dir:

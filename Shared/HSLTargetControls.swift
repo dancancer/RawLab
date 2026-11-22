@@ -81,3 +81,45 @@ struct HSLTargetCanvasControls: View {
             .accessibilityIdentifier("hsl.target.exit")
     }
 }
+
+struct CurveTargetCanvasControls: View {
+    let channel: ToneCurveChannel
+    let onExit: () -> Void
+
+    private var channelTitle: String {
+        switch channel {
+        case .rgb: return "RGB"
+        case .red: return L10n.text("红")
+        case .green: return L10n.text("绿")
+        case .blue: return L10n.text("蓝")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { title; exitButton }
+                VStack(alignment: .leading, spacing: 4) { title; exitButton }
+            }
+            Text(L10n.text("拖动照片调整颜色；退出目标模式后可平移。"))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10).frame(maxWidth: 560, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain).accessibilityIdentifier("curve.target.canvas")
+    }
+
+    private var title: some View {
+        Label(L10n.format("目标调整：%@", channelTitle), systemImage: "scope")
+            .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var exitButton: some View {
+        Button(L10n.text("退出目标调整"), action: onExit)
+            .buttonStyle(.bordered)
+            #if canImport(UIKit)
+            .frame(minHeight: 44)
+            #endif
+            .accessibilityIdentifier("curve.target.exit")
+    }
+}

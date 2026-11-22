@@ -60,12 +60,25 @@ public sealed class DenoiseSettingsTests
         settings = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), new(new OriginalIdentity("denoise.arw", 1, 2, 3), settings.Capture(), null)).Candidate!.Settings.Restore();
         Check(settings.Denoise == new DenoiseSettings(), "Reset all disables denoising");
         Check(settings.Effects == new PhotoEffectsSettings() && settings.DisplayChromaDenoise == 0, "Reset all restores effects and display chroma defaults");
-        settings.Denoise = DenoiseSettings.Clean; settings.ResetGroup("细节");
+        settings.Denoise = DenoiseSettings.Clean; settings.AIDenoiseStrength = 42.0; settings.ResetGroup("细节");
         Check(!settings.Denoise.Enabled, "Detail group reset disables denoising");
         Check(settings.DisplayChromaDenoise == 0, "Detail group reset disables display chroma denoise");
+        Check(settings.AIDenoiseStrength == 100.0, "Detail group reset restores AI denoise strength");
         foreach (var invalid in new[] { -1d, 101d, double.NaN, double.PositiveInfinity })
             Assert.Throws<ArgumentOutOfRangeException>(() => (new DenoiseSettings(true, invalid, 46, 50)).NativeConfig());
         foreach (var invalid in new[] { -101d, 101d, double.NaN, double.PositiveInfinity })
             Assert.Throws<ArgumentOutOfRangeException>(() => (new PhotoEffectsSettings(invalid, 50, 0, 50, 0, 0, 25, 50)).NativeConfig());
+
+        settings.AIDenoiseStrength = 250.0;
+        Check(settings.AIDenoiseStrength == 100.0, "DualDn blend clamps above 100");
+        settings.AIDenoiseStrength = -10.0;
+        Check(settings.AIDenoiseStrength == 0.0, "DualDn blend clamps below 0");
+        settings.AIDenoiseStrength = 42.5;
+        var blendSnap = settings.Capture();
+        Check(blendSnap.AIDenoiseBlend == 42.5 && blendSnap.Restore().AIDenoiseStrength == 42.5,
+            "DualDn non-default blend round-trips through snapshot capture/restore");
+        var denoiseReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Tool, Tool: EditorAdjustmentTool.Denoise),
+            new(new OriginalIdentity("denoise.arw", 1, 2, 3), blendSnap, null)).Candidate!.Settings.Restore();
+        Check(denoiseReset.AIDenoiseStrength == 100.0, "Denoise tool reset restores DualDn blend to 100");
     }
 }

@@ -82,6 +82,25 @@ static class BatchFrozenChecks
             rejected = false;
             try { journal.Save(json.Deserialize<BatchJob>()!); } catch (Exception) { rejected = true; }
             Check(rejected, "Missing per-target snapshots must not fall back to global settings");
+
+            var sharpJob = BatchJob.Create(inputs[0], new Adjustments().Capture(), null, "Neutral");
+            sharpJob.OutputDirectory = output;
+            sharpJob.OutputFormat = ExportFormat.Jpeg;
+            sharpJob.OutputSharpening = OutputSharpening.High;
+            sharpJob.Items = [BatchItem.Create(inputs[0]) with { Selected = true }];
+            var sharpJournal = new BatchJournal(Path.Combine(root, "journal-sharp"));
+            var observedSharpening = new List<OutputSharpening>();
+            BatchRunner.Run(sharpJob, sharpJournal, false, CancellationToken.None, (_, _) => { }, (_, _, _, destination, _, sharpening) =>
+            {
+                observedSharpening.Add(sharpening);
+                File.WriteAllText(destination, "sharp");
+            });
+            Check(sharpJournal.Load()?.OutputSharpening == OutputSharpening.High && observedSharpening.SequenceEqual([OutputSharpening.High]),
+                "Uniform BatchJob persists OutputSharpening and forwards it to BatchRunner");
+
+            sharpJob.OutputFormat = ExportFormat.RenderedDng;
+            Check(sharpJob.EffectiveOutputSharpening == OutputSharpening.Off,
+                "RenderedDng forces EffectiveOutputSharpening to Off");
         }
         finally { Directory.Delete(root, true); }
         RunUniformX3fTargetModeChecks();
@@ -348,7 +367,7 @@ static class BatchFrozenChecks
             Refusal("version", "\"Version\":1", "\"Version\":9");
             Refusal("proraw", "\"ProRAWDecodeVersion\":2", "\"ProRAWDecodeVersion\":99");
             Refusal("recipe", "\"MasterRecipeSettingsVersion\":3", "\"MasterRecipeSettingsVersion\":5");
-            Refusal("hdr", "\"hdr_processing_version\":1", "\"hdr_processing_version\":9");
+            Refusal("hdr", "\"hdr_processing_version\":1", "\"hdr_processing_version\":10");
         }
         finally
         {

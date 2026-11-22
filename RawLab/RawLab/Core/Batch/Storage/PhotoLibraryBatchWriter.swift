@@ -35,7 +35,9 @@ enum PhotoLibraryBatchWriter {
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = outputName
-            if (outputName as NSString).pathExtension == "heic" { options.uniformTypeIdentifier = UTType.heic.identifier }
+            let ext = (outputName as NSString).pathExtension.lowercased()
+            if ext == "heic" { options.uniformTypeIdentifier = UTType.heic.identifier }
+            else if ext == "png" { options.uniformTypeIdentifier = UTType.png.identifier }
             request.addResource(with: .photo, data: data, options: options)
             if let identifier = request.placeholderForCreatedAsset?.localIdentifier {
                 do { try checkpoint(identifier) } catch { checkpointError = error }

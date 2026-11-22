@@ -42,7 +42,9 @@
 -keep class com.rawlab.android.engine.NativeProcessRequest { <fields>; }
 -keep class com.rawlab.android.engine.NativeGeometry { <fields>; }
 -keep class com.rawlab.android.engine.NativeToneCurve { <fields>; }
+-keep class com.rawlab.android.engine.NativeToneCurveParametric { <fields>; }
 -keep class com.rawlab.android.engine.NativeColorGrading { <fields>; }
+-keep class com.rawlab.android.engine.NativeColorGradingV2 { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRTone { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRColor { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRRendition { <fields>; }

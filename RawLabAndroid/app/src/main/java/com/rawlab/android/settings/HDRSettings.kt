@@ -28,7 +28,8 @@ data class HDRToneSettings(
     init { require(listOf(blackPoint, whitePoint, curveStrength).all { it in -100f..100f }) }
     val isDefault get() = blackPoint == 0f && whitePoint == 0f && curveStrength == 0f && curve.isDefault
     val isIdentity get() = blackPoint == 0f && whitePoint == 0f &&
-        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) && curve.channels.isIdentity
+        (if (curve.mode == ToneCurveMode.LEGACY) curveStrength == 0f else curve.master.isIdentity) &&
+        curve.channels.isIdentity && curve.parametric.isIdentity
 }
 
 data class HDRColorSettings(
@@ -162,10 +163,17 @@ data class HDRSettings(
         require(detail == null || effects != null)
         require(look == null || detail != null)
         require(tone?.curve?.hasChannelCurves != true || look != null)
+        require((tone?.curve?.hasV2Extensions != true && color?.grading?.hasV2Extensions != true) || look != null)
     }
 
-    val recordVersion get() = if (processingVersion == 8) 9 else if (cameraDevelopment == null) processingVersion else 8
+    val recordVersion get() = when {
+        processingVersion >= 9 -> 10
+        processingVersion == 8 -> 9
+        cameraDevelopment == null -> processingVersion
+        else -> 8
+    }
     val processingVersion get() = when {
+        tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
         tone?.curve?.hasChannelCurves == true -> 8
         look != null -> 7
         detail != null -> 6
@@ -197,12 +205,16 @@ data class HDRSettings(
             HDRCameraDevelopmentSettings(lensDistortion = it.lensDistortion, lensTca = it.lensTca, lensVignetting = it.lensVignetting,
                 lensAutoCrop = it.lensAutoCrop, lensProfile = it.lensProfile)
         })
-    fun withTone(value: HDRToneSettings) = if (value.curve.hasChannelCurves)
+    fun withTone(value: HDRToneSettings) = if (value.curve.hasChannelCurves || value.curve.hasV2Extensions)
         copy(tone = value, color = colorSettings, rendition = renditionSettings, effects = effectSettings, detail = detailSettings, look = lookSettings)
         else copy(tone = value.takeUnless { tone == null && it.isDefault })
     fun withColor(value: HDRColorSettings): HDRSettings {
         if (color == null && value.isDefault) return this
-        return copy(tone = toneSettings, color = value)
+        return if (value.grading.hasV2Extensions) {
+            copy(tone = toneSettings, color = value, rendition = renditionSettings, effects = effectSettings, detail = detailSettings, look = lookSettings)
+        } else {
+            copy(tone = toneSettings, color = value)
+        }
     }
     fun withRendition(value: HDRRenditionSettings): HDRSettings {
         if (rendition == null && value.isDefault) return this

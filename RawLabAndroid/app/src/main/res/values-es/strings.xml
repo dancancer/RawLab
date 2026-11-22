@@ -247,6 +247,7 @@
     <string name="expand_vignette">"Mostrar ajustes de viñeta"</string>
     <string name="export">"Exportar"</string>
     <string name="export_done">"Foto guardada"</string>
+    <string name="export_output_sharpening">"Enfoque de salida"</string>
     <string name="exporting">"Exportando…"</string>
     <string name="exposure">"Exposición"</string>
     <string name="exposure_basis">"Referencia de exposición"</string>
@@ -450,6 +451,10 @@
     <string name="output_custom_size">"Personalizado"</string>
     <string name="output_long_edge">"Límite del lado largo (px)"</string>
     <string name="output_original_size">"Tamaño original"</string>
+    <string name="output_sharpening_high">"Alto"</string>
+    <string name="output_sharpening_low">"Bajo"</string>
+    <string name="output_sharpening_off">"Desactivado"</string>
+    <string name="output_sharpening_standard">"Estándar"</string>
     <string name="output_size">"Tamaño de exportación"</string>
     <string name="output_size_error">"El borde largo debe tener entre 1 y 65535 píxeles."</string>
     <string name="output_size_range">"1–65535 píxeles"</string>

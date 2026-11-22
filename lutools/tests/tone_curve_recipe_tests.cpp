@@ -52,6 +52,27 @@ int main() {
         doc["schema_version"]=4;doc.erase("processing");
         require(parseEditRecipe(doc.dump(),recipe,error),"v4 remains valid");
         require(!Json::parse(serializeEditRecipe(recipe))["edits"]["tone"].contains("curve"),"v4 serialization stays unchanged");
+
+        Json v17={{"schema_version",17},{"processing",{{"family","rawlab"},{"version",3},{"quality","standard"}}},
+            {"input",{{"path","input.dng"}}},{"edits",{{"exposure",{{"mode","sensor"}}},{"tone",{{"curve",{
+                {"mode","custom"},
+                {"points",{{0,0.12},{0.5,0.52},{1,0.88}}},
+                {"apply_to_luminosity",true},
+                {"parametric",{{"shadows",25},{"darks",-15},{"lights",10},{"highlights",-20},
+                    {"split_shadow",0.20},{"split_midtone",0.48},{"split_highlight",0.78}}},
+                {"channels",{{"red",{{"mode","custom"},{"points",{{0,0.05},{1,0.95}}}}}}}
+            }}}}}},
+            {"output",{{"path","output.png"},{"format","png"}}}};
+        require(parseEditRecipe(v17.dump(),recipe,error),"v17 v2 tone curve accepted: "+error);
+        require(recipe.curveApplyToLuminosity,"v17 apply_to_luminosity parsed");
+        require(recipe.parametricCurve.shadows==25 && recipe.parametricCurve.split_shadow==0.20f,"v17 parametric parsed");
+        require(recipe.toneCurve.points[0].y==0.12 && recipe.toneCurve.points[2].y==0.88,"v17 unpinned master endpoints parsed");
+        require(recipe.channelCurves[0].points[0].y==0.05 && recipe.channelCurves[0].points[1].y==0.95,"v17 unpinned channel endpoints parsed");
+        const auto savedV17=Json::parse(serializeEditRecipe(recipe));
+        require(savedV17["edits"]["tone"]["curve"]["apply_to_luminosity"]==true &&
+                savedV17["edits"]["tone"]["curve"]["parametric"]["shadows"]==25 &&
+                savedV17["edits"]["tone"]["curve"]["points"][0][1]==0.12,"v17 v2 tone curve roundtrips");
+
         std::cout<<"Tone curve recipe checks passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
 }

@@ -170,6 +170,14 @@ class EditorViewModel internal constructor(
         mutable, { sourceRevision }, { currentRevision }, { work -> currentRevision = submitRender(work) },
         { edits, interactive -> draftHolder.changeDraft(edits, interactive) },
         { draftHolder.incrementDraftRevision() }, { draftHolder.renderDraft(it) },
+        dependencies.curveSampler,
+        dependencies.curveParametricSampler,
+    )
+
+    private val wbHolder: EditorWbEyedropperStateHolder = EditorWbEyedropperStateHolder(
+        mutable, { sourceRevision }, { currentRevision },
+        { work -> submitRender(work).also { currentRevision = it } },
+        { edits -> previewCoordinator.edit(edits, false) },
     )
 
     private val hdrHolder: EditorHdrStateHolder = EditorHdrStateHolder(
@@ -211,7 +219,7 @@ class EditorViewModel internal constructor(
         { target -> collectionHolder.validate(target) }, { id, changed -> collectionHolder.synchronized(id, changed) },
         { collectionHolder.releaseDeferred() }, { work, completed -> commitAdjustments(work, completed = completed) },
         { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        { hslHolder.clear() }, { processingMigrationHolder.cancel(skipCurrentSource = true) },
+        { hslHolder.clear(); wbHolder.clear() }, { processingMigrationHolder.cancel(skipCurrentSource = true) },
         { processingMigrationHolder.clearPendingReset() }, { editRevision += 1 },
         lookHolder::includeIndependentRecipeLook, lookHolder::updateRecentLooks,
         { draftHolder.renderCommittedForNavigation() },
@@ -265,6 +273,7 @@ class EditorViewModel internal constructor(
         { editRevision += 1 }, { work -> submitRender(work).also { currentRevision = it } },
         { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
         { settings, interactive, clearMigration -> previewCoordinator.edit(settings, interactive, clearMigration) },
+        wbHolder::cancel, wbHolder::clear,
     )
 
     private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(
@@ -278,6 +287,7 @@ class EditorViewModel internal constructor(
         processingMigrationHolder, adjustmentTransferHolder, collectionHolder, batchHolder, draftHolder, ::failure,
         { scheduleDetailIfNeeded() },
         ::handleDetailAccepted,
+        wbHolder,
     )
 
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
@@ -293,6 +303,7 @@ class EditorViewModel internal constructor(
     val pendingBatch = batchHolder.pending
     val collectionExport = collectionHolder.export
     val hslTarget = hslHolder.state
+    val wbProbe = wbHolder.state
 
     // Internal test seams for androidTest and JVM unit tests.
     internal val lookQueue get() = lookHolder.queue
@@ -356,15 +367,16 @@ class EditorViewModel internal constructor(
     }
 
     private fun submitRender(work: Work): Long {
-        if (work !is Work.DetailPreview && work !is Work.HslProbe) {
+        if (work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe) {
             clearDetailState(keepRequest = work is Work.Preview && !work.importing)
         }
         if (work !is Work.DetailPreview) {
             if (work !is Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
+            if (work !is Work.WbProbe && wbHolder.isWaiting) wbHolder.clear()
             hdrHolder.onRenderSubmitted(work)
         }
         val continuesInteraction = latestRender?.canFinishPreviewBefore(work) == true
-        if (work !is Work.DetailPreview && work !is Work.HslProbe) {
+        if (work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe) {
             latestRender = work
         }
         return queue.submit(work).also { submitted ->
@@ -607,7 +619,7 @@ class EditorViewModel internal constructor(
             val preview = current.preview ?: return@launch
             if (!current.controlsEnabled || !current.exact || current.rendering ||
                 current.previewResizePending || current.operation != Operation.NONE ||
-                current.draft?.group == AdjustmentGroup.GEOMETRY || hslHolder.isWaiting
+                current.draft?.group == AdjustmentGroup.GEOMETRY || hslHolder.isWaiting || wbHolder.isWaiting
             ) {
                 return@launch
             }
@@ -727,14 +739,26 @@ class EditorViewModel internal constructor(
 
     fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) = systemPhotoHolder.receive(uris, requestID)
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)
-    fun setHslTargetEnabled(enabled: Boolean) = hslHolder.setEnabled(enabled)
+    fun setHslTargetEnabled(enabled: Boolean) {
+        if (enabled) wbHolder.setEnabled(false)
+        hslHolder.setEnabled(enabled)
+    }
     fun setHslTargetAxis(axis: Int) = hslHolder.setAxis(axis)
+    fun setCurveTargetChannel(channel: com.rawlab.android.settings.ToneCurveChannel) = hslHolder.setCurveChannel(channel)
     fun beginHslTarget(x: Float, y: Float, keyDelta: Float? = null) = hslHolder.begin(x, y, keyDelta)
     fun moveHslTarget(delta: Float) = hslHolder.move(delta)
     fun endHslTarget() = hslHolder.end()
     fun cancelHslTarget() = hslHolder.cancel()
     fun rejectHslTarget() = hslHolder.reject()
     fun keyHslTarget(delta: Float) = hslHolder.key(delta)
+
+    fun setWbProbeEnabled(enabled: Boolean) {
+        if (enabled) hslHolder.setEnabled(false)
+        wbHolder.setEnabled(enabled)
+    }
+    fun beginWbProbe(x: Float, y: Float) = wbHolder.begin(x, y)
+    fun cancelWbProbe() = wbHolder.cancel()
+    fun rejectWbProbe() = wbHolder.reject()
 
     fun importPhoto(uri: Uri?) = importRecoveryHolder.importPhoto(uri)
     fun importPhoto(uri: Uri?, completed: (Boolean) -> Unit) = importRecoveryHolder.importPhoto(uri, completed)
@@ -825,7 +849,12 @@ class EditorViewModel internal constructor(
     fun beginExportDestinationPick() = exportHolder.beginExportDestinationPick()
     fun returnToExportOptions() = exportHolder.returnToExportOptions()
     fun cancelExport() = exportHolder.cancelExport()
-    fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null) = exportHolder.export(destination, format, longEdge)
+    fun export(
+        destination: Uri?,
+        format: ExportFormat,
+        longEdge: Int? = null,
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+    ) = exportHolder.export(destination, format, longEdge, outputSharpening)
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 
     fun addCollectionPhotos(uris: List<Uri>) = collectionHolder.addPhotos(uris)
@@ -842,12 +871,14 @@ class EditorViewModel internal constructor(
     fun captureCollectionSynchronization(scope: AdjustmentScope, completed: (CollectionSynchronization?) -> Unit) =
         collectionHolder.captureSynchronization(scope, completed)
     fun prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        completed: (CollectionExportReview?) -> Unit) = collectionHolder.prepareExport(skipping, format, longEdge, destination, completed)
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        completed: (CollectionExportReview?) -> Unit) = collectionHolder.prepareExport(skipping, format, longEdge, destination, completed, outputSharpening)
     fun freezeCollectionExport(review: CollectionExportReview, completed: (Boolean) -> Unit) =
         collectionHolder.freezeExport(review, completed)
     fun cancelCollectionExport() = collectionHolder.cancelExport()
     fun startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        completed: (Boolean) -> Unit = {}) = collectionHolder.startExport(skipping, format, longEdge, destination, completed)
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        completed: (Boolean) -> Unit = {}) = collectionHolder.startExport(skipping, format, longEdge, destination, outputSharpening, completed)
 
     fun beginBatch() = batchHolder.beginBatch()
     fun resumeBatch(job: BatchJob) = batchHolder.resumeBatch(job)

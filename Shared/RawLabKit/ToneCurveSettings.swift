@@ -26,12 +26,17 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
     public static let identity = Self(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 1)])
     public var isDefault: Bool { mode == .legacy && points.isEmpty }
     public var isIdentity: Bool { mode == .legacy || points.allSatisfy { $0.x == $0.y } }
+    public var hasUnpinnedEndpoints: Bool {
+        mode == .custom && ((points.first?.y ?? 0) != 0 || (points.last?.y ?? 1) != 1)
+    }
     public var isValid: Bool {
         let sub = AdjustmentFieldSpec.SubFields.LightCurve.self
         if mode == .legacy { return points.count == sub.legacyPointsCount }
         guard (sub.customMinPoints...sub.customMaxPoints).contains(points.count),
-              points.first == ToneCurvePoint(x: sub.coordRange.lowerBound, y: sub.coordRange.lowerBound),
-              points.last == ToneCurvePoint(x: sub.coordRange.upperBound, y: sub.coordRange.upperBound) else { return false }
+              let first = points.first, let last = points.last,
+              first.x == sub.coordRange.lowerBound,
+              last.x == sub.coordRange.upperBound,
+              sub.endpointsYUnpinned || (first.y == sub.coordRange.lowerBound && last.y == sub.coordRange.upperBound) else { return false }
         for (index, point) in points.enumerated() {
             guard point.x.isFinite, point.y.isFinite,
                   sub.coordRange.contains(point.x), sub.coordRange.contains(point.y) else { return false }
@@ -55,6 +60,8 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         return result
     }
     public func isInterior(_ index: Int) -> Bool { mode == .custom && index > 0 && index + 1 < points.count }
+    public func isEndpoint(_ index: Int) -> Bool { mode == .custom && points.count >= 2 && (index == 0 || index == points.count - 1) }
+    public func canMoveY(_ index: Int) -> Bool { mode == .custom && points.indices.contains(index) }
     public func inserting(x: Double, y: Double) -> Self {
         guard mode == .custom, isValid, points.count < 33, x.isFinite, y.isFinite, x > 0, x < 1,
               !points.contains(where: { $0.x == x }), let next = points.firstIndex(where: { $0.x > x }) else { return self }
@@ -63,7 +70,19 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         return result
     }
     public func moving(index: Int, x: Double, y: Double) -> Self {
-        guard isValid, isInterior(index), x.isFinite, y.isFinite else { return self }
+        guard isValid, canMoveY(index), x.isFinite, y.isFinite else { return self }
+        if index == 0 {
+            let maxY = points.count > 1 ? points[1].y : 1.0
+            var result = self
+            result.points[0] = .init(x: 0.0, y: min(maxY, max(0.0, y)))
+            return result
+        }
+        if index == points.count - 1 {
+            let minY = points.count > 1 ? points[index - 1].y : 0.0
+            var result = self
+            result.points[index] = .init(x: 1.0, y: min(1.0, max(minY, y)))
+            return result
+        }
         let previous = points[index - 1], next = points[index + 1]
         let low = previous.x.nextUp, high = next.x.nextDown
         guard low <= high else { return self }
@@ -104,6 +123,9 @@ public struct ToneCurveChannels: Equatable, Hashable, Codable {
     public var isDefault: Bool { red.isDefault && green.isDefault && blue.isDefault }
     public var isIdentity: Bool { red.isIdentity && green.isIdentity && blue.isIdentity }
     public var isValid: Bool { red.isValid && green.isValid && blue.isValid }
+    public var hasUnpinnedEndpoints: Bool {
+        red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
+    }
     public var progress: Double { max(red.progress, green.progress, blue.progress) }
     public func scaled(by strength: Double) -> Self {
         Self(red: red.scaled(by: strength), green: green.scaled(by: strength), blue: blue.scaled(by: strength))
@@ -124,23 +146,121 @@ public struct ToneCurveChannels: Equatable, Hashable, Codable {
     }
 }
 
+public struct ToneCurveParametric: Equatable, Hashable, Codable {
+    public var highlights: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault
+    public var lights: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault
+    public var darks: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault
+    public var shadows: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault
+    public var splitShadow: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitShadowDefault
+    public var splitMidtone: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitMidtoneDefault
+    public var splitHighlight: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitHighlightDefault
+
+    public var isDefault: Bool {
+        let sub = AdjustmentFieldSpec.SubFields.LightCurveParametric.self
+        return highlights == sub.bandDefault && lights == sub.bandDefault &&
+            darks == sub.bandDefault && shadows == sub.bandDefault &&
+            splitShadow == sub.splitShadowDefault && splitMidtone == sub.splitMidtoneDefault &&
+            splitHighlight == sub.splitHighlightDefault
+    }
+    public var isIdentity: Bool {
+        let sub = AdjustmentFieldSpec.SubFields.LightCurveParametric.self
+        return highlights == sub.bandDefault && lights == sub.bandDefault &&
+            darks == sub.bandDefault && shadows == sub.bandDefault
+    }
+    public var isValid: Bool {
+        let sub = AdjustmentFieldSpec.SubFields.LightCurveParametric.self
+        return [highlights, lights, darks, shadows, splitShadow, splitMidtone, splitHighlight].allSatisfy(\.isFinite) &&
+            sub.bandRange.contains(highlights) && sub.bandRange.contains(lights) &&
+            sub.bandRange.contains(darks) && sub.bandRange.contains(shadows) &&
+            sub.splitShadowRange.contains(splitShadow) &&
+            sub.splitMidtoneRange.contains(splitMidtone) &&
+            sub.splitHighlightRange.contains(splitHighlight) &&
+            splitShadow + sub.splitMinGap <= splitMidtone &&
+            splitMidtone + sub.splitMinGap <= splitHighlight
+    }
+    public var progress: Double {
+        max(abs(highlights), abs(lights), abs(darks), abs(shadows)) / 100
+    }
+    public func scaled(by strength: Double) -> Self {
+        var result = self
+        result.highlights = min(100, max(-100, highlights * strength))
+        result.lights = min(100, max(-100, lights * strength))
+        result.darks = min(100, max(-100, darks * strength))
+        result.shadows = min(100, max(-100, shadows * strength))
+        return result
+    }
+    public init(
+        highlights: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault,
+        lights: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault,
+        darks: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault,
+        shadows: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.bandDefault,
+        splitShadow: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitShadowDefault,
+        splitMidtone: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitMidtoneDefault,
+        splitHighlight: Double = AdjustmentFieldSpec.SubFields.LightCurveParametric.splitHighlightDefault
+    ) {
+        self.highlights = highlights
+        self.lights = lights
+        self.darks = darks
+        self.shadows = shadows
+        self.splitShadow = splitShadow
+        self.splitMidtone = splitMidtone
+        self.splitHighlight = splitHighlight
+    }
+    public enum CodingKeys: String, CodingKey {
+        case highlights, lights, darks, shadows
+        case splitShadow = "split_shadow"
+        case splitMidtone = "split_midtone"
+        case splitHighlight = "split_highlight"
+    }
+    public init(from decoder: Decoder) throws {
+        let keys = try decoder.container(keyedBy: CurveCodingKey.self)
+        let expected: Set<String> = ["highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"]
+        guard Set(keys.allKeys.map(\.stringValue)) == expected else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid parametric curve fields"))
+        }
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        highlights = try values.decode(Double.self, forKey: .highlights)
+        lights = try values.decode(Double.self, forKey: .lights)
+        darks = try values.decode(Double.self, forKey: .darks)
+        shadows = try values.decode(Double.self, forKey: .shadows)
+        splitShadow = try values.decode(Double.self, forKey: .splitShadow)
+        splitMidtone = try values.decode(Double.self, forKey: .splitMidtone)
+        splitHighlight = try values.decode(Double.self, forKey: .splitHighlight)
+        guard isValid else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid parametric curve values"))
+        }
+    }
+}
+
 public struct ToneCurveSettings: Equatable, Hashable, Codable {
     public static let hdrExposureRange = ToneCurveShape.hdrExposureRange
     public var master: ToneCurveShape
     public var channels: ToneCurveChannels
+    public var applyToLuminosity: Bool
+    public var parametric: ToneCurveParametric
     public var mode: ToneCurveMode { get { master.mode } set { master.mode = newValue } }
     public var points: [ToneCurvePoint] { get { master.points } set { master.points = newValue } }
     public static let identity = Self(mode: .custom, points: ToneCurveShape.identity.points)
-    public var isDefault: Bool { master.isDefault && channels.isDefault }
-    public var isIdentity: Bool { master.isIdentity && channels.isIdentity }
-    public var isValid: Bool { master.isValid && channels.isValid }
-    public var progress: Double { max(master.progress, channels.progress) }
+    public var isDefault: Bool { master.isDefault && channels.isDefault && !applyToLuminosity && parametric.isDefault }
+    public var isIdentity: Bool { master.isIdentity && channels.isIdentity && parametric.isIdentity }
+    public var isValid: Bool { master.isValid && channels.isValid && parametric.isValid }
+    public var progress: Double { max(master.progress, channels.progress, parametric.progress) }
     public var hasChannelCurves: Bool { !channels.isDefault }
+    public var hasV2Extensions: Bool {
+        applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
+    }
     public var labeledPoints: [(channel: ToneCurveChannel, point: ToneCurvePoint)] {
         ToneCurveChannel.allCases.flatMap { channel in shape(channel).points.map { (channel, $0) } }
     }
-    public init(mode: ToneCurveMode = .legacy, points: [ToneCurvePoint] = [], channels: ToneCurveChannels = .init()) {
-        master = .init(mode: mode, points: points); self.channels = channels
+    public init(mode: ToneCurveMode = .legacy,
+                points: [ToneCurvePoint] = [],
+                channels: ToneCurveChannels = .init(),
+                applyToLuminosity: Bool = false,
+                parametric: ToneCurveParametric = .init()) {
+        master = .init(mode: mode, points: points)
+        self.channels = channels
+        self.applyToLuminosity = applyToLuminosity
+        self.parametric = parametric
     }
     public func shape(_ channel: ToneCurveChannel) -> ToneCurveShape {
         switch channel { case .rgb: return master; case .red: return channels.red; case .green: return channels.green; case .blue: return channels.blue }
@@ -151,28 +271,43 @@ public struct ToneCurveSettings: Equatable, Hashable, Codable {
         return result
     }
     public func scaled(by strength: Double) -> Self {
-        var result = self; result.master = master.scaled(by: strength); result.channels = channels.scaled(by: strength); return result
+        var result = self
+        result.master = master.scaled(by: strength)
+        result.channels = channels.scaled(by: strength)
+        result.parametric = parametric.scaled(by: strength)
+        return result
     }
     public func isInterior(_ index: Int) -> Bool { master.isInterior(index) }
+    public func isEndpoint(_ index: Int) -> Bool { master.isEndpoint(index) }
+    public func canMoveY(_ index: Int) -> Bool { master.canMoveY(index) }
     public func inserting(x: Double, y: Double) -> Self { replacing(.rgb, with: master.inserting(x: x, y: y)) }
     public func moving(index: Int, x: Double, y: Double) -> Self { replacing(.rgb, with: master.moving(index: index, x: x, y: y)) }
     public func removing(index: Int) -> Self { replacing(.rgb, with: master.removing(index: index)) }
-    public enum CodingKeys: String, CodingKey { case mode, points, channels }
+    public enum CodingKeys: String, CodingKey {
+        case mode, points, channels
+        case applyToLuminosity = "apply_to_luminosity"
+        case parametric
+    }
     public init(from decoder: Decoder) throws {
         let keys = try decoder.container(keyedBy: CurveCodingKey.self)
         let names = Set(keys.allKeys.map(\.stringValue))
-        guard names.isSuperset(of: ["mode", "points"]), names.isSubset(of: ["mode", "points", "channels"]) else {
+        guard names.isSuperset(of: ["mode", "points"]),
+              names.isSubset(of: ["mode", "points", "channels", "apply_to_luminosity", "parametric"]) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid curve fields"))
         }
         let values = try decoder.container(keyedBy: CodingKeys.self)
         master = .init(mode: try values.decode(ToneCurveMode.self, forKey: .mode), points: try values.decode([ToneCurvePoint].self, forKey: .points))
         channels = values.contains(.channels) ? try values.decode(ToneCurveChannels.self, forKey: .channels) : .init()
+        applyToLuminosity = values.contains(.applyToLuminosity) ? try values.decode(Bool.self, forKey: .applyToLuminosity) : false
+        parametric = values.contains(.parametric) ? try values.decode(ToneCurveParametric.self, forKey: .parametric) : .init()
         guard isValid else { throw DecodingError.dataCorruptedError(forKey: .points, in: values, debugDescription: "Invalid curve points") }
     }
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(mode, forKey: .mode); try values.encode(points, forKey: .points)
         if !channels.isDefault { try values.encode(channels, forKey: .channels) }
+        if applyToLuminosity { try values.encode(applyToLuminosity, forKey: .applyToLuminosity) }
+        if !parametric.isDefault { try values.encode(parametric, forKey: .parametric) }
     }
 }
 

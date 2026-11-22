@@ -261,11 +261,48 @@ struct JniCache {
         jclass clazz = nullptr;
         jfieldID shadowsHue = nullptr;
         jfieldID shadowsSaturation = nullptr;
+        jfieldID shadowsLuminance = nullptr;
         jfieldID midtonesHue = nullptr;
         jfieldID midtonesSaturation = nullptr;
+        jfieldID midtonesLuminance = nullptr;
         jfieldID highlightsHue = nullptr;
         jfieldID highlightsSaturation = nullptr;
+        jfieldID highlightsLuminance = nullptr;
+        jfieldID globalHue = nullptr;
+        jfieldID globalSaturation = nullptr;
+        jfieldID globalLuminance = nullptr;
+        jfieldID blending = nullptr;
+        jfieldID balance = nullptr;
     } colorGrading;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID highlights = nullptr;
+        jfieldID lights = nullptr;
+        jfieldID darks = nullptr;
+        jfieldID shadows = nullptr;
+        jfieldID splitShadow = nullptr;
+        jfieldID splitMidtone = nullptr;
+        jfieldID splitHighlight = nullptr;
+    } toneCurveParametric;
+
+    struct {
+        jclass clazz = nullptr;
+        jfieldID shadowsHue = nullptr;
+        jfieldID shadowsSaturation = nullptr;
+        jfieldID shadowsLuminance = nullptr;
+        jfieldID midtonesHue = nullptr;
+        jfieldID midtonesSaturation = nullptr;
+        jfieldID midtonesLuminance = nullptr;
+        jfieldID highlightsHue = nullptr;
+        jfieldID highlightsSaturation = nullptr;
+        jfieldID highlightsLuminance = nullptr;
+        jfieldID globalHue = nullptr;
+        jfieldID globalSaturation = nullptr;
+        jfieldID globalLuminance = nullptr;
+        jfieldID blending = nullptr;
+        jfieldID balance = nullptr;
+    } colorGradingV2;
 
     struct {
         jclass clazz = nullptr;
@@ -273,6 +310,8 @@ struct JniCache {
         jfieldID whitePoint = nullptr;
         jfieldID curveStrength = nullptr;
         jfieldID curve = nullptr;
+        jfieldID applyToLuminosity = nullptr;
+        jfieldID parametric = nullptr;
     } hdrTone;
 
     struct {
@@ -330,6 +369,8 @@ struct JniCache {
         jfieldID detail = nullptr;
         jfieldID look = nullptr;
         jfieldID channelCurves = nullptr;
+        jfieldID outputSharpening = nullptr;
+        jfieldID gradingV2 = nullptr;
     } hdrRenderRequest;
 
     struct {
@@ -387,6 +428,8 @@ void releaseJniCache(JNIEnv* env) {
         &gJniCache.geometry.clazz,
         &gJniCache.toneCurve.clazz,
         &gJniCache.colorGrading.clazz,
+        &gJniCache.toneCurveParametric.clazz,
+        &gJniCache.colorGradingV2.clazz,
         &gJniCache.hdrTone.clazz,
         &gJniCache.hdrColor.clazz,
         &gJniCache.hdrRendition.clazz,
@@ -512,16 +555,51 @@ void initJniCache(JNIEnv* env) {
         c.colorGrading.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeColorGrading");
         c.colorGrading.shadowsHue = cacheField(env, c.colorGrading.clazz, "shadowsHue", "F");
         c.colorGrading.shadowsSaturation = cacheField(env, c.colorGrading.clazz, "shadowsSaturation", "F");
+        c.colorGrading.shadowsLuminance = cacheField(env, c.colorGrading.clazz, "shadowsLuminance", "F");
         c.colorGrading.midtonesHue = cacheField(env, c.colorGrading.clazz, "midtonesHue", "F");
         c.colorGrading.midtonesSaturation = cacheField(env, c.colorGrading.clazz, "midtonesSaturation", "F");
+        c.colorGrading.midtonesLuminance = cacheField(env, c.colorGrading.clazz, "midtonesLuminance", "F");
         c.colorGrading.highlightsHue = cacheField(env, c.colorGrading.clazz, "highlightsHue", "F");
         c.colorGrading.highlightsSaturation = cacheField(env, c.colorGrading.clazz, "highlightsSaturation", "F");
+        c.colorGrading.highlightsLuminance = cacheField(env, c.colorGrading.clazz, "highlightsLuminance", "F");
+        c.colorGrading.globalHue = cacheField(env, c.colorGrading.clazz, "globalHue", "F");
+        c.colorGrading.globalSaturation = cacheField(env, c.colorGrading.clazz, "globalSaturation", "F");
+        c.colorGrading.globalLuminance = cacheField(env, c.colorGrading.clazz, "globalLuminance", "F");
+        c.colorGrading.blending = cacheField(env, c.colorGrading.clazz, "blending", "F");
+        c.colorGrading.balance = cacheField(env, c.colorGrading.clazz, "balance", "F");
+
+        c.toneCurveParametric.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeToneCurveParametric");
+        c.toneCurveParametric.highlights = cacheField(env, c.toneCurveParametric.clazz, "highlights", "F");
+        c.toneCurveParametric.lights = cacheField(env, c.toneCurveParametric.clazz, "lights", "F");
+        c.toneCurveParametric.darks = cacheField(env, c.toneCurveParametric.clazz, "darks", "F");
+        c.toneCurveParametric.shadows = cacheField(env, c.toneCurveParametric.clazz, "shadows", "F");
+        c.toneCurveParametric.splitShadow = cacheField(env, c.toneCurveParametric.clazz, "splitShadow", "F");
+        c.toneCurveParametric.splitMidtone = cacheField(env, c.toneCurveParametric.clazz, "splitMidtone", "F");
+        c.toneCurveParametric.splitHighlight = cacheField(env, c.toneCurveParametric.clazz, "splitHighlight", "F");
+
+        c.colorGradingV2.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeColorGradingV2");
+        c.colorGradingV2.shadowsHue = cacheField(env, c.colorGradingV2.clazz, "shadowsHue", "F");
+        c.colorGradingV2.shadowsSaturation = cacheField(env, c.colorGradingV2.clazz, "shadowsSaturation", "F");
+        c.colorGradingV2.shadowsLuminance = cacheField(env, c.colorGradingV2.clazz, "shadowsLuminance", "F");
+        c.colorGradingV2.midtonesHue = cacheField(env, c.colorGradingV2.clazz, "midtonesHue", "F");
+        c.colorGradingV2.midtonesSaturation = cacheField(env, c.colorGradingV2.clazz, "midtonesSaturation", "F");
+        c.colorGradingV2.midtonesLuminance = cacheField(env, c.colorGradingV2.clazz, "midtonesLuminance", "F");
+        c.colorGradingV2.highlightsHue = cacheField(env, c.colorGradingV2.clazz, "highlightsHue", "F");
+        c.colorGradingV2.highlightsSaturation = cacheField(env, c.colorGradingV2.clazz, "highlightsSaturation", "F");
+        c.colorGradingV2.highlightsLuminance = cacheField(env, c.colorGradingV2.clazz, "highlightsLuminance", "F");
+        c.colorGradingV2.globalHue = cacheField(env, c.colorGradingV2.clazz, "globalHue", "F");
+        c.colorGradingV2.globalSaturation = cacheField(env, c.colorGradingV2.clazz, "globalSaturation", "F");
+        c.colorGradingV2.globalLuminance = cacheField(env, c.colorGradingV2.clazz, "globalLuminance", "F");
+        c.colorGradingV2.blending = cacheField(env, c.colorGradingV2.clazz, "blending", "F");
+        c.colorGradingV2.balance = cacheField(env, c.colorGradingV2.clazz, "balance", "F");
 
         c.hdrTone.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRTone");
         c.hdrTone.blackPoint = cacheField(env, c.hdrTone.clazz, "blackPoint", "F");
         c.hdrTone.whitePoint = cacheField(env, c.hdrTone.clazz, "whitePoint", "F");
         c.hdrTone.curveStrength = cacheField(env, c.hdrTone.clazz, "curveStrength", "F");
         c.hdrTone.curve = cacheField(env, c.hdrTone.clazz, "curve", "Lcom/rawlab/android/engine/NativeToneCurve;");
+        c.hdrTone.applyToLuminosity = cacheField(env, c.hdrTone.clazz, "applyToLuminosity", "Z");
+        c.hdrTone.parametric = cacheField(env, c.hdrTone.clazz, "parametric", "Lcom/rawlab/android/engine/NativeToneCurveParametric;");
 
         c.hdrColor.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/NativeHDRColor");
         c.hdrColor.vibrance = cacheField(env, c.hdrColor.clazz, "vibrance", "F");
@@ -567,6 +645,8 @@ void initJniCache(JNIEnv* env) {
         c.hdrRenderRequest.detail = cacheField(env, c.hdrRenderRequest.clazz, "detail", "Lcom/rawlab/android/engine/NativeHDRDetail;");
         c.hdrRenderRequest.look = cacheField(env, c.hdrRenderRequest.clazz, "look", "Lcom/rawlab/android/engine/NativeHDRLook;");
         c.hdrRenderRequest.channelCurves = cacheField(env, c.hdrRenderRequest.clazz, "channelCurves", "Lcom/rawlab/android/engine/NativeHDRChannelCurves;");
+        c.hdrRenderRequest.outputSharpening = cacheField(env, c.hdrRenderRequest.clazz, "outputSharpening", "I");
+        c.hdrRenderRequest.gradingV2 = cacheField(env, c.hdrRenderRequest.clazz, "gradingV2", "Lcom/rawlab/android/engine/NativeColorGradingV2;");
 
         c.hdrProgressListener.clazz = cacheGlobalClass(env, "com/rawlab/android/engine/HDRProgressListener");
         c.hdrProgressListener.onProgress = cacheMethod(env, c.hdrProgressListener.clazz, "onProgress", "(I)V");
@@ -738,25 +818,100 @@ void marshalGeometryFields(JNIEnv* env, const JniCache& cache, jobject geometryO
 }
 
 struct MarshalledHdrRequest {
-    sony2fuji_hdr_request_v8 value{};
+    sony2fuji_hdr_request_v9 value{};
     std::string lookPath;
     MarshalledHdrRequest() = default;
     MarshalledHdrRequest(const MarshalledHdrRequest&) = delete;
     MarshalledHdrRequest& operator=(const MarshalledHdrRequest&) = delete;
-    sony2fuji_hdr_request_v1& base() { return value.base.base.base.base.base.base.base; }
+    sony2fuji_hdr_request_v1& base() { return value.base.base.base.base.base.base.base.base; }
 };
+
+sony2fuji_tone_curve_parametric_config defaultParametricConfig() {
+    sony2fuji_tone_curve_parametric_config cfg{};
+    cfg.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+    cfg.struct_size = sizeof(cfg);
+    cfg.split_shadow = 0.25f;
+    cfg.split_midtone = 0.50f;
+    cfg.split_highlight = 0.75f;
+    return cfg;
+}
+
+sony2fuji_tone_curve_parametric_config marshalToneCurveParametric(JNIEnv* env, const JniCache& cache, jobject obj) {
+    auto cfg = defaultParametricConfig();
+    if (!obj) return cfg;
+    cfg.highlights = env->GetFloatField(obj, cache.toneCurveParametric.highlights);
+    cfg.lights = env->GetFloatField(obj, cache.toneCurveParametric.lights);
+    cfg.darks = env->GetFloatField(obj, cache.toneCurveParametric.darks);
+    cfg.shadows = env->GetFloatField(obj, cache.toneCurveParametric.shadows);
+    cfg.split_shadow = env->GetFloatField(obj, cache.toneCurveParametric.splitShadow);
+    cfg.split_midtone = env->GetFloatField(obj, cache.toneCurveParametric.splitMidtone);
+    cfg.split_highlight = env->GetFloatField(obj, cache.toneCurveParametric.splitHighlight);
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read parametric tone curve");
+    return cfg;
+}
+
+sony2fuji_color_grading_v2_config marshalColorGradingV2(
+    JNIEnv* env, const JniCache& cache, jobject obj, const sony2fuji_color_grading_config& legacy) {
+    sony2fuji_color_grading_v2_config cfg{};
+    cfg.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+    cfg.struct_size = sizeof(cfg);
+    if (!obj) {
+        cfg.shadows_hue = legacy.shadows_hue;
+        cfg.shadows_saturation = legacy.shadows_saturation;
+        cfg.midtones_hue = legacy.midtones_hue;
+        cfg.midtones_saturation = legacy.midtones_saturation;
+        cfg.highlights_hue = legacy.highlights_hue;
+        cfg.highlights_saturation = legacy.highlights_saturation;
+        cfg.blending = 50.f;
+        cfg.balance = 0.f;
+        return cfg;
+    }
+    cfg.shadows_hue = env->GetFloatField(obj, cache.colorGradingV2.shadowsHue);
+    cfg.shadows_saturation = env->GetFloatField(obj, cache.colorGradingV2.shadowsSaturation);
+    cfg.shadows_luminance = env->GetFloatField(obj, cache.colorGradingV2.shadowsLuminance);
+    cfg.midtones_hue = env->GetFloatField(obj, cache.colorGradingV2.midtonesHue);
+    cfg.midtones_saturation = env->GetFloatField(obj, cache.colorGradingV2.midtonesSaturation);
+    cfg.midtones_luminance = env->GetFloatField(obj, cache.colorGradingV2.midtonesLuminance);
+    cfg.highlights_hue = env->GetFloatField(obj, cache.colorGradingV2.highlightsHue);
+    cfg.highlights_saturation = env->GetFloatField(obj, cache.colorGradingV2.highlightsSaturation);
+    cfg.highlights_luminance = env->GetFloatField(obj, cache.colorGradingV2.highlightsLuminance);
+    cfg.global_hue = env->GetFloatField(obj, cache.colorGradingV2.globalHue);
+    cfg.global_saturation = env->GetFloatField(obj, cache.colorGradingV2.globalSaturation);
+    cfg.global_luminance = env->GetFloatField(obj, cache.colorGradingV2.globalLuminance);
+    cfg.blending = env->GetFloatField(obj, cache.colorGradingV2.blending);
+    cfg.balance = env->GetFloatField(obj, cache.colorGradingV2.balance);
+    if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR color grading v2");
+    return cfg;
+}
 
 void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrRequest& out) {
     if (!requestObj) throw std::invalid_argument("Missing HDR render request");
     const auto& cache = jniCache(env);
-    auto& result = out.value;
-    auto& look = result.base;
+    auto& v9 = out.value;
+    auto& channelCurves = v9.base;
+    auto& look = channelCurves.base;
     auto& detail = look.base;
     auto& effectsRequest = detail.base;
     auto& rendition = effectsRequest.base;
     auto& color = rendition.base;
     auto& tone = color.base;
     auto& request = tone.base;
+    v9.parametric_curve = {
+        SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION,
+        sizeof(v9.parametric_curve),
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.25f, 0.50f, 0.75f,
+        0u,
+    };
+    v9.grading_v2 = {
+        SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION,
+        sizeof(v9.grading_v2),
+        0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f,
+        50.0f, 0.0f,
+    };
 
     request.version = SONY2FUJI_HDR_VERSION;
     request.struct_size = sizeof(request);
@@ -782,13 +937,18 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
     LocalRef detailRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.detail));
     LocalRef lookRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.look));
     LocalRef channelCurvesRef(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.channelCurves));
+    LocalRef gradingV2Ref(env, env->GetObjectField(requestObj, cache.hdrRenderRequest.gradingV2));
     if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR request sections");
 
     if ((colorRef && !toneRef) || (renditionRef && !colorRef) || (effectsRef && !renditionRef) ||
-        (detailRef && !effectsRef) || (lookRef && !detailRef) || (channelCurvesRef && !lookRef)) {
+        (detailRef && !effectsRef) || (lookRef && !detailRef) || (channelCurvesRef && !lookRef) ||
+        (gradingV2Ref && !lookRef)) {
         throw std::invalid_argument("Invalid HDR render request");
     }
 
+    bool curveHasV2 = false;
+    bool curveApplyToLuminosity = false;
+    LocalRef curveParametricRef(env, nullptr);
     if (toneRef) {
         request.struct_size = sizeof(tone);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_TONE_VERSION;
@@ -796,8 +956,14 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
         tone.white_point = env->GetFloatField(toneRef.get(), cache.hdrTone.whitePoint);
         tone.curve_strength = env->GetFloatField(toneRef.get(), cache.hdrTone.curveStrength);
         LocalRef curveRef(env, env->GetObjectField(toneRef.get(), cache.hdrTone.curve));
+        curveApplyToLuminosity = env->GetBooleanField(toneRef.get(), cache.hdrTone.applyToLuminosity) != JNI_FALSE;
+        curveParametricRef.reset(env->GetObjectField(toneRef.get(), cache.hdrTone.parametric));
         if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR tone settings");
         tone.curve = marshalToneCurve(env, cache, curveRef.get());
+        curveHasV2 = curveApplyToLuminosity || bool(curveParametricRef);
+        if (curveHasV2 && !lookRef) {
+            throw std::invalid_argument("Invalid HDR render request");
+        }
     }
     if (colorRef) {
         request.struct_size = sizeof(color);
@@ -826,6 +992,24 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
             env->GetFloatField(gradingRef.get(), cache.colorGrading.midtonesSaturation),
             env->GetFloatField(gradingRef.get(), cache.colorGrading.highlightsHue),
             env->GetFloatField(gradingRef.get(), cache.colorGrading.highlightsSaturation),
+        };
+        v9.grading_v2 = {
+            SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION,
+            sizeof(v9.grading_v2),
+            color.grading.shadows_hue,
+            color.grading.shadows_saturation,
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.shadowsLuminance),
+            color.grading.midtones_hue,
+            color.grading.midtones_saturation,
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.midtonesLuminance),
+            color.grading.highlights_hue,
+            color.grading.highlights_saturation,
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.highlightsLuminance),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.globalHue),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.globalSaturation),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.globalLuminance),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.blending),
+            env->GetFloatField(gradingRef.get(), cache.colorGrading.balance),
         };
         if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR color grading");
     }
@@ -882,11 +1066,63 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
         LocalRef greenRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.green));
         LocalRef blueRef(env, env->GetObjectField(channelCurvesRef.get(), cache.hdrChannelCurves.blue));
         if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read HDR channel curves");
-        result.channels[0] = marshalToneCurve(env, cache, redRef.get());
-        result.channels[1] = marshalToneCurve(env, cache, greenRef.get());
-        result.channels[2] = marshalToneCurve(env, cache, blueRef.get());
-        request.struct_size = sizeof(result);
+        channelCurves.channels[0] = marshalToneCurve(env, cache, redRef.get());
+        channelCurves.channels[1] = marshalToneCurve(env, cache, greenRef.get());
+        channelCurves.channels[2] = marshalToneCurve(env, cache, blueRef.get());
+        request.struct_size = sizeof(channelCurves);
         request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    }
+    const jint outputSharpening = env->GetIntField(requestObj, cache.hdrRenderRequest.outputSharpening);
+    if (env->ExceptionCheck() || outputSharpening < 0 || outputSharpening > SONY2FUJI_OUTPUT_SHARPENING_HIGH) {
+        throw std::invalid_argument("Invalid HDR output sharpening");
+    }
+    const bool hasV2Grading = colorRef && (
+        v9.grading_v2.shadows_luminance != 0.0f ||
+        v9.grading_v2.midtones_luminance != 0.0f ||
+        v9.grading_v2.highlights_luminance != 0.0f ||
+        v9.grading_v2.global_hue != 0.0f ||
+        v9.grading_v2.global_saturation != 0.0f ||
+        v9.grading_v2.global_luminance != 0.0f ||
+        v9.grading_v2.blending != 50.0f ||
+        v9.grading_v2.balance != 0.0f);
+    if (curveHasV2 || hasV2Grading || gradingV2Ref || outputSharpening != 0) {
+        if (!toneRef) {
+            tone.curve.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            tone.curve.struct_size = sizeof(tone.curve);
+            tone.curve.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        if (!colorRef) {
+            color.hsl.version = SONY2FUJI_HSL_CONFIG_VERSION;
+            color.hsl.struct_size = sizeof(color.hsl);
+            color.grading.version = SONY2FUJI_COLOR_GRADING_CONFIG_VERSION;
+            color.grading.struct_size = sizeof(color.grading);
+        }
+        if (!effectsRef) {
+            effectsRequest.effects = {
+                SONY2FUJI_PHOTO_EFFECTS_CONFIG_VERSION,
+                sizeof(sony2fuji_photo_effects_config),
+                0.0f, 50.0f, 0.0f, 50.0f, 0.0f, 0.0f, 25.0f, 50.0f,
+            };
+        }
+        if (!channelCurvesRef) {
+            for (auto& ch : channelCurves.channels) {
+                ch = {
+                    SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
+                    sizeof(sony2fuji_tone_curve_config),
+                    SONY2FUJI_CURVE_LEGACY,
+                    0,
+                    {},
+                };
+            }
+        }
+        v9.curve_apply_to_luminosity = curveApplyToLuminosity ? 1 : 0;
+        v9.output_sharpening = static_cast<uint32_t>(outputSharpening);
+        v9.parametric_curve = marshalToneCurveParametric(env, cache, curveParametricRef.get());
+        if (gradingV2Ref || !colorRef) {
+            v9.grading_v2 = marshalColorGradingV2(env, cache, gradingV2Ref.get(), color.grading);
+        }
+        request.struct_size = sizeof(v9);
+        request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
     }
 }
 
@@ -1275,17 +1511,69 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeApplyParams(JNIEnv* env, jo
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
-Java_com_rawlab_android_engine_ToneCurveSampling_nativeSamples(JNIEnv* env, jclass, jdoubleArray points, jint count) {
+Java_com_rawlab_android_engine_ToneCurveSampling_nativeSamples(
+    JNIEnv* env, jclass, jdoubleArray points, jdoubleArray parametric, jint count) {
     try {
         if (count < 2 || count > 4097) throw std::invalid_argument("Invalid curve sample count");
         const auto config = curveConfig(env, SONY2FUJI_CURVE_CUSTOM, points);
+        sony2fuji_tone_curve_parametric_config paramCfg = defaultParametricConfig();
+        const sony2fuji_tone_curve_parametric_config* paramPtr = nullptr;
+        if (parametric) {
+            if (env->GetArrayLength(parametric) != 7) throw std::invalid_argument("Invalid parametric curve");
+            jdouble vals[7]{};
+            env->GetDoubleArrayRegion(parametric, 0, 7, vals);
+            if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read parametric curve");
+            paramCfg.highlights = static_cast<float>(vals[0]);
+            paramCfg.lights = static_cast<float>(vals[1]);
+            paramCfg.darks = static_cast<float>(vals[2]);
+            paramCfg.shadows = static_cast<float>(vals[3]);
+            paramCfg.split_shadow = static_cast<float>(vals[4]);
+            paramCfg.split_midtone = static_cast<float>(vals[5]);
+            paramCfg.split_highlight = static_cast<float>(vals[6]);
+            paramPtr = &paramCfg;
+        }
         std::vector<double> values(static_cast<size_t>(count));
         for (jint i = 0; i < count; ++i) values[i] = double(i) / (count - 1);
-        check(sony2fuji_sample_tone_curve(&config, values.data(), values.data(), static_cast<uint32_t>(count)));
+        check(sony2fuji_sample_tone_curve_v2(&config, paramPtr, values.data(), values.data(), static_cast<uint32_t>(count)));
         auto result = env->NewDoubleArray(count);
         if (result) env->SetDoubleArrayRegion(result, 0, count, values.data());
         return result;
     } catch (const std::exception& error) { throwJava(env, "java/lang/IllegalArgumentException", error.what()); return nullptr; }
+}
+
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_rawlab_android_engine_ToneCurveSampling_nativeSampleParametricValue(
+    JNIEnv* env, jclass, jdoubleArray parametric, jdouble x) {
+    try {
+        if (!parametric || env->GetArrayLength(parametric) != 7) {
+            throw std::invalid_argument("Invalid parametric curve");
+        }
+        jdouble vals[7]{};
+        env->GetDoubleArrayRegion(parametric, 0, 7, vals);
+        if (env->ExceptionCheck()) throw std::invalid_argument("Cannot read parametric curve");
+        const sony2fuji_tone_curve_config identityConfig{
+            SONY2FUJI_TONE_CURVE_CONFIG_VERSION,
+            sizeof(sony2fuji_tone_curve_config),
+            SONY2FUJI_CURVE_CUSTOM,
+            2,
+            {{0.0, 0.0}, {1.0, 1.0}},
+        };
+        sony2fuji_tone_curve_parametric_config paramCfg = defaultParametricConfig();
+        paramCfg.highlights = static_cast<float>(vals[0]);
+        paramCfg.lights = static_cast<float>(vals[1]);
+        paramCfg.darks = static_cast<float>(vals[2]);
+        paramCfg.shadows = static_cast<float>(vals[3]);
+        paramCfg.split_shadow = static_cast<float>(vals[4]);
+        paramCfg.split_midtone = static_cast<float>(vals[5]);
+        paramCfg.split_highlight = static_cast<float>(vals[6]);
+        double input = static_cast<double>(x);
+        double output = input;
+        check(sony2fuji_sample_tone_curve_v2(&identityConfig, &paramCfg, &input, &output, 1));
+        return static_cast<jdouble>(output);
+    } catch (const std::exception& error) {
+        throwJava(env, "java/lang/IllegalArgumentException", error.what());
+        return x;
+    }
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -2473,11 +2761,14 @@ struct ViewportRoiScope {
 };
 
 jobject processRequestInternal(JNIEnv* env, jlong id, jobject requestObj,
-    const sony2fuji_viewport_roi* roi, jintArray roiBoundsOut) {
+    const sony2fuji_viewport_roi* roi, jintArray roiBoundsOut,
+    const sony2fuji_wb_probe_query* wbQuery = nullptr, jfloatArray wbProbeOut = nullptr) {
     try {
         if (!requestObj) throw std::invalid_argument("Missing native process request");
         if (roi != nullptr && (!roiBoundsOut || env->GetArrayLength(roiBoundsOut) != 6))
             throw std::invalid_argument("Invalid ROI bounds output");
+        if (wbQuery != nullptr && (!wbProbeOut || env->GetArrayLength(wbProbeOut) != 5))
+            throw std::invalid_argument("Invalid WB probe output");
         const auto& cache = jniCache(env);
 
         LocalRef inputObj(env, env->GetObjectField(requestObj, cache.processRequest.input));
@@ -2596,6 +2887,24 @@ jobject processRequestInternal(JNIEnv* env, jlong id, jobject requestObj,
             sampleHslProbe(env, snapshot, sourceRevision, requestRevision, hslProbe);
             return nullptr;
         }
+        if (wbQuery && wbProbeOut) {
+            if (out.chars || hslProbe || migrationValues || roi != nullptr)
+                throw std::invalid_argument("Invalid WB probe request");
+            sony2fuji_wb_probe_result wbResult{};
+            wbResult.version = SONY2FUJI_WB_PROBE_VERSION;
+            wbResult.struct_size = sizeof(wbResult);
+            check(sony2fuji_session_sample_wb_probe(session, &request, wbQuery, &wbResult), session);
+            check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
+            const jfloat values[] = {
+                static_cast<jfloat>(wbResult.availability),
+                static_cast<jfloat>(wbResult.valid_pixel_count),
+                static_cast<jfloat>(wbResult.rejected_overexposed_count),
+                wbResult.temperature,
+                wbResult.tint,
+            };
+            env->SetFloatArrayRegion(wbProbeOut, 0, 5, values);
+            return nullptr;
+        }
         ViewportRoiScope roiScope(session, roi);
         check(cancellation.isCancelled() ? SONY2FUJI_STATUS_CANCELLED : SONY2FUJI_STATUS_OK);
         Buffer buffer;
@@ -2694,6 +3003,19 @@ Java_com_rawlab_android_engine_NativeProcessor_nativeProcessRoi(JNIEnv* env, job
     roi.norm_y1 = y1;
     roi.max_output_long_edge = static_cast<uint32_t>(std::clamp(maxOutputLongEdge, jint(1), jint(2048)));
     return processRequestInternal(env, id, requestObj, &roi, roiBoundsOut);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeSampleWbProbe(JNIEnv* env, jobject, jlong id, jobject requestObj,
+    jfloat x, jfloat y, jint windowSize, jfloatArray out) {
+    sony2fuji_wb_probe_query query{};
+    query.version = SONY2FUJI_WB_PROBE_VERSION;
+    query.struct_size = sizeof(query);
+    query.norm_x = x;
+    query.norm_y = y;
+    query.window_size = windowSize <= 0 ? 0u : static_cast<uint32_t>(windowSize);
+    query.reserved = 0u;
+    processRequestInternal(env, id, requestObj, nullptr, nullptr, &query, out);
 }
 
 extern "C" JNIEXPORT jfloat JNICALL

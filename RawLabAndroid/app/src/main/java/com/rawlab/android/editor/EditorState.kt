@@ -6,6 +6,7 @@ import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.render.Work
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.R
 import com.rawlab.android.settings.EditSettings
@@ -219,6 +220,7 @@ internal fun prepareExportSubmission(
     gpuMode: Int,
     cleanup: ExportDestinationCleanup,
     disposed: Boolean = false,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ): ExportSubmission {
     val photo = current.photo
     if (disposed || current.operation != Operation.PICK_EXPORT || photo == null) {
@@ -239,8 +241,9 @@ internal fun prepareExportSubmission(
             refreshPreviewSize = true,
         )
     }
+    val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
     return ExportSubmission.Ready(
-        Work.Export(photo, current.edits, destination, format, longEdge, gpuMode),
+        Work.Export(photo, current.edits, destination, format, longEdge, gpuMode, effectiveSharpening),
         current.copy(
             operation = Operation.EXPORT,
             exportStep = SingleExportStep.WRITING,

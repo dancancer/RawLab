@@ -18,7 +18,7 @@ ERROR_CODES = {
     "invalid_argument", "invalid_recipe", "io_error", "processing_error",
     "unsupported", "out_of_memory", "output_io_error",
 }
-COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
+COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"}
 
 
 class AgentCommands(unittest.TestCase):
@@ -103,8 +103,8 @@ class AgentCommands(unittest.TestCase):
         declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15] if hdr else []),
-            "commands": ["capabilities", "validate_recipe", "info", "preview", "export"],
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15, 16] if hdr else []) + [17],
+            "commands": ["capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],
@@ -122,7 +122,7 @@ class AgentCommands(unittest.TestCase):
                     self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
                     self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
-                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8])
+                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
                     self.assertEqual(capabilities["tone_adjustments"], ["black_point", "white_point", "s_curve", "curve"])
                     self.assertEqual(capabilities["color_recipe_version"], 9)
@@ -144,13 +144,19 @@ class AgentCommands(unittest.TestCase):
                     "fields": ["tone.black_point", "tone.white_point", "color.vibrance"],
                 })
                 self.assertEqual(result["result"]["color_grading"], {
-                    "version": 1, "recipe_min_version": 5, "zones": ["shadows", "midtones", "highlights"],
+                    "version": 2, "recipe_min_version": 5, "v2_recipe_min_version": 17,
+                    "zones": ["shadows", "midtones", "highlights", "global"],
                     "hue_degrees": {"minimum": 0, "exclusive_maximum": 360}, "saturation_range": [0, 100],
+                    "luminance_range": [-100, 100], "blending_range": [0, 100], "balance_range": [-100, 100],
                 })
                 self.assertEqual(result["result"]["tone_curve"], {
-                    "version": 1, "recipe_min_version": 5, "modes": ["legacy", "custom"],
-                    "channels": ["red", "green", "blue"], "max_points": 33, "interpolation": "pchip", "fixed_endpoints": True, "monotone": True,
+                    "version": 2, "recipe_min_version": 5, "v2_recipe_min_version": 17,
+                    "modes": ["legacy", "custom"],
+                    "channels": ["red", "green", "blue"], "max_points": 33, "interpolation": "pchip",
+                    "fixed_endpoints": False, "monotone": True, "apply_to_luminosity": True,
+                    "parametric": ["highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"],
                 })
+                self.assertEqual(result["result"]["output_sharpening"], ["off", "low", "standard", "high"])
                 self.assertEqual(result["result"]["atmosphere"], {
                     "version": 1, "recipe_min_version": 5, "range": [-1, 1],
                     "fields": ["effects.clarity", "effects.dehaze"], "backend": "cpu",
@@ -160,6 +166,7 @@ class AgentCommands(unittest.TestCase):
                     self.assertEqual(result["result"]["raster_input"]["max_pixels"], 128_000_000)
                     self.assertEqual(result["result"]["raster_input"]["bits_per_component"], [8, 16])
                     self.assertEqual(result["result"]["raster_input"]["tiff_bits_per_component"], [8, 16])
+                    self.assertEqual(result["result"]["raster_input"]["white_balance_modes"], ["none", "relative"])
                 if sys.platform == "win32":
                     self.assertEqual(result["result"]["raster_input"]["formats"], ["jpeg", "png", "tiff", "heif"])
                 self.assertEqual(set(features), {"wavelet_denoise", "chroma_denoise", "lens_correction"})

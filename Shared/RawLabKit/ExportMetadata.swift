@@ -54,6 +54,52 @@ public enum ExportMetadata {
         return result
     }
 
+    public static func ensureSRGBICCProfile(_ jpeg: Data) -> Data {
+        guard jpeg.count >= 4, jpeg[0] == 0xFF, jpeg[1] == 0xD8, !hasICCProfileMarker(jpeg),
+              let icc = CGColorSpace(name: CGColorSpace.sRGB)?.copyICCData() as Data?,
+              !icc.isEmpty, icc.count <= 65519 else {
+            return jpeg
+        }
+        let segmentLength = icc.count + 16
+        var result = Data(capacity: jpeg.count + segmentLength + 2)
+        result.append(contentsOf: [0xFF, 0xD8, 0xFF, 0xE2,
+                                   UInt8((segmentLength >> 8) & 0xFF),
+                                   UInt8(segmentLength & 0xFF)])
+        result.append(contentsOf: "ICC_PROFILE\0".utf8)
+        result.append(contentsOf: [0x01, 0x01])
+        result.append(icc)
+        result.append(jpeg.dropFirst(2))
+        return result
+    }
+
+    private static func hasICCProfileMarker(_ jpeg: Data) -> Bool {
+        let bytes = [UInt8](jpeg)
+        guard bytes.count >= 4, bytes[0] == 0xFF, bytes[1] == 0xD8 else { return false }
+        let iccHeader = Array("ICC_PROFILE\0".utf8)
+        var index = 2
+        while index + 1 < bytes.count {
+            if bytes[index] != 0xFF {
+                index += 1
+                continue
+            }
+            while index < bytes.count && bytes[index] == 0xFF { index += 1 }
+            guard index < bytes.count else { break }
+            let marker = bytes[index]
+            index += 1
+            if marker == 0xD9 || marker == 0xDA { break }
+            if marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8) { continue }
+            guard index + 2 <= bytes.count else { break }
+            let segmentLength = (Int(bytes[index]) << 8) | Int(bytes[index + 1])
+            guard segmentLength >= 2, index + segmentLength <= bytes.count else { break }
+            if marker == 0xE2, segmentLength >= 16,
+               Array(bytes[(index + 2)..<(index + 14)]) == iccHeader {
+                return true
+            }
+            index += segmentLength
+        }
+        return false
+    }
+
     public static func jpegData(image: CGImage, sourceURL: URL, orientation: CGImagePropertyOrientation,
                                 quality: CGFloat, fallbackSourceProperties: [CFString: Any]? = nil) throws -> Data {
         let data = NSMutableData()
@@ -65,7 +111,11 @@ public enum ExportMetadata {
         values[kCGImageDestinationLossyCompressionQuality] = quality
         CGImageDestinationAddImage(destination, image, values as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw Failure.cannotWriteMetadata }
-        return data as Data
+        let encoded = data as Data
+        if image.colorSpace == nil || image.colorSpace?.name == CGColorSpace.sRGB {
+            return ensureSRGBICCProfile(encoded)
+        }
+        return encoded
     }
 
     public static func preserve(from original: URL, in rendered: URL,
@@ -129,7 +179,14 @@ public enum ExportMetadata {
         guard CGImageDestinationCopyImageSource(destination, source, options, nil) else {
             throw Failure.cannotWriteMetadata
         }
-        try (data as Data).write(to: rendered, options: .atomic)
+        var output = data as Data
+        if type as String == "public.jpeg" {
+            let profileName = dimensions[kCGImagePropertyProfileName] as? String
+            if profileName == nil || profileName == "sRGB IEC61966-2.1" {
+                output = ensureSRGBICCProfile(output)
+            }
+        }
+        try output.write(to: rendered, options: .atomic)
     }
 
     // 冻结：禁新增字节级解析（WR-05 评估结论：Mac PNG 导出仍由 RawLabMac 在 sony2fuji_process

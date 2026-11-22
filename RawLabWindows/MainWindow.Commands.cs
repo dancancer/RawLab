@@ -66,7 +66,7 @@ public partial class MainWindow
             item.Click+=(_,_)=>RequestReset(scope);items.Add(item);
         }
         if(CurrentTool==EditorAdjustmentTool.ColorGrading) {
-            Add(Loc.Text("重置当前分区"),new(EditorResetKind.GradingZone,Zone:GradingEditor.SelectedZone));
+            Add(Loc.Text("重置当前分区"), GradingEditor.GlobalSelected ? new(EditorResetKind.GradingGlobal) : new(EditorResetKind.GradingZone,Zone:GradingEditor.SelectedZone));
             Add(Loc.Text("重置颜色分级"),new(EditorResetKind.AllGrading));
         } else if(CurrentTool==EditorAdjustmentTool.Hsl) {
             Add(Loc.Format("重置当前颜色（{0}）",HslEditor.SelectedChannelName),new(EditorResetKind.HslChannel,Channel:HslEditor.SelectedChannel));

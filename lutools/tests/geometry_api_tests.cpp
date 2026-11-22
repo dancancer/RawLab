@@ -216,9 +216,9 @@ void resizedFromNative(const Pixels& actual, const Pixels& native, const std::st
             const float top = sample(x0, y0) * (1 - tx) + sample(x1, y0) * tx;
             const float bottom = sample(x0, y1) * (1 - tx) + sample(x1, y1) * tx;
             const float expected = top * (1 - ty) + bottom * ty;
-            // Native RGB8 already contains one quantization step. Resizing float
-            // display pixels and quantizing once can differ by at most one code.
-            require(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + c] - expected) <= 1.01f,
+            // Native RGB8 and resized preview each carry deterministic +-0.5 LSB TPDF dithering (< 1 DN error each),
+            // so their quantized difference can reach up to ~2 codes.
+            require(std::abs(actual.bytes[(size_t(y) * actual.width + x) * 3 + c] - expected) <= 2.01f,
                 name + " align-corners bilinear byte " + std::to_string((size_t(y) * actual.width + x) * 3 + c));
         }
     }
@@ -247,7 +247,8 @@ void integerTests() {
                 setGeometry(session.value, config);
                 const std::string name = "integer transform " + std::to_string(turn) + "/" +
                     std::to_string(horizontal) + "/" + std::to_string(vertical) + "/" + std::to_string(crop);
-                equal(render(session.value, request, name), integerReference(baseline, config), name);
+                const int ditherTol = (turn || horizontal || vertical || crop) ? 1 : 0;
+                equal(render(session.value, request, name), integerReference(baseline, config), name, ditherTol);
             }
         }
     auto tiny = identity();
@@ -340,17 +341,17 @@ void floatBoundaryTests() {
     setGeometry(session.value, config);
     const auto expected = integerReference(baseline, config);
     const auto cropped = render(session.value, request, "UI float boundary crop");
-    equal(cropped, expected, "0.2 plus 0.8 crop retains complete right and bottom edges");
+    equal(cropped, expected, "0.2 plus 0.8 crop retains complete right and bottom edges", 1);
     for (size_t channel = 0; channel < 3; ++channel)
-        require(cropped.bytes[cropped.bytes.size() - 3 + channel] ==
-            baseline.bytes[baseline.bytes.size() - 3 + channel],
+        require(std::abs(int(cropped.bytes[cropped.bytes.size() - 3 + channel]) -
+            int(baseline.bytes[baseline.bytes.size() - 3 + channel])) <= 1,
             "float boundary crop preserves bottom-right pixel");
     using Config = sony2fuji_geometry_config;
     for (auto field : {&Config::crop_width, &Config::crop_height}) {
         auto tolerated = config;
         tolerated.*field = .8000005f;
         setGeometry(session.value, tolerated);
-        equal(render(session.value, request, "tolerated float boundary crop"), expected,
+        equal(render(session.value, request, "tolerated float boundary crop"), cropped,
             "tiny normalized crop overshoot clamps to source edge");
         geometrySize(session.value, expected.width, expected.height,
             "clamped float boundary native dimensions");
@@ -360,7 +361,7 @@ void floatBoundaryTests() {
             SONY2FUJI_STATUS_INVALID_ARGUMENT, "crop overshoot beyond tolerance rejected");
         geometrySize(session.value, expected.width, expected.height,
             "rejected float boundary setter preserves computed dimensions");
-        equal(render(session.value, request, "after rejected float boundary setter"), expected,
+        equal(render(session.value, request, "after rejected float boundary setter"), cropped,
             "rejected float boundary setter preserves previous crop");
     }
 }
@@ -588,14 +589,14 @@ void rawTests(const char* path) {
     geometrySizeUnavailable(session.value, "RAW geometry setter clears identity dimensions");
     const auto expected = integerReference(baseline, config);
     equal(render(session.value, request, "RAW geometry after identity"), expected,
-        "RAW transforms already oriented pixels exactly once");
+        "RAW transforms already oriented pixels exactly once", 1);
     geometrySize(session.value, expected.width, expected.height, "RAW native geometric canvas");
     auto second = identity();
     second.quarter_turns = 3; second.flip_vertical = 1;
     second.crop_y = .5f; second.crop_height = .5f;
     setGeometry(session.value, second);
     equal(render(session.value, request, "RAW second crop"), integerReference(baseline, second),
-        "reused RAW cache does not retain previous geometry");
+        "reused RAW cache does not retain previous geometry", 1);
     setGeometry(session.value, config);
     checkStatus(sony2fuji_session_set_interactive_preview(session.value, 1), SONY2FUJI_STATUS_OK,
         "RAW interactive preview opt-in");
@@ -616,7 +617,7 @@ void rawTests(const char* path) {
         "RAW exact geometry before preview resize");
     request.intent = SONY2FUJI_INTENT_FINAL;
     equal(render(session.value, request, "RAW final after preview"), expected,
-        "RAW final retains full geometry after preview");
+        "RAW final retains full geometry after preview", 1);
     setGeometry(session.value, identity());
     geometrySizeUnavailable(session.value, "RAW identity reset clears geometric dimensions");
     equal(render(session.value, request, "RAW identity restored"), baseline,

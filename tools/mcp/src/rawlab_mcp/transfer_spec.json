@@ -1,0 +1,1528 @@
+{
+  "spec_version": 1,
+  "fields": {
+    "looks.reference": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "id",
+        "kind"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "kind": {
+          "value_type": "string",
+          "allowed_values": [
+            "neutral",
+            "builtin",
+            "managed",
+            "recipe",
+            "recipe_lut"
+          ]
+        },
+        "id": {
+          "value_type": "string",
+          "nullable_when_kind": "neutral",
+          "non_empty": true
+        }
+      }
+    },
+    "looks.strength": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 2.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.exposure": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -20.0,
+      "max": 20.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.exposure_mode": {
+      "value_type": "string",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        "scene",
+        "preview",
+        "sensor"
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.contrast": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 2.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.highlights": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -1.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.shadows": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -1.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.s_curve": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -1.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.curve": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "mode",
+        "points"
+      ],
+      "optional_keys": [
+        "channels"
+      ],
+      "hdr_only": false,
+      "sub_fields": {
+        "mode": {
+          "value_type": "string",
+          "allowed_values": [
+            "legacy",
+            "custom"
+          ]
+        },
+        "points": {
+          "value_type": "array",
+          "legacy_count": 0,
+          "custom_min_count": 2,
+          "custom_max_count": 33,
+          "coord_min": 0.0,
+          "coord_max": 1.0,
+          "endpoint_x": [
+            0.0,
+            1.0
+          ],
+          "endpoints_y_unpinned": true
+        },
+        "channels": {
+          "value_type": "object",
+          "optional": true,
+          "allowed_keys": [
+            "red",
+            "green",
+            "blue"
+          ]
+        }
+      }
+    },
+    "light.curve.apply_to_luminosity": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "light.curve.parametric": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "highlights",
+        "lights",
+        "darks",
+        "shadows",
+        "split_shadow",
+        "split_midtone",
+        "split_highlight"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "highlights": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "lights": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "darks": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "shadows": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "split_shadow": {
+          "value_type": "number",
+          "min": 0.05,
+          "max": 0.45,
+          "default": 0.25
+        },
+        "split_midtone": {
+          "value_type": "number",
+          "min": 0.25,
+          "max": 0.75,
+          "default": 0.5
+        },
+        "split_highlight": {
+          "value_type": "number",
+          "min": 0.55,
+          "max": 0.95,
+          "default": 0.75
+        },
+        "split_min_gap": 0.02
+      }
+    },
+    "tone.black_point": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "tone.white_point": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.vibrance": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.grading.shadows": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "hue",
+        "saturation"
+      ],
+      "optional_keys": [
+        "luminance"
+      ],
+      "hdr_only": false,
+      "sub_fields": {
+        "hue": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 360.0,
+          "exclusive_max": true
+        },
+        "saturation": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "luminance": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "optional": true
+        }
+      }
+    },
+    "color.grading.midtones": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "hue",
+        "saturation"
+      ],
+      "optional_keys": [
+        "luminance"
+      ],
+      "hdr_only": false,
+      "sub_fields": {
+        "hue": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 360.0,
+          "exclusive_max": true
+        },
+        "saturation": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "luminance": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "optional": true
+        }
+      }
+    },
+    "color.grading.highlights": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "hue",
+        "saturation"
+      ],
+      "optional_keys": [
+        "luminance"
+      ],
+      "hdr_only": false,
+      "sub_fields": {
+        "hue": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 360.0,
+          "exclusive_max": true
+        },
+        "saturation": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "luminance": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "optional": true
+        }
+      }
+    },
+    "color.grading.global": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "hue",
+        "saturation"
+      ],
+      "optional_keys": [
+        "luminance"
+      ],
+      "hdr_only": false,
+      "sub_fields": {
+        "hue": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 360.0,
+          "exclusive_max": true
+        },
+        "saturation": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "luminance": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "optional": true
+        }
+      }
+    },
+    "color.grading.blending": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.grading.balance": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.white_balance.mode": {
+      "value_type": "string",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        "camera",
+        "temperature",
+        "relative",
+        "none"
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.white_balance.temperature_kelvin": {
+      "value_type": "number",
+      "nullable": true,
+      "min": 2000.0,
+      "max": 50000.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.white_balance.tint": {
+      "value_type": "number",
+      "nullable": true,
+      "min": -150.0,
+      "max": 150.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.saturation": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 2.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "hdr.relative_temperature": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 2000.0,
+      "max": 50000.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.relative_tint": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -150.0,
+      "max": 150.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.peak_limit_ev": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 6.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.sdr_exposure_ev": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -4.0,
+      "max": 4.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.sdr_contrast": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.sdr_saturation": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": null
+    },
+    "hdr.look": {
+      "value_type": "object",
+      "nullable": true,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "name",
+        "sha256",
+        "strength"
+      ],
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": {
+        "sha256": {
+          "value_type": "string",
+          "hex_length": 64
+        },
+        "name": {
+          "value_type": "string",
+          "min_utf8_bytes": 1,
+          "max_utf8_bytes": 512
+        },
+        "strength": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 2.0
+        }
+      }
+    },
+    "hdr.camera_development": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "exposure_reference",
+        "fbdd_level",
+        "temperature",
+        "tint",
+        "version",
+        "white_balance_mode"
+      ],
+      "optional_keys": null,
+      "hdr_only": true,
+      "sub_fields": {
+        "version": {
+          "value_type": "integer",
+          "allowed_values": [
+            1
+          ]
+        },
+        "white_balance_mode": {
+          "value_type": "string",
+          "allowed_values": [
+            "as_shot",
+            "temperature"
+          ]
+        },
+        "temperature": {
+          "value_type": "number",
+          "as_shot_value": 0.0,
+          "temperature_min": 2000.0,
+          "temperature_max": 50000.0
+        },
+        "tint": {
+          "value_type": "number",
+          "as_shot_value": 0.0,
+          "temperature_min": -150.0,
+          "temperature_max": 150.0
+        },
+        "exposure_reference": {
+          "value_type": "string",
+          "allowed_values": [
+            "metadata",
+            "sensor"
+          ]
+        },
+        "fbdd_level": {
+          "value_type": "integer",
+          "allowed_values": [
+            0,
+            1,
+            2
+          ]
+        }
+      }
+    },
+    "color.hsl.hue.red": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.orange": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.yellow": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.green": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.aqua": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.blue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.purple": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.hue.magenta": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.red": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.orange": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.yellow": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.green": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.aqua": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.blue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.purple": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.saturation.magenta": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.red": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.orange": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.yellow": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.green": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.aqua": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.blue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.purple": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.hsl.lightness.magenta": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.vignette.amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.vignette.midpoint": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.vignette.roundness": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.vignette.feather": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.vignette.highlights": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.grain.amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.clarity": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.dehaze": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.grain.size": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.grain.roughness": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.sharpening": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 2.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.denoise.raw_level": {
+      "value_type": "integer",
+      "nullable": false,
+      "min": 0,
+      "max": 2,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        0,
+        1,
+        2
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.denoise.post_rgb": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.denoise.chroma_mode": {
+      "value_type": "integer",
+      "nullable": true,
+      "min": 0,
+      "max": 2,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        0,
+        1,
+        2
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.denoise.wavelet": {
+      "value_type": "object",
+      "nullable": true,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "chroma",
+        "coarse",
+        "enabled",
+        "luma",
+        "preset"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "enabled": {
+          "value_type": "boolean"
+        },
+        "preset": {
+          "value_type": "string",
+          "allowed_values": [
+            "detail",
+            "clean",
+            "custom"
+          ]
+        },
+        "luma": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "chroma": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        },
+        "coarse": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0
+        }
+      }
+    },
+    "geometry.crop.x": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.crop.y": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.crop.width": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 1.0,
+      "exclusive_min": true,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.crop.height": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 1.0,
+      "exclusive_min": true,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.quarter_turns": {
+      "value_type": "integer",
+      "nullable": false,
+      "min": 0,
+      "max": 3,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.flip_horizontal": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.flip_vertical": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.straighten_degrees": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -45.0,
+      "max": 45.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.perspective.horizontal": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -1.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.perspective.vertical": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -1.0,
+      "max": 1.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.distortion": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.tca": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.vignetting": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.auto_crop": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.profile_id": {
+      "value_type": "string",
+      "nullable": true,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": true,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    }
+  }
+}

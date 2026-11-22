@@ -32,8 +32,8 @@ public enum BatchJournalVersionKey: String, CaseIterable, Sendable {
         case .frozenSettings: return 1
         case .processing: return ProcessingIdentity.current.version
         case .masterRecipeSettings: return 4
-        case .hdrProcessing: return 8
-        case .hdrRecord: return 9
+        case .hdrProcessing: return 9
+        case .hdrRecord: return 10
         case .hdrCameraDevelopment: return 1
         }
     }
@@ -49,10 +49,16 @@ public struct MacBatchFrozenSettings: Codable {
     public let lookName: String
     public let outputFormat: ExportFormat
     public let longEdge: Int?
+    public let outputSharpening: OutputSharpening?
+
+    public var effectiveOutputSharpening: OutputSharpening {
+        outputFormat == .renderedDNG ? .off : (outputSharpening ?? .off)
+    }
 
     public init(version: Int = 1, settingsVersion: Int = 1, ordinal: Int, settings: Adjustments,
                 look: URL?, lookSHA256: String?, lookName: String,
-                outputFormat: ExportFormat, longEdge: Int?) {
+                outputFormat: ExportFormat, longEdge: Int?,
+                outputSharpening: OutputSharpening? = nil) {
         self.version = version
         self.settingsVersion = settingsVersion
         self.ordinal = ordinal
@@ -62,6 +68,7 @@ public struct MacBatchFrozenSettings: Codable {
         self.lookName = lookName
         self.outputFormat = outputFormat
         self.longEdge = longEdge
+        self.outputSharpening = outputSharpening
     }
 
     public static func checksum(_ url: URL) throws -> String {
@@ -160,15 +167,21 @@ public struct MacBatchExportJob: Codable {
     public var png = false
     public var outputFormat: ExportFormat?
     public var longEdge: Int?
+    public var outputSharpening: OutputSharpening?
     public var started = false
     public var interrupted = false
     public var cancelled = false
     public var failure: String?
     public var settingsMode: BatchSettingsMode?
 
+    public var effectiveOutputSharpening: OutputSharpening {
+        format == .renderedDNG ? .off : (outputSharpening ?? .off)
+    }
+
     public enum CodingKeys: String, CodingKey {
         case version, id, source, settings, look, lookName, items, outputDirectory, png, outputFormat,
              longEdge, started, interrupted, cancelled, failure
+        case outputSharpening = "output_sharpening"
         case settingsMode = "settings_mode"
     }
 
@@ -224,7 +237,8 @@ public struct MacBatchExportJob: Codable {
         }
         return MacBatchFrozenSettings(ordinal: 0,
             settings: try settings(for: item.input, resolveX3fMode: resolveX3fMode), look: look,
-            lookSHA256: nil, lookName: lookName, outputFormat: format, longEdge: longEdge)
+            lookSHA256: nil, lookName: lookName, outputFormat: format, longEdge: longEdge,
+            outputSharpening: effectiveOutputSharpening)
     }
 
     public init(source: URL, settings: Adjustments, look: URL?, lookName: String) {

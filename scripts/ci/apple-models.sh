@@ -55,6 +55,7 @@ case "${1:-}" in
             RawLabMac/tests/wavelet-settings.sh RawLabMac/tests/workspace-browser.sh
             RawLabMac/tests/workspace-layout.sh RawLabMac/tests/render-scheduling.sh
             RawLabMac/tests/histogram.sh RawLabMac/tests/mac-crop-interaction.sh
+            RawLabMac/tests/mac-inspection-suite.sh
             RawLabMac/tests/update-trust.sh RawLabMac/tests/usage-privacy-presentation.sh)
         ;;
     ios)
@@ -63,6 +64,7 @@ case "${1:-}" in
             RawLab/tests/hdr-model.sh RawLab/tests/hdr-canvas.sh RawLab/tests/hdr-resource-notice.sh
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/editor-coordinator.sh RawLab/tests/ios-reset-entry-ui.sh
+            RawLab/tests/ios-inspection-suite.sh
             RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
             RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh RawLab/tests/adjustment-persistence.sh
             RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh

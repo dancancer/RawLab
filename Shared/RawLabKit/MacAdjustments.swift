@@ -101,6 +101,15 @@ public struct Adjustments: Equatable, Codable {
     // nil 保留旧算法语义，显式启用或选择预设后才迁移。
     public var waveletNoiseReduction: WaveletDenoiseSettings?
     public var aiDenoiseEnabled = false
+    private var aiDenoiseBlend: Double?
+    public var aiDenoiseStrength: Double {
+        get { aiDenoiseBlend ?? 100.0 }
+        set {
+            guard newValue.isFinite else { return }
+            let clamped = min(100.0, max(0.0, newValue))
+            aiDenoiseBlend = clamped == 100.0 ? nil : clamped
+        }
+    }
     private var hdrCameraAI: Bool?
     public var hdrCameraAIEnabled: Bool {
         get { hdrCameraAI == true }
@@ -376,7 +385,7 @@ public struct Adjustments: Equatable, Codable {
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
         if group == .color { hsl = nil; colorGrading = nil }
         if group == .tone { toneCurveConfig = nil }
-        if group == .detail { aiDenoiseEnabled = false }
+        if group == .detail { aiDenoiseEnabled = false; aiDenoiseStrength = 100.0 }
         if group == .effects { photoEffects = nil; atmosphere = nil }
         if group == .lens { lensCorrection = nil }
         if group == .geometry { geometry = nil }
@@ -395,7 +404,7 @@ public struct Adjustments: Equatable, Codable {
             && (group != .input || exposureMode == .preview)
             && (group != .tone || curveSettings.isDefault)
             && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
-            && (group != .detail || !isDenoiseEnabled)
+            && (group != .detail || (!isDenoiseEnabled && aiDenoiseStrength == 100.0))
             && (group != .effects || effectSettings == PhotoEffectsSettings() && atmosphereSettings.isIdentity)
             && (group != .film || masterRecipeID == nil)
             && (group != .lens || lensSettings == LensCorrectionSettings())
@@ -441,12 +450,14 @@ public struct Adjustments: Equatable, Codable {
         self[keyPath: parameter.spec.keyPath] = value
         if parameter.isWhiteBalance {
             if masterRecipe != nil {
-                if parameter == .temperature {
-                    whiteBalanceMode = temperature == asShotWhiteBalance?.temperature ? .asShot : .custom
+                if parameter == .temperature, let camera = asShotWhiteBalance {
+                    whiteBalanceMode = temperature == camera.temperature ? .asShot : .custom
                 }
                 return
             }
-            whiteBalanceMode = temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint ? .asShot : .custom
+            if let camera = asShotWhiteBalance {
+                whiteBalanceMode = temperature == camera.temperature && tint == camera.tint ? .asShot : .custom
+            }
         }
     }
 
@@ -480,10 +491,12 @@ public struct Adjustments: Equatable, Codable {
         if isHDREditing { return self }
         var state = self
         state.exposureMode = .sensor
-        state.whiteBalanceMode = .asShot
-        state.resolveWhiteBalance(nil)
-        state.temperature = 6500
-        state.tint = 0
+        if state.whiteBalanceMode != .asShot || state.asShotWhiteBalance != nil || state.masterRecipe != nil {
+            state.whiteBalanceMode = .asShot
+            state.resolveWhiteBalance(nil)
+            state.temperature = 6500
+            state.tint = 0
+        }
         state.rawNoiseReduction = 0
         state.aiDenoiseEnabled = false
         state.lensCorrection = nil
@@ -503,6 +516,7 @@ public struct Adjustments: Equatable, Codable {
             }
         }
         guard rawNoiseReduction.rounded() == rawNoiseReduction,
+              aiDenoiseStrength.isFinite, (0...100).contains(aiDenoiseStrength),
               chromaNoiseReduction.map({ $0.isFinite && (0...2).contains($0) && $0.rounded() == $0 }) ?? true,
               DenoiseParameter.allCases.allSatisfy({
                   let value = waveletSettings[keyPath: $0.keyPath]
@@ -538,7 +552,9 @@ public struct Adjustments: Equatable, Codable {
                 rendered.toneCurve, rendered.sharpening] +
             (effective.renderHSLSettings.hue + effective.renderHSLSettings.saturation + effective.renderHSLSettings.lightness).map(Float.init) +
             [tone.blackPoint, tone.whitePoint, tone.vibrance, atmosphere.clarity, atmosphere.dehaze].map(Float.init) +
-            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation)] } +
+            ColorGradingZone.allCases.flatMap { [Float(grading[$0].hue), Float(grading[$0].saturation), Float(grading[$0].luminance)] } +
+            [Float(grading.global.hue), Float(grading.global.saturation), Float(grading.global.luminance), Float(grading.blending), Float(grading.balance)] +
+            (context.isRaw ? [] : [Float(effective.temperature), Float(effective.tint)]) +
             ToneCurveChannel.allCases.flatMap { channel -> [Float] in
                 let shape = curve.shape(channel)
                 return [shape.mode == .custom ? 1 : 0] + shape.points.flatMap { [Float($0.x), Float($0.y)] }
@@ -631,6 +647,12 @@ public struct Adjustments: Equatable, Codable {
         chromaNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction)
         waveletNoiseReduction = try values.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction)
         aiDenoiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiDenoiseEnabled) ?? false
+        if let blend = try values.decodeIfPresent(Double.self, forKey: .aiDenoiseBlend) {
+            guard blend.isFinite, (0.0...100.0).contains(blend) else {
+                throw DecodingError.dataCorruptedError(forKey: .aiDenoiseBlend, in: values, debugDescription: "Invalid AI denoise strength")
+            }
+            aiDenoiseBlend = blend == 100.0 ? nil : blend
+        }
         hdrCameraAIEnabled = try values.decodeIfPresent(Bool.self, forKey: .hdrCameraAI) ?? false
         if hdrCameraAIEnabled && (hdr?.cameraDevelopmentSettings.fbddLevel != 0 || hdr?.cameraDevelopmentSettings.cameraProfile != nil) {
             throw DecodingError.dataCorruptedError(forKey: .hdrCameraAI, in: values, debugDescription: "HDR Bayer AI requires a camera HDR record without FBDD or a camera profile")

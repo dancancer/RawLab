@@ -24,3 +24,21 @@ enum class ExportFormat(
         } ?: throw IllegalArgumentException("Unsupported export format: $value")
     }
 }
+
+enum class OutputSharpening(val wireValue: String, val nativeValue: Int) {
+    OFF("off", 0),
+    LOW("low", 1),
+    STANDARD("standard", 2),
+    HIGH("high", 3),
+    ;
+
+    companion object {
+        fun fromWireValue(value: String?): OutputSharpening = when (value) {
+            null, "off" -> OFF
+            "low" -> LOW
+            "standard" -> STANDARD
+            "high" -> HIGH
+            else -> throw IllegalArgumentException("Unsupported output sharpening: $value")
+        }
+    }
+}

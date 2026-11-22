@@ -168,10 +168,13 @@ internal sealed class CollectionExportDialog : Window
     // 测试缝：经生产入口记录冻结阶段（revalidate/copy）所在线程，不改变生产路径。
     internal Action<string>? freezeStage;
     private ExportFormat format=ExportFormat.Jpeg;
+    private OutputSharpening outputSharpening=OutputSharpening.Off;
     private readonly ComboBox formats=new(){MinWidth=150};
+    private readonly ComboBox sharpening=new(){MinWidth=130};
     private readonly TextBox edge=new(){MinWidth=100};
     private string? directory;
     internal ComboBox FormatsBox => formats;
+    internal ComboBox SharpeningBox => sharpening;
     internal TextBox EdgeBox => edge;
     internal string? DirectoryPath { get => directory; set => directory = value; }
     internal Task ConfirmAsync() => Confirm();
@@ -182,7 +185,19 @@ internal sealed class CollectionExportDialog : Window
         header.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("将按每张照片已保存的调整导出。跳过只影响本次导出。")));
         var output=new WrapPanel();header.Children.Add(output);
         formats.ItemsSource=Enum.GetValues<ExportFormat>();formats.SelectedItem=format;output.Children.Add(formats);
-        formats.SelectionChanged+=(_,_)=>{format=(ExportFormat)formats.SelectedItem;Invalidate();};
+        sharpening.ItemsSource=Enum.GetValues<OutputSharpening>();sharpening.SelectedItem=outputSharpening;
+        sharpening.IsEnabled=format!=ExportFormat.RenderedDng;
+        sharpening.SelectionChanged+=(_,_)=>{
+            outputSharpening=format==ExportFormat.RenderedDng ? OutputSharpening.Off : (OutputSharpening)(sharpening.SelectedItem ?? OutputSharpening.Off);
+            Invalidate();
+        };
+        formats.SelectionChanged+=(_,_)=>{
+            format=(ExportFormat)formats.SelectedItem;
+            if(format==ExportFormat.RenderedDng){outputSharpening=OutputSharpening.Off;sharpening.SelectedItem=OutputSharpening.Off;}
+            sharpening.IsEnabled=format!=ExportFormat.RenderedDng;
+            Invalidate();
+        };
+        output.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("输出锐化")));output.Children.Add(sharpening);
         output.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("导出长边像素（留空为原尺寸）")));output.Children.Add(edge);
         edge.TextChanged+=(_,_)=>Invalidate();
         var destination=AdjustmentDialogLayout.Text(Loc.Text("请选择输出文件夹。"));header.Children.Add(destination);
@@ -249,7 +264,7 @@ internal sealed class CollectionExportDialog : Window
             var longEdge=string.IsNullOrWhiteSpace(edge.Text) ? (int?)null : ExportSize.Parse(edge.Text) ?? throw new ArgumentException(Loc.Text("请输入 1 到 65535 之间的整数。"));
             checking=true;confirm.IsEnabled=configuration.IsEnabled=rows.IsEnabled=false;
             message.Text=Loc.Text("正在检查照片…");
-            var prepared=await editor.PrepareCollectionExportAsync(skipping,format,longEdge,directory ?? "");
+            var prepared=await editor.PrepareCollectionExportAsync(skipping,format,longEdge,directory ?? "",outputSharpening);
             if(closed || request!=generation)return;
             if(prepared==null){checking=false;Invalidate();return;}
             review=prepared;RefreshRows();

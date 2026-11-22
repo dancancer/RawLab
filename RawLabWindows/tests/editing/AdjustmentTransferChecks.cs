@@ -431,6 +431,19 @@ internal static class AdjustmentTransferChecks
         Check(AdjustmentTransfer.Prepare(Payload((F.RawDenoise,1)),target,raster with {OnTransferNotice=rasterFbddNotices.Add}).Settings.SameAs(target.Settings),
             "Nonzero RAW FBDD is ignored on JPEG instead of rejecting");
         Check(rasterFbddNotices.Contains(AdjustmentTransferNotice.IgnoredRawDenoise),"Ignored JPEG FBDD reports a one-time prompt");
+        var rasterSrc = new Adjustments { ExposureMode = 2 };
+        rasterSrc.SetRelativeWhiteBalance(5350, 14);
+        var rasterPayload = AdjustmentTransfer.Capture(AdjustmentScope.Custom(AdjustmentFields.WhiteBalance), Edit(rasterSrc), raster);
+        Check(Text(rasterPayload[F.WhiteBalanceMode]) == "relative" && Number(rasterPayload[F.Temperature]) == 5350 && Number(rasterPayload[F.Tint]) == 14,
+            "Edited raster captures white_balance mode=relative with numeric temp/tint");
+        var rasterApplied = AdjustmentTransfer.Prepare(rasterPayload, target, raster).Settings.Restore();
+        Check(rasterApplied[Parameter.Temperature] == 5350 && rasterApplied[Parameter.Tint] == 14 && rasterApplied.CameraWhiteBalance,
+            "Applying relative WB from raster to raster preserves relative temp/tint");
+        var rawTargetCtx = Context with { Identifier = "target.arw", IsRaw = true };
+        var rawTarget = new Adjustments(); rawTarget.ResolveWhiteBalance((5000, 5));
+        var rawFromRaster = AdjustmentTransfer.Prepare(rasterPayload, Edit(rawTarget), rawTargetCtx).Settings.Restore();
+        Check(rawFromRaster.CameraWhiteBalance && rawFromRaster[Parameter.Temperature] == 5000 && rawFromRaster[Parameter.Tint] == 5,
+            "Raster relative WB does not overwrite RAW target WB");
         Console.WriteLine("PASS: Windows neutral RAW default/partial paste on JPEG, unchanged detection and incompatible effective requests");
     }
     private static void NonRawSourcePreservesRawExposureAndWhiteBalance()

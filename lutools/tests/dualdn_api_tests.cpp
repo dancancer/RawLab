@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
     sony2fuji_session* session = nullptr;
     try {
         require(argc == 4, "requires RAW, model directory and temporary cache directory");
+        std::filesystem::remove_all(std::filesystem::u8path(argv[3]));
         std::filesystem::create_directories(std::filesystem::absolute(std::filesystem::u8path(argv[3])).parent_path());
         require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, "session create");
         require(!sony2fuji_session_get_ai_backend(session)[0] && !sony2fuji_session_get_ai_backend(nullptr)[0],
@@ -188,6 +189,50 @@ int main(int argc, char** argv) {
             require(sony2fuji_process(session,&request,&buffer) == missingResultStatus && !buffer.data,
                     "white balance reused an incompatible generic cache");
             sony2fuji_release_buffer(&buffer);
+
+            // DualDn blend strength (0-100%): verify validation + 0% untouched + intermediate blending
+            // across 1.0 -> 0.5 -> 0.25 -> 0.0 -> 0.75 without re-running inference (disk cache stays intact)
+            request.wb_mode = SONY2FUJI_WB_CAMERA; request.temperature = 6500;
+            require(sony2fuji_session_set_ai_denoise_blend(session, -0.1f) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                    "negative AI blend accepted");
+            require(sony2fuji_session_set_ai_denoise_blend(session, 1.1f) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                    "AI blend > 1 accepted");
+            if (runtimeIdentityAvailable) {
+                request.contrast = 1;
+                config.enabled = 0;
+                require(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_OK, "AI off baseline for blend");
+                require(sony2fuji_process(session, &request, &buffer) == SONY2FUJI_STATUS_OK && buffer.data, "AI off baseline render");
+                const auto* offPtr = static_cast<const uint8_t*>(buffer.data);
+                const std::vector<uint8_t> blendBaseline(offPtr, offPtr + buffer.size_bytes);
+                sony2fuji_release_buffer(&buffer);
+                config.enabled = 1;
+                require(sony2fuji_session_set_ai_denoise(session, &config) == SONY2FUJI_STATUS_OK, "AI re-enable for blend");
+
+                std::vector<float> nonZero(source.pixels.size() * 3, 0.25f);
+                cache.store(sceneKey, CacheKind::SceneRGB, source.width, source.height, nonZero.data(), nonZero.size(), {}, "test-blend");
+                auto renderBlend = [&](float blendVal) {
+                    require(sony2fuji_session_set_ai_denoise_blend(session, blendVal) == SONY2FUJI_STATUS_OK, "set AI blend");
+                    sony2fuji_buffer out{};
+                    require(sony2fuji_process(session, &request, &out) == SONY2FUJI_STATUS_OK && out.data,
+                            "blend slider adjustment must hit cached AI result with zero re-inference");
+                    const auto* ptr = static_cast<const uint8_t*>(out.data);
+                    std::vector<uint8_t> bytes(ptr, ptr + out.size_bytes);
+                    sony2fuji_release_buffer(&out);
+                    return bytes;
+                };
+                const auto b100 = renderBlend(1.0f);
+                const auto b50 = renderBlend(0.5f);
+                const auto b25 = renderBlend(0.25f);
+                const auto b0 = renderBlend(0.0f);
+                const auto b75 = renderBlend(0.75f);
+                require(b0 == blendBaseline, "AI blend=0.0 must be bit-identical to AI OFF");
+                require(b100 != blendBaseline, "AI blend=1.0 must differ from AI OFF");
+                require(b50 != b100, "AI blend=0.5 must differ from 1.0");
+                require(b25 != b50, "AI blend=0.25 must differ from 0.5");
+                require(b75 != b50, "AI blend=0.75 must differ from 0.5");
+                require(sony2fuji_session_set_ai_denoise_blend(session, 1.0f) == SONY2FUJI_STATUS_OK, "restore AI blend");
+                request.contrast = 0;
+            }
             std::filesystem::remove_all(argv[3]);
 #endif
         }

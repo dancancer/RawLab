@@ -101,12 +101,15 @@ data class EditSettings(
     ) else copy(x3fMode = mode)
 
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
-    fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) copy(
-        exposureMode = 2,
-        customWb = false,
-        temperature = 6500f,
-        tint = 0f,
-    ) else this
+    fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) {
+        val keepRelativeWb = !customWb && recipeID == null
+        copy(
+            exposureMode = 2,
+            customWb = false,
+            temperature = if (keepRelativeWb) temperature else 6500f,
+            tint = if (keepRelativeWb) tint else 0f,
+        )
+    } else this
     fun resetWhiteBalance(asShotTemperature: Float?, asShotTint: Float?): EditSettings = copy(
         customWb = false,
         temperature = asShotTemperature ?: 6500f,
@@ -314,12 +317,14 @@ internal fun EditSettings.resetRenderValues(
         wbTint = (nativeRound(asShotTint) + tint * strength).coerceIn(-150f, 150f)
         custom = true
     }
+    val rasterRelative = input == PhotoInputKind.RASTER && recipeID == null && (kelvin != 6500f || wbTint != 0f)
     return ResetRenderValues(listOf(exposure * recipeScale, -highlights * recipeScale, shadows * recipeScale,
         1f + contrast * recipeScale, renderToneCurve, 1f + saturation * recipeScale, sharpening,
-        effective.exposureMode.toFloat(), if (custom) 1f else 0f,
-        if (custom) kelvin else 6500f, if (custom) wbTint else 0f) + renderHsl.packed().toList() +
+        effective.exposureMode.toFloat(), if (custom) 1f else if (rasterRelative) 4f else 0f,
+        if (custom || rasterRelative) kelvin else 6500f, if (custom || rasterRelative) wbTint else 0f) + renderHsl.packed().toList() +
         listOf(renderBlackPoint, renderWhitePoint, renderVibrance, renderClarity, renderDehaze) +
-        ColorGradingZone.entries.flatMap { listOf(renderColorGrading[it].hue, renderColorGrading[it].saturation) } +
+        ColorGradingZone.entries.flatMap { listOf(renderColorGrading[it].hue, renderColorGrading[it].saturation, renderColorGrading[it].luminance) } +
+        listOf(renderColorGrading.global.hue, renderColorGrading.global.saturation, renderColorGrading.global.luminance, renderColorGrading.blending, renderColorGrading.balance) +
         ToneCurveChannel.entries.flatMap { channel -> renderCurve.shape(channel).let { listOf(it.mode.nativeValue.toFloat()) + it.packed().map(Double::toFloat) } }, kelvin, wbTint)
 }
 
@@ -347,9 +352,9 @@ internal fun EditSettings.independentForReset(
         toneCurve = (toneCurve * refinementScale).coerceIn(-1f, 1f),
         exposure = scaledExposure, highlights = scaledHighlights, shadows = scaledShadows,
         contrast = scaledContrast, saturation = scaledSaturation, hsl = renderHsl,
-        customWb = if (convertWb) true else customWb,
-        temperature = if (convertWb) before.temperature else temperature,
-        tint = if (convertWb) before.tint else if (input == PhotoInputKind.RAW && recipeID != null) 0f else tint).canonicalZeros()
+        customWb = if (convertWb) true else if (input != PhotoInputKind.RAW && recipeID != null) false else customWb,
+        temperature = if (convertWb) before.temperature else if (input != PhotoInputKind.RAW && recipeID != null) 6500f else temperature,
+        tint = if (convertWb) before.tint else if (recipeID != null) 0f else tint).canonicalZeros()
     val after = candidate.resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
     return candidate.takeIf { before.core.size == after.core.size && before.core.zip(after.core).all { (a, b) -> a == b } }
 }

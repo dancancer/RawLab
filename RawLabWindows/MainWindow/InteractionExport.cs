@@ -61,6 +61,7 @@ public partial class MainWindow
     {
         ExportJpeg.Header=Loc.Text("JPEG…");
         ExportPng.Header=Loc.Text("PNG · 16-bit…");
+        RefreshExportSharpeningMenu();
         RefreshStateToolTips();
     }
     private void ClippingClicked(object sender,RoutedEventArgs e)
@@ -87,6 +88,9 @@ public partial class MainWindow
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
         if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
         if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
+        if(e.Key==Key.Escape && inspection.HandleEscape()){RefreshViewingFrames();e.Handled=true;return;}
+        if(e.Key==Key.Escape && curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
+        if(e.Key==Key.Escape && wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
         if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
         if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
@@ -95,12 +99,13 @@ public partial class MainWindow
         if(e.Key==Key.C && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){CopyAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if(e.Key==Key.V && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift)){PasteAdjustmentsClicked(sender,e);e.Handled=true;return;}
         if(!ShowsPhotoWorkspace && !(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control))return;
-        if((viewingKey is Key.I or Key.Oem5) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
+        if((viewingKey is Key.I or Key.Oem5 or Key.G) && (ViewInputBlocked || Keyboard.Modifiers!=ModifierKeys.None))return;
         if(viewingKey==Key.Oem5){if(startsBeforeKey)BeginHoldingBefore();e.Handled=true;return;}
         if(e.Key==Key.O && Keyboard.Modifiers==ModifierKeys.Control)OpenClicked(sender,e);
         else if(e.Key==Key.F)FitClicked(sender,e); else if(e.Key==Key.D1)ActualClicked(sender,e);
         else if(e.Key is Key.Add or Key.OemPlus)ZoomInClicked(sender,e); else if(e.Key is Key.Subtract or Key.OemMinus)ZoomOutClicked(sender,e);
         else if(viewingKey==Key.I)InfoClicked(sender,e);
+        else if(viewingKey==Key.G){ToggleGray50Clicked(sender,e);e.Handled=true;}
     }
     private void ExportJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.Jpeg);
     private void ExportHdrJpegClicked(object sender,RoutedEventArgs e)=>Export(ExportFormat.HdrJpeg);
@@ -130,6 +135,22 @@ public partial class MainWindow
         ExportSize4096.IsChecked=exportLongEdge == 4096;
         ExportCustomSize.IsChecked=exportLongEdge.HasValue && exportLongEdge != 2048 && exportLongEdge != 3000 && exportLongEdge != 4096;
         ExportCustomSize.Header=ExportCustomSize.IsChecked == true ? Loc.Format("自定义 {0} px", exportLongEdge) : Loc.Text("自定义…");
+    }
+    private void ExportSharpeningClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string text } && int.TryParse(text, out var level) && Enum.IsDefined((OutputSharpening)level))
+        {
+            exportOutputSharpening = (OutputSharpening)level;
+            RefreshExportSharpeningMenu();
+        }
+    }
+    private void RefreshExportSharpeningMenu()
+    {
+        if (ExportSharpeningOff == null) return;
+        ExportSharpeningOff.IsChecked = exportOutputSharpening == OutputSharpening.Off;
+        ExportSharpeningLow.IsChecked = exportOutputSharpening == OutputSharpening.Low;
+        ExportSharpeningStandard.IsChecked = exportOutputSharpening == OutputSharpening.Standard;
+        ExportSharpeningHigh.IsChecked = exportOutputSharpening == OutputSharpening.High;
     }
     private async void Export(ExportFormat format)
     {
@@ -162,6 +183,7 @@ public partial class MainWindow
         var temp=TempCleanup.CreateExportStagingPath(destination,format.Suffix());
         var stagingDirectory=exportStagingDirectory;
         var size=exportLongEdge;
+        var sharpening = format == ExportFormat.RenderedDng ? OutputSharpening.Off : exportOutputSharpening;
         foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在导出…"));
         ExportStagingLease? staging=null;
         try
@@ -175,7 +197,7 @@ public partial class MainWindow
             await Task.Run(()=> {
                 TempCleanup.SweepExpiredExportStagingInDirectory(Path.GetDirectoryName(temp)!, DateTime.UtcNow, TempCleanup.DefaultRetention, stagingDirectory);
                 staging = TempCleanup.BeginExportStaging(temp, stagingDirectory);
-                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format);
+                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
             });
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
@@ -200,6 +222,7 @@ public partial class MainWindow
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         Volatile.Write(ref closing, true);
+        externalStoreWatcher?.Dispose(); externalStoreWatcher = null;
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();

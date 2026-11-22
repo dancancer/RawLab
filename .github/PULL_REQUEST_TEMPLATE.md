@@ -36,7 +36,9 @@
 ## Risk & Scope Checklist
 
 - [ ] Minimal sufficient change; unrelated refactoring avoided, raw photos/credentials/build artifacts excluded.
-- [ ] **CODEOWNERS high-risk paths check**: Does this PR touch `/lutools/include/`, `/Shared/specs/`, `/Shared/fixtures/`, or `/lutools/src/gpu/*shader*`?
+- [ ] **CODEOWNERS high-risk paths check**: Does this PR touch `/lutools/include/`, `/Shared/specs/`, `/Shared/fixtures/`, `/Shared/version.json`, `/lutools/src/gpu/*shader*`, `/lutools/docs/edit-json-*.schema.json`, or `/scripts/ci/`?
   - [ ] No — standard self-verification + Hosted CI gate applies.
   - [ ] Yes — **mandatory carbon / independent review** completed and bound to the current head/base SHAs.
 - [ ] No tracked in-repo task ledger / kanban / changelog files added (execution status belongs in GitHub Issues/Projects).
+- [ ] No cross-language algorithm/persistence re-implementation (geometry, color math, sampling, and store codecs reuse `lutools` / `RawLabKit` rather than copying into clients/Python).
+- [ ] Persistence/sync changes preserve unknown & orthogonal fields (HDR, AI denoise, future entries) and pass cross-process lock & in-flight save race checks.

@@ -117,15 +117,16 @@ class EditRecordFixtureTest {
         if (!condition) throw HarnessSetupException(message)
     }
 
-    private fun parseCurve(obj: JSONObject): ToneCurveSettings {
-        val mode = if (obj.optString("mode", "legacy") == "custom") ToneCurveMode.CUSTOM else ToneCurveMode.LEGACY
-        val ptsRaw = obj.optJSONArray("points") ?: JSONArray()
+    private fun parseCurve(values: JSONObject): ToneCurveSettings {
+        val obj = values.optJSONObject("light.curve")
+        val mode = if (obj != null && obj.optString("mode", "legacy") == "custom") ToneCurveMode.CUSTOM else ToneCurveMode.LEGACY
+        val ptsRaw = obj?.optJSONArray("points") ?: JSONArray()
         val points = (0 until ptsRaw.length()).map { idx ->
             val p = ptsRaw.getJSONArray(idx)
             ToneCurvePoint(p.getDouble(0), p.getDouble(1))
         }
         var channels = ToneCurveChannels()
-        if (obj.has("channels") && !obj.isNull("channels")) {
+        if (obj != null && obj.has("channels") && !obj.isNull("channels")) {
             val ch = obj.getJSONObject("channels")
             fun shape(name: String): ToneCurveShape {
                 if (!ch.has(name) || ch.isNull(name)) return ToneCurveShape()
@@ -139,19 +140,28 @@ class EditRecordFixtureTest {
             }
             channels = ToneCurveChannels(red = shape("red"), green = shape("green"), blue = shape("blue"))
         }
-        return ToneCurveSettings(mode = mode, points = points, channels = channels)
+        val applyToLuminosity = values.optBoolean("light.curve.apply_to_luminosity", false)
+        val parametric = values.optJSONObject("light.curve.parametric")?.let { ToneCurveParametric.decode(it) } ?: ToneCurveParametric()
+        return ToneCurveSettings(mode = mode, points = points, channels = channels, applyToLuminosity = applyToLuminosity, parametric = parametric)
     }
 
     private fun parseGrading(values: JSONObject): ColorGradingSettings {
         fun wheel(key: String): ColorGradingWheel {
             if (!values.has(key) || values.isNull(key)) return ColorGradingWheel()
             val w = values.getJSONObject(key)
-            return ColorGradingWheel(w.optDouble("hue", 0.0).toFloat(), w.optDouble("saturation", 0.0).toFloat())
+            return ColorGradingWheel(
+                w.optDouble("hue", 0.0).toFloat(),
+                w.optDouble("saturation", 0.0).toFloat(),
+                w.optDouble("luminance", 0.0).toFloat(),
+            )
         }
         return ColorGradingSettings(
             shadows = wheel("color.grading.shadows"),
             midtones = wheel("color.grading.midtones"),
             highlights = wheel("color.grading.highlights"),
+            global = wheel("color.grading.global"),
+            blending = (num(values.opt("color.grading.blending")) ?: 50.0).toFloat(),
+            balance = (num(values.opt("color.grading.balance")) ?: 0.0).toFloat(),
         )
     }
 
@@ -182,16 +192,18 @@ class EditRecordFixtureTest {
         val hasRendition = hasEffects || values.has("hdr.peak_limit_ev") || values.has("hdr.sdr_exposure_ev") ||
             values.has("hdr.sdr_contrast") || values.has("hdr.sdr_saturation")
         val hasColor = hasRendition || values.has("color.vibrance") || values.has("color.grading.shadows") ||
+            values.has("color.grading.global") || values.has("color.grading.blending") || values.has("color.grading.balance") ||
             values.keys().asSequence().any { it.startsWith("color.hsl.") }
         val hasTone = hasColor || values.has("tone.black_point") || values.has("tone.white_point") ||
-            values.has("light.s_curve") || values.has("light.curve")
+            values.has("light.s_curve") || values.has("light.curve") ||
+            values.has("light.curve.apply_to_luminosity") || values.has("light.curve.parametric")
 
         val tone = if (hasTone) {
             HDRToneSettings(
                 blackPoint = (num(values.opt("tone.black_point")) ?: 0.0).toFloat(),
                 whitePoint = (num(values.opt("tone.white_point")) ?: 0.0).toFloat(),
                 curveStrength = ((num(values.opt("light.s_curve")) ?: 0.0) * 100.0).toFloat(),
-                curve = if (values.has("light.curve") && !values.isNull("light.curve")) parseCurve(values.getJSONObject("light.curve")) else ToneCurveSettings(),
+                curve = parseCurve(values),
             )
         } else null
 
@@ -415,7 +427,7 @@ class EditRecordFixtureTest {
             clarity = (num(sdrValues.opt("effects.clarity")) ?: 0.0).toFloat(),
             dehaze = (num(sdrValues.opt("effects.dehaze")) ?: 0.0).toFloat(),
             colorGrading = parseGrading(sdrValues),
-            curve = sdrValues.optJSONObject("light.curve")?.let { parseCurve(it) } ?: ToneCurveSettings(),
+            curve = parseCurve(sdrValues),
             masterRecipeSettingsVersion = mVer,
             hdr = hdr,
             proRAWDecodeVersion = proRawVer,
@@ -480,16 +492,24 @@ class EditRecordFixtureTest {
             }
         }
         fun verifyGradingInto(values: JSONObject, actual: ColorGradingSettings, label: String) {
-            val zones = listOf("shadows" to actual.shadows, "midtones" to actual.midtones, "highlights" to actual.highlights)
+            val zones = listOf(
+                "shadows" to actual.shadows,
+                "midtones" to actual.midtones,
+                "highlights" to actual.highlights,
+                "global" to actual.global,
+            )
             for ((zoneName, wheel) in zones) {
                 values.optJSONObject("color.grading.$zoneName")?.let {
                     verify(
                         approx(wheel.hue.toDouble(), it.getDouble("hue")) &&
-                            approx(wheel.saturation.toDouble(), it.getDouble("saturation")),
+                            approx(wheel.saturation.toDouble(), it.getDouble("saturation")) &&
+                            approx(wheel.luminance.toDouble(), it.optDouble("luminance", 0.0)),
                         "$label.grading.$zoneName",
                     )
                 }
             }
+            num(values.opt("color.grading.blending"))?.let { verify(approx(actual.blending.toDouble(), it), "$label.grading.blending") }
+            num(values.opt("color.grading.balance"))?.let { verify(approx(actual.balance.toDouble(), it), "$label.grading.balance") }
         }
         fun verifyEffectsInto(values: JSONObject, actual: PhotoEffectsSettings, label: String) {
             num(values.opt("effects.vignette.amount"))?.let { verify(approx(actual.vignetteAmount.toDouble(), it), "$label.effects.vignette.amount") }
@@ -548,6 +568,12 @@ class EditRecordFixtureTest {
         num(sdrValues.opt("light.shadows"))?.let { verify(approx(s.shadows.toDouble(), it), "light.shadows") }
         num(sdrValues.opt("light.s_curve"))?.let { verify(approx(s.toneCurve.toDouble(), it), "light.s_curve") }
         sdrValues.optJSONObject("light.curve")?.let { verifyCurveInto(it, s.curve, "sdr") }
+        if (sdrValues.has("light.curve.apply_to_luminosity")) {
+            verify(s.curve.applyToLuminosity == sdrValues.getBoolean("light.curve.apply_to_luminosity"), "sdr.curve.apply_to_luminosity")
+        }
+        sdrValues.optJSONObject("light.curve.parametric")?.let {
+            verify(s.curve.parametric == ToneCurveParametric.decode(it), "sdr.curve.parametric")
+        }
         num(sdrValues.opt("tone.black_point"))?.let { verify(approx(s.blackPoint.toDouble(), it), "tone.black_point") }
         num(sdrValues.opt("tone.white_point"))?.let { verify(approx(s.whitePoint.toDouble(), it), "tone.white_point") }
         num(sdrValues.opt("color.vibrance"))?.let { verify(approx(s.vibrance.toDouble(), it), "color.vibrance") }
@@ -606,6 +632,12 @@ class EditRecordFixtureTest {
             num(hdrCheck.opt("tone.white_point"))?.let { verify(approx(hdr.toneSettings.whitePoint.toDouble(), it), "hdr.whitePoint") }
             num(hdrCheck.opt("light.s_curve"))?.let { verify(approx(hdr.toneSettings.curveStrength.toDouble() / 100.0, it), "hdr.sCurve") }
             hdrCheck.optJSONObject("light.curve")?.let { verifyCurveInto(it, hdr.toneSettings.curve, "hdr") }
+            if (hdrCheck.has("light.curve.apply_to_luminosity")) {
+                verify(hdr.toneSettings.curve.applyToLuminosity == hdrCheck.getBoolean("light.curve.apply_to_luminosity"), "hdr.curve.apply_to_luminosity")
+            }
+            hdrCheck.optJSONObject("light.curve.parametric")?.let {
+                verify(hdr.toneSettings.curve.parametric == ToneCurveParametric.decode(it), "hdr.curve.parametric")
+            }
             num(hdrCheck.opt("color.vibrance"))?.let { verify(approx(hdr.colorSettings.vibrance.toDouble(), it), "hdr.vibrance") }
             verifyHslInto(hdrCheck, hdr.colorSettings.hsl, "hdr")
             verifyGradingInto(hdrCheck, hdr.colorSettings.grading, "hdr")

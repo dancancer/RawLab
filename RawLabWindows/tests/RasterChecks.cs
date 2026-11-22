@@ -187,6 +187,22 @@ internal static class RasterChecks
         check(dormant.Capture().SameAs(dormantSnapshot),"Batch target normalization does not mutate the frozen source snapshot");
         var previewSettings=RenderEngine.PrepareBatchSettings(png,raw,dormant);
         check(previewSettings.Capture().SameAs(effectiveRaw!),"Batch target preview uses the same effective RAW settings as final render");
+
+        var rasterWb = new Adjustments();
+        rasterWb.SetRelativeWhiteBalance(4800, -22);
+        var rasterWbFrame = engine.Render(png, rasterWb, null, 0, statistics: false, clipping: false)!;
+        check(!Bytes(rasterWbFrame.Image).SequenceEqual(rgba), "SDR raster relative WB visibly shifts rendered pixels");
+        var rasterProbe = engine.SampleWhiteBalance(png, new Adjustments(), null, 0, 0.5, 0.5);
+        check(rasterProbe.Availability == Native.WbProbeAvailability.Available &&
+              rasterProbe.ValidPixelCount > 0 &&
+              rasterProbe.Temperature is >= 2000 and <= 50000 &&
+              rasterProbe.Tint is >= -150 and <= 150,
+            "SDR raster WB eyedropper probe samples valid relative temp/tint");
+        var rawProbe = engine.SampleWhiteBalance(raw, new Adjustments(), null, 0, 0.5, 0.5);
+        check(rawProbe.Availability == Native.WbProbeAvailability.Available &&
+              rawProbe.Temperature is >= 2000 and <= 50000,
+            "RAW WB eyedropper probe samples valid temp/tint");
+
         var damaged=Path.Combine(inputs,"damaged.png");File.WriteAllBytes(damaged,[137,80,78,71]);
         var rejected=false;try{engine.Render(damaged,new(),null,32);}catch(InvalidOperationException){rejected=true;}
         check(rejected,"Damaged ordinary input is rejected rather than returning the previous image");

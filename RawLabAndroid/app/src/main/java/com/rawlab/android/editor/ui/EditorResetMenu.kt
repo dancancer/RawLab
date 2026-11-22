@@ -23,7 +23,7 @@ internal fun resetScopeTitle(scope: EditorResetScope): String = when (scope) {
     is EditorResetScope.Tool -> stringResource(R.string.editor_reset_tool, stringResource(editorToolTitles[scope.id]))
     is EditorResetScope.Group -> stringResource(R.string.editor_reset_group, stringResource(groupTitle(scope.group)))
     is EditorResetScope.HslChannel -> stringResource(R.string.editor_reset_hsl_color, stringResource(hslChannelTitles[scope.channel]))
-    is EditorResetScope.GradingZone -> stringResource(R.string.grading_reset_zone)
+    is EditorResetScope.GradingZone, EditorResetScope.GradingGlobal -> stringResource(R.string.grading_reset_zone)
     EditorResetScope.AllGrading -> stringResource(R.string.grading_reset_all)
     EditorResetScope.AllHsl -> stringResource(R.string.editor_reset_hsl_all)
     EditorResetScope.All -> stringResource(R.string.editor_reset_all)

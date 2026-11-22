@@ -6,6 +6,7 @@
 #include "sony2fuji/dcp_look.h"
 #include "core/chroma_denoise.h"
 #include "core/display_lens_correction.h"
+#include "core/hdr_rendering.h"
 #include "core/image_header_probe.h"
 #include "core/lut_compatibility.h"
 #include "core/parallel_pixels.h"
@@ -62,6 +63,13 @@ void Pipeline::copyConfigurationFrom(const Pipeline& source) {
     colorGrading_ = source.colorGrading_;
     toneCurve_ = source.toneCurve_;
     channelCurves_ = source.channelCurves_;
+    curveApplyToLuminosity_ = source.curveApplyToLuminosity_;
+    parametricCurve_ = source.parametricCurve_;
+    aiDenoiseBlend_ = source.aiDenoiseBlend_;
+    outputSharpening_ = source.outputSharpening_;
+    rasterRelativeWbActive_ = source.rasterRelativeWbActive_;
+    rasterRelativeTemp_ = source.rasterRelativeTemp_;
+    rasterRelativeTint_ = source.rasterRelativeTint_;
     geometry_ = source.geometry_;
     lensCorrection_ = source.lensCorrection_;
     displayLensMetadata_ = source.displayLensMetadata_;
@@ -143,6 +151,45 @@ RenderStatus Pipeline::sampleToneCurve(const ToneCurveConfig& config, const doub
         const ToneCurve curve(config);
         for (uint32_t i = 0; i < count; ++i) {
             y[i] = curve.evaluate(x[i]);
+        }
+        return RenderStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::sampleToneCurveV2(
+    const ToneCurveConfig& config,
+    const ToneCurveParametricConfig* parametric,
+    const double* x,
+    double* y,
+    uint32_t count
+) {
+    if (!x || !y || count == 0 || !validToneCurve(config, /*allowFreeEndpoints=*/true)) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (parametric && !parametric->valid()) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (config.mode != ToneCurveMode::Custom && !(parametric && parametric->active())) {
+        return RenderStatus::InvalidArgument;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        if (!std::isfinite(x[i])) return RenderStatus::InvalidArgument;
+    }
+    try {
+        const ToneCurve curve(config, /*allowFreeEndpoints=*/true);
+        const ToneCurveParametric parametricEval = parametric
+            ? ToneCurveParametric(*parametric)
+            : ToneCurveParametric{};
+        for (uint32_t i = 0; i < count; ++i) {
+            double v = x[i];
+            if (parametricEval.active()) {
+                v = parametricEval.evaluate(v);
+            }
+            y[i] = curve.evaluate(v);
         }
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
@@ -378,6 +425,8 @@ RenderStatus Pipeline::setToneCurve(const ToneCurveConfig& config) {
         ToneCurve curve(config);
         toneCurve_ = std::move(curve);
         channelCurves_ = {};
+        curveApplyToLuminosity_ = false;
+        parametricCurve_ = {};
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
@@ -388,7 +437,8 @@ RenderStatus Pipeline::setToneCurve(const ToneCurveConfig& config) {
 
 RenderStatus Pipeline::setToneCurves(const ToneCurveConfig& masterConfig, const std::array<ToneCurveConfig, 3>& channelConfigs) {
     if (!validToneCurve(masterConfig) ||
-        !std::all_of(channelConfigs.begin(), channelConfigs.end(), validToneCurve)) {
+        !std::all_of(channelConfigs.begin(), channelConfigs.end(),
+            [](const auto& c) { return validToneCurve(c); })) {
         return RenderStatus::InvalidArgument;
     }
     try {
@@ -400,12 +450,53 @@ RenderStatus Pipeline::setToneCurves(const ToneCurveConfig& masterConfig, const 
         };
         toneCurve_ = std::move(master);
         channelCurves_ = std::move(channels);
+        curveApplyToLuminosity_ = false;
+        parametricCurve_ = {};
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
     } catch (...) {
         return RenderStatus::ProcessingError;
     }
+}
+
+RenderStatus Pipeline::setToneCurvesV2(
+    const ToneCurveConfig& masterConfig,
+    const std::array<ToneCurveConfig, 3>& channelConfigs,
+    bool applyToLuminosity,
+    const ToneCurveParametricConfig& parametric
+) {
+    if (!validToneCurve(masterConfig, /*allowFreeEndpoints=*/true) ||
+        !std::all_of(channelConfigs.begin(), channelConfigs.end(),
+            [](const auto& c) { return validToneCurve(c, /*allowFreeEndpoints=*/true); }) ||
+        !parametric.valid()) {
+        return RenderStatus::InvalidArgument;
+    }
+    try {
+        ToneCurve master(masterConfig, /*allowFreeEndpoints=*/true);
+        std::array<ToneCurve, 3> channels = {
+            ToneCurve(channelConfigs[0], /*allowFreeEndpoints=*/true),
+            ToneCurve(channelConfigs[1], /*allowFreeEndpoints=*/true),
+            ToneCurve(channelConfigs[2], /*allowFreeEndpoints=*/true)
+        };
+        toneCurve_ = std::move(master);
+        channelCurves_ = std::move(channels);
+        curveApplyToLuminosity_ = applyToLuminosity;
+        parametricCurve_ = parametric;
+        return RenderStatus::Ok;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
+    }
+}
+
+RenderStatus Pipeline::setAiDenoiseBlend(float strength) noexcept {
+    if (!std::isfinite(strength) || strength < 0.0f || strength > 1.0f) {
+        return RenderStatus::InvalidArgument;
+    }
+    aiDenoiseBlend_ = strength;
+    return RenderStatus::Ok;
 }
 
 RenderStatus Pipeline::applyParams(const char* recipeJson) {
@@ -452,22 +543,25 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         if (wavelet.active() && !waveletDenoiseAvailable()) {
             return RenderStatus::Unsupported;
         }
+        const bool freeCurveEndpoints = recipe.schemaVersion >= 17;
         if (!recipe.effects.valid() || !recipe.hsl.valid() || !recipe.toneControls.valid() ||
-            !recipe.atmosphere.valid() || !recipe.colorGrading.valid()) {
+            !recipe.atmosphere.valid() || !recipe.colorGrading.valid() || !recipe.parametricCurve.valid() ||
+            recipe.outputSharpening < OutputSharpening::Off || recipe.outputSharpening > OutputSharpening::High) {
             return RenderStatus::InvalidArgument;
         }
-        if (!validToneCurve(recipe.toneCurve) ||
-            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(), validToneCurve)) {
+        if (!validToneCurve(recipe.toneCurve, freeCurveEndpoints) ||
+            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+                [freeCurveEndpoints](const auto& c) { return validToneCurve(c, freeCurveEndpoints); })) {
             return RenderStatus::InvalidArgument;
         }
-        ToneCurve masterCurve(recipe.toneCurve);
+        ToneCurve masterCurve(recipe.toneCurve, freeCurveEndpoints);
         if (masterCurve.custom() && recipe.sCurve != 0.0f) {
             return RenderStatus::InvalidArgument;
         }
         std::array<ToneCurve, 3> channelCurves = {
-            ToneCurve(recipe.channelCurves[0]),
-            ToneCurve(recipe.channelCurves[1]),
-            ToneCurve(recipe.channelCurves[2])
+            ToneCurve(recipe.channelCurves[0], freeCurveEndpoints),
+            ToneCurve(recipe.channelCurves[1], freeCurveEndpoints),
+            ToneCurve(recipe.channelCurves[2], freeCurveEndpoints)
         };
         GeometryOptions geometry = recipe.geometry;
         if (!geometry.valid()) {
@@ -507,6 +601,18 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         colorGrading_ = recipe.colorGrading;
         toneCurve_ = std::move(masterCurve);
         channelCurves_ = std::move(channelCurves);
+        curveApplyToLuminosity_ = recipe.curveApplyToLuminosity;
+        parametricCurve_ = recipe.parametricCurve;
+        outputSharpening_ = recipe.outputSharpening;
+        if (recipe.rasterInput && recipe.whiteBalanceMode == RenderWhiteBalanceMode::Relative) {
+            rasterRelativeWbActive_ = true;
+            rasterRelativeTemp_ = recipe.temperatureKelvin;
+            rasterRelativeTint_ = recipe.tint;
+        } else {
+            rasterRelativeWbActive_ = false;
+            rasterRelativeTemp_ = 6500.0f;
+            rasterRelativeTint_ = 0.0f;
+        }
         geometry_ = geometry;
         geometryWidth_ = geometryHeight_ = 0;
         lensCorrection_ = std::move(lens);
@@ -537,6 +643,31 @@ RenderStatus Pipeline::process(const RenderParams& params, OwnedPixelBuffer* out
             params.outputTarget == RenderOutputTarget::Buffer || params.intent == RenderIntent::Final;
         ProcessingCancellationScope scope(cancellable ? cancellation_ : ProcessingCancellation{});
         return processImpl(params, outBuffer);
+    } catch (const ProcessingCancelled&) {
+        return RenderStatus::Cancelled;
+    } catch (const std::bad_alloc& error) {
+        return recordAiError(RenderStatus::OutOfMemory, error.what());
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    } catch (const ai::NotReady& error) {
+        return recordAiError(RenderStatus::AiNotReady, error.what());
+    } catch (const ai::Unsupported& error) {
+        return recordAiError(RenderStatus::Unsupported, error.what());
+#endif
+    } catch (const std::exception& error) {
+        return recordAiError(RenderStatus::ProcessingError, error.what());
+    } catch (...) {
+        return recordAiError(RenderStatus::ProcessingError, "Unknown native AI failure");
+    }
+}
+
+RenderStatus Pipeline::processToImageData(const RenderParams& params, ImageData& outImage) {
+    outImage = {};
+    try {
+        beginAiOperation("render");
+        const bool cancellable =
+            params.outputTarget == RenderOutputTarget::Buffer || params.intent == RenderIntent::Final;
+        ProcessingCancellationScope scope(cancellable ? cancellation_ : ProcessingCancellation{});
+        return processImpl(params, nullptr, nullptr, nullptr, nullptr, &outImage);
     } catch (const ProcessingCancelled&) {
         return RenderStatus::Cancelled;
     } catch (const std::bad_alloc& error) {
@@ -645,7 +776,7 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
     unsupportedReason_ = UnsupportedReason::None;
     gpuFallbackReason_ = GpuFallbackReason::None;
     gpuErrorDetail_.clear();
-    if (params.wbMode < RenderWhiteBalanceMode::Camera || params.wbMode > RenderWhiteBalanceMode::Temperature) {
+    if (params.wbMode < RenderWhiteBalanceMode::Camera || params.wbMode > RenderWhiteBalanceMode::Relative) {
         return RenderStatus::InvalidArgument;
     }
     if (params.inputType == RenderInputType::Buffer &&
@@ -661,6 +792,15 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
     local.intent = RenderIntent::Final;
     const auto valid = validateRenderParams(local, true);
     if (valid != RenderStatus::Ok) return valid;
+    if (local.inputType == RenderInputType::DisplayBuffer &&
+        local.wbMode == RenderWhiteBalanceMode::Camera &&
+        local.temperature == 6500.0f &&
+        local.tint == 0.0f &&
+        rasterRelativeWbActive_) {
+        local.wbMode = RenderWhiteBalanceMode::Relative;
+        local.temperature = rasterRelativeTemp_;
+        local.tint = rasterRelativeTint_;
+    }
 
     try {
         beginAiOperation("auto_exposure");
@@ -675,7 +815,9 @@ RenderStatus Pipeline::estimateAutoExposure(const RenderParams& params, float& o
         if (status != RenderStatus::Ok) return status;
         if (space == ColorSpace::SonyNative) return RenderStatus::Unsupported;
         RGB wb(1, 1, 1);
-        if (local.wbMode != RenderWhiteBalanceMode::Temperature || (raw && rawDisplayReferred_)) {
+        if (local.wbMode == RenderWhiteBalanceMode::Relative) {
+            wb = hdrRelativeWhiteBalance(local.temperature, local.tint);
+        } else if (local.wbMode != RenderWhiteBalanceMode::Temperature || (raw && rawDisplayReferred_)) {
             const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
             const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
             wb = RGB(
@@ -837,11 +979,13 @@ static void computeEffectiveWbAndExposure(
     RGB& wb,
     float& exposure
 ) {
-    const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
-    const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
     exposure = std::pow(2.0f, local.exposureEV) * local.brightness;
     wb = RGB(1.0f, 1.0f, 1.0f);
-    if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
+    if (local.wbMode == RenderWhiteBalanceMode::Relative) {
+        wb = hdrRelativeWhiteBalance(local.temperature, local.tint);
+    } else if (local.wbMode != RenderWhiteBalanceMode::Temperature || displayInput) {
+        const auto reference = whiteBalanceForTempTint(6500.0f, 0.0f);
+        const auto selected = whiteBalanceForTempTint(local.temperature, local.tint);
         wb = RGB(
             reference.r / std::max(selected.r, 1e-4f),
             reference.g / std::max(selected.g, 1e-4f),
@@ -855,6 +999,203 @@ static void computeEffectiveWbAndExposure(
         local.wbMode == RenderWhiteBalanceMode::Custom) {
         wb.r *= local.wbMul[0] / local.wbMul[1];
         wb.b *= local.wbMul[2] / local.wbMul[1];
+    }
+}
+
+RenderStatus Pipeline::sampleWbProbe(
+    const RenderParams& params,
+    const WbProbeQuery& query,
+    WbProbeResult& outResult
+) {
+    outResult = {};
+    if (query.windowSize != 0 && query.windowSize != 1 && query.windowSize != 3 && query.windowSize != 5) {
+        return RenderStatus::InvalidArgument;
+    }
+    RenderParams local = params;
+    local.outputTarget = RenderOutputTarget::Buffer;
+    local.outputPath.clear();
+    local.intent = RenderIntent::Preview;
+    const RenderStatus valid = validateRenderParams(local, true);
+    if (valid != RenderStatus::Ok) {
+        return valid;
+    }
+    if (!std::isfinite(query.normX) || !std::isfinite(query.normY) ||
+        query.normX < 0.0f || query.normX > 1.0f ||
+        query.normY < 0.0f || query.normY > 1.0f) {
+        outResult.availability = WbProbeAvailability::Outside;
+        return RenderStatus::Ok;
+    }
+    if (local.inputType == RenderInputType::Buffer) {
+        outResult.availability = WbProbeAvailability::Unavailable;
+        return RenderStatus::Ok;
+    }
+    try {
+        const int windowSize = query.windowSize == 0 ? 3 : static_cast<int>(query.windowSize);
+        const int half = windowSize / 2;
+
+        if (local.inputType == RenderInputType::Raw) {
+            if (isNormalX3f(local.inputPath.c_str(), x3fMode_)) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const RenderStatus loadStatus = loadRawForWbProbe(local);
+            if (loadStatus != RenderStatus::Ok) {
+                return loadStatus;
+            }
+            if (!hasCachedRawWb_ || !cachedRawWb_.available() || rawCache_.pixels.empty()) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const auto outSize = geometryOutputSize(rawCache_.width, rawCache_.height, geometry_);
+            const int outW = outSize.first;
+            const int outH = outSize.second;
+            if (outW <= 0 || outH <= 0) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const auto sampler = makeGeometrySampler(rawCache_.width, rawCache_.height, geometry_);
+            const auto reader = [&](int sx, int sy) { return rawCache_.at(sx, sy); };
+            const int cx = static_cast<int>(std::lround(double(query.normX) * (outW - 1)));
+            const int cy = static_cast<int>(std::lround(double(query.normY) * (outH - 1)));
+            const auto adobeToSrgb = ColorConverter::getConversionMatrix(ColorSpace::AdobeRGB, ColorSpace::sRGB);
+            const float invBaseline = 1.0f / std::exp2(cachedBaselineEv_);
+
+            double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+            for (int dy = -half; dy <= half; ++dy) {
+                const int py = cy + dy;
+                if (py < 0 || py >= outH) continue;
+                for (int dx = -half; dx <= half; ++dx) {
+                    const int px = cx + dx;
+                    if (px < 0 || px >= outW) continue;
+                    const RGB adobe = sampler(px, py, reader);
+                    RGB srgb = ColorConverter::applyMatrix(adobe, adobeToSrgb);
+                    srgb.r *= invBaseline;
+                    srgb.g *= invBaseline;
+                    srgb.b *= invBaseline;
+                    if (!std::isfinite(srgb.r) || !std::isfinite(srgb.g) || !std::isfinite(srgb.b) ||
+                        std::max({srgb.r, srgb.g, srgb.b}) >= 0.98f) {
+                        ++outResult.rejectedOverexposedCount;
+                        continue;
+                    }
+                    sumR += srgb.r;
+                    sumG += srgb.g;
+                    sumB += srgb.b;
+                    ++outResult.validPixelCount;
+                }
+            }
+            if (outResult.validPixelCount == 0) {
+                outResult.availability = WbProbeAvailability::Overexposed;
+                return RenderStatus::Ok;
+            }
+            const double count = static_cast<double>(outResult.validPixelCount);
+            const RGB mean(static_cast<float>(sumR / count), static_cast<float>(sumG / count), static_cast<float>(sumB / count));
+            outResult.sampledRgb = {mean.r, mean.g, mean.b};
+
+            ColorConverter::Matrix3x3 invRgbCam{};
+            try {
+                invRgbCam = ColorConverter::invertMatrix(cachedRgbCam_);
+            } catch (...) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            const RGB camWb = ColorConverter::applyMatrix(mean, invRgbCam);
+            const double camRaw[3] = {
+                std::max(1e-6, static_cast<double>(camWb.r) / cachedWbUsed_[0]),
+                std::max(1e-6, static_cast<double>(camWb.g) / cachedWbUsed_[1]),
+                std::max(1e-6, static_cast<double>(camWb.b) / cachedWbUsed_[2])
+            };
+            const std::array<double, 3> neutral = {
+                camRaw[0] / camRaw[1],
+                1.0,
+                camRaw[2] / camRaw[1]
+            };
+            TemperatureTint solved{};
+            if (!cachedRawWb_.solveTemperatureTint(neutral, solved)) {
+                outResult.availability = WbProbeAvailability::Unavailable;
+                return RenderStatus::Ok;
+            }
+            outResult.temperature = static_cast<float>(std::clamp(solved.temperature, 2000.0, 50000.0));
+            outResult.tint = static_cast<float>(std::clamp(solved.tint, -150.0, 150.0));
+            outResult.wbMul = {
+                static_cast<float>(camRaw[1] / camRaw[0]),
+                1.0f,
+                static_cast<float>(camRaw[1] / camRaw[2])
+            };
+            outResult.availability = WbProbeAvailability::Available;
+            return RenderStatus::Ok;
+        }
+
+        // DisplayBuffer (SDR raster)
+        ImageData image;
+        ColorSpace space = ColorSpace::sRGB;
+        bool isLinear = false;
+        RenderStatus status = loadBufferImage(local, image, &space, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        status = ensureLinear(image, space, &isLinear);
+        if (status != RenderStatus::Ok) return status;
+        if (hasDisplayLensMetadata_) {
+            ensureLensDatabase();
+            (void)applyDisplayLensCorrection(image, lensDatabase_,
+                displayLensMetadata_, lensCorrection_, displayLensOrientation_);
+        }
+        const auto outSize = geometryOutputSize(image.width, image.height, geometry_);
+        const int outW = outSize.first;
+        const int outH = outSize.second;
+        if (outW <= 0 || outH <= 0) {
+            outResult.availability = WbProbeAvailability::Unavailable;
+            return RenderStatus::Ok;
+        }
+        const auto sampler = makeGeometrySampler(image.width, image.height, geometry_);
+        const auto reader = [&](int sx, int sy) { return image.at(sx, sy); };
+        const int cx = static_cast<int>(std::lround(double(query.normX) * (outW - 1)));
+        const int cy = static_cast<int>(std::lround(double(query.normY) * (outH - 1)));
+
+        double sumR = 0.0, sumG = 0.0, sumB = 0.0;
+        for (int dy = -half; dy <= half; ++dy) {
+            const int py = cy + dy;
+            if (py < 0 || py >= outH) continue;
+            for (int dx = -half; dx <= half; ++dx) {
+                const int px = cx + dx;
+                if (px < 0 || px >= outW) continue;
+                const RGB srgb = sampler(px, py, reader);
+                if (!std::isfinite(srgb.r) || !std::isfinite(srgb.g) || !std::isfinite(srgb.b) ||
+                    std::max({srgb.r, srgb.g, srgb.b}) >= 0.98f) {
+                    ++outResult.rejectedOverexposedCount;
+                    continue;
+                }
+                sumR += srgb.r;
+                sumG += srgb.g;
+                sumB += srgb.b;
+                ++outResult.validPixelCount;
+            }
+        }
+        if (outResult.validPixelCount == 0) {
+            outResult.availability = WbProbeAvailability::Overexposed;
+            return RenderStatus::Ok;
+        }
+        const double count = static_cast<double>(outResult.validPixelCount);
+        const RGB mean(static_cast<float>(sumR / count), static_cast<float>(sumG / count), static_cast<float>(sumB / count));
+        outResult.sampledRgb = {mean.r, mean.g, mean.b};
+
+        constexpr double eps = 1e-5;
+        const double r = std::max<double>(mean.r, eps);
+        const double g = std::max<double>(mean.g, eps);
+        const double b = std::max<double>(mean.b, eps);
+        const double m = std::clamp(std::log2(b / r), -2.25, 0.87);
+        const double temp = std::clamp(6500.0 / (1.0 - m), 2000.0, 50000.0);
+        const double tint = std::clamp(600.0 * std::log2(g / std::sqrt(r * b)), -150.0, 150.0);
+        const RGB gain = hdrRelativeWhiteBalance(static_cast<float>(temp), static_cast<float>(tint));
+        outResult.temperature = static_cast<float>(temp);
+        outResult.tint = static_cast<float>(tint);
+        outResult.wbMul = {gain.r / gain.g, 1.0f, gain.b / gain.g};
+        outResult.availability = WbProbeAvailability::Available;
+        return RenderStatus::Ok;
+    } catch (const ProcessingCancelled&) {
+        return RenderStatus::Cancelled;
+    } catch (const std::bad_alloc&) {
+        return RenderStatus::OutOfMemory;
+    } catch (...) {
+        return RenderStatus::ProcessingError;
     }
 }
 
@@ -1108,6 +1449,11 @@ RenderStatus Pipeline::processPreviewRoi(
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
     local.customCurve = toneCurve_;
+    local.channelCurves = channelCurves_;
+    local.curveApplyToLuminosity = curveApplyToLuminosity_;
+    local.parametricCurve = parametricCurve_;
+    local.aiDenoiseBlend = aiDenoiseBlend_;
+    local.outputSharpening = outputSharpening_;
 
     ColorConverter converter;
     converter.convertImage(image, colorSpace, ColorSpace::sRGB);
@@ -1168,7 +1514,8 @@ RenderStatus Pipeline::processImpl(
     OwnedPixelBuffer* outBuffer,
     ImageData* preHsl,
     std::shared_ptr<LUT3D> previewLut,
-    MigrationFrame* migrationFrame
+    MigrationFrame* migrationFrame,
+    ImageData* outImage
 ) {
     x3fError_.clear();
     unsupportedReason_ = UnsupportedReason::None;
@@ -1178,7 +1525,7 @@ RenderStatus Pipeline::processImpl(
     geometryWidth_ = geometryHeight_ = 0;
     viewportRoiResult_ = {};
 
-    RenderStatus status = validateRenderParams(params, outBuffer != nullptr);
+    RenderStatus status = validateRenderParams(params, outBuffer != nullptr || outImage != nullptr);
     if (status != RenderStatus::Ok) return status;
 
     status = validateRenderParamsSize(params);
@@ -1188,6 +1535,15 @@ RenderStatus Pipeline::processImpl(
     if (status != RenderStatus::Ok) return status;
 
     RenderParams local = params;
+    if (local.inputType == RenderInputType::DisplayBuffer &&
+        local.wbMode == RenderWhiteBalanceMode::Camera &&
+        local.temperature == 6500.0f &&
+        local.tint == 0.0f &&
+        rasterRelativeWbActive_) {
+        local.wbMode = RenderWhiteBalanceMode::Relative;
+        local.temperature = rasterRelativeTemp_;
+        local.tint = rasterRelativeTint_;
+    }
     if (toneCurve_.custom() && local.toneCurve != 0.0f) return RenderStatus::InvalidArgument;
     const bool cpuAnalysis = preHsl != nullptr;
     const auto effectiveGpuMode = cpuAnalysis ? GpuMode::Off : gpuConfig_.mode;
@@ -1252,12 +1608,16 @@ RenderStatus Pipeline::processImpl(
         return RenderStatus::Unsupported;
     }
     bool viewportPreview = viewportPreview_ && previewToBuffer && !roiActive;
+    const bool channelCurvesUnsupported = std::any_of(channelCurves_.begin(), channelCurves_.end(),
+        [](const auto& curve) { return !curve.gpuSupported(); });
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    const bool curvesGpuUnsupported = !toneCurve_.gpuSupported() || channelCurvesUnsupported;
+    const bool cpuOnlyStages = atmosphereActive || curvesGpuUnsupported;
+#else
     const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
         [](const auto& curve) { return curve.active(); });
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool cpuOnlyStages = atmosphereActive || channelCurvesActive || !toneCurve_.gpuSupported();
-#else
-    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || channelCurvesActive ||
+    const bool curvesGpuUnsupported = channelCurvesActive || !toneCurve_.gpuSupported();
+    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || curvesGpuUnsupported ||
         toneCurve_.active() || colorGradingActive || toneControlsActive || hslActive ||
         effectsActive || waveletActive || chromaMode != 0;
 #endif
@@ -1270,7 +1630,7 @@ RenderStatus Pipeline::processImpl(
 #if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
         if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
 #endif
-        if (channelCurvesActive || !toneCurve_.gpuSupported()) return GpuFallbackReason::Curves;
+        if (curvesGpuUnsupported) return GpuFallbackReason::Curves;
         if (c5Wavelet) return GpuFallbackReason::C5Wavelet;
         return GpuFallbackReason::GpuDisabled;
     };
@@ -1694,6 +2054,11 @@ RenderStatus Pipeline::processImpl(
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
     local.customCurve = toneCurve_;
+    local.channelCurves = channelCurves_;
+    local.curveApplyToLuminosity = curveApplyToLuminosity_;
+    local.parametricCurve = parametricCurve_;
+    local.aiDenoiseBlend = aiDenoiseBlend_;
+    local.outputSharpening = outputSharpening_;
     local.basicV3 = basicV3;
     local.basicTone = basicV3 ? basicTone : BasicToneV3{};
 
@@ -1756,7 +2121,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::Metal;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1795,7 +2160,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::Gles;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1829,7 +2194,7 @@ RenderStatus Pipeline::processImpl(
             lastBackend_ = RenderBackend::D3d11;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
         }
         gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
         gpuErrorDetail_ = outcome.message;
@@ -1905,7 +2270,7 @@ RenderStatus Pipeline::processImpl(
     checkProcessingCancellation();
     applyPhotoEffects(image, photoEffects_);
 
-    return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame);
+    return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
 }
 
 } // namespace sony2fuji

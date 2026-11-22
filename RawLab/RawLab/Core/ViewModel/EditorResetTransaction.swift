@@ -168,7 +168,7 @@ extension RawEditorViewModel {
             switch scope {
             case .tool(let tool): belongs = tool == draft.tool
             case .hslChannel, .allHSL: belongs = draft.tool == .adjustment(.hsl)
-            case .gradingZone, .allGrading: belongs = draft.tool == .adjustment(.colorGrading)
+            case .gradingZone, .gradingGlobal, .allGrading: belongs = draft.tool == .adjustment(.colorGrading)
             case .group(.geometry): belongs = draft.tool == .geometry || draft.tool == .lens
             default: belongs = false
             }

@@ -44,6 +44,7 @@ import com.rawlab.android.batch.BatchRowStatus
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.ExportSizeChoice
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.BundledLooks
 import com.rawlab.android.looks.MasterRecipe
@@ -53,6 +54,7 @@ import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.Film
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
+import com.rawlab.android.ui.OutputSharpeningControls
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +76,7 @@ fun BatchExportScreen(
         mutableStateOf(if (state.job.outputLongEdge != null && exportSizeChoice(state.job.outputLongEdge) == ExportSizeChoice.CUSTOM)
             state.job.outputLongEdge.toString() else "")
     }
+    var outputSharpening by rememberSaveable(state.job.id) { mutableStateOf(state.job.effectiveOutputSharpening) }
     var destination by rememberSaveable(state.job.id) { mutableStateOf<Uri?>(state.job.destination?.let(Uri::parse)) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.addUris(it) }
     val directory = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -109,12 +112,20 @@ fun BatchExportScreen(
                 BatchPhase.SELECTING -> if (state.job.settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
                     FrozenBatchContent(state, { effectTarget = it }, model::continueUnfinished, { discard = true })
                 else BatchConfirmContent(state, storage, format, destination,
-                    ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize,
+                    ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize, outputSharpening,
                     onAlbum = { album = true }, onFiles = { files.launch(arrayOf("*/*")) },
                     onDirectory = { directory.launch(null) }, onAlbumOutput = { destination = null; model.setDestination(null) }, onFormat = { format = it },
                     onSize = { choice -> exportSizeKey = choice.key }, onCustomSize = { exportCustomSize = it },
+                    onOutputSharpening = { outputSharpening = it },
                     onRemove = model::remove, onInspect = { effectTarget = it },
-                    onStart = { model.start(format, destination, ExportSize.parse(ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize)) })
+                    onStart = {
+                        model.start(
+                            format,
+                            destination,
+                            ExportSize.parse(ExportSizeChoice.fromKey(exportSizeKey), exportCustomSize),
+                            if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening,
+                        )
+                    })
                 BatchPhase.PREPARING, BatchPhase.RUNNING -> BatchProgressContent(state, model::cancel)
                 BatchPhase.COMPLETE, BatchPhase.CANCELLED, BatchPhase.FAILED -> BatchResultContent(state,
                     onRetry = model::retryFailed, onContinue = model::continueUnfinished, onClose = onBack, onDirectory = { directory.launch(state.destination) },
@@ -154,6 +165,7 @@ private fun BatchConfirmContent(
     destination: Uri?,
     sizeChoice: ExportSizeChoice,
     customSize: String,
+    outputSharpening: OutputSharpening,
     onAlbum: () -> Unit,
     onFiles: () -> Unit,
     onDirectory: () -> Unit,
@@ -161,6 +173,7 @@ private fun BatchConfirmContent(
     onFormat: (ExportFormat) -> Unit,
     onSize: (ExportSizeChoice) -> Unit,
     onCustomSize: (String) -> Unit,
+    onOutputSharpening: (OutputSharpening) -> Unit,
     onRemove: (String) -> Unit,
     onInspect: (BatchRow) -> Unit,
     onStart: () -> Unit,
@@ -235,6 +248,12 @@ private fun BatchConfirmContent(
                 onSelected = onSize,
                 onCustomText = onCustomSize,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            OutputSharpeningControls(
+                selected = outputSharpening,
+                onSelected = onOutputSharpening,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                enabled = format != ExportFormat.DNG,
             )
             Text(destination?.lastPathSegment ?: if (format.allowsGallery) AppStrings.text(R.string.message_photo_gallery)
                 else AppStrings.text(R.string.message_choose_directory),

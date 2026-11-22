@@ -244,8 +244,8 @@ public static class AdjustmentTransfer
         }
         if(p.Source.IsHDR) {
             if(p.Fields.Any(field=>field.IsHDRRelative()))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.relative_white_balance");
-            if(p.Fields.Overlaps(AdjustmentFields.HDRTone))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.tone");
-            if(p.Fields.Overlaps(AdjustmentFields.HDRColor))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.color");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRTone) || p.Fields.Overlaps(AdjustmentFields.HDRV9ToneExtensions))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.tone");
+            if(p.Fields.Overlaps(AdjustmentFields.HDRColor) || p.Fields.Overlaps(AdjustmentFields.HDRV9ColorExtensions))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.color");
             if(p.Fields.Overlaps(AdjustmentFields.HDRRendition))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.rendition");
             if(p.Fields.Overlaps(AdjustmentFields.HDREffects))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.effects");
             if(p.Fields.Overlaps(AdjustmentFields.HDRDetail))throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.detail");

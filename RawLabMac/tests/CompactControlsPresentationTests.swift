@@ -308,6 +308,7 @@ struct CompactControlsPresentationTests {
             grading.midtones = ColorGradingWheel(hue: 110.125, saturation: 32.375)
             snapshots.append(try await snapshot(ScrollView {
                 MacColorGradingControls(settings: .constant(grading), zone: .constant(.shadows),
+                    globalSelected: .constant(false),
                     source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
                     .padding(16)
             }.background(Color(nsColor: .windowBackgroundColor)), name: "grading-wide", language: language,

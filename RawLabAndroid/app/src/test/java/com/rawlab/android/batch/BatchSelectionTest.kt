@@ -1,7 +1,9 @@
 package com.rawlab.android.batch
 
 import com.rawlab.android.batch.journal.BatchJournal
+import com.rawlab.android.batch.journal.JournalCodec
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.*
 import kotlinx.coroutines.*
@@ -291,6 +293,43 @@ class BatchSelectionTest {
             assertTrue(error is IllegalStateException && error.message == "Photo source changed")
             assertEquals("Failed freeze must discard partial job folder",
                 emptyList<String>(), batchDir.list()?.toList().orEmpty())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun batchOutputSharpeningPersistsInJournalAndDngForcesOff() {
+        val root = Files.createTempDirectory("batch-sharpening").toFile()
+        try {
+            val batchDir = File(root, "batch").apply { mkdirs() }
+            val source = File(root, "a.dng").apply { writeBytes(ByteArray(32) { 3 }) }
+            val target = BatchTarget(PhotoIdentity("a"), source, "a.dng", inputKind = PhotoInputKind.RAW)
+            val selection = BatchSelectionState().append(listOf(target))
+            val store = EditStore(File(root, "edits"))
+            val exporter = BatchSelectionExport(
+                directory = batchDir,
+                readRecord = store::readState,
+                resolveLook = { null },
+            )
+            val jpegReview = exporter.prepare(
+                selection, emptySet(), ExportFormat.JPEG, 2048, null, OutputSharpening.HIGH
+            ) {}
+            assertTrue(jpegReview.ready)
+            assertEquals(OutputSharpening.HIGH, jpegReview.outputSharpening)
+            val jpegJob = exporter.freeze(selection, jpegReview) {}
+            assertEquals(OutputSharpening.HIGH, jpegJob.effectiveOutputSharpening)
+            assertEquals(OutputSharpening.HIGH, jpegJob.outputSharpeningFor(jpegJob.targets.single()))
+
+            val props = JournalCodec.snapshot(jpegJob, "gen-1")
+            val decoded = JournalCodec.readSnapshot(jpegJob.id, props)
+            assertEquals(OutputSharpening.HIGH, decoded.effectiveOutputSharpening)
+            assertEquals(OutputSharpening.HIGH, decoded.outputSharpeningFor(decoded.targets.single()))
+
+            val dngReview = exporter.prepare(
+                selection, emptySet(), ExportFormat.DNG, 2048, "/out", OutputSharpening.STANDARD
+            ) {}
+            assertEquals(OutputSharpening.OFF, dngReview.outputSharpening)
+            val dngJob = exporter.freeze(selection, dngReview) {}
+            assertEquals(OutputSharpening.OFF, dngJob.effectiveOutputSharpening)
+            assertEquals(OutputSharpening.OFF, dngJob.outputSharpeningFor(dngJob.targets.single()))
         } finally { root.deleteRecursively() }
     }
 

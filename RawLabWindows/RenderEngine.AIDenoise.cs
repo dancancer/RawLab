@@ -50,7 +50,7 @@ internal sealed partial class RenderEngine
         if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         if(!GetAIDevices().IsAvailable(deviceID))throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
     }
-    private void ConfigureAI(bool enabled)
+    private void ConfigureAI(bool enabled, double blend = 100.0)
     {
         if(enabled && (!AIAvailable || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json"))))
             throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
@@ -60,6 +60,8 @@ internal sealed partial class RenderEngine
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
             ModelDirectory=aiModelDirectory,CacheDirectory=aiCacheDirectory};
         CheckAI(Native.sony2fuji_session_set_ai_denoise(session,ref config));
+        var normalized = enabled ? (float)Math.Clamp(blend / 100.0, 0.0, 1.0) : 1.0f;
+        CheckAI(Native.sony2fuji_session_set_ai_denoise_blend(session, normalized));
         if(enabled)CheckAI(Native.sony2fuji_session_set_ai_device(session,aiDeviceID));
     }
     private void CheckAI(int status)

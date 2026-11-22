@@ -1,7 +1,7 @@
 """Contract for the shared persisted editing-record golden fixture (P2-01 / S1).
 
 Pins:
-1. Full 83-field coverage anchored to Shared/specs/adjustment-fields-v1.json.
+1. Full 89-field coverage anchored to Shared/specs/adjustment-fields-v1.json.
 2. X1 read-side unknown-field scenarios, cross-version compatibility, and boundary rejections.
 3. Monotonically non-increasing per-platform divergence ledgers with non-blank ledgerId and reason.
 4. Explicit CI inclusion in scripts/ci/apple-models.sh and RawLabWindows/tests/editing/EditWorkflowTests.cs
@@ -270,11 +270,11 @@ class EditRecordFixtureContracts(unittest.TestCase):
             all_ids.extend(f"roundtrip:{i}" if section == "roundtrip_records" else i for i in ids)
         self.assertEqual(len(all_ids), len(set(all_ids)), "scenario ids must be globally unique")
 
-    def test_roundtrip_records_cover_all_83_spec_fields_without_drift(self):
-        self.assertEqual(len(self.spec_fields), 83, "expected 83 fields in adjustment-fields-v1.json")
+    def test_roundtrip_records_cover_all_spec_fields_without_drift(self):
+        self.assertEqual(len(self.spec_fields), 89, "expected 89 fields in adjustment-fields-v1.json")
         covered_any = set()
         covered_hdr = set()
-        covered_local_true = set()
+        covered_local_active = set()
         for rec in self.document["roundtrip_records"]:
             for bag_name in ("sdr_values", "hdr_values", "dormant_hdr_values", "local_values"):
                 bag = rec.get(bag_name) or {}
@@ -285,17 +285,27 @@ class EditRecordFixtureContracts(unittest.TestCase):
                     covered_hdr |= set(bag)
             local = rec.get("local_values") or {}
             for k, v in local.items():
-                if v is True:
-                    covered_local_true.add(k)
+                row = self.spec_fields.get(k)
+                if not row:
+                    continue
+                if row["protocol"]["value_type"] == "bool" and v is True:
+                    covered_local_active.add(k)
+                elif row["protocol"]["value_type"] != "bool":
+                    default_val = next(
+                        (m["default"] for m in row["model"].values() if m.get("supported") and m.get("default") is not None),
+                        None,
+                    )
+                    if v is not None and v != default_val:
+                        covered_local_active.add(k)
 
-        self.assertEqual(covered_any, set(self.spec_fields), "roundtrip_records must cover all 83 spec fields")
+        self.assertEqual(covered_any, set(self.spec_fields), "roundtrip_records must cover all 89 spec fields")
         hdr_only_transferable = {
             fid for fid, row in self.spec_fields.items()
             if row["protocol"]["transferable"] and row["protocol"].get("hdr_only")
         }
         self.assertLessEqual(hdr_only_transferable, covered_hdr, "active hdr_values must cover all transferable hdr_only fields")
         local_only = {fid for fid, row in self.spec_fields.items() if not row["protocol"]["transferable"]}
-        self.assertEqual(covered_local_true, local_only, "local_only fields must be exercised with true in roundtrip_records")
+        self.assertEqual(covered_local_active, local_only, "local_only fields must be exercised with non-default active values in roundtrip_records")
 
     def test_hdr_camera_ai_record_respects_mutual_exclusion(self):
         by_id = {r["id"]: r for r in self.document["roundtrip_records"]}

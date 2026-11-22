@@ -15,7 +15,8 @@ import com.rawlab.android.settings.*
 data class HslTargetActions(val state: HslTargetState = HslTargetState(),
     val enabled: (Boolean) -> Unit = {}, val axis: (Int) -> Unit = {},
     val begin: (Float, Float) -> Unit = { _, _ -> }, val move: (Float) -> Unit = {},
-    val end: () -> Unit = {}, val cancel: () -> Unit = {}, val key: (Float) -> Unit = {}, val reject: () -> Unit = {}) {
+    val end: () -> Unit = {}, val cancel: () -> Unit = {}, val key: (Float) -> Unit = {}, val reject: () -> Unit = {},
+    val curveChannel: (ToneCurveChannel) -> Unit = {}) {
     fun guarded(current: () -> Boolean) = copy(
         begin = { x, y -> if (current()) begin(x, y) }, move = { if (current()) move(it) },
         end = { if (current()) end() }, cancel = { if (current()) cancel() },
@@ -59,11 +60,20 @@ internal fun HslTargetControls(target: HslTargetActions, enabled: Boolean) {
 
 @Composable
 internal fun HslTargetCanvasControls(target: HslTargetActions, modifier: Modifier = Modifier) {
-    val axis = listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)[target.state.axis]
+    val label = if (target.state.curveMode) {
+        when (target.state.curveChannel) {
+            ToneCurveChannel.RGB -> "RGB"
+            ToneCurveChannel.RED -> stringResource(R.string.hsl_red)
+            ToneCurveChannel.GREEN -> stringResource(R.string.hsl_green)
+            ToneCurveChannel.BLUE -> stringResource(R.string.hsl_blue)
+        }
+    } else {
+        stringResource(listOf(R.string.hsl_hue, R.string.saturation, R.string.hsl_lightness)[target.state.axis])
+    }
     Surface(modifier.widthIn(max = 560.dp).testTag("hsl-target-canvas"), shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface.copy(alpha = .95f)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.hsl_target_active, stringResource(axis)), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.hsl_target_active, label), style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = { target.enabled(false) }, modifier = Modifier.heightIn(min = 48.dp).testTag("hsl-target-exit")) {
                 Text(stringResource(R.string.hsl_target_exit))
             }

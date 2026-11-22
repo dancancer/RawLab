@@ -15,6 +15,7 @@ extern "C" {
 #define SONY2FUJI_HDR_PROCESSING_DETAIL_VERSION 6u
 #define SONY2FUJI_HDR_PROCESSING_LOOK_VERSION 7u
 #define SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION 8u
+#define SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION 9u
 
 // 独立枚举；不重解释旧 request v2 的 pixel_format/input_type。
 enum {
@@ -209,6 +210,17 @@ typedef struct sony2fuji_hdr_request_v8 {
     sony2fuji_hdr_request_v7 base;
     sony2fuji_tone_curve_config channels[3]; // red, green, blue
 } sony2fuji_hdr_request_v8;
+
+// Processing version 9: Tone Curve v2 (free y0/y1, luminosity mode, parametric),
+// Color Grading v2 (per-zone luminance, global wheel, blending, balance) and output sharpening.
+// grading_v2 supersedes base...grading when hdr_processing_version >= 9.
+typedef struct sony2fuji_hdr_request_v9 {
+    sony2fuji_hdr_request_v8 base;
+    int32_t curve_apply_to_luminosity; // 0 = RGB (default), 1 = Luminosity
+    uint32_t output_sharpening;        // sony2fuji_output_sharpening (0 = off)
+    sony2fuji_tone_curve_parametric_config parametric_curve;
+    sony2fuji_color_grading_v2_config grading_v2;
+} sony2fuji_hdr_request_v9;
 
 typedef struct sony2fuji_hdr_look_info_v1 {
     uint32_t version, struct_size, grid_size, reserved;

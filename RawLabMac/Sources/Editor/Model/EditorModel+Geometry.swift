@@ -199,6 +199,9 @@ extension EditorModel {
         if geometryDraftSaveFailed { saveError = geometryDraftEntrySaveError }
         result = geometryDraftEntryResult; neutral = geometryDraftEntryNeutral
         endGeometryDraft(); schedule(forceExact: true)
+        if !hasUnsavedManualDraft {
+            handleExternalEditsFileChange()
+        }
     }
 
     private func endGeometryDraft() {

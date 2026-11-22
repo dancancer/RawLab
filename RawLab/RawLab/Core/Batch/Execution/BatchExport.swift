@@ -136,7 +136,16 @@ final class BatchExportModel: ObservableObject {
     func setFormat(_ format: BatchOutputFormat) {
         guard canChangeTargets else { return }
         job.outputFormat = format
+        if format == .renderedDNG {
+            job.outputSharpening = nil
+        }
         job.targets = OutputNameAllocator.assignUniqueNames(job.targets, suffix: format.suffix)
+        saveJournal()
+    }
+
+    func setOutputSharpening(_ level: OutputSharpening) {
+        guard canChangeTargets, job.outputFormat != .renderedDNG else { return }
+        job.outputSharpening = level == .off ? nil : level
         saveJournal()
     }
 
@@ -237,7 +246,7 @@ final class BatchExportModel: ObservableObject {
         defer { if !published { for url in owned { try? FileManager.default.removeItem(at:url) } } }
         for index in result.targets.indices {
             if isCancellationRequested { throw CancellationError() }
-            let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge)
+            let prepared=try hdrPreparation.prepare(result.targets[index],ordinal:index,format:draft.outputFormat,longEdge:draft.longEdge,outputSharpening:draft.effectiveOutputSharpening)
             var frozen=prepared
             if let original=prepared.lookURL {
                 let folder=try BatchInputStore.directory(for:draft.id,root:journal.directory).deletingLastPathComponent()
@@ -308,7 +317,8 @@ final class BatchExportModel: ObservableObject {
                         render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
                                                    look: snapshot.look(for: target),
-                                                   longEdge: snapshot.longEdge(for: target),format:snapshot.outputFormat)
+                                                   longEdge: snapshot.longEdge(for: target), format: snapshot.outputFormat,
+                                                   outputSharpening: target.frozen?.effectiveOutputSharpening ?? snapshot.effectiveOutputSharpening)
                         },
                         write: jpegWriter,
                         shouldCancel: { self.isCancellationRequested },
@@ -324,7 +334,8 @@ final class BatchExportModel: ObservableObject {
                         render: { target, resolvedSettings in
                             return try self.render(target: target, settings: resolvedSettings,
                                                    look: snapshot.look(for: target),
-                                                   longEdge: snapshot.longEdge(for: target),format:snapshot.outputFormat)
+                                                   longEdge: snapshot.longEdge(for: target), format: snapshot.outputFormat,
+                                                   outputSharpening: target.frozen?.effectiveOutputSharpening ?? snapshot.effectiveOutputSharpening)
                         },
                         write: { data, name, target, checkpoint in
                             try PhotoLibraryBatchWriter.write(data: data, outputName: name,

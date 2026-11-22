@@ -18,6 +18,23 @@ extension ToneCurveShape {
     }
 }
 
+extension ToneCurveParametric {
+    var nativeConfig: sony2fuji_tone_curve_parametric_config {
+        var config = sony2fuji_tone_curve_parametric_config()
+        config.version = UInt32(SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_tone_curve_parametric_config>.size)
+        config.highlights = Float(highlights)
+        config.lights = Float(lights)
+        config.darks = Float(darks)
+        config.shadows = Float(shadows)
+        config.split_shadow = Float(splitShadow)
+        config.split_midtone = Float(splitMidtone)
+        config.split_highlight = Float(splitHighlight)
+        config.reserved = 0
+        return config
+    }
+}
+
 extension ToneCurveSettings {
     var nativeConfig: sony2fuji_tone_curve_config { master.nativeConfig }
     var nativeSetConfig: sony2fuji_tone_curve_set_config {
@@ -28,6 +45,19 @@ extension ToneCurveSettings {
             let curves = bytes.bindMemory(to: sony2fuji_tone_curve_config.self)
             for (index, channel) in ToneCurveChannel.allCases.enumerated() { curves[index] = shape(channel).nativeConfig }
         }
+        return config
+    }
+    var nativeSetV2Config: sony2fuji_tone_curve_set_v2_config {
+        var config = sony2fuji_tone_curve_set_v2_config()
+        config.version = UInt32(SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION)
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_tone_curve_set_v2_config>.size)
+        config.apply_to_luminosity = applyToLuminosity ? 1 : 0
+        config.reserved = 0
+        withUnsafeMutableBytes(of: &config.curves) { bytes in
+            let curves = bytes.bindMemory(to: sony2fuji_tone_curve_config.self)
+            for (index, channel) in ToneCurveChannel.allCases.enumerated() { curves[index] = shape(channel).nativeConfig }
+        }
+        config.parametric = parametric.nativeConfig
         return config
     }
 }

@@ -181,11 +181,29 @@ public enum IOSAdjustmentTransfer {
         let refinements = try AdjustmentTransferRefinement.applying(payload,
             original: AdjustmentTransferRefinement.values(curve: target.settings.curveSettings, grading: target.settings.gradingSettings),
             previousScale: target.settings.refinementScale, targetScale: result.refinementScale, fullRecipe: fullRecipe)
-        result.curveSettings = refinements[.curve]!.curve!
+        if let updatedCurve = refinements[.curve]?.curve {
+            result.curveSettings.master = updatedCurve.master
+            result.curveSettings.channels = updatedCurve.channels
+        }
+        if let applyToLuminosity = payload[.curveApplyToLuminosity]?.boolean {
+            result.curveSettings.applyToLuminosity = applyToLuminosity
+        }
+        if let parametric = refinements[.curveParametric]?.parametricCurve {
+            result.curveSettings.parametric = parametric
+        }
         for field in Field.refinementObjects {
-            if let zone = field.gradingZone, let wheel = refinements[field]?.object {
-                result.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            if let zone = field.gradingZone, let wheel = refinements[field]?.gradingWheel {
+                result.gradingSettings[zone] = wheel
             }
+        }
+        if let global = payload[.gradingGlobal]?.gradingWheel {
+            result.gradingSettings.global = global
+        }
+        if let blending = payload[.gradingBlending]?.number {
+            result.gradingSettings.blending = blending
+        }
+        if let balance = payload[.gradingBalance]?.number {
+            result.gradingSettings.balance = balance
         }
         if context.isRaw, !selected.contains(.postRGBDenoise), target.settings.denoise.enabled != result.denoise.enabled,
            target.settings.noiseReduction != 0 {
@@ -276,6 +294,8 @@ public enum IOSAdjustmentTransfer {
     public static func values(_ settings: RawSettings, context: IOSAdjustmentTransferContext) -> [String: Value] {
         var result = [String: Value]()
         result[Field.curve.rawValue] = settings.curveSettings.transferValue
+        result[Field.curveApplyToLuminosity.rawValue] = .boolean(settings.curveSettings.applyToLuminosity)
+        result[Field.curveParametric.rawValue] = settings.curveSettings.parametric.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(settings[keyPath: key]) }
         result[Field.strength.rawValue] = .number(Double(settings.clampedLUTStrength))
         let look: [String: Value]
@@ -289,9 +309,10 @@ public enum IOSAdjustmentTransfer {
         result[Field.look.rawValue] = .object(look)
         result[Field.exposureMode.rawValue] = .string(!context.isRaw ? "sensor" : settings.exposureMode == .scene ? "scene" : settings.exposureMode == .preview ? "preview" : "sensor")
         let camera = !context.isRaw || settings.whiteBalanceMode == .camera
-        result[Field.whiteBalanceMode.rawValue] = .string(!context.isRaw ? "none" : camera ? "camera" : "temperature")
-        result[Field.temperature.rawValue] = camera ? .null : .number(settings.temperature)
-        result[Field.tint.rawValue] = settings.masterRecipeID != nil ? .number(settings.tint) : camera ? .null : .number(settings.tint)
+        let rasterRelative = !context.isRaw && settings.masterRecipeID == nil && (settings.temperature != 6500 || settings.tint != 0)
+        result[Field.whiteBalanceMode.rawValue] = .string(!context.isRaw ? (rasterRelative ? "relative" : "none") : camera ? "camera" : "temperature")
+        result[Field.temperature.rawValue] = rasterRelative ? .number(settings.temperature) : camera ? .null : .number(settings.temperature)
+        result[Field.tint.rawValue] = settings.masterRecipeID != nil ? .number(settings.tint) : rasterRelative ? .number(settings.tint) : camera ? .null : .number(settings.tint)
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hsl.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
@@ -299,10 +320,12 @@ public enum IOSAdjustmentTransfer {
         }
         for field in Field.allCases {
             if let zone = field.gradingZone {
-                let wheel = settings.gradingSettings[zone]
-                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
+                result[field.rawValue] = settings.gradingSettings[zone].transferValue
             }
         }
+        result[Field.gradingGlobal.rawValue] = settings.gradingSettings.global.transferValue
+        result[Field.gradingBlending.rawValue] = .number(settings.gradingSettings.blending)
+        result[Field.gradingBalance.rawValue] = .number(settings.gradingSettings.balance)
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.photoEffects[keyPath: key]) }
         result[Field.rawDenoise.rawValue] = .number(0)
         result[Field.postRGBDenoise.rawValue] = .number(context.isRaw ? settings.noiseReduction : 0)
@@ -442,6 +465,18 @@ public enum IOSAdjustmentTransfer {
             && selected.allSatisfy({ payload[$0] == previousValues[$0.rawValue] }) { return }
         if selected == Field.whiteBalanceFields {
             let mode = payload[.whiteBalanceMode]!.string!
+            if !context.isRaw && !payload.source.isRaw {
+                if mode == "relative", let temp = payload[.temperature]?.number, let tint = payload[.tint]?.number {
+                    result.whiteBalanceMode = .camera
+                    result.temperature = temp
+                    result.tint = tint
+                } else {
+                    result.whiteBalanceMode = .camera
+                    result.temperature = 6500
+                    result.tint = 0
+                }
+                return
+            }
             let balance: [String: Value] = ["mode": .string(mode == "none" && payload.source.recipe != nil ? "camera" : mode),
                 "temperature": payload[.temperature]!, "tint": .number(payload[.tint]?.number ?? 0),
                 "tint_mode": .string(payload.source.recipe != nil || mode == "camera" ? "camera_offset" : "absolute")]
@@ -455,7 +490,22 @@ public enum IOSAdjustmentTransfer {
             } else if context.isRaw { try applyResolvedWB(desired, to: &result, context: context) }
             return
         }
-        guard context.isRaw else { return }
+        if !context.isRaw {
+            guard !payload.source.isRaw else { return }
+            let selectedMode = payload[.whiteBalanceMode]?.string
+            if selectedMode == "none" {
+                if payload[.temperature]?.number != nil || payload[.tint]?.number != nil {
+                    throw AdjustmentTransferError.incompatible("select white balance mode with temperature/tint")
+                }
+                result.whiteBalanceMode = .camera
+                result.temperature = 6500
+                result.tint = 0
+                return
+            }
+            if let temp = payload[.temperature]?.number { result.whiteBalanceMode = .camera; result.temperature = temp }
+            if let tint = payload[.tint]?.number { result.whiteBalanceMode = .camera; result.tint = tint }
+            return
+        }
         let selectedMode = payload[.whiteBalanceMode]?.string
         let cameraMode = selectedMode.map { $0 != "temperature" } ?? (target.whiteBalanceMode == .camera)
         let temperature = payload[.temperature], tint = payload[.tint]

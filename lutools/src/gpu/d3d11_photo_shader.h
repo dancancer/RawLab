@@ -4,7 +4,7 @@
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
 namespace sony2fuji {
-inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + kToneCurveShader + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
+inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + toneCurveShader("float3") + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
     uint4 control; // stage, HSL active, use LUT, LUT size
@@ -19,7 +19,13 @@ cbuffer Params : register(b0) {
     float4 hslHue[2], hslSaturation[2], hslLightness[2];
     float4 toneControls;
     float4 colorGrading[3];
-    float4 curveRanges[32], curveTangents[32];
+    float4 curveRanges[128], curveTangents[128];
+    uint4 curveCounts; // master, R, G, B
+    uint4 curveFlags;  // applyToLuminosity, parametricActive, 0, 0
+    float4 parametricAmps;
+    float4 parametricSplits;
+    float4 colorGradingGlobal;
+    float4 colorGradingMix;
     uint4 band; // source row, destination row, output rows, reserved
     uint4 basicV3; // basicV3, basicToneActive, fieldWidth, fieldHeight
     float4 basicTone; // highlights, shadows, reserved, reserved
@@ -52,13 +58,24 @@ float curve(float x) {
     if(x<=.75)return lerp(p.y,p.z,(x-.5)*4);
     return lerp(p.z,1,(x-.75)*4);
 }
-float customToneCurve(float x) {
-    if (x <= 0.0) return 0.0;
-    if (x >= 1.0) return 1.0;
-    uint i = 0;
-    while (i + 1 < uint(detail.w) && x > curveRanges[i].y) ++i;
-    float4 r = curveRanges[i];
-    return pchipSegment(x, r.x, r.y, r.z, r.w, curveTangents[i].x, curveTangents[i].y);
+float customToneCurve(float x, uint count, uint base) {
+    if (count == 0u) return x;
+    if (x <= 0.0) return curveRanges[base].z;
+    if (x >= 1.0) return curveRanges[base + count - 1u].w;
+    uint i = 0u;
+    while (i + 1u < count && x > curveRanges[base + i].y) ++i;
+    float4 r = curveRanges[base + i];
+    float4 t = curveTangents[base + i];
+    return pchipSegment(x, r.x, r.y, r.z, r.w, t.x, t.y);
+}
+float evalMasterTone(float x) {
+    if (curveFlags.y != 0u) {
+        x = tcParametric(x, parametricAmps.x, parametricAmps.y, parametricAmps.z, parametricAmps.w,
+            parametricSplits.x, parametricSplits.y, parametricSplits.z);
+    }
+    if (curveCounts.x != 0u) return customToneCurve(x, curveCounts.x, 0u);
+    if (detail.x != 0.0) return curve(x);
+    return x;
 }
 float3 applyHsl(float3 pixel) {
     if (control.y == 0) return pixel;
@@ -135,8 +152,22 @@ float3 evaluate(float3 inputColor, uint2 coord, uint2 coordSize) {
     if(basicV3.x==0) {
         pixel=hsApplyHighlightsShadows(pixel,tone.z,tone.w);
     }
-    if(detail.w!=0)pixel=float3(customToneCurve(pixel.r),customToneCurve(pixel.g),customToneCurve(pixel.b));
-    else if(detail.x!=0)pixel=float3(curve(pixel.r),curve(pixel.g),curve(pixel.b));
+    bool masterActive=curveFlags.y!=0u || curveCounts.x!=0u || detail.x!=0.0;
+    if(masterActive) {
+        if(curveFlags.x!=0u) {
+            float3 pL=float3(tcSrgbToLinear(pixel.r),tcSrgbToLinear(pixel.g),tcSrgbToLinear(pixel.b));
+            float Y=tcLuminosityLinearY(pL);
+            float u=tcLinearToSrgb(max(0.0,Y));
+            float uPrime=evalMasterTone(u);
+            float Y0=tcSrgbToLinear(evalMasterTone(0.0));
+            pixel=tcLuminosityFinish(pL,Y,uPrime,Y0);
+        } else {
+            pixel=float3(evalMasterTone(pixel.r),evalMasterTone(pixel.g),evalMasterTone(pixel.b));
+        }
+    }
+    pixel.r=customToneCurve(pixel.r,curveCounts.y,32u);
+    pixel.g=customToneCurve(pixel.g,curveCounts.z,64u);
+    pixel.b=customToneCurve(pixel.b,curveCounts.w,96u);
     if(basicV3.x!=0 && tone.x!=1) {
         pixel=float3(tcBasicContrastV3(pixel.r,tone.x-1.0),tcBasicContrastV3(pixel.g,tone.x-1.0),tcBasicContrastV3(pixel.b,tone.x-1.0));
     }
@@ -146,7 +177,12 @@ float3 evaluate(float3 inputColor, uint2 coord, uint2 coordSize) {
         pixel=light+(pixel-light)*tone.y;
     }
     float3 vibranced=basicV3.x!=0 ? tcBasicVibranceV3(pixel,toneControls.z) : tcVibrance(pixel,toneControls.z);
-    return cgApply(applyHsl(vibranced),colorGrading[0].xyz,colorGrading[1].xyz,colorGrading[2].xyz);
+    return cgApply(applyHsl(vibranced),
+        colorGrading[0].xyz,colorGrading[0].w,
+        colorGrading[1].xyz,colorGrading[1].w,
+        colorGrading[2].xyz,colorGrading[2].w,
+        colorGradingGlobal.xyz,colorGradingGlobal.w,
+        colorGradingMix.x,colorGradingMix.y);
 }
 float3 readPixel(uint2 p) { return source[(p.y-band.x)*dimensions.x+p.x]; }
 float3 resize(uint2 xy) {

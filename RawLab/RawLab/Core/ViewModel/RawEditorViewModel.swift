@@ -23,6 +23,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
+    @Published var sourceNativeSize: CGSize?
     @Published var basePreviewImage: UIImage?
     @Published var hasImage = false
     @Published var statusMessage: String? {
@@ -177,6 +178,9 @@ final class RawEditorViewModel: ObservableObject {
             completedPreviewCache.removeAll()
             completedPreviewCacheBytes = 0
             fullRasterROIBuffer = nil
+            sourceNativeSize = nil
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             closeQuickPresets()
         }
     }
@@ -327,6 +331,8 @@ final class RawEditorViewModel: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             self.clearDetailState(releaseRaster: true, keepRequest: true)
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             self.renderStateLock.lock()
             self.detailPrewarmScheduledFrameID = self.acceptedPreviewFrameID
             self.renderStateLock.unlock()

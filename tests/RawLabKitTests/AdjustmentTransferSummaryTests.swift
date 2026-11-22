@@ -47,8 +47,12 @@ final class AdjustmentTransferSummaryTests: XCTestCase {
             case .whiteBalanceMode: values[field] = .string("camera")
             case .temperature, .tint, .lensProfile: values[field] = .null
             case .curve: values[field] = ToneCurveSettings().transferValue
-            case .gradingShadows, .gradingMidtones, .gradingHighlights:
+            case .curveApplyToLuminosity: values[field] = .boolean(false)
+            case .curveParametric: values[field] = ToneCurveParametric().transferValue
+            case .gradingShadows, .gradingMidtones, .gradingHighlights, .gradingGlobal:
                 values[field] = .object(["hue": .number(0), "saturation": .number(0)])
+            case .gradingBlending: values[field] = .number(50)
+            case .gradingBalance: values[field] = .number(0)
             case .waveletDenoise: values[field] = .null
             case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop:
                 values[field] = .boolean(false)

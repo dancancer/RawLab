@@ -43,6 +43,7 @@ sealed interface EditorResetScope {
     data class Group(val group: EditorAdjustmentGroup) : EditorResetScope
     data class HslChannel(val channel: Int) : EditorResetScope
     data class GradingZone(val zone: ColorGradingZone) : EditorResetScope
+    data object GradingGlobal : EditorResetScope
     data object AllGrading : EditorResetScope
     data object AllHsl : EditorResetScope
     data object All : EditorResetScope
@@ -128,11 +129,15 @@ object EditorAdjustmentRules {
                 else -> true
             }
 
-    /** 忽略不生效的相机元数据；保留自定义 WB 模式、配方 tint 与所有关闭的辅助对象。 */
+    /** 忽略不生效的相机元数据；保留自定义 WB 模式、自主相对白平衡、配方 tint 与所有关闭的辅助对象。 */
     private fun markerSnapshot(snapshot: EditSettings, context: EditorResetContext): EditSettings = when {
         snapshot.isHDREditing -> snapshot.synchronizeHDR()
-        context.input == PhotoInputKind.RASTER -> snapshot.copy(exposureMode = 2, customWb = false,
-            temperature = 6500f, tint = if (snapshot.recipeID != null) snapshot.tint else 0f)
+        context.input == PhotoInputKind.RASTER -> snapshot.copy(
+            exposureMode = 2,
+            customWb = false,
+            temperature = if (!snapshot.customWb && snapshot.recipeID == null) snapshot.temperature else 6500f,
+            tint = if (!snapshot.customWb || snapshot.recipeID != null) snapshot.tint else 0f,
+        )
         !snapshot.customWb -> snapshot.copy(temperature = 6500f,
             tint = if (snapshot.recipeID != null) snapshot.tint else 0f)
         else -> snapshot
@@ -158,6 +163,7 @@ object EditorAdjustmentRules {
         EditorResetScope.All -> if (s.isHDREditing) d else d.copy(film = "neutral", recipeID = null, strength = 1f,
             hdr = s.hdr, sdrSnapshot = s.sdrSnapshot, proRAWDecodeVersion = s.proRAWDecodeVersion)
         EditorResetScope.AllGrading -> s.withEditingGrading(d.editingGrading)
+        EditorResetScope.GradingGlobal -> s.withEditingGrading(s.editingGrading.copy(global = d.editingGrading.global))
         is EditorResetScope.GradingZone -> s.withEditingGrading(s.editingGrading.with(scope.zone, d.editingGrading[scope.zone]))
         EditorResetScope.AllHsl -> s.withEditingHsl(d.editingHsl)
         is EditorResetScope.HslChannel -> s.withEditingHsl(HslSettings(s.editingHsl.packed().mapIndexed { index, value ->

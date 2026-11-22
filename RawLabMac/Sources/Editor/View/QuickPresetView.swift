@@ -35,6 +35,7 @@ struct QuickPresetView: View {
         }.padding(.horizontal, 16).padding(.vertical, 8).controlSize(.small)
             .onAppear(perform: reload)
             .onChange(of: model.adjustmentSheet) { _, kind in if kind == nil { reload() } }
+            .onChange(of: model.presetLibraryRevision) { _, _ in reload() }
             .onDisappear { model.cancelQuickPreset() }
             .onExitCommand { model.closeQuickPresets() }
     }

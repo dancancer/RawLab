@@ -42,7 +42,8 @@ struct EditorWorkspaceResetPresentation: Equatable {
     static func make(toolWorkspaceOpen: Bool, quickPresetsVisible: Bool = false,
                      selectedGroup: EditorAdjustmentGroup,
                      currentTool: EditorToolSelection, hslChannel: Int,
-                     gradingZone: ColorGradingZone, isAvailable: Bool,
+                     gradingZone: ColorGradingZone, gradingGlobalSelected: Bool = false,
+                     isAvailable: Bool,
                      isModified: (EditorAdjustmentScope) -> Bool) -> Self? {
         let label = L10n.text("重置调整")
         if !toolWorkspaceOpen {
@@ -79,7 +80,7 @@ struct EditorWorkspaceResetPresentation: Equatable {
             return Self(identifier: "editor.draft.reset", label: label,
                         style: .menu(items: items, isEnabled: isAvailable && (channelEnabled || allHSLEnabled)))
         case .adjustment(.colorGrading):
-            let zoneScope = EditorAdjustmentScope.gradingZone(gradingZone)
+            let zoneScope: EditorAdjustmentScope = gradingGlobalSelected ? .gradingGlobal : .gradingZone(gradingZone)
             let zoneEnabled = isModified(zoneScope)
             let allGradingEnabled = isModified(.allGrading)
             let items = [

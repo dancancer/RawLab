@@ -76,7 +76,7 @@ void hslAxis(const Json& object, const char* key, std::array<float, 8>& destinat
     }
 }
 
-void readToneCurve(const Json& curve, ToneCurveConfig& config) {
+void readToneCurve(const Json& curve, ToneCurveConfig& config, bool allowFreeEndpoints) {
     const std::string path = "edits.tone.curve";
     fields(curve, path, {"mode", "points"});
     const auto mode = text(required(curve, "mode", path), path + ".mode");
@@ -93,19 +93,41 @@ void readToneCurve(const Json& curve, ToneCurveConfig& config) {
             throw std::invalid_argument(path + ".points must contain [x,y] pairs");
         config.points[i] = {point[0].get<double>(), point[1].get<double>()};
     }
-    if (!validToneCurve(config))
+    if (!validToneCurve(config, allowFreeEndpoints))
         throw std::invalid_argument(path + ".points are invalid for the selected mode");
 }
 
+void readParametricCurve(const Json& param, ToneCurveParametricConfig& out) {
+    const std::string path = "edits.tone.curve.parametric";
+    fields(param, path, {"highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"});
+    out.highlights = number(param, "highlights", 0.0f, -100.0, 100.0, path);
+    out.lights = number(param, "lights", 0.0f, -100.0, 100.0, path);
+    out.darks = number(param, "darks", 0.0f, -100.0, 100.0, path);
+    out.shadows = number(param, "shadows", 0.0f, -100.0, 100.0, path);
+    out.splitShadow = number(param, "split_shadow", 0.25f, 0.05, 0.45, path);
+    out.splitMidtone = number(param, "split_midtone", 0.50f, 0.25, 0.75, path);
+    out.splitHighlight = number(param, "split_highlight", 0.75f, 0.55, 0.95, path);
+    if (!out.valid()) {
+        throw std::invalid_argument(path + " split points must be strictly increasing with minimum gap 0.02");
+    }
+}
+
 void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
+    const bool allowV12 = parsed.schemaVersion >= 17;
     if (edits.contains("color_grading")) {
         const auto& grading = edits.at("color_grading");
-        fields(grading, "edits.color_grading", {"shadows", "midtones", "highlights"});
+        if (allowV12)
+            fields(grading, "edits.color_grading", {"shadows", "midtones", "highlights", "global", "blending", "balance"});
+        else
+            fields(grading, "edits.color_grading", {"shadows", "midtones", "highlights"});
         auto readWheel = [&](const char* zone, ColorGradingWheel& wheelOut) {
             if (!grading.contains(zone)) return;
             const auto path = std::string("edits.color_grading.") + zone;
             const auto& wheel = grading.at(zone);
-            fields(wheel, path, {"hue", "saturation"});
+            if (allowV12)
+                fields(wheel, path, {"hue", "saturation", "luminance"});
+            else
+                fields(wheel, path, {"hue", "saturation"});
             required(wheel, "hue", path);
             required(wheel, "saturation", path);
             float hue = number(wheel, "hue", 0, 0, 360, path);
@@ -115,10 +137,17 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
             if (hue == 360) hue = 0;
             wheelOut.hue = hue;
             wheelOut.saturation = number(wheel, "saturation", 0, 0, 100, path);
+            if (allowV12)
+                wheelOut.luminance = number(wheel, "luminance", 0, -100, 100, path);
         };
         readWheel("shadows", parsed.colorGrading.wheels[0]);
         readWheel("midtones", parsed.colorGrading.wheels[1]);
         readWheel("highlights", parsed.colorGrading.wheels[2]);
+        if (allowV12) {
+            readWheel("global", parsed.colorGrading.global);
+            parsed.colorGrading.blending = number(grading, "blending", 50.0f, 0.0, 100.0, "edits.color_grading");
+            parsed.colorGrading.balance = number(grading, "balance", 0.0f, -100.0, 100.0, "edits.color_grading");
+        }
     }
     if (edits.contains("tone")) {
         const auto& tone = edits.at("tone");
@@ -135,16 +164,25 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
         parsed.toneControls.whitePoint = number(tone, "white_point", 0, -1, 1, "edits.tone");
         if (tone.contains("curve")) {
             const auto& root = tone.at("curve");
+            if (!root.is_object()) throw std::invalid_argument("edits.tone.curve must be an object");
             auto master = root;
             if (root.contains("channels")) {
                 const auto& channels = root.at("channels");
                 fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
                 const char* names[]{"red", "green", "blue"};
                 for (size_t i = 0; i < 3; ++i)
-                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i]);
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], allowV12);
                 master.erase("channels");
             }
-            readToneCurve(master, parsed.toneCurve);
+            if (allowV12 && root.contains("apply_to_luminosity")) {
+                parsed.curveApplyToLuminosity = boolean(root, "apply_to_luminosity", "edits.tone.curve") != 0;
+                master.erase("apply_to_luminosity");
+            }
+            if (allowV12 && root.contains("parametric")) {
+                readParametricCurve(root.at("parametric"), parsed.parametricCurve);
+                master.erase("parametric");
+            }
+            readToneCurve(master, parsed.toneCurve, allowV12);
             if (parsed.toneCurve.mode == ToneCurveMode::Custom && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -218,7 +256,7 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
 }
 
 bool isHdrSchemaVersion(uint32_t schema) {
-    return schema == 6 || (schema >= 8 && schema <= 15);
+    return schema == 6 || (schema >= 8 && schema <= 16);
 }
 
 } // namespace
@@ -229,6 +267,7 @@ bool validProfileId(const std::string& id) {
 }
 
 RenderParams CanonicalSdrRecipe::toRenderParams() const {
+    const bool freeEndpoints = schemaVersion >= 17;
     RenderParams params{};
     params.inputType = rasterInput ? RenderInputType::DisplayBuffer : RenderInputType::Raw;
     params.inputPath = inputPath;
@@ -250,7 +289,13 @@ RenderParams CanonicalSdrRecipe::toRenderParams() const {
     params.hsl = hsl;
     params.toneControls = toneControls;
     params.colorGrading = colorGrading;
-    params.customCurve = ToneCurve(toneCurve);
+    params.customCurve = ToneCurve(toneCurve, freeEndpoints);
+    for (size_t i = 0; i < 3; ++i) {
+        params.channelCurves[i] = ToneCurve(channelCurves[i], freeEndpoints);
+    }
+    params.curveApplyToLuminosity = curveApplyToLuminosity;
+    params.parametricCurve = parametricCurve;
+    params.outputSharpening = outputSharpening;
     params.sizeMode = outputLongEdge ? RenderSizeMode::LimitLongEdge : RenderSizeMode::Native;
     params.longEdge = outputLongEdge;
     params.intent = RenderIntent::Final;
@@ -282,9 +327,9 @@ bool parseCanonicalSdrRecipe(
         const auto root = Json::parse(document, checkKeys);
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (isHdrSchemaVersion(version) || version < 1 || version > 7)
+        if (isHdrSchemaVersion(version) || (version != 17 && (version < 1 || version > 7)))
             throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
-        if (version == 7) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
+        if (version == 7 || version == 17) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
         else if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
         else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
 
@@ -292,6 +337,10 @@ bool parseCanonicalSdrRecipe(
         parsed.schemaVersion = version;
         if (version == 7) {
             const auto mode = text(required(root, "x3f_mode", "recipe"), "x3f_mode");
+            if (mode == "normal-v1") parsed.x3fMode = X3fMode::Normal;
+            else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
+        } else if (version == 17 && root.contains("x3f_mode")) {
+            const auto mode = text(root.at("x3f_mode"), "x3f_mode");
             if (mode == "normal-v1") parsed.x3fMode = X3fMode::Normal;
             else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
         }
@@ -317,6 +366,8 @@ bool parseCanonicalSdrRecipe(
         }
         if (version == 7 && parsed.rasterInput)
             throw std::invalid_argument("schema_version 7 requires an X3F raw input");
+        if (version == 17 && parsed.rasterInput && root.contains("x3f_mode"))
+            throw std::invalid_argument("x3f_mode requires a raw input");
 
         const auto& edits = required(root, "edits", "recipe");
         if (version == 1) fields(edits, "edits", {"exposure", "white_balance", "look"});
@@ -337,21 +388,37 @@ bool parseCanonicalSdrRecipe(
 
         if (edits.contains("white_balance")) {
             const auto& wb = edits.at("white_balance");
-            fields(wb, "edits.white_balance", {"mode", "temperature_kelvin", "tint"});
+            if (version >= 17)
+                fields(wb, "edits.white_balance", {"mode", "temperature_kelvin", "tint", "relative_temperature", "relative_tint"});
+            else
+                fields(wb, "edits.white_balance", {"mode", "temperature_kelvin", "tint"});
             const auto wbMode = text(required(wb, "mode", "edits.white_balance"), "edits.white_balance.mode");
-            if (parsed.rasterInput && wbMode != "none")
-                throw std::invalid_argument("Raster edits.white_balance.mode must be none");
-            if (parsed.rasterInput && wbMode == "none") parsed.whiteBalanceMode = RenderWhiteBalanceMode::Camera;
-            else if (wbMode == "camera") parsed.whiteBalanceMode = RenderWhiteBalanceMode::Camera;
-            else if (wbMode == "auto") parsed.whiteBalanceMode = RenderWhiteBalanceMode::Auto;
-            else if (wbMode == "temperature") {
-                parsed.whiteBalanceMode = RenderWhiteBalanceMode::Temperature;
-                required(wb, "temperature_kelvin", "edits.white_balance");
-                parsed.temperatureKelvin = number(wb, "temperature_kelvin", 6500, 2000, 50000, "edits.white_balance");
-                parsed.tint = number(wb, "tint", 0, -150, 150, "edits.white_balance");
-            } else throw std::invalid_argument("edits.white_balance.mode must be camera, auto or temperature");
+            if (parsed.rasterInput) {
+                if (wbMode == "none") {
+                    parsed.whiteBalanceMode = RenderWhiteBalanceMode::Camera;
+                } else if (version >= 17 && wbMode == "relative") {
+                    parsed.whiteBalanceMode = RenderWhiteBalanceMode::Relative;
+                    parsed.temperatureKelvin = number(wb, "relative_temperature", 6500, 2000, 50000, "edits.white_balance");
+                    parsed.tint = number(wb, "relative_tint", 0, -150, 150, "edits.white_balance");
+                } else {
+                    throw std::invalid_argument(version >= 17
+                        ? "Raster edits.white_balance.mode must be none or relative"
+                        : "Raster edits.white_balance.mode must be none");
+                }
+            } else {
+                if (wbMode == "camera") parsed.whiteBalanceMode = RenderWhiteBalanceMode::Camera;
+                else if (wbMode == "auto") parsed.whiteBalanceMode = RenderWhiteBalanceMode::Auto;
+                else if (wbMode == "temperature") {
+                    parsed.whiteBalanceMode = RenderWhiteBalanceMode::Temperature;
+                    required(wb, "temperature_kelvin", "edits.white_balance");
+                    parsed.temperatureKelvin = number(wb, "temperature_kelvin", 6500, 2000, 50000, "edits.white_balance");
+                    parsed.tint = number(wb, "tint", 0, -150, 150, "edits.white_balance");
+                } else throw std::invalid_argument("edits.white_balance.mode must be camera, auto or temperature");
+            }
             if (wbMode != "temperature" && (wb.contains("temperature_kelvin") || wb.contains("tint")))
                 throw std::invalid_argument("Kelvin/tint require edits.white_balance.mode=temperature");
+            if (wbMode != "relative" && (wb.contains("relative_temperature") || wb.contains("relative_tint")))
+                throw std::invalid_argument("relative_temperature/relative_tint require edits.white_balance.mode=relative");
         }
 
         if (parsed.rasterInput) {
@@ -407,7 +474,10 @@ bool parseCanonicalSdrRecipe(
         }
 
         const auto& output = required(root, "output", "recipe");
-        fields(output, "output", {"path", "format", "jpeg_quality", "size"});
+        if (version >= 17)
+            fields(output, "output", {"path", "format", "jpeg_quality", "size", "output_sharpening"});
+        else
+            fields(output, "output", {"path", "format", "jpeg_quality", "size"});
         parsed.outputPath = text(required(output, "path", "output"), "output.path");
         const auto format = text(required(output, "format", "output"), "output.format");
         if (format == "jpeg") parsed.outputFormat = RenderOutputFormat::JPEG;
@@ -416,6 +486,14 @@ bool parseCanonicalSdrRecipe(
         else throw std::invalid_argument("output.format must be jpeg, png or dng");
         if (output.contains("jpeg_quality"))
             parsed.jpegQuality = integer(output.at("jpeg_quality"), 1, 100, "output.jpeg_quality");
+        if (output.contains("output_sharpening")) {
+            const auto os = text(output.at("output_sharpening"), "output.output_sharpening");
+            if (os == "off") parsed.outputSharpening = OutputSharpening::Off;
+            else if (os == "low") parsed.outputSharpening = OutputSharpening::Low;
+            else if (os == "standard") parsed.outputSharpening = OutputSharpening::Standard;
+            else if (os == "high") parsed.outputSharpening = OutputSharpening::High;
+            else throw std::invalid_argument("output.output_sharpening must be off, low, standard or high");
+        }
         if (output.contains("size")) {
             const auto& size = output.at("size");
             fields(size, "output.size", {"mode", "long_edge"});

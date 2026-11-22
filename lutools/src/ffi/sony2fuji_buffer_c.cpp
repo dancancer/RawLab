@@ -1,9 +1,11 @@
 #include "ffi/session_internal.h"
 
+#include "core/bsh_diagnostics.h"
 #include "gpu/image_stats.h"
 #include "platform/display_image.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -181,6 +183,112 @@ sony2fuji_status sony2fuji_analyze_image(
         *shadows = stats.shadows;
         *highlights = stats.highlights;
         return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+namespace {
+
+bool validBshImageBuffer(const sony2fuji_buffer* image, uint32_t& outChannels, uint32_t& outBitDepth) {
+    if (!image || !image->data || image->width == 0 || image->height == 0 ||
+        image->width > UINT32_MAX / 8 ||
+        static_cast<uint64_t>(image->width) * image->height > UINT32_MAX) {
+        return false;
+    }
+    size_t bytesPerPixel = 0;
+    switch (image->pixel_format) {
+        case SONY2FUJI_PIXEL_RGB8:
+            outChannels = 3;
+            outBitDepth = 8;
+            bytesPerPixel = 3;
+            break;
+        case SONY2FUJI_PIXEL_RGBA8:
+            outChannels = 4;
+            outBitDepth = 8;
+            bytesPerPixel = 4;
+            break;
+        case SONY2FUJI_PIXEL_RGBA16:
+            outChannels = 4;
+            outBitDepth = 16;
+            bytesPerPixel = 8;
+            break;
+        default:
+            return false;
+    }
+    const uint64_t rowBytes = static_cast<uint64_t>(image->width) * bytesPerPixel;
+    if (rowBytes > static_cast<uint64_t>(image->stride_bytes)) return false;
+    const uint64_t requiredBytes = static_cast<uint64_t>(image->stride_bytes) * (image->height - 1u) + rowBytes;
+    return requiredBytes <= image->size_bytes;
+}
+
+} // namespace
+
+sony2fuji_status sony2fuji_diagnose_image(
+    const sony2fuji_buffer* image,
+    const sony2fuji_bsh_diagnose_options* options,
+    sony2fuji_bsh_diagnosis* out_diagnosis
+) {
+    uint32_t channels = 0;
+    uint32_t bitDepth = 0;
+    if (!validBshImageBuffer(image, channels, bitDepth) || !out_diagnosis ||
+        out_diagnosis->version != SONY2FUJI_BSH_DIAGNOSIS_VERSION ||
+        out_diagnosis->struct_size < sizeof(*out_diagnosis)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (options && (options->version != SONY2FUJI_BSH_DIAGNOSIS_VERSION ||
+        options->struct_size != sizeof(*options) || options->reserved != 0)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        const sony2fuji::PixelBufferView view{
+            image->data,
+            image->size_bytes,
+            image->width,
+            image->height,
+            image->stride_bytes,
+            static_cast<sony2fuji::PixelBufferFormat>(image->pixel_format)
+        };
+        const uint32_t stride = options ? options->sample_stride : 0u;
+        return toFfiStatus(sony2fuji::diagnosePixelBuffer(view, stride, *out_diagnosis));
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_sample_region_bsh(
+    const sony2fuji_buffer* image,
+    const sony2fuji_bsh_sample_query* query,
+    sony2fuji_bsh_sample_result* out_result
+) {
+    uint32_t channels = 0;
+    uint32_t bitDepth = 0;
+    if (!validBshImageBuffer(image, channels, bitDepth) || !query || !out_result ||
+        query->version != SONY2FUJI_BSH_SAMPLE_VERSION ||
+        query->struct_size != sizeof(*query) ||
+        query->reserved != 0 ||
+        !std::isfinite(query->norm_x) || query->norm_x < 0.0f || query->norm_x > 1.0f ||
+        !std::isfinite(query->norm_y) || query->norm_y < 0.0f || query->norm_y > 1.0f ||
+        !std::isfinite(query->radius_norm) || query->radius_norm < 0.0f ||
+        out_result->version != SONY2FUJI_BSH_SAMPLE_VERSION ||
+        out_result->struct_size < sizeof(*out_result)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        const sony2fuji::PixelBufferView view{
+            image->data,
+            image->size_bytes,
+            image->width,
+            image->height,
+            image->stride_bytes,
+            static_cast<sony2fuji::PixelBufferFormat>(image->pixel_format)
+        };
+        return toFfiStatus(sony2fuji::sampleRegionBshBuffer(
+            view, query->norm_x, query->norm_y, query->radius_norm, *out_result));
     } catch (const std::bad_alloc&) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
     } catch (...) {

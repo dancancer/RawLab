@@ -3,6 +3,7 @@
 #include "sony2fuji/dcp_compiler.h"
 #include "preview_exposure.h"
 #include "photo_rendering.h"
+#include "quantize_dither.h"
 #include "white_balance.h"
 #include "file_path.h"
 #include "output_file_mode.h"
@@ -28,6 +29,12 @@
 #include <spng.h>
 #include <jpeglib.h>
 #include <jerror.h>
+#if defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#else
+#include <lcms2.h>
+#endif
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -102,6 +109,8 @@ public:
     BayerOverrideScope(LibRaw& raw, const RAWBayerSource& source, const RAWBayerOverride* replacement)
         : raw_(raw) {
         if (!replacement) return;
+        const float blend = std::clamp(replacement->blend, 0.0f, 1.0f);
+        if (blend <= 0.0f) return;
         original_ = raw.imgdata.rawdata.raw_image;
         pitch_ = raw.imgdata.sizes.raw_pitch / sizeof(uint16_t);
         left_ = raw.imgdata.sizes.left_margin; top_ = raw.imgdata.sizes.top_margin;
@@ -114,7 +123,15 @@ public:
             const float range = source.white - black;
             auto& pixel = original_[(size_t(y) + top_) * pitch_ + left_ + x];
             float value = std::clamp(replacement->normalizedMosaic[size_t(y) * width_ + x], 0.f, 1.f);
-            if (replacement->protectSensorHighlights) {
+            if (blend < 1.0f) {
+                const float signal = (pixel - black) / range;
+                if (replacement->protectSensorHighlights) {
+                    if (signal >= .9f) continue;
+                    const float t = std::clamp((signal - .6f) / .3f, 0.f, 1.f);
+                    value += t * t * (3.f - 2.f * t) * (signal - value);
+                }
+                value = signal + blend * (value - signal);
+            } else if (replacement->protectSensorHighlights) {
                 // 在白平衡和 LibRaw 高光混合前渐退，保留接近饱和的原始传感器值。
                 const float signal = (pixel - black) / range;
                 if (signal >= .9f) continue;
@@ -318,6 +335,7 @@ public:
             return ErrorCode::InvalidFormat;
         const auto* replacement = options.bayerOverride;
         if (replacement && (!bayerMetadataReady_ || options.halfSize || options.rawNoiseReduction != 0 || autoWB ||
+            !std::isfinite(replacement->blend) || replacement->blend < 0.0f || replacement->blend > 1.0f ||
             replacement->width != bayerMetadata_.width || replacement->height != bayerMetadata_.height ||
             replacement->normalizedMosaic.size() != size_t(bayerMetadata_.width) * bayerMetadata_.height ||
             (!replacement->cameraCorrection.empty() && replacement->cameraCorrection.size() != replacement->normalizedMosaic.size()) ||
@@ -339,6 +357,15 @@ public:
         } imageGuard{rawProcessor_.get()};
         auto& data = rawProcessor_->imgdata;
         const float scale = 1.0f / (65535.0f * green);
+        lastCalibrationValid_ = (channels == 3) && whiteBalance_ && whiteBalance_->available();
+        if (lastCalibrationValid_) {
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 3; ++c) {
+                    lastRgbCam_[r][c] = data.color.rgb_cam[r][c];
+                }
+                lastWbUsed_[r] = data.color.pre_mul[r] / green;
+            }
+        }
 
         float profileMatrix[3][4]{};
         const float (*cameraMatrix)[4] = data.color.rgb_cam;
@@ -547,6 +574,43 @@ public:
         return true;
     }
 
+    bool getLastRgbCam(float matrix[3][3]) const {
+        if (!lastCalibrationValid_) return false;
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                matrix[row][col] = lastRgbCam_[row][col];
+            }
+        }
+        return true;
+    }
+
+    bool getLastWbUsed(float multipliers[3]) const {
+        if (!lastCalibrationValid_) return false;
+        for (int c = 0; c < 3; ++c) {
+            if (!std::isfinite(lastWbUsed_[c]) || lastWbUsed_[c] <= 0.0f) return false;
+            multipliers[c] = lastWbUsed_[c];
+        }
+        return true;
+    }
+
+    bool getWhiteBalanceCalibration(
+        double first[3][3],
+        double second[3][3],
+        double& firstTemperature,
+        double& secondTemperature
+    ) const {
+        if (!whiteBalance_ || !whiteBalance_->available()) return false;
+        std::array<std::array<double, 3>, 3> f{}, s{};
+        whiteBalance_->calibrationData(f, s, firstTemperature, secondTemperature);
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                first[r][c] = f[r][c];
+                second[r][c] = s[r][c];
+            }
+        }
+        return true;
+    }
+
 private:
     static bool validCameraToSrgb(const float matrix[3][3]) {
         for (int r = 0; r < 3; ++r)
@@ -589,11 +653,13 @@ private:
         for (int dst = 0; dst < 3; ++dst)
             for (int c = 0; c < channels; ++c)
                 rgb[dst] += cameraMatrix[dst][c] * camera[c] * scale;
-        if (replacement && !replacement->cameraCorrection.empty()) {
+        const float bayerBlend = replacement ? std::clamp(replacement->blend, 0.0f, 1.0f) : 0.0f;
+        if (replacement && !replacement->cameraCorrection.empty() && bayerBlend > 0.0f) {
             const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
             for (int c = 0; c < 3; ++c) {
-                const float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
+                float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
                     coordinates[c * 2], coordinates[c * 2 + 1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
+                if (bayerBlend < 1.0f) delta *= bayerBlend;
                 if (delta != 0)
                     for (int dst = 0; dst < 3; ++dst)
                         rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
@@ -769,6 +835,9 @@ private:
         cameraModel_.clear();
         whiteBalance_.reset();
         cameraColorMatrixValid_ = false;
+        lastCalibrationValid_ = false;
+        lastRgbCam_ = {};
+        lastWbUsed_ = {1.0f, 1.0f, 1.0f};
         cameraToSrgbValid_ = false;
         cameraToSrgb_ = {};
         lastAppliedWbValid_ = false;
@@ -962,6 +1031,9 @@ private:
     std::unique_ptr<CameraWhiteBalance> whiteBalance_;
     std::array<std::array<float,3>,3> cameraColorMatrix_{};
     bool cameraColorMatrixValid_ = false;
+    std::array<std::array<float,3>,3> lastRgbCam_{};
+    std::array<float,3> lastWbUsed_{1.0f, 1.0f, 1.0f};
+    bool lastCalibrationValid_ = false;
     std::array<std::array<float,3>,3> cameraToSrgb_{};
     bool cameraToSrgbValid_ = false;
     std::array<float, 3> lastAppliedWbMul_{1.0f, 1.0f, 1.0f};
@@ -1174,6 +1246,23 @@ bool RAWProcessor::getCameraColorMatrix(float matrix[3][3]) const {
     return pImpl_->getCameraColorMatrix(matrix);
 }
 
+bool RAWProcessor::getLastRgbCam(float matrix[3][3]) const {
+    return pImpl_->getLastRgbCam(matrix);
+}
+
+bool RAWProcessor::getLastWbUsed(float multipliers[3]) const {
+    return pImpl_->getLastWbUsed(multipliers);
+}
+
+bool RAWProcessor::getWhiteBalanceCalibration(
+    double first[3][3],
+    double second[3][3],
+    double& firstTemperature,
+    double& secondTemperature
+) const {
+    return pImpl_->getWhiteBalanceCalibration(first, second, firstTemperature, secondTemperature);
+}
+
 // ============================================================================
 // ImageEncoder Implementation
 // ============================================================================
@@ -1352,6 +1441,40 @@ private:
     bool published_ = false;
 };
 
+const std::vector<uint8_t>& srgbIccProfileBytes() {
+    static const std::vector<uint8_t> cached = []() -> std::vector<uint8_t> {
+#if defined(__APPLE__)
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        if (!space) return {};
+        CFDataRef data = CGColorSpaceCopyICCData(space);
+        CGColorSpaceRelease(space);
+        if (!data) return {};
+        const CFIndex len = CFDataGetLength(data);
+        const UInt8* ptr = CFDataGetBytePtr(data);
+        std::vector<uint8_t> bytes;
+        if (ptr && len > 0) {
+            bytes.assign(ptr, ptr + len);
+        }
+        CFRelease(data);
+        return bytes;
+#else
+        cmsHPROFILE profile = cmsCreate_sRGBProfile();
+        if (!profile) return {};
+        cmsUInt32Number size = 0;
+        std::vector<uint8_t> bytes;
+        if (cmsSaveProfileToMem(profile, nullptr, &size) && size > 0) {
+            bytes.resize(size);
+            if (!cmsSaveProfileToMem(profile, bytes.data(), &size)) {
+                bytes.clear();
+            }
+        }
+        cmsCloseProfile(profile);
+        return bytes;
+#endif
+    }();
+    return cached;
+}
+
 // libjpeg-turbo 扫描线编码器：写入 EncodedStagingFile 的暂存 FILE（stdio 目标管理器），
 // 取消信号在扫描线边界即时中止（ProcessingCancelled 沿栈展开，析构删 .tmp），
 // ERREXIT 经 setjmp 分类为 IO/内存/处理错误；流式写出，无整帧偏移量索引。
@@ -1374,6 +1497,8 @@ struct TurboJpegEncoder {
 
     // 返回 false 表示 libjpeg 报错：按 outOfMemory 或 FILE 错误位分类。
     bool encode(int width, int height, const uint8_t* data, int quality) {
+        const auto& icc = srgbIccProfileBytes();
+        if (icc.empty()) return false;
         codec.err = jpeg_std_error(&manager);
         manager.error_exit = &TurboJpegEncoder::fail;
         if (setjmp(jump) != 0) return false;
@@ -1397,6 +1522,7 @@ struct TurboJpegEncoder {
             codec.comp_info[component].v_samp_factor = 1;
         }
         jpeg_start_compress(&codec, TRUE);
+        jpeg_write_icc_profile(&codec, icc.data(), static_cast<unsigned int>(icc.size()));
         // 行首指针用 size_t 步长：>2GiB 输入缓冲（约 715.8MP 上限 × 3B）无 int 溢出。
         const size_t rowBytes = static_cast<size_t>(width) * 3u;
         while (codec.next_scanline < static_cast<JDIMENSION>(height)) {
@@ -1454,11 +1580,16 @@ ErrorCode ImageEncoder::saveJPEG(
             static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
         std::vector<uint8_t> data(pixelCount * 3);
 
-        parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
-            for (size_t index = first; index < last; ++index) {
-                data[index * 3 + 0] = floatToUint8(image.pixels[index].r);
-                data[index * 3 + 1] = floatToUint8(image.pixels[index].g);
-                data[index * 3 + 2] = floatToUint8(image.pixels[index].b);
+        parallelRowRanges(image.height, image.width, [&](int firstRow, int lastRow) {
+            for (int y = firstRow; y < lastRow; ++y) {
+                const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(image.width);
+                for (int x = 0; x < image.width; ++x) {
+                    const size_t index = rowBase + static_cast<size_t>(x);
+                    const auto& pixel = image.pixels[index];
+                    data[index * 3 + 0] = quantizeFloatToUint8Dithered(pixel.r, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    data[index * 3 + 1] = quantizeFloatToUint8Dithered(pixel.g, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                    data[index * 3 + 2] = quantizeFloatToUint8Dithered(pixel.b, static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+                }
             }
         });
 

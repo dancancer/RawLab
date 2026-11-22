@@ -5,6 +5,7 @@ import org.json.JSONArray
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.HDRLookSettings
+import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.canonicalZero
 import com.rawlab.android.json.validateStrictJSON
@@ -50,7 +51,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 (payloadVersion == 2 && scopeVersion == 2 && source.isHDR)))
             throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
         if (source.isHDR) {
-            val version = source.hdrProcessingVersion?.takeIf { it in 1..8 }
+            val version = source.hdrProcessingVersion?.takeIf { it in 1..9 }
                 ?: throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
             val supported = AdjustmentField.hdrSupported(version) + AdjustmentField.HDR_CAMERA_DEVELOPMENT
             valid(!source.isRaw && source.recipe == null && supported.containsAll(fields), "hdr context")
@@ -69,9 +70,13 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
         val mode = this[AdjustmentField.WHITE_BALANCE_MODE]?.text
         val temperature = this[AdjustmentField.TEMPERATURE]
         val tint = this[AdjustmentField.TINT]
-        if (mode != null) valid(if (source.isRaw) mode != "none" else mode == "none", "white_balance.mode")
+        if (mode != null) valid(if (source.isRaw) mode in setOf("camera", "temperature") else mode in setOf("none", "relative"), "white_balance.mode")
         if (!source.isRaw) {
-            valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
+            if (mode == "relative") {
+                valid(temperature != AdjustmentValue.Null && tint != AdjustmentValue.Null, "white_balance values conflict with mode")
+            } else {
+                valid(temperature?.number == null && (source.recipe != null || tint?.number == null), "raster.white_balance")
+            }
             valid(this[AdjustmentField.EXPOSURE_MODE].let { it == null || it == AdjustmentValue.Text("sensor") } &&
                 this[AdjustmentField.RAW_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) } &&
                 (source.isHDR || this[AdjustmentField.POST_RGB_DENOISE].let { it == null || it == AdjustmentValue.Number(0.0) }), "raster request")
@@ -153,12 +158,15 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             val proto = field.spec.protocol
             if (value == AdjustmentValue.Null) return proto.nullable
             if (field == AdjustmentField.CURVE) return runCatching { curve(value) }.isSuccess
+            if (field == AdjustmentField.CURVE_PARAMETRIC) return runCatching { parametricCurve(value) }.isSuccess
             if (field == AdjustmentField.HDR_LOOK) return value.hdrLook() != null
             if (field == AdjustmentField.HDR_CAMERA_DEVELOPMENT) return value.hdrCameraDevelopment() != null
-            if (field.gradingZone != null) {
+            if (field.gradingZone != null || field == AdjustmentField.GRADING_GLOBAL) {
                 val wheel = value.objectValue ?: return false
-                if (wheel.keys != proto.objectKeys.toSet()) return false
-                return ColorGradingWheel.valid(wheel["hue"]?.number ?: return false, wheel["saturation"]?.number ?: return false)
+                val allowed = setOf("hue", "saturation", "luminance")
+                if (!wheel.keys.containsAll(setOf("hue", "saturation")) || !allowed.containsAll(wheel.keys)) return false
+                val luminance = if ("luminance" in wheel.keys) (wheel["luminance"]?.number ?: return false) else 0.0
+                return ColorGradingWheel.valid(wheel["hue"]?.number ?: return false, wheel["saturation"]?.number ?: return false, luminance)
             }
             if (field == AdjustmentField.LOOK) {
                 val look = value.objectValue ?: return false
@@ -204,8 +212,19 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 AdjustmentProtocolValueType.OBJECT -> false
             }
         }
-        internal fun curve(value: AdjustmentValue): ToneCurveSettings = ToneCurveSettings.decode(jsonValue(value) as JSONObject)
-        internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(curve.json())
+        internal fun curve(value: AdjustmentValue): ToneCurveSettings {
+            val obj = jsonValue(value) as JSONObject
+            val keys = obj.keys().asSequence().toSet()
+            require(keys.containsAll(setOf("mode", "points")) && keys.all { it in setOf("mode", "points", "channels") })
+            return ToneCurveSettings.decode(obj)
+        }
+        internal fun curveValue(curve: ToneCurveSettings): AdjustmentValue = decodeValue(
+            curve.master.json().also {
+                if (curve.hasChannelCurves) it.put("channels", curve.channels.json())
+            }
+        )
+        internal fun parametricCurve(value: AdjustmentValue): ToneCurveParametric = ToneCurveParametric.decode(jsonValue(value) as JSONObject)
+        internal fun parametricCurveValue(parametric: ToneCurveParametric): AdjustmentValue = decodeValue(parametric.json())
     }
 }
 

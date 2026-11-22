@@ -174,6 +174,8 @@ extension EditorModel {
 
     private func navigateAdjustment(to target: EditorAdjustmentNavigation, geometryTab: MacGeometryTab? = nil) {
         cancelHSLTarget(); hslTargetEnabled = false
+        cancelCurveTarget(); curveTargetEnabled = false
+        cancelWBProbe(); wbEyedropperEnabled = false
         if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
@@ -190,6 +192,8 @@ extension EditorModel {
 
     func requestAdjustmentReset(_ scope: EditorResetScope) {
         cancelHSLTarget()
+        cancelCurveTarget()
+        cancelWBProbe()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {
@@ -321,9 +325,13 @@ extension EditorModel {
         dirty = true
         saveStatusKey = ""
         saveWork?.cancel()
+        saveWork = nil
         if !scheduler.interacting {
             // 同一个原生事件的联动 setter 合为一次；拖动由 begin/end 明确提交。
-            let work = DispatchWorkItem { [weak self] in _ = self?.saveEditsAsync() }
+            let work = DispatchWorkItem { [weak self] in
+                self?.saveWork = nil
+                _ = self?.saveEditsAsync()
+            }
             saveWork = work
             DispatchQueue.main.async(execute: work)
         }
@@ -332,6 +340,7 @@ extension EditorModel {
 
     @discardableResult func saveEditsAsync() -> Bool {
         saveWork?.cancel()
+        saveWork = nil
         guard file != nil, dirty else { return true }
         let clearsMigration = pendingAllResetRevision == editRevision
         guard !scheduler.interacting,
@@ -342,6 +351,7 @@ extension EditorModel {
 
     @discardableResult func saveEdits() -> Bool {
         saveWork?.cancel()
+        saveWork = nil
         let flushedOK = editStore?.flushPendingCommits() ?? true
         guard flushedOK else { return false }
         guard file != nil else { return true }
@@ -470,6 +480,7 @@ extension EditorModel {
         cancelQuickPreset()
         pendingOpenID=UUID(); importing=false
         cancelHSLTarget()
+        cancelCurveTarget()
         if file == url && result != nil, acceptedOriginalSource == referenceSource(url) { return }
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
@@ -867,8 +878,9 @@ extension EditorModel {
         let lookName = settings.masterRecipe?.title ?? selectedFilm?.name ?? "neutral"
         panel.nameFieldStringValue = file.deletingPathExtension().lastPathComponent + "-" +
             lookName + "." + format.suffix
-        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self).padding(12).frame(width: 360))
-        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: 110)
+        let showSharpening = format != .renderedDNG
+        let sizePicker = NSHostingView(rootView: ExportSizeAccessory(model: self, showOutputSharpening: showSharpening).padding(12).frame(width: 360))
+        sizePicker.frame = NSRect(x: 0, y: 0, width: 360, height: showSharpening ? 168 : 110)
         panel.accessoryView = sizePicker
         guard panel.runModal() == .OK, let output = panel.url else { return }
         export(to: output,format:format)
@@ -878,13 +890,16 @@ extension EditorModel {
         guard canExport, let file else { return }
         exporting = true
         let settings = settings, lut = settings.masterRecipe?.lutURL() ?? selectedFilm?.url, longEdge = exportLongEdge
+        let resolvedFormat = format ?? ExportFormat.forOutput(output)
+        let sharpening: OutputSharpening = resolvedFormat == .renderedDNG ? .off : exportOutputSharpening
         let generation = aiGeneration
         queue.async { [weak self] in
             guard let self else { return }
             do {
                 if self.engine == nil { self.engine = try RenderEngine() }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false, exportLongEdge: longEdge,exportFormat:format)
+                                             interactive: false, exportLongEdge: longEdge, exportFormat: format,
+                                             outputSharpening: sharpening)
                 DispatchQueue.main.async {
                     self.exporting = false; self.statusState = .exported(output.lastPathComponent)
                     self.onUsage(.exportCompleted)

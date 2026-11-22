@@ -9,23 +9,25 @@
     "protocol_metadata": "Protocol field group or metadata helper differs across platforms while wire key/value contract matches"
   },
   "divergence_policy": {
-    "max_divergent_fields": 65,
+    "max_divergent_fields": 64,
     "monotonic_non_increasing": true,
-    "default_expiration_wave": "v0.12",
+    "default_expiration_wave": "v0.13",
     "allowed_expiration_milestones": [
-      "v0.12"
+      "v0.13",
+      "platform_step_policy",
+      "platform_capability"
     ],
     "policy_notes": "Total divergent_fields must stay <= max_divergent_fields and monotonically decrease across waves; every divergent field must declare divergence.expires_wave."
   },
   "summary": {
-    "total_fields": 83,
-    "transfer_fields": 81,
-    "local_only_fields": 2,
-    "divergent_fields": 65,
-    "report_d5d62af7_divergent_fields": 59,
+    "total_fields": 89,
+    "transfer_fields": 86,
+    "local_only_fields": 3,
+    "divergent_fields": 64,
+    "report_d5d62af7_divergent_fields": 58,
     "post_280_hdr_rendition_divergent_fields": 4,
     "errata_newly_uncovered_divergent_fields": 2,
-    "identical_fields": 18
+    "identical_fields": 25
   },
   "fields": [
     {
@@ -317,7 +319,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; Windows model stores 0..200 (default 100) while Mac/iOS/Android store 0..2 (default 1)."
       }
     },
@@ -470,7 +472,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI fine step 0.01 EV vs mobile 0.05 EV; wire protocol allows -20..20 EV while local SDR models clamp/validate -5..5 EV (HDR -4..4 EV)."
       }
     },
@@ -743,7 +745,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1% vs mobile 1%; SDR model stores -100..100 (Mac/Windows), 0..2 default 1 (iOS), -1..1 default 0 (Android); HDR stores -100..100 on all 4 ends."
       }
     },
@@ -888,7 +890,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Wire protocol uses engine/iOS SDR sign (-1..1 where UI +100 -> protocol -1.0); iOS SDR model stores -1..1 inverted relative to UI while Android SDR stores -1..1 same-sign and Mac/Windows/HDR store -100..100 same-sign."
       }
     },
@@ -1033,7 +1035,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1% vs mobile 1%; mobile SDR stores -1..1 while desktop SDR and all-platform HDR store -100..100."
       }
     },
@@ -1177,7 +1179,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Report erratum: active IOSToneCurveControls (ToneCurveControls.swift:110) uses step 0.1% (matching Mac/Windows), while dead AdjustmentKind.toneCurve.step is 1 and Android ToneCurveControls.kt:127 uses step 1%; mobile SDR model stores -1..1 vs desktop/HDR -100..100."
       }
     },
@@ -1215,16 +1217,11 @@
             "custom_max_count": 33,
             "coord_min": 0.0,
             "coord_max": 1.0,
-            "endpoints": [
-              [
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0
-              ]
-            ]
+            "endpoint_x": [
+              0.0,
+              1.0
+            ],
+            "endpoints_y_unpinned": true
           },
           "channels": {
             "value_type": "object",
@@ -1328,7 +1325,10 @@
           "hdr_min": -8.0,
           "hdr_max": 8.0,
           "channels": [
-            "rgb"
+            "rgb",
+            "red",
+            "green",
+            "blue"
           ]
         },
         "ios": {
@@ -1372,7 +1372,7 @@
           },
           "step": {
             "coordinate": 0.001,
-            "hdr_coordinate_ev": 0.016
+            "hdr_coordinate_ev": 0.01
           },
           "hdr_min": -8.0,
           "hdr_max": 8.0,
@@ -1403,22 +1403,428 @@
           "hdr_min": -8.0,
           "hdr_max": 8.0,
           "channels": [
-            "rgb"
+            "rgb",
+            "red",
+            "green",
+            "blue"
           ]
         }
       },
       "divergence": {
-        "has_divergence": true,
+        "has_divergence": false,
         "report_d5d62af7_listed": false,
-        "categories": [
-          "step",
-          "missing"
-        ],
+        "categories": [],
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
-        "notes": "Mac and Windows expose only the RGB master curve in UI (no Red/Green/Blue channel tabs), whereas iOS and Android expose RGB/Red/Green/Blue channel selectors; Android CurveCanvas fine keyboard step is 0.001 normalized (0.016 EV across -8..8 EV) with freeform coordinate dialog vs 0.01 EV grid on Mac/iOS/Windows."
+        "notes": "Resolved in v0.12: Mac and Windows expose RGB/Red/Green/Blue channels and Android aligns hdr_coordinate_ev step to 0.01 EV; endpoint Y values are unpinned in [0, 1] while X endpoints stay [0, 1]."
+      }
+    },
+    {
+      "field_id": "light.curve.apply_to_luminosity",
+      "group": "light",
+      "protocol": {
+        "transferable": true,
+        "value_type": "boolean",
+        "nullable": false,
+        "min": null,
+        "max": null,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": null,
+        "hdr_only": false
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "bool",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": false,
+          "scale_from_protocol": "p",
+          "quantization": "discrete"
+        },
+        "ios": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "bool",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": false,
+          "scale_from_protocol": "p",
+          "quantization": "discrete"
+        },
+        "android": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "bool",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": false,
+          "scale_from_protocol": "p",
+          "quantization": "discrete"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "bool",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": false,
+          "scale_from_protocol": "p",
+          "quantization": "discrete"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": false,
+          "step": null
+        },
+        "ios": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": false,
+          "step": null
+        },
+        "android": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": false,
+          "step": null
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": false,
+          "step": null
+        }
+      },
+      "divergence": {
+        "has_divergence": false,
+        "report_d5d62af7_listed": false,
+        "categories": [],
+        "ledger_ids": []
+      }
+    },
+    {
+      "field_id": "light.curve.parametric",
+      "group": "light",
+      "protocol": {
+        "transferable": true,
+        "value_type": "object",
+        "nullable": false,
+        "min": null,
+        "max": null,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": [
+          "highlights",
+          "lights",
+          "darks",
+          "shadows",
+          "split_shadow",
+          "split_midtone",
+          "split_highlight"
+        ],
+        "hdr_only": false,
+        "sub_fields": {
+          "highlights": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0
+          },
+          "lights": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0
+          },
+          "darks": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0
+          },
+          "shadows": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0
+          },
+          "split_shadow": {
+            "value_type": "number",
+            "min": 0.05,
+            "max": 0.45,
+            "default": 0.25
+          },
+          "split_midtone": {
+            "value_type": "number",
+            "min": 0.25,
+            "max": 0.75,
+            "default": 0.5
+          },
+          "split_highlight": {
+            "value_type": "number",
+            "min": 0.55,
+            "max": 0.95,
+            "default": 0.75
+          },
+          "split_min_gap": 0.02
+        }
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "ios": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "android": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": -100.0,
+          "max": 100.0,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "step": {
+            "highlights": 0.1,
+            "lights": 0.1,
+            "darks": 0.1,
+            "shadows": 0.1,
+            "split_shadow": 0.01,
+            "split_midtone": 0.01,
+            "split_highlight": 0.01
+          }
+        },
+        "ios": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": -100.0,
+          "max": 100.0,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "step": {
+            "highlights": 0.1,
+            "lights": 0.1,
+            "darks": 0.1,
+            "shadows": 0.1,
+            "split_shadow": 0.01,
+            "split_midtone": 0.01,
+            "split_highlight": 0.01
+          }
+        },
+        "android": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": -100.0,
+          "max": 100.0,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "step": {
+            "highlights": 0.1,
+            "lights": 0.1,
+            "darks": 0.1,
+            "shadows": 0.1,
+            "split_shadow": 0.01,
+            "split_midtone": 0.01,
+            "split_highlight": 0.01
+          }
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": -100.0,
+          "max": 100.0,
+          "default": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
+          "step": {
+            "highlights": 0.1,
+            "lights": 0.1,
+            "darks": 0.1,
+            "shadows": 0.1,
+            "split_shadow": 0.01,
+            "split_midtone": 0.01,
+            "split_highlight": 0.01
+          }
+        }
+      },
+      "divergence": {
+        "has_divergence": false,
+        "report_d5d62af7_listed": false,
+        "categories": [],
+        "ledger_ids": []
       }
     },
     {
@@ -1552,7 +1958,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -1687,7 +2093,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -1822,7 +2228,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%."
       }
     },
@@ -1853,8 +2259,18 @@
             "value_type": "number",
             "min": 0.0,
             "max": 100.0
+          },
+          "luminance": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0,
+            "optional": true
           }
-        }
+        },
+        "optional_keys": [
+          "luminance"
+        ]
       },
       "model": {
         "macos": {
@@ -1869,7 +2285,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1886,7 +2303,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1903,7 +2321,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1920,7 +2339,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -1938,11 +2358,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "ios": {
@@ -1956,11 +2378,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "android": {
@@ -1974,11 +2398,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "windows": {
@@ -1992,11 +2418,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         }
       },
@@ -2034,8 +2462,18 @@
             "value_type": "number",
             "min": 0.0,
             "max": 100.0
+          },
+          "luminance": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0,
+            "optional": true
           }
-        }
+        },
+        "optional_keys": [
+          "luminance"
+        ]
       },
       "model": {
         "macos": {
@@ -2050,7 +2488,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2067,7 +2506,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2084,7 +2524,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2101,7 +2542,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2119,11 +2561,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "ios": {
@@ -2137,11 +2581,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "android": {
@@ -2155,11 +2601,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "windows": {
@@ -2173,11 +2621,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         }
       },
@@ -2215,8 +2665,18 @@
             "value_type": "number",
             "min": 0.0,
             "max": 100.0
+          },
+          "luminance": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0,
+            "optional": true
           }
-        }
+        },
+        "optional_keys": [
+          "luminance"
+        ]
       },
       "model": {
         "macos": {
@@ -2231,7 +2691,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2248,7 +2709,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2265,7 +2727,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2282,7 +2745,8 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "scale_from_protocol": "p",
           "quantization": "continuous"
@@ -2300,11 +2764,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "ios": {
@@ -2318,11 +2784,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "android": {
@@ -2336,11 +2804,13 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
         },
         "windows": {
@@ -2354,12 +2824,475 @@
           "max": null,
           "default": {
             "hue": 0.0,
-            "saturation": 0.0
+            "saturation": 0.0,
+            "luminance": 0.0
           },
           "step": {
             "hue": 0.1,
-            "saturation": 0.1
+            "saturation": 0.1,
+            "luminance": 0.1
           }
+        }
+      },
+      "divergence": {
+        "has_divergence": false,
+        "report_d5d62af7_listed": false,
+        "categories": [],
+        "ledger_ids": []
+      }
+    },
+    {
+      "field_id": "color.grading.global",
+      "group": "color",
+      "protocol": {
+        "transferable": true,
+        "value_type": "object",
+        "nullable": false,
+        "min": null,
+        "max": null,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": [
+          "hue",
+          "saturation"
+        ],
+        "hdr_only": false,
+        "sub_fields": {
+          "hue": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 360.0,
+            "exclusive_max": true
+          },
+          "saturation": {
+            "value_type": "number",
+            "min": 0.0,
+            "max": 100.0
+          },
+          "luminance": {
+            "value_type": "number",
+            "min": -100.0,
+            "max": 100.0,
+            "default": 0.0,
+            "optional": true
+          }
+        },
+        "optional_keys": [
+          "luminance"
+        ]
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "ios": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "android": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "object",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "step": {
+            "hue": 0.1,
+            "saturation": 0.1,
+            "luminance": 0.1
+          }
+        },
+        "ios": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "step": {
+            "hue": 0.1,
+            "saturation": 0.1,
+            "luminance": 0.1
+          }
+        },
+        "android": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "step": {
+            "hue": 0.1,
+            "saturation": 0.1,
+            "luminance": 0.1
+          }
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": {
+            "hue": 0.0,
+            "saturation": 0.0,
+            "luminance": 0.0
+          },
+          "step": {
+            "hue": 0.1,
+            "saturation": 0.1,
+            "luminance": 0.1
+          }
+        }
+      },
+      "divergence": {
+        "has_divergence": false,
+        "report_d5d62af7_listed": false,
+        "categories": [],
+        "ledger_ids": []
+      }
+    },
+    {
+      "field_id": "color.grading.blending",
+      "group": "color",
+      "protocol": {
+        "transferable": true,
+        "value_type": "number",
+        "nullable": false,
+        "min": 0.0,
+        "max": 100.0,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": null,
+        "hdr_only": false
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "ios": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "android": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "float",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "step": 0.1
+        },
+        "ios": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "step": 0.1
+        },
+        "android": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "step": 0.1
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0,
+          "step": 0.1
+        }
+      },
+      "divergence": {
+        "has_divergence": false,
+        "report_d5d62af7_listed": false,
+        "categories": [],
+        "ledger_ids": []
+      }
+    },
+    {
+      "field_id": "color.grading.balance",
+      "group": "color",
+      "protocol": {
+        "transferable": true,
+        "value_type": "number",
+        "nullable": false,
+        "min": -100.0,
+        "max": 100.0,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": null,
+        "hdr_only": false
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "ios": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "android": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "float",
+          "nullable": false,
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "scale_from_protocol": "p",
+          "quantization": "continuous"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "step": 0.1
+        },
+        "ios": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "step": 0.1
+        },
+        "android": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "step": 0.1
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr",
+            "hdr"
+          ],
+          "unit": "",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0,
+          "step": 0.1
         }
       },
       "divergence": {
@@ -2382,6 +3315,7 @@
         "allowed_values": [
           "camera",
           "temperature",
+          "relative",
           "none"
         ],
         "object_keys": null,
@@ -2494,7 +3428,7 @@
         "ledger_ids": [
           "P1-11"
         ],
-        "notes": "Field range/default/UI identical across 4 ends; Android raster->RAW paste transfer behavior tracked under P1-11."
+        "notes": "Field range/default/UI identical across 4 ends; relative mode supports SDR raster relative WB; Android raster->RAW paste transfer behavior tracked under P1-11."
       }
     },
     {
@@ -2745,7 +3679,7 @@
           "P2-23",
           "P1-11"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1; Android raster->RAW paste tracked under P1-11."
       }
     },
@@ -2890,7 +3824,7 @@
           "P2-23",
           "P1-10"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1% vs mobile 1%; SDR model stores -100..100 (Mac/Windows), 0..2 default 1 (iOS), -1..1 default 0 (Android); HDR stores -100..100 on all 4 ends."
       }
     },
@@ -3138,7 +4072,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1."
       }
     },
@@ -3273,7 +4207,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
@@ -3408,7 +4342,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.01 EV, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 0.1 EV."
       }
     },
@@ -3543,7 +4477,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
@@ -3678,7 +4612,7 @@
           "P1-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "All four platforms place this field in editor group 'hdr_rendition' (transfer protocol group remains 'light'). Mac primary dock hdrRenditionRow uses fineStep 0.1 %, while Mac secondary HDRRenditionControls and iOS/Android/Windows use 1.0 %."
       }
     },
@@ -4011,7 +4945,7 @@
             "fbdd_level": 0
           },
           "step": {
-            "temperature": 50.0,
+            "temperature": 10.0,
             "tint": 1.0
           }
         },
@@ -4032,7 +4966,7 @@
             "fbdd_level": 0
           },
           "step": {
-            "temperature": 50.0,
+            "temperature": 10.0,
             "tint": 1.0
           }
         },
@@ -4074,22 +5008,17 @@
             "fbdd_level": 0
           },
           "step": {
-            "temperature": 50.0,
+            "temperature": 10.0,
             "tint": 1.0
           }
         }
       },
       "divergence": {
-        "has_divergence": true,
+        "has_divergence": false,
         "report_d5d62af7_listed": true,
-        "categories": [
-          "step"
-        ],
-        "ledger_ids": [
-          "P2-23"
-        ],
-        "expires_wave": "v0.12",
-        "notes": "Custom white balance temperature slider in HDR RAW dialog uses 50 K step on Mac/iOS/Windows vs 10 K on Android (reusing R.string.temperature)."
+        "categories": [],
+        "ledger_ids": [],
+        "notes": "Resolved in v0.12: unified HDR RAW custom white balance temperature step to 10 K across all 4 platforms."
       }
     },
     {
@@ -4223,7 +5152,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4358,7 +5287,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4493,7 +5422,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4628,7 +5557,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4763,7 +5692,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -4898,7 +5827,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5033,7 +5962,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5168,7 +6097,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5303,7 +6232,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5438,7 +6367,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5573,7 +6502,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5708,7 +6637,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5843,7 +6772,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -5978,7 +6907,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6113,7 +7042,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6248,7 +7177,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6383,7 +7312,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6518,7 +7447,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6653,7 +7582,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6788,7 +7717,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -6923,7 +7852,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7058,7 +7987,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7193,7 +8122,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7328,7 +8257,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1 vs mobile 1 (iOS UI set() rounds to integer while transfer uses setExact)."
       }
     },
@@ -7465,7 +8394,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7602,7 +8531,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7739,7 +8668,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -7876,7 +8805,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8013,7 +8942,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8150,7 +9079,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8301,7 +9230,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; SDR model stores -100..100 while HDRDetailSettings stores -1..1 across all 4 ends."
       }
     },
@@ -8452,7 +9381,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; SDR model stores -100..100 while HDRDetailSettings stores -1..1 across all 4 ends."
       }
     },
@@ -8589,7 +9518,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8726,7 +9655,7 @@
           "D-05",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI step 0.1 vs mobile 1 (iOS UI setEditingEffect() rounds to integer while SDR/HDR model and transfer preserve exact decimals)."
       }
     },
@@ -8870,7 +9799,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop UI fine step 0.1% vs mobile 1%; desktop SDR stores 0..200 while mobile SDR and all-platform HDR store 0..2."
       }
     },
@@ -8990,7 +9919,7 @@
           "D-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_capability",
         "notes": "Q3/D-02: raw_level is pre-demosaic Bayer FBDD (integer 0/1/2), modeled only by Mac SDR RAW. A valid non-zero value unsupported by the platform or target (raster, non-Bayer, or active desktop AI) is ignored with ignored_raw_denoise; other selected edits still apply. Zero never overwrites dormant denoise on an AI target. Wire type/range/source validation remains strict before adaptation."
       }
     },
@@ -9120,7 +10049,7 @@
           "D-02",
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Q3/D-02: post_rgb is post-render RGB denoise (0-1 float), the current HDR v6+ key; Mac/Android/Windows model it on HDR only and iOS on SDR RAW+HDR (no SDR UI slider). Unsupported SDR platform/target values, including iOS raster and desktop AI, are ignored with ignored_post_rgb_denoise; other selected edits still apply. This client capability rule does not remove the core display-buffer RGB stage. HDR denoise UI step is 0.1% on Mac/Windows, 1% on Android, and 5% (0.05) on iOS."
       }
     },
@@ -9246,7 +10175,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Mac stores optional Double? defaulting to nil (legacy picker visible when hasLegacyDenoise); iOS/Android/Windows store non-null Int 0..2 defaulting to 0 with UI hidden. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
@@ -9466,7 +10395,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Desktop wavelet sliders use fine step 0.1 vs mobile 1 (rounded); Mac model is optional WaveletDenoiseSettings? = nil until upgraded while iOS/Android/Windows default to (false, 0, 46, 50); Windows DenoisePanel displays '%' suffix while Mac/iOS/Android display unitless values. D-02: raster and non-Bayer targets support this field. Active desktop AI ignores selected traditional denoise fields with ignored_target_denoise for non-neutral values, preserving all saved dormant values even for zero/null pastes. Mobile clients do not represent an active AI target."
       }
     },
@@ -9859,7 +10788,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "UI minimum crop dimension diverges 3 ways: iOS 1.0% vs Mac/Android 0.1% vs Windows 0.01%."
       }
     },
@@ -9994,7 +10923,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "UI minimum crop dimension diverges 3 ways: iOS 1.0% vs Mac/Android 0.1% vs Windows 0.01%."
       }
     },
@@ -10516,7 +11445,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_step_policy",
         "notes": "Mac/iOS/Android straighten UI fine step is 0.1 deg while Windows GeometryPanel uses Grid = 0.01 deg."
       }
     },
@@ -10653,7 +11582,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Mac/iOS/Android display -100..100 (Mac step 0.1, iOS/Android step 1; Android adds '%' suffix), whereas Windows GeometryPanel displays normalized -1..1 with step 0.001."
       }
     },
@@ -10790,7 +11719,7 @@
         "ledger_ids": [
           "P2-23"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Mac/iOS/Android display -100..100 (Mac step 0.1, iOS/Android step 1; Android adds '%' suffix), whereas Windows GeometryPanel displays normalized -1..1 with step 0.001."
       }
     },
@@ -11191,7 +12120,7 @@
           "P1-11",
           "P1-12"
         ],
-        "expires_wave": "v0.12",
+        "expires_wave": "v0.13",
         "notes": "Report erratum: SDR Lens UI exposes vignetting toggle only on iOS (LensControls.swift:63) and Android (LensControls.kt:58), while Mac (LensControls.swift:98) and Windows (LensPanel.xaml:9-11) omit it in SDR (exposed only in HDR camera RAW dialog)."
       }
     },
@@ -11567,8 +12496,125 @@
           "missing"
         ],
         "ledger_ids": [],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_capability",
         "notes": "Intentional desktop-only hardware GPU feature (Mac Core ML, Windows DirectML); absent from wire transfer protocol and mobile clients."
+      }
+    },
+    {
+      "field_id": "local.ai_denoise_strength",
+      "group": "detail",
+      "protocol": {
+        "transferable": false,
+        "value_type": "number",
+        "nullable": false,
+        "min": 0.0,
+        "max": 100.0,
+        "exclusive_min": false,
+        "allowed_values": null,
+        "object_keys": null,
+        "hdr_only": false
+      },
+      "model": {
+        "macos": {
+          "supported": true,
+          "modes": [
+            "sdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 100.0,
+          "scale_from_protocol": "none",
+          "quantization": "continuous"
+        },
+        "ios": {
+          "supported": false,
+          "modes": [],
+          "storage_type": "none",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": null,
+          "scale_from_protocol": "none",
+          "quantization": "none"
+        },
+        "android": {
+          "supported": false,
+          "modes": [],
+          "storage_type": "none",
+          "nullable": false,
+          "min": null,
+          "max": null,
+          "default": null,
+          "scale_from_protocol": "none",
+          "quantization": "none"
+        },
+        "windows": {
+          "supported": true,
+          "modes": [
+            "sdr"
+          ],
+          "storage_type": "double",
+          "nullable": false,
+          "min": 0.0,
+          "max": 100.0,
+          "default": 100.0,
+          "scale_from_protocol": "none",
+          "quantization": "continuous"
+        }
+      },
+      "ui": {
+        "macos": {
+          "exposed": true,
+          "modes": [
+            "sdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 100.0,
+          "step": 1.0
+        },
+        "ios": {
+          "exposed": false,
+          "modes": [],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": null,
+          "step": null
+        },
+        "android": {
+          "exposed": false,
+          "modes": [],
+          "unit": null,
+          "min": null,
+          "max": null,
+          "default": null,
+          "step": null
+        },
+        "windows": {
+          "exposed": true,
+          "modes": [
+            "sdr"
+          ],
+          "unit": "%",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 100.0,
+          "step": 1.0
+        }
+      },
+      "divergence": {
+        "has_divergence": true,
+        "report_d5d62af7_listed": false,
+        "categories": [
+          "missing"
+        ],
+        "ledger_ids": [],
+        "expires_wave": "platform_capability",
+        "notes": "Intentional desktop-only hardware GPU DualDn blend strength (Mac Core ML, Windows DirectML); absent from wire transfer protocol and mobile clients."
       }
     },
     {
@@ -11684,7 +12730,7 @@
           "missing"
         ],
         "ledger_ids": [],
-        "expires_wave": "v0.12",
+        "expires_wave": "platform_capability",
         "notes": "Intentional desktop-only HDR camera RAW AI denoise flag (Mac Core ML, Windows DirectML); absent from wire transfer protocol and mobile clients."
       }
     }

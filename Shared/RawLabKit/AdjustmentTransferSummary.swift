@@ -81,7 +81,11 @@ public struct AdjustmentTransferSummary {
         case .temperature: return whiteBalanceValue(value, unit: " K")
         case .tint: return whiteBalanceValue(value, unit: "", signed: true)
         case .curve: return curveText(value)
-        case .gradingShadows, .gradingMidtones, .gradingHighlights: return gradingText(value)
+        case .curveApplyToLuminosity: return text((value.boolean ?? false) ? "开启" : "停用")
+        case .curveParametric: return parametricCurveText(value)
+        case .gradingShadows, .gradingMidtones, .gradingHighlights, .gradingGlobal: return gradingText(value)
+        case .gradingBlending: return number(value.number ?? 50) + "%"
+        case .gradingBalance: return number(value.number ?? 0, signed: true)
         case .vignetteAmount, .vignetteRoundness:
             return number(value.number ?? 0, signed: true)
         case .perspectiveHorizontal, .perspectiveVertical:
@@ -139,6 +143,7 @@ public struct AdjustmentTransferSummary {
         switch mode {
         case "camera": return text("相机白平衡（按目标照片）")
         case "temperature": return text("自定义")
+        case "relative": return text("相对白平衡")
         case "none": return text("不适用")
         default: return mode ?? ""
         }
@@ -173,14 +178,26 @@ public struct AdjustmentTransferSummary {
         return parts.joined(separator: "\n")
     }
 
+    private func parametricCurveText(_ value: AdjustmentTransferValue) -> String {
+        guard let parametric = value.parametricCurve else { return text("无效的曲线参数") }
+        return [
+            text("高光") + " " + number(parametric.highlights, signed: true),
+            text("亮部") + " " + number(parametric.lights, signed: true),
+            text("暗部") + " " + number(parametric.darks, signed: true),
+            text("阴影") + " " + number(parametric.shadows, signed: true),
+        ].joined(separator: " · ")
+    }
+
     private func gradingText(_ value: AdjustmentTransferValue) -> String {
-        guard let object = value.object,
-              let hue = object["hue"]?.number,
-              let saturation = object["saturation"]?.number else {
+        guard let wheel = value.gradingWheel else {
             return text("无效的颜色分级参数")
         }
-        return text("色相") + " " + number(hue) + "° · " +
-            text("饱和度") + " " + number(saturation) + "%"
+        var summary = text("色相") + " " + number(wheel.hue) + "° · " +
+            text("饱和度") + " " + number(wheel.saturation) + "%"
+        if wheel.luminance != 0.0 {
+            summary += " · " + text("明亮度") + " " + number(wheel.luminance, signed: true)
+        }
+        return summary
     }
 
     private func chromaDenoiseText(_ value: AdjustmentTransferValue) -> String {

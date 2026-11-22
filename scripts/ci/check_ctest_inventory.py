@@ -78,10 +78,14 @@ LIBRAW_SOURCE_ONLY_TEST_SOURCES = {
 AI_DENOISE_ONLY_TEST_SOURCES = {
     "ai_session_memory_tests.cpp",
     "coreml_gpu_placement_tests.cpp",
+}
+AI_PACKAGE_ONLY_TEST_SOURCES = {
     "dualdn_directml_tests.cpp",
     "dualdn_native_tests.cpp",
-    "dualdn_onnx_tests.cpp",
     "dualdn_session_tests.cpp",
+}
+AI_MODEL_ONLY_TEST_SOURCES = {
+    "dualdn_onnx_tests.cpp",
 }
 GLSLANG_ONLY_TEST_SOURCES = {
     "gles_photo_pixel_tests.cpp",
@@ -172,6 +176,8 @@ def validate_ctest_inventory(
     platform: str | None = None,
     tests_dir: Path | None = None,
     ai_enabled: bool = False,
+    ai_package_present: bool | None = None,
+    ai_model_present: bool | None = None,
     portable_hdr_enabled: bool | None = None,
     libraw_source_present: bool | None = None,
     glslang_available: bool | None = None,
@@ -245,6 +251,10 @@ def validate_ctest_inventory(
                 continue
             if not ai_enabled and fname in AI_DENOISE_ONLY_TEST_SOURCES:
                 continue
+            if not (ai_enabled and (ai_package_present if ai_package_present is not None else True)) and fname in AI_PACKAGE_ONLY_TEST_SOURCES:
+                continue
+            if not (ai_enabled and (ai_model_present if ai_model_present is not None else True)) and fname in AI_MODEL_ONLY_TEST_SOURCES:
+                continue
             if not glslang_available and fname in GLSLANG_ONLY_TEST_SOURCES:
                 continue
             expected_stem = SOURCE_TO_EXECUTABLE_STEM.get(fname, Path(fname).stem)
@@ -281,6 +291,8 @@ def main(argv: list[str] | None = None) -> int:
         data = load_ctest_json(args.build_dir, args.ctest_bin, config=config)
 
     ai_enabled = args.ai_enabled or _cache_truthy(cache, "SONY2FUJI_ENABLE_AI_DENOISE")
+    ai_package_present = bool(cache.get("RAWLAB_DUALDN_TEST_PACKAGE", "").strip()) if cache else None
+    ai_model_present = bool(cache.get("RAWLAB_DUALDN_TEST_MODEL", "").strip()) if cache else None
     portable_hdr = _cache_truthy(cache, "SONY2FUJI_TEST_PORTABLE_HDR") if "SONY2FUJI_TEST_PORTABLE_HDR" in cache else None
     libraw_src = cache.get("SONY2FUJI_TEST_LIBRAW_SOURCE", "")
     libraw_source_present = (Path(libraw_src) / "src/decoders/sony_arw6.cpp").is_file() if libraw_src else (False if cache else None)
@@ -298,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
         platform=args.platform,
         tests_dir=tests_dir,
         ai_enabled=ai_enabled,
+        ai_package_present=ai_package_present,
+        ai_model_present=ai_model_present,
         portable_hdr_enabled=portable_hdr,
         libraw_source_present=libraw_source_present,
         glslang_available=glslang_available,

@@ -169,7 +169,7 @@ void toneV2(sony2fuji_session* session) {
     settings.base.struct_size = sizeof(settings.base);
     render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
     settings.base.struct_size = sizeof(settings);
-    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION + 1;
     render(SONY2FUJI_STATUS_UNSUPPORTED, unchanged);
 }
 
@@ -312,6 +312,62 @@ void lookV7Probe(sony2fuji_session* session, const char* path) {
         require(changed, "HDR v7 probe bypass also removed the look from rendering");
     }
 }
+
+void gradingV2V9(sony2fuji_session* session) {
+    Source source;
+    sony2fuji_hdr_request_v9 v9{};
+    auto& v8 = v9.base;
+    auto& v7 = v8.base;
+    auto& v6 = v7.base;
+    auto& v5 = v6.base;
+    auto& v4 = v5.base;
+    auto& v3 = v4.base;
+    auto& v2 = v3.base;
+    auto& base = v2.base;
+    base = request();
+    base.hdr_processing_version = 9;
+    base.struct_size = sizeof(v9);
+    v2.curve = init<sony2fuji_tone_curve_config>();
+    v3.hsl = init<sony2fuji_hsl_config>();
+    v3.grading = init<sony2fuji_color_grading_config>();
+    v5.effects = init<sony2fuji_photo_effects_config>();
+    for (int c = 0; c < 3; ++c) v8.channels[c] = init<sony2fuji_tone_curve_config>();
+    v9.parametric_curve.version = 1;
+    v9.parametric_curve.struct_size = sizeof(v9.parametric_curve);
+    v9.parametric_curve.split_shadow = 0.25f;
+    v9.parametric_curve.split_midtone = 0.50f;
+    v9.parametric_curve.split_highlight = 0.75f;
+    v9.grading_v2.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+    v9.grading_v2.struct_size = sizeof(v9.grading_v2);
+    v9.grading_v2.blending = 50;
+    v9.grading_v2.balance = 0;
+
+    auto diagnostic = init<sony2fuji_hdr_diagnostic_v1>();
+    auto result = init<sony2fuji_hdr_image_pair_v1>();
+    require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR v9 neutral render failed");
+    require(std::memcmp(result.hdr.data, source.hdr.data(), source.hdr.size() * sizeof(float)) == 0,
+        "HDR v9 neutral grading changed pixels");
+    sony2fuji_hdr_release_pair(&result);
+
+    v9.grading_v2.global_hue = 35;
+    v9.grading_v2.global_saturation = 45;
+    v9.grading_v2.global_luminance = 30;
+    v9.grading_v2.blending = 80;
+    v9.grading_v2.balance = -25;
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR v9 grading_v2 render failed");
+    const auto* outHdr = static_cast<const float*>(result.hdr.data);
+    require(outHdr[3] > source.hdr[3] && (outHdr[3] / outHdr[5]) > (source.hdr[3] / source.hdr[5]),
+        "HDR v9 grading_v2 global wheel/luminance did not apply");
+    sony2fuji_hdr_release_pair(&result);
+
+    v9.grading_v2.blending = 150;
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "HDR v9 accepted invalid grading_v2 blending");
+}
 }
 
 int main(int argc, char** argv) {
@@ -325,6 +381,7 @@ int main(int argc, char** argv) {
         require(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK && session, "session creation failed");
         toneV2(session);
         colorV3(session);
+        gradingV2V9(session);
         for (int i = 1; i < argc; ++i) lookV7Probe(session, argv[i]);
         Source source;
         auto output = init<sony2fuji_hdr_image_pair_v1>();

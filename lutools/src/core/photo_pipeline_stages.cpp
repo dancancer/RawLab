@@ -11,6 +11,7 @@
 #include "core/photo_lut_contract.h"
 #include "core/photo_rendering.h"
 #include "core/processing_cancellation.h"
+#include "gpu/photo_tone_curve_shader.h"
 #include "gpu/photo_tone_shader.h"
 #include "sony2fuji/sony2fuji.h"
 
@@ -24,6 +25,24 @@
 
 namespace sony2fuji {
 namespace {
+
+#define TCV_FN inline
+#define TCV_RGB sony2fuji::RGB
+#define TCV_RGB3(r, g, b) sony2fuji::RGB(static_cast<float>(r), static_cast<float>(g), static_cast<float>(b))
+#define TCV_MAX(a, b) std::max<float>(static_cast<float>(a), static_cast<float>(b))
+#define TCV_MIN(a, b) std::min<float>(static_cast<float>(a), static_cast<float>(b))
+#define TCV_CLAMP01(x) std::max<float>(0.0f, std::min<float>(1.0f, static_cast<float>(x)))
+#define TCV_SRGB_TO_LINEAR(x) sony2fuji::GammaConverter::removeSRGBGamma(static_cast<float>(x))
+#define TCV_LINEAR_TO_SRGB(x) sony2fuji::GammaConverter::applySRGBGamma(static_cast<float>(x))
+RAWLAB_TONE_CURVE_LUMINOSITY_BODY
+#undef TCV_FN
+#undef TCV_RGB
+#undef TCV_RGB3
+#undef TCV_MAX
+#undef TCV_MIN
+#undef TCV_CLAMP01
+#undef TCV_SRGB_TO_LINEAR
+#undef TCV_LINEAR_TO_SRGB
 
 float signedPow(float value, float power) {
     float sign = value >= 0.0f ? 1.0f : -1.0f;
@@ -290,9 +309,12 @@ void applyPostLookStages(
     bool applyHslAndGrading
 ) {
     const auto& customCurve = params.customCurve;
+    const ToneCurveParametric parametric(params.parametricCurve);
+    const bool useCurve = params.toneCurve != 0.0f;
+    const bool masterActive = parametric.active() || customCurve.active() || useCurve;
     const bool channelsActive = std::any_of(channels.begin(), channels.end(),
         [](const auto& curve) { return curve.active(); });
-    const bool toneActive = params.needsToneAdjustments() || customCurve.active() || channelsActive;
+    const bool toneActive = params.needsToneAdjustments() || masterActive || channelsActive;
     const BasicBlackWhiteV3Prepared bwV3(basicV3 ? toneControls : ToneControlsOptions{});
     const bool bwLegacyActive = !basicV3 && (toneControls.blackPoint != 0.0f || toneControls.whitePoint != 0.0f);
     const bool vibranceActive = toneControls.vibrance != 0.0f;
@@ -306,10 +328,25 @@ void applyPostLookStages(
     const float saturation = clampFloat(params.saturation, 0.0f, 2.0f);
     const float highlights = clampFloat(params.highlights, -1.0f, 1.0f);
     const float shadows = clampFloat(params.shadows, -1.0f, 1.0f);
-    const bool useCurve = params.toneCurve != 0.0f;
     const ToneCurvePoints curve = buildToneCurve(params.toneCurve);
     const BasicContrastV3Lut contrastLut((toneActive && basicV3) ? (contrast - 1.0f) : 0.0f);
-    const auto gradingCoeffs = gradingActive ? colorGradingCoefficients(colorGrading) : std::array<RGB, 3>{};
+    const ColorGradingShaderParams gradingParams = gradingActive ? colorGradingParameters(colorGrading) : ColorGradingShaderParams{};
+
+    auto evalMaster = [&](float v) -> float {
+        if (parametric.active()) {
+            v = static_cast<float>(parametric.evaluate(v));
+        }
+        if (customCurve.active()) {
+            return static_cast<float>(customCurve.evaluate(v));
+        }
+        if (useCurve) {
+            return applyToneCurve(v, curve);
+        }
+        return v;
+    };
+    const float y0Linear = (masterActive && params.curveApplyToLuminosity)
+        ? GammaConverter::removeSRGBGamma(evalMaster(0.0f))
+        : 0.0f;
 
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t index = first; index < last; ++index) {
@@ -323,19 +360,27 @@ void applyPostLookStages(
                 if (highlights != 0.0f || shadows != 0.0f) {
                     pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
                 }
-                if (customCurve.active()) {
-                    pixel.r = static_cast<float>(customCurve.evaluate(pixel.r));
-                    pixel.g = static_cast<float>(customCurve.evaluate(pixel.g));
-                    pixel.b = static_cast<float>(customCurve.evaluate(pixel.b));
-                } else if (useCurve) {
-                    pixel.r = applyToneCurve(pixel.r, curve);
-                    pixel.g = applyToneCurve(pixel.g, curve);
-                    pixel.b = applyToneCurve(pixel.b, curve);
+                if (masterActive) {
+                    if (params.curveApplyToLuminosity) {
+                        const RGB pL(
+                            GammaConverter::removeSRGBGamma(pixel.r),
+                            GammaConverter::removeSRGBGamma(pixel.g),
+                            GammaConverter::removeSRGBGamma(pixel.b)
+                        );
+                        const float Y = tcLuminosityLinearY(pL);
+                        const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
+                        const float uPrime = evalMaster(u);
+                        pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
+                    } else {
+                        pixel.r = evalMaster(pixel.r);
+                        pixel.g = evalMaster(pixel.g);
+                        pixel.b = evalMaster(pixel.b);
+                    }
                 }
                 if (channelsActive) {
-                    pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
-                    pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
-                    pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+                    if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
+                    if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
+                    if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
                 }
                 if (basicV3 && contrastLut.active) {
                     pixel.r = contrastLut.apply(pixel.r);
@@ -353,7 +398,7 @@ void applyPostLookStages(
                 pixel = applyHsl(pixel, hsl);
             }
             if (gradingActive) {
-                pixel = applyColorGradingCoefficients(pixel, gradingCoeffs);
+                pixel = applyColorGradingParameters(pixel, gradingParams);
             }
             image.pixels[index] = pixel;
         }
@@ -382,6 +427,60 @@ void applyDetailAdjustments(
     if (sharpening > 0.0f) {
         applySharpening(image, sharpening);
     }
+}
+
+void applyOutputSharpening(ImageData& image, OutputSharpening level) {
+    if (level == OutputSharpening::Off || image.width <= 1 || image.height <= 1 || image.pixels.empty()) {
+        return;
+    }
+    float strength = 0.0f;
+    switch (level) {
+        case OutputSharpening::Low: strength = 0.20f; break;
+        case OutputSharpening::Standard: strength = 0.40f; break;
+        case OutputSharpening::High: strength = 0.70f; break;
+        case OutputSharpening::Off: return;
+    }
+    const int width = image.width;
+    const int height = image.height;
+    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (image.pixels.size() != pixelCount) {
+        return;
+    }
+
+    std::vector<float> luma(pixelCount);
+    parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const auto& p = image.pixels[i];
+            luma[i] = 0.2126f * p.r + 0.7152f * p.g + 0.0722f * p.b;
+        }
+    });
+
+    auto rowHoriz = [&](int row, int x) noexcept -> float {
+        const int x0 = std::max(0, x - 1);
+        const int x2 = std::min(width - 1, x + 1);
+        const float* rowPtr = luma.data() + static_cast<size_t>(row) * static_cast<size_t>(width);
+        return (rowPtr[x0] + 2.0f * rowPtr[x] + rowPtr[x2]) * 0.25f;
+    };
+
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            checkProcessingCancellation();
+            const int y0 = std::max(0, y - 1);
+            const int y2 = std::min(height - 1, y + 1);
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(width);
+            for (int x = 0; x < width; ++x) {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                const float blur = (rowHoriz(y0, x) + 2.0f * rowHoriz(y, x) + rowHoriz(y2, x)) * 0.25f;
+                const float detail = luma[idx] - blur;
+                const float weight = clamp01((std::abs(detail) - 0.008f) / 0.032f);
+                const float delta = clampFloat(detail * weight * strength, -0.15f, 0.15f);
+                auto& pixel = image.pixels[idx];
+                pixel.r = clamp01(pixel.r + delta);
+                pixel.g = clamp01(pixel.g + delta);
+                pixel.b = clamp01(pixel.b + delta);
+            }
+        }
+    });
 }
 
 RenderStatus applyPhotoLook(

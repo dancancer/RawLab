@@ -262,6 +262,7 @@ private struct IOSCollectionExportView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var format = BatchOutputFormat.jpeg
     @State private var longEdge: Int?
+    @State private var outputSharpening = OutputSharpening.off
     @State private var sizeValid = true
     @State private var skipped = Set<String>()
     private var review: IOSCollectionExportReview? { model.collectionExportReview }
@@ -281,12 +282,22 @@ private struct IOSCollectionExportView: View {
                 Section {
                     Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。"))
                     Picker(L10n.text("格式"), selection: $format) {
-                        ForEach([BatchOutputFormat.jpeg, .hdrJPEG, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
+                        ForEach([BatchOutputFormat.jpeg, .png, .hdrJPEG, .renderedDNG], id: \.self) { Text($0.title).tag($0) }
                         if HDRImage.heifExportAvailable {
                             Text(BatchOutputFormat.hdrHEIF.title).tag(BatchOutputFormat.hdrHEIF)
                         }
                     }.accessibilityIdentifier("collection.export.format")
                     ExportSizePicker(longEdge: $longEdge, onValidityChanged: { sizeValid = $0 })
+                    Picker(L10n.text("输出锐化"), selection: Binding(
+                        get: { format == .renderedDNG ? .off : outputSharpening },
+                        set: { outputSharpening = $0 }
+                    )) {
+                        ForEach(OutputSharpening.allCases, id: \.self) { level in
+                            Text(level.title).tag(level)
+                        }
+                    }
+                    .accessibilityIdentifier("collection.export.sharpening")
+                    .disabled(format == .renderedDNG)
                 }
                 Section {
                     ForEach(collection.selection.targets(), id: \.self) { id in
@@ -361,7 +372,9 @@ private struct IOSCollectionExportView: View {
     }
     private func start() {
         message = nil
-        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge, completed: created)
+        model.startCollectionExport(skipping: skipped, format: format, longEdge: longEdge,
+                                    outputSharpening: format == .renderedDNG ? .off : outputSharpening,
+                                    completed: created)
     }
 }
 

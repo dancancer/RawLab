@@ -75,7 +75,8 @@ public enum AdjustmentField
     Vibrance,
     GradingShadows, GradingMidtones, GradingHighlights,
     Curve, Clarity, Dehaze, HdrTemperature, HdrTint,
-    HdrPeakLimit, HdrSDRExposure, HdrSDRContrast, HdrSDRSaturation, HdrLook, HdrCameraDevelopment
+    HdrPeakLimit, HdrSDRExposure, HdrSDRContrast, HdrSDRSaturation, HdrLook, HdrCameraDevelopment,
+    CurveApplyToLuminosity, CurveParametric, GradingGlobal, GradingBlending, GradingBalance
 }
 
 public static class AdjustmentFields
@@ -150,7 +151,9 @@ public static class AdjustmentFields
         "color.vibrance",
         "color.grading.shadows", "color.grading.midtones", "color.grading.highlights",
         "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint",
-        "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development"
+        "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development",
+        "light.curve.apply_to_luminosity", "light.curve.parametric",
+        "color.grading.global", "color.grading.blending", "color.grading.balance"
     ];
     // Keep the legacy catalog/index contract stable; HDR-only fields are
     // addressable through HDRSupported but are not legacy "common" fields.
@@ -199,11 +202,19 @@ public static class AdjustmentFields
     public static readonly IReadOnlySet<AdjustmentField> HDRV5Supported = HDRV4Supported.Concat(HDREffects).ToHashSet();
     public static readonly IReadOnlySet<AdjustmentField> HDRV6Supported = HDRV5Supported.Concat(HDRDetail).ToHashSet();
     public static readonly IReadOnlySet<AdjustmentField> HDRSupported = HDRV6Supported.Append(AdjustmentField.HdrLook).ToHashSet();
+    public static readonly IReadOnlySet<AdjustmentField> HDRV9ToneExtensions = new HashSet<AdjustmentField> {
+        AdjustmentField.CurveApplyToLuminosity, AdjustmentField.CurveParametric
+    };
+    public static readonly IReadOnlySet<AdjustmentField> HDRV9ColorExtensions = new HashSet<AdjustmentField> {
+        AdjustmentField.GradingGlobal, AdjustmentField.GradingBlending, AdjustmentField.GradingBalance
+    };
+    public static readonly IReadOnlySet<AdjustmentField> HDRV9Supported = HDRSupported
+        .Concat(HDRV9ToneExtensions).Concat(HDRV9ColorExtensions).ToHashSet();
     internal static IReadOnlySet<AdjustmentField> HDRTransferFields(bool cameraRaw) =>
-        cameraRaw ? HDRSupported.Append(AdjustmentField.HdrCameraDevelopment).ToHashSet() : HDRSupported;
+        cameraRaw ? HDRV9Supported.Append(AdjustmentField.HdrCameraDevelopment).ToHashSet() : HDRV9Supported;
     public static IReadOnlySet<AdjustmentField> HDRSupportedFor(int version) => version switch {
         1 => HDRV1Supported, 2 => HDRV2Supported, 3 => HDRV3Supported, 4 => HDRV4Supported,
-        5 => HDRV5Supported, 6 => HDRV6Supported, 7 or 8 => HDRSupported,
+        5 => HDRV5Supported, 6 => HDRV6Supported, 7 or 8 => HDRSupported, 9 => HDRV9Supported,
         _ => throw new ArgumentOutOfRangeException(nameof(version))
     };
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };
@@ -301,7 +312,10 @@ public sealed class AdjustmentPayload
             JsonValueKind.Null or JsonValueKind.True or JsonValueKind.False => true, _ => false
         };
     }
-    public string ToJson()
+    public string ToJson() => SerializeJson(indented: false);
+    public string ToIndentedJson() => SerializeJson(indented: true);
+
+    private string SerializeJson(bool indented)
     {
         var source = new Dictionary<string, object?> {
             ["identifier"] = Source.Identifier, ["is_raw"] = Source.IsRaw,
@@ -312,7 +326,7 @@ public sealed class AdjustmentPayload
         return JsonSerializer.Serialize(new {
             payload_version = PayloadVersion, scope_version = ScopeVersion, source,
             values = Values.ToDictionary(p => p.Key.ID(), p => p.Value)
-        });
+        }, indented ? new JsonSerializerOptions { WriteIndented = true } : null);
     }
     public static AdjustmentPayload Parse(string json)
     {
@@ -341,7 +355,7 @@ public sealed class AdjustmentPayload
     }
     public void Validate()
     {
-        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 8)
+        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 9)
             : PayloadVersion != 1 || ScopeVersion != 1)
             throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);
@@ -359,9 +373,15 @@ public sealed class AdjustmentPayload
         foreach (var (field,value) in Values) if (!Enum.IsDefined(field) || !Valid(field,value)) throw Invalid(field.ToString());
         if (this[AdjustmentField.Look] is {} look && Text(look.GetProperty("kind"))=="recipe" && Text(look.GetProperty("id"))!=Source.Recipe?.ID) throw Invalid("recipe.look");
         var mode = Text(this[AdjustmentField.WhiteBalanceMode]);
-        if (mode!=null && (Source.IsRaw ? mode=="none" : mode!="none")) throw Invalid("white_balance.mode");
+        if (mode!=null && (Source.IsRaw ? mode is "none" or "relative" : mode is not ("none" or "relative"))) throw Invalid("white_balance.mode");
         var temperature=this[AdjustmentField.Temperature]; var tint=this[AdjustmentField.Tint];
-        if (!Source.IsRaw && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null)) throw Invalid("raster.white_balance");
+        if (!Source.IsRaw) {
+            if (mode == "relative") {
+                if (Null(temperature) || Null(tint)) throw Invalid("white_balance values conflict with mode");
+            } else if (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) {
+                throw Invalid("raster.white_balance");
+            }
+        }
         if (Source.Recipe!=null && Null(tint)) throw Invalid("recipe.white_balance.tint");
         if (mode=="camera" && (Number(temperature)!=null || Source.Recipe==null && Number(tint)!=null) ||
             mode=="temperature" && (Null(temperature) || Null(tint))) throw Invalid("white_balance values conflict with mode");
@@ -377,12 +397,25 @@ public sealed class AdjustmentPayload
         if (field == AdjustmentField.HdrLook) return HDRLookValue(value) != null;
         if (field == AdjustmentField.HdrCameraDevelopment) return HDRCameraValue(value) != null;
         if (field == AdjustmentField.Curve) {
-            try { _ = ToneCurveSettings.Parse(value); return true; } catch (JsonException) { return false; }
+            try { _ = ToneCurveSettings.Parse(value, allowV2Fields: false); return true; } catch (JsonException) { return false; }
         }
-        if (field.GradingZone() != null) {
-            if (!ObjectKeys(value, proto.ObjectKeys.ToArray())) return false;
+        if (field == AdjustmentField.CurveParametric) {
+            try { _ = ToneCurveParametric.Parse(value); return true; } catch (JsonException) { return false; }
+        }
+        if (field.GradingZone() != null || field == AdjustmentField.GradingGlobal) {
+            if (value.ValueKind != JsonValueKind.Object) return false;
+            var keys = value.EnumerateObject().Select(p => p.Name).ToArray();
+            if (keys.Distinct(StringComparer.Ordinal).Count() != keys.Length ||
+                !proto.ObjectKeys.All(keys.Contains) ||
+                keys.Any(k => !proto.ObjectKeys.Contains(k) && !proto.OptionalKeys.Contains(k)))
+                return false;
+            var lum = 0.0;
+            if (value.TryGetProperty("luminance", out var lumElem)) {
+                if (Number(lumElem) is not {} lv) return false;
+                lum = lv;
+            }
             return Number(value.GetProperty("hue")) is {} hue && Number(value.GetProperty("saturation")) is {} saturation
-                && new ColorGradingWheel(hue, saturation).IsValid;
+                && new ColorGradingWheel(hue, saturation, lum).IsValid;
         }
         if (field == AdjustmentField.Look) {
             if (!ObjectKeys(value, proto.ObjectKeys.ToArray())) return false;

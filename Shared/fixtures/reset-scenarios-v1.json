@@ -425,6 +425,16 @@
             "mode": "legacy",
             "points": []
           },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "highlights": 0.0,
+            "lights": 0.0,
+            "darks": 0.0,
+            "shadows": 0.0,
+            "split_shadow": 0.25,
+            "split_midtone": 0.5,
+            "split_highlight": 0.75
+          },
           "tone.black_point": 0,
           "tone.white_point": 0,
           "color.vibrance": 0,
@@ -440,6 +450,12 @@
             "hue": 0.0,
             "saturation": 0.0
           },
+          "color.grading.global": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.blending": 50.0,
+          "color.grading.balance": 0.0,
           "color.white_balance.mode": "camera",
           "color.white_balance.temperature_kelvin": null,
           "color.white_balance.tint": null,

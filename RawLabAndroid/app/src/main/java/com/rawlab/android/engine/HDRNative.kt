@@ -1,6 +1,7 @@
 package com.rawlab.android.engine
 
 import com.rawlab.android.photo.HDRSourceInfo
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import android.graphics.Bitmap
@@ -100,9 +101,10 @@ internal object NativeHDRBridge {
     }
 
     fun render(session: Long, source: NativeHDRImage, settings: HDRSettings, edge: Int, cancellationGeneration: Long,
-        lookDirectory: File?, progress: HDRProgressListener? = null): NativeHDRImage {
+        lookDirectory: File?, progress: HDRProgressListener? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF): NativeHDRImage {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
-        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory),
+        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory, outputSharpening),
             cancellationGeneration, progress)
         if (handle == 0L) error("HDR render returned an empty owner")
         try {
@@ -183,12 +185,12 @@ internal object NativeHDRBridge {
 
     fun exportProRAW(processor: Long, file: File, info: HDRSourceInfo, settings: HDRSettings,
         output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?,
-        progress: HDRProgressListener? = null) {
+        progress: HDRProgressListener? = null, outputSharpening: OutputSharpening = OutputSharpening.OFF) {
         require(info.isProRAW && edge in 0..65535 && settings.cameraSettings.isDefault)
         info.cameraStamp?.let { require(it == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" } }
         HDRSourceCache.clear()
         // 全零 source_sha256：导出内部在 validateStreamSource 单次读取时自采冻结摘要，避免前置全盘扫读。
-        nativeExportProRAW(processor, file.absolutePath, settings.toNativeRequest(edge, lookDirectory), keepHDR,
+        nativeExportProRAW(processor, file.absolutePath, settings.toNativeRequest(edge, lookDirectory, outputSharpening), keepHDR,
             ByteArray(32), requireNotNull(output.parentFile).absolutePath, output.absolutePath,
             cancellationGeneration, progress)
     }

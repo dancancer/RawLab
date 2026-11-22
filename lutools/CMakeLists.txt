@@ -237,6 +237,7 @@ set(CORE_SOURCES
     src/core/image_header_probe.cpp
     src/core/photo_pipeline_stages.cpp
     src/core/hsl_probe.cpp
+    src/core/bsh_diagnostics.cpp
     src/core/pipeline.cpp
     src/core/pipeline_raw.cpp
     src/core/pipeline_lens.cpp
@@ -559,6 +560,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/recipe_wb_abi_tests.cpp
         LIBRARIES sony2fuji_core
         ARGS "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME bsh_diagnostics
+        SOURCES tests/bsh_diagnostics_tests.cpp
+        LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_X3F)
@@ -1055,6 +1062,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME inspection_geometry_parity
+        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp
+        LIBRARIES ${geometry_libs}
+        LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME perspective_api
         SOURCES tests/perspective_api_tests.cpp
         LIBRARIES sony2fuji_core
@@ -1225,6 +1238,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                     --cli $<TARGET_FILE:sony2fuji_cli>
                     ${CLI_RAW_ARGS}
                 SKIP_RETURN_CODE 77
+                LABELS cli ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
+            rawlab_add_test(
+                NAME bsh_cli
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bsh_cli.py"
+                    --cli $<TARGET_FILE:sony2fuji_cli>
+                    --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
                 LABELS cli ci_macos_arm64 ci_macos_x86_64 ci_windows
             )
             rawlab_add_test(
@@ -2104,6 +2125,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples"
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME export_color_delivery
+        SOURCES tests/export_color_delivery_tests.cpp
+        INCLUDES src
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(

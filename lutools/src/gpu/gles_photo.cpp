@@ -25,6 +25,16 @@ constexpr size_t kCacheBytes = 64 * 1024 * 1024;
 constexpr GLuint kWorkgroup = GlesPhotoPixelContract::kWorkgroupSize;
 static_assert(sizeof(RGB) == GlesPhotoPixelContract::kSsboPixelBytes);
 
+struct alignas(16) CurveUbo {
+    uint32_t curveCounts[4]{};     // master, R, G, B
+    uint32_t curveFlags[4]{};      // applyToLuminosity, parametricActive, 0, 0
+    float parametricAmps[4]{};     // shadows, darks, lights, highlights
+    float parametricSplits[4]{};   // splitShadow, splitMidtone, splitHighlight, 0
+    float curveRanges[128][4]{};   // 0..31 master, 32..63 R, 64..95 G, 96..127 B
+    float curveTangents[128][4]{}; // 0..31 master, 32..63 R, 64..95 G, 96..127 B
+};
+static_assert(sizeof(CurveUbo) == 4160, "GLES CurveUbo std140 layout");
+
 EGLDisplay sharedDisplay() {
     // Android's display is shared with HWUI. Keep one process-level initialization;
     // session teardown must not terminate other clients' contexts on that display.
@@ -95,7 +105,7 @@ struct GlesPhotoRenderer::Impl {
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLContext context = EGL_NO_CONTEXT;
     EGLSurface surface = EGL_NO_SURFACE;
-    GLuint program = 0, buffers[4]{}, texture = 0;
+    GLuint program = 0, buffers[4]{}, curveUbo = 0, texture = 0;
     size_t capacities[4]{}, blockLimit = 0, dispatchLimit = 0;
     GLint textureLimit = 0;
     uint64_t cachedRevision = 0;
@@ -108,6 +118,7 @@ struct GlesPhotoRenderer::Impl {
                 Binding binding(display, surface, context);
                 if (binding.bound) {
                     glDeleteBuffers(4, buffers);
+                    if (curveUbo) glDeleteBuffers(1, &curveUbo);
                     if (texture) glDeleteTextures(1, &texture);
                     if (program) glDeleteProgram(program);
                 }
@@ -151,6 +162,9 @@ struct GlesPhotoRenderer::Impl {
         dispatchLimit = std::min<size_t>(static_cast<size_t>(groups) * kWorkgroup, UINT32_MAX);
         program = makeProgram();
         glGenBuffers(4, buffers);
+        glGenBuffers(1, &curveUbo);
+        glBindBuffer(GL_UNIFORM_BUFFER, curveUbo);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(CurveUbo), nullptr, GL_DYNAMIC_DRAW);
         checkGL();
         __android_log_print(ANDROID_LOG_INFO, "RawLabGPU", "%s; %s; SSBO=%lld; groups=%d; texture3D=%d",
             glGetString(GL_RENDERER), glGetString(GL_VERSION), static_cast<long long>(block), groups, textureLimit);
@@ -356,16 +370,43 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         glUniform4f(context.uniform("tone"), std::clamp(params.contrast, 0.f, 2.f), std::clamp(params.saturation, 0.f, 2.f),
             std::clamp(params.highlights, -1.f, 1.f), std::clamp(params.shadows, -1.f, 1.f));
         glUniform1f(context.uniform("curve"), params.toneCurve);
+        CurveUbo ubo{};
         const auto custom = toneCurveGpuParameters(params.customCurve);
-        glUniform1i(context.uniform("customCurveCount"), custom.count);
-        glUniform4fv(context.uniform("curveRanges[0]"), 32, &custom.ranges[0][0]);
-        glUniform4fv(context.uniform("curveTangents[0]"), 32, &custom.tangents[0][0]);
+        ubo.curveCounts[0] = custom.count;
+        if (custom.count) {
+            std::memcpy(&ubo.curveRanges[0], custom.ranges, sizeof(custom.ranges));
+            std::memcpy(&ubo.curveTangents[0], custom.tangents, sizeof(custom.tangents));
+        }
+        for (size_t ch = 0; ch < 3; ++ch) {
+            const auto chParams = toneCurveGpuParameters(params.channelCurves[ch]);
+            ubo.curveCounts[ch + 1] = chParams.count;
+            if (chParams.count) {
+                const size_t base = (ch + 1) * 32;
+                std::memcpy(&ubo.curveRanges[base], chParams.ranges, sizeof(chParams.ranges));
+                std::memcpy(&ubo.curveTangents[base], chParams.tangents, sizeof(chParams.tangents));
+            }
+        }
+        ubo.curveFlags[0] = params.curveApplyToLuminosity ? 1u : 0u;
+        const auto parametric = toneCurveParametricGpuParameters(params.parametricCurve);
+        ubo.curveFlags[1] = parametric.active;
+        std::memcpy(ubo.parametricAmps, parametric.amps, sizeof(parametric.amps));
+        std::memcpy(ubo.parametricSplits, parametric.splits, sizeof(parametric.splits));
+        glBindBuffer(GL_UNIFORM_BUFFER, context.curveUbo);
+        const bool anyCurve = ubo.curveCounts[0] || ubo.curveCounts[1] || ubo.curveCounts[2] || ubo.curveCounts[3];
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, anyCurve ? sizeof(CurveUbo) : 64, &ubo);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 0, context.curveUbo);
         glUniform1i(context.uniform("hslActive"), params.hsl.active());
         glUniform3f(context.uniform("toneControls"),
             params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);
-        const auto grading=colorGradingCoefficients(params.colorGrading);
-        const float coefficients[]={grading[0].r,grading[0].g,grading[0].b,grading[1].r,grading[1].g,grading[1].b,grading[2].r,grading[2].g,grading[2].b};
-        glUniform3fv(context.uniform("colorGrading[0]"),3,coefficients);
+        const auto grading = colorGradingParameters(params.colorGrading);
+        const float coefficients[16] = {
+            grading.coefficients[0].r, grading.coefficients[0].g, grading.coefficients[0].b, grading.luminance[0],
+            grading.coefficients[1].r, grading.coefficients[1].g, grading.coefficients[1].b, grading.luminance[1],
+            grading.coefficients[2].r, grading.coefficients[2].g, grading.coefficients[2].b, grading.luminance[2],
+            grading.coefficients[3].r, grading.coefficients[3].g, grading.coefficients[3].b, grading.luminance[3]
+        };
+        glUniform4fv(context.uniform("colorGrading[0]"), 4, coefficients);
+        glUniform4f(context.uniform("colorGradingMix"), grading.blending, grading.balance, 0.0f, 0.0f);
         glUniform4fv(context.uniform("hslHue[0]"), 2, params.hsl.hue.data());
         glUniform4fv(context.uniform("hslSaturation[0]"), 2, params.hsl.saturation.data());
         glUniform4fv(context.uniform("hslLightness[0]"), 2, params.hsl.lightness.data());

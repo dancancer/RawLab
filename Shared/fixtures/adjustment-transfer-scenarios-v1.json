@@ -45,6 +45,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -120,6 +126,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": 0.75,
           "light.exposure_mode": "sensor",
@@ -198,6 +214,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -273,6 +295,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": -0.5,
           "light.exposure_mode": "sensor",
@@ -357,6 +389,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -432,6 +470,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": 0.75,
           "light.exposure_mode": "sensor",
@@ -512,6 +560,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -587,6 +641,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": 0.75,
           "light.exposure_mode": "sensor",
@@ -663,6 +727,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -738,6 +808,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": 0,
           "light.exposure_mode": "sensor",
@@ -1388,6 +1468,12 @@
           "processing_version": 3
         },
         "values": {
+          "color.grading.balance": 0,
+          "color.grading.blending": 50,
+          "color.grading.global": {
+            "hue": 0,
+            "saturation": 0
+          },
           "color.grading.highlights": {
             "hue": 0,
             "saturation": 0
@@ -1469,6 +1555,16 @@
           "light.curve": {
             "mode": "legacy",
             "points": []
+          },
+          "light.curve.apply_to_luminosity": false,
+          "light.curve.parametric": {
+            "darks": 0,
+            "highlights": 0,
+            "lights": 0,
+            "shadows": 0,
+            "split_highlight": 0.75,
+            "split_midtone": 0.5,
+            "split_shadow": 0.25
           },
           "light.exposure": 0.75,
           "light.exposure_mode": "sensor",

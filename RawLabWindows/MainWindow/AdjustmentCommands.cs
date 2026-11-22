@@ -223,6 +223,66 @@ public partial class MainWindow
         UndoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,true)!=null;
         RedoAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.PhotoHistoryID(file!,false)!=null;
         CopyAdjustmentMenu.IsEnabled=HistoryAdjustmentMenu.IsEnabled=enabled;
+        ImportTransferJsonMenu.IsEnabled=ExportTransferJsonMenu.IsEnabled=enabled && !transform.Active;
         PasteAdjustmentMenu.IsEnabled=PastePhotosAdjustmentMenu.IsEnabled=enabled && adjustmentSession?.Clipboard!=null;
+    }
+
+    private async void ExportTransferJsonClicked(object sender, RoutedEventArgs e)
+    {
+        if (!await PrepareAdjustmentCommandAsync()) return;
+        try {
+            var json = ExportAdjustmentTransferJson();
+            var picker = new SaveFileDialog {
+                Title = Loc.Text("导出调整参数 JSON…"),
+                Filter = "JSON (*.json)|*.json",
+                DefaultExt = ".json",
+                FileName = Path.GetFileNameWithoutExtension(file!) + "-transfer.json"
+            };
+            if (picker.ShowDialog(this) != true) return;
+            File.WriteAllText(picker.FileName, json);
+            SetSaveNotice("调整已保存", "", false);
+        } catch (Exception error) {
+            ShowAdjustmentError(error);
+        }
+    }
+
+    private async void ImportTransferJsonClicked(object sender, RoutedEventArgs e)
+    {
+        if (!await PrepareAdjustmentCommandAsync()) return;
+        var picker = new OpenFileDialog {
+            Title = Loc.Text("导入调整参数 JSON…"),
+            Filter = "JSON (*.json)|*.json",
+            Multiselect = false
+        };
+        if (picker.ShowDialog(this) != true) return;
+        try {
+            var json = File.ReadAllText(picker.FileName);
+            await ImportAdjustmentTransferJsonAsync(json);
+        } catch (Exception error) {
+            ShowAdjustmentError(error);
+        }
+    }
+
+    internal string ExportAdjustmentTransferJson()
+    {
+        var context = CurrentTransferContext();
+        var fields = settings.IsHDREditing
+            ? AdjustmentFields.HDRTransferFields(context.SupportsHDRCameraDevelopment)
+            : AdjustmentFields.All.ToHashSet();
+        var payload = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields), CaptureVerifiedAdjustmentSource(), context);
+        return payload.ToIndentedJson();
+    }
+
+    internal async Task ImportAdjustmentTransferJsonAsync(string json)
+    {
+        var payload = AdjustmentPayload.Parse(json);
+        var operation = await PrepareAdjustmentTargets(payload, [file!], AdjustmentHistoryAction.Paste);
+        if (operation == null) return;
+        if (operation.Targets.FirstOrDefault()?.Error is { } targetError) throw targetError;
+        var adopted = new Dictionary<string, Exception?>(StringComparer.OrdinalIgnoreCase);
+        var outcomes = AdoptAdjustmentOutcomes(TransferSession.Apply(operation), adopted);
+        ShowAdjustmentTransferNotices(operation, outcomes, AdjustmentTransferNoticeOrigin.Dialog, CurrentAdoptedSuccessfully(outcomes));
+        if (outcomes.FirstOrDefault(o => o.Error != null) is { Error: { } failure }) throw failure;
+        ClearExternalReloadOnSourceChange();
     }
 }

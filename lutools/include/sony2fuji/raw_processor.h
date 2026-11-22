@@ -45,6 +45,7 @@ struct RAWBayerOverride {
     // 未旋转 sensor 坐标；已白平衡并以绿色归一化的相机通道线性修正。
     std::vector<RGB> cameraCorrection;
     bool protectSensorHighlights = false;
+    float blend = 1.0f;
 };
 
 /**
@@ -174,6 +175,14 @@ public:
      * 用于色彩空间转换
      */
     bool getCameraColorMatrix(float matrix[3][3]) const;
+    bool getLastRgbCam(float matrix[3][3]) const;
+    bool getLastWbUsed(float multipliers[3]) const;
+    bool getWhiteBalanceCalibration(
+        double first[3][3],
+        double second[3][3],
+        double& firstTemperature,
+        double& secondTemperature
+    ) const;
 
 private:
     class Impl;

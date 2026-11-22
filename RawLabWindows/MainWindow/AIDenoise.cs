@@ -37,6 +37,10 @@ public partial class MainWindow
             Dispatcher.BeginInvoke(new Action(()=>{if(!closing)RefreshControls();}));
         };
         DenoiseEditor.AIChanged+=SetAIEnabled;
+        DenoiseEditor.AIStrengthChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.AIDenoiseStrength=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
         DenoiseEditor.AICancelRequested+=()=>{aiManuallyRequested=false;aiJob.Cancel();RefreshControls();Schedule();};
         DenoiseEditor.AIRetryRequested+=()=>RequestAI(true);
         DenoiseEditor.AIDiagnosticsRequested+=async()=>await ExportAIDiagnostics(this,aiJob.State.DiagnosticPath);
@@ -47,7 +51,7 @@ public partial class MainWindow
         DenoiseEditor.RefreshAI(visible,settings.ActiveAIDenoise,CanStartAI,aiJob.State,
             PhotoInput.HDRCameraAIUnavailableHint(settings.HDR,RequestedGpuMode) ??
                 (!RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
-                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),GpuMode.SelectedIndex==1);
+                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),GpuMode.SelectedIndex==1,settings.AIDenoiseStrength);
     }
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private bool HasPendingAIReset(EditorResetScope scope)=>EditorAdjustmentRules.ResetsAI(scope) && aiManuallyRequested;

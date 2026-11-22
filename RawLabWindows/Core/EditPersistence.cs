@@ -58,6 +58,11 @@ public sealed record AdjustmentSnapshot(
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public X3fMode X3fMode { get; init; } = X3fMode.Legacy;
     public bool AIDenoiseEnabled { get; init; }
+    private readonly double? aiDenoiseBlend;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? AIDenoiseBlend { get => aiDenoiseBlend; init => aiDenoiseBlend = value == 100.0 ? null : value; }
+    [JsonIgnore]
+    public double AIDenoiseStrength => AIDenoiseBlend ?? 100.0;
     [JsonPropertyName("hdrCameraAI")]
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)]
     public bool HDRCameraAIEnabled { get; init; }
@@ -83,7 +88,8 @@ public sealed record AdjustmentSnapshot(
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
-        HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion;
+        HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion &&
+        AIDenoiseStrength == other.AIDenoiseStrength;
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 
@@ -192,9 +198,12 @@ public sealed class EditStore
     private readonly Func<string, OriginalIdentity>? customReadIdentity;
     private readonly Func<string, PathStatStamp> captureStamp;
     private readonly object cacheGate = new();
+    private readonly object writeStampGate = new();
+    private PathStatStamp? lastWriteStamp;
     private CachedRegistry? cachedRegistry;
     private long diskReadCount;
     internal long DiskReadCount => Interlocked.Read(ref diskReadCount);
+    internal PathStatStamp? LastWriteStamp { get { lock (writeStampGate) return lastWriteStamp; } }
     public string? LastQuarantinedPath { get; private set; }
     public event Action<PhotoEditState>? Changed;
     private void NotifyChanged(PhotoEditState state)
@@ -266,6 +275,7 @@ public sealed class EditStore
 
         var nextEpoch = BumpPathEpoch(canonicalPath);
         var afterStamp = captureStamp(canonicalPath);
+        lock (writeStampGate) lastWriteStamp = afterStamp;
         var afterIdentity = afterStamp.StatReliable && afterStamp.Exists ? TryReadRegistryIdentity(canonicalPath) : null;
         if (beforeStamp.StatReliable &&
             afterStamp.StatReliable &&

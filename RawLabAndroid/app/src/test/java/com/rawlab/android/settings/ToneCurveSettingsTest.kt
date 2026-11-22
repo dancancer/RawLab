@@ -40,7 +40,13 @@ class ToneCurveSettingsTest {
         val frozen = ToneCurveSettings(ToneCurveMode.CUSTOM, points)
         points[1] = ToneCurvePoint(.5, .5)
         assertEquals(ToneCurveSettings.identity, frozen)
-        assertEquals(curve, curve.moving(0, .1, .1))
+        assertTrue(curve.isEndpoint(0) && curve.isEndpoint(3) && curve.canMoveY(0) && curve.canMoveY(3))
+        assertFalse(curve.isInterior(0) || curve.isInterior(3))
+        val movedBlack = curve.moving(0, .2, .1)
+        assertEquals(ToneCurvePoint(0.0, .1), movedBlack.points[0])
+        assertEquals(curve.points[1].y, curve.moving(0, .2, .5).points[0].y, 0.0)
+        assertEquals(ToneCurvePoint(1.0, .9), curve.moving(3, .8, .9).points[3])
+        assertEquals(curve, curve.removing(0))
         assertEquals(curve, curve.removing(3))
         val moved = curve.moving(1, 1.0, 1.0)
         assertTrue(moved.points[1].x < moved.points[2].x)
@@ -97,5 +103,56 @@ class ToneCurveSettingsTest {
         }
         assertTrue(ToneCurveSettings.identity.isIdentity)
         assertFalse(ToneCurveSettings.identity.isDefault)
+    }
+
+    @Test fun unpinnedEndpointYAndParametricCurveRoundTripThroughStorageHDRAndTransfer() {
+        val unpinned = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.12), ToneCurvePoint(0.5, 0.55), ToneCurvePoint(1.0, 0.91)))
+        assertEquals(0.12, unpinned.points.first().y, 0.0)
+        assertEquals(0.91, unpinned.points.last().y, 0.0)
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.05, 0.0), ToneCurvePoint(1.0, 1.0)))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveParametric(splitShadow = 0.45, splitMidtone = 0.46)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ToneCurveParametric.decode(JSONObject("""{"highlights":10.0}"""))
+        }
+        assertFalse(ToneCurveSettings.identity.inserting(0.5, 0.6).hasV2Extensions)
+        assertTrue(ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.2), ToneCurvePoint(1.0, 1.0))).hasV2Extensions)
+        assertTrue(ToneCurveSettings(channels = ToneCurveChannels(
+            red = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(1.0, 0.9))),
+        )).hasV2Extensions)
+        val param = ToneCurveParametric(highlights = -18.0, lights = 12.0, darks = -8.0, shadows = 24.0,
+            splitShadow = 0.2, splitMidtone = 0.52, splitHighlight = 0.8)
+        val v2Curve = ToneCurveSettings(ToneCurveMode.CUSTOM, unpinned.points, applyToLuminosity = true, parametric = param)
+        assertTrue(v2Curve.hasV2Extensions)
+        val source = EditSettings(curve = v2Curve)
+        assertEquals(source, SettingsCodec.decode(SettingsCodec.encode(source)))
+        val hdr = HDRSettings().withTone(HDRToneSettings(curve = v2Curve))
+        assertEquals(9, hdr.processingVersion); assertEquals(10, hdr.recordVersion)
+        assertEquals(hdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = hdr))).hdr)
+        val context = AdjustmentTransferContext("v2curve", false)
+        val payload = AdjustmentTransfer.capture(
+            AdjustmentScope.Custom(setOf(AdjustmentField.CURVE, AdjustmentField.CURVE_APPLY_TO_LUMINOSITY, AdjustmentField.CURVE_PARAMETRIC)),
+            source, context,
+        )
+        assertEquals(v2Curve, AdjustmentTransfer.prepare(AdjustmentPayload.decode(payload.encode()), EditSettings(), context).curve)
+    }
+
+    @Test fun curveTargetInteractionAcceptsNearGraySwitchesLegacyAndCancelsCleanly() {
+        val rev = HslTargetRevision(1L, 2L)
+        val interaction = CurveTargetInteraction()
+        val sampled = listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.5, 0.5), ToneCurvePoint(1.0, 1.0))
+        val token = interaction.begin(ToneCurveSettings(), ToneCurveChannel.RGB, rev, sampled)
+        val graySample = HslTargetSample(rev, HslTargetAvailability.NEAR_GRAY, listOf(0.4f, 0.4f, 0.4f), emptyList(), preview = false)
+        val accepted = interaction.accept(graySample, token, rev)
+        assertNotNull(accepted)
+        assertEquals(ToneCurveMode.CUSTOM, accepted!!.mode)
+        assertEquals(3, accepted.points.size)
+        val dragged = interaction.move(20f)
+        assertNotNull(dragged)
+        assertEquals(0.5, dragged!!.points[1].y, 1e-6)
+        assertEquals(ToneCurveSettings(), interaction.cancel())
     }
 }

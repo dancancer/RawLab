@@ -50,6 +50,7 @@ struct MacCollectionExportReview {
     let rows: [Row]
     let format: ExportFormat
     let longEdge: Int?
+    var outputSharpening: OutputSharpening = .off
     let directory: URL
     var adaptiveJPEG = false
     var snapshots: [Snapshot] { rows.compactMap(\.snapshot) }
@@ -70,6 +71,7 @@ struct MacCollectionExportPreparation {
     let skipped: Set<String>
     let format: ExportFormat
     let longEdge: Int?
+    var outputSharpening: OutputSharpening = .off
     let directory: URL
     var adaptiveJPEG = false
     var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
@@ -94,7 +96,9 @@ struct MacCollectionExportPreparation {
             }
         }
         return MacCollectionExportReview(selection: selection, skipped: skipped, rows: rows,
-            format: format, longEdge: longEdge, directory: directory, adaptiveJPEG: adaptiveJPEG)
+            format: format, longEdge: longEdge,
+            outputSharpening: (!adaptiveJPEG && format == .renderedDNG) ? .off : outputSharpening,
+            directory: directory, adaptiveJPEG: adaptiveJPEG)
     }
 
     func snapshot(_ photo: MacCollectionPhoto) throws -> MacCollectionExportReview.Snapshot {
@@ -180,8 +184,13 @@ struct MacCollectionExportFreeze {
         let first = review.snapshots[0]
         var job = MacBatchExportJob(source: first.photo.url, settings: first.settings, look: nil, lookName: first.lookName)
         job.settingsMode = .perTargetFrozen; job.version = 3
-        job.format = review.adaptiveJPEG ? .jpeg : review.format
-        job.longEdge = review.longEdge; job.outputDirectory = review.directory
+        let effectiveFormat = review.adaptiveJPEG ? .jpeg : review.format
+        let effectiveSharpening: OutputSharpening? = (effectiveFormat == .renderedDNG || review.outputSharpening == .off)
+            ? nil : review.outputSharpening
+        job.format = effectiveFormat
+        job.longEdge = review.longEdge
+        job.outputSharpening = effectiveSharpening
+        job.outputDirectory = review.directory
         var ownedLooks = [URL]()
         do {
             observeStage?("copy", Thread.isMainThread)
@@ -194,10 +203,12 @@ struct MacCollectionExportFreeze {
                 if let look { ownedLooks.append(look) }
                 item.selected = true
                 item.noticeKey = snapshot.noticeKey
+                let itemFormat = review.adaptiveJPEG ? (snapshot.settings.isHDREditing ? .hdrJPEG : .jpeg) : review.format
                 item.frozen = MacBatchFrozenSettings(ordinal: ordinal, settings: snapshot.settings, look: look,
                     lookSHA256: snapshot.lookSHA256, lookName: snapshot.lookName,
-                    outputFormat: review.adaptiveJPEG ? (snapshot.settings.isHDREditing ? .hdrJPEG : .jpeg) : review.format,
-                    longEdge: review.longEdge)
+                    outputFormat: itemFormat,
+                    longEdge: review.longEdge,
+                    outputSharpening: itemFormat == .renderedDNG ? nil : effectiveSharpening)
                 try item.frozen!.verifyLook(); job.items.append(item)
             }
             try validate()

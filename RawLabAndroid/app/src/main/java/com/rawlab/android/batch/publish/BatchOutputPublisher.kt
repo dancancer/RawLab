@@ -36,6 +36,7 @@ internal class BatchOutputPublisher(
 
     fun render(target: BatchTarget, settings: EditSettings): File {
         val format = job.formatFor(target)
+        val outputSharpening = job.outputSharpeningFor(target)
         val temporary = File.createTempFile("render-", format.suffix, context.filesDir)
             .also(com.rawlab.android.photo.WorkingCopyCleanup::protect)
         try {
@@ -53,7 +54,8 @@ internal class BatchOutputPublisher(
                 com.rawlab.android.engine.HDRSourceCache.clear()
                 if (hdrInfo.isProRAW && format in setOf(com.rawlab.android.format.ExportFormat.HDR_JPEG, com.rawlab.android.format.ExportFormat.JPEG)) {
                     processor.exportProRAW(target.sourceFile, hdrInfo, settings, temporary,
-                        format == com.rawlab.android.format.ExportFormat.HDR_JPEG, edge, generation, storage.hdrLookDirectory)
+                        format == com.rawlab.android.format.ExportFormat.HDR_JPEG, edge, generation, storage.hdrLookDirectory,
+                        outputSharpening = outputSharpening)
                     return temporary
                 }
                 val source = if (hdrInfo.isCameraRaw) processor.decodeHDRCamera(target.sourceFile, hdrInfo, 0, generation,
@@ -62,7 +64,7 @@ internal class BatchOutputPublisher(
                 val rendered = try {
                     processor.setGpuMode(NativeProcessor.CPU)
                     processor.renderHDR(source, requireNotNull(settings.hdr).copy(geometry = settings.geometry), edge, generation,
-                        storage.hdrLookDirectory)
+                        storage.hdrLookDirectory, outputSharpening = outputSharpening)
                 } finally { source.close() }
                 try {
                     val metadata = target.sourceFile.takeUnless { hdrInfo.isCameraRaw && !hdrInfo.isProRAW }
@@ -75,7 +77,7 @@ internal class BatchOutputPublisher(
                 return temporary
             }
             val backend = processor.export(target.sourceFile, job.lookFor(target), settings,
-                temporary, format, job.longEdgeFor(target), target.inputKind, cancellationGeneration)
+                temporary, format, job.longEdgeFor(target), target.inputKind, cancellationGeneration, outputSharpening)
             android.util.Log.i("RawLabBatch", "job=${job.id} exportBackend=$backend")
             return temporary
         } catch (error: Throwable) {

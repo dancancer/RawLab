@@ -12,9 +12,10 @@ public sealed class ToneCurveCanvas : FrameworkElement
     private IReadOnlyList<ToneCurvePoint> samples = [];
     private sealed record Drag(ToneCurveSettings Before, ToneCurveSettings Initial, int Index, Point Origin, bool Fine);
     private Drag? drag;
-    private bool changed;
+    private bool changed, showSplitMarkers;
     private object? source;
     private int selected;
+    private ToneCurveChannel channel = ToneCurveChannel.Rgb;
     public Func<bool>? PrepareEditing { get; set; }
     public event Action<ToneCurveSettings, bool>? Changed;
     public event Action<int>? SelectionChanged;
@@ -26,18 +27,26 @@ public sealed class ToneCurveCanvas : FrameworkElement
         IsEnabledChanged += (_, _) => { if (!IsEnabled) CancelGesture(); InvalidateVisual(); };
         Unloaded += (_, _) => CancelGesture();
     }
-    public void Refresh(ToneCurveSettings next, object? identity, int index)
+    public void Refresh(ToneCurveSettings next, object? identity, int index,
+        ToneCurveChannel nextChannel = ToneCurveChannel.Rgb, bool nextShowSplitMarkers = false)
     {
-        if (!Equals(source, identity) || value.Mode != next.Mode) CancelGesture();
+        if (!Equals(source, identity) || value.Mode != next.Mode || channel != nextChannel) CancelGesture();
         source = identity; selected = index;
-        SetValue(next);
+        var channelOrSplitChanged = channel != nextChannel || showSplitMarkers != nextShowSplitMarkers;
+        channel = nextChannel; showSplitMarkers = nextShowSplitMarkers;
+        SetValue(next, forceResample: channelOrSplitChanged);
         AutomationProperties.SetName(this, Loc.Text("曲线"));
         AutomationProperties.SetHelpText(this, Loc.Text("点击曲线区域添加控制点，拖动中间点调整。"));
         AutomationProperties.SetItemStatus(this, Loc.Format("多点曲线（{0} 个控制点）", next.Points.Count));
     }
-    private void SetValue(ToneCurveSettings next)
+    private void SetValue(ToneCurveSettings next, bool forceResample = false)
     {
-        if (value != next) { value = next; samples = (next.Mode == ToneCurveMode.Legacy) ? [] : ToneCurveSampling.Samples(next); }
+        if (value != next || forceResample) {
+            value = next;
+            samples = (next.Mode == ToneCurveMode.Legacy)
+                ? []
+                : ToneCurveSampling.Samples(next, ToneCurveChannel.Rgb, includeParametric: channel == ToneCurveChannel.Rgb);
+        }
         InvalidateVisual();
     }
     private Point Normalized(Point point) => new((point.X - 12) / Math.Max(1, ActualWidth - 24), 1 - (point.Y - 12) / Math.Max(1, ActualHeight - 24));
@@ -87,8 +96,10 @@ public sealed class ToneCurveCanvas : FrameworkElement
     {
         if (e.Key == Key.Escape) { CancelGesture(); e.Handled = true; return; }
         if (drag != null) { if (e.Key is Key.LeftShift or Key.RightShift) CancelGesture(); e.Handled = true; return; }
-        if (!IsEnabled || !value.IsInterior(selected) || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Delete or Key.Back) ||
+        if (!IsEnabled || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Delete or Key.Back) ||
             PrepareEditing?.Invoke() == false) { base.OnKeyDown(e); return; }
+        var isVertical = e.Key is Key.Up or Key.Down;
+        if (isVertical ? !value.CanMoveY(selected) : !value.IsInterior(selected)) { base.OnKeyDown(e); return; }
         var point = value.Points[selected]; var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? .001 : .01;
         var next = e.Key switch {
             Key.Left => value.Moving(selected, point.X - step, point.Y), Key.Right => value.Moving(selected, point.X + step, point.Y),
@@ -117,17 +128,29 @@ public sealed class ToneCurveCanvas : FrameworkElement
             dc.DrawLine(grid, CanvasPoint(new(t, 0)), CanvasPoint(new(t, 1)));
             dc.DrawLine(grid, CanvasPoint(new(0, t)), CanvasPoint(new(1, t)));
         }
+        if (showSplitMarkers && channel == ToneCurveChannel.Rgb) {
+            var splitPen = new Pen(new SolidColorBrush(Color.FromArgb(110, 180, 180, 180)), 1) { DashStyle = DashStyles.Dot };
+            dc.DrawLine(splitPen, CanvasPoint(new(value.Parametric.SplitShadow, 0)), CanvasPoint(new(value.Parametric.SplitShadow, 1)));
+            dc.DrawLine(splitPen, CanvasPoint(new(value.Parametric.SplitMidtone, 0)), CanvasPoint(new(value.Parametric.SplitMidtone, 1)));
+            dc.DrawLine(splitPen, CanvasPoint(new(value.Parametric.SplitHighlight, 0)), CanvasPoint(new(value.Parametric.SplitHighlight, 1)));
+        }
         dc.DrawLine(new Pen(Brushes.Gray, 1) { DashStyle = DashStyles.Dash }, CanvasPoint(new(0, 0)), CanvasPoint(new(1, 1)));
         var curve = new StreamGeometry();
         using (var context = curve.Open()) {
             if (samples.Count > 0) { context.BeginFigure(CanvasPoint(samples[0]), false, false); context.PolyLineTo(samples.Skip(1).Select(CanvasPoint).ToArray(), true, false); }
         }
         var foreground = TryFindResource("Foreground") as Brush ?? Brushes.White;
+        var stroke = channel switch {
+            ToneCurveChannel.Red => Brushes.IndianRed,
+            ToneCurveChannel.Green => Brushes.MediumSeaGreen,
+            ToneCurveChannel.Blue => Brushes.CornflowerBlue,
+            _ => foreground
+        };
         var indicator = TryFindResource("Indicator") as Brush ?? Brushes.Gold;
-        dc.DrawGeometry(null, new Pen(foreground, 2), curve);
+        dc.DrawGeometry(null, new Pen(stroke, 2), curve);
         for (var i = 0; i < value.Points.Count; i++) {
             var radius = i == selected ? 6 : 4;
-            dc.DrawEllipse(i == selected ? indicator : foreground, new Pen(Brushes.Black, 1), CanvasPoint(value.Points[i]), radius, radius);
+            dc.DrawEllipse(i == selected ? indicator : stroke, new Pen(Brushes.Black, 1), CanvasPoint(value.Points[i]), radius, radius);
         }
         dc.Pop();
     }

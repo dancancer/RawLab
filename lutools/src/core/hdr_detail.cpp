@@ -122,4 +122,62 @@ void renderHDRDetailBand(const HDRDetailPlan& plan, const RGB* input, int inputT
     if (overflow.load(std::memory_order_relaxed)) throw std::overflow_error("HDR detail exceeded finite float range");
 }
 
+void renderHDROutputSharpeningBand(OutputSharpening level, int width, int height, double peak,
+    const RGB* input, int inputTop, int inputRows,
+    RGB* output, int outputTop, int outputRows) {
+    if (level == OutputSharpening::Off || width <= 1 || height <= 1 || outputRows <= 0) {
+        for (int r = 0; r < outputRows; ++r) {
+            const int y = outputTop + r;
+            std::copy_n(input + size_t(y - inputTop) * width, width, output + size_t(r) * width);
+        }
+        return;
+    }
+    float strength = 0.0f;
+    switch (level) {
+        case OutputSharpening::Low: strength = 0.20f; break;
+        case OutputSharpening::Standard: strength = 0.40f; break;
+        case OutputSharpening::High: strength = 0.70f; break;
+        case OutputSharpening::Off: return;
+    }
+    std::vector<float> stops(size_t(width) * inputRows);
+    parallelPixelRanges(stops.size(), [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i)
+            stops[i] = float(std::log2(std::max(luminance(input[i]), 1.0 / 65536)));
+    });
+    const auto index = [&](int x, int y) {
+        return size_t(std::clamp(y, 0, height - 1) - inputTop) * width + std::clamp(x, 0, width - 1);
+    };
+    constexpr int weights[] = {1, 2, 1};
+    std::atomic<bool> overflow{false};
+    parallelPixelRanges(size_t(width) * outputRows, [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+            const int x = int(i % width), y = outputTop + int(i / width);
+            const size_t centerIndex = index(x, y);
+            RGB pixel = input[centerIndex];
+            const double luma = luminance(pixel);
+            if (luma > 0) {
+                float sum = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        sum += stops[index(x + dx, y + dy)] * weights[dx + 1] * weights[dy + 1];
+                    }
+                }
+                const float detail = stops[centerIndex] - sum / 16.0f;
+                const float weight = std::clamp((std::abs(detail) - .012f) / .06f, 0.f, 1.f);
+                const float shift = std::clamp(detail * weight * strength, -.45f, .45f);
+                if (shift != 0) {
+                    double target = luma * std::exp2(double(shift));
+                    if (peak > 0) target = std::min(target, peak);
+                    const double gain = target / luma;
+                    pixel = {float(pixel.r * gain), float(pixel.g * gain), float(pixel.b * gain)};
+                }
+            }
+            if (!std::isfinite(pixel.r) || !std::isfinite(pixel.g) || !std::isfinite(pixel.b))
+                overflow.store(true, std::memory_order_relaxed);
+            output[i] = pixel;
+        }
+    });
+    if (overflow.load(std::memory_order_relaxed)) throw std::overflow_error("HDR output sharpening exceeded finite float range");
+}
+
 } // namespace sony2fuji

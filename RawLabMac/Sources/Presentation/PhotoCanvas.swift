@@ -25,6 +25,11 @@ struct PhotoCanvas: View {
     var onCropEditingChanged: ((Bool) -> Void)? = nil
     var prepareCropInteraction: (GeometrySettings) -> Bool = { _ in true }
     var hdrDisplay: HDRDisplayState? = nil
+    var inspectionOverlay: InspectionOverlayMode = .none
+    var inspectionAnchors: [(index: Int, point: CGPoint, selected: Bool)] = []
+    var inspectionPinMode: Bool = false
+    var onInspectionHover: ((CGPoint?) -> Void)? = nil
+    var onInspectionPin: ((CGPoint) -> Void)? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
     @State private var labelRects: [CGRect] = []
@@ -94,11 +99,12 @@ struct PhotoCanvas: View {
                             excludedRects: labelRects + (beforeFrame != nil && split != nil ?
                                 [CGRect(x: sourceBounds.minX, y: sourceBounds.minY,
                                     width: sourceBounds.width * (split?.wrappedValue ?? 0) + 12, height: sourceBounds.height)] : []),
-                            target: hslTarget, canHold: canHold, onHold: onHold,
+                            target: hslTarget, pinMode: inspectionPinMode, canHold: canHold, onHold: onHold,
                             onPan: { translation in
                                 if dragOrigin == nil { dragOrigin = viewport.focus }
                                 viewport.moveFocus(from: dragOrigin ?? viewport.focus, translation: translation, displayed: displayedSize)
-                            }, onPanEnd: { dragOrigin = nil }, onDoubleClick: onDoubleClick)
+                            }, onPanEnd: { dragOrigin = nil }, onDoubleClick: onDoubleClick,
+                            onHover: onInspectionHover, onPin: onInspectionPin)
                     }
                 }
                 .overlay {
@@ -143,6 +149,26 @@ struct PhotoCanvas: View {
                                       y: sourceBounds.minY + point.y * sourceBounds.height)
                             .allowsHitTesting(false).accessibilityHidden(true)
                     }
+                    if cropSettings == nil, inspectionOverlay != .neutralGray50 {
+                        ForEach(inspectionAnchors, id: \.index) { marker in
+                            let x = sourceBounds.minX + marker.point.x * sourceBounds.width
+                            let y = sourceBounds.minY + marker.point.y * sourceBounds.height
+                            ZStack {
+                                Circle()
+                                    .fill(marker.selected ? Color.yellow : Color.black.opacity(0.75))
+                                    .frame(width: 20, height: 20)
+                                Circle()
+                                    .stroke(marker.selected ? Color.black : Color.white, lineWidth: 1.5)
+                                    .frame(width: 20, height: 20)
+                                Text("\(marker.index)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(marker.selected ? Color.black : Color.white)
+                            }
+                            .position(x: x, y: y)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                    }
                 }
                 .coordinateSpace(name: "photoCanvas")
                 .onPreferenceChange(PhotoLabelBounds.self) { labelRects = $0 }
@@ -151,9 +177,15 @@ struct PhotoCanvas: View {
         }
     }
     @ViewBuilder private func photo(_ frame: RenderedImage) -> some View {
-        if let presentation=frame.hdr,let hdrDisplay {
-            HDRCanvas(presentation:presentation,state:hdrDisplay)
-        } else { Image(decorative:frame.image,scale:1).resizable().interpolation(.high) }
+        if inspectionOverlay == .neutralGray50 {
+            Color(red: 128.0 / 255.0, green: 128.0 / 255.0, blue: 128.0 / 255.0)
+        } else if inspectionOverlay != .none {
+            InspectionOverlayPhotoView(base: frame.hdr?.sdrImage ?? frame.image, mode: inspectionOverlay)
+        } else if let presentation = frame.hdr, let hdrDisplay {
+            HDRCanvas(presentation: presentation, state: hdrDisplay)
+        } else {
+            Image(decorative: frame.image, scale: 1).resizable().interpolation(.high)
+        }
     }
     private func photoLabel(_ text: String) -> some View {
         Text(text).font(.system(size: 11, weight: .medium)).padding(.horizontal, 7).padding(.vertical, 4)
@@ -161,6 +193,40 @@ struct PhotoCanvas: View {
             .background { GeometryReader { geometry in
                 Color.clear.preference(key: PhotoLabelBounds.self, value: [geometry.frame(in: .named("photoCanvas"))])
             } }
+    }
+}
+
+private struct InspectionOverlayPhotoView: View {
+    let base: CGImage
+    let mode: InspectionOverlayMode
+    @State private var rendered: (sourceID: ObjectIdentifier, mode: InspectionOverlayMode, image: CGImage)?
+
+    private struct RenderKey: Equatable {
+        let sourceID: ObjectIdentifier
+        let mode: InspectionOverlayMode
+    }
+
+    var body: some View {
+        let cached = InspectionOverlayRenderer.shared.cached(base, mode: mode)
+        let display = cached
+            ?? (rendered?.mode == mode ? rendered?.image : nil)
+            ?? base
+        Image(decorative: display, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .task(id: RenderKey(sourceID: ObjectIdentifier(base), mode: mode)) {
+                if let hit = InspectionOverlayRenderer.shared.cached(base, mode: mode) {
+                    rendered = (ObjectIdentifier(base), mode, hit)
+                    return
+                }
+                let result = await withCheckedContinuation { continuation in
+                    InspectionOverlayRenderer.shared.renderAsync(base, mode: mode) { output in
+                        continuation.resume(returning: output)
+                    }
+                }
+                guard !Task.isCancelled, let result else { return }
+                rendered = (ObjectIdentifier(base), mode, result)
+            }
     }
 }
 
@@ -172,6 +238,7 @@ private struct PhotoLabelBounds: PreferenceKey {
 struct HistogramView: View {
     @Environment(\.locale) private var localizationLocale
     let bins: [[Double]]
+    var luminanceCursor: Double? = nil
 
     var body: some View {
         let presentation = HistogramPresentation(bins: bins)
@@ -192,6 +259,20 @@ struct HistogramView: View {
                     let rect = CGRect(x: x, y: y, width: barWidth + 0.5, height: height)
                     context.fill(Path(rect), with: .color(color(for: segment.fill).opacity(0.82)))
                 }
+            }
+            if let cursor = luminanceCursor, cursor.isFinite {
+                let x = min(1.0, max(0.0, cursor)) * size.width
+                var line = Path()
+                line.move(to: CGPoint(x: x, y: 0))
+                line.addLine(to: CGPoint(x: x, y: size.height))
+                context.stroke(line, with: .color(.black.opacity(0.9)), lineWidth: 3)
+                context.stroke(line, with: .color(.white), lineWidth: 1.2)
+                var marker = Path()
+                marker.move(to: CGPoint(x: x, y: 5))
+                marker.addLine(to: CGPoint(x: x - 4, y: 0))
+                marker.addLine(to: CGPoint(x: x + 4, y: 0))
+                marker.closeSubpath()
+                context.fill(marker, with: .color(.yellow))
             }
         }.accessibilityLabel(L10n.text("RGB 输出直方图"))
     }

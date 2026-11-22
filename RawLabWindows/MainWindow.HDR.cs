@@ -78,12 +78,12 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner];
+        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner,InspectionHud];
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
             Grid.SetRowSpan(surface,Grid.GetRowSpan(canvas));Grid.SetColumnSpan(surface,Grid.GetColumnSpan(canvas));
-            surface.Visibility=active && !hdrSdrPreview && surface.Available && !canvas.GeometryEditing && !canvas.ShowClipping
+            surface.Visibility=active && !hdrSdrPreview && surface.Available && !canvas.GeometryEditing && !canvas.ShowClipping && !canvas.InspectionOverlayActive
                 ? canvas.Visibility : Visibility.Collapsed;
             var presented=surface.ShowFrame(active ? image : null,reference,canvas,hdrSdrPreview,hdrFalseColor,overlays);
             if(ReferenceEquals(surface,ResultHDRSurface))resultPresented=presented;

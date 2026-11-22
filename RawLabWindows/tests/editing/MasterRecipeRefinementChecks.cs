@@ -10,6 +10,8 @@ internal static class MasterRecipeRefinementChecks
         var recipe = JsonSerializer.Deserialize<MasterRecipe>(
             File.ReadAllText(Path.Combine(RawLab.Windows.Tests.TestInputs.Repo(), "Shared/fixtures/master-recipe-v4.json")),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Check(MasterRecipe.All.Count == 14 && MasterRecipe.All.All(r => r.SettingsVersion == 4 && r.Grading != null && r.Grading.IsValid),
+            "All 14 bundled v4 master recipes deserialize with valid color grading");
         var state = new Adjustments { ToneControls = new(-20, 30, -25), Atmosphere = new(-40, 20) };
         state.Set(Parameter.ToneCurve, 35); state.Set(Parameter.Temperature, 8000); state.Set(Parameter.Sharpening, 75);
         state.ApplyMasterRecipe(recipe);
@@ -96,6 +98,19 @@ internal static class MasterRecipeRefinementChecks
         Check(changed.RenderToneControls == target.RenderToneControls && changed.RenderAtmosphere == target.RenderAtmosphere &&
             changed.RenderGrading == target.RenderGrading && changed.RenderCurve == target.RenderCurve,
             "Strength-only transfer preserves unselected effective refinements");
+        var paramSource = new Adjustments {
+            Curve = new(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: new(Shadows: 40))
+        };
+        var zeroTarget = new Adjustments(); zeroTarget.ApplyMasterRecipe(recipe); zeroTarget.ResolveWhiteBalance((5200, 10));
+        zeroTarget.Set(Parameter.Strength, 0);
+        var paramPayload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Curve, F.CurveParametric]), Edit(paramSource), context);
+        try {
+            _ = AdjustmentTransfer.Prepare(paramPayload, Edit(zeroTarget), context);
+            throw new Exception("Zero-strength parametric refinement accepted");
+        } catch (AdjustmentTransferException ex) {
+            Check(ex.Failure == AdjustmentFailure.Unrepresentable && ex.Detail == F.CurveParametric.ID(),
+                "Zero-strength parametric refinement must report light.curve.parametric");
+        }
         Console.WriteLine("PASS: v4 complete, partial and strength-only transfers");
     }
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }

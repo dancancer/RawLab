@@ -46,6 +46,7 @@ struct WorkspaceHistogram: View {
     var hdrDisplay: HDRDisplayState?
     var collapsible = true
     var clippingEnabled = true
+    var luminanceCursor: Double? = nil
     @Environment(\.locale) private var localizationLocale
     private var source: String { L10n.text(before ? "调整前" : "调整后") }
     private var title: String { L10n.text(frame?.hdr == nil ? "RGB 直方图" : "HDR 亮度直方图") }
@@ -77,9 +78,9 @@ struct WorkspaceHistogram: View {
             if expanded || !collapsible {
                 Group {
                     if let hdr = frame?.hdr {
-                        HDRLuminanceHistogram(statistics: hdr.statistics, headroom: hdrDisplay?.headroom ?? 1)
+                        HDRLuminanceHistogram(statistics: hdr.statistics, headroom: hdrDisplay?.headroom ?? 1, luminanceCursor: luminanceCursor)
                     } else {
-                        HistogramView(bins: frame?.histogram ?? [])
+                        HistogramView(bins: frame?.histogram ?? [], luminanceCursor: luminanceCursor)
                     }
                 }.frame(height: 68)
                     .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 3))

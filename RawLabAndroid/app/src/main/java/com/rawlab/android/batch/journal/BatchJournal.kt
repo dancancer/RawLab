@@ -100,7 +100,7 @@ class BatchJournal internal constructor(
                 processing.optInt("version") > ProcessingIdentity.CURRENT.version) return true
             if (settings.optInt("masterRecipeSettingsVersion", 3) > 4) return true
             val hdr = settings.optJSONObject("hdr")
-            hdr != null && (hdr.optInt("hdr_processing_version") > 8 || hdr.optInt("record_version") > 9 ||
+            hdr != null && (hdr.optInt("hdr_processing_version") > 9 || hdr.optInt("record_version") > 10 ||
                 (hdr.optJSONObject("camera_development")?.optInt("version") ?: 0) > 1)
         } catch (_: Exception) {
             false

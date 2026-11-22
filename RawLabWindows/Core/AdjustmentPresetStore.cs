@@ -73,6 +73,10 @@ public sealed class AdjustmentPresetStore
     public static string DefaultDirectory => AppPaths.Default.PresetsDirectory;
     public string DirectoryPath { get; }
     private readonly string path;
+    internal string RegistryPath => path;
+    private readonly object writeStampGate = new();
+    private PathStatStamp? lastWriteStamp;
+    internal PathStatStamp? LastWriteStamp { get { lock (writeStampGate) return lastWriteStamp; } }
     private readonly Action<string, object> write;
     private readonly Func<string> makeID;
     private readonly Func<long> clock;
@@ -170,7 +174,11 @@ public sealed class AdjustmentPresetStore
     private Registry Read()
     {
         if (!File.Exists(path)) return new([], [], []);
-        var text = File.ReadAllText(path);
+        var rawBytes = AtomicJson.ReadBytes(path);
+        var jsonBytes = rawBytes.Length >= 3 && rawBytes[0] == 0xEF && rawBytes[1] == 0xBB && rawBytes[2] == 0xBF
+            ? rawBytes.AsSpan(3)
+            : rawBytes.AsSpan();
+        var text = Encoding.UTF8.GetString(jsonBytes);
         try {
             using var document = JsonDocument.Parse(text);
             var root = document.RootElement;
@@ -234,6 +242,8 @@ public sealed class AdjustmentPresetStore
             id = item.ID, name = item.Name, created_at = item.CreatedAt, updated_at = item.UpdatedAt,
             payload = JsonSerializer.Deserialize<JsonElement>(item.Payload.ToJson())
         }).Concat(registry.Unreadable.Select(item => (object)new RawEntry(item.Json))).ToArray(), retired_ids = registry.RetiredIDs });
+        var stamp = PathStatStamp.Capture(Path.GetFullPath(path));
+        lock (writeStampGate) lastWriteStamp = stamp;
     }
     // JsonElement 写回会重新转义字符串；读不懂的条目必须按原文写出。
     [JsonConverter(typeof(RawEntryConverter))]

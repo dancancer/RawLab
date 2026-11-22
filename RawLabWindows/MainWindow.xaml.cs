@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     internal TextBox ValueText => OrdinaryParameter.Number;
     private Button ResetParameterButton => OrdinaryParameter.ResetButton;
     private record Film(string Name,string? Path,string? Artwork,FilmGroup Group=FilmGroup.Other,bool AppearanceUnverified=false,int CompatibilityMode=0);
-    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity? Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null,long SourceGeneration=0,long LookGeneration=0);
+    private record Work(string File,Adjustments Settings,string? Lut,int Edge,bool Interactive,int GpuMode,bool Compare,bool Refine,long TransformGeneration,long OpenRevision,OriginalIdentity? Source,AIDenoiseIdentity? AIIdentity,HslProbeWork? Probe=null,long SourceGeneration=0,long LookGeneration=0,WbProbeWork? WbProbe=null);
     private AppPaths appPaths;
     private readonly Library library;
     private LookLibrary? lookLibrary;
@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     private bool autoExposing;
     private long editRevision;
     private int? exportLongEdge;
+    private OutputSharpening exportOutputSharpening = OutputSharpening.Off;
     private string? lastExportedPath;
     private PhotoInfo? photoInfo;
     private PhotoInfoMode photoInfoMode;
@@ -132,6 +133,7 @@ public partial class MainWindow : Window
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
+            RefreshInspection();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
             RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
@@ -154,7 +156,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();CancelHslTarget();CancelCurveTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
@@ -192,7 +194,9 @@ public partial class MainWindow : Window
         };
         WhiteBalanceEditor.Changed+=(parameter,value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Set(parameter,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            if (file != null && PhotoInput.IsRaster(file) && !settings.IsHDREditing) settings.SetRasterWhiteBalance(parameter,value);
+            else settings.Set(parameter,value);
+            interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         WhiteBalanceEditor.ResetRequested+=()=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -212,6 +216,8 @@ public partial class MainWindow : Window
             settings.EditingGrading=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         InitializeHslTarget();
+        InitializeInspection();
+        InitializeWbProbe();
         HslEditor.ResetRequested+=RequestReset;
         PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{

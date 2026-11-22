@@ -2,6 +2,7 @@ package com.rawlab.android.engine
 
 import android.graphics.Bitmap
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.raster.DecodedRaster
 import com.rawlab.android.settings.ColorGradingSettings
@@ -14,6 +15,7 @@ import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HDRToneSettings
 import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.PhotoEffectsSettings
+import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurveShape
 import java.io.File
 
@@ -43,10 +45,45 @@ internal data class NativeToneCurve(
 internal data class NativeColorGrading(
     val shadowsHue: Float = 0f,
     val shadowsSaturation: Float = 0f,
+    val shadowsLuminance: Float = 0f,
     val midtonesHue: Float = 0f,
     val midtonesSaturation: Float = 0f,
+    val midtonesLuminance: Float = 0f,
     val highlightsHue: Float = 0f,
     val highlightsSaturation: Float = 0f,
+    val highlightsLuminance: Float = 0f,
+    val globalHue: Float = 0f,
+    val globalSaturation: Float = 0f,
+    val globalLuminance: Float = 0f,
+    val blending: Float = 50f,
+    val balance: Float = 0f,
+)
+
+internal data class NativeToneCurveParametric(
+    val highlights: Float = 0f,
+    val lights: Float = 0f,
+    val darks: Float = 0f,
+    val shadows: Float = 0f,
+    val splitShadow: Float = 0.25f,
+    val splitMidtone: Float = 0.50f,
+    val splitHighlight: Float = 0.75f,
+)
+
+internal data class NativeColorGradingV2(
+    val shadowsHue: Float = 0f,
+    val shadowsSaturation: Float = 0f,
+    val shadowsLuminance: Float = 0f,
+    val midtonesHue: Float = 0f,
+    val midtonesSaturation: Float = 0f,
+    val midtonesLuminance: Float = 0f,
+    val highlightsHue: Float = 0f,
+    val highlightsSaturation: Float = 0f,
+    val highlightsLuminance: Float = 0f,
+    val globalHue: Float = 0f,
+    val globalSaturation: Float = 0f,
+    val globalLuminance: Float = 0f,
+    val blending: Float = 50f,
+    val balance: Float = 0f,
 )
 
 internal data class NativePhotoEffectsConfig(
@@ -171,6 +208,8 @@ internal data class NativeHDRTone(
     val whitePoint: Float = 0f,
     val curveStrength: Float = 0f,
     val curve: NativeToneCurve = NativeToneCurve(),
+    val applyToLuminosity: Boolean = false,
+    val parametric: NativeToneCurveParametric? = null,
 )
 
 internal data class NativeHDRColor(
@@ -233,6 +272,8 @@ internal data class NativeHDRRenderRequest(
     val detail: NativeHDRDetail? = null,
     val look: NativeHDRLook? = null,
     val channelCurves: NativeHDRChannelCurves? = null,
+    val outputSharpening: Int = 0,
+    val gradingV2: NativeColorGradingV2? = null,
 )
 
 private fun IntArray?.contentEqualsOrNull(other: IntArray?): Boolean = when {
@@ -268,10 +309,45 @@ internal fun ToneCurveShape.toNativeCurve(): NativeToneCurve = NativeToneCurve(
 internal fun ColorGradingSettings.toNativeColorGrading(): NativeColorGrading = NativeColorGrading(
     shadowsHue = shadows.hue,
     shadowsSaturation = shadows.saturation,
+    shadowsLuminance = shadows.luminance,
     midtonesHue = midtones.hue,
     midtonesSaturation = midtones.saturation,
+    midtonesLuminance = midtones.luminance,
     highlightsHue = highlights.hue,
     highlightsSaturation = highlights.saturation,
+    highlightsLuminance = highlights.luminance,
+    globalHue = global.hue,
+    globalSaturation = global.saturation,
+    globalLuminance = global.luminance,
+    blending = blending,
+    balance = balance,
+)
+
+internal fun ToneCurveParametric.toNativeParametric(): NativeToneCurveParametric = NativeToneCurveParametric(
+    highlights = highlights.toFloat(),
+    lights = lights.toFloat(),
+    darks = darks.toFloat(),
+    shadows = shadows.toFloat(),
+    splitShadow = splitShadow.toFloat(),
+    splitMidtone = splitMidtone.toFloat(),
+    splitHighlight = splitHighlight.toFloat(),
+)
+
+internal fun ColorGradingSettings.toNativeColorGradingV2(): NativeColorGradingV2 = NativeColorGradingV2(
+    shadowsHue = shadows.hue,
+    shadowsSaturation = shadows.saturation,
+    shadowsLuminance = shadows.luminance,
+    midtonesHue = midtones.hue,
+    midtonesSaturation = midtones.saturation,
+    midtonesLuminance = midtones.luminance,
+    highlightsHue = highlights.hue,
+    highlightsSaturation = highlights.saturation,
+    highlightsLuminance = highlights.luminance,
+    globalHue = global.hue,
+    globalSaturation = global.saturation,
+    globalLuminance = global.luminance,
+    blending = blending,
+    balance = balance,
 )
 
 internal fun PhotoEffectsSettings.toNativePhotoEffects(): NativePhotoEffectsConfig = NativePhotoEffectsConfig(
@@ -364,6 +440,8 @@ internal fun HDRToneSettings.toNativeTone(): NativeHDRTone = NativeHDRTone(
     whitePoint = whitePoint,
     curveStrength = curveStrength,
     curve = curve.master.toNativeCurve(),
+    applyToLuminosity = curve.applyToLuminosity,
+    parametric = curve.parametric.takeUnless { it.isDefault }?.toNativeParametric(),
 )
 
 internal fun HDRColorSettings.toNativeColor(): NativeHDRColor = NativeHDRColor(
@@ -395,8 +473,10 @@ internal fun HDRLookSettings.toNativeLook(lookDirectory: File?): NativeHDRLook =
 internal fun HDRSettings.toNativeRequest(
     longEdge: Int = 0,
     lookDirectory: File? = null,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ): NativeHDRRenderRequest {
     val curve = tone?.curve
+    val needsV9 = curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true
     return NativeHDRRenderRequest(
         exposureEv = exposure,
         temperature = temperature,
@@ -413,12 +493,17 @@ internal fun HDRSettings.toNativeRequest(
         effects = effects?.toNativePhotoEffects(),
         detail = detail?.toNativeDetail(),
         look = look?.toNativeLook(lookDirectory),
-        channelCurves = if (curve?.hasChannelCurves == true) {
+        channelCurves = if (curve?.hasChannelCurves == true || needsV9) {
+            val ch = curve?.channels
             NativeHDRChannelCurves(
-                red = curve.channels.red.toNativeCurve(),
-                green = curve.channels.green.toNativeCurve(),
-                blue = curve.channels.blue.toNativeCurve(),
+                red = (ch?.red ?: ToneCurveShape()).toNativeCurve(),
+                green = (ch?.green ?: ToneCurveShape()).toNativeCurve(),
+                blue = (ch?.blue ?: ToneCurveShape()).toNativeCurve(),
             )
+        } else null,
+        outputSharpening = outputSharpening.nativeValue,
+        gradingV2 = if (needsV9) {
+            (color?.grading ?: ColorGradingSettings()).toNativeColorGradingV2()
         } else null,
     )
 }

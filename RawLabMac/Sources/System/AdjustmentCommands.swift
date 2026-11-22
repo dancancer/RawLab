@@ -35,6 +35,12 @@ struct AdjustmentCommands: Commands {
                 .keyboardShortcut("c", modifiers: [.command, .shift]).disabled(!textUndo.photoWindowActive || model.file == nil || model.exporting)
             Button(L10n.text("粘贴调整…")) { model.requestAdjustmentSheet(.paste) }
                 .keyboardShortcut("v", modifiers: [.command, .shift]).disabled(!textUndo.photoWindowActive || model.adjustmentClipboard == nil || model.exporting)
+            Divider()
+            Button(L10n.text("导入调整参数 JSON…")) { model.importAdjustmentTransferPanel() }
+                .disabled(!textUndo.photoWindowActive || !model.canImportAdjustmentTransfer)
+            Button(L10n.text("导出调整参数 JSON…")) { model.exportAdjustmentTransferPanel() }
+                .disabled(!textUndo.photoWindowActive || !model.canExportAdjustmentTransfer)
+            Divider()
             Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
                 .disabled(!textUndo.photoWindowActive || model.exporting)
         }

@@ -152,6 +152,28 @@
       ]
     },
     {
+      "name": "sony2fuji_color_grading_v2_config",
+      "size": 64,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "shadows_hue", "offset": 8, "size": 4},
+        {"name": "shadows_saturation", "offset": 12, "size": 4},
+        {"name": "shadows_luminance", "offset": 16, "size": 4},
+        {"name": "midtones_hue", "offset": 20, "size": 4},
+        {"name": "midtones_saturation", "offset": 24, "size": 4},
+        {"name": "midtones_luminance", "offset": 28, "size": 4},
+        {"name": "highlights_hue", "offset": 32, "size": 4},
+        {"name": "highlights_saturation", "offset": 36, "size": 4},
+        {"name": "highlights_luminance", "offset": 40, "size": 4},
+        {"name": "global_hue", "offset": 44, "size": 4},
+        {"name": "global_saturation", "offset": 48, "size": 4},
+        {"name": "global_luminance", "offset": 52, "size": 4},
+        {"name": "blending", "offset": 56, "size": 4},
+        {"name": "balance", "offset": 60, "size": 4}
+      ]
+    },
+    {
       "name": "sony2fuji_curve_point",
       "size": 16,
       "fields": [
@@ -177,6 +199,34 @@
         {"name": "version", "offset": 0, "size": 4},
         {"name": "struct_size", "offset": 4, "size": 4},
         {"name": "curves", "offset": 8, "size": 2176}
+      ]
+    },
+    {
+      "name": "sony2fuji_tone_curve_parametric_config",
+      "size": 40,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "highlights", "offset": 8, "size": 4},
+        {"name": "lights", "offset": 12, "size": 4},
+        {"name": "darks", "offset": 16, "size": 4},
+        {"name": "shadows", "offset": 20, "size": 4},
+        {"name": "split_shadow", "offset": 24, "size": 4},
+        {"name": "split_midtone", "offset": 28, "size": 4},
+        {"name": "split_highlight", "offset": 32, "size": 4},
+        {"name": "reserved", "offset": 36, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_tone_curve_set_v2_config",
+      "size": 2232,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "apply_to_luminosity", "offset": 8, "size": 4},
+        {"name": "reserved", "offset": 12, "size": 4},
+        {"name": "curves", "offset": 16, "size": 2176},
+        {"name": "parametric", "offset": 2192, "size": 40}
       ]
     },
     {
@@ -355,6 +405,101 @@
       ]
     },
     {
+      "name": "sony2fuji_bsh_diagnose_options",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "sample_stride", "offset": 8, "size": 4},
+        {"name": "reserved", "offset": 12, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_bsh_hsl_channel_stats",
+      "size": 20,
+      "fields": [
+        {"name": "coverage_pct", "offset": 0, "size": 4},
+        {"name": "mean_hue_deg", "offset": 4, "size": 4},
+        {"name": "mean_sat_pct", "offset": 8, "size": 4},
+        {"name": "mean_brightness_pct", "offset": 12, "size": 4},
+        {"name": "active", "offset": 16, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_bsh_diagnosis",
+      "size": 312,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "width", "offset": 8, "size": 4},
+        {"name": "height", "offset": 12, "size": 4},
+        {"name": "bit_depth", "offset": 16, "size": 4},
+        {"name": "channels", "offset": 20, "size": 4},
+        {"name": "sampled_pixels", "offset": 24, "size": 8},
+        {"name": "blacks_0_10_pct", "offset": 32, "size": 4},
+        {"name": "shadows_10_35_pct", "offset": 36, "size": 4},
+        {"name": "midtones_35_65_pct", "offset": 40, "size": 4},
+        {"name": "lights_65_90_pct", "offset": 44, "size": 4},
+        {"name": "highlights_90_100_pct", "offset": 48, "size": 4},
+        {"name": "mean_luma_0_1", "offset": 52, "size": 4},
+        {"name": "luma_p01", "offset": 56, "size": 4},
+        {"name": "luma_p05", "offset": 60, "size": 4},
+        {"name": "luma_p25", "offset": 64, "size": 4},
+        {"name": "luma_p50", "offset": 68, "size": 4},
+        {"name": "luma_p75", "offset": 72, "size": 4},
+        {"name": "luma_p95", "offset": 76, "size": 4},
+        {"name": "luma_p99", "offset": 80, "size": 4},
+        {"name": "dynamic_spread_p95_minus_p05", "offset": 84, "size": 4},
+        {"name": "shadow_crush_pct", "offset": 88, "size": 4},
+        {"name": "white_blowout_pct", "offset": 92, "size": 4},
+        {"name": "channel_clip_high_any_pct", "offset": 96, "size": 4},
+        {"name": "channel_clip_high_r_pct", "offset": 100, "size": 4},
+        {"name": "channel_clip_high_g_pct", "offset": 104, "size": 4},
+        {"name": "channel_clip_high_b_pct", "offset": 108, "size": 4},
+        {"name": "neutral_midtone_coverage_pct", "offset": 112, "size": 4},
+        {"name": "r_over_g", "offset": 116, "size": 4},
+        {"name": "b_over_g", "offset": 120, "size": 4},
+        {"name": "cast_hint", "offset": 124, "size": 4},
+        {"name": "mean_s_pct", "offset": 128, "size": 4},
+        {"name": "p95_s_pct", "offset": 132, "size": 4},
+        {"name": "low_sat_pct", "offset": 136, "size": 4},
+        {"name": "melting_saturation_pct", "offset": 140, "size": 4},
+        {"name": "melting_warning", "offset": 144, "size": 4},
+        {"name": "reserved", "offset": 148, "size": 4},
+        {"name": "hsl_channels", "offset": 152, "size": 160}
+      ]
+    },
+    {
+      "name": "sony2fuji_bsh_sample_query",
+      "size": 24,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "norm_x", "offset": 8, "size": 4},
+        {"name": "norm_y", "offset": 12, "size": 4},
+        {"name": "radius_norm", "offset": 16, "size": 4},
+        {"name": "reserved", "offset": 20, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_bsh_sample_result",
+      "size": 80,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "width", "offset": 8, "size": 4},
+        {"name": "height", "offset": 12, "size": 4},
+        {"name": "pixel_x", "offset": 16, "size": 4},
+        {"name": "pixel_y", "offset": 20, "size": 4},
+        {"name": "sample_count", "offset": 24, "size": 4},
+        {"name": "nearest_hsl_channel", "offset": 28, "size": 4},
+        {"name": "linear_rgb", "offset": 32, "size": 12},
+        {"name": "srgb_rgb", "offset": 44, "size": 12},
+        {"name": "hsb", "offset": 56, "size": 12},
+        {"name": "rgb_8bit", "offset": 68, "size": 12}
+      ]
+    },
+    {
       "name": "sony2fuji_recipe_wb_request",
       "size": 48,
       "fields": [
@@ -383,6 +528,34 @@
         {"name": "camera_temperature", "offset": 20, "size": 4},
         {"name": "camera_tint", "offset": 24, "size": 4},
         {"name": "camera_calibrated", "offset": 28, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_wb_probe_query",
+      "size": 24,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "norm_x", "offset": 8, "size": 4},
+        {"name": "norm_y", "offset": 12, "size": 4},
+        {"name": "window_size", "offset": 16, "size": 4},
+        {"name": "reserved", "offset": 20, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_wb_probe_result",
+      "size": 56,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "availability", "offset": 8, "size": 4},
+        {"name": "valid_pixel_count", "offset": 12, "size": 4},
+        {"name": "rejected_overexposed_count", "offset": 16, "size": 4},
+        {"name": "temperature", "offset": 20, "size": 4},
+        {"name": "tint", "offset": 24, "size": 4},
+        {"name": "sampled_rgb", "offset": 28, "size": 12},
+        {"name": "wb_mul", "offset": 40, "size": 12},
+        {"name": "reserved", "offset": 52, "size": 4}
       ]
     },
     {
@@ -628,6 +801,17 @@
       "fields": [
         {"name": "base", "offset": 0, "size": 952},
         {"name": "channels", "offset": 952, "size": 1632}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_request_v9",
+      "size": 2696,
+      "fields": [
+        {"name": "base", "offset": 0, "size": 2584},
+        {"name": "curve_apply_to_luminosity", "offset": 2584, "size": 4},
+        {"name": "output_sharpening", "offset": 2588, "size": 4},
+        {"name": "parametric_curve", "offset": 2592, "size": 40},
+        {"name": "grading_v2", "offset": 2632, "size": 64}
       ]
     },
     {
@@ -1000,6 +1184,18 @@
       "symbol": "sony2fuji_analyze_image"
     },
     {
+      "name": "sony2fuji_diagnose_image",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_buffer*", "const sony2fuji_bsh_diagnose_options*", "sony2fuji_bsh_diagnosis*"],
+      "symbol": "sony2fuji_diagnose_image"
+    },
+    {
+      "name": "sony2fuji_sample_region_bsh",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_buffer*", "const sony2fuji_bsh_sample_query*", "sony2fuji_bsh_sample_result*"],
+      "symbol": "sony2fuji_sample_region_bsh"
+    },
+    {
       "name": "sony2fuji_session_set_raw_exposure_mode",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "sony2fuji_raw_exposure_mode"],
@@ -1046,6 +1242,12 @@
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_ai_denoise_config*"],
       "symbol": "sony2fuji_session_set_ai_denoise"
+    },
+    {
+      "name": "sony2fuji_session_set_ai_denoise_blend",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "float"],
+      "symbol": "sony2fuji_session_set_ai_denoise_blend"
     },
     {
       "name": "sony2fuji_session_prepare_ai",
@@ -1126,6 +1328,12 @@
       "symbol": "sony2fuji_session_set_color_grading"
     },
     {
+      "name": "sony2fuji_session_set_color_grading_v2",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_color_grading_v2_config*"],
+      "symbol": "sony2fuji_session_set_color_grading_v2"
+    },
+    {
       "name": "sony2fuji_session_set_tone_curve",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_tone_curve_config*"],
@@ -1142,6 +1350,18 @@
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_tone_curve_config*", "const double*", "double*", "uint32_t"],
       "symbol": "sony2fuji_sample_tone_curve"
+    },
+    {
+      "name": "sony2fuji_session_set_tone_curves_v2",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_tone_curve_set_v2_config*"],
+      "symbol": "sony2fuji_session_set_tone_curves_v2"
+    },
+    {
+      "name": "sony2fuji_sample_tone_curve_v2",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_tone_curve_config*", "const sony2fuji_tone_curve_parametric_config*", "const double*", "double*", "uint32_t"],
+      "symbol": "sony2fuji_sample_tone_curve_v2"
     },
     {
       "name": "sony2fuji_session_set_geometry",
@@ -1196,6 +1416,12 @@
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_recipe_wb_request*", "sony2fuji_recipe_wb_result*"],
       "symbol": "sony2fuji_session_resolve_recipe_wb"
+    },
+    {
+      "name": "sony2fuji_session_sample_wb_probe",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_request*", "const sony2fuji_wb_probe_query*", "sony2fuji_wb_probe_result*"],
+      "symbol": "sony2fuji_session_sample_wb_probe"
     },
     {
       "name": "sony2fuji_session_set_gpu_config",
@@ -1662,6 +1888,16 @@
       ]
     },
     {
+      "enum": "sony2fuji_output_sharpening",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_OUTPUT_SHARPENING_OFF", "value": 0},
+        {"name": "SONY2FUJI_OUTPUT_SHARPENING_LOW", "value": 1},
+        {"name": "SONY2FUJI_OUTPUT_SHARPENING_STANDARD", "value": 2},
+        {"name": "SONY2FUJI_OUTPUT_SHARPENING_HIGH", "value": 3}
+      ]
+    },
+    {
       "enum": "sony2fuji_curve_mode",
       "size": 4,
       "values": [
@@ -1722,6 +1958,42 @@
         {"name": "SONY2FUJI_BACKEND_METAL", "value": 1},
         {"name": "SONY2FUJI_BACKEND_GLES", "value": 2},
         {"name": "SONY2FUJI_BACKEND_D3D11", "value": 3}
+      ]
+    },
+    {
+      "enum": "sony2fuji_bsh_cast_hint",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_BSH_CAST_INSUFFICIENT_NEUTRALS", "value": 0},
+        {"name": "SONY2FUJI_BSH_CAST_BALANCED", "value": 1},
+        {"name": "SONY2FUJI_BSH_CAST_WARM_YELLOW_AMBER", "value": 2},
+        {"name": "SONY2FUJI_BSH_CAST_COOL_BLUE", "value": 3},
+        {"name": "SONY2FUJI_BSH_CAST_GREEN", "value": 4},
+        {"name": "SONY2FUJI_BSH_CAST_MAGENTA", "value": 5}
+      ]
+    },
+    {
+      "enum": "sony2fuji_hsl_channel",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_HSL_CHANNEL_RED", "value": 0},
+        {"name": "SONY2FUJI_HSL_CHANNEL_ORANGE", "value": 1},
+        {"name": "SONY2FUJI_HSL_CHANNEL_YELLOW", "value": 2},
+        {"name": "SONY2FUJI_HSL_CHANNEL_GREEN", "value": 3},
+        {"name": "SONY2FUJI_HSL_CHANNEL_AQUA", "value": 4},
+        {"name": "SONY2FUJI_HSL_CHANNEL_BLUE", "value": 5},
+        {"name": "SONY2FUJI_HSL_CHANNEL_PURPLE", "value": 6},
+        {"name": "SONY2FUJI_HSL_CHANNEL_MAGENTA", "value": 7}
+      ]
+    },
+    {
+      "enum": "sony2fuji_wb_probe_availability",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_WB_PROBE_AVAILABLE", "value": 0},
+        {"name": "SONY2FUJI_WB_PROBE_OVEREXPOSED", "value": 1},
+        {"name": "SONY2FUJI_WB_PROBE_OUTSIDE", "value": 2},
+        {"name": "SONY2FUJI_WB_PROBE_UNAVAILABLE", "value": 3}
       ]
     },
     {
