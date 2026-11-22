@@ -1491,6 +1491,213 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raw_settings["temperature"], 5200.0)
         self.assertEqual(raw_settings["tint"], -6.0)
 
+    async def test_sync_photo_edit_heic_heif_raster_and_non_destructive_preserve(self):
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+        data_dir = self.root / "appdata-b3"
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        for ext in (".heic", ".HEIF", ".heif", ".Heic"):
+            heic_path = self.recipe_dir / f"sample_{ext.strip('.')}{ext}"
+            heic_path.write_bytes(b"heic fixture")
+            ok_heic = await adapter.sync_photo_edit(
+                photo_path=str(heic_path),
+                adjustments={"white_balance_mode": "relative", "temperature": 5800, "tint": -4},
+            )
+            self.assertTrue(ok_heic.ok, f"Expected raster classification for {ext}: {ok_heic.error}")
+            bad_heic_raw_wb = await adapter.sync_photo_edit(
+                photo_path=str(heic_path),
+                adjustments={"white_balance_mode": "temperature", "temperature": 5800, "tint": -4},
+            )
+            self.assertFalse(bad_heic_raw_wb.ok)
+            self.assertEqual(bad_heic_raw_wb.error.code, "invalid_argument")
+
+            edits_doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+            st = edits_doc["records"][ok_heic.result["photo_path"]]["state"]["settings"]
+            self.assertFalse(st["supportsRawNoiseReduction"])
+            self.assertEqual(st["exposureMode"], "传感器基准")
+            self.assertEqual(st["whiteBalanceMode"], "拍摄时设置")
+            self.assertEqual(st["temperature"], 5800.0)
+            self.assertEqual(st["tint"], -4.0)
+
+        # Seed existing edit record with HDR, AI denoise, output sharpening, filmID, and untouched fields
+        edits_file = data_dir / "Edits" / "edits.json"
+        existing_doc = json.loads(edits_file.read_text(encoding="utf-8"))
+        raw_path_canon = gui_sync._mac_foundation_canonical_path(self.input_path)
+        existing_doc["records"][raw_path_canon] = {
+            "identity": gui_sync._swift_identity_for_file(self.input_path),
+            "state": {
+                "filmID": "builtin:classic_chrome",
+                "masterRecipeID": "hamada_daylight_v2",
+                "settings": {
+                    "processing": {"family": "rawlab", "quality": "standard", "version": 3},
+                    "x3fMode": "normal-v1",
+                    "exposureMode": "匹配内嵌预览",
+                    "exposure": 0.4,
+                    "contrast": 22.0,
+                    "highlights": -15.0,
+                    "shadows": 10.0,
+                    "toneCurve": 0.0,
+                    "saturation": 8.0,
+                    "sharpening": 35.0,
+                    "temperature": 5500.0,
+                    "tint": 6.0,
+                    "whiteBalanceMode": "自定义",
+                    "strength": 1.0,
+                    "rawNoiseReduction": 0.0,
+                    "supportsRawNoiseReduction": True,
+                    "masterRecipeSettingsVersion": 4,
+                    "masterRecipeID": "hamada_daylight_v2",
+                    "aiDenoiseEnabled": True,
+                    "aiDenoiseBlend": 72.5,
+                    "hdrCameraAI": True,
+                    "proRAWDecodeVersion": 2,
+                    "outputSharpening": "standard",
+                    "asShotWhiteBalance": {"temperature": 5200.0, "tint": 3.0},
+                    "hdr": {"mode": "hdr", "peakLimitEV": 2.5},
+                    "colorGrading": {
+                        "shadows": {"hue": 210.0, "saturation": 20.0, "luminance": -5.0},
+                        "midtones": {"hue": 0.0, "saturation": 0.0, "luminance": 0.0},
+                        "highlights": {"hue": 45.0, "saturation": 12.0, "luminance": 3.0},
+                        "global": {"hue": 180.0, "saturation": 10.0, "luminance": 2.0},
+                        "blending": 65.0,
+                        "balance": -12.0,
+                    },
+                },
+            },
+        }
+        edits_file.write_text(json.dumps(existing_doc), encoding="utf-8")
+
+        # Update ONLY exposure via sync_photo_edit -> must preserve hdr, aiDenoiseEnabled, and untouched fields!
+        updated = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"exposure": 1.15},
+        )
+        self.assertTrue(updated.ok, str(updated.error))
+        self.assertEqual(updated.result["action"], "updated")
+        after_doc = json.loads(edits_file.read_text(encoding="utf-8"))
+        after_state = after_doc["records"][raw_path_canon]["state"]
+        after_settings = after_state["settings"]
+        self.assertEqual(after_settings["exposure"], 1.15)
+        self.assertEqual(after_settings["contrast"], 22.0)
+        self.assertEqual(after_settings["hdr"], {"mode": "hdr", "peakLimitEV": 2.5})
+        self.assertIs(after_settings["aiDenoiseEnabled"], True)
+        self.assertEqual(after_settings["aiDenoiseBlend"], 72.5)
+        self.assertIs(after_settings["hdrCameraAI"], True)
+        self.assertEqual(after_settings["proRAWDecodeVersion"], 2)
+        self.assertEqual(after_settings["outputSharpening"], "standard")
+        self.assertEqual(after_settings["asShotWhiteBalance"], {"temperature": 5200.0, "tint": 3.0})
+        self.assertEqual(after_settings["colorGrading"]["global"]["hue"], 180.0)
+        self.assertEqual(after_state["masterRecipeID"], "hamada_daylight_v2")
+        self.assertEqual(after_state["filmID"], "builtin:classic_chrome")
+
+    def test_store_lock_windows_open_retry_and_timeout(self):
+        lock_file = self.root / "Presets" / "presets.json.lock"
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file_str = os.fspath(lock_file)
+        attempts = {"count": 0}
+        real_open = open
+
+        class FakeMsvcrt:
+            LK_NBLCK = 1
+            LK_UNLCK = 2
+
+            def __init__(self):
+                self.locked = 0
+                self.unlocked = 0
+
+            def locking(self, fd, mode, nbytes):
+                if mode == self.LK_NBLCK:
+                    self.locked += 1
+                elif mode == self.LK_UNLCK:
+                    self.unlocked += 1
+
+        fake_msvcrt = FakeMsvcrt()
+
+        def flaky_open(file, *args, **kwargs):
+            if os.fspath(file) == lock_file_str:
+                attempts["count"] += 1
+                if attempts["count"] <= 2:
+                    err = PermissionError(errno.EACCES, "Sharing violation", str(file))
+                    err.winerror = 32
+                    raise err
+            return real_open(file, *args, **kwargs)
+
+        with patch.object(gui_sync.os, "name", "nt"), \
+             patch.object(gui_sync, "msvcrt", fake_msvcrt, create=True), \
+             patch("builtins.open", side_effect=flaky_open), \
+             patch.object(gui_sync.time, "sleep", return_value=None):
+            with gui_sync._store_lock(lock_file):
+                pass
+        self.assertEqual(attempts["count"], 3)
+        self.assertEqual(fake_msvcrt.locked, 1)
+        self.assertEqual(fake_msvcrt.unlocked, 1)
+
+        def always_locked_open(file, *args, **kwargs):
+            if os.fspath(file) == lock_file_str:
+                err = PermissionError(errno.EACCES, "Sharing violation", str(file))
+                err.winerror = 32
+                raise err
+            return real_open(file, *args, **kwargs)
+
+        ticks = iter([0.0, 0.01, 5.5])
+        with patch.object(gui_sync.os, "name", "nt"), \
+             patch.object(gui_sync, "msvcrt", fake_msvcrt, create=True), \
+             patch("builtins.open", side_effect=always_locked_open), \
+             patch.object(gui_sync.time, "monotonic", side_effect=lambda: next(ticks)), \
+             patch.object(gui_sync.time, "sleep", return_value=None):
+            with self.assertRaises(AdapterError) as ctx:
+                with gui_sync._store_lock(lock_file):
+                    pass
+            self.assertEqual(ctx.exception.code, "output_io_error")
+
+    async def test_cli_accepts_status_codes_7_and_8(self):
+        cli_78 = self.root / "fake_cli_78.py"
+        cli_78.write_text(textwrap.dedent("""
+            #!/usr/bin/env python3
+            import json, os, sys
+            args = sys.argv[1:]
+            if "--capabilities" in args:
+                print(json.dumps({
+                    "protocol_version": 1, "command": "capabilities", "ok": True,
+                    "result": {"recipe_versions": [4, 17], "commands": ["capabilities", "validate_recipe", "info", "preview", "export"]},
+                    "error": None,
+                }))
+                sys.exit(0)
+            mode = os.environ.get("FAKE_STATUS_MODE", "7")
+            if mode == "7":
+                print(json.dumps({
+                    "protocol_version": 1, "command": "info", "ok": False, "result": None,
+                    "error": {"code": "cancelled", "message": "Cancelled by caller", "status": 7},
+                }))
+                sys.exit(7)
+            print(json.dumps({
+                "protocol_version": 1, "command": "info", "ok": False, "result": None,
+                "error": {"code": "ai_not_ready", "message": "AI model not ready", "status": 8},
+            }))
+            sys.exit(8)
+        """).lstrip(), encoding="utf-8")
+        cli_78.chmod(0o755)
+
+        for status_str, expected_code, expected_status in (("7", "cancelled", 7), ("8", "ai_not_ready", 8)):
+            with python_cli_patch():
+                adapter = CliAdapter(ServerConfig(
+                    cli=cli_78, read_roots=(self.read_root,), write_roots=(self.write_root,), timeout=2.0,
+                ), environment={"FAKE_STATUS_MODE": status_str, "RAWLAB_MCP_TEST_CLI_SCRIPT": str(cli_78)})
+                await adapter.start()
+                res = await adapter.image_info(image_path=str(self.input_path))
+                self.assertFalse(res.ok)
+                self.assertIsNotNone(res.error)
+                self.assertEqual(res.error.code, expected_code)
+                self.assertEqual(res.error.status, expected_status)
+
 
 if __name__ == "__main__":
     unittest.main()

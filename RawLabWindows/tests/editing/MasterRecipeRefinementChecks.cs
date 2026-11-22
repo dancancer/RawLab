@@ -106,7 +106,7 @@ internal static class MasterRecipeRefinementChecks
             _ = AdjustmentTransfer.Prepare(paramPayload, Edit(zeroTarget), context);
             throw new Exception("Zero-strength parametric refinement accepted");
         } catch (AdjustmentTransferException ex) {
-            Check(ex.Failure == AdjustmentFailure.Unrepresentable && ex.Field == F.CurveParametric.ID(),
+            Check(ex.Failure == AdjustmentFailure.Unrepresentable && ex.Detail == F.CurveParametric.ID(),
                 "Zero-strength parametric refinement must report light.curve.parametric");
         }
         Console.WriteLine("PASS: v4 complete, partial and strength-only transfers");

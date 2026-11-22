@@ -114,6 +114,78 @@ TC_RGB tcVibrance(TC_RGB p, float vibrance) {
     TC_RGB result=TC_RGB(y,y,y)+(p-TC_RGB(y,y,y))*gain;
     return inGamut ? clamp(result,0.0,1.0) : result;
 }
+float tcBasicContrastV3(float value, float amount) {
+    if (amount == 0.0 || value <= 0.0 || value >= 1.0) return value;
+    float exponent = exp2(clamp(amount, -1.0, 1.0) * 0.75);
+    float low = pow(value, exponent);
+    float high = pow(1.0 - value, exponent);
+    return low / (low + high);
+}
+TC_RGB tcBasicBlackWhiteV3(TC_RGB pixel, float blackPoint, float whitePoint) {
+    if (blackPoint == 0.0 && whitePoint == 0.0) return pixel;
+    TC_RGB result = pixel;
+    if (blackPoint < 0.0) {
+        float black = 0.24 * blackPoint * blackPoint;
+        float scale = 1.0 / (1.0 - black);
+        result = (result - TC_RGB(black, black, black)) * scale;
+    } else if (blackPoint > 0.0) {
+        float y = clamp(tcLuminance(result), 0.0, 1.0);
+        float o = 1.0 - y;
+        float o2 = o * o;
+        float o7 = o2 * o2 * o2 * o;
+        float black = pow(blackPoint, 1.4) * (0.15 * (1.0 - exp(-y / 0.06)) + 0.01 * o7);
+        result = result * (1.0 - black) + TC_RGB(black, black, black);
+    }
+    if (whitePoint < 0.0) {
+        float y = max(0.0, tcLuminance(result));
+        result *= 1.0 / (1.0 - 0.18 * whitePoint * y);
+    } else if (whitePoint > 0.0) {
+        float y = max(0.0, tcLuminance(result));
+        float scale = y > 0.0 ? 1.0 + 0.18 * pow(whitePoint, 1.4) * tcSmooth(y / 0.8) / y : 1.0;
+        result *= scale;
+    }
+    return result;
+}
+TC_RGB tcBasicVibranceV3(TC_RGB pixel, float amount) {
+    if (amount == 0.0) return pixel;
+    float maximum = max(max(pixel.r, pixel.g), pixel.b);
+    float minimum = min(min(pixel.r, pixel.g), pixel.b);
+    float chroma = maximum - minimum;
+    if (chroma <= 0.0 || maximum <= 0.0) return pixel;
+    float saturation = clamp(chroma / maximum, 0.0, 1.0);
+    float y = tcLuminance(pixel);
+    float gain;
+    if (amount < 0.0) {
+        gain = 1.0 + amount * (0.95 - 0.45 * saturation * saturation);
+    } else {
+        if (minimum < 0.0 || maximum > 1.0) return pixel;
+        float hue;
+        if (maximum == pixel.r) hue = 60.0 * ((pixel.g - pixel.b) / chroma);
+        else if (maximum == pixel.g) hue = 60.0 * ((pixel.b - pixel.r) / chroma + 2.0);
+        else hue = 60.0 * ((pixel.r - pixel.g) / chroma + 4.0);
+        if (hue < 0.0) hue += 360.0;
+        float distance = min(abs(hue - 35.0), 360.0 - abs(hue - 35.0));
+        float skin = (1.0 - tcSmooth(distance / 45.0)) * tcSmooth((y - 0.08) / 0.12) *
+            (1.0 - tcSmooth((y - 0.75) / 0.2)) * tcSmooth((chroma - 0.02) / 0.08);
+        gain = 1.0 + 2.0 * amount * (1.0 - saturation) * (1.0 - 0.6 * skin);
+        for (int channel = 0; channel < 3; ++channel) {
+            float difference = pixel[channel] - y;
+            if (difference > 0.0) gain = min(gain, (1.0 - y) / difference);
+            else if (difference < 0.0) gain = min(gain, -y / difference);
+        }
+    }
+    return TC_RGB(y, y, y) + (pixel - TC_RGB(y, y, y)) * gain;
+}
+float tcBasicToneV3Gain(float light, float slope, float intercept, float highlights, float shadows) {
+    if (!(light > 0.0 && light <= 3.4e38)) return 1.0;
+    float sh = clamp(shadows, -1.0, 1.0);
+    float hi = clamp(highlights, -1.0, 1.0);
+    float logLight = log2(max(light, 1e-7) / 0.1845);
+    float base = slope * logLight + intercept;
+    float shadowWeight = 1.0 - tcSmooth((base + 6.0) / 7.0);
+    float highlightWeight = tcSmooth((base + 1.0) / 6.0);
+    return exp2(3.5 * sh * shadowWeight + 3.0 * hi * highlightWeight);
+}
 #define RAWLAB_HS_FN
 #define RAWLAB_HS_RGB TC_RGB
 #define RAWLAB_HS_RGB3(r, g, b) TC_RGB((r), (g), (b))

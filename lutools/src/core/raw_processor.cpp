@@ -317,6 +317,7 @@ public:
             lastError_ = x3fProcessor_->error();
             if (result != ErrorCode::Success) return result;
             displayReferred_ = true;
+            lastAppliedWbValid_ = false;
             baselineExposureEV_ = previewExposureEV_ = 0;
             outputSpace_ = options.outputLinear && options.outputAdobe ? ColorSpace::AdobeRGB :
                 (options.outputLinear && options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
@@ -326,40 +327,12 @@ public:
         const bool customWB = options.useCustomWhiteBalance || options.useTemperatureWhiteBalance;
         const bool cameraWB = options.useCameraWhiteBalance && !customWB && !options.useAutoWhiteBalance;
         const bool autoWB = options.useAutoWhiteBalance && !customWB;
-        auto& params = rawProcessor_->imgdata.params;
-        // half_size skips the LibRaw interpolation stage that runs FBDD.
-        params.half_size = options.halfSize && options.rawNoiseReduction == 0 ? 1 : 0;
-        params.fbdd_noiserd = options.rawNoiseReduction;
-        const ErrorCode identificationResult = ensureIdentificationMode(cameraWB, autoWB);
-        if (identificationResult != ErrorCode::Success) return identificationResult;
         float multipliers[4];
-        std::copy_n(options.customWhiteBalance,4,multipliers);
+        std::copy_n(options.customWhiteBalance, 4, multipliers);
         if (options.useTemperatureWhiteBalance &&
             (!whiteBalance_ || !whiteBalance_->multipliers(options.temperature, options.tint, multipliers,
                 cameraProfile ? &cameraProfile->xyzToCamera : nullptr)))
             return ErrorCode::InvalidFormat;
-        // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
-        params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
-            (options.bayerDemosaic == BayerDemosaicMethod::VNG ? 1 : 11) : -1;
-        params.use_camera_matrix = 3;
-        params.use_camera_wb = cameraWB ? 1 : 0;
-        params.use_auto_wb = autoWB ? 1 : 0;
-        for (int c=0;c<4;++c) {
-            const float value=c==3 && multipliers[c]==0 ? multipliers[1] : multipliers[c];
-            if (customWB && (!std::isfinite(value) || value<=0))
-                return ErrorCode::InvalidFormat;
-            params.user_mul[c]=customWB ? value : 0;
-        }
-        params.output_color = 0;
-        params.output_bps = 16;
-        params.no_auto_bright = 1;
-        params.no_auto_scale = 0;
-        params.adjust_maximum_thr = 0;
-        // Blend clipped highlight chroma before the camera matrix and film LUT.
-        params.highlight = 2;
-        params.gamm[0] = params.gamm[1] = 1;
-        params.bright = 1;
-        params.exp_correc = 0;
         const auto* replacement = options.bayerOverride;
         if (replacement && (!bayerMetadataReady_ || options.halfSize || options.rawNoiseReduction != 0 || autoWB ||
             !std::isfinite(replacement->blend) || replacement->blend < 0.0f || replacement->blend > 1.0f ||
@@ -370,52 +343,20 @@ public:
             !std::all_of(replacement->cameraCorrection.begin(), replacement->cameraCorrection.end(), [](const RGB& p) {
                 return std::isfinite(p.r) && std::isfinite(p.g) && std::isfinite(p.b);
             }))) return ErrorCode::InvalidFormat;
-        BayerOverrideScope overrideScope(*rawProcessor_, bayerMetadata_, replacement);
-        const int processed = rawProcessor_->dcraw_process();
-        if (processed != LIBRAW_SUCCESS) {
-            // Fatal LibRaw processing errors may recycle unpacked data internally.
-            // Require a fresh load rather than advertising a reusable source.
-            invalidateState();
-            if (processed == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
-            if (processed == LIBRAW_UNSUFFICIENT_MEMORY || processed == LIBRAW_MEMPOOL_OVERFLOW)
-                return ErrorCode::OutOfMemory;
-            return ErrorCode::ProcessingError;
-        }
-        auto& data = rawProcessor_->imgdata;
-        const int channels = data.idata.colors;
-        if (channels != 3 && (channels != 4 || cameraProfile)) {
-            rawProcessor_->free_image();
-            return ErrorCode::InvalidFormat;
-        }
-        if (!data.image || !data.color.maximum) {
-            rawProcessor_->free_image();
-            return ErrorCode::ProcessingError;
-        }
 
-        // Bayer half-size keeps the active crop in width/height while image is
-        // allocated with iwidth/iheight. Fuji rotation and pixel-aspect stretch
-        // instead replace width/height with the postprocess geometry.
-        const bool postprocessGeometry = fujiRotate_ ||
-            (std::isfinite(data.sizes.pixel_aspect) && data.sizes.pixel_aspect > 0 &&
-             std::abs(data.sizes.pixel_aspect - 1.0) > .005);
-        const int width = postprocessGeometry ? data.sizes.width : data.sizes.iwidth;
-        const int height = postprocessGeometry ? data.sizes.height : data.sizes.iheight;
-        if (replacement && (width != replacement->width || height != replacement->height)) {
-            rawProcessor_->free_image();
-            return ErrorCode::InvalidFormat;
-        }
-        if (width <= 0 || height <= 0) {
-            rawProcessor_->free_image();
-            return ErrorCode::ProcessingError;
-        }
-        const float green=data.color.pre_mul[1];
-        if (!std::isfinite(green) || green<=0) {
-            rawProcessor_->free_image();
-            return ErrorCode::ProcessingError;
-        }
-        // LibRaw balances camera channels before demosaic, normalized by max WB
-        // (highlight=2). Undo that common attenuation in float, not in uint16.
-        const float scale=1.0f/(65535.0f*green);
+        int width = 0, height = 0, channels = 0;
+        float green = 0.0f;
+        const ErrorCode runResult = runDcrawProcess(options, cameraWB, autoWB, customWB, multipliers,
+            options.halfSize, options.rawNoiseReduction, replacement, cameraProfile,
+            width, height, channels, green);
+        if (runResult != ErrorCode::Success) return runResult;
+
+        struct ImageGuard {
+            LibRaw* raw;
+            ~ImageGuard() { raw->free_image(); }
+        } imageGuard{rawProcessor_.get()};
+        auto& data = rawProcessor_->imgdata;
+        const float scale = 1.0f / (65535.0f * green);
         lastCalibrationValid_ = (channels == 3) && whiteBalance_ && whiteBalance_->available();
         if (lastCalibrationValid_) {
             for (int r = 0; r < 3; ++r) {
@@ -433,67 +374,16 @@ public:
                 std::copy(cameraProfile->balancedToSrgb[row].begin(), cameraProfile->balancedToSrgb[row].end(), profileMatrix[row]);
             cameraMatrix = profileMatrix;
         }
+        snapshotLastAppliedColor(data, channels, green, cameraProfile != nullptr || replacement != nullptr);
         LensCorrectionTransform correction(options.lensDatabase, lensMetadata(*rawProcessor_, sdkStage3_),
             options.lensCorrection, width, height, channels);
         lensReport_ = correction.report();
-        const float bayerBlend = replacement ? std::clamp(replacement->blend, 0.0f, 1.0f) : 0.0f;
-        auto sampledRGB=[&](int row,int col,const float* coordinates) {
-            const auto& raw=data.image[static_cast<size_t>(row)*width+col];
-            float rgb[3]={};
-            float camera[4];
-            float lensGains[3] = {1, 1, 1};
-            if (correction.report().appliedVignetting) {
-                lensGains[0] = correction.gainAt(coordinates ? coordinates[0] : float(col), coordinates ? coordinates[1] : float(row));
-                lensGains[1] = correction.report().appliedTCA ? correction.gainAt(coordinates[2], coordinates[3]) : lensGains[0];
-                lensGains[2] = correction.report().appliedTCA ? correction.gainAt(coordinates[4], coordinates[5]) : lensGains[0];
-            }
-            for (int c=0;c<channels;++c) {
-                const int mapped = c == 3 ? 1 : c;
-                camera[c] = coordinates ? sampleCameraChannel(&data.image[0][0], width, height, c,
-                    coordinates[mapped*2], coordinates[mapped*2+1]) : raw[c];
-                camera[c] *= lensGains[mapped];
-            }
-            for (int dst=0;dst<3;++dst) for (int c=0;c<channels;++c)
-                rgb[dst]+=cameraMatrix[dst][c]*camera[c]*scale;
-            if (replacement && !replacement->cameraCorrection.empty() && bayerBlend > 0.0f) {
-                const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
-                for (int c = 0; c < 3; ++c) {
-                    float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
-                        coordinates[c*2], coordinates[c*2+1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
-                    if (bayerBlend < 1.0f) delta *= bayerBlend;
-                    if (delta != 0) for (int dst = 0; dst < 3; ++dst) rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
-                }
-            }
-            return RGB(rgb[0],rgb[1],rgb[2]);
-        };
-        auto linearRGB=[&](int row,int col) {
-            alignas(16) float coordinates[6];
-            if (correction.hasGeometry()) correction.map(col, row, 1, 1, coordinates);
-            return sampledRGB(row, col, correction.hasGeometry() ? coordinates : nullptr);
-        };
-        baselineExposureEV_=options.applyBaselineExposure ? sceneExposureEV(metadataExposureEV_) : 0;
-        previewExposureEV_=0;
-        if (options.matchEmbeddedPreviewExposure) {
-            auto* previewCache=currentPreviewExposureCache();
-            auto preview=previewCache ? previewCache->getOrLoad(filepath_) : localPreviewCache_.getOrLoad(filepath_);
-            if (!preview.empty()) {
-                std::vector<float> luminance;
-                luminance.reserve(128*128);
-                for (int y=0;y<128;++y) for (int x=0;x<128;++x) {
-                    const auto p=linearRGB((2*y+1)*height/256,(2*x+1)*width/256);
-                    luminance.push_back(std::max(0.0f,.2126f*p.r+.7152f*p.g+.0722f*p.b));
-                }
-                bool matched=false;
-                previewExposureEV_=estimatePreviewExposureEV(std::move(luminance),std::move(preview),&matched);
-                if (matched) baselineExposureEV_=previewExposureEV_;
-            }
-        }
+        previewExposureEV_ = 0;
+        baselineExposureEV_ = measureBaselineEV(width, height, channels, cameraMatrix, scale,
+            correction, replacement, options, &previewExposureEV_);
         // User EV remains relative to a fixed per-file baseline, before the LUT.
         const float gain=std::exp2(baselineExposureEV_+options.exposure)*options.brightness;
-        if (!std::isfinite(gain) || gain<=0) {
-            rawProcessor_->free_image();
-            return ErrorCode::InvalidFormat;
-        }
+        if (!std::isfinite(gain) || gain<=0) return ErrorCode::InvalidFormat;
 
         const int flip = data.sizes.flip;
         output.width = (flip & 4) ? height : width;
@@ -503,10 +393,6 @@ public:
             (options.outputAces ? ColorSpace::ACES2065_1 : ColorSpace::sRGB);
         const auto matrix = ColorConverter::getConversionMatrix(ColorSpace::sRGB, target);
         outputSpace_ = options.outputLinear ? target : ColorSpace::sRGB;
-        struct ImageGuard {
-            LibRaw* raw;
-            ~ImageGuard() { raw->free_image(); }
-        } imageGuard{rawProcessor_.get()};
         parallelRowRanges(output.height, output.width, [&](int firstRow, int lastRow) {
             std::vector<float> coordinates;
             if (correction.hasGeometry()) {
@@ -523,7 +409,8 @@ public:
                     if (flip & 2) row=height-1-row;
                     if (flip & 1) col=width-1-col;
                     const int mappedIndex = (flip & 4) ? row : col;
-                    auto rgb=sampledRGB(row,col,coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
+                    auto rgb=sampleProcessedRGB(data, width, height, channels, cameraMatrix, scale,
+                        correction, replacement, row, col, coordinates.empty() ? nullptr : coordinates.data()+mappedIndex*6);
                     rgb=RGB(rgb.r*gain,rgb.g*gain,rgb.b*gain);
                     RGB pixel = ColorConverter::applyMatrix(rgb,matrix);
                     if (!options.outputLinear) {
@@ -538,6 +425,47 @@ public:
                 }
             }
         });
+        return ErrorCode::Success;
+    }
+
+    ErrorCode estimatePreviewExposure(const RAWProcessOptions& options, float& outBaselineEV) {
+        RawCancellationScope cancellationScope(*rawProcessor_);
+        outBaselineEV = 0.0f;
+        if (filepath_.empty() || !sourceReady_) return ErrorCode::FileNotFound;
+        if (options.bayerDemosaic != BayerDemosaicMethod::Legacy &&
+            options.bayerDemosaic != BayerDemosaicMethod::VNG && options.bayerDemosaic != BayerDemosaicMethod::DHT)
+            return ErrorCode::InvalidFormat;
+        if (options.x3fMode != X3fMode::Legacy && options.x3fMode != X3fMode::Normal) return ErrorCode::InvalidFormat;
+        const bool x3fSignature = options.x3fMode == X3fMode::Normal && hasX3fSignature(filepath_);
+        if (options.x3fMode == X3fMode::Normal && !x3fSignature &&
+            (rawProcessor_->imgdata.idata.is_foveon || hasX3fExtension(filepath_))) {
+            lastError_ = "The X3F source does not contain a valid FOVb header";
+            return ErrorCode::InvalidFormat;
+        }
+        if (x3fSignature) {
+            outBaselineEV = 0.0f;
+            return ErrorCode::Success;
+        }
+
+        int width = 0, height = 0, channels = 0;
+        float green = 0.0f;
+        const float unusedMul[4]{};
+        const ErrorCode runResult = runDcrawProcess(options, /*cameraWB=*/true, /*autoWB=*/false, /*customWB=*/false,
+            unusedMul, /*halfSize=*/bayerSource_ && options.rawNoiseReduction == 0, /*rawNoiseReduction=*/0,
+            nullptr, nullptr, width, height, channels, green);
+        if (runResult != ErrorCode::Success) return runResult;
+
+        struct ImageGuard {
+            LibRaw* raw;
+            ~ImageGuard() { raw->free_image(); }
+        } imageGuard{rawProcessor_.get()};
+        const auto& data = rawProcessor_->imgdata;
+        const float scale = 1.0f / (65535.0f * green);
+        LensCorrectionTransform correction(options.lensDatabase, lensMetadata(*rawProcessor_, sdkStage3_),
+            options.lensCorrection, width, height, channels);
+        float previewEV = 0.0f;
+        outBaselineEV = measureBaselineEV(width, height, channels, data.color.rgb_cam, scale,
+            correction, nullptr, options, &previewEV);
         return ErrorCode::Success;
     }
 
@@ -606,6 +534,34 @@ public:
         return true;
     }
 
+    bool getAsShotWhiteBalanceMultipliers(float multipliers[3]) const {
+        if (displayReferred_ || !asShotWbValid_) return false;
+        std::copy_n(asShotWbMul_.data(), 3, multipliers);
+        return true;
+    }
+
+    bool computeTemperatureWhiteBalanceMultipliers(float temperature, float tint, float multipliers[3]) const {
+        if (displayReferred_ || !whiteBalance_) return false;
+        float mul[4]{};
+        if (!whiteBalance_->multipliers(temperature, tint, mul)) return false;
+        std::copy_n(mul, 3, multipliers);
+        return true;
+    }
+
+    bool getLastAppliedWhiteBalanceMultipliers(float multipliers[3]) const {
+        if (displayReferred_ || !lastAppliedWbValid_) return false;
+        std::copy_n(lastAppliedWbMul_.data(), 3, multipliers);
+        return true;
+    }
+
+    bool getCameraToSrgbMatrix(float matrix[3][3]) const {
+        if (displayReferred_ || !cameraToSrgbValid_) return false;
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 3; ++col)
+                matrix[row][col] = cameraToSrgb_[row][col];
+        return true;
+    }
+
     bool supportsNoiseReduction() const { return sourceReady_ && bayerSource_; }
     bool isDisplayReferred() const { return displayReferred_; }
     const std::string& getLastError() const { return lastError_; }
@@ -656,6 +612,212 @@ public:
     }
 
 private:
+    static bool validCameraToSrgb(const float matrix[3][3]) {
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                if (!std::isfinite(matrix[r][c])) return false;
+        const float det = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+                        - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+                        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+        return std::isfinite(det) && std::abs(det) >= 1e-10f;
+    }
+
+    static RGB sampleProcessedRGB(
+        const libraw_data_t& data,
+        int width,
+        int height,
+        int channels,
+        const float (*cameraMatrix)[4],
+        float scale,
+        const LensCorrectionTransform& correction,
+        const RAWBayerOverride* replacement,
+        int row,
+        int col,
+        const float* coordinates
+    ) {
+        const auto& raw = data.image[static_cast<size_t>(row) * width + col];
+        float rgb[3] = {};
+        float camera[4];
+        float lensGains[3] = {1, 1, 1};
+        if (correction.report().appliedVignetting) {
+            lensGains[0] = correction.gainAt(coordinates ? coordinates[0] : float(col), coordinates ? coordinates[1] : float(row));
+            lensGains[1] = correction.report().appliedTCA ? correction.gainAt(coordinates[2], coordinates[3]) : lensGains[0];
+            lensGains[2] = correction.report().appliedTCA ? correction.gainAt(coordinates[4], coordinates[5]) : lensGains[0];
+        }
+        for (int c = 0; c < channels; ++c) {
+            const int mapped = c == 3 ? 1 : c;
+            camera[c] = coordinates ? sampleCameraChannel(&data.image[0][0], width, height, c,
+                coordinates[mapped * 2], coordinates[mapped * 2 + 1]) : raw[c];
+            camera[c] *= lensGains[mapped];
+        }
+        for (int dst = 0; dst < 3; ++dst)
+            for (int c = 0; c < channels; ++c)
+                rgb[dst] += cameraMatrix[dst][c] * camera[c] * scale;
+        const float bayerBlend = replacement ? std::clamp(replacement->blend, 0.0f, 1.0f) : 0.0f;
+        if (replacement && !replacement->cameraCorrection.empty() && bayerBlend > 0.0f) {
+            const auto& value = replacement->cameraCorrection[size_t(row) * width + col];
+            for (int c = 0; c < 3; ++c) {
+                float delta = coordinates ? sampleCameraCorrection(replacement->cameraCorrection, width, height, c,
+                    coordinates[c * 2], coordinates[c * 2 + 1]) : c == 0 ? value.r : c == 1 ? value.g : value.b;
+                if (bayerBlend < 1.0f) delta *= bayerBlend;
+                if (delta != 0)
+                    for (int dst = 0; dst < 3; ++dst)
+                        rgb[dst] += cameraMatrix[dst][c] * delta * lensGains[c];
+            }
+        }
+        return RGB(rgb[0], rgb[1], rgb[2]);
+    }
+
+    float measureBaselineEV(
+        int width,
+        int height,
+        int channels,
+        const float (*cameraMatrix)[4],
+        float scale,
+        const LensCorrectionTransform& correction,
+        const RAWBayerOverride* replacement,
+        const RAWProcessOptions& options,
+        float* outPreviewEV
+    ) {
+        const auto& data = rawProcessor_->imgdata;
+        float baseline = options.applyBaselineExposure ? sceneExposureEV(metadataExposureEV_) : 0;
+        if (outPreviewEV) *outPreviewEV = 0;
+        if (options.matchEmbeddedPreviewExposure) {
+            auto* previewCache = currentPreviewExposureCache();
+            auto preview = previewCache ? previewCache->getOrLoad(filepath_) : localPreviewCache_.getOrLoad(filepath_);
+            if (!preview.empty()) {
+                std::vector<float> luminance;
+                luminance.reserve(128 * 128);
+                alignas(16) float coordinates[6];
+                for (int y = 0; y < 128; ++y) for (int x = 0; x < 128; ++x) {
+                    const int row = (2 * y + 1) * height / 256;
+                    const int col = (2 * x + 1) * width / 256;
+                    if (correction.hasGeometry()) correction.map(col, row, 1, 1, coordinates);
+                    const auto p = sampleProcessedRGB(data, width, height, channels, cameraMatrix, scale,
+                        correction, replacement, row, col, correction.hasGeometry() ? coordinates : nullptr);
+                    luminance.push_back(std::max(0.0f, .2126f * p.r + .7152f * p.g + .0722f * p.b));
+                }
+                bool matched = false;
+                const float matchedEV = estimatePreviewExposureEV(std::move(luminance), std::move(preview), &matched);
+                if (outPreviewEV) *outPreviewEV = matchedEV;
+                if (matched) baseline = matchedEV;
+            }
+        }
+        return baseline;
+    }
+
+    ErrorCode runDcrawProcess(
+        const RAWProcessOptions& options,
+        bool cameraWB,
+        bool autoWB,
+        bool customWB,
+        const float multipliers[4],
+        bool halfSize,
+        int rawNoiseReduction,
+        const RAWBayerOverride* replacement,
+        const HDRCameraProfile* cameraProfile,
+        int& outWidth,
+        int& outHeight,
+        int& outChannels,
+        float& outGreen
+    ) {
+        auto& params = rawProcessor_->imgdata.params;
+        // half_size skips the LibRaw interpolation stage that runs FBDD.
+        params.half_size = halfSize && rawNoiseReduction == 0 ? 1 : 0;
+        params.fbdd_noiserd = rawNoiseReduction;
+        const ErrorCode identificationResult = ensureIdentificationMode(cameraWB, autoWB);
+        if (identificationResult != ErrorCode::Success) return identificationResult;
+        // 非 Bayer 必须重置，避免复用处理器时把 X-Trans 误送入 VNG。
+        params.user_qual = bayerSource_ && options.bayerDemosaic != BayerDemosaicMethod::Legacy ?
+            (options.bayerDemosaic == BayerDemosaicMethod::VNG ? 1 : 11) : -1;
+        params.use_camera_matrix = 3;
+        params.use_camera_wb = cameraWB ? 1 : 0;
+        params.use_auto_wb = autoWB ? 1 : 0;
+        for (int c = 0; c < 4; ++c) {
+            const float value = c == 3 && multipliers[c] == 0 ? multipliers[1] : multipliers[c];
+            if (customWB && (!std::isfinite(value) || value <= 0))
+                return ErrorCode::InvalidFormat;
+            params.user_mul[c] = customWB ? value : 0;
+        }
+        params.output_color = 0;
+        params.output_bps = 16;
+        params.no_auto_bright = 1;
+        params.no_auto_scale = 0;
+        params.adjust_maximum_thr = 0;
+        // Blend clipped highlight chroma before the camera matrix and film LUT.
+        params.highlight = 2;
+        params.gamm[0] = params.gamm[1] = 1;
+        params.bright = 1;
+        params.exp_correc = 0;
+        BayerOverrideScope overrideScope(*rawProcessor_, bayerMetadata_, replacement);
+        const int processed = rawProcessor_->dcraw_process();
+        if (processed != LIBRAW_SUCCESS) {
+            // Fatal LibRaw processing errors may recycle unpacked data internally.
+            // Require a fresh load rather than advertising a reusable source.
+            invalidateState();
+            if (processed == LIBRAW_CANCELLED_BY_CALLBACK) throw ProcessingCancelled();
+            if (processed == LIBRAW_UNSUFFICIENT_MEMORY || processed == LIBRAW_MEMPOOL_OVERFLOW)
+                return ErrorCode::OutOfMemory;
+            return ErrorCode::ProcessingError;
+        }
+        auto& data = rawProcessor_->imgdata;
+        const int channels = data.idata.colors;
+        if (channels != 3 && (channels != 4 || cameraProfile)) {
+            rawProcessor_->free_image();
+            return ErrorCode::InvalidFormat;
+        }
+        if (!data.image || !data.color.maximum) {
+            rawProcessor_->free_image();
+            return ErrorCode::ProcessingError;
+        }
+        // Bayer half-size keeps the active crop in width/height while image is
+        // allocated with iwidth/iheight. Fuji rotation and pixel-aspect stretch
+        // instead replace width/height with the postprocess geometry.
+        const bool postprocessGeometry = fujiRotate_ ||
+            (std::isfinite(data.sizes.pixel_aspect) && data.sizes.pixel_aspect > 0 &&
+             std::abs(data.sizes.pixel_aspect - 1.0) > .005);
+        const int width = postprocessGeometry ? data.sizes.width : data.sizes.iwidth;
+        const int height = postprocessGeometry ? data.sizes.height : data.sizes.iheight;
+        if (replacement && (width != replacement->width || height != replacement->height)) {
+            rawProcessor_->free_image();
+            return ErrorCode::InvalidFormat;
+        }
+        if (width <= 0 || height <= 0) {
+            rawProcessor_->free_image();
+            return ErrorCode::ProcessingError;
+        }
+        const float green = data.color.pre_mul[1];
+        if (!std::isfinite(green) || green <= 0) {
+            rawProcessor_->free_image();
+            return ErrorCode::ProcessingError;
+        }
+        outWidth = width;
+        outHeight = height;
+        outChannels = channels;
+        outGreen = green;
+        return ErrorCode::Success;
+    }
+
+    void snapshotLastAppliedColor(const libraw_data_t& data, int channels, float green, bool customOverride) {
+        lastAppliedWbValid_ = false;
+        cameraToSrgbValid_ = false;
+        if (channels != 3 || customOverride || displayReferred_ || data.color.as_shot_wb_applied) return;
+        float m[3][3]{};
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                m[r][c] = data.color.rgb_cam[r][c];
+        if (!validCameraToSrgb(m)) return;
+        for (int c = 0; c < 3; ++c) {
+            if (!std::isfinite(data.color.pre_mul[c]) || data.color.pre_mul[c] <= 0) return;
+        }
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                cameraToSrgb_[r][c] = m[r][c];
+        cameraToSrgbValid_ = true;
+        lastAppliedWbMul_ = {data.color.pre_mul[0] / green, 1.0f, data.color.pre_mul[2] / green};
+        lastAppliedWbValid_ = true;
+    }
+
     void invalidateState() {
         cameraHDRInspected_ = false;
         x3fProcessor_.reset();
@@ -676,12 +838,19 @@ private:
         lastCalibrationValid_ = false;
         lastRgbCam_ = {};
         lastWbUsed_ = {1.0f, 1.0f, 1.0f};
+        cameraToSrgbValid_ = false;
+        cameraToSrgb_ = {};
+        lastAppliedWbValid_ = false;
+        lastAppliedWbMul_ = {1.0f, 1.0f, 1.0f};
+        asShotWbValid_ = false;
+        asShotWbMul_ = {1.0f, 1.0f, 1.0f};
         bayerSource_ = false;
         previewExposureEV_ = 0;
         baselineExposureEV_ = 0;
         metadataExposureEV_ = 0;
         fujiRotate_ = false;
         sdkStage3_ = false;
+        jxlDng_ = false;
         lensReport_ = {};
         outputSpace_ = ColorSpace::sRGB;
         bayerMetadata_ = {}; bayerMetadataReady_ = false; bayerDaylightWB_ = {};
@@ -710,11 +879,13 @@ private:
         const int openResult = openRawFile(*rawProcessor_, filepath_);
         if (openResult != LIBRAW_SUCCESS) return openResult;
         sdkStage3_ = false;
+        jxlDng_ = false;
         if (!unpack) return LIBRAW_SUCCESS;
 #ifdef SONY2FUJI_ENABLE_DNGSDK
         // 仅 JPEG XL 使用 SDK，其他 RAW 保留现有解码和白平衡路径。
         const char* decoder = rawProcessor_->unpack_function_name();
         if (decoder && std::strcmp(decoder, "jxl_dng_load_raw_placeholder()") == 0) {
+            jxlDng_ = true;
             // LibRaw 在 open_file 内根据 Stage2 决定 WB 校正，必须带正确标志重新识别。
             rawProcessor_->recycle();
             rawProcessor_->imgdata.rawparams.options |= dngOptions;
@@ -763,6 +934,24 @@ private:
             for (int k=0; k<3; ++k)
                 cameraColorMatrix_[row][col] += xyz[row][k] * data.color.rgb_cam[k][col];
         }
+        float camSrgb[3][3]{};
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                camSrgb[r][c] = data.color.rgb_cam[r][c];
+        cameraToSrgbValid_ = data.idata.colors == 3 && validCameraToSrgb(camSrgb);
+        if (cameraToSrgbValid_) {
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    cameraToSrgb_[r][c] = camSrgb[r][c];
+        }
+        asShotWbValid_ = data.idata.colors == 3 && !data.color.as_shot_wb_applied &&
+            std::isfinite(data.color.cam_mul[0]) && data.color.cam_mul[0] > 0 &&
+            std::isfinite(data.color.cam_mul[1]) && data.color.cam_mul[1] > 0 &&
+            std::isfinite(data.color.cam_mul[2]) && data.color.cam_mul[2] > 0;
+        if (asShotWbValid_) {
+            const float g = data.color.cam_mul[1];
+            asShotWbMul_ = {data.color.cam_mul[0] / g, 1.0f, data.color.cam_mul[2] / g};
+        }
         snapshotBayerMetadata();
     }
 
@@ -805,7 +994,12 @@ private:
     }
 
     ErrorCode ensureIdentificationMode(bool cameraWB, bool autoWB) {
-        if (sourceUnpacked_ && cameraWB == identificationCameraWB_ && autoWB == identificationAutoWB_)
+        // LibRaw only alters identification state on use_camera_wb for 4-color CatchLight metadata;
+        // retain WB-mode re-identification for 4-color and JPEG XL SDK paths, while 3-color RAWs
+        // reuse their unpacked mosaic directly across Camera/Auto/Custom/Temperature WB switches.
+        const bool needsWbReidentify = (rawProcessor_->imgdata.idata.colors == 4 && cameraWB != identificationCameraWB_) ||
+            (jxlDng_ && (cameraWB != identificationCameraWB_ || autoWB != identificationAutoWB_));
+        if (sourceUnpacked_ && !needsWbReidentify)
             return ErrorCode::Success;
         const bool needsCalibration = !sourceUnpacked_;
         const int ret = openAndUnpack(cameraWB, autoWB);
@@ -840,6 +1034,12 @@ private:
     std::array<std::array<float,3>,3> lastRgbCam_{};
     std::array<float,3> lastWbUsed_{1.0f, 1.0f, 1.0f};
     bool lastCalibrationValid_ = false;
+    std::array<std::array<float,3>,3> cameraToSrgb_{};
+    bool cameraToSrgbValid_ = false;
+    std::array<float, 3> lastAppliedWbMul_{1.0f, 1.0f, 1.0f};
+    bool lastAppliedWbValid_ = false;
+    std::array<float, 3> asShotWbMul_{1.0f, 1.0f, 1.0f};
+    bool asShotWbValid_ = false;
     bool bayerSource_ = false;
     bool sourceReady_ = false;
     bool cameraHDRInspected_ = false;
@@ -848,6 +1048,7 @@ private:
     bool identificationAutoWB_ = false;
     bool fujiRotate_ = false;
     bool sdkStage3_ = false;
+    bool jxlDng_ = false;
     LensCorrectionReport lensReport_;
     int width_ = 0;
     int height_ = 0;
@@ -966,6 +1167,10 @@ ErrorCode RAWProcessor::process(const RAWProcessOptions& options, ImageData& out
     return pImpl_->process(options, output);
 }
 
+ErrorCode RAWProcessor::estimatePreviewExposure(const RAWProcessOptions& options, float& outBaselineEV) {
+    return pImpl_->estimatePreviewExposure(options, outBaselineEV);
+}
+
 bool RAWProcessor::isDisplayReferred() const { return pImpl_->isDisplayReferred(); }
 const std::string& RAWProcessor::getLastError() const { return pImpl_->getLastError(); }
 
@@ -1004,6 +1209,22 @@ float RAWProcessor::getBaselineExposureEV() const { return pImpl_->getBaselineEx
 float RAWProcessor::getMetadataExposureEV() const { return pImpl_->getMetadataExposureEV(); }
 bool RAWProcessor::getAsShotWhiteBalance(float& temperature, float& tint) const {
     return pImpl_->getAsShotWhiteBalance(temperature,tint);
+}
+
+bool RAWProcessor::getAsShotWhiteBalanceMultipliers(float multipliers[3]) const {
+    return pImpl_->getAsShotWhiteBalanceMultipliers(multipliers);
+}
+
+bool RAWProcessor::computeTemperatureWhiteBalanceMultipliers(float temperature, float tint, float multipliers[3]) const {
+    return pImpl_->computeTemperatureWhiteBalanceMultipliers(temperature, tint, multipliers);
+}
+
+bool RAWProcessor::getLastAppliedWhiteBalanceMultipliers(float multipliers[3]) const {
+    return pImpl_->getLastAppliedWhiteBalanceMultipliers(multipliers);
+}
+
+bool RAWProcessor::getCameraToSrgbMatrix(float matrix[3][3]) const {
+    return pImpl_->getCameraToSrgbMatrix(matrix);
 }
 
 bool RAWProcessor::supportsNoiseReduction() const {

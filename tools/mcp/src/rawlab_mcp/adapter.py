@@ -23,7 +23,7 @@ RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
-_RASTER_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp"}
+_RASTER_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp", ".heic", ".heif"}
 
 
 def _copy_exclusive(staged, destination):
@@ -214,9 +214,10 @@ class CliAdapter:
                     or set(error) != {"code", "message", "status"}
                     or not isinstance(error.get("code"), str)
                     or error.get("code") not in {"invalid_argument", "unsupported", "io_error", "processing_error",
-                                                  "out_of_memory", "output_io_error", "invalid_recipe"}
+                                                  "out_of_memory", "output_io_error", "invalid_recipe",
+                                                  "cancelled", "ai_not_ready"}
                     or not isinstance(error.get("message"), str)
-                    or (error.get("status") is not None and (type(error["status"]) is not int or not 1 <= error["status"] <= 6))):
+                    or (error.get("status") is not None and (type(error["status"]) is not int or not 1 <= error["status"] <= 8))):
                 raise AdapterError("CLI returned an invalid error envelope", "processing_error")
             return Envelope(command, False, error=Error(error["code"], error["message"], error.get("status")))
         except TimeoutError as e:

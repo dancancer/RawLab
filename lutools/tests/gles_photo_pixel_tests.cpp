@@ -10,8 +10,10 @@
 #include "core/photo_lut.h"
 #include "core/photo_rendering.h"
 #include "core/photo_tone_controls.h"
+#include "core/photo_basic_controls_v3.h"
 #include "core/photo_tone_curve.h"
 #include "gpu/gles_photo.h"
+#include "gpu/photo_tone_curve_shader.h"
 #include "sony2fuji/color_converter.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/lut_parser.h"
@@ -720,6 +722,278 @@ void testChromaDenoiseUsesWorkingBands() {
           std::to_string(diff) + ")");
 }
 
+void testBasicV3AndToneFieldParity() {
+    rawlabtest::resetGlesVmState();
+    sony2fuji::GlesPhotoRenderer renderer;
+    const auto srgbLut = buildSyntheticLut("sRGB to sRGB", "ITU-R BT.709 to ITU-R BT.709", 5, false, true);
+    checkPass(srgbLut != nullptr, "Synthetic sRGB LUT created for BasicV3 parity test");
+
+    auto cpuRenderBasicV3 = [&](
+        const sony2fuji::ImageData& input,
+        sony2fuji::ColorSpace inputSpace,
+        const sony2fuji::RenderParams& params,
+        uint32_t outW, uint32_t outH,
+        int sourceW, int sourceH
+    ) {
+        const auto toSrgb = params.hasCustomToSrgb
+            ? params.customToSrgb
+            : sony2fuji::ColorConverter::getConversionMatrix(inputSpace, sony2fuji::ColorSpace::sRGB);
+        const bool previewEarlyResize = params.intent == sony2fuji::RenderIntent::Preview &&
+            !params.preserveSourceResolution &&
+            (outW != static_cast<uint32_t>(input.width) || outH != static_cast<uint32_t>(input.height));
+        sony2fuji::ImageData img = previewEarlyResize ? bilinearResize(input, outW, outH) : input;
+        const float expScale = std::exp2(params.exposureEV) * params.brightness;
+        for (auto& px : img.pixels) {
+            const float r = toSrgb[0][0] * px.r + toSrgb[0][1] * px.g + toSrgb[0][2] * px.b;
+            const float g = toSrgb[1][0] * px.r + toSrgb[1][1] * px.g + toSrgb[1][2] * px.b;
+            const float b = toSrgb[2][0] * px.r + toSrgb[2][1] * px.g + toSrgb[2][2] * px.b;
+            px = {r * expScale * params.relativeWB.r, g * expScale * params.relativeWB.g, b * expScale * params.relativeWB.b};
+        }
+        if (params.basicTone.active() && params.basicToneField) {
+            sony2fuji::applyBasicToneV3WithField(img, params.basicTone, *params.basicToneField, {});
+        }
+        for (auto& px : img.pixels) {
+            px = {sony2fuji::neutralDisplay(px.r), sony2fuji::neutralDisplay(px.g), sony2fuji::neutralDisplay(px.b)};
+        }
+        if (params.lut && params.lutStrength > 0.f) {
+            const auto dMin = params.lut->domainMin();
+            const auto dMax = params.lut->domainMax();
+            const int sz = params.lut->getSize();
+            std::vector<sony2fuji::RGB> table;
+            table.reserve(size_t(sz) * sz * sz);
+            for (int b = 0; b < sz; ++b)
+                for (int g = 0; g < sz; ++g)
+                    for (int r = 0; r < sz; ++r)
+                        table.push_back(params.lut->getValue(r, g, b));
+            for (auto& px : img.pixels) {
+                const float nr = std::clamp((px.r - dMin.r) / (dMax.r - dMin.r), 0.f, 1.f);
+                const float ng = std::clamp((px.g - dMin.g) / (dMax.g - dMin.g), 0.f, 1.f);
+                const float nb = std::clamp((px.b - dMin.b) / (dMax.b - dMin.b), 0.f, 1.f);
+                const auto look = sony2fuji::detail::interpolateLUT(table.data(), sz, nr, ng, nb);
+                const float s = params.lutStrength;
+                px = {px.r + (look.r - px.r) * s, px.g + (look.g - px.g) * s, px.b + (look.b - px.b) * s};
+            }
+        }
+        sony2fuji::applyBasicBlackWhiteV3(img, params.toneControls);
+        const float contrast = std::clamp(params.contrast, 0.f, 2.f);
+        const float sat = std::clamp(params.saturation, 0.f, 2.f);
+        for (auto& px : img.pixels) {
+            if (contrast != 1.f) {
+                px.r = sony2fuji::basicContrastV3(px.r, contrast - 1.f);
+                px.g = sony2fuji::basicContrastV3(px.g, contrast - 1.f);
+                px.b = sony2fuji::basicContrastV3(px.b, contrast - 1.f);
+            }
+            if (sat != 1.f) {
+                const float lum = 0.2126f * px.r + 0.7152f * px.g + 0.0722f * px.b;
+                px = {lum + (px.r - lum) * sat, lum + (px.g - lum) * sat, lum + (px.b - lum) * sat};
+            }
+        }
+        sony2fuji::applyBasicVibranceV3(img, params.toneControls.vibrance);
+        if (static_cast<uint32_t>(img.width) != outW || static_cast<uint32_t>(img.height) != outH) {
+            img = bilinearResize(img, outW, outH);
+        }
+        (void)sourceW; (void)sourceH;
+        return img;
+    };
+
+    const auto input = makeColorfulTestImage(24, 16);
+    sony2fuji::RenderParams params;
+    params.lut = srgbLut;
+    params.lutStrength = 0.85f;
+    params.exposureEV = 0.35f;
+    params.contrast = 1.35f;
+    params.saturation = 1.12f;
+    params.basicV3 = true;
+    params.toneControls.blackPoint = 0.3f;
+    params.toneControls.whitePoint = -0.25f;
+    params.toneControls.vibrance = 0.45f;
+    params.basicTone = {-0.6f, 0.7f};
+
+    const auto baseSrgb = sony2fuji::ColorConverter::getConversionMatrix(
+        sony2fuji::ColorSpace::AdobeRGB, sony2fuji::ColorSpace::sRGB);
+    params.hasCustomToSrgb = true;
+    params.customToSrgb = {{
+        {baseSrgb[0][0] * 1.12f, baseSrgb[0][1] * 0.96f, baseSrgb[0][2]},
+        {baseSrgb[1][0], baseSrgb[1][1] * 1.02f, baseSrgb[1][2]},
+        {baseSrgb[2][0], baseSrgb[2][1], baseSrgb[2][2] * 0.90f}
+    }};
+
+    // 1. PREVIEW mode with early resize + BasicToneV3 field built on target size.
+    {
+        params.intent = sony2fuji::RenderIntent::Preview;
+        auto previewInput = bilinearResize(input, 16, 12);
+        const auto field = std::make_shared<sony2fuji::BasicToneV3Field>(
+            sony2fuji::buildBasicToneV3Field(previewInput, params.customToSrgb, {std::exp2(params.exposureEV), std::exp2(params.exposureEV), std::exp2(params.exposureEV)}, 24, 16));
+        params.basicToneField = field;
+        sony2fuji::ImageData gpuOut;
+        const bool ok = renderer.render(input, sony2fuji::ColorSpace::AdobeRGB, params, 16, 12, 11, gpuOut);
+        const auto cpuRef = cpuRenderBasicV3(input, sony2fuji::ColorSpace::AdobeRGB, params, 16, 12, 24, 16);
+        const float diff = maxPixelDiff(gpuOut, cpuRef);
+        checkPass(ok && diff <= 3e-4f, "GLES BasicV3 PREVIEW parity maxDiff=" + std::to_string(diff));
+    }
+
+    // 2. Negative blackPoint, positive whitePoint, negative vibrance.
+    {
+        params.toneControls.blackPoint = -0.4f;
+        params.toneControls.whitePoint = 0.5f;
+        params.toneControls.vibrance = -0.35f;
+        params.contrast = 0.7f;
+        params.basicTone = {0.4f, -0.5f};
+        const auto field = std::make_shared<sony2fuji::BasicToneV3Field>(
+            sony2fuji::buildBasicToneV3Field(input, params.customToSrgb, {std::exp2(params.exposureEV), std::exp2(params.exposureEV), std::exp2(params.exposureEV)}, 24, 16));
+        params.basicToneField = field;
+        params.intent = sony2fuji::RenderIntent::Final;
+        sony2fuji::ImageData gpuOut;
+        const bool ok = renderer.render(input, sony2fuji::ColorSpace::AdobeRGB, params, 18, 12, 0, gpuOut);
+        const auto cpuRef = cpuRenderBasicV3(input, sony2fuji::ColorSpace::AdobeRGB, params, 18, 12, 24, 16);
+        const float diff = maxPixelDiff(gpuOut, cpuRef);
+        checkPass(ok && diff <= 3e-4f, "GLES BasicV3 FINAL parity maxDiff=" + std::to_string(diff));
+    }
+
+    // 3. Multi-band FINAL tiling under 4096-byte SSBO limit with active BasicToneV3 field (24*16*8 = 3072 <= 4096).
+    {
+        const auto savedCfg = rawlabtest::glesVmConfig();
+        rawlabtest::glesVmConfig().maxSsboBytes = 4096;
+        rawlabtest::glesVmStats().resetCounters();
+        sony2fuji::GlesPhotoRenderer bandRenderer;
+        sony2fuji::ImageData bandOut;
+        const bool bandOk = bandRenderer.render(input, sony2fuji::ColorSpace::AdobeRGB, params, 18, 12, 0, bandOut);
+        const size_t bandDispatches = rawlabtest::glesVmStats().dispatchCalls;
+        rawlabtest::glesVmConfig() = savedCfg;
+        const auto cpuRef = cpuRenderBasicV3(input, sony2fuji::ColorSpace::AdobeRGB, params, 18, 12, 24, 16);
+        const float diff = maxPixelDiff(bandOut, cpuRef);
+        checkPass(bandOk && bandDispatches >= 2,
+            "GLES BasicV3 multi-band tiling executes multiple bands (dispatches=" + std::to_string(bandDispatches) + ")");
+        checkPass(diff <= 3e-4f, "GLES BasicV3 multi-band FINAL parity maxDiff=" + std::to_string(diff));
+    }
+
+    // 4. Combined BasicV3 + Tone Curve v2 (Parametric + Luminosity + R/B channels) + Color Grading v2 (5 zones + blending + balance)
+    {
+        auto combo = params;
+        combo.customCurve = sony2fuji::ToneCurve(
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.08}, {0.5, 0.64}, {1.0, 0.92}}}}, true);
+        combo.channelCurves[0] = sony2fuji::ToneCurve(
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.5, 0.56}, {1.0, 0.96}}}}, true);
+        combo.channelCurves[2] = sony2fuji::ToneCurve(
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.5, 0.44}, {1.0, 1.0}}}}, true);
+        combo.parametricCurve = {30.0f, -20.0f, 25.0f, -15.0f, 0.25f, 0.50f, 0.75f};
+        combo.curveApplyToLuminosity = true;
+        combo.colorGrading.wheels[0] = {215.0f, 28.0f, -15.0f};
+        combo.colorGrading.wheels[1] = {45.0f, 20.0f, 6.0f};
+        combo.colorGrading.wheels[2] = {320.0f, 24.0f, -10.0f};
+        combo.colorGrading.global = {160.0f, 15.0f, 8.0f};
+        combo.colorGrading.blending = 72.0f;
+        combo.colorGrading.balance = -24.0f;
+
+        auto cpuCombo = [&](bool lumMode) {
+            auto c = combo;
+            c.curveApplyToLuminosity = lumMode;
+            sony2fuji::ImageData img = cpuRenderBasicV3(input, sony2fuji::ColorSpace::AdobeRGB, c, 24, 16, 24, 16);
+            // Re-run cleanly from neutral+BasicTone+LUT+BW+CurveV2+Contrast/Sat+Vibrance+GradingV2 to match pipeline stage order
+            const auto toSrgb = c.hasCustomToSrgb ? c.customToSrgb :
+                sony2fuji::ColorConverter::getConversionMatrix(sony2fuji::ColorSpace::AdobeRGB, sony2fuji::ColorSpace::sRGB);
+            const float expScale = std::exp2(c.exposureEV);
+            img = input;
+            for (int y = 0; y < img.height; ++y) {
+                for (int x = 0; x < img.width; ++x) {
+                    auto& px = img.at(x, y);
+                    px = sony2fuji::ColorConverter::applyMatrix(px, toSrgb);
+                    px = {px.r * expScale, px.g * expScale, px.b * expScale};
+                }
+            }
+            sony2fuji::applyBasicToneV3WithField(img, c.basicTone, *c.basicToneField, {});
+            for (auto& px : img.pixels) {
+                px = {sony2fuji::neutralDisplay(px.r), sony2fuji::neutralDisplay(px.g), sony2fuji::neutralDisplay(px.b)};
+                const auto dMin = c.lut->domainMin();
+                const auto dMax = c.lut->domainMax();
+                const float nr = std::clamp((px.r - dMin.r) / (dMax.r - dMin.r), 0.f, 1.f);
+                const float ng = std::clamp((px.g - dMin.g) / (dMax.g - dMin.g), 0.f, 1.f);
+                const float nb = std::clamp((px.b - dMin.b) / (dMax.b - dMin.b), 0.f, 1.f);
+                const auto look = sony2fuji::detail::interpolateLUT(
+                    [&]() {
+                        std::vector<sony2fuji::RGB> t;
+                        const int sz = c.lut->getSize();
+                        t.reserve(size_t(sz) * sz * sz);
+                        for (int b = 0; b < sz; ++b) for (int g = 0; g < sz; ++g) for (int r = 0; r < sz; ++r)
+                            t.push_back(c.lut->getValue(r, g, b));
+                        return t;
+                    }().data(), c.lut->getSize(), nr, ng, nb);
+                const float s = c.lutStrength;
+                px = {px.r + (look.r - px.r) * s, px.g + (look.g - px.g) * s, px.b + (look.b - px.b) * s};
+            }
+            sony2fuji::applyBasicBlackWhiteV3(img, c.toneControls);
+            const sony2fuji::ToneCurveParametric parametric(c.parametricCurve);
+            auto evalMaster = [&](float v) -> float {
+                if (parametric.active()) v = static_cast<float>(parametric.evaluate(v));
+                if (c.customCurve.active()) return static_cast<float>(c.customCurve.evaluate(v));
+                return v;
+            };
+            const float y0Lin = c.curveApplyToLuminosity ? sony2fuji::GammaConverter::removeSRGBGamma(evalMaster(0.0f)) : 0.0f;
+            const float contrast = std::clamp(c.contrast, 0.f, 2.f);
+            const float sat = std::clamp(c.saturation, 0.f, 2.f);
+            for (auto& px : img.pixels) {
+                if (c.curveApplyToLuminosity) {
+                    const sony2fuji::RGB pL(
+                        sony2fuji::GammaConverter::removeSRGBGamma(px.r),
+                        sony2fuji::GammaConverter::removeSRGBGamma(px.g),
+                        sony2fuji::GammaConverter::removeSRGBGamma(px.b));
+                    const float Y = 0.2126f * pL.r + 0.7152f * pL.g + 0.0722f * pL.b;
+                    const float u = sony2fuji::GammaConverter::applySRGBGamma(std::max(0.0f, Y));
+                    const float uPrime = evalMaster(u);
+                    const float Yp = sony2fuji::GammaConverter::removeSRGBGamma(uPrime);
+                    if (Yp <= 0.0f) {
+                        px = {0.f, 0.f, 0.f};
+                    } else if (Yp >= 1.0f) {
+                        px = {1.f, 1.f, 1.f};
+                    } else if (Y <= 1e-7f) {
+                        px = {uPrime, uPrime, uPrime};
+                    } else {
+                        const float s = std::max(0.0f, Yp - y0Lin) / Y;
+                        sony2fuji::RGB delta((pL.r - Y) * s, (pL.g - Y) * s, (pL.b - Y) * s);
+                        float t = 1.0f;
+                        if (delta.r > 0.0f) t = std::min(t, (1.0f - Yp) / delta.r);
+                        else if (delta.r < 0.0f) t = std::min(t, -Yp / delta.r);
+                        if (delta.g > 0.0f) t = std::min(t, (1.0f - Yp) / delta.g);
+                        else if (delta.g < 0.0f) t = std::min(t, -Yp / delta.g);
+                        if (delta.b > 0.0f) t = std::min(t, (1.0f - Yp) / delta.b);
+                        else if (delta.b < 0.0f) t = std::min(t, -Yp / delta.b);
+                        px = {sony2fuji::GammaConverter::applySRGBGamma(std::clamp(Yp + delta.r * t, 0.f, 1.f)),
+                              sony2fuji::GammaConverter::applySRGBGamma(std::clamp(Yp + delta.g * t, 0.f, 1.f)),
+                              sony2fuji::GammaConverter::applySRGBGamma(std::clamp(Yp + delta.b * t, 0.f, 1.f))};
+                    }
+                } else {
+                    px = {evalMaster(px.r), evalMaster(px.g), evalMaster(px.b)};
+                }
+                px.r = static_cast<float>(c.channelCurves[0].evaluate(px.r));
+                px.b = static_cast<float>(c.channelCurves[2].evaluate(px.b));
+                if (contrast != 1.f) {
+                    px.r = sony2fuji::basicContrastV3(px.r, contrast - 1.f);
+                    px.g = sony2fuji::basicContrastV3(px.g, contrast - 1.f);
+                    px.b = sony2fuji::basicContrastV3(px.b, contrast - 1.f);
+                }
+                if (sat != 1.f) {
+                    const float lum = 0.2126f * px.r + 0.7152f * px.g + 0.0722f * px.b;
+                    px = {lum + (px.r - lum) * sat, lum + (px.g - lum) * sat, lum + (px.b - lum) * sat};
+                }
+            }
+            sony2fuji::applyBasicVibranceV3(img, c.toneControls.vibrance);
+            sony2fuji::applyColorGrading(img, c.colorGrading);
+            return bilinearResize(img, 18, 12);
+        };
+
+        for (bool lumMode : {true, false}) {
+            combo.curveApplyToLuminosity = lumMode;
+            sony2fuji::ImageData gpuOut;
+            const bool ok = renderer.render(input, sony2fuji::ColorSpace::AdobeRGB, combo, 18, 12, 0, gpuOut);
+            const auto cpuRef = cpuCombo(lumMode);
+            const float diff = maxPixelDiff(gpuOut, cpuRef);
+            checkPass(ok && diff <= 3e-4f,
+                std::string("GLES BasicV3 + Tone Curve v2 (lum=") + (lumMode ? "true" : "false") +
+                ") + Color Grading v2 parity maxDiff=" + std::to_string(diff));
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -736,6 +1010,7 @@ int main(int argc, char** argv) {
     testShaderBranchesPixelParity();
     testResizeStagesEffectsAndMultiBand();
     testChromaDenoiseUsesWorkingBands();
+    testBasicV3AndToneFieldParity();
 
     if (rawlab::test::failureCount() != 0) {
         std::cerr << rawlab::test::failureCount() << " checkPass(s) failed\n";

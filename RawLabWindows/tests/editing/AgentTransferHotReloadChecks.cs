@@ -182,6 +182,20 @@ public sealed class AgentTransferHotReloadChecks
 
         var accepted = nextExternal.NextState.AcceptReload();
         Check(!accepted.Visible && accepted.PendingRecord == null, "AcceptReload clears banner");
+
+        // In-flight async save guard: Evaluate must never AutoReload while async save is in flight,
+        // and TryAcceptReload must block ReloadExternalUpdate until async save completes.
+        var asyncBlocked = state.Evaluate(committed, committed.Edit, disk, stamp2,
+            hasUnsavedManualDraft: false, hasPendingAsyncSave: true);
+        Check(asyncBlocked.Decision == ExternalReloadDecision.None && !asyncBlocked.NextState.Visible,
+            "Evaluate blocks AutoReload while an async save is in flight");
+        Check(!nextExternal.NextState.TryAcceptReload(hasPendingAsyncSave: true, out var blockedDisk) &&
+              blockedDisk == null && nextExternal.NextState.Visible &&
+              nextExternal.NextState.PendingRecord != null,
+            "TryAcceptReload blocks external reload acceptance while an async save is in flight");
+        Check(nextExternal.NextState.TryAcceptReload(hasPendingAsyncSave: false, out var readyDisk) &&
+              readyDisk != null && readyDisk.SameAs(disk),
+            "TryAcceptReload yields pending record once in-flight async save drains");
     }
 
     private static void ExternalStoreWatcherChecks()

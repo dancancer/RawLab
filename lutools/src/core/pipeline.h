@@ -6,6 +6,7 @@
 #include "sony2fuji/raw_processor.h"
 #include "core/hsl_probe.h"
 #include "core/photo_atmosphere.h"
+#include "core/photo_basic_controls_v3.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
 #include "core/photo_effects.h"
@@ -318,13 +319,21 @@ private:
 
     // pipeline_raw.cpp
     RAWProcessOptions rawWhiteBalanceOptions(const RenderParams& params) const;
+    bool buildRawCacheWbKeys(
+        const RenderParams& params,
+        std::string& outBaseSourceKey,
+        std::string& outFileKey,
+        std::string& outWbBaseKey,
+        std::string& outPreviewExposureKey
+    );
     RenderStatus loadRawImage(
         const RenderParams& params,
         ImageData& image,
         ColorSpace* space,
         bool* isLinear,
         bool copyImage = true,
-        bool applyAI = true
+        bool applyAI = true,
+        bool forceFullResolution = false
     );
     RenderStatus loadRawForWbProbe(const RenderParams& params);
 
@@ -445,6 +454,17 @@ private:
     PreviewExposureCache previewExposureCache_{};
     std::unique_ptr<RAWProcessor> rawProcessor_;
     std::string processorKey_;
+    std::string rawCacheWbBaseKey_;
+    bool rawCacheWbValid_ = false;
+    bool rawCacheAnchoredPreview_ = false;
+    std::array<float, 3> rawCacheAppliedWbMul_{1.0f, 1.0f, 1.0f};
+    std::array<float, 3> rawCacheAsShotWbMul_{1.0f, 1.0f, 1.0f};
+    float rawCacheCamToSrgb_[3][3]{};
+    struct BasicToneFieldCacheEntry {
+        std::string key;
+        std::shared_ptr<const BasicToneV3Field> field;
+    };
+    BasicToneFieldCacheEntry basicToneFieldCache_{};
     bool interactivePreview_ = false;
     bool viewportPreview_ = false;
     ViewportRoiConfig viewportRoi_{};

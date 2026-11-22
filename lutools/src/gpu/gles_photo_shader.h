@@ -12,6 +12,7 @@ precision highp int;
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
+layout(std430, binding = 2) readonly buffer BasicToneField { float basicField[]; };
 layout(binding = 0) uniform highp sampler3D film;
 uniform uvec2 sourceSize;
 uniform uvec2 destinationSize;
@@ -49,6 +50,10 @@ uniform vec4 colorGradingMix;
 uniform vec4 hslHue[2];
 uniform vec4 hslSaturation[2];
 uniform vec4 hslLightness[2];
+uniform int basicV3;
+uniform int basicToneActive;
+uniform uvec2 basicFieldSize;
+uniform vec4 basicTone;
 
 vec3 readPixel(uvec2 xy) {
     uint i = ((xy.y - sourceStartRow) * sourceSize.x + xy.x) * 3u;
@@ -143,8 +148,31 @@ vec3 applyHsl(vec3 pixel) {
     return rgb + (lightness - chroma * 0.5) + residual;
 }
 
-vec3 evaluate(vec3 inputColor) {
+vec2 sampleBasicToneField(uvec2 coord, uvec2 coordSize) {
+    uint fw = max(1u, basicFieldSize.x);
+    uint fh = max(1u, basicFieldSize.y);
+    vec2 maxIdx = vec2(float(fw - 1u), float(fh - 1u));
+    vec2 f = clamp((vec2(coord) + 0.5) * vec2(float(fw), float(fh)) / vec2(coordSize) - 0.5, vec2(0.0), maxIdx);
+    uvec2 low = uvec2(floor(f));
+    uvec2 high = min(low + 1u, uvec2(fw - 1u, fh - 1u));
+    vec2 t = f - vec2(low);
+    uint i00 = (low.y * fw + low.x) * 2u;
+    uint i10 = (low.y * fw + high.x) * 2u;
+    uint i01 = (high.y * fw + low.x) * 2u;
+    uint i11 = (high.y * fw + high.x) * 2u;
+    vec2 v00 = vec2(basicField[i00], basicField[i00 + 1u]);
+    vec2 v10 = vec2(basicField[i10], basicField[i10 + 1u]);
+    vec2 v01 = vec2(basicField[i01], basicField[i01 + 1u]);
+    vec2 v11 = vec2(basicField[i11], basicField[i11 + 1u]);
+    return mix(mix(v00, v10, t.x), mix(v01, v11, t.x), t.y);
+}
+
+vec3 evaluate(vec3 inputColor, uvec2 coord, uvec2 coordSize) {
     vec3 linear = (toSrgb * inputColor) * exposureWB;
+    if (basicToneActive != 0) {
+        vec2 si = sampleBasicToneField(coord, coordSize);
+        linear *= tcBasicToneV3Gain(tcLuminance(linear), si.x, si.y, basicTone.x, basicTone.y);
+    }
     vec3 pixel = vec3(neutral(linear.r), neutral(linear.g), neutral(linear.b));
     if (useLut) {
         vec3 lookInput = pixel;
@@ -156,8 +184,11 @@ vec3 evaluate(vec3 inputColor) {
         if (outputIsLog) look = vec3(neutral(decodePhotoLog(look.r, outputIsFLog)), neutral(decodePhotoLog(look.g, outputIsFLog)), neutral(decodePhotoLog(look.b, outputIsFLog)));
         pixel = mix(pixel, look, strength);
     }
-    pixel = tcBlackWhite(pixel, toneControls.x, toneControls.y);
-    pixel = hsApplyHighlightsShadows(pixel, tone.z, tone.w);
+    pixel = basicV3 != 0 ? tcBasicBlackWhiteV3(pixel, toneControls.x, toneControls.y)
+        : tcBlackWhite(pixel, toneControls.x, toneControls.y);
+    if (basicV3 == 0) {
+        pixel = hsApplyHighlightsShadows(pixel, tone.z, tone.w);
+    }
     bool masterActive = curveFlags.y != 0u || curveCounts.x != 0u || curve != 0.0;
     if (masterActive) {
         if (curveFlags.x != 0u) {
@@ -174,12 +205,16 @@ vec3 evaluate(vec3 inputColor) {
     pixel.r = customToneCurve(pixel.r, int(curveCounts.y), 32);
     pixel.g = customToneCurve(pixel.g, int(curveCounts.z), 64);
     pixel.b = customToneCurve(pixel.b, int(curveCounts.w), 96);
-    if (tone.x != 1.0 || tone.y != 1.0) {
-        pixel = (pixel - 0.5) * tone.x + 0.5;
+    if (basicV3 != 0 && tone.x != 1.0) {
+        pixel = vec3(tcBasicContrastV3(pixel.r, tone.x - 1.0), tcBasicContrastV3(pixel.g, tone.x - 1.0), tcBasicContrastV3(pixel.b, tone.x - 1.0));
+    }
+    if ((basicV3 == 0 && tone.x != 1.0) || tone.y != 1.0) {
+        if (basicV3 == 0) pixel = (pixel - 0.5) * tone.x + 0.5;
         float luminance = dot(pixel, vec3(0.2126, 0.7152, 0.0722));
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
-    return cgApply(applyHsl(tcVibrance(pixel, toneControls.z)),
+    vec3 vibranced = basicV3 != 0 ? tcBasicVibranceV3(pixel, toneControls.z) : tcVibrance(pixel, toneControls.z);
+    return cgApply(applyHsl(vibranced),
         colorGrading[0].xyz, colorGrading[0].w,
         colorGrading[1].xyz, colorGrading[1].w,
         colorGrading[2].xyz, colorGrading[2].w,
@@ -192,7 +227,7 @@ void main() {
     uvec2 xy = uvec2(i % destinationSize.x, destinationStartRow + i / destinationSize.x);
     vec3 value;
     if (stage == 1 || (stage == 2 && all(equal(sourceSize, destinationSize)))) {
-        value = evaluate(readPixel(xy));
+        value = evaluate(readPixel(xy), xy, stage == 1 ? destinationSize : sourceSize);
     } else {
         vec2 scale = vec2(destinationSize.x == 1u ? 0.0 : float(sourceSize.x - 1u) / float(destinationSize.x - 1u),
             destinationSize.y == 1u ? 0.0 : float(sourceSize.y - 1u) / float(destinationSize.y - 1u));
@@ -203,9 +238,14 @@ void main() {
         vec3 a = readPixel(low), b = readPixel(uvec2(high.x, low.y));
         vec3 c = readPixel(uvec2(low.x, high.y)), d = readPixel(high);
         // FINAL resizes display output; PREVIEW resizes linear input first.
-        if (stage == 2) { a = evaluate(a); b = evaluate(b); c = evaluate(c); d = evaluate(d); }
+        if (stage == 2) {
+            a = evaluate(a, low, sourceSize);
+            b = evaluate(b, uvec2(high.x, low.y), sourceSize);
+            c = evaluate(c, uvec2(low.x, high.y), sourceSize);
+            d = evaluate(d, high, sourceSize);
+        }
         value = mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
-        if (stage == 3) value = evaluate(value);
+        if (stage == 3) value = evaluate(value, xy, destinationSize);
     }
     uint outIndex = (outputOffset + i) * 3u;
     dst[outIndex] = value.r; dst[outIndex + 1u] = value.g; dst[outIndex + 2u] = value.b;

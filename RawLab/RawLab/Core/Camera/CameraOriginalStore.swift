@@ -430,11 +430,14 @@ final class CameraOriginalStore {
     }
     private func availability(_ source: CameraStoredOriginal) -> CameraOriginalAvailability {
         let url = originalURL(source)
+        var st = Darwin.stat()
+        guard Darwin.lstat(url.path, &st) == 0 else {
+            return errno == ENOENT ? .missing : .unavailable
+        }
+        guard (st.st_mode & S_IFMT) == S_IFREG,
+              st.st_size >= 0,
+              UInt64(st.st_size) == source.size else { return .changed }
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-            guard attributes[.type] as? FileAttributeType == .typeRegular,
-                  let size = (attributes[.size] as? NSNumber)?.uint64Value,
-                  size == source.size else { return .changed }
             // #341 摘要缓存复用（同一 FileDigestCache.shared 权威）：stat 指纹（inode+size+ctime+mtime）
             // 未变时直接复用摘要，验证只余 stat 复查；采样→复用二次校验、重复打开不再整读整算，
             // 内容真实变化（指纹任一字段变化）自动重算，语义与整文件重算一致。

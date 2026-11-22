@@ -9,9 +9,10 @@ public partial class MainWindow
     private ExternalStoreWatcher? externalStoreWatcher;
     private ExternalReloadBannerState externalReloadBanner = ExternalReloadBannerState.Empty;
     private bool deferredExternalEditsCheck;
+    private bool deferredExternalReloadAccept;
 
     private bool HasUnsavedManualDraft =>
-        editDirty || transform.Active || editGesture != null || interacting || editSaveTimer.IsEnabled;
+        editDirty || transform.Active || editGesture != null || interacting || editSaveTimer.IsEnabled || HasPendingEditSaves;
 
     private bool HasPendingEditSaves =>
         pendingEditSaves.HasPending || editSaveQueue.HasPendingWork;
@@ -50,7 +51,16 @@ public partial class MainWindow
 
     private void FlushDeferredExternalEditsCheckIfNeeded()
     {
-        if (!deferredExternalEditsCheck || HasPendingEditSaves)
+        if (HasPendingEditSaves)
+            return;
+        if (deferredExternalReloadAccept)
+        {
+            deferredExternalReloadAccept = false;
+            deferredExternalEditsCheck = false;
+            ReloadExternalUpdate();
+            return;
+        }
+        if (!deferredExternalEditsCheck)
             return;
         deferredExternalEditsCheck = false;
         HandleExternalEditsFileChange();
@@ -90,13 +100,19 @@ public partial class MainWindow
     internal void EvaluateExternalEditsRecord(PhotoEditState diskRecord, PathStatStamp? stamp = null)
     {
         if (file == null || currentEditRecord == null) return;
+        if (HasPendingEditSaves)
+        {
+            deferredExternalEditsCheck = true;
+            return;
+        }
         var currentUi = new SavedEdit(currentEditRecord.Identity, settings.Capture(), CurrentLookIdentity());
         var evaluation = externalReloadBanner.Evaluate(
             currentEditRecord,
             currentUi,
             diskRecord,
             stamp,
-            HasUnsavedManualDraft);
+            HasUnsavedManualDraft,
+            HasPendingEditSaves);
 
         externalReloadBanner = evaluation.NextState;
         RefreshExternalReloadBanner();
@@ -107,7 +123,15 @@ public partial class MainWindow
 
     internal void ReloadExternalUpdate()
     {
-        if (externalReloadBanner.PendingRecord is not { } diskRecord) return;
+        if (HasPendingEditSaves)
+        {
+            deferredExternalEditsCheck = true;
+            deferredExternalReloadAccept = true;
+            return;
+        }
+        deferredExternalReloadAccept = false;
+        if (!externalReloadBanner.TryAcceptReload(HasPendingEditSaves, out var diskRecord) || diskRecord == null)
+            return;
         externalReloadBanner = externalReloadBanner.AcceptReload();
         RefreshExternalReloadBanner();
 
@@ -126,6 +150,7 @@ public partial class MainWindow
 
     internal void KeepManualDraftOnExternalUpdate()
     {
+        deferredExternalReloadAccept = false;
         externalReloadBanner = externalReloadBanner.KeepManualDraft();
         RefreshExternalReloadBanner();
     }
@@ -133,6 +158,7 @@ public partial class MainWindow
     private void ClearExternalReloadOnSourceChange()
     {
         deferredExternalEditsCheck = false;
+        deferredExternalReloadAccept = false;
         externalReloadBanner = externalReloadBanner.ClearOnSourceChange();
         RefreshExternalReloadBanner();
     }

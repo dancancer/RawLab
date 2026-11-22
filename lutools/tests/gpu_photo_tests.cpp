@@ -719,6 +719,157 @@ int main() {
         sony2fuji_tone_curve_config resetCurve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(resetCurve), SONY2FUJI_CURVE_LEGACY, 0, {}};
         for (auto* target : {session, forced}) sony2fuji_session_set_tone_curve(target, &resetCurve);
     }
+    {
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_processing_version(target, SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                "BasicV3 session version sets");
+        }
+        const auto srgbLutPath = makePhotoLUT("sRGB", "Display");
+        {
+            // makePhotoLUT writes FLog header unless overridden; write an explicit sRGB LUT for BasicV3 parity.
+            std::ofstream file(srgbLutPath);
+            file << "# Gamma: sRGB to sRGB\n# Gamut: ITUR BT709 to ITUR BT709\n"
+                 << "LUT_3D_SIZE 2\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n";
+            for (int b = 0; b < 2; ++b) for (int g = 0; g < 2; ++g) for (int r = 0; r < 2; ++r)
+                file << (0.04f + 0.92f * r) << ' ' << (0.05f + 0.90f * g) << ' ' << (0.06f + 0.88f * b) << '\n';
+        }
+        const auto srgbLutUtf8 = srgbLutPath.u8string();
+        sony2fuji_tone_controls_config v3Tone{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(v3Tone), -0.3f, 0.4f, 0.5f};
+        for (auto* target : {session, forced}) sony2fuji_session_set_tone_controls(target, &v3Tone);
+        auto v3Req = baseRequest(ramp, 17, 13);
+        v3Req.lut_path = srgbLutUtf8.c_str();
+        v3Req.lut_strength = 0.85f;
+        v3Req.highlights = -0.4f;
+        v3Req.shadows = 0.5f;
+        v3Req.contrast = 1.35f;
+        v3Req.saturation = 1.15f;
+        for (bool preview : {true, false}) {
+            v3Req.intent = preview ? SONY2FUJI_INTENT_PREVIEW : SONY2FUJI_INTENT_FINAL;
+            v3Req.target_width = preview ? 11 : 9;
+            v3Req.target_height = preview ? 9 : 7;
+            compareForcedCase(session, forced, v3Req,
+                std::string("BasicV3 GPU vs CPU ") + (preview ? "PREVIEW" : "FINAL"));
+        }
+
+        // Combined BasicV3 + Tone Curve v2 + Color Grading v2 GPU vs CPU parity
+        sony2fuji_tone_curve_set_v2_config v2{};
+        v2.version = SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION;
+        v2.struct_size = sizeof(v2);
+        for (auto& c : v2.curves) {
+            c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            c.struct_size = sizeof(c);
+            c.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        v2.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+        v2.curves[0].count = 3;
+        v2.curves[0].points[0] = {0.0, 0.08};
+        v2.curves[0].points[1] = {0.5, 0.64};
+        v2.curves[0].points[2] = {1.0, 0.92};
+        v2.curves[1].mode = SONY2FUJI_CURVE_CUSTOM;
+        v2.curves[1].count = 3;
+        v2.curves[1].points[0] = {0.0, 0.02};
+        v2.curves[1].points[1] = {0.5, 0.56};
+        v2.curves[1].points[2] = {1.0, 0.96};
+        v2.parametric.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+        v2.parametric.struct_size = sizeof(v2.parametric);
+        v2.parametric.shadows = 35.0f;
+        v2.parametric.darks = -20.0f;
+        v2.parametric.lights = 25.0f;
+        v2.parametric.highlights = -15.0f;
+        v2.parametric.split_shadow = 0.25f;
+        v2.parametric.split_midtone = 0.50f;
+        v2.parametric.split_highlight = 0.75f;
+        v2.apply_to_luminosity = 1;
+
+        sony2fuji_color_grading_v2_config gv2{};
+        gv2.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+        gv2.struct_size = sizeof(gv2);
+        gv2.shadows_hue = 215.0f; gv2.shadows_saturation = 28.0f; gv2.shadows_luminance = -15.0f;
+        gv2.midtones_hue = 45.0f; gv2.midtones_saturation = 20.0f; gv2.midtones_luminance = 6.0f;
+        gv2.highlights_hue = 320.0f; gv2.highlights_saturation = 24.0f; gv2.highlights_luminance = -10.0f;
+        gv2.global_hue = 160.0f; gv2.global_saturation = 15.0f; gv2.global_luminance = 8.0f;
+        gv2.blending = 72.0f;
+        gv2.balance = -24.0f;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_tone_curves_v2(target, &v2) == SONY2FUJI_STATUS_OK,
+                "combined BasicV3 + v2 curve setter");
+            checkPass(sony2fuji_session_set_color_grading_v2(target, &gv2) == SONY2FUJI_STATUS_OK,
+                "combined BasicV3 + v2 grading setter");
+        }
+        v3Req.intent = SONY2FUJI_INTENT_FINAL;
+        v3Req.target_width = 17;
+        v3Req.target_height = 13;
+        compareForcedCase(session, forced, v3Req,
+            "Combined BasicV3 + Tone Curve v2 (Luminosity + Parametric + R) + Color Grading v2 GPU vs CPU");
+
+        // Prove CPU master-recipe fusion path (applyPostLookStages) actively applies v2 grading and parametric/luminosity curves
+        auto renderCpu = [&](sony2fuji_session* s) {
+            sony2fuji_buffer buf{};
+            checkPass(sony2fuji_process(s, &v3Req, &buf) == SONY2FUJI_STATUS_OK, "CPU BasicV3 fusion render succeeds");
+            std::vector<unsigned char> bytes(buf.size_bytes);
+            std::memcpy(bytes.data(), buf.data, buf.size_bytes);
+            sony2fuji_release_buffer(&buf);
+            return bytes;
+        };
+        const auto cpuFullV2 = renderCpu(session);
+
+        // V1-equivalent grading (drops global, zone luminance, blending!=50, balance!=0) must differ on CPU
+        auto gv1Equiv = gv2;
+        gv1Equiv.shadows_luminance = gv1Equiv.midtones_luminance = gv1Equiv.highlights_luminance = 0.0f;
+        gv1Equiv.global_hue = gv1Equiv.global_saturation = gv1Equiv.global_luminance = 0.0f;
+        gv1Equiv.blending = 50.0f;
+        gv1Equiv.balance = 0.0f;
+        checkPass(sony2fuji_session_set_color_grading_v2(session, &gv1Equiv) == SONY2FUJI_STATUS_OK,
+            "v1-equiv grading setter");
+        const auto cpuV1Grading = renderCpu(session);
+        checkPass(cpuFullV2 != cpuV1Grading,
+            "BasicV3 CPU fusion path applies v2 5-zone Color Grading (global/luminance/blending/balance)");
+
+        // Restoring full gv2 but disabling parametric + luminosity must differ on CPU
+        checkPass(sony2fuji_session_set_color_grading_v2(session, &gv2) == SONY2FUJI_STATUS_OK,
+            "restore v2 grading setter");
+        auto v2NoParamNoLum = v2;
+        v2NoParamNoLum.apply_to_luminosity = 0;
+        v2NoParamNoLum.parametric.shadows = v2NoParamNoLum.parametric.darks = 0.0f;
+        v2NoParamNoLum.parametric.lights = v2NoParamNoLum.parametric.highlights = 0.0f;
+        checkPass(sony2fuji_session_set_tone_curves_v2(session, &v2NoParamNoLum) == SONY2FUJI_STATUS_OK,
+            "no-parametric/no-lum curve setter");
+        const auto cpuNoParamNoLum = renderCpu(session);
+        checkPass(cpuFullV2 != cpuNoParamNoLum,
+            "BasicV3 CPU fusion path applies Parametric + Luminosity Tone Curve v2");
+
+        // Restore full v2 curves (RGB mode) and compare GPU vs CPU
+        v2.apply_to_luminosity = 0;
+        for (auto* target : {session, forced}) {
+            checkPass(sony2fuji_session_set_tone_curves_v2(target, &v2) == SONY2FUJI_STATUS_OK,
+                "combined BasicV3 + v2 RGB curve setter");
+        }
+        compareForcedCase(session, forced, v3Req,
+            "Combined BasicV3 + Tone Curve v2 (RGB + Parametric) + Color Grading v2 GPU vs CPU");
+
+        sony2fuji_tone_curve_set_v2_config resetV2{};
+        resetV2.version = SONY2FUJI_TONE_CURVE_SET_V2_CONFIG_VERSION;
+        resetV2.struct_size = sizeof(resetV2);
+        for (auto& c : resetV2.curves) {
+            c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            c.struct_size = sizeof(c);
+            c.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        resetV2.parametric.version = SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION;
+        resetV2.parametric.struct_size = sizeof(resetV2.parametric);
+        resetV2.parametric.split_shadow = 0.25f;
+        resetV2.parametric.split_midtone = 0.50f;
+        resetV2.parametric.split_highlight = 0.75f;
+        sony2fuji_color_grading_v2_config resetGv2{SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION, sizeof(resetGv2), 0,0,0, 0,0,0, 0,0,0, 0,0,0, 50.0f, 0.0f};
+        v3Tone.black_point = v3Tone.white_point = v3Tone.vibrance = 0;
+        for (auto* target : {session, forced}) {
+            sony2fuji_session_set_tone_curves_v2(target, &resetV2);
+            sony2fuji_session_set_color_grading_v2(target, &resetGv2);
+            sony2fuji_session_set_tone_controls(target, &v3Tone);
+            sony2fuji_session_set_processing_version(target, SONY2FUJI_PROCESSING_LEGACY);
+        }
+        std::filesystem::remove(srgbLutPath);
+    }
     std::filesystem::remove(hslLutPath);
     sony2fuji_session_destroy(forced);
 

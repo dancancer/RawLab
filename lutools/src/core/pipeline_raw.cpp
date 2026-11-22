@@ -8,6 +8,10 @@
 #include "ai/ai_session.h"
 #endif
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 
@@ -39,54 +43,23 @@ RAWProcessOptions Pipeline::rawWhiteBalanceOptions(const RenderParams& params) c
     return options;
 }
 
-RenderStatus Pipeline::loadRawImage(
+bool Pipeline::buildRawCacheWbKeys(
     const RenderParams& params,
-    ImageData& image,
-    ColorSpace* space,
-    bool* isLinear,
-    bool copyImage,
-    bool applyAI
+    std::string& outBaseSourceKey,
+    std::string& outFileKey,
+    std::string& outWbBaseKey,
+    std::string& outPreviewExposureKey
 ) {
     const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(processingVersion_);
-    std::string baseSourceKey;
-    if (!buildRawSourceIdentityKey(params.inputPath.c_str(), legacySonyCrop, baseSourceKey)) {
-        return RenderStatus::IoError;
+    if (!buildRawSourceIdentityKey(params.inputPath.c_str(), legacySonyCrop, outBaseSourceKey)) {
+        return false;
     }
-    std::string fileKey = baseSourceKey;
+    outFileKey = outBaseSourceKey;
 #ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    const auto aiSourceIdentity = aiEnabled() ? ai::sourceIdentityKey(params.inputPath.c_str()) : std::string();
-    if (aiEnabled()) fileKey += ":ai-source:" + aiSourceIdentity;
+    if (aiEnabled()) outFileKey += ":ai-source:" + ai::sourceIdentityKey(params.inputPath.c_str());
 #endif
-    const bool useAI = applyAI && aiEnabled();
-    const int rawNoiseReduction = aiEnabled() ? 0 : rawNoiseReduction_;
-    if (lensCorrection_.active()) ensureLensDatabase();
-    auto wbOptions = rawWhiteBalanceOptions(params);
-    std::string aiKey;
-#ifdef SONY2FUJI_ENABLE_AI_DENOISE
-    if (useAI) aiKey = ":ai:" + runtime_->ai->renderKey(params.inputPath.c_str(), wbOptions, aiSourceIdentity);
-#endif
-    const bool normalX3f = isNormalX3f(params.inputPath.c_str(), x3fMode_);
-    if (normalX3f && useAI) {
-        x3fError_ = "AI RAW replacement is not supported for normal X3F rendering";
-        return RenderStatus::Unsupported;
-    }
-    const bool interactive = !normalX3f && !useAI && interactivePreview_ && rawNoiseReduction_ == 0 &&
-        chromaDenoise_ == 0 && !photoEffects_.active() &&
-        params.intent == RenderIntent::Preview &&
-        params.outputTarget == RenderOutputTarget::Buffer &&
-        !(rawExposureMode_ == RawExposureMode::Preview && params.wbMode == RenderWhiteBalanceMode::Camera);
     const std::string processingKey = ":processing:" + std::to_string(static_cast<int>(processingVersion_)) +
         ":x3f-v1:" + std::to_string(static_cast<int>(x3fMode_));
-    std::string key = fileKey + processingKey + ":" + std::to_string(static_cast<int>(params.wbMode)) +
-        ":" + std::to_string(static_cast<int>(rawExposureMode_)) + ":" + std::to_string(rawNoiseReduction);
-    for (float multiplier : params.wbMul) key += ":" + std::to_string(multiplier);
-    key += aiKey;
-    if (useAI) {
-        const float blend = std::clamp(aiDenoiseBlend_, 0.0f, 1.0f) + 0.0f;
-        key += ":ai-blend:" + std::to_string(blend);
-    }
-    if (params.wbMode == RenderWhiteBalanceMode::Temperature)
-        key += ":" + std::to_string(params.temperature) + ":" + std::to_string(params.tint);
     std::string lensKey;
     if (lensCorrection_.active()) {
         ensureLensDatabase();
@@ -95,27 +68,69 @@ RenderStatus Pipeline::loadRawImage(
             std::to_string(lensCorrection_.autoCrop) + ":" + std::to_string(lensCorrection_.vignetting) + ":" +
             lensCorrection_.profileID;
     }
-    key += lensKey;
-    // AI 沿用原片的拍摄白平衡预览锚点，不能因去噪/改 WB 再次改变基础曝光。
-    const std::string previewExposureKey = fileKey + processingKey + lensKey;
+    const int rawNoiseReduction = aiEnabled() ? 0 : rawNoiseReduction_;
+    outPreviewExposureKey = outFileKey + processingKey + lensKey;
+    outWbBaseKey = outFileKey + processingKey + ":" + std::to_string(static_cast<int>(rawExposureMode_)) +
+        ":" + std::to_string(rawNoiseReduction) + lensKey;
+    return true;
+}
+
+RenderStatus Pipeline::loadRawImage(
+    const RenderParams& params,
+    ImageData& image,
+    ColorSpace* space,
+    bool* isLinear,
+    bool copyImage,
+    bool applyAI,
+    bool forceFullResolution
+) {
+    const bool legacySonyCrop = sony2fuji::usesLegacySonyCrop(processingVersion_);
+    std::string baseSourceKey, fileKey, wbBaseKey, previewExposureKey;
+    if (!buildRawCacheWbKeys(params, baseSourceKey, fileKey, wbBaseKey, previewExposureKey)) {
+        return RenderStatus::IoError;
+    }
+    const bool useAI = applyAI && aiEnabled();
+    const int rawNoiseReduction = aiEnabled() ? 0 : rawNoiseReduction_;
+    auto wbOptions = rawWhiteBalanceOptions(params);
+    std::string aiKey;
+#ifdef SONY2FUJI_ENABLE_AI_DENOISE
+    std::string aiSourceIdentity;
+    if (useAI) {
+        aiSourceIdentity = ai::sourceIdentityKey(params.inputPath.c_str());
+        aiKey = ":ai:" + runtime_->ai->renderKey(params.inputPath.c_str(), wbOptions, aiSourceIdentity);
+    }
+#endif
+    const bool normalX3f = isNormalX3f(params.inputPath.c_str(), x3fMode_);
+    if (normalX3f && useAI) {
+        x3fError_ = "AI RAW replacement is not supported for normal X3F rendering";
+        return RenderStatus::Unsupported;
+    }
+    const bool interactive = !forceFullResolution && !normalX3f && !useAI && interactivePreview_ && rawNoiseReduction_ == 0 &&
+        chromaDenoise_ == 0 && !photoEffects_.active() &&
+        params.intent == RenderIntent::Preview &&
+        params.outputTarget == RenderOutputTarget::Buffer &&
+        !(rawExposureMode_ == RawExposureMode::Preview && params.wbMode == RenderWhiteBalanceMode::Camera);
+    std::string key = wbBaseKey + ":" + std::to_string(static_cast<int>(params.wbMode));
+    for (float multiplier : params.wbMul) key += ":" + std::to_string(multiplier);
+    key += aiKey;
+    if (useAI) {
+        const float blend = std::clamp(aiDenoiseBlend_, 0.0f, 1.0f) + 0.0f;
+        key += ":ai-blend:" + std::to_string(blend);
+    }
+    if (params.wbMode == RenderWhiteBalanceMode::Temperature)
+        key += ":" + std::to_string(params.temperature) + ":" + std::to_string(params.tint);
     // A full-quality cache can serve a proxy, but never the reverse. Non-WB
     // sliders should not trigger another demosaic just because dragging began.
     const std::string exactKey = key + ":exact";
     const bool halfSize = interactive && (rawCache_.pixels.empty() || rawKey_ != exactKey);
     key += halfSize ? ":interactive" : ":exact";
     if (rawKey_ != key || rawCache_.pixels.empty()) {
-        const bool anchoredPreview = rawExposureMode_ == RawExposureMode::Preview &&
-            (params.wbMode == RenderWhiteBalanceMode::Temperature || useAI);
-        if (anchoredPreview && previewExposureKey_ != previewExposureKey) {
-            auto reference = params;
-            reference.wbMode = RenderWhiteBalanceMode::Camera;
-            const auto status = loadRawImage(reference, image, space, isLinear, false, false);
-            image = {};
-            if (status != RenderStatus::Ok) return status;
-        }
         // 失效的整图缓存必须在下一次解码之前释放，WB/照片切换不能叠加两张 RAW。
         rawCache_ = {};
         rawKey_.clear();
+        rawCacheWbBaseKey_.clear();
+        rawCacheWbValid_ = false;
+        rawCacheAnchoredPreview_ = false;
         if (!rawProcessor_ || processorKey_ != fileKey) {
             rawProcessor_.reset();
             processorKey_.clear();
@@ -126,6 +141,40 @@ RenderStatus Pipeline::loadRawImage(
             processorKey_ = fileKey;
         }
         auto& processor = *rawProcessor_;
+        const bool anchoredPreview = !normalX3f && rawExposureMode_ == RawExposureMode::Preview &&
+            (params.wbMode == RenderWhiteBalanceMode::Temperature || useAI);
+        if (anchoredPreview && previewExposureKey_ != previewExposureKey) {
+            auto anchorOptions = wbOptions;
+            anchorOptions.useCameraWhiteBalance = true;
+            anchorOptions.useAutoWhiteBalance = false;
+            anchorOptions.useCustomWhiteBalance = false;
+            anchorOptions.useTemperatureWhiteBalance = false;
+            anchorOptions.halfSize = true;
+            anchorOptions.rawNoiseReduction = 0;
+            anchorOptions.outputLinear = true;
+            anchorOptions.outputAdobe = true;
+            anchorOptions.lensDatabase = lensDatabase_;
+            anchorOptions.lensCorrection = lensCorrection_;
+            anchorOptions.matchEmbeddedPreviewExposure = true;
+            anchorOptions.applyBaselineExposure = true;
+            float anchorBaselineEv = 0.0f;
+            ErrorCode anchorResult = ErrorCode::ProcessingError;
+            try {
+                PreviewExposureCacheScope previewCacheScope(&previewExposureCache_);
+                anchorResult = processor.estimatePreviewExposure(anchorOptions, anchorBaselineEv);
+            } catch (...) {
+                rawProcessor_.reset();
+                processorKey_.clear();
+                throw;
+            }
+            if (anchorResult != ErrorCode::Success) {
+                rawProcessor_.reset();
+                processorKey_.clear();
+                return mapErrorCode(anchorResult);
+            }
+            previewExposureKey_ = previewExposureKey;
+            previewCameraEv_ = anchorBaselineEv;
+        }
         auto options = wbOptions;
         options.halfSize = halfSize;
         options.rawNoiseReduction = rawNoiseReduction;
@@ -232,15 +281,33 @@ RenderStatus Pipeline::loadRawImage(
                 recipeWbCache_.tint = calibratedWb_ ? std::round(asShotTint_) : 0.0f;
             }
         }
+        rawCacheWbBaseKey_ = wbBaseKey;
+        rawCacheWbValid_ = !normalX3f && !useAI && !rawDisplayReferred_ &&
+            processor.getLastAppliedWhiteBalanceMultipliers(rawCacheAppliedWbMul_.data()) &&
+            processor.getCameraToSrgbMatrix(rawCacheCamToSrgb_) &&
+            processor.getAsShotWhiteBalanceMultipliers(rawCacheAsShotWbMul_.data());
+        rawCacheAnchoredPreview_ = rawExposureMode_ == RawExposureMode::Preview &&
+            (anchoredPreview || params.wbMode == RenderWhiteBalanceMode::Camera);
         if (rawExposureMode_ == RawExposureMode::Preview && params.wbMode == RenderWhiteBalanceMode::Camera) {
             previewExposureKey_ = previewExposureKey;
             previewCameraEv_ = baselineEv_;
         }
     }
-    // 大图已保存全部元数据，后续调色不再需要 LibRaw 的解包像素。
-    if (rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget) {
+    // 预览编辑期内保留合理上限内的解包 RAW，避免大师配方切牌重读磁盘；导出或超大文件仍及时释放。
+    constexpr size_t kMosaicRetainBudget =
+#if (defined(__APPLE__) && TARGET_OS_IPHONE) || defined(__ANDROID__)
+        64u * 1024u * 1024u;
+#else
+        WaveletRenderCache::defaultPreviewBudget;
+#endif
+    const bool keepMosaic = params.intent == RenderIntent::Preview &&
+        params.outputTarget == RenderOutputTarget::Buffer &&
+        rawCache_.pixels.size() * sizeof(uint16_t) <= kMosaicRetainBudget;
+    if (!keepMosaic && rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget) {
         rawProcessor_.reset();
         processorKey_.clear();
+        rawCacheWbValid_ = false;
+        rawCacheAnchoredPreview_ = false;
     }
     lensReport_ = rawLensReport_;
     if (copyImage) image = rawCache_;

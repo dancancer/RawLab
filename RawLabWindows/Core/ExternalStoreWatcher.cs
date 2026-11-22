@@ -47,9 +47,13 @@ internal sealed class ExternalReloadBannerState
         SavedEdit? currentUiEdit,
         PhotoEditState diskRecord,
         PathStatStamp? stamp,
-        bool hasUnsavedManualDraft)
+        bool hasUnsavedManualDraft,
+        bool hasPendingAsyncSave = false)
     {
         if (!currentCommitted.Identity.SameFile(diskRecord.Identity))
+            return new(ExternalReloadDecision.None, this);
+
+        if (hasPendingAsyncSave)
             return new(ExternalReloadDecision.None, this);
 
         if (!hasUnsavedManualDraft)
@@ -73,6 +77,17 @@ internal sealed class ExternalReloadBannerState
 
         return new(ExternalReloadDecision.ShowBanner,
             new(true, diskRecord.Copy(), stamp, dismissedStamps));
+    }
+
+    internal bool TryAcceptReload(bool hasPendingAsyncSave, out PhotoEditState? pendingRecord)
+    {
+        if (hasPendingAsyncSave || PendingRecord == null)
+        {
+            pendingRecord = null;
+            return false;
+        }
+        pendingRecord = PendingRecord;
+        return true;
     }
 
     internal ExternalReloadBannerState KeepManualDraft()

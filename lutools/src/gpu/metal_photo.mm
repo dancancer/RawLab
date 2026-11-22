@@ -84,8 +84,15 @@ struct PhotoParams {
     uint32_t parametricActive;
     float parametricAmps[4];
     float parametricSplits[4];
+    uint32_t basicV3;
+    uint32_t basicToneActive;
+    uint32_t basicFieldWidth;
+    uint32_t basicFieldHeight;
+    uint32_t fullWorkHeight;
+    float basicHighlights;
+    float basicShadows;
 };
-static_assert(sizeof(PhotoParams) == 3516, "Photo Metal parameter layout");
+static_assert(sizeof(PhotoParams) == 3544, "Photo Metal parameter layout");
 static_assert(offsetof(PhotoParams, hslHue) == 192, "HSL Metal options offset");
 static_assert(offsetof(PhotoParams, colorGrading) == 316, "Grading Metal options offset");
 static_assert(offsetof(PhotoParams, customCurveCount) == 388, "Curve Metal options offset");
@@ -190,6 +197,13 @@ struct Params {
     uint parametricActive;
     float parametricAmps[4];
     float parametricSplits[4];
+    uint basicV3;
+    uint basicToneActive;
+    uint basicFieldWidth;
+    uint basicFieldHeight;
+    uint fullWorkHeight;
+    float basicHighlights;
+    float basicShadows;
 };
 
 inline float customToneCurve(float x, constant Params& p) {
@@ -394,6 +408,7 @@ kernel void matrixExposure(
     constant Params& params [[buffer(0)]],
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
+    device const float* basicField [[buffer(3)]],
     uint gid [[thread_position_in_grid]]) {
     uint count = params.srcWidth * params.srcHeight;
     if (gid >= count) {
@@ -403,6 +418,30 @@ kernel void matrixExposure(
     result.r *= params.exposureScale * params.wbR;
     result.g *= params.exposureScale * params.wbG;
     result.b *= params.exposureScale * params.wbB;
+    if (params.basicToneActive != 0u) {
+        uint px = gid % params.srcWidth;
+        uint py = gid / params.srcWidth + params.srcRowOffset;
+        uint fw = params.basicFieldWidth;
+        uint fh = params.basicFieldHeight;
+        float fx = clamp((float(px) + 0.5f) * float(fw) / float(params.srcWidth) - 0.5f, 0.0f, float(fw - 1u));
+        float fy = clamp((float(py) + 0.5f) * float(fh) / float(params.fullWorkHeight) - 0.5f, 0.0f, float(fh - 1u));
+        uint x0 = uint(floor(fx));
+        uint y0 = uint(floor(fy));
+        uint x1 = min(x0 + 1u, fw - 1u);
+        uint y1 = min(y0 + 1u, fh - 1u);
+        float tx = fx - float(x0);
+        float ty = fy - float(y0);
+        uint i00 = (y0 * fw + x0) * 2u;
+        uint i10 = (y0 * fw + x1) * 2u;
+        uint i01 = (y1 * fw + x0) * 2u;
+        uint i11 = (y1 * fw + x1) * 2u;
+        float slope = mix(mix(basicField[i00], basicField[i10], tx),
+                          mix(basicField[i01], basicField[i11], tx), ty);
+        float intercept = mix(mix(basicField[i00 + 1u], basicField[i10 + 1u], tx),
+                              mix(basicField[i01 + 1u], basicField[i11 + 1u], tx), ty);
+        float gain = tcBasicToneV3Gain(tcLuminance(result), slope, intercept, params.basicHighlights, params.basicShadows);
+        result *= gain;
+    }
     destination[gid] = packed_float3(result);
 }
 
@@ -514,12 +553,20 @@ kernel void toneAdjustments(
     if (gid >= count) {
         return;
     }
-    float3 pixel = tcBlackWhite(float3(source[gid]), params.blackPoint, params.whitePoint);
+    float3 raw = float3(source[gid]);
+    float3 pixel = params.basicV3 != 0u
+        ? tcBasicBlackWhiteV3(raw, params.blackPoint, params.whitePoint)
+        : tcBlackWhite(raw, params.blackPoint, params.whitePoint);
     if (params.toneEnabled == 0u) {
-        destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
+        float3 vibranced = params.basicV3 != 0u
+            ? tcBasicVibranceV3(pixel, params.vibrance)
+            : tcVibrance(pixel, params.vibrance);
+        destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
         return;
     }
-    pixel = hsApplyHighlightsShadows(pixel, params.highlights, params.shadows);
+    if (params.basicV3 == 0u) {
+        pixel = hsApplyHighlightsShadows(pixel, params.highlights, params.shadows);
+    }
     bool masterActive = params.parametricActive != 0u || params.customCurveCount != 0u || params.toneCurve != 0.0f;
     if (masterActive) {
         if (params.curveApplyToLuminosity != 0u) {
@@ -538,8 +585,18 @@ kernel void toneAdjustments(
     pixel.b = channelToneCurve(pixel.b, 2u, params);
     float contrast = clamp(params.contrast, 0.0f, 2.0f);
     float saturation = clamp(params.saturation, 0.0f, 2.0f);
-    if (contrast != 1.0f || saturation != 1.0f) {
-        pixel = (pixel - 0.5f) * contrast + 0.5f;
+    if (params.basicV3 != 0u && contrast != 1.0f) {
+        float amount = contrast - 1.0f;
+        pixel = float3(
+            tcBasicContrastV3(pixel.r, amount),
+            tcBasicContrastV3(pixel.g, amount),
+            tcBasicContrastV3(pixel.b, amount)
+        );
+    }
+    if ((params.basicV3 == 0u && contrast != 1.0f) || saturation != 1.0f) {
+        if (params.basicV3 == 0u) {
+            pixel = (pixel - 0.5f) * contrast + 0.5f;
+        }
         float luminance = 0.2126f * pixel.r + 0.7152f * pixel.g + 0.0722f * pixel.b;
         pixel = float3(
             luminance + (pixel.r - luminance) * saturation,
@@ -547,7 +604,10 @@ kernel void toneAdjustments(
             luminance + (pixel.b - luminance) * saturation
         );
     }
-    destination[gid] = packed_float3(applyGrading(applyHsl(tcVibrance(pixel, params.vibrance), params),params));
+    float3 vibranced = params.basicV3 != 0u
+        ? tcBasicVibranceV3(pixel, params.vibrance)
+        : tcVibrance(pixel, params.vibrance);
+    destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
 }
 
 kernel void noiseReduction(
@@ -891,6 +951,15 @@ PhotoParams makeParams(
         std::copy(renderParams.hsl.hue.begin(), renderParams.hsl.hue.end(), params.hslHue);
         std::copy(renderParams.hsl.saturation.begin(), renderParams.hsl.saturation.end(), params.hslSaturation);
         std::copy(renderParams.hsl.lightness.begin(), renderParams.hsl.lightness.end(), params.hslLightness);
+        params.basicV3 = renderParams.basicV3 ? 1u : 0u;
+        const bool bt = renderParams.basicV3 && renderParams.basicTone.active() &&
+            renderParams.basicToneField && !renderParams.basicToneField->empty();
+        params.basicToneActive = bt ? 1u : 0u;
+        params.basicFieldWidth = bt ? static_cast<uint32_t>(renderParams.basicToneField->width) : 1u;
+        params.basicFieldHeight = bt ? static_cast<uint32_t>(renderParams.basicToneField->height) : 1u;
+        params.fullWorkHeight = srcHeight;
+        params.basicHighlights = bt ? std::clamp(renderParams.basicTone.highlights, -1.0f, 1.0f) : 0.0f;
+        params.basicShadows = bt ? std::clamp(renderParams.basicTone.shadows, -1.0f, 1.0f) : 0.0f;
     } else {
         const auto grading = sony2fuji::colorGradingParameters(sony2fuji::ColorGradingOptions{});
         for (size_t zone = 0; zone < 4; ++zone) {
@@ -928,7 +997,8 @@ id<MTLComputeCommandEncoder> beginKernel(
     id<MTLTexture> lut,
     size_t count,
     const CachedDcp* dcp = nullptr,
-    id<MTLBuffer> invalid = nil
+    id<MTLBuffer> invalid = nil,
+    id<MTLBuffer> extraBuffer = nil
 ) {
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder || !pipeline || !params || !source || !destination || count == 0) {
@@ -943,6 +1013,8 @@ id<MTLComputeCommandEncoder> beginKernel(
         [encoder setBuffer:dcp->params offset:0 atIndex:3];
         [encoder setBuffer:dcp->data offset:0 atIndex:4];
         [encoder setBuffer:invalid offset:0 atIndex:5];
+    } else if (extraBuffer != nil) {
+        [encoder setBuffer:extraBuffer offset:0 atIndex:3];
     }
     const NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
     if (maxThreads == 0) {
@@ -972,10 +1044,11 @@ bool encodeKernel(
     id<MTLTexture> lut,
     size_t count,
     const CachedDcp* dcp = nullptr,
-    id<MTLBuffer> invalid = nil
+    id<MTLBuffer> invalid = nil,
+    id<MTLBuffer> extraBuffer = nil
 ) {
     return finishKernel(beginKernel(
-        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid
+        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid, extraBuffer
     ));
 }
 
@@ -1070,7 +1143,9 @@ bool renderPhotoMetalImpl(
     ColorConverter::Matrix3x3 toSRGB;
     ColorConverter::Matrix3x3 toFGamut;
     try {
-        if (inputSpace == ColorSpace::sRGB) {
+        if (renderParams.hasCustomToSrgb) {
+            toSRGB = renderParams.customToSrgb;
+        } else if (inputSpace == ColorSpace::sRGB) {
             toSRGB = ColorConverter::Matrix3x3{{
                 {1.0f, 0.0f, 0.0f},
                 {0.0f, 1.0f, 0.0f},
@@ -1088,6 +1163,30 @@ bool renderPhotoMetalImpl(
         return failWith(sony2fuji::GpuFailureKind::Unsupported,
             sony2fuji::GpuBackendFault::UnsupportedCapability,
             error.what());
+    }
+
+    id<MTLBuffer> basicFieldBuffer = nil;
+    if (renderParams.basicV3 && renderParams.basicTone.active()) {
+        const size_t fieldCount = renderParams.basicToneField->slope.size();
+        basicFieldBuffer = makeBuffer(context.device, fieldCount * 2 * sizeof(float));
+        if (!basicFieldBuffer) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal BasicToneV3 field buffer");
+        }
+        auto* dstField = static_cast<float*>(basicFieldBuffer.contents);
+        for (size_t i = 0; i < fieldCount; ++i) {
+            dstField[i * 2] = renderParams.basicToneField->slope[i];
+            dstField[i * 2 + 1] = renderParams.basicToneField->intercept[i];
+        }
+    } else {
+        basicFieldBuffer = makeBuffer(context.device, 2 * sizeof(float));
+        if (!basicFieldBuffer) {
+            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                sony2fuji::GpuBackendFault::DeviceError,
+                "Failed to allocate Metal BasicToneV3 dummy field buffer");
+        }
+        std::memset(basicFieldBuffer.contents, 0, 2 * sizeof(float));
     }
 
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
@@ -1218,8 +1317,10 @@ bool renderPhotoMetalImpl(
                     }
                     current = a; next = b;
                 }
-                const auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
+                auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
                     toSRGB, toFGamut, renderParams, useLUT ? &cachedLUT : nullptr, lutStrength, true);
+                params.srcRowOffset = work.first;
+                params.fullWorkHeight = workHeight;
                 auto constants = makeParamsBuffer(context.device, params);
                 if (!constants) {
                     return failWith(sony2fuji::GpuFailureKind::ProcessingError,
@@ -1227,13 +1328,13 @@ bool renderPhotoMetalImpl(
                         "Failed to allocate Metal parameter buffer");
                 }
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
-                               const CachedDcp* stages = nullptr) {
+                               const CachedDcp* stages = nullptr, id<MTLBuffer> extraBuffer = nil) {
                     if (!encodeKernel(command, pipeline, constants, current, next, texture,
-                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil)) return false;
+                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil, extraBuffer)) return false;
                     std::swap(current, next);
                     return true;
                 };
-                if (beforeChroma && (!run(context.matrixExposurePipeline, nil) ||
+                if (beforeChroma && (!run(context.matrixExposurePipeline, nil, nullptr, basicFieldBuffer) ||
                     !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
                         useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
                     !run(context.tonePipeline, nil))) {

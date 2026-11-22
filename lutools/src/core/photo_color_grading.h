@@ -31,6 +31,7 @@ std::array<RGB,3> colorGradingCoefficients(const ColorGradingOptions& options);
 ColorGradingShaderParams colorGradingParameters(const ColorGradingOptions& options);
 std::array<float,3> colorGradingWeights(float linearLuminance);
 std::array<float,3> colorGradingWeights(float linearLuminance, float blending, float balance);
+RGB applyColorGradingParameters(const RGB& pixel, const ColorGradingShaderParams& params);
 RGB applyColorGrading(const RGB& pixel, const ColorGradingOptions& options);
 void applyColorGrading(ImageData& image, const ColorGradingOptions& options);
 

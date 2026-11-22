@@ -238,6 +238,7 @@ public enum CanonicalEditRecipe {
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         return encoder
     }()
 

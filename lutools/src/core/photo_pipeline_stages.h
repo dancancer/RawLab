@@ -47,6 +47,17 @@ void applyToneAdjustments(
     bool basicV3 = false
 );
 
+void applyPostLookStages(
+    ImageData& image,
+    const RenderParams& params,
+    const ToneControlsOptions& toneControls,
+    const HslOptions& hsl,
+    const ColorGradingOptions& colorGrading,
+    const std::array<ToneCurve, 3>& channels,
+    bool basicV3,
+    bool applyHslAndGrading
+);
+
 void applyDetailAdjustments(
     ImageData& image,
     float noiseReduction,

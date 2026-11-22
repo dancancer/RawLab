@@ -195,30 +195,45 @@ def _store_lock(lock_path: Path):
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     if os.path.lexists(lock_path) and lock_path.is_symlink():
         raise AdapterError("Lock file cannot be a symbolic link")
-    with open(lock_path, "a+", encoding="utf-8") as handle:
-        if os.name == "nt":
-            deadline = time.monotonic() + 5.0
-            locked = False
-            while True:
-                try:
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                    locked = True
-                    break
-                except OSError:
-                    if time.monotonic() >= deadline:
-                        raise AdapterError("Timed out waiting for store lock", "output_io_error")
-                    time.sleep(0.01)
+    if os.name == "nt":
+        deadline = time.monotonic() + 5.0
+        handle = None
+        locked = False
+        while True:
             try:
-                yield
-            finally:
-                if locked:
+                handle = open(lock_path, "a+", encoding="utf-8")
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                locked = True
+                break
+            except (PermissionError, OSError):
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except OSError:
+                        pass
+                    handle = None
+                if time.monotonic() >= deadline:
+                    raise AdapterError("Timed out waiting for store lock", "output_io_error")
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            try:
+                if locked and handle is not None:
                     try:
                         handle.seek(0)
                         msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
                     except OSError:
                         pass
-        else:
+            finally:
+                if handle is not None:
+                    try:
+                        handle.close()
+                    except OSError:
+                        pass
+    else:
+        with open(lock_path, "a+", encoding="utf-8") as handle:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
                 yield
@@ -1098,6 +1113,22 @@ def _build_mac_photo_edit_state(
     film_id: str = "",
     master_recipe_id: str | None = None,
 ) -> dict[str, Any]:
+    state, _ = _build_mac_photo_edit_state_and_explicit(
+        adjustments=adjustments,
+        is_raster=is_raster,
+        film_id=film_id,
+        master_recipe_id=master_recipe_id,
+    )
+    return state
+
+
+def _build_mac_photo_edit_state_and_explicit(
+    *,
+    adjustments: dict[str, Any],
+    is_raster: bool,
+    film_id: str = "",
+    master_recipe_id: str | None = None,
+) -> tuple[dict[str, Any], set[str]]:
     if not isinstance(adjustments, dict):
         raise AdapterError("adjustments must be an object")
 
@@ -1444,11 +1475,55 @@ def _build_mac_photo_edit_state(
             raise AdapterError("master_recipe_id must be a nonempty string or null")
         settings["masterRecipeID"] = master_recipe_id
 
+    explicit_keys: set[str] = set()
+    key_map = {
+        "processing_version": "processing",
+        "x3f_mode": "x3fMode",
+        "exposure_mode": "exposureMode",
+        "exposure": "exposure",
+        "strength": "strength",
+        "contrast": "contrast",
+        "highlights": "highlights",
+        "shadows": "shadows",
+        "s_curve": "toneCurve",
+        "saturation": "saturation",
+        "sharpening": "sharpening",
+        "raw_noise_reduction": "rawNoiseReduction",
+        "master_recipe_settings_version": "masterRecipeSettingsVersion",
+        "chroma_noise_reduction": "chromaNoiseReduction",
+        "wavelet": "waveletNoiseReduction",
+        "tone_curve": "toneCurveConfig",
+        "color_grading": "colorGrading",
+        "hsl": "hsl",
+        "photo_effects": "photoEffects",
+        "lens_correction": "lensCorrection",
+        "geometry": "geometry",
+    }
+    for adj_key, settings_key in key_map.items():
+        if adj_key in adjustments and adjustments[adj_key] is not None and settings_key in settings:
+            explicit_keys.add(settings_key)
+    if "white_balance_mode" in adjustments:
+        explicit_keys.update({"whiteBalanceMode", "temperature", "tint"})
+    if has_wb_temp:
+        explicit_keys.add("temperature")
+    if has_wb_tint:
+        explicit_keys.add("tint")
+    if any(k in adjustments and adjustments[k] is not None for k in ("black_point", "white_point", "vibrance")):
+        if "toneControls" in settings:
+            explicit_keys.add("toneControls")
+    if any(k in adjustments and adjustments[k] is not None for k in ("clarity", "dehaze")):
+        if "atmosphere" in settings:
+            explicit_keys.add("atmosphere")
+    if "toneCurveConfig" in explicit_keys and settings["toneCurveConfig"].get("mode") == "custom":
+        explicit_keys.add("toneCurve")
+    if master_recipe_id is not None:
+        explicit_keys.update({"masterRecipeID", "masterRecipeSettingsVersion"})
+
     return {
         "filmID": "" if master_recipe_id else film_id,
         "masterRecipeID": master_recipe_id,
         "settings": settings,
-    }
+    }, explicit_keys
 
 
 def sync_photo_edit(
@@ -1467,7 +1542,7 @@ def sync_photo_edit(
         )
 
     identity = _swift_identity_for_file(photo_canonical)
-    state = _build_mac_photo_edit_state(
+    new_state, explicit_keys = _build_mac_photo_edit_state_and_explicit(
         adjustments=adjustments,
         is_raster=is_raster,
         film_id=film_id,
@@ -1492,8 +1567,39 @@ def sync_photo_edit(
             registry = {"records": {}, "version": 1}
 
         records: dict[str, Any] = dict(registry["records"])
-        had_existing = identity["path"] in records
-        records[identity["path"]] = {"identity": identity, "state": state}
+        existing_record = records.get(identity["path"])
+        had_existing = existing_record is not None
+
+        if isinstance(existing_record, dict) and isinstance(existing_record.get("state"), dict):
+            existing_state = existing_record["state"]
+            existing_settings = existing_state.get("settings")
+            if isinstance(existing_settings, dict):
+                merged_settings = dict(existing_settings)
+                for key, value in new_state["settings"].items():
+                    if key in explicit_keys or key not in merged_settings:
+                        merged_settings[key] = value
+                merged_settings["supportsRawNoiseReduction"] = not is_raster
+            else:
+                merged_settings = dict(new_state["settings"])
+
+            final_state = dict(existing_state)
+            final_state["settings"] = merged_settings
+            if master_recipe_id is not None:
+                final_state["masterRecipeID"] = master_recipe_id
+                final_state["filmID"] = ""
+            elif film_id:
+                final_state["filmID"] = film_id
+                final_state["masterRecipeID"] = None
+                merged_settings.pop("masterRecipeID", None)
+
+            final_record = dict(existing_record)
+            final_record["identity"] = identity
+            final_record["state"] = final_state
+        else:
+            final_state = new_state
+            final_record = {"identity": identity, "state": final_state}
+
+        records[identity["path"]] = final_record
 
         out_reg: dict[str, Any] = {"records": records}
         if registry.get("processingMigrations") is not None:
@@ -1507,6 +1613,6 @@ def sync_photo_edit(
         "action": "updated" if had_existing else "created",
         "photo_path": identity["path"],
         "edits_file": str(edits_file),
-        "filmID": state["filmID"],
-        "masterRecipeID": state["masterRecipeID"],
+        "filmID": final_state.get("filmID", ""),
+        "masterRecipeID": final_state.get("masterRecipeID"),
     }

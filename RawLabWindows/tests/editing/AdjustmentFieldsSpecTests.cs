@@ -82,6 +82,21 @@ public sealed class AdjustmentFieldsSpecTests
 
     [Fact]
     [Trait("Category", "Model")]
+    public void EveryTransferableAdjustmentFieldHasNonEmptyPresentationTitle()
+    {
+        foreach (var field in Enum.GetValues<AdjustmentField>())
+        {
+            var title = AdjustmentTransferPresentation.Title(field);
+            Assert.False(string.IsNullOrWhiteSpace(title), $"Missing presentation title for {field}");
+        }
+
+        Assert.Contains(Loc.Text("全局"), AdjustmentTransferPresentation.Title(AdjustmentField.GradingGlobal));
+        Assert.Equal(Loc.Text("融合"), AdjustmentTransferPresentation.Title(AdjustmentField.GradingBlending));
+        Assert.Equal(Loc.Text("平衡"), AdjustmentTransferPresentation.Title(AdjustmentField.GradingBalance));
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
     public void RuntimeModelObjectsMatchWindowsSpecJson()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(ResolveSpecPath()));

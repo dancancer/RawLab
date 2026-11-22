@@ -12,7 +12,7 @@ internal static class AdjustmentTransferRefinement
         var originalCurve = original.Curve ?? new();
         var updatedCurveBase = target.Curve ?? new();
         var selectedCurve = payload[F.Curve] is {} json ? ToneCurveSettings.Parse(json, allowV2Fields: false) : null;
-        var selectedApply = payload[F.CurveApplyToLuminosity] is {} applyJson && AdjustmentTransferValues.Boolean(applyJson) is {} applyBool ? applyBool : (bool?)null;
+        var selectedApply = payload[F.CurveApplyToLuminosity] is {} applyJson && AdjustmentPayload.Boolean(applyJson) is {} applyBool ? applyBool : (bool?)null;
         var selectedParametric = payload[F.CurveParametric] is {} paramJson ? ToneCurveParametric.Parse(paramJson) : null;
         var baseDesiredCurve = selectedCurve?.Scaled(sourceScale) ?? originalCurve.Scaled(previousScale);
         var desiredCurve = new ToneCurveSettings(

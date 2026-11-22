@@ -294,6 +294,10 @@ RenderStatus Pipeline::finishOutput(
         roiGuideCache_ = {};
         if (rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget) {
             rawCache_ = {};
+            rawProcessor_.reset();
+            processorKey_.clear();
+            rawCacheWbValid_ = false;
+            rawCacheAnchoredPreview_ = false;
         }
     }
     const auto status = finishGeometry(params, image, nativeWidth, nativeHeight);

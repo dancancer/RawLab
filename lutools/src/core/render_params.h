@@ -5,6 +5,7 @@
 #include "sony2fuji/dcp_look.h"
 #include "sony2fuji/lut_parser.h"
 #include "core/pixel_buffer.h"
+#include "core/photo_basic_controls_v3.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
 #include "core/photo_effects.h"
@@ -109,6 +110,11 @@ struct RenderParams {
     ToneCurveParametricConfig parametricCurve{};
     float aiDenoiseBlend = 1.0f;
     OutputSharpening outputSharpening = OutputSharpening::Off;
+    bool basicV3 = false;
+    BasicToneV3 basicTone{};
+    std::shared_ptr<const BasicToneV3Field> basicToneField;
+    bool hasCustomToSrgb = false;
+    ColorConverter::Matrix3x3 customToSrgb{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
 
     RenderOutputTarget outputTarget = RenderOutputTarget::Buffer;
     RenderOutputFormat outputFormat = RenderOutputFormat::RGB8;
@@ -137,6 +143,23 @@ struct RenderParams {
     }
 
     bool validForGpu() const noexcept {
+        if (basicTone.active()) {
+            if (!std::isfinite(basicTone.highlights) || !std::isfinite(basicTone.shadows) ||
+                !basicToneField || basicToneField->empty()) {
+                return false;
+            }
+            const size_t fieldCount = static_cast<size_t>(basicToneField->width) * basicToneField->height;
+            if (basicToneField->slope.size() != fieldCount || basicToneField->intercept.size() != fieldCount) {
+                return false;
+            }
+        }
+        if (hasCustomToSrgb) {
+            for (const auto& row : customToSrgb) {
+                for (float v : row) {
+                    if (!std::isfinite(v)) return false;
+                }
+            }
+        }
         return std::isfinite(exposureEV) && std::isfinite(brightness) &&
                std::isfinite(contrast) && std::isfinite(saturation) &&
                std::isfinite(temperature) && std::isfinite(tint) &&
