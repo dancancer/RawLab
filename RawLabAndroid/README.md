@@ -199,14 +199,32 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 bash scripts/build-release.sh
 ```
 
-产物为 `app/build/outputs/apk/release/RawLab-Android-release.apk`，包含签名验证和 16 KB 对齐检查。
+产物为 `app/build/outputs/apk/release/RawLab-Android-release.apk`，脚本会自动校验
+R8 压缩后 Release DEX 中所有 RawLab 与 RUM JNI 类完整性、APK 签名及 16 KB 对齐。
+**发布前必跑门禁**：在模拟器上对实际已签名 Release APK 执行 2 次干净冷启动冒烟校验
+（脚本严格拒绝非 `emulator-*` 设备以防误删真机安装和数据；缺少真机不免除此步骤）：
+
+```sh
+bash scripts/smoke-release-apk.sh app/build/outputs/apk/release/RawLab-Android-release.apk --avd <avd-name>
+```
+
 Release 与 debug 包使用相同应用 ID、不同签名，不能相互覆盖安装；先保存编辑并导出结果，
 再自行卸载旧 debug 包、安装 Release。卸载会删除应用私有数据，不会删除相册原图。
 
-The script verifies the APK signature and 16 KB alignment. Release and debug builds
-share an application ID but have different signing keys, so they cannot update each
-other. Save/export your work before manually uninstalling a debug build; uninstalling
-removes app-private data, not the original album photos.
+`build-release.sh` verifies R8 DEX JNI class preservation (RawLab and RUM), APK
+signature validity, and 16 KB native alignment. Before publishing any release APK,
+run the emulator cold-start smoke script (emulator-only by design so it cannot
+uninstall user installs on a physical phone; missing physical hardware never
+exempts this smoke gate):
+
+```sh
+bash scripts/smoke-release-apk.sh app/build/outputs/apk/release/RawLab-Android-release.apk --avd <avd-name>
+```
+
+Release and debug builds share an application ID but have different signing keys,
+so they cannot update each other. Save/export your work before manually
+uninstalling a debug build; uninstalling removes app-private data, not the
+original album photos.
 
 ## 验证 / Verification
 

@@ -11,7 +11,13 @@ source "$HERE/../../scripts/rum/shared-cache.sh"
 NAME="alibabacloud-android-rum-sdk-$RUM_ANDROID_VERSION.aar"
 URL="https://maven.aliyun.com/repository/public/com/aliyun/rum/alibabacloud-android-rum-sdk/$RUM_ANDROID_VERSION/$NAME"
 DEST="$RUM_CACHE_ROOT/android/$RUM_ANDROID_VERSION/$NAME"
-sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
 
 if [[ -f "$DEST" && "$(sha256 "$DEST")" == "$RUM_ANDROID_SHA256" ]]; then
     printf 'PASS: reusing %s\n' "$DEST"
