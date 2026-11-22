@@ -335,6 +335,9 @@ struct ExportMetadataTests {
         _ = try engine.render(raw, settings: Adjustments(), lut: nil, edge: nil, output: jpeg, exportLongEdge: 400)
         let exported = properties(jpeg)
         check(max(decoded(jpeg).width, decoded(jpeg).height) == 400, "Final RAW export honors the chosen long-edge limit")
+        check(decoded(jpeg).colorSpace?.name == CGColorSpace.sRGB, "Mac JPEG export embeds sRGB ICC profile")
+        let jpegBytes = try Data(contentsOf: jpeg)
+        check(jpegBytes.range(of: Data("ICC_PROFILE\0".utf8)) != nil, "Mac JPEG export retains APP2 ICC_PROFILE segment")
         let exif = exported[kCGImagePropertyExifDictionary] as? [CFString: Any]
         check(exif?[kCGImagePropertyExifDateTimeOriginal] as? String == originalEXIF[kCGImagePropertyExifDateTimeOriginal] as? String,
               "Mac JPEG export retains the actual RAW capture timestamp")

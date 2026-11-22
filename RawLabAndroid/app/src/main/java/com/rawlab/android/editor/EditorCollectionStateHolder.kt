@@ -248,8 +248,14 @@ internal class EditorCollectionStateHolder(
         }
     }
 
-    fun prepareExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?, completed: (CollectionExportReview?) -> Unit) =
-        collections.prepare(skipping, format, longEdge, destination, completed)
+    fun prepareExport(
+        skipping: Set<String>,
+        format: ExportFormat,
+        longEdge: Int?,
+        destination: Uri?,
+        completed: (CollectionExportReview?) -> Unit,
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+    ) = collections.prepare(skipping, format, longEdge, destination, completed, outputSharpening)
 
     fun freezeExport(review: CollectionExportReview, completed: (Boolean) -> Unit) {
         freezeAndAttachExport(review, false, { true }) { _, attached -> completed(attached) }
@@ -260,7 +266,14 @@ internal class EditorCollectionStateHolder(
         mutableExport.value = mutableExport.value.copy(preparing = false, review = null)
     }
 
-    fun startExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?, completed: (Boolean) -> Unit = {}) {
+    fun startExport(
+        skipping: Set<String>,
+        format: ExportFormat,
+        longEdge: Int?,
+        destination: Uri?,
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        completed: (Boolean) -> Unit = {},
+    ) {
         if (mutableExport.value.preparing || mutableExport.value.freezing || state.value.busy) return
         cancelExport()
         val generation = exportGeneration
@@ -277,7 +290,7 @@ internal class EditorCollectionStateHolder(
                 state.value.selected == selected
         }
         mutableExport.value = CollectionExportFlow(preparing = true)
-        collections.prepare(skipping, format, longEdge, destination) { review ->
+        collections.prepare(skipping, format, longEdge, destination, { review ->
             if (generation != exportGeneration) return@prepare
             if (!current()) {
                 mutableExport.value = CollectionExportFlow()
@@ -291,7 +304,7 @@ internal class EditorCollectionStateHolder(
                     if (job != null) completed(true)
                 }
             }
-        }
+        }, outputSharpening)
     }
 
     private fun freezeAndAttachExport(

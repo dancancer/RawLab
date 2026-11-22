@@ -61,6 +61,7 @@ public partial class MainWindow
     {
         ExportJpeg.Header=Loc.Text("JPEG…");
         ExportPng.Header=Loc.Text("PNG · 16-bit…");
+        RefreshExportSharpeningMenu();
         RefreshStateToolTips();
     }
     private void ClippingClicked(object sender,RoutedEventArgs e)
@@ -131,6 +132,22 @@ public partial class MainWindow
         ExportCustomSize.IsChecked=exportLongEdge.HasValue && exportLongEdge != 2048 && exportLongEdge != 3000 && exportLongEdge != 4096;
         ExportCustomSize.Header=ExportCustomSize.IsChecked == true ? Loc.Format("自定义 {0} px", exportLongEdge) : Loc.Text("自定义…");
     }
+    private void ExportSharpeningClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string text } && int.TryParse(text, out var level) && Enum.IsDefined((OutputSharpening)level))
+        {
+            exportOutputSharpening = (OutputSharpening)level;
+            RefreshExportSharpeningMenu();
+        }
+    }
+    private void RefreshExportSharpeningMenu()
+    {
+        if (ExportSharpeningOff == null) return;
+        ExportSharpeningOff.IsChecked = exportOutputSharpening == OutputSharpening.Off;
+        ExportSharpeningLow.IsChecked = exportOutputSharpening == OutputSharpening.Low;
+        ExportSharpeningStandard.IsChecked = exportOutputSharpening == OutputSharpening.Standard;
+        ExportSharpeningHigh.IsChecked = exportOutputSharpening == OutputSharpening.High;
+    }
     private async void Export(ExportFormat format)
     {
         if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
@@ -162,6 +179,7 @@ public partial class MainWindow
         var temp=TempCleanup.CreateExportStagingPath(destination,format.Suffix());
         var stagingDirectory=exportStagingDirectory;
         var size=exportLongEdge;
+        var sharpening = format == ExportFormat.RenderedDng ? OutputSharpening.Off : exportOutputSharpening;
         foregroundBusy=true;RefreshControls();SetStatus(() => Loc.Text("正在导出…"));
         ExportStagingLease? staging=null;
         try
@@ -175,7 +193,7 @@ public partial class MainWindow
             await Task.Run(()=> {
                 TempCleanup.SweepExpiredExportStagingInDirectory(Path.GetDirectoryName(temp)!, DateTime.UtcNow, TempCleanup.DefaultRetention, stagingDirectory);
                 staging = TempCleanup.BeginExportStaging(temp, stagingDirectory);
-                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format);
+                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
             });
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {

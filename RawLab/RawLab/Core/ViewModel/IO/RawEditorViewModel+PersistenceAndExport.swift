@@ -180,6 +180,7 @@ extension RawEditorViewModel {
     }
 
     func exportPhoto(settings: RawSettings, longEdge: Int?, format: BatchOutputFormat,
+                     outputSharpening: OutputSharpening = .off,
                      completion: @escaping (Result<Data, Error>) -> Void) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard let hdrFormat = format.hdrPhotoFormat else {
@@ -240,6 +241,7 @@ extension RawEditorViewModel {
                         var lastPercent = -1
                         let progressLock = NSLock()
                         try self.processor.exportHDR(url: sourceURL, settings: hdr, output: output, longEdge: longEdge,
+                            outputSharpening: outputSharpening,
                             processing: settings.processing, proRAWDecodeVersion: settings.proRAWDecodeVersion, format: hdrFormat,
                             progress: { [weak self] fraction in
                                 let clamped = min(1.0, max(0.0, fraction))
@@ -257,31 +259,61 @@ extension RawEditorViewModel {
                             cancelled: { cancellation.isCancelled })
                         data=try Data(contentsOf:output)
                     } else if sourceKind == .raw {
-                        let result = try self.processor.processRaw(
-                            url: sourceURL,
-                            settings: settings,
-                            previewLongEdge: nil,
-                            lutURL: lutURL,
-                            exportLongEdge: longEdge
-                        )
-                        let output = try self.processor.makeJPEGData(
-                            from: result.buffer,
-                            sourceURL: sourceURL,
-                            orientation: result.orientation,
-                            quality: 0.92,
-                            sourceIsRaw: true
-                        )
-                        data = output
+                        if format == .png {
+                            let output = FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).png")
+                            defer { try? FileManager.default.removeItem(at: output) }
+                            try self.processor.exportPNG(
+                                url: sourceURL,
+                                settings: settings,
+                                lutURL: lutURL,
+                                outputURL: output,
+                                exportLongEdge: longEdge,
+                                outputSharpening: outputSharpening
+                            )
+                            data = try Data(contentsOf: output)
+                        } else {
+                            let result = try self.processor.processRaw(
+                                url: sourceURL,
+                                settings: settings,
+                                previewLongEdge: nil,
+                                lutURL: lutURL,
+                                exportLongEdge: longEdge,
+                                outputSharpening: outputSharpening
+                            )
+                            let output = try self.processor.makeJPEGData(
+                                from: result.buffer,
+                                sourceURL: sourceURL,
+                                orientation: result.orientation,
+                                quality: 0.92,
+                                sourceIsRaw: true
+                            )
+                            data = output
+                        }
                     } else {
                         guard source.hasBuffer else { throw EditorError.noImageLoaded }
                         data = try autoreleasepool {
                             let sourceBuffer = try source.fullBuffer ?? self.processor.loadRasterBuffer(url: sourceURL).buffer
+                            if format == .png {
+                                let output = FileManager.default.temporaryDirectory.appendingPathComponent("RawLab-\(UUID().uuidString).png")
+                                defer { try? FileManager.default.removeItem(at: output) }
+                                try self.processor.exportPNG(
+                                    buffer: sourceBuffer,
+                                    settings: settings,
+                                    lutURL: lutURL,
+                                    sourceURL: sourceURL,
+                                    outputURL: output,
+                                    exportLongEdge: longEdge,
+                                    outputSharpening: outputSharpening
+                                )
+                                return try Data(contentsOf: output)
+                            }
                             let outputBuffer = try self.processor.processBuffer(
                                 buffer: sourceBuffer,
                                 settings: settings,
                                 previewLongEdge: nil,
                                 lutURL: lutURL,
-                                exportLongEdge: longEdge
+                                exportLongEdge: longEdge,
+                                outputSharpening: outputSharpening
                             )
                             return try self.processor.makeJPEGData(
                                 from: outputBuffer,

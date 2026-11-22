@@ -136,4 +136,46 @@ final class CanonicalEditRecipeTests: XCTestCase {
         ) as? [String: Any])
         XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
     }
+
+    func testOutputSharpeningCanonicalJSONAndHDRRecipeAndSRGBICCProfile() throws {
+        let settings = RawSettings.default
+        let rawData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .standard).data(using: .utf8))
+        let rawRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+        let rawOutput = try XCTUnwrap(rawRoot["output"] as? [String: Any])
+        XCTAssertEqual(rawOutput["output_sharpening"] as? String, "standard")
+        XCTAssertGreaterThanOrEqual(rawRoot["schema_version"] as? Int ?? 0, 17)
+
+        let offData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .off).data(using: .utf8))
+        let offRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: offData) as? [String: Any])
+        let offOutput = offRoot["output"] as? [String: Any]
+        XCTAssertNil(offOutput?["output_sharpening"])
+
+        let adjustments = Adjustments()
+        let adjData = try XCTUnwrap(adjustments.canonicalParamsJSON(isRaster: true, outputSharpening: .low).data(using: .utf8))
+        let adjRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: adjData) as? [String: Any])
+        let adjOutput = try XCTUnwrap(adjRoot["output"] as? [String: Any])
+        XCTAssertEqual(adjOutput["output_sharpening"] as? String, "low")
+
+        let hdrData = try HDRRecipe.document(
+            settings: HDRSettings(),
+            input: URL(fileURLWithPath: "/tmp/source.heic"),
+            output: URL(fileURLWithPath: "/tmp/output.jpg"),
+            baseColor: .srgb,
+            outputSharpening: .high
+        )
+        let hdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: hdrData) as? [String: Any])
+        let hdrOutput = try XCTUnwrap(hdrRoot["output"] as? [String: Any])
+        let hdrProcessing = try XCTUnwrap(hdrRoot["processing"] as? [String: Any])
+        XCTAssertEqual(hdrProcessing["version"] as? Int, 9)
+        XCTAssertEqual(hdrOutput["output_sharpening"] as? String, "high")
+
+        // Verify ExportMetadata.ensureSRGBICCProfile injects APP2 ICC_PROFILE\0 on bare JPEG and preserves existing APP2
+        let minimalJPEG = Data([0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x02, 0xFF, 0xD9])
+        let tagged = ExportMetadata.ensureSRGBICCProfile(minimalJPEG)
+        let marker = Data([0xFF, 0xE2])
+        let iccSig = Data("ICC_PROFILE\0".utf8)
+        XCTAssertTrue(tagged.range(of: marker) != nil && tagged.range(of: iccSig) != nil)
+        let reTagged = ExportMetadata.ensureSRGBICCProfile(tagged)
+        XCTAssertEqual(reTagged, tagged)
+    }
 }

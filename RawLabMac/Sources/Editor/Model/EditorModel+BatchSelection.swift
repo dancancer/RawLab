@@ -138,21 +138,24 @@ extension EditorModel {
     }
 
     private func collectionExportPreparation(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-                                             directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportPreparation {
+                                             directory: URL, adaptiveJPEG: Bool = false,
+                                             outputSharpening: OutputSharpening = .off) throws -> MacCollectionExportPreparation {
         _ = editStore?.flushPendingCommits()
         let session = try requireAdjustmentSession()
         let selection = batchSelection.targets()
         return MacCollectionExportPreparation(selection: selection, photos: batchSelectionPhotos,
             drafts: Set(selection.filter(collectionHasDraft)), activeFile: file, activeRecord: committedEdit,
             activeRevision: editRevision, activeAIBusy: aiState.isRunning, store: editStore!, films: films,
-            skipped: skipping, format: format, longEdge: longEdge, directory: directory, adaptiveJPEG: adaptiveJPEG,
+            skipped: skipping, format: format, longEdge: longEdge, outputSharpening: outputSharpening,
+            directory: directory, adaptiveJPEG: adaptiveJPEG,
             probeHDRSource: probeHDRSource, editGeneration: session.editGeneration(for:))
     }
 
     func prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?,
-                                 directory: URL, adaptiveJPEG: Bool = false) throws -> MacCollectionExportReview {
+                                 directory: URL, adaptiveJPEG: Bool = false,
+                                 outputSharpening: OutputSharpening = .off) throws -> MacCollectionExportReview {
         try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory,
-                                        adaptiveJPEG: adaptiveJPEG).prepare()
+                                        adaptiveJPEG: adaptiveJPEG, outputSharpening: outputSharpening).prepare()
     }
 
     func cancelCollectionExportPreparation() {
@@ -161,6 +164,7 @@ extension EditorModel {
     }
 
     func startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, directory: URL, adaptiveJPEG: Bool = false,
+                               outputSharpening: OutputSharpening = .off,
                                observeFreezeStage: ((String, Bool) -> Void)? = nil,
                                completed: @escaping (UUID) -> Void = { _ in }) {
         guard !collectionExportPreparing, !exporting else { return }
@@ -168,7 +172,7 @@ extension EditorModel {
         do {
             _ = editStore?.flushPendingCommits()
             let input = try collectionExportPreparation(skipping: skipping, format: format, longEdge: longEdge, directory: directory,
-                                                       adaptiveJPEG: adaptiveJPEG)
+                                                       adaptiveJPEG: adaptiveJPEG, outputSharpening: outputSharpening)
             let generation = collectionExportGeneration, source = sourceRevision, revision = editRevision
             let prepare = prepareCollectionExportOperation
             let session = try requireAdjustmentSession(), journal = batchJournal

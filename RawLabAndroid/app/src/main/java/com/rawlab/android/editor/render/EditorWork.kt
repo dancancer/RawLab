@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.engine.RgbHistogram
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.geometry.uncropped
@@ -114,7 +115,7 @@ internal sealed interface Work {
     data class CameraHDRPreflight(val photo: ImportedPhoto, val before: EditSettings, val edits: EditSettings,
         val gpuMode: Int, val sourceRevision: Long, val edge: Int = 1600) : Work
     data class Export(val photo: ImportedPhoto, val edits: EditSettings, val destination: Uri?, val format: ExportFormat,
-        val longEdge: Int?, val gpuMode: Int) : Work
+        val longEdge: Int?, val gpuMode: Int, val outputSharpening: OutputSharpening = OutputSharpening.OFF) : Work
     data class AutoExposure(val photo: ImportedPhoto, val edits: EditSettings, val gpuMode: Int,
         val sourceRevision: Long = 0, val draftRevision: Long = 0, val activationRevision: Long = 0) : Work
 }

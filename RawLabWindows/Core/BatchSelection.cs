@@ -125,7 +125,7 @@ public sealed class BatchSelectionSession
 public sealed record CollectionExportRow(CollectionPhoto Photo,PhotoEditState? Record=null,
     AdjustmentSnapshot? Settings=null,string? Look=null,string? LookSHA256=null,string? LookName=null,string? Error=null,long EditGeneration=0);
 public sealed record CollectionExportReview(IReadOnlyList<string> SelectionIDs,IReadOnlyList<CollectionExportRow> Rows,
-    ExportFormat Format,int? LongEdge,string OutputDirectory)
+    ExportFormat Format,int? LongEdge,string OutputDirectory,OutputSharpening OutputSharpening=OutputSharpening.Off)
 {
     public bool Ready=>Rows.Count>0 && Rows.All(row=>row.Error==null && row.Record!=null && row.Settings!=null);
 }
@@ -232,12 +232,14 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
     }
 
     public CollectionExportReview Prepare(BatchSelectionSession selection,IReadOnlyCollection<string> skipping,
-        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
-        =>Prepare(selection.SelectedPhotos.ToArray(),skipping,format,longEdge,outputDirectory,activeFailure);
+        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure,
+        OutputSharpening outputSharpening=OutputSharpening.Off)
+        =>Prepare(selection.SelectedPhotos.ToArray(),skipping,format,longEdge,outputDirectory,activeFailure,outputSharpening);
     public CollectionExportReview Prepare(IReadOnlyList<CollectionPhoto> photos,IReadOnlyCollection<string> skipping,
-        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure)
+        ExportFormat format,int? longEdge,string outputDirectory,Func<string,string?> activeFailure,
+        OutputSharpening outputSharpening=OutputSharpening.Off)
     {
-        if(!Enum.IsDefined(format) || longEdge is {} edge && !ExportSize.IsValid(edge))throw new ArgumentException("Invalid output settings");
+        if(!Enum.IsDefined(format) || !Enum.IsDefined(outputSharpening) || longEdge is {} edge && !ExportSize.IsValid(edge))throw new ArgumentException("Invalid output settings");
         if(!Directory.Exists(outputDirectory))throw new DirectoryNotFoundException(Loc.Text("请选择输出文件夹。"));
         var rows=new List<CollectionExportRow>();
         foreach(var photo in photos.Where(photo=>!skipping.Contains(photo.ID))) {
@@ -260,7 +262,8 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 rows.Add(new(photo,record.Copy(),settings.Copy(),look,hash,look==null ? Loc.Text("中性") : System.IO.Path.GetFileNameWithoutExtension(look),EditGeneration:generation));
             }catch(Exception error){rows.Add(new(photo,Error:AdjustmentTransferPresentation.Detail(error)));}
         }
-        return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory));
+        var effectiveSharpening = format == ExportFormat.RenderedDng ? OutputSharpening.Off : outputSharpening;
+        return new(photos.Select(photo=>photo.ID).ToArray(),rows,format,longEdge,System.IO.Path.GetFullPath(outputDirectory),effectiveSharpening);
     }
     private BatchJob? EnsureNoUnfinishedTask()
     {
@@ -309,15 +312,17 @@ public sealed class BatchSelectionExport(EditStore store,BatchJournal journal,Fu
                 }
                 return new BatchItem(id,row.Photo.Path,row.Photo.Identity){Selected=true,Frozen=new(){Ordinal=index,
                     Settings=row.Settings!,Look=look,LookSha256=row.LookSHA256,LookName=row.LookName!,
-                    OutputFormat=review.Format,LongEdge=review.LongEdge}};
+                    OutputFormat=review.Format,LongEdge=review.LongEdge,
+                    OutputSharpening=review.Format == ExportFormat.RenderedDng ? OutputSharpening.Off : review.OutputSharpening}};
             }).ToList();
             Validate();
+            var effectiveSharpening = review.Format == ExportFormat.RenderedDng ? OutputSharpening.Off : review.OutputSharpening;
             var job=new BatchJob{Version=3,AIBackend=aiBackend,AIDeviceID=aiDeviceID,SettingsMode=BatchJob.PerTargetFrozen,Source=items[0].Input,
                 SourceIsProRAW=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } &&
                     items[0].Frozen!.Settings.ProRAWDecodeVersion == HDRNative.ProRAWDecodeVersion,
                 SourceSupportsCameraHDR=items[0].Frozen!.Settings.HDR is { Mode: HDRMode.Hdr } && PhotoInput.IsRaw(items[0].Input),
                 Settings=items[0].Frozen!.Settings,Items=items,OutputFormat=review.Format,Png=review.Format==ExportFormat.Png,
-                LongEdge=review.LongEdge,OutputDirectory=review.OutputDirectory};
+                LongEdge=review.LongEdge,OutputSharpening=effectiveSharpening,OutputDirectory=review.OutputDirectory};
             return new FrozenCollectionExport(job,journal,previousCompletedJob,owned);
         }catch {foreach(var path in owned)if(File.Exists(path))File.Delete(path);throw;}
     }
@@ -373,7 +378,8 @@ internal sealed class BatchHDRPreparation(EditStore store, Func<SavedEdit,string
         var frozen = new BatchFrozenSettings { Ordinal=ordinal,Settings=prepared.Settings,Look=look,
             LookSha256=look == null ? null : BatchFrozenSettings.Checksum(look),
             LookName=isHDR ? "HDR" : look == null ? Loc.Text("中性") : Path.GetFileNameWithoutExtension(look),
-            OutputFormat=job.Format,LongEdge=job.LongEdge };
+            OutputFormat=job.Format,LongEdge=job.LongEdge,
+            OutputSharpening=job.Format == ExportFormat.RenderedDng ? OutputSharpening.Off : job.EffectiveOutputSharpening };
         frozen.Validate();
         return (record,frozen);
     }

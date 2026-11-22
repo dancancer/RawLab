@@ -91,6 +91,26 @@ struct BatchPublicationTests {
             CGImageSourceCreateWithURL($0 as CFURL, nil) != nil
         }, "Batch model publishes readable JPEG output for every mixed target")
 
+        let pngDirectory = root.appendingPathComponent("png-output", isDirectory: true)
+        try FileManager.default.createDirectory(at: pngDirectory, withIntermediateDirectories: true)
+        let pngModel = BatchExportModel(
+            job: BatchExportJob(source: source, targets: targets, outputFormat: .png, outputSharpening: .standard),
+            journalStore: journal,
+            jpegWriter: { data, name, _, checkpoint in
+                let destination = pngDirectory.appendingPathComponent(name)
+                try data.write(to: destination)
+                try checkpoint("file:\(destination.path)")
+            })
+        pngModel.start()
+        try await waitForCompletion(pngModel)
+        try require(pngModel.job.status == .completed && pngModel.job.targets.allSatisfy { $0.status == .succeeded },
+                    "Batch model completes mixed raster/RAW 16-bit PNG rendering with output sharpening")
+        let pngOutputs = try FileManager.default.contentsOfDirectory(at: pngDirectory, includingPropertiesForKeys: nil)
+        try require(pngOutputs.count == targets.count && pngOutputs.allSatisfy { url in
+            url.pathExtension.lowercased() == "png" &&
+                CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }?.bitsPerComponent == 16
+        }, "Batch model publishes readable 16-bit PNG output for every mixed target")
+
         let job = BatchExportJob(source: source, targets: targets, outputFormat: .renderedDNG)
         let model = BatchExportModel(job: job, journalStore: journal)
         model.start()

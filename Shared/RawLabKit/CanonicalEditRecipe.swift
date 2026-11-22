@@ -511,7 +511,7 @@ public enum CanonicalEditRecipe {
 }
 
 public extension RawSettings {
-    func canonicalEditState(isRaster: Bool = false) -> CanonicalEditRecipe.State {
+    func canonicalEditState(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
         let exposureString: String
         switch exposureMode {
         case .scene: exposureString = "scene"
@@ -538,17 +538,18 @@ public extension RawSettings {
                 coarse: denoise.coarse
             ),
             chromaDenoise: displayChromaDenoise,
-            rawNoiseReduction: 0
+            rawNoiseReduction: 0,
+            outputSharpening: outputSharpening
         )
     }
 
-    func canonicalParamsJSON(isRaster: Bool = false) throws -> String {
-        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster))
+    func canonicalParamsJSON(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws -> String {
+        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, outputSharpening: outputSharpening))
     }
 }
 
 public extension Adjustments {
-    func canonicalEditState(isRaster: Bool = false, includeDenoise: Bool = true) -> CanonicalEditRecipe.State {
+    func canonicalEditState(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
         let exposureString: String
         switch exposureMode {
         case .scene: exposureString = "scene"
@@ -573,11 +574,12 @@ public extension Adjustments {
             photoEffects: effectSettings,
             waveletDenoise: wavelet,
             chromaDenoise: chromaMode,
-            rawNoiseReduction: legacyLevel
+            rawNoiseReduction: legacyLevel,
+            outputSharpening: outputSharpening
         )
     }
 
-    func canonicalParamsJSON(isRaster: Bool = false, includeDenoise: Bool = true) throws -> String {
-        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise))
+    func canonicalParamsJSON(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) throws -> String {
+        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise, outputSharpening: outputSharpening))
     }
 }

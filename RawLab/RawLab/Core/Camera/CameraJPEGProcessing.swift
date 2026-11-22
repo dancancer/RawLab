@@ -1,5 +1,7 @@
+import CoreGraphics
 import Foundation
 import ImageIO
+import RawLabKit
 
 struct CameraJPEGSource: Codable, Equatable {
     let digest: String
@@ -30,12 +32,13 @@ enum CameraJPEGProcessing {
             else { throw CameraProtocolError.jpegProcessing }
 
             let edge = min(options.longEdge ?? max(width, height), max(width, height))
+            let encoded = NSMutableData()
             guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: edge
             ] as CFDictionary), max(image.width, image.height) <= edge,
-                  let destination = CGImageDestinationCreateWithURL(destinationURL as CFURL, "public.jpeg" as CFString, 1, nil)
+                  let destination = CGImageDestinationCreateWithData(encoded, "public.jpeg" as CFString, 1, nil)
             else { throw CameraProtocolError.jpegProcessing }
 
             var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
@@ -64,6 +67,11 @@ enum CameraJPEGProcessing {
             metadata[kCGImagePropertyExifAuxDictionary] = properties[kCGImagePropertyExifAuxDictionary]
             CGImageDestinationAddImage(destination, image, metadata as CFDictionary)
             guard CGImageDestinationFinalize(destination) else { throw CameraProtocolError.jpegProcessing }
+            var outputData = encoded as Data
+            if image.colorSpace == nil || image.colorSpace?.name == CGColorSpace.sRGB {
+                outputData = ExportMetadata.ensureSRGBICCProfile(outputData)
+            }
+            try outputData.write(to: destinationURL, options: .atomic)
         }
     }
 }

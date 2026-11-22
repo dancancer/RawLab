@@ -63,10 +63,12 @@ import com.rawlab.android.presets.AdjustmentPreset
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportSize
 import com.rawlab.android.format.ExportSizeChoice
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
+import com.rawlab.android.ui.OutputSharpeningControls
 
 class MainActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -191,6 +193,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     var exportSizeKey by rememberSaveable { mutableStateOf(ExportSizeChoice.ORIGINAL.key) }
     var exportCustomSize by rememberSaveable { mutableStateOf("") }
     var pendingExportLongEdgeText by rememberSaveable { mutableStateOf("") }
+    var outputSharpening by rememberSaveable { mutableStateOf(OutputSharpening.OFF) }
     var licenses by rememberSaveable { mutableStateOf(false) }
     val screenState = rememberSaveableStateHolder()
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -206,13 +209,16 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
     val openHDRLook = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRLookImport)
     val openHDRCameraProfile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), model::finishHDRCameraProfileImport)
     val saveJpeg = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) {
-        if (it == null) model.returnToExportOptions() else model.export(it, format, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions()
+        else model.export(it, format, pendingExportLongEdgeText.toIntOrNull(), outputSharpening)
     }
     val savePng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) {
-        if (it == null) model.returnToExportOptions() else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions()
+        else model.export(it, ExportFormat.PNG, pendingExportLongEdgeText.toIntOrNull(), outputSharpening)
     }
     val saveDng = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/x-adobe-dng")) {
-        if (it == null) model.returnToExportOptions() else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull())
+        if (it == null) model.returnToExportOptions()
+        else model.export(it, ExportFormat.DNG, pendingExportLongEdgeText.toIntOrNull(), OutputSharpening.OFF)
     }
     if (cameraOpen) {
         com.rawlab.android.camera.CameraScreen(camera, model.storage, onBack = { cameraOpen = false; albumFromCamera = false },
@@ -311,6 +317,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             onExport = {
                 exportSizeKey = ExportSizeChoice.ORIGINAL.key
                 exportCustomSize = ""
+                outputSharpening = OutputSharpening.OFF
                 format = if (state.edits.isHDREditing) ExportFormat.HDR_JPEG else ExportFormat.JPEG
                 model.beginExport()
             },
@@ -379,6 +386,11 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
                     onCustomText = { exportCustomSize = it },
                     modifier = Modifier.padding(top = 12.dp),
                 )
+                OutputSharpeningControls(
+                    selected = outputSharpening,
+                    onSelected = { outputSharpening = it },
+                    enabled = format != ExportFormat.DNG,
+                )
                 Text(stringResource(R.string.output_destination), style = MaterialTheme.typography.titleSmall)
                 if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) {
                     OutlinedButton(onClick = { exportToAlbum = true }, modifier = Modifier.fillMaxWidth()) {
@@ -392,7 +404,7 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
             Button(onClick = {
                     if (!model.state.value.exportOptionsVisible) return@Button
                     if (exportToAlbum && format.allowsGallery && Build.VERSION.SDK_INT >= 29) {
-                        model.export(null, format, longEdge)
+                        model.export(null, format, longEdge, outputSharpening)
                         return@Button
                     }
                     pendingExportLongEdgeText = longEdge?.toString().orEmpty()

@@ -345,6 +345,60 @@ void applyDetailAdjustments(
     }
 }
 
+void applyOutputSharpening(ImageData& image, OutputSharpening level) {
+    if (level == OutputSharpening::Off || image.width <= 1 || image.height <= 1 || image.pixels.empty()) {
+        return;
+    }
+    float strength = 0.0f;
+    switch (level) {
+        case OutputSharpening::Low: strength = 0.20f; break;
+        case OutputSharpening::Standard: strength = 0.40f; break;
+        case OutputSharpening::High: strength = 0.70f; break;
+        case OutputSharpening::Off: return;
+    }
+    const int width = image.width;
+    const int height = image.height;
+    const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (image.pixels.size() != pixelCount) {
+        return;
+    }
+
+    std::vector<float> luma(pixelCount);
+    parallelPixelRanges(pixelCount, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const auto& p = image.pixels[i];
+            luma[i] = 0.2126f * p.r + 0.7152f * p.g + 0.0722f * p.b;
+        }
+    });
+
+    auto rowHoriz = [&](int row, int x) noexcept -> float {
+        const int x0 = std::max(0, x - 1);
+        const int x2 = std::min(width - 1, x + 1);
+        const float* rowPtr = luma.data() + static_cast<size_t>(row) * static_cast<size_t>(width);
+        return (rowPtr[x0] + 2.0f * rowPtr[x] + rowPtr[x2]) * 0.25f;
+    };
+
+    parallelRowRanges(height, width, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            checkProcessingCancellation();
+            const int y0 = std::max(0, y - 1);
+            const int y2 = std::min(height - 1, y + 1);
+            const size_t rowOffset = static_cast<size_t>(y) * static_cast<size_t>(width);
+            for (int x = 0; x < width; ++x) {
+                const size_t idx = rowOffset + static_cast<size_t>(x);
+                const float blur = (rowHoriz(y0, x) + 2.0f * rowHoriz(y, x) + rowHoriz(y2, x)) * 0.25f;
+                const float detail = luma[idx] - blur;
+                const float weight = clamp01((std::abs(detail) - 0.008f) / 0.032f);
+                const float delta = clampFloat(detail * weight * strength, -0.15f, 0.15f);
+                auto& pixel = image.pixels[idx];
+                pixel.r = clamp01(pixel.r + delta);
+                pixel.g = clamp01(pixel.g + delta);
+                pixel.b = clamp01(pixel.b + delta);
+            }
+        }
+    });
+}
+
 RenderStatus applyPhotoLook(
     ImageData& image,
     const std::shared_ptr<LUT3D>& lut,

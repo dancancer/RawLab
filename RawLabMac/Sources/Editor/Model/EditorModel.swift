@@ -275,6 +275,7 @@ final class EditorModel: ObservableObject {
     var prepareCollectionExportOperation: (MacCollectionExportPreparation) throws -> MacCollectionExportReview = { try $0.prepare() }
     @Published var collectionError: String?
     @Published var exportLongEdge: Int?
+    @Published var exportOutputSharpening: OutputSharpening = .off
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
     var scheduler = RenderScheduler<RenderWork>()

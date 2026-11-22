@@ -295,6 +295,7 @@ final class EditorCoordinator: ObservableObject {
     @Published var showingExportSize = false
     @Published var showingPrivacy = false
     @Published var exportLongEdge: Int?
+    @Published var exportOutputSharpening: OutputSharpening = .off
     @Published var singleExportFormat: BatchOutputFormat = .jpeg
     @Published var fileExportRequest: FileExportRequest?
 
@@ -1169,6 +1170,7 @@ final class EditorCoordinator: ObservableObject {
         guard closeEditorDraftCleanly() else { return }
         singleExportFormat = format
         exportLongEdge = nil
+        exportOutputSharpening = .off
         showingExportSize = true
     }
 

@@ -32,6 +32,7 @@ public partial class MainWindow
     internal long EditRevision => editRevision;
     internal long OpenRevision => Volatile.Read(ref openRevision);
     internal int? ExportLongEdge { get => exportLongEdge; set => exportLongEdge = value; }
+    internal OutputSharpening ExportOutputSharpening { get => exportOutputSharpening; set { exportOutputSharpening = value; RefreshExportSharpeningMenu(); } }
     internal string? LastExportedPath => lastExportedPath;
     internal int PreviewLongEdge { get => previewLongEdge; set => previewLongEdge = value; }
     internal int RequestedPreviewLongEdge { get => requestedPreviewLongEdge; set => requestedPreviewLongEdge = value; }

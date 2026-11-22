@@ -8,6 +8,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import com.rawlab.android.engine.LookFormat
+import com.rawlab.android.editor.render.ExportDestinationCleanup
+import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.looks.ManagedLook
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
@@ -133,5 +136,22 @@ class EditorStateReducerTest {
         assertEquals(SingleExportStep.NONE, EditorStateReducer.lookImported(staleLook, imported).state.exportStep)
         assertEquals(SingleExportStep.NONE, EditorStateReducer.lookRenamed(staleLook, imported).state.exportStep)
         assertEquals(SingleExportStep.NONE, EditorStateReducer.lookDeleted(staleLook, imported.id).state.exportStep)
+    }
+
+    @Test
+    fun prepareExportSubmissionPropagatesOutputSharpeningAndForcesOffForDng() {
+        val photo = ImportedPhoto(TestUri.value, "photo.raw", File("photo.raw"))
+        val state = EditorState(photo = photo, operation = Operation.PICK_EXPORT, exportStep = SingleExportStep.OPTIONS)
+        val cleanup = ExportDestinationCleanup { _, _ -> }
+
+        val jpegReady = prepareExportSubmission(
+            state, null, ExportFormat.JPEG, 2048, 0, cleanup, outputSharpening = OutputSharpening.STANDARD
+        ) as ExportSubmission.Ready
+        assertEquals(OutputSharpening.STANDARD, jpegReady.work.outputSharpening)
+
+        val dngReady = prepareExportSubmission(
+            state, TestUri.value, ExportFormat.DNG, 2048, 0, cleanup, outputSharpening = OutputSharpening.HIGH
+        ) as ExportSubmission.Ready
+        assertEquals(OutputSharpening.OFF, dngReady.work.outputSharpening)
     }
 }

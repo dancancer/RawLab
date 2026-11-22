@@ -145,10 +145,10 @@ extension ContentView {
         return settings.customWhiteBalance(cameraTemperature: camera.temperature, cameraTint: camera.tint)
     }
 
-    func exportPhoto(longEdge: Int?, format: BatchOutputFormat) {
+    func exportPhoto(longEdge: Int?, format: BatchOutputFormat, outputSharpening: OutputSharpening = .off) {
         guard !isEditorDraftActive else { return }
         isSaving = true
-        viewModel.exportPhoto(settings: settings, longEdge: longEdge, format: format) { result in
+        viewModel.exportPhoto(settings: settings, longEdge: longEdge, format: format, outputSharpening: outputSharpening) { result in
             switch result {
             case .success(let data):
                 saveToPhotoLibrary(data, format: format)
@@ -681,7 +681,12 @@ extension ContentView {
             PHPhotoLibrary.shared().performChanges({
                 let request = PHAssetCreationRequest.forAsset()
                 let options = PHAssetResourceCreationOptions()
-                options.uniformTypeIdentifier = (format == .hdrHEIF ? UTType.heic : .jpeg).identifier
+                let type: UTType = switch format {
+                case .hdrHEIF: .heic
+                case .png: .png
+                default: .jpeg
+                }
+                options.uniformTypeIdentifier = type.identifier
                 request.addResource(with: .photo, data: data, options: options)
             }, completionHandler: { success, error in
                 DispatchQueue.main.async {

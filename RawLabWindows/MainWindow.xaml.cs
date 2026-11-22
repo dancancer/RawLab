@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     private bool autoExposing;
     private long editRevision;
     private int? exportLongEdge;
+    private OutputSharpening exportOutputSharpening = OutputSharpening.Off;
     private string? lastExportedPath;
     private PhotoInfo? photoInfo;
     private PhotoInfoMode photoInfoMode;

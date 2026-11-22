@@ -19,6 +19,7 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.ExportMetadata
 import com.rawlab.android.format.ExportSize
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoFiles
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
@@ -286,11 +287,13 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int? = null,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
-        cancellationGeneration: Long = -1L): Int {
+        cancellationGeneration: Long = -1L,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF): Int {
         check(handle != 0L) { "Processor is closed" }
         require(format != ExportFormat.HDR_JPEG) { "HDR JPEG requires HDR editing" }
         require(input.canonicalPath != output.canonicalPath)
         require(ExportSize.isValid(longEdge)) { "Invalid output long edge" }
+        val effectiveSharpening = if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
         val generation = if (cancellationGeneration >= 0L) cancellationGeneration else -1L
         val cancelled = { generation >= 0L && cancellationGeneration() != generation }
         return executeExport(
@@ -307,6 +310,7 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
                     nativeApplyParams(handle, effective.toCanonicalRecipeJson(
                         isRaster = pixels != null || inputKind != PhotoInputKind.RAW,
                         includeDenoise = true,
+                        outputSharpening = effectiveSharpening,
                     ))
                     val backend = intArrayOf(-1)
                     nativeProcess(
@@ -365,10 +369,11 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     @Synchronized
     internal fun renderHDR(source: NativeHDRImage, settings: com.rawlab.android.settings.HDRSettings, edge: Int,
         cancellationGeneration: Long = -1L, lookDirectory: File? = null,
-        progress: HDRProgressListener? = null): NativeHDRImage {
+        progress: HDRProgressListener? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF): NativeHDRImage {
         check(handle != 0L) { "Processor is closed" }
         require(edge in 0..65535)
-        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory, progress)
+        return NativeHDRBridge.render(handle, source, settings, edge, cancellationGeneration, lookDirectory, progress, outputSharpening)
     }
 
     @Synchronized
@@ -416,11 +421,12 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
 
     internal fun exportProRAW(file: File, info: com.rawlab.android.photo.HDRSourceInfo,
         edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long = -1L,
-        lookDirectory: File? = null, progress: HDRProgressListener? = null) {
+        lookDirectory: File? = null, progress: HDRProgressListener? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF) {
         check(handle != 0L) { "Processor is closed" }
         edits.requireProRAWDecoder()
         NativeHDRBridge.exportProRAW(handle, file, info, requireNotNull(edits.hdr).copy(geometry = edits.geometry),
-            output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
+            output, keepHDR, edge, cancellationGeneration, lookDirectory, progress, outputSharpening)
     }
 
     internal fun sessionHandle(): Long = handle

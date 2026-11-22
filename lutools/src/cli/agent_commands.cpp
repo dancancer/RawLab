@@ -162,16 +162,10 @@ HDRCommandResult renderHDR(
     if (result.status==SONY2FUJI_STATUS_OK && settings.inputType=="raw" && !lensDatabase.empty())
         result.status=sony2fuji_session_set_lens_database(session.get(),lensDatabase.c_str());
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
-    const sony2fuji_hdr_request_v9 requestV9 =
-        settings.processingVersion >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION
-        ? recipe.toHDRRenderRequestV9()
-        : sony2fuji_hdr_request_v9{};
-    const sony2fuji_hdr_request_v8 requestV8 =
-        settings.processingVersion < SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION
-        ? recipe.toHDRRenderRequest()
-        : requestV9.base;
-    const sony2fuji_hdr_request_v1* requestPtr =
-        settings.processingVersion >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION
+    const bool useV9 = recipe.schemaVersion >= 16;
+    const auto requestV9 = useV9 ? recipe.toHDRRenderRequestV9() : sony2fuji_hdr_request_v9{};
+    const auto requestV8 = useV9 ? requestV9.base : recipe.toHDRRenderRequest();
+    const sony2fuji_hdr_request_v1* requestPtr = useV9
         ? &requestV9.base.base.base.base.base.base.base.base
         : &requestV8.base.base.base.base.base.base.base;
     if (settings.inputType=="proraw" && settings.hdrOutput && !preview && !analyze) {

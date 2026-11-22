@@ -19,6 +19,9 @@ public sealed record BatchFrozenSettings
     public string LookName { get; init; } = "中性";
     [JsonRequired] public ExportFormat OutputFormat { get; init; }
     public int? LongEdge { get; init; }
+    public OutputSharpening OutputSharpening { get; init; } = OutputSharpening.Off;
+    [JsonIgnore] public OutputSharpening EffectiveOutputSharpening =>
+        OutputFormat == ExportFormat.RenderedDng ? OutputSharpening.Off : OutputSharpening;
 
     public BatchFrozenSettings Copy() => this with { Settings = Settings.Copy() };
     public static string Checksum(string path) =>
@@ -26,6 +29,7 @@ public sealed record BatchFrozenSettings
     public void Validate()
     {
         if (Version != 1 || SettingsVersion != 1 || Ordinal < 0 || !Enum.IsDefined(OutputFormat) ||
+            !Enum.IsDefined(OutputSharpening) ||
             LongEdge is {} edge && !ExportSize.IsValid(edge) ||
             Look == null && LookSha256 != null || Look != null &&
             (LookSha256?.Length != 64 || LookSha256.Any(c => !"0123456789abcdef".Contains(c))))
@@ -89,6 +93,9 @@ public sealed class BatchJob
     // Null is deliberately the original-size default, including for journals
     // written by older versions that do not have this property.
     public int? LongEdge { get; set; }
+    public OutputSharpening OutputSharpening { get; set; } = OutputSharpening.Off;
+    [JsonIgnore] public OutputSharpening EffectiveOutputSharpening =>
+        Format == ExportFormat.RenderedDng ? OutputSharpening.Off : OutputSharpening;
     public bool Started { get; set; }
     public bool Interrupted { get; set; }
     public bool Cancelled { get; set; }
@@ -106,13 +113,13 @@ public sealed class BatchJob
     public BatchJob Copy() => new() {
         Version=Version, SettingsMode=SettingsMode, Id=Id, Source=Source, SourceIsProRAW=SourceIsProRAW,
         SourceSupportsCameraHDR=SourceSupportsCameraHDR, Settings=Settings.Copy(), AIBackend=AIBackend, AIDeviceID=AIDeviceID, Look=Look, LookName=LookName,
-        OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
+        OutputDirectory=OutputDirectory, Png=Png, OutputFormat=OutputFormat, LongEdge=LongEdge, OutputSharpening=OutputSharpening, Started=Started, Interrupted=Interrupted, Cancelled=Cancelled,
         Error=Error, Items=Items.Select(x => x with { Frozen = x.Frozen?.Copy() }).ToList()
     };
     public BatchFrozenSettings SnapshotFor(BatchItem item, Func<string, X3fMode>? resolveX3fMode = null) => Mode == PerTargetFrozen
         ? item.Frozen ?? throw new InvalidDataException("Missing frozen batch item.")
         : new() { Ordinal = 0, Settings = PhotoInput.PrepareBatchSettings(Source, item.Input, Settings.Restore(), resolveX3fMode).Capture(),
-            Look = Look, LookName = LookName, OutputFormat = Format, LongEdge = LongEdge };
+            Look = Look, LookName = LookName, OutputFormat = Format, LongEdge = LongEdge, OutputSharpening = EffectiveOutputSharpening };
     public string TemporaryPath(BatchItem item) => Path.Combine(OutputDirectory!, $".rawlab-{Id}-{item.Id}.{(item.Frozen?.OutputFormat ?? Format).Suffix()}");
 
     public void Validate()
@@ -129,6 +136,8 @@ public sealed class BatchJob
             throw new InvalidDataException(Loc.Text("不支持此处理版本，原有记录未被覆盖。"));
         if (AIBackend == 0 && (Settings.ActiveAIDenoise || Items.Any(item => item.Frozen?.Settings.ActiveAIDenoise == true)))
             throw new InvalidDataException(Loc.Text("AI 降噪不支持 CPU，请重新创建使用 GPU 的批量任务。"));
+        if (!Enum.IsDefined(OutputSharpening))
+            throw new InvalidDataException("Invalid output sharpening in batch journal.");
         if (Mode != PerTargetFrozen)
         {
             if (Version == 3 || Items.Any(x => x.Frozen != null || x.AwaitingTargetSettings)) throw new InvalidDataException("Frozen items require per-target mode.");
@@ -341,22 +350,29 @@ public static class BatchRunner
 {
     public delegate void Render(string input, Adjustments settings, string? look, string destination);
     public delegate void SizedRender(string input, Adjustments settings, string? look, string destination, int? longEdge);
+    public delegate void SharpenedRender(string input, Adjustments settings, string? look, string destination, int? longEdge, OutputSharpening outputSharpening);
 
     public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
                            Action<BatchJob, string?> changed, Render render,
                            Func<string, X3fMode>? resolveX3fMode = null) =>
         Run(job, journal, failuresOnly, cancellation, changed,
-            (input, settings, look, destination, _) => render(input, settings, look, destination), resolveX3fMode);
+            (input, settings, look, destination, _, _) => render(input, settings, look, destination), resolveX3fMode);
 
     public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
                            Action<BatchJob, string?> changed, SizedRender render,
+                           Func<string, X3fMode>? resolveX3fMode = null) =>
+        Run(job, journal, failuresOnly, cancellation, changed,
+            (input, settings, look, destination, longEdge, _) => render(input, settings, look, destination, longEdge), resolveX3fMode);
+
+    public static void Run(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
+                           Action<BatchJob, string?> changed, SharpenedRender render,
                            Func<string, X3fMode>? resolveX3fMode = null)
     {
         RunCore(job, journal, failuresOnly, cancellation, changed, render, resolveX3fMode);
     }
 
     private static void RunCore(BatchJob job, BatchJournal journal, bool failuresOnly, CancellationToken cancellation,
-                                Action<BatchJob, string?> changed, SizedRender render,
+                                Action<BatchJob, string?> changed, SharpenedRender render,
                                 Func<string, X3fMode>? resolveX3fMode)
     {
         job.Validate();
@@ -394,7 +410,7 @@ public static class BatchRunner
     }
 
     private static void Export(int index, BatchJob job, BatchJournal journal, CancellationToken cancellation,
-                               SizedRender render, Func<string, X3fMode>? resolveX3fMode)
+                               SharpenedRender render, Func<string, X3fMode>? resolveX3fMode)
     {
         var item = job.Items[index];
         var temporary = job.TemporaryPath(item);
@@ -406,7 +422,7 @@ public static class BatchRunner
                 if (!item.Identity.SameFile(OriginalIdentity.Read(item.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 snapshot = job.SnapshotFor(item, resolveX3fMode);
                 if (job.Mode == BatchJob.PerTargetFrozen) snapshot.VerifyLook();
-                render(item.Input, snapshot.Settings.Restore(), snapshot.Look, temporary, snapshot.LongEdge);
+                render(item.Input, snapshot.Settings.Restore(), snapshot.Look, temporary, snapshot.LongEdge, snapshot.EffectiveOutputSharpening);
             }
             catch (OperationCanceledException) when(cancellation.IsCancellationRequested)
             {

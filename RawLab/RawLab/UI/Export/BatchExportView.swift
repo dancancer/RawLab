@@ -211,6 +211,7 @@ struct BatchExportView: View {
             Text(L10n.text("输出")).font(.title3.weight(.semibold)).padding(.top, 18).padding(.bottom, 10)
             Picker(L10n.text("格式"), selection: Binding(get: { model.job.outputFormat }, set: model.setFormat)) {
                 Text(BatchOutputFormat.jpeg.title).tag(BatchOutputFormat.jpeg)
+                Text(BatchOutputFormat.png.title).tag(BatchOutputFormat.png)
                 if model.job.source.settings.isHDREditing {
                     Text(BatchOutputFormat.hdrJPEG.title).tag(BatchOutputFormat.hdrJPEG)
                     if HDRImage.heifExportAvailable || model.job.outputFormat == .hdrHEIF {
@@ -227,6 +228,16 @@ struct BatchExportView: View {
             ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge),
                              onValidityChanged: { exportSizeValid = $0 })
                 .disabled(!model.canChangeTargets)
+            Picker(L10n.text("输出锐化"), selection: Binding(
+                get: { model.job.outputFormat == .renderedDNG ? .off : model.job.effectiveOutputSharpening },
+                set: model.setOutputSharpening
+            )) {
+                ForEach(OutputSharpening.allCases, id: \.self) { level in
+                    Text(level.title).tag(level)
+                }
+            }
+            .accessibilityIdentifier("batch.sharpening")
+            .disabled(!model.canChangeTargets || model.job.outputFormat == .renderedDNG)
             settingRow(L10n.text("保存到"), value: model.job.outputFormat.publishesToPhotos ? L10n.text("照片图库") : L10n.text("RawLab 文件"))
         }.padding(.horizontal, 20).padding(.bottom, 16)
     }
