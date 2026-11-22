@@ -754,7 +754,7 @@ jobs:
           cd ..
           bash RawLabAndroid/tests/jni-session-lock.sh
           bash RawLabAndroid/tests/ndk-compile.sh
-      - name: Build both ABIs, lint and instrumentation test APK
+      - name: Build both ABIs, lint, debug/release APKs and verify JNI/alignment
         if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
@@ -766,8 +766,21 @@ jobs:
           git rev-parse HEAD
           java -version
           cd RawLabAndroid
-          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --max-workers=2
+          bash scripts/fetch-rum-sdk.sh
+          ./gradlew :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease --no-daemon --max-workers=2
           bash scripts/check-native.sh
+          UNSIGNED="app/build/outputs/apk/release/app-release-unsigned.apk"
+          if ! unzip -Z1 "$UNSIGNED" lib/arm64-v8a/libproducer.so > /dev/null 2>&1; then
+            echo "Release APK is missing the Aliyun RUM SDK" >&2
+            exit 2
+          fi
+          python3 tests/check-rum-jni-classes.py "$UNSIGNED" \
+            --apkanalyzer "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          aligned_tmp="$(mktemp -d)"
+          trap 'rm -rf "$aligned_tmp"' EXIT
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -P 16 4 "$UNSIGNED" "$aligned_tmp/aligned.apk"
+          bash scripts/check-native.sh "$aligned_tmp/aligned.apk"
+          rm -rf "$aligned_tmp"
           cd ..
           if [[ "$RAWLAB_CI_NATIVE" == true ]]; then
             RAWLAB_TEST_ANDROID_CACHE=1 python scripts/ci/test_native_cache_android.py

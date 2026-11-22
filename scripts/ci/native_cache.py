@@ -132,8 +132,9 @@ def cache_paths(platform, arch, root=ROOT):
         return [f"build/windows-native/{path}" for path in (
             "_deps", "dng-sdk", "raw-jpeg", "core/wavelib", "lens-dependencies/install", *OPENCV_HEADERS)]
     if platform == "android":
-        base = "RawLabAndroid/app/.cxx/Debug/*"
-        return [f"{base}/{abi}/{path}" for abi in ("arm64-v8a", "x86_64")
+        return [f"RawLabAndroid/app/.cxx/{variant}/*/{abi}/{path}"
+                for variant in ("Debug", "RelWithDebInfo")
+                for abi in ("arm64-v8a", "x86_64")
                 for path in ("_deps", "dng-sdk", "raw-jpeg", "core/wavelib", "lens-dependencies/install",
                              ".ninja_deps", ".ninja_log", "configure_fingerprint.bin",
                              "metadata_generation_command.txt", *OPENCV_HEADERS)]
