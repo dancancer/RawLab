@@ -17,6 +17,10 @@ if [[ "$RUM" == true ]] && ! unzip -Z1 "$UNSIGNED" lib/arm64-v8a/libproducer.so 
   printf 'Release APK is missing the Aliyun RUM SDK; refusing to sign it.\n' >&2
   exit 2
 fi
+if [[ "$RUM" == true ]]; then
+  python3 "$ROOT/tests/check-rum-jni-classes.py" "$UNSIGNED" \
+    --apkanalyzer "$SDK/cmdline-tools/latest/bin/apkanalyzer"
+fi
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 "$TOOLS/zipalign" -f -P 16 4 "$UNSIGNED" "$TEMP/aligned.apk"

@@ -166,11 +166,11 @@ Assets are generated from existing repository resources rather than duplicated i
 
 ## Release
 
-[下载 Android v0.11.0 APK / Download Android v0.11.0 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.0/RawLab-Android-0.11.0.apk) · [完整发布说明 / Release notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.0) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.0/SHA256SUMS.txt)
+[下载 Android v0.11.1 APK / Download Android v0.11.1 APK](https://github.com/dancancer/RawLab/releases/download/v0.11.1/RawLab-Android-0.11.1.apk) · [修复说明 / Hotfix notes](https://github.com/dancancer/RawLab/releases/tag/v0.11.1) · [SHA-256](https://github.com/dancancer/RawLab/releases/download/v0.11.1/SHA256SUMS.txt)
 
-发布 APK 为 `versionName=0.11.0`、`versionCode=20`，沿用正式发布签名，支持同签名旧正式版覆盖升级。本版新增 Sony Wi-Fi 相机导图与一键增量导入、无线联机实拍（含点按对焦与对焦区域控制）、Processing v3、紧凑工具工作区、RGB 分通道色调曲线、1:1 原生视口分块缩放与可取消 HDR 导出进度，以及已编辑筛选、效果缩略图和存储清理，见[发布说明](../docs/releases/v0.11/v0.11.0.md)。既有默认开启的使用统计和关于页关闭开关保留。实际构建、JVM、模拟器与设备覆盖见发布附件 `BUILD-PROVENANCE.json`。
+发布 APK 为 `versionName=0.11.1`、`versionCode=21`，沿用 0.11.0 正式签名，可直接覆盖升级。此修复版解决 R8 发布包启动时缺少 RUM JNI 类导致的闪退；0.11.0 的 Android 功能保持不变，详见[修复说明](../docs/releases/v0.11/v0.11.1.md)和[完整功能说明](../docs/releases/v0.11/v0.11.0.md)。macOS、Windows 和 iOS 包不在此次热修复中重发，桌面更新元数据继续保留。
 
-The release APK uses version 0.11.0/code 20 and the existing release identity. It adds Sony Wi-Fi camera import with one-tap incremental transfer, wireless tethering (with tap-to-focus and focus area controls), Processing v3, compact tool workspaces, RGB channel tone curves, 1:1 native viewport ROI zoom, cancellable HDR export progress, edited filters/thumbnails and storage cleanup. Usage-statistics defaults are unchanged. See the [release notes](../docs/releases/v0.11/v0.11.0.md) and package provenance for actual build, emulator and physical-device coverage.
+The release APK uses version 0.11.1/code 21 and the existing release identity. It fixes the 0.11.0 Android cold-start crash and preserves the 0.11.0 feature set and usage-statistics defaults. See the [hotfix notes](../docs/releases/v0.11/v0.11.1.md) and package provenance for actual build, emulator and physical-device coverage.
 
 正式 APK 使用专用发布密钥签名，不使用 debug key。密钥和密码文件必须放在仓库外，
 后续更新使用同一密钥；请单独安全备份。构建脚本不创建或上传密钥。

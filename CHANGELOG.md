@@ -3,6 +3,18 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.11.1]
+
+### Fixed
+
+- Android no longer aborts during cold start when R8 removes Aliyun RUM
+  producer classes resolved by native JNI. The release APK retains those
+  classes and checks their presence before signing.
+
+This is an Android hotfix; macOS, Windows and iOS packages are not republished.
+Version `0.11.1`, build `21`. See the
+[release notes](docs/releases/v0.11/v0.11.1.md).
+
 ## [0.11.0]
 
 ### Added
