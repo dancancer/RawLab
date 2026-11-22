@@ -4,12 +4,11 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasParent
-import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import com.rawlab.android.RawLabTheme
 import com.rawlab.android.editor.render.PreviewPair
 import com.rawlab.android.editor.ui.EditorScreen
@@ -48,7 +47,7 @@ class InspectionOverlayMenuInstrumentedTest {
             }
         }
         compose.waitForIdle()
-        compose.onNode(hasParent(hasTestTag("workspace-more")) and hasClickAction()).performClick()
+        compose.onNodeWithTag("workspace-more").assertIsDisplayed().performTouchInput { click() }
         compose.onNodeWithTag("inspection-gray50-menu").assertIsDisplayed()
         compose.onNodeWithTag("inspection-overlay-menu").assertIsDisplayed().performClick()
         compose.onNodeWithTag("inspection-overlay-item-sketch_luminance").assertIsDisplayed().performClick()

@@ -205,7 +205,10 @@ class AdjustmentHistoryInstrumentedTest {
             val renderer = EditorViewModel::class.java.getDeclaredField("renderer").apply { isAccessible = true }.get(model)
             val processorField = renderer.javaClass.getDeclaredField("processor").apply { isAccessible = true }
             fun cachedBitmap(): Bitmap {
-                val processor = processorField.get(renderer)!!
+                val engine = processorField.get(renderer)!!
+                val processor = runCatching {
+                    engine.javaClass.getDeclaredField("native").apply { isAccessible = true }.get(engine)!!
+                }.getOrDefault(engine)
                 val decoded = processor.javaClass.getDeclaredField("raster").apply { isAccessible = true }.get(processor) as com.rawlab.android.raster.DecodedRaster
                 return decoded.bitmap
             }
