@@ -193,7 +193,12 @@ android {
     sourceSets["debug"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Debug"))
     sourceSets["release"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Release"))
     sourceSets["androidTest"].assets.srcDir(testAssets)
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += listOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "/META-INF/versions/*/OSGI-INF/MANIFEST.MF",
+        )
+    }
     // SDK 的 webview-sdk.js 只在给 WebView 注入 H5 采集时读取（2.3.2 字节码核实）；本应用没有 WebView，
     // h5 采集也已关闭，不打包。前半段是 aapt 的默认忽略规则，原样保留
     androidResources { ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!webview-sdk.js" }
@@ -225,12 +230,15 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.fasterxml.jackson.core:jackson-core:2.18.3")
+    implementation("com.github.mwiede:jsch:2.28.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")
     testImplementation("junit:junit:4.13.2")
     // JVM 合同测试使用真实 JSON parser；设备端继续使用 Android 的 org.json。
     testImplementation("org.json:json:20240303")
+    testImplementation("org.apache.sshd:sshd-core:2.14.0")
+    testImplementation("org.slf4j:slf4j-nop:2.0.16")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.06.01"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
