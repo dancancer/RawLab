@@ -42,13 +42,15 @@ internal data class ConnectedCameraImport(
 internal suspend fun openCameraImportSession(
     createMobile: () -> CameraMediaSession,
     createLegacy: () -> CameraMediaSession,
+    initializeRemote: Boolean = false,
     onOpened: suspend (CameraMediaSession) -> Unit = {},
 ): ConnectedCameraImport {
     var opened = createMobile()
     try {
         onOpened(opened)
         var info = opened.deviceInfo()
-        if (!info.operations.containsAll(listOf(0x923c, 0x923d))) {
+        val isMobile = info.operations.containsAll(listOf(0x923c, 0x923d))
+        if (!isMobile) {
             if (!info.operations.containsAll(listOf(0x1002, 0x9201, 0x9202, 0x9209, 0x9212, 0x1004, 0x1007, 0x1008, 0x1009)))
                 throw CameraMediaSession.UnsupportedCameraException("Photo import is unavailable in this camera mode")
             opened.close()
@@ -56,14 +58,34 @@ internal suspend fun openCameraImportSession(
             onOpened(opened)
             info = opened.deviceInfo()
         }
-        opened.openSession()
-        val listing = listCameraPhotosBounded(opened, info)
+        var remoteInitialized = false
+        if (opened is SonyMobileSession && initializeRemote && info.operations.containsAll(listOf(0x9201, 0x9202))) {
+            opened.openSession(info, true)
+            remoteInitialized = true
+        } else {
+            opened.openSession()
+        }
+        val listing = try {
+            listCameraPhotosBounded(opened, info)
+        } catch (error: SonyMobileSession.ResponseException) {
+            val canRetryWithRemoteInit =
+                !remoteInitialized &&
+                    opened is SonyMobileSession &&
+                    error.operation == 0x923c &&
+                    error.code in REMOTE_INIT_RETRY_CODES &&
+                    info.operations.containsAll(listOf(0x9201, 0x9202))
+            if (!canRetryWithRemoteInit) throw error
+            opened.initializeRemoteContents()
+            listCameraPhotosBounded(opened, info)
+        }
         return ConnectedCameraImport(opened, info, listing)
     } catch (error: Exception) {
         opened.close()
         throw error
     }
 }
+
+private val REMOTE_INIT_RETRY_CODES = setOf(0x2002, 0x2005, 0x201e)
 
 internal data class CameraSessionQueueResult(
     val job: CameraImportJob,

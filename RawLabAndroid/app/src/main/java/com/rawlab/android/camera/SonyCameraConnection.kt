@@ -40,6 +40,7 @@ import java.io.Closeable
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.util.LinkedHashMap
+import java.util.Locale
 import java.util.UUID
 
 internal data class CameraCandidate(val id: String, val name: String)
@@ -91,7 +92,17 @@ internal class SonyCameraConnection internal constructor(
         val createBond: () -> Boolean,
     )
 
-    internal data class WifiApResult(val ssid: String?, val bssid: String?, val timestampMicros: Long)
+    internal enum class WifiSecurity {
+        WPA2,
+        WPA3,
+    }
+
+    internal data class WifiApResult(
+        val ssid: String?,
+        val bssid: String?,
+        val timestampMicros: Long,
+        val capabilities: String = "",
+    )
 
     internal interface Handle {
         fun close()
@@ -150,18 +161,47 @@ internal class SonyCameraConnection internal constructor(
         fun registerWifiScanReceiver(onScanResults: (updated: Boolean) -> Unit): Handle
         fun isConnectivityAvailable(): Boolean
         fun requestWifiNetwork(ssid: String, password: String, bssid: String?, callbacks: WifiNetworkCallbacks): Handle
+        fun requestWifiNetwork(
+            ssid: String,
+            password: String,
+            bssid: String?,
+            security: WifiSecurity,
+            callbacks: WifiNetworkCallbacks,
+        ): Handle = requestWifiNetwork(ssid, password, bssid, callbacks)
         fun registerManualWifiNetwork(callbacks: LegacyWifiCallbacks): Handle
         fun defaultIpv4Gateway(properties: LinkProperties?): Inet4Address? {
-            val routeGateway = properties?.routes?.asSequence()
-                ?.filter { it.isDefaultRoute }
-                ?.mapNotNull { it.gateway as? Inet4Address }
-                ?.firstOrNull()
-            if (routeGateway != null) return routeGateway
-            return if (sdkInt >= Build.VERSION_CODES.R && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                properties?.dhcpServerAddress
+            if (properties == null) return null
+            val routes = properties.routes.map { route ->
+                val isDefault = route.isDefaultRoute
+                val prefixLen = route.destination.prefixLength
+                val hasGw = if (sdkInt >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    route.hasGateway()
+                } else {
+                    route.gateway != null
+                }
+                Ipv4RouteCandidate(
+                    isDefaultRoute = isDefault,
+                    hasGateway = hasGw,
+                    gateway = route.gateway as? Inet4Address,
+                    destinationPrefixLength = prefixLen,
+                )
+            }
+            val dhcp = if (sdkInt >= Build.VERSION_CODES.R && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                properties.dhcpServerAddress
             } else {
                 null
             }
+            val links = properties.linkAddresses.mapNotNull { link ->
+                val v4 = link.address as? Inet4Address ?: return@mapNotNull null
+                Ipv4LinkCandidate(v4, link.prefixLength)
+            }
+            val dns = properties.dnsServers.mapNotNull { it as? Inet4Address }
+            return resolveCameraIpv4Gateway(
+                routes = routes,
+                dhcpServerAddress = dhcp,
+                linkAddresses = links,
+                dnsServers = dns,
+            )
         }
     }
 
@@ -217,6 +257,9 @@ internal class SonyCameraConnection internal constructor(
     private var scanStartedMicros = 0L
     private var pendingSSID: String? = null
     private var pendingPassword: String? = null
+    private var activeWifiCapabilities = ""
+    private var activeWifiSecurity = WifiSecurity.WPA2
+    private var retriedWpa3 = false
 
     private var networkHandle: Handle? = null
     private var cameraNetwork: Network? = null
@@ -637,8 +680,24 @@ internal class SonyCameraConnection internal constructor(
     private fun fallbackToSsidOnlyWifi() {
         val ssid = pendingSSID ?: return
         val password = pendingPassword ?: return fail(Failure.WIFI)
-        debugLog("Wi-Fi scan unavailable/timed out; requesting WifiNetworkSpecifier by SSID only")
-        requestWiFi(ssid, password, bssid = null)
+        val cachedCaps = findMatchingApCapabilities(ssid)
+        val security = selectWifiSecurity(cachedCaps)
+        debugLog("Wi-Fi scan unavailable/timed out; requesting WifiNetworkSpecifier by SSID only security=$security")
+        requestWiFi(ssid, password, bssid = null, security = security, capabilities = cachedCaps)
+    }
+
+    private fun findMatchingApCapabilities(ssid: String): String {
+        val results = try {
+            platform.wifiScanResults()
+        } catch (_: SecurityException) {
+            return ""
+        }
+        return results
+            .asSequence()
+            .filter { it.ssid == ssid && it.capabilities.isNotBlank() }
+            .maxByOrNull { it.timestampMicros }
+            ?.capabilities
+            .orEmpty()
     }
 
     private fun findFreshAccessPoint() {
@@ -651,14 +710,28 @@ internal class SonyCameraConnection internal constructor(
         for (result in results) {
             val bssid = result.bssid ?: continue
             if (result.ssid == name && result.timestampMicros >= scanStartedMicros - WIFI_FRESHNESS_US) {
-                debugLog("Found fresh cached AP; requesting WifiNetworkSpecifier (withBssid=true)")
-                requestWiFi(name, pendingPassword ?: return fail(Failure.WIFI), bssid)
+                val security = selectWifiSecurity(result.capabilities)
+                debugLog("Found fresh cached AP; requesting WifiNetworkSpecifier (withBssid=true, security=$security)")
+                requestWiFi(
+                    name = name,
+                    password = pendingPassword ?: return fail(Failure.WIFI),
+                    bssid = bssid,
+                    security = security,
+                    capabilities = result.capabilities,
+                )
                 return
             }
         }
     }
 
-    private fun requestWiFi(name: String, password: String, bssid: String?) {
+    private fun requestWiFi(
+        name: String,
+        password: String,
+        bssid: String?,
+        security: WifiSecurity = WifiSecurity.WPA2,
+        capabilities: String = "",
+        isRetry: Boolean = false,
+    ) {
         if (platform.sdkInt < Build.VERSION_CODES.Q) {
             fail(Failure.UNSUPPORTED)
             return
@@ -667,6 +740,9 @@ internal class SonyCameraConnection internal constructor(
         pendingSSID = null
         pendingPassword = null
         cancelWifiScanTimeout()
+        activeWifiCapabilities = capabilities
+        activeWifiSecurity = security
+        if (!isRetry) retriedWpa3 = false
         if (!platform.isConnectivityAvailable()) return fail(Failure.WIFI)
         val current = generation
         lateinit var handle: Handle
@@ -689,10 +765,30 @@ internal class SonyCameraConnection internal constructor(
 
             override fun onUnavailable() {
                 platform.post {
-                    if (isCurrentNetwork(current, handle)) {
-                        debugLog("WifiNetworkCallbacks.onUnavailable")
-                        fail(Failure.WIFI)
+                    if (!isCurrentNetwork(current, handle)) return@post
+                    val latestCaps = activeWifiCapabilities.ifBlank { findMatchingApCapabilities(name) }
+                    val shouldRetryWpa3 =
+                        activeWifiSecurity == WifiSecurity.WPA2 &&
+                            !retriedWpa3 &&
+                            advertisesWpa3Sae(latestCaps)
+                    if (shouldRetryWpa3) {
+                        debugLog("WifiNetworkCallbacks.onUnavailable under WPA2 on SAE AP; retrying with WPA3")
+                        retriedWpa3 = true
+                        networkHandle = null
+                        cancelWifiRequestTimeout()
+                        runCatching { handle.close() }
+                        requestWiFi(
+                            name = name,
+                            password = password,
+                            bssid = bssid,
+                            security = WifiSecurity.WPA3,
+                            capabilities = latestCaps,
+                            isRetry = true,
+                        )
+                        return@post
                     }
+                    debugLog("WifiNetworkCallbacks.onUnavailable")
+                    fail(Failure.WIFI)
                 }
             }
 
@@ -707,9 +803,9 @@ internal class SonyCameraConnection internal constructor(
         }
         setStage(Stage.WIFI_CONFIRMATION)
         if (!active) return
-        debugLog("Requesting WifiNetworkSpecifier (withBssid=${!bssid.isNullOrBlank()})")
+        debugLog("Requesting WifiNetworkSpecifier (withBssid=${!bssid.isNullOrBlank()}, security=$security)")
         try {
-            handle = platform.requestWifiNetwork(name, password, bssid, callbacks)
+            handle = platform.requestWifiNetwork(name, password, bssid, security, callbacks)
             networkHandle = handle
         } catch (_: SecurityException) {
             fail(Failure.PERMISSION)
@@ -823,6 +919,9 @@ internal class SonyCameraConnection internal constructor(
         gattConnected = false
         pendingSSID = null
         pendingPassword = null
+        activeWifiCapabilities = ""
+        activeWifiSecurity = WifiSecurity.WPA2
+        retriedWpa3 = false
         selectedDevice = null
         selectedId = null
         stage = null
@@ -1024,7 +1123,7 @@ internal class SonyCameraConnection internal constructor(
 
         @Suppress("DEPRECATION")
         override fun wifiScanResults(): List<WifiApResult> =
-            wifi?.scanResults.orEmpty().map { WifiApResult(it.SSID, it.BSSID, it.timestamp) }
+            wifi?.scanResults.orEmpty().map { WifiApResult(it.SSID, it.BSSID, it.timestamp, it.capabilities.orEmpty()) }
 
         override fun registerWifiScanReceiver(onScanResults: (updated: Boolean) -> Unit): Handle {
             val receiver = object : BroadcastReceiver() {
@@ -1054,6 +1153,14 @@ internal class SonyCameraConnection internal constructor(
             password: String,
             bssid: String?,
             callbacks: WifiNetworkCallbacks,
+        ): Handle = requestWifiNetwork(ssid, password, bssid, WifiSecurity.WPA2, callbacks)
+
+        override fun requestWifiNetwork(
+            ssid: String,
+            password: String,
+            bssid: String?,
+            security: WifiSecurity,
+            callbacks: WifiNetworkCallbacks,
         ): Handle {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                 throw UnsupportedOperationException("WifiNetworkSpecifier requires Android 10+")
@@ -1063,8 +1170,11 @@ internal class SonyCameraConnection internal constructor(
                 .setSsid(ssid)
                 .apply {
                     if (!bssid.isNullOrBlank()) setBssid(MacAddress.fromString(bssid))
+                    when (security) {
+                        WifiSecurity.WPA3 -> setWpa3Passphrase(password)
+                        WifiSecurity.WPA2 -> setWpa2Passphrase(password)
+                    }
                 }
-                .setWpa2Passphrase(password)
                 .build()
             val request = NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
@@ -1087,6 +1197,33 @@ internal class SonyCameraConnection internal constructor(
 
         override fun registerManualWifiNetwork(callbacks: LegacyWifiCallbacks): Handle {
             val manager = checkNotNull(connectivity)
+            val selector = ManualWifiSelector()
+            val networkStates = LinkedHashMap<String, Pair<Network, LinkProperties>>()
+            var evalRunnable: Runnable? = null
+            var closed = false
+
+            fun cancelPendingEval() {
+                evalRunnable?.let(main::removeCallbacks)
+                evalRunnable = null
+            }
+
+            fun evaluate() {
+                if (closed) return
+                cancelPendingEval()
+                val nowMs = SystemClock.elapsedRealtime()
+                val selected = selector.pollSelected(nowMs)
+                if (selected != null) {
+                    val (observation, identity) = selected
+                    val pair = networkStates[observation.networkKey] ?: return
+                    callbacks.onLegacyNetworkReady(pair.first, identity, pair.second)
+                    return
+                }
+                val delayMs = selector.nextEvaluationDelayMs(nowMs) ?: return
+                val runnable = Runnable { evaluate() }
+                evalRunnable = runnable
+                main.postDelayed(runnable, delayMs)
+            }
+
             class ManualWifiCallback : ConnectivityManager.NetworkCallback {
                 constructor() : super()
                 @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
@@ -1097,36 +1234,62 @@ internal class SonyCameraConnection internal constructor(
 
                 @Suppress("DEPRECATION")
                 private fun inspect(network: Network) {
-                    if (Build.VERSION.SDK_INT < 29) return
+                    if (Build.VERSION.SDK_INT < 29 || closed) return
                     val capabilities = capabilitiesByNetwork[network] ?: return
                     val properties = propertiesByNetwork[network] ?: return
-                    val hasWifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-                    if (!hasWifi) return
+                    if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return
                     val info = capabilities.transportInfo as? WifiInfo
-                    var identity = SonyCameraModel.networkIdentity(info?.ssid, info?.bssid)
-                    // 旧系统没有位置回调标志；新系统只信任对应 Network 的回调，避免套用另一条 Wi-Fi 的身份。
-                    if (identity == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    var ssid = info?.ssid
+                    var bssid = info?.bssid
+                    // 旧系统没有位置回调标志；仅当回调无 SSID/BSSID 且为 Android 11 及以下时参考连接信息。
+                    if (ssid.isNullOrBlank() && bssid.isNullOrBlank() && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
                         val legacy = wifi?.connectionInfo
-                        identity = SonyCameraModel.networkIdentity(legacy?.ssid, legacy?.bssid)
+                        ssid = legacy?.ssid
+                        bssid = legacy?.bssid
                     }
-                    val hasGateway = defaultIpv4Gateway(properties) != null
-                    debugLog("ManualWifiCallback.inspect hasWifi=$hasWifi hasIdentity=${identity != null} hasGateway=$hasGateway")
-                    identity ?: return
-                    callbacks.onLegacyNetworkReady(network, identity, properties)
+                    val gateway = defaultIpv4Gateway(properties)
+                    val validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    val key = network.toString()
+                    debugLog(
+                        "ManualWifiCallback.inspect key=$key validated=$validated " +
+                            "hasGateway=${gateway != null} strictId=${SonyCameraModel.networkIdentity(ssid, bssid) != null}",
+                    )
+                    networkStates[key] = network to properties
+                    selector.update(
+                        ManualWifiObservation(
+                            networkKey = key,
+                            ssid = ssid,
+                            bssid = bssid,
+                            gateway = gateway,
+                            validated = validated,
+                        ),
+                        nowMs = SystemClock.elapsedRealtime(),
+                    )
+                    evaluate()
                 }
 
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    capabilitiesByNetwork[network] = capabilities
-                    inspect(network)
+                    main.post {
+                        capabilitiesByNetwork[network] = capabilities
+                        inspect(network)
+                    }
                 }
                 override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
-                    propertiesByNetwork[network] = properties
-                    inspect(network)
+                    main.post {
+                        propertiesByNetwork[network] = properties
+                        inspect(network)
+                    }
                 }
                 override fun onLost(network: Network) {
-                    capabilitiesByNetwork.remove(network)
-                    propertiesByNetwork.remove(network)
-                    callbacks.onLost(network)
+                    main.post {
+                        capabilitiesByNetwork.remove(network)
+                        propertiesByNetwork.remove(network)
+                        val key = network.toString()
+                        networkStates.remove(key)
+                        selector.remove(key)
+                        callbacks.onLost(network)
+                        evaluate()
+                    }
                 }
             }
             val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -1138,7 +1301,14 @@ internal class SonyCameraConnection internal constructor(
                 callback,
             )
             return object : Handle {
-                override fun close() { manager.unregisterNetworkCallback(callback) }
+                override fun close() {
+                    main.post {
+                        closed = true
+                        cancelPendingEval()
+                        networkStates.clear()
+                    }
+                    manager.unregisterNetworkCallback(callback)
+                }
             }
         }
     }
@@ -1203,5 +1373,209 @@ internal class SonyCameraConnection internal constructor(
 
         override fun disconnect() = source.disconnect()
         override fun close() = source.close()
+    }
+}
+
+private val SAE_CAPABILITY_REGEX = Regex("(^|[^A-Z0-9])SAE([^A-Z0-9]|$)")
+private val PSK_CAPABILITY_REGEX = Regex("(^|[^A-Z0-9])PSK([^A-Z0-9]|$)")
+
+internal fun advertisesWpa3Sae(capabilities: String?): Boolean {
+    val upper = capabilities.orEmpty().uppercase(Locale.ROOT)
+    return SAE_CAPABILITY_REGEX.containsMatchIn(upper)
+}
+
+internal fun selectWifiSecurity(capabilities: String?): SonyCameraConnection.WifiSecurity {
+    val upper = capabilities.orEmpty().uppercase(Locale.ROOT)
+    val hasSae = SAE_CAPABILITY_REGEX.containsMatchIn(upper)
+    val hasPsk = PSK_CAPABILITY_REGEX.containsMatchIn(upper)
+    return if (hasSae && !hasPsk) {
+        SonyCameraConnection.WifiSecurity.WPA3
+    } else {
+        SonyCameraConnection.WifiSecurity.WPA2
+    }
+}
+
+internal data class Ipv4RouteCandidate(
+    val isDefaultRoute: Boolean,
+    val hasGateway: Boolean,
+    val gateway: Inet4Address?,
+    val destinationPrefixLength: Int,
+)
+
+internal data class Ipv4LinkCandidate(
+    val address: Inet4Address,
+    val prefixLength: Int,
+)
+
+internal fun resolveCameraIpv4Gateway(
+    routes: List<Ipv4RouteCandidate>,
+    dhcpServerAddress: Inet4Address?,
+    linkAddresses: List<Ipv4LinkCandidate>,
+    dnsServers: List<Inet4Address>,
+): Inet4Address? {
+    val ownInts = linkAddresses.mapTo(HashSet()) { ipv4ToInt(it.address) }
+    routes.asSequence()
+        .filter { it.isDefaultRoute }
+        .mapNotNull { it.gateway }
+        .firstOrNull { isUsableIpv4Gateway(it, ownInts, requirePrivate = false) }
+        ?.let { return it }
+
+    dhcpServerAddress
+        ?.takeIf { isUsableIpv4Gateway(it, ownInts, requirePrivate = false) }
+        ?.let { return it }
+
+    routes.asSequence()
+        .filter { !it.isDefaultRoute && (it.hasGateway || it.gateway != null) }
+        .sortedBy { it.destinationPrefixLength }
+        .mapNotNull { it.gateway }
+        .firstOrNull { isUsableIpv4Gateway(it, ownInts, requirePrivate = true) }
+        ?.let { return it }
+
+    dnsServers.asSequence()
+        .firstOrNull { dns ->
+            isUsableIpv4Gateway(dns, ownInts, requirePrivate = true) &&
+                linkAddresses.any { link -> sameIpv4Subnet(dns, link.address, link.prefixLength) }
+        }
+        ?.let { return it }
+
+    for (link in linkAddresses) {
+        if (!link.address.isSiteLocalAddress || link.prefixLength !in 16..30) continue
+        val ownInt = ipv4ToInt(link.address)
+        val mask = (-1L shl (32 - link.prefixLength)).toInt()
+        val firstHostInt = (ownInt and mask) or 1
+        if (firstHostInt != ownInt && firstHostInt !in ownInts) {
+            return intToIpv4(firstHostInt)
+        }
+    }
+    return null
+}
+
+private fun isUsableIpv4Gateway(
+    candidate: Inet4Address?,
+    ownInts: Set<Int>,
+    requirePrivate: Boolean,
+): Boolean {
+    candidate ?: return false
+    if (candidate.isAnyLocalAddress || candidate.isLoopbackAddress || candidate.isMulticastAddress) return false
+    if (ipv4ToInt(candidate) in ownInts) return false
+    if (requirePrivate && !(candidate.isSiteLocalAddress || candidate.isLinkLocalAddress)) return false
+    return true
+}
+
+private fun sameIpv4Subnet(a: Inet4Address, b: Inet4Address, prefixLength: Int): Boolean {
+    if (prefixLength <= 0) return true
+    if (prefixLength >= 32) return ipv4ToInt(a) == ipv4ToInt(b)
+    val mask = (-1L shl (32 - prefixLength)).toInt()
+    return (ipv4ToInt(a) and mask) == (ipv4ToInt(b) and mask)
+}
+
+private fun ipv4ToInt(address: Inet4Address): Int {
+    val bytes = address.address
+    return ((bytes[0].toInt() and 0xFF) shl 24) or
+        ((bytes[1].toInt() and 0xFF) shl 16) or
+        ((bytes[2].toInt() and 0xFF) shl 8) or
+        (bytes[3].toInt() and 0xFF)
+}
+
+private fun intToIpv4(value: Int): Inet4Address {
+    val bytes = byteArrayOf(
+        ((value ushr 24) and 0xFF).toByte(),
+        ((value ushr 16) and 0xFF).toByte(),
+        ((value ushr 8) and 0xFF).toByte(),
+        (value and 0xFF).toByte(),
+    )
+    return InetAddress.getByAddress(bytes) as Inet4Address
+}
+
+internal fun cleanWifiSsid(raw: String?): String? {
+    val cleaned = raw?.trim()?.removeSurrounding("\"")?.trim().orEmpty()
+    if (cleaned.isEmpty() || cleaned.equals("<unknown ssid>", ignoreCase = true)) return null
+    return cleaned
+}
+
+internal data class ManualWifiObservation(
+    val networkKey: String,
+    val ssid: String?,
+    val bssid: String?,
+    val gateway: Inet4Address?,
+    val validated: Boolean,
+) {
+    val isDirectSsid: Boolean
+        get() = cleanWifiSsid(ssid)?.startsWith("DIRECT-", ignoreCase = true) == true
+
+    val strictIdentity: String?
+        get() = SonyCameraModel.networkIdentity(ssid, bssid)
+
+    fun fallbackIdentity(): String? {
+        strictIdentity?.let { return it }
+        cleanWifiSsid(ssid)?.let { return "sony-wifi-ssid:$it" }
+        gateway?.hostAddress?.takeIf { it.isNotBlank() }?.let { return "sony-wifi-route:$it" }
+        return null
+    }
+}
+
+internal class ManualWifiSelector(
+    private val dualWlanSettleDelayMs: Long = 400L,
+    private val bssidGraceDelayMs: Long = 2_000L,
+) {
+    private data class Entry(
+        val observation: ManualWifiObservation,
+        val firstSeenMs: Long,
+    )
+
+    private val entries = LinkedHashMap<String, Entry>()
+
+    fun update(observation: ManualWifiObservation, nowMs: Long) {
+        val previous = entries[observation.networkKey]
+        val firstSeen = previous?.firstSeenMs ?: nowMs
+        entries[observation.networkKey] = Entry(observation, firstSeen)
+    }
+
+    fun remove(networkKey: String) {
+        entries.remove(networkKey)
+    }
+
+    fun nextEvaluationDelayMs(nowMs: Long): Long? {
+        val readyAt = readyTimestampMs() ?: return null
+        return maxOf(0L, readyAt - nowMs)
+    }
+
+    fun pollSelected(nowMs: Long): Pair<ManualWifiObservation, String>? {
+        val best = bestEntry() ?: return null
+        val readyAt = readyTimestampMsFor(best) ?: return null
+        if (nowMs < readyAt) return null
+        val allowFallback = nowMs - best.firstSeenMs >= bssidGraceDelayMs
+        val identity = best.observation.strictIdentity
+            ?: if (allowFallback) best.observation.fallbackIdentity() else null
+        return identity?.let { best.observation to it }
+    }
+
+    private fun bestEntry(): Entry? = entries.values
+        .asSequence()
+        .filter { it.observation.gateway != null }
+        .maxWithOrNull(
+            compareBy<Entry> { rank(it.observation) }
+                .thenBy { if (it.observation.strictIdentity != null) 1 else 0 }
+                .thenBy { -it.firstSeenMs },
+        )
+
+    private fun rank(observation: ManualWifiObservation): Int = when {
+        observation.isDirectSsid && !observation.validated -> 3
+        !observation.validated -> 2
+        observation.isDirectSsid -> 1
+        else -> 0
+    }
+
+    private fun readyTimestampMs(): Long? = bestEntry()?.let(::readyTimestampMsFor)
+
+    private fun readyTimestampMsFor(best: Entry): Long? {
+        val obs = best.observation
+        if (obs.gateway == null) return null
+        if (obs.isDirectSsid && !obs.validated && obs.strictIdentity != null) {
+            return best.firstSeenMs
+        }
+        val bssidWait = if (obs.strictIdentity != null) 0L else bssidGraceDelayMs
+        val dualWait = if (obs.isDirectSsid && !obs.validated) 0L else dualWlanSettleDelayMs
+        return best.firstSeenMs + maxOf(bssidWait, dualWait)
     }
 }

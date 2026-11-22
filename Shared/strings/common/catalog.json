@@ -8854,5 +8854,21 @@
     "es": "La cámara no aceptó el punto de enfoque en su estado actual.",
     "fr": "L’appareil n’a pas accepté le point de mise au point dans son état actuel.",
     "ja": "現在の状態ではカメラがピント位置の設定を受け付けませんでした。"
+  },
+  "显示密码": {
+    "de": "Passwort anzeigen",
+    "en": "Show password",
+    "es": "Mostrar contraseña",
+    "fr": "Afficher le mot de passe",
+    "ja": "パスワードを表示",
+    "zh-Hans": "显示密码"
+  },
+  "隐藏密码": {
+    "de": "Passwort ausblenden",
+    "en": "Hide password",
+    "es": "Ocultar contraseña",
+    "fr": "Masquer le mot de passe",
+    "ja": "パスワードを隠す",
+    "zh-Hans": "隐藏密码"
   }
 }

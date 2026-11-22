@@ -201,4 +201,44 @@ class CameraTetherJournalTest {
             journal.reserve(normal, slid, CameraTetherObservationMode.Incremental())
         }
     }
+
+    @Test fun slotTwoAssetsKeepDistinctObjectSlotKeysPerFileHandle() = withJournal { _, journal ->
+        val slot1 = CameraPhoto(
+            key = "10:1:DSC00001.ARW:100:1",
+            name = "DSC00001.ARW",
+            size = 100L,
+            created = 1L,
+            resumeIdentity = "mobile:10:1:DSC00001.ARW:100:1",
+            storageToken = "mobile",
+        )
+        val slot2First = CameraPhoto(
+            key = "s2:10:1:DSC00001.ARW:200:2",
+            name = "DSC00001.ARW",
+            size = 200L,
+            created = 2L,
+            resumeIdentity = "mobile:s2:10:1:DSC00001.ARW:200:2",
+            storageToken = "mobile-slot2",
+        )
+        val slot2Second = CameraPhoto(
+            key = "s2:10:2:DSC00002.ARW:300:3",
+            name = "DSC00002.ARW",
+            size = 300L,
+            created = 3L,
+            resumeIdentity = "mobile:s2:10:2:DSC00002.ARW:300:3",
+            storageToken = "mobile-slot2",
+        )
+        val run = journal.create("camera", "sony-test", listOf(slot1, slot2First), CameraImportDestination())
+        val (reserved, batch) = journal.reserve(
+            run,
+            listOf(slot2Second),
+            CameraTetherObservationMode.Incremental(afterCursor = 2L),
+        )
+        assertEquals(listOf(slot2Second), batch!!.photos)
+
+        // Reusing slot-2's object handle (s2:10:1) with changed metadata must still fail as source changed.
+        val overwrittenSlot2 = slot2First.copy(key = "s2:10:1:DSC00099.ARW:400:9", name = "DSC00099.ARW", size = 400L, created = 9L)
+        assertThrows(CameraTetherSourceException::class.java) {
+            journal.reserve(reserved, listOf(overwrittenSlot2), CameraTetherObservationMode.Incremental(afterCursor = 3L))
+        }
+    }
 }

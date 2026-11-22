@@ -95,3 +95,7 @@ Sony ARW6 decoding and A7 V metadata are backported from LibRaw e419de0;
 A1 II, EOS R50 V and PowerShot V1 metadata come from upstream PRs 775/846,
 784 and 856 under the original LibRaw LGPL/CDDL terms. Pinned sources and
 format boundaries: docs/reference/raw-format-support.md.
+
+JSch 2.28.0 (com.github.mwiede:jsch, https://github.com/mwiede/jsch) is
+licensed under BSD-3-Clause (with bundled JZlib and jBCrypt notices).
+See jsch-LICENSE.txt for the full license text.

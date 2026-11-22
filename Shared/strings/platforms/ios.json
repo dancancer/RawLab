@@ -5355,14 +5355,6 @@
       "ja": "以前の調整は写真ライブラリの識別子だけで保存されています。同じ元の写真であれば復元できます。",
       "zh-Hans": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
     },
-    "显示密码": {
-      "de": "Passwort anzeigen",
-      "en": "Show password",
-      "es": "Mostrar contraseña",
-      "fr": "Afficher le mot de passe",
-      "ja": "パスワードを表示",
-      "zh-Hans": "显示密码"
-    },
     "暂无可导出的错误日志。": {
       "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
       "en": "There is no error log to export.",
@@ -5930,14 +5922,6 @@
       "fr": "Paramètres de confidentialité",
       "ja": "プライバシー設定",
       "zh-Hans": "隐私设置"
-    },
-    "隐藏密码": {
-      "de": "Passwort ausblenden",
-      "en": "Hide password",
-      "es": "Ocultar contraseña",
-      "fr": "Masquer le mot de passe",
-      "ja": "パスワードを隠す",
-      "zh-Hans": "隐藏密码"
     },
     "高级参数": {
       "de": "Erweiterte Parameter",
